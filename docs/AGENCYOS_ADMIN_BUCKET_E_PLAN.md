@@ -10,7 +10,7 @@ Owner decisions on record (2026-09-30):
 | # | Question | Decision |
 |---|---|---|
 | E1 | WhatsApp broadcast (SCR-059 sub-feature) | **Reopen as a governed campaign** |
-| E2 | Cost time on the project margin | **Keep uncosted** — no work |
+| E2 | Cost time on the project margin | **Per person hourly cost rate** (revised 2026-09-30 after a re-ask; the first answer was "keep uncosted") |
 | E3 | Profile / Preferences (A32) and Help (A34) | **Build both** |
 | E4 | Two-session realtime test | **Runnable script + CI job** |
 | E5 | GST return | **Add GSTR-1 / GSTR-3B exports** (no filing API) |
@@ -88,6 +88,57 @@ a reason; on the local stack all refused with "not configured") → audit
 rows. Screenshot both routes.
 
 Effort: 1 stream, ~1 migration, ~14 files.
+
+## E2. Time costed at a per-person rate
+
+**Rule.** A log is priced at the rate in force for that person on the
+day of the log, never today's rate, so a rate change does not rewrite
+history. Rates are cost, not billing: nothing here touches invoices.
+
+**Migration `20260930170000_a_person_has_a_cost_rate_with_a_history.sql`**
+
+- `core.member_cost_rates` (organization_id, user_id, hourly_cost_minor
+  bigint > 0, currency text default 'INR', effective_from date, set_by,
+  note, created_at). Unique (organization_id, user_id, effective_from).
+  RLS enable+force; select owner and ops_admin only (a cost rate is
+  private to management — a person does not see their own rate through
+  this table, and the report's per-person cost is shown only to roles
+  with `invoice.read`); insert owner only via the door; no update or
+  delete grant (a correction is a new row from the same date, the latest
+  row for a date wins). Tenancy + freeze triggers.
+- Door `core.set_member_cost_rate(user_id, hourly_cost_minor, effective_from, note)`
+  — owner only, member must belong to the org, audits `cost_rate.set`
+  with before (the rate in force) and after.
+- View `projects.time_log_costs` (`security_invoker`): each time log
+  joined to the rate in force on `logged_on` (lateral latest
+  `effective_from <= logged_on`), giving `cost_minor = round(hours × rate)`
+  and `rate_missing` when no rate covers that day. The three totals
+  views gain `cost_minor` and `uncosted_hours`.
+
+**Code**
+
+- `src/modules/team/cost-rate-{schema,service,actions,queries}.ts` — new
+  files; `setMemberCostRate`, `listMemberCostRates` (history per person).
+- Settings › Team roster: a "Cost rate" column (owner sees value and a
+  "Set rate" form with effective-from date; ops_admin sees value; others
+  see nothing). History expands under the row.
+- `src/modules/finance/margin.ts` — `computeMargin` gains `timeCostMinor`
+  and `uncostedHours`; margin = paid − (expenses + AI cost + time cost).
+  The report says "N h uncosted — no rate on those days" instead of
+  silently treating them as zero, and the CSV carries both.
+- Project report Time card: per-person rows gain cost; task rows gain
+  cost; the time CSV gains `cost_minor` and `rate_missing`.
+- Tests: `tests/a-log-is-priced-on-its-day.test.ts` — the view picks the
+  rate by `logged_on`, not now(); a rate change leaves earlier costs
+  unchanged; margin arithmetic in paise; uncosted hours are reported, not
+  zeroed; the table has no update/delete grant; no page outside
+  `invoice.read` renders a cost.
+
+**Verification.** Set a rate from 2026-09-01, log 1.5 h → cost shown;
+set a new rate from today, the earlier log's cost unchanged; a log dated
+before the first rate shows as uncosted; audit rows read back.
+
+Effort: 1 stream, 1 migration, ~9 files.
 
 ## E3. Profile / Preferences and Help
 
@@ -215,13 +266,16 @@ constant update, which the test will flag by design.
 
 ## Order and streams
 
-Four worktree streams in parallel, one migration timestamp each, merged
+Five worktree streams in parallel, one migration timestamp each, merged
 in this order so the shared files touch once:
 
 1. **E4** (no migration) — starts first because its CI run is the long pole.
 2. **E5** `20260930160000` — finance only.
-3. **E3** `20260930150000` — identity + shell (`?` link, user menu).
-4. **E1** `20260930140000` — CRM + cron tick + sidebar.
+3. **E2** `20260930170000` — team + report (touches `margin.ts` and the
+   report page; merged before E3 so the report's date formatting change
+   lands on top).
+4. **E3** `20260930150000` — identity + shell (`?` link, user menu).
+5. **E1** `20260930140000` — CRM + cron tick + sidebar.
 
 Then, as with bucket D: apply migrations locally, restart PostgREST,
 typecheck, lint, guards, `npm test` (baseline 52), browser drive with
