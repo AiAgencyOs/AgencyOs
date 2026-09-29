@@ -22,17 +22,25 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'You do not have permission to read clients.' }, { status: 403 });
   }
 
-  const q = (new URL(request.url).searchParams.get('q') ?? '').trim().toLowerCase();
+  const params = new URL(request.url).searchParams;
+  const q = (params.get('q') ?? '').trim().toLowerCase();
+  const tag = (params.get('tag') ?? '').trim().toLowerCase();
+  const owner = (params.get('owner') ?? '').trim();
   const rows = (await listClients()).filter(
-    (c) => !q || c.name.toLowerCase().includes(q) || (c.billingEmail ?? '').toLowerCase().includes(q),
+    (c) =>
+      (!q || c.name.toLowerCase().includes(q) || (c.billingEmail ?? '').toLowerCase().includes(q)) &&
+      (!tag || c.tags.includes(tag)) &&
+      (!owner || (owner === 'none' ? c.ownerId === null : c.ownerId === owner)),
   );
 
-  const header = ['Client', 'Billing email', 'Status', 'Joined', 'Active projects', 'Total projects', 'Currency', 'Invoiced', 'Paid', 'Outstanding'];
+  const header = ['Client', 'Billing email', 'Status', 'Owner', 'Tags', 'Joined', 'Active projects', 'Total projects', 'Currency', 'Invoiced', 'Paid', 'Outstanding'];
   const lines = rows.map((c) =>
     [
       c.name,
       c.billingEmail ?? '',
       c.status,
+      c.ownerName ?? '',
+      c.tags.join('; '),
       c.createdAt.slice(0, 10),
       c.projectsActive,
       c.projectsTotal,

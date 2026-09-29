@@ -80,6 +80,25 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
       </Badge>
     ),
   },
+  {
+    // SCR-014 — the relationship owner, with the tags beneath.
+    key: 'owner',
+    header: 'Owner',
+    desktopOnly: true,
+    cell: (c) => (
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className={c.ownerName ? 'text-foreground' : 'text-muted'}>{c.ownerName ?? 'Nobody'}</span>
+        {c.tags.length > 0 ? (
+          <span className="flex flex-wrap gap-1">
+            {c.tags.slice(0, 4).map((t) => (
+              <Badge key={t} tone="neutral">{t}</Badge>
+            ))}
+            {c.tags.length > 4 ? <span className="text-[11px] text-faint">+{c.tags.length - 4}</span> : null}
+          </span>
+        ) : null}
+      </span>
+    ),
+  },
   { key: 'created', header: 'Joined', align: 'right', cellClassName: 'text-muted whitespace-nowrap', cell: (c) => clock.date(c.createdAt), sortKey: 'created' },
   {
     // SCR-014: the preview drawer, fetched on open (preview-actions.ts).
@@ -111,17 +130,20 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
 export default async function ClientsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; q?: string }>;
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; q?: string; tag?: string; owner?: string }>;
 }) {
   const context = await requireInternal('/clients');
   const clock = await agencyClock();
   if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
-  const { page: pageParam, sort: sortKey, dir, status, q: qRaw } = await searchParams;
+  const { page: pageParam, sort: sortKey, dir, status, q: qRaw, tag: tagRaw, owner: ownerRaw } = await searchParams;
   const q = (qRaw ?? '').trim();
+  const tag = (tagRaw ?? '').trim().toLowerCase();
+  const owner = (ownerRaw ?? '').trim();
   const needle = q.toLowerCase();
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
-  const currentQuery = [status ? `status=${status}` : '', q ? `q=${encodeURIComponent(q)}` : '', sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
+  const facet = [tag ? `tag=${encodeURIComponent(tag)}` : '', owner ? `owner=${encodeURIComponent(owner)}` : ''].filter(Boolean);
+  const currentQuery = [status ? `status=${status}` : '', q ? `q=${encodeURIComponent(q)}` : '', ...facet, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
   const [allClients, savedViews] = await Promise.all([listClients(), listSavedViews('/clients')]);
 
   const active = allClients.filter((c) => c.status === 'active');
@@ -134,12 +156,21 @@ export default async function ClientsPage({
 
   const byStatus =
     status === 'active' ? active : status === 'archived' ? archived : status === 'owing' ? owing : status === 'working' ? withProjects : allClients;
-  const filtered = needle ? byStatus.filter((c) => c.name.toLowerCase().includes(needle) || (c.billingEmail ?? '').toLowerCase().includes(needle)) : byStatus;
+  const bySearch = needle ? byStatus.filter((c) => c.name.toLowerCase().includes(needle) || (c.billingEmail ?? '').toLowerCase().includes(needle)) : byStatus;
+  // SCR-014 — `?tag=` and `?owner=` (owner is a user id; `none` means unowned).
+  const filtered = bySearch.filter((c) => (!tag || c.tags.includes(tag)) && (!owner || (owner === 'none' ? c.ownerId === null : c.ownerId === owner)));
   const clients = sortRows(filtered, sortKey, direction, COMPARATORS);
   const { page, pageCount, rows: pageRows } = paginate(clients, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
-  const keep = [status ? `status=${status}` : '', q ? `q=${encodeURIComponent(q)}` : ''].filter(Boolean);
+  const keep = [status ? `status=${status}` : '', q ? `q=${encodeURIComponent(q)}` : '', ...facet].filter(Boolean);
   const qs = (extra: string) => `/clients?${keep.length ? `${keep.join('&')}&` : ''}${extra}`;
-  const chip = (s: string | null) => `/clients?${[s ? `status=${s}` : '', q ? `q=${encodeURIComponent(q)}` : ''].filter(Boolean).join('&')}`;
+  const chip = (s: string | null) => `/clients?${[s ? `status=${s}` : '', q ? `q=${encodeURIComponent(q)}` : '', ...facet].filter(Boolean).join('&')}`;
+  const facetHref = (over: { tag?: string; owner?: string }) => {
+    const next = { tag, owner, ...over };
+    return `/clients?${[status ? `status=${status}` : '', q ? `q=${encodeURIComponent(q)}` : '', next.tag ? `tag=${encodeURIComponent(next.tag)}` : '', next.owner ? `owner=${encodeURIComponent(next.owner)}` : ''].filter(Boolean).join('&')}`;
+  };
+  const allTags = [...new Set(allClients.flatMap((c) => c.tags))].sort();
+  const owners = [...new Map(allClients.filter((c) => c.ownerId).map((c) => [c.ownerId!, c.ownerName ?? 'Unnamed'])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  const exportQuery = [q ? `q=${encodeURIComponent(q)}` : '', ...facet].filter(Boolean).join('&');
 
   return (
     <div className="flex flex-col gap-5">
@@ -148,7 +179,7 @@ export default async function ClientsPage({
         description="Manage your clients, track projects, communication and business growth."
         actions={
           <>
-            <a href={`/api/clients/export${q ? `?q=${encodeURIComponent(q)}` : ''}`} className={buttonClass('secondary', 'sm')}>
+            <a href={`/api/clients/export${exportQuery ? `?${exportQuery}` : ''}`} className={buttonClass('secondary', 'sm')}>
               <IconDownload size={14} />
               Export CSV
             </a>
@@ -193,10 +224,29 @@ export default async function ClientsPage({
           />
           <form method="get" action="/clients" className="flex flex-wrap items-center gap-2">
             {status ? <input type="hidden" name="status" value={status} /> : null}
+            {tag ? <input type="hidden" name="tag" value={tag} /> : null}
+            {owner ? <input type="hidden" name="owner" value={owner} /> : null}
             <input name="q" defaultValue={q} placeholder="Search name or email…" aria-label="Search clients" className={cx(inputClass, 'w-56')} />
             <button type="submit" className={buttonClass('secondary', 'sm')}>Search</button>
             {q ? <Link href={chip(status ?? null)} className="text-xs text-muted hover:underline">Clear</Link> : null}
           </form>
+          {allTags.length > 0 ? (
+            <FilterChips
+              options={[
+                { key: 'any-tag', label: 'Any tag', href: facetHref({ tag: '' }), active: !tag },
+                ...allTags.map((t) => ({ key: `tag-${t}`, label: t, href: facetHref({ tag: t }), active: tag === t })),
+              ]}
+            />
+          ) : null}
+          {owners.length > 0 ? (
+            <FilterChips
+              options={[
+                { key: 'any-owner', label: 'Any owner', href: facetHref({ owner: '' }), active: !owner },
+                ...owners.map(([id, name]) => ({ key: `owner-${id}`, label: name, href: facetHref({ owner: id }), active: owner === id })),
+                { key: 'owner-none', label: 'Unowned', href: facetHref({ owner: 'none' }), active: owner === 'none' },
+              ]}
+            />
+          ) : null}
         </FilterBar>
       ) : null}
 
@@ -216,8 +266,8 @@ export default async function ClientsPage({
       ) : (
         <EmptyState
           icon={<IconUser size={22} />}
-          title={status || q ? 'No matching clients' : 'No clients yet'}
-          description={q ? `No client matches “${q}”.` : status ? 'No client is in this state.' : 'A client account is created automatically the first time a deal is won, or from + Add client.'}
+          title={status || q || tag || owner ? 'No matching clients' : 'No clients yet'}
+          description={q ? `No client matches “${q}”.` : tag || owner ? 'No client carries that tag or owner.' : status ? 'No client is in this state.' : 'A client account is created automatically the first time a deal is won, or from + Add client.'}
         />
       )}
     </div>

@@ -10,7 +10,9 @@ import { listClientLeads, listClientOpportunities } from '@/lib/admin/client-lea
 import { getClient } from '@/lib/admin/clients';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { listAnnouncements } from '@/modules/crm/announcements-queries';
 import { listEligibleMilestones } from '@/modules/finance/eligible-milestones-queries';
+import { listInternalRoster } from '@/modules/projects/queries';
 import {
   ActivityFeed,
   Callout,
@@ -52,6 +54,7 @@ import { TrailLabel } from '../../trail-label';
 import { GenerateClientInvoiceButton } from './client-forms';
 import { ClientCreateButtons } from './create-buttons';
 import { AddClientNoteForm } from './note-form';
+import { ClientOwnerForm, ClientTagsForm } from './ownership-forms';
 
 const TABS = ['overview', 'projects', 'quotations', 'invoices', 'communication', 'files', 'notes', 'activity'] as const;
 type Tab = (typeof TABS)[number];
@@ -138,6 +141,13 @@ export default async function ClientDetailPage({
     listClientOpportunities(clientId),
   ]);
   const mayInvoice = can(context.role, 'invoice.create');
+  const mayEditClient = can(context.role, 'project.write');
+  // SCR-014 (owner select) and SCR-017 (announcements addressed to clients).
+  const [roster, clientAnnouncements] = await Promise.all([
+    mayEditClient ? listInternalRoster() : Promise.resolve([]),
+    listAnnouncements({ audience: 'clients', status: 'published', limit: 10 }),
+  ]);
+  const rosterOptions = roster.map((m) => ({ userId: m.userId, fullName: m.fullName || m.email }));
   const base = `/clients/${clientId}`;
   const tabHref = (t: Tab) => (t === 'overview' ? base : `${base}?tab=${t}`);
   const invoiceTarget = eligible.find((e) => e.eligible)?.projectId ?? null;
@@ -406,6 +416,22 @@ export default async function ClientDetailPage({
               </ul>
             ) : (
               <p className="px-4 py-3 text-[13px] text-muted sm:px-5">Every client message has been answered.</p>
+            )}
+          </Card>
+          <Card>
+            <CardHeader title="Announcements" description="Published for clients — a record of what was announced, not a send. WhatsApp broadcast is declined on record (traceability row 59)." />
+            {clientAnnouncements.length > 0 ? (
+              <ul className="divide-y divide-line">
+                {clientAnnouncements.map((a) => (
+                  <li key={a.id} className="flex flex-col gap-0.5 px-4 py-2.5 text-[13px] sm:px-5">
+                    <span className="font-medium text-foreground">{a.title}</span>
+                    <span className="whitespace-pre-wrap text-muted">{a.body}</span>
+                    <span className="text-xs text-faint">Published {a.publishedAt ? clock.dateTime(a.publishedAt) : '—'}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No announcement has been published for clients.</p>
             )}
           </Card>
           <Callout tone="info">
@@ -712,8 +738,31 @@ export default async function ClientDetailPage({
               { label: 'Client since', value: clock.date(client.createdAt) },
               { label: 'Projects', value: `${client.projectsActive} active of ${client.projectsTotal}` },
               ...(canSeeMoney ? [{ label: 'Collection', value: collection === null ? 'Nothing invoiced' : `${collection}% of ${money(client.invoicedMinor, client.currency)}` }] : []),
+              { label: 'Owner', value: client.ownerName ?? <span className="text-muted">Nobody yet</span> },
+              {
+                label: 'Tags',
+                value:
+                  client.tags.length > 0 ? (
+                    <span className="flex flex-wrap gap-1">
+                      {client.tags.map((t) => (
+                        <Link key={t} href={`/clients?tag=${encodeURIComponent(t)}`}>
+                          <Badge tone="neutral">{t}</Badge>
+                        </Link>
+                      ))}
+                    </span>
+                  ) : (
+                    <span className="text-muted">None</span>
+                  ),
+              },
             ]}
-          />
+          >
+            {mayEditClient ? (
+              <div className="flex flex-col gap-3 border-t border-line px-4 py-3 sm:px-5">
+                <ClientOwnerForm clientAccountId={client.id} ownerId={client.ownerId} roster={rosterOptions} />
+                <ClientTagsForm clientAccountId={client.id} tags={client.tags} />
+              </div>
+            ) : null}
+          </DetailPanel>
 
           <Card>
             <CardHeader title={`Contacts (${client.contacts.length})`} />

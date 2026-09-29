@@ -2,7 +2,9 @@ import type { Metadata } from 'next';
 
 import { reactivationSummary } from '@/lib/admin/reactivation-summary';
 import { requireInternal } from '@/lib/auth/session';
+import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
+import { listAnnouncements } from '@/modules/crm/announcements-queries';
 import { readInternalGroup, readInternalRecipient } from '@/modules/crm/queries';
 import { listWhatsAppTemplates, listWhatsAppTemplateVersions } from '@/modules/crm/template-queries';
 import { agencyClock } from '@/lib/admin/agency-clock';
@@ -22,11 +24,12 @@ import {
   WhatsAppNumberForm,
   WhatsAppTemplatesForm,
 } from '../forms';
+import { AnnouncementsPanel } from './announcements-panel';
 
 export const metadata: Metadata = { title: 'Settings — Communication' };
 
 export default async function SettingsCommunicationPage() {
-  await requireInternal('/settings');
+  const context = await requireInternal('/settings');
 
   const supabase = await createClient();
   const { data: orgRows } = await supabase.schema('core').from('organizations').select('settings').limit(1);
@@ -70,6 +73,9 @@ export default async function SettingsCommunicationPage() {
 
   const reactivation = await reactivationSummary();
 
+  // SCR-017/057 — announcements: a record, never a send.
+  const announcements = await listAnnouncements({ limit: 50 });
+
   // SCR-059 — the registry by the numbers, and its history. Categories are
   // the situations a template answers; languages are what it answers in.
   const clock = await agencyClock();
@@ -112,6 +118,38 @@ export default async function SettingsCommunicationPage() {
           the channel that actually delivers. The decision itself is still made in AgencyOS.
         </p>
         <InternalRecipientForm current={internalRecipient} />
+      </div>
+
+      {/*
+        SCR-017/057/059. An announcement is RECORDED here — drafted,
+        published, archived, each audited — and shown read-only on the
+        Communication Center and on every Client 360. It is not sent:
+        WhatsApp broadcast is declined on record (traceability row 59), and
+        no other channel exists for a message to many people at once.
+      */}
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
+        <h2 className="text-[13px] font-semibold tracking-tight">Announcements</h2>
+        <p className="text-xs text-muted">
+          What the agency announced, to the team or to clients, and when. Publishing records the announcement so the
+          Communication Center and each client&rsquo;s page can show it; <span className="font-medium">nothing is
+          sent</span> — WhatsApp broadcast is declined on record (traceability row 59).
+        </p>
+        <AnnouncementsPanel
+          canWrite={can(context.role, 'organization.settings')}
+          announcements={announcements.map((a) => ({
+            id: a.id,
+            title: a.title,
+            body: a.body,
+            audience: a.audience,
+            status: a.status,
+            when:
+              a.status === 'published' && a.publishedAt
+                ? `published ${clock.dateTime(a.publishedAt)}`
+                : a.status === 'archived' && a.archivedAt
+                  ? `archived ${clock.dateTime(a.archivedAt)}`
+                  : `drafted ${clock.dateTime(a.createdAt)}`,
+          }))}
+        />
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
