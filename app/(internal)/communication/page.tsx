@@ -6,6 +6,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
 import { listDeferredSends, listFailedDeliveries } from '@/lib/observability/queries';
+import { listAnnouncements } from '@/modules/crm/announcements-queries';
 import { listLeadAssignees } from '@/modules/crm/escalation-queries';
 import { listActiveConversations } from '@/modules/crm/queries';
 import { listWhatsAppTemplates } from '@/modules/crm/template-queries';
@@ -61,12 +62,13 @@ export default async function CommunicationCenterPage() {
   const clock = await agencyClock();
 
   const mayAssign = can(context.role, 'lead.assign');
-  const [conversations, failedDeliveries, deferred, templates, roster] = await Promise.all([
+  const [conversations, failedDeliveries, deferred, templates, roster, announcements] = await Promise.all([
     listActiveConversations(),
     listFailedDeliveries(20),
     listDeferredSends(20),
     listWhatsAppTemplates(),
     mayAssign ? listInternalRoster() : Promise.resolve([]),
+    listAnnouncements({ status: 'published', limit: 8 }),
   ]);
   const assignees = await listLeadAssignees(conversations.map((c) => c.leadId));
   const rosterOptions = roster.map((m) => ({ userId: m.userId, fullName: m.fullName || m.email }));
@@ -225,6 +227,31 @@ export default async function CommunicationCenterPage() {
             ) : (
               <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No template registered — nothing can be sent outside the window.</p>
             )}
+          </Card>
+
+          {/* SCR-057 — announcements, read-only here: recorded on Settings ›
+              Communication, never sent (WhatsApp broadcast is declined,
+              traceability row 59). */}
+          <Card>
+            <CardHeader
+              title="Announcements"
+              description={announcements.length === 0 ? 'Nothing published.' : 'Published — a record, not a send.'}
+              actions={can(context.role, 'organization.settings') ? <ViewAll href="/settings/communication" label="Manage" /> : null}
+            />
+            {announcements.length > 0 ? (
+              <ul className="divide-y divide-line">
+                {announcements.map((a) => (
+                  <li key={a.id} className="flex flex-col gap-0.5 px-4 py-2.5 text-[13px] sm:px-5">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-foreground">{a.title}</span>
+                      <Badge tone={a.audience === 'clients' ? 'info' : 'neutral'}>{a.audience === 'clients' ? 'For clients' : 'Internal'}</Badge>
+                    </span>
+                    <span className="line-clamp-2 text-muted">{a.body}</span>
+                    <span className="text-[11px] text-faint">{a.publishedAt ? clock.dateTime(a.publishedAt) : ''}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </Card>
 
           <QuickActions

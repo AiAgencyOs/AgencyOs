@@ -30,6 +30,11 @@ export type ClientListItem = {
   currency: string;
   status: 'active' | 'archived';
   createdAt: string;
+  /** SCR-014 — free labels, lower-cased (`core.client_accounts.tags`). */
+  tags: string[];
+  /** SCR-014 — the relationship owner (`core.client_accounts.owner_id`). */
+  ownerId: string | null;
+  ownerName: string | null;
   projectsActive: number;
   projectsTotal: number;
   invoicedMinor: number;
@@ -123,13 +128,22 @@ function directionOf(metadata: unknown): 'inbound' | 'outbound' | null {
 
 const ACTIVE_PROJECT_STATUSES = new Set(['planning', 'active', 'on_hold']);
 
+/** Owner names, joined in memory — this file's "no embed" convention. */
+async function ownerNames(supabase: Awaited<ReturnType<typeof createClient>>, ownerIds: (string | null)[]): Promise<Map<string, string>> {
+  const ids = [...new Set(ownerIds.filter((id): id is string => id !== null))];
+  if (ids.length === 0) return new Map();
+  const { data, error } = await supabase.schema('core').from('users').select('id, full_name, email').in('id', ids);
+  if (error) unreadable('clients.owners', error);
+  return new Map((data ?? []).map((u) => [u.id, u.full_name || u.email]));
+}
+
 export async function listClients(limit = 200): Promise<ClientListItem[]> {
   const supabase = await createClient();
 
   const { data: accounts, error: accountsError } = await supabase
     .schema('core')
     .from('client_accounts')
-    .select('id, name, billing_email, currency, status, created_at')
+    .select('id, name, billing_email, currency, status, created_at, tags, owner_id')
     .order('created_at', { ascending: false })
     .limit(limit);
   if (accountsError) unreadable('listClients.accounts', accountsError);
@@ -137,6 +151,7 @@ export async function listClients(limit = 200): Promise<ClientListItem[]> {
   if (accountRows.length === 0) return [];
 
   const ids = accountRows.map((a) => a.id);
+  const owners = await ownerNames(supabase, accountRows.map((a) => a.owner_id));
 
   const { data: projects, error: projectsError } = await supabase
     .schema('projects')
@@ -165,6 +180,9 @@ export async function listClients(limit = 200): Promise<ClientListItem[]> {
       currency: a.currency,
       status: a.status as 'active' | 'archived',
       createdAt: a.created_at,
+      tags: a.tags ?? [],
+      ownerId: a.owner_id,
+      ownerName: a.owner_id ? (owners.get(a.owner_id) ?? null) : null,
       projectsActive: clientProjects.filter((p) => ACTIVE_PROJECT_STATUSES.has(p.status)).length,
       projectsTotal: clientProjects.length,
       invoicedMinor,
@@ -180,11 +198,12 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
   const { data: account, error: accountError } = await supabase
     .schema('core')
     .from('client_accounts')
-    .select('id, name, billing_email, currency, status, created_at')
+    .select('id, name, billing_email, currency, status, created_at, tags, owner_id')
     .eq('id', clientAccountId)
     .maybeSingle();
   if (accountError) unreadable('getClient.account', accountError);
   if (!account) return null;
+  const owners = await ownerNames(supabase, [account.owner_id]);
 
   const { data: projects, error: projectsError } = await supabase
     .schema('projects')
@@ -443,6 +462,9 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
     currency: account.currency,
     status: account.status as 'active' | 'archived',
     createdAt: account.created_at,
+    tags: account.tags ?? [],
+    ownerId: account.owner_id,
+    ownerName: account.owner_id ? (owners.get(account.owner_id) ?? null) : null,
     projectsActive: projectRows.filter((p) => ACTIVE_PROJECT_STATUSES.has(p.status)).length,
     projectsTotal: projectRows.length,
     invoicedMinor,

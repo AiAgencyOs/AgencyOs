@@ -8,9 +8,11 @@ import { createLeadAction } from '@/modules/crm/actions';
 import { createClientAccountAction } from '@/modules/sales/actions';
 import { filterCommands, type Command } from '@/lib/admin/command-palette-eval';
 import { globalSearch, type SearchResult } from '@/lib/admin/global-search';
+import type { SavedSearch } from '@/lib/admin/saved-searches';
 import { Button, cx, Field, FormMessage, IconChevronRight, IconSearch, inputClass } from '@/ui';
 
 import { CreateProjectForm, MilestoneInvoiceForm } from './quick-create-forms';
+import { listMySearchesAction } from './search/search-actions';
 
 import { OPEN_CREATE_EVENT } from './shell-controls';
 
@@ -68,6 +70,9 @@ export function CommandPalette({
   const [records, setRecords] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [createMode, setCreateMode] = useState<CreateMode>(null);
+  // SCR-002: the person's own recent and saved searches, read when the
+  // palette opens (the layout itself makes no database read).
+  const [mySearches, setMySearches] = useState<{ saved: SavedSearch[]; recent: SavedSearch[] }>({ saved: [], recent: [] });
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -147,13 +152,22 @@ export function CommandPalette({
             },
           ]
         : [];
+    // Saved and recent searches: all of them on an empty palette, and the
+    // ones whose name or query contains the typed text otherwise.
+    const terms = trimmed.toLowerCase().split(/\s+/).filter(Boolean);
+    const matches = (e: SavedSearch) => terms.every((t) => `${e.name ?? ''} ${e.query}`.toLowerCase().includes(t));
+    const searchEntries: Entry[] = [
+      ...mySearches.saved.filter(matches).map((e) => ({ key: `saved:${e.id}`, label: `${e.name} — “${e.query}”`, group: 'Saved search', href: e.href })),
+      ...mySearches.recent.filter(matches).slice(0, 5).map((e) => ({ key: `recent:${e.id}`, label: `“${e.query}”`, group: 'Recent search', href: e.href })),
+    ];
     return [
       ...createEntries,
       ...records.map((r) => ({ key: `${r.group}:${r.id}`, label: r.label, group: r.group, href: r.href })),
       ...seeAll,
+      ...searchEntries,
       ...pageResults.map((c) => ({ key: c.href, label: c.label, group: c.group, href: c.href })),
     ];
-  }, [createEntries, records, pageResults, query]);
+  }, [createEntries, records, pageResults, query, mySearches]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -180,6 +194,14 @@ export function CommandPalette({
       window.removeEventListener(OPEN_CREATE_EVENT, onCreate);
     };
   }, [canCreateLead, canCreateClient]);
+
+  useEffect(() => {
+    if (open) {
+      listMySearchesAction()
+        .then(setMySearches)
+        .catch(() => setMySearches({ saved: [], recent: [] }));
+    }
+  }, [open]);
 
   useEffect(() => {
     if (open) {

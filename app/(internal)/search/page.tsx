@@ -10,9 +10,12 @@ import {
   searchRecords,
   type SearchPageResult,
 } from '@/lib/admin/global-search-page';
+import { listMySearches, normalizeFilters } from '@/lib/admin/saved-searches';
 import { requireInternal } from '@/lib/auth/session';
 import {
   Badge,
+  Card,
+  CardHeader,
   DataTable,
   EmptyState,
   FilterBar,
@@ -24,6 +27,7 @@ import {
 } from '@/ui';
 
 import { CopyIdButton } from './copy-id-button';
+import { RecordSearch, SaveSearchForm, SearchChip } from './saved-search-controls';
 
 export const metadata: Metadata = { title: 'Search' };
 
@@ -32,6 +36,10 @@ export const metadata: Metadata = { title: 'Search' };
  * entity; this is the page its "see all results" row lands on: every match
  * under the same capabilities and RLS, filterable by entity and by when the
  * row was created, with the record's id one click from the clipboard.
+ *
+ * Recent and saved searches (`core.saved_searches`) are the person's own: a
+ * run search is recorded after render, "Save this search" names it, and
+ * both lists appear here and in the palette.
  *
  * No rail entry: it is reached from the palette or by URL, and the phone
  * header falls back to the product name for a route the rail does not list.
@@ -49,7 +57,12 @@ export default async function SearchPage({
   const group = isSearchGroup(params.type) ? params.type : undefined;
   const since = SEARCH_SINCE.find((s) => s.key === params.since);
 
-  const results = await searchRecords({ q, group, sinceDays: since?.days });
+  const [results, mine] = await Promise.all([searchRecords({ q, group, sinceDays: since?.days }), listMySearches()]);
+  const currentFilters = normalizeFilters({ type: group, since: since?.key });
+  const alreadyNamed =
+    q.length >= MIN_SEARCH_LENGTH
+      ? (mine.saved.find((e) => e.query === q && e.filters.type === currentFilters.type && e.filters.since === currentFilters.since)?.name ?? null)
+      : null;
 
   const href = (over: Partial<{ type: string; since: string }>) => {
     const next = { q, type: group ?? '', since: since?.key ?? '', ...over };
@@ -125,6 +138,38 @@ export default async function SearchPage({
           ]}
         />
       </FilterBar>
+
+      {q.length >= MIN_SEARCH_LENGTH ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <RecordSearch q={q} type={group} since={since?.key} />
+          <SaveSearchForm q={q} type={group} since={since?.key} alreadyNamed={alreadyNamed} />
+        </div>
+      ) : null}
+
+      {mine.saved.length > 0 || mine.recent.length > 0 ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader title="Saved searches" description={mine.saved.length === 0 ? 'Name a search to keep it here.' : 'Yours alone — a click re-runs it with its filters.'} />
+            {mine.saved.length > 0 ? (
+              <div className="flex flex-wrap gap-2 px-4 pb-4 sm:px-5">
+                {mine.saved.map((e) => (
+                  <SearchChip key={e.id} entry={e} />
+                ))}
+              </div>
+            ) : null}
+          </Card>
+          <Card>
+            <CardHeader title="Recent searches" description={mine.recent.length === 0 ? 'Nothing run yet.' : 'The last twenty, most recent first.'} />
+            {mine.recent.length > 0 ? (
+              <div className="flex flex-wrap gap-2 px-4 pb-4 sm:px-5">
+                {mine.recent.map((e) => (
+                  <SearchChip key={e.id} entry={e} />
+                ))}
+              </div>
+            ) : null}
+          </Card>
+        </div>
+      ) : null}
 
       {q.length < MIN_SEARCH_LENGTH ? (
         <EmptyState

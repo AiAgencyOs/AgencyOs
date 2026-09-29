@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLive } from '@/lib/realtime';
 import { cx, IconBell } from '@/ui';
 
+import { ACTION_ITEMS_CHANGED_EVENT } from './notifications/changed-event';
 import { countActionItemsAction, type ActionCount } from './notifications/count-action';
 
 const COUNT_DEBOUNCE_MS = 600;
@@ -42,7 +43,11 @@ export function ActionBell() {
 
   useEffect(() => {
     fetchCount();
+    // A mark-read / snooze / resolve on the inbox page changes the count
+    // without touching any subscribed table, so the page says so directly.
+    window.addEventListener(ACTION_ITEMS_CHANGED_EVENT, fetchCount);
     return () => {
+      window.removeEventListener(ACTION_ITEMS_CHANGED_EVENT, fetchCount);
       if (timer.current) clearTimeout(timer.current);
     };
   }, [fetchCount]);

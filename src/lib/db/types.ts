@@ -1131,7 +1131,9 @@ export type Database = {
           id: string
           name: string
           organization_id: string
+          owner_id: string | null
           status: string
+          tags: string[]
           updated_at: string
         }
         Insert: {
@@ -1141,7 +1143,9 @@ export type Database = {
           id?: string
           name: string
           organization_id: string
+          owner_id?: string | null
           status?: string
+          tags?: string[]
           updated_at?: string
         }
         Update: {
@@ -1151,7 +1155,9 @@ export type Database = {
           id?: string
           name?: string
           organization_id?: string
+          owner_id?: string | null
           status?: string
+          tags?: string[]
           updated_at?: string
         }
         Relationships: [
@@ -1160,6 +1166,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_accounts_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -1417,6 +1430,134 @@ export type Database = {
           },
         ]
       }
+      notification_state_events: {
+        Row: {
+          assigned_to: string | null
+          created_at: string
+          event: string
+          from_state: string | null
+          id: string
+          item_key: string
+          note: string | null
+          organization_id: string
+          snoozed_until: string | null
+          to_state: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          created_at?: string
+          event: string
+          from_state?: string | null
+          id?: string
+          item_key: string
+          note?: string | null
+          organization_id: string
+          snoozed_until?: string | null
+          to_state: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          assigned_to?: string | null
+          created_at?: string
+          event?: string
+          from_state?: string | null
+          id?: string
+          item_key?: string
+          note?: string | null
+          organization_id?: string
+          snoozed_until?: string | null
+          to_state?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_state_events_assigned_to_fkey"
+            columns: ["assigned_to"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_state_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_state_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_states: {
+        Row: {
+          assigned_to: string | null
+          created_at: string
+          id: string
+          item_key: string
+          note: string | null
+          organization_id: string
+          snoozed_until: string | null
+          state: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          created_at?: string
+          id?: string
+          item_key: string
+          note?: string | null
+          organization_id: string
+          snoozed_until?: string | null
+          state?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          assigned_to?: string | null
+          created_at?: string
+          id?: string
+          item_key?: string
+          note?: string | null
+          organization_id?: string
+          snoozed_until?: string | null
+          state?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_states_assigned_to_fkey"
+            columns: ["assigned_to"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_states_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_states_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organizations: {
         Row: {
           agent_answers_clients: boolean
@@ -1511,6 +1652,60 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      saved_searches: {
+        Row: {
+          created_at: string
+          filters: Json
+          id: string
+          last_used_at: string
+          name: string | null
+          organization_id: string
+          query: string
+          updated_at: string
+          use_count: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          filters?: Json
+          id?: string
+          last_used_at?: string
+          name?: string | null
+          organization_id: string
+          query: string
+          updated_at?: string
+          use_count?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          filters?: Json
+          id?: string
+          last_used_at?: string
+          name?: string | null
+          organization_id?: string
+          query?: string
+          updated_at?: string
+          use_count?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "saved_searches_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "saved_searches_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -1721,6 +1916,19 @@ export type Database = {
           outcome: string
         }[]
       }
+      set_notification_state: {
+        Args: {
+          p_assigned_to?: string
+          p_item_keys: string[]
+          p_note?: string
+          p_organization_id: string
+          p_snoozed_until?: string
+          p_state: string
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
       list_membership_roles: {
         Args: { p_organization_id: string }
         Returns: {
@@ -1849,6 +2057,63 @@ export type Database = {
   }
   crm: {
     Tables: {
+      announcements: {
+        Row: {
+          archived_at: string | null
+          audience: string
+          body: string
+          created_at: string
+          created_by: string | null
+          id: string
+          organization_id: string
+          published_at: string | null
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          archived_at?: string | null
+          audience: string
+          body: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id: string
+          published_at?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          archived_at?: string | null
+          audience?: string
+          body?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id?: string
+          published_at?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "announcements_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "announcements_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       check_in_briefs: {
         Row: {
           created_at: string
@@ -3772,6 +4037,16 @@ export type Database = {
         Args: { p_body: string; p_version_id: string }
         Returns: {
           message_id: string
+          outcome: string
+        }[]
+      }
+      set_announcement_status: {
+        Args: {
+          p_announcement_id: string
+          p_organization_id: string
+          p_status: string
+        }
+        Returns: {
           outcome: string
         }[]
       }
