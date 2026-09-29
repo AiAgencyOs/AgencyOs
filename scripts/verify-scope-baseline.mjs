@@ -234,6 +234,58 @@ try {
 
   // ── E ──────────────────────────────────────────────────────────────────
   console.log('\n  E. applying it copies rather than edits');
+  // SCR-031 "Implement after payment where required" (bucket F, 2026-09-30):
+  // a paid change opens the next baseline only once its invoice is paid. The
+  // door says so at each step rather than opening early.
+  const unbilled = await rpc('apply_change_request', { p_change_request_id: cr.change_request_id });
+  check(unbilled?.outcome === 'not_invoiced', 'a paid change is not applied before it is invoiced', unbilled?.outcome);
+
+  const crNumber = `${MARKER}-CR-1`;
+  const invoiced = one(
+    await rest('POST', 'finance', 'rpc/create_change_request_invoice', {
+      p_change_request_id: cr.change_request_id,
+      p_number: crNumber,
+      p_currency: 'INR',
+      p_subtotal_minor: 500000,
+      p_tax_minor: 0,
+      p_total_minor: 500000,
+      p_lines: [
+        { position: 0, description: `${MARKER} paid change`, quantity: 1, unit_price_minor: 500000, amount_minor: 500000, tax_rate_bp: 0 },
+      ],
+    }, ownerToken),
+  );
+  check(invoiced?.outcome === 'created' && invoiced.invoice_id, 'the change is invoiced through the finance door', invoiced?.outcome ?? JSON.stringify(invoiced));
+
+  const issued = one(await rest('POST', 'finance', 'rpc/issue_invoice', { p_invoice_id: invoiced?.invoice_id }, ownerToken));
+  check(issued?.outcome === 'issued', 'and the invoice is issued', issued?.outcome);
+
+  const unpaid = await rpc('apply_change_request', { p_change_request_id: cr.change_request_id });
+  check(unpaid?.outcome === 'unpaid', 'nor applied while the invoice is unpaid', unpaid?.outcome);
+
+  const settled = one(
+    await rest('POST', 'finance', 'rpc/record_manual_payment', {
+      p_invoice_id: invoiced?.invoice_id,
+      p_provider_payment_id: `${invoiced?.invoice_id}:${MARKER}`,
+      p_amount_minor: 500000,
+      p_captured_at: new Date().toISOString(),
+      p_method: 'bank_transfer',
+    }, ownerToken),
+  );
+  check(settled?.outcome === 'recorded' && settled.payment_id, 'a payment is recorded against it', settled?.outcome ?? JSON.stringify(settled));
+
+  // Recorded money is not confirmed money: the gate (bucket F decision) waits
+  // for a *verified* final payment, so the request is still refused here.
+  const unverified = await rpc('apply_change_request', { p_change_request_id: cr.change_request_id });
+  check(unverified?.outcome === 'unpaid', 'nor applied while that payment is unverified', unverified?.outcome);
+
+  const verified = one(
+    await rest('POST', 'finance', 'rpc/verify_payment', {
+      p_payment_id: settled?.payment_id,
+      p_verified_by: authUser.id,
+    }, ownerToken),
+  );
+  check(verified?.status_after === 'paid', 'the invoice is paid in full once the payment is verified', verified?.status_after ?? verified?.outcome);
+
   const applied = await rpc('apply_change_request', { p_change_request_id: cr.change_request_id });
   check(applied?.outcome === 'opened' && applied.version === 2, 'the next baseline opens as v2', `v${applied?.version}`);
 
@@ -298,6 +350,16 @@ try {
   // has cost a chain replay.
   for (const id of created.projects) {
     await rest('DELETE', 'core', `outbox_events?payload->>project_id=eq.${id}`);
+  }
+  // The paid-change invoice (section E) has a receipt and a payment hanging
+  // off it, and neither cascades — so they go first, then the invoice, so the
+  // number is free for the next run.
+  const invoices = await rest('GET', 'finance', `invoices?number=like.${MARKER}*&select=id`);
+  for (const inv of Array.isArray(invoices.json) ? invoices.json : []) {
+    await rest('DELETE', 'core', `outbox_events?payload->>invoice_id=eq.${inv.id}`);
+    await rest('DELETE', 'finance', `receipts?invoice_id=eq.${inv.id}`);
+    await rest('DELETE', 'finance', `payments?invoice_id=eq.${inv.id}`);
+    await rest('DELETE', 'finance', `invoices?id=eq.${inv.id}`);
   }
   for (const id of created.projects) await rest('DELETE', 'projects', `projects?id=eq.${id}`);
   for (const id of created.accounts) await rest('DELETE', 'core', `client_accounts?id=eq.${id}`);

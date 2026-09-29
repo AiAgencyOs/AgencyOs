@@ -157,7 +157,12 @@ export default async function RequirementsPage() {
             }
           />
           {recent.length === 0 ? (
-            <EmptyState icon={<IconClock size={22} />} title="No requirement changes yet" description="A change request, a frozen baseline or a plan question will appear here as it happens." />
+            <EmptyState
+              icon={<IconClock size={22} />}
+              title="No requirement changes yet"
+              description="A change request, a frozen baseline or a plan question will appear here as it happens."
+              action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open a project's scope</Link>}
+            />
           ) : (
             <ul className="divide-y divide-line">
               {recent.map((r) => (
