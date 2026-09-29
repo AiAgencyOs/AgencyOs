@@ -239,6 +239,40 @@ type ReferenceRow = {
   document: { pricingReference?: { referenceRupees?: unknown; proposedRupees?: unknown } } | null;
 };
 
+export type LeadSourceCount = { source: string; count: number };
+
+/**
+ * SCR-005's "lead source breakdown" — leads created in the same window the
+ * funnel above counts, grouped by `crm.leads.source`. A direct read, not an
+ * RPC: `source` is a five-value enum column
+ * (`manual|whatsapp|web_form|email|referral|import`, `crm.leads`' own check
+ * constraint), so an in-memory group-by is exactly as much work as writing a
+ * view for it, without adding a second place the definition of "the window"
+ * has to agree with `getSalesFunnel`'s.
+ */
+export async function getLeadSourceBreakdown(sinceDays = 90): Promise<LeadSourceCount[]> {
+  const supabase = await createClient();
+  const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('leads')
+    .select('source')
+    .gte('created_at', since)
+    .is('deleted_at', null);
+
+  if (error) unreadable('getLeadSourceBreakdown', error);
+
+  const counts = new Map<string, number>();
+  for (const row of data ?? []) {
+    counts.set(row.source, (counts.get(row.source) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .map(([source, count]) => ({ source, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
 export async function getPricingReflex(sinceDays = 90): Promise<PricingReflex> {
   const supabase = await createClient();
   const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();

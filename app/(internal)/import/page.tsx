@@ -1,11 +1,10 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 
 import { listImportBatches } from '@/lib/import/queries';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { PageHeader } from '@/ui';
+import { PageHeader, PermissionDenied } from '@/ui';
 
 import { UploadForm } from './forms';
 
@@ -28,7 +27,7 @@ export const metadata: Metadata = { title: 'Import' };
 export default async function ImportPage() {
   const context = await requireInternal('/import');
   const clock = await agencyClock();
-  if (!can(context.role, 'organization.settings')) redirect('/dashboard');
+  if (!can(context.role, 'organization.settings')) return <PermissionDenied />;
 
   const batches = await listImportBatches();
 

@@ -34,7 +34,7 @@ export default async function SettingsTeamPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">Project group names</h2>
         {/*
           G-188. Four of the five parts are facts about the project — its name,
@@ -69,7 +69,7 @@ export default async function SettingsTeamPage() {
         A default removes that, and deliberately does not govern: see the
         wording in the form.
       */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">Who reviews design work</h2>
         <p className="text-xs text-muted">
           The internal design gate refuses until somebody specific holds it — a capability check

@@ -815,3 +815,76 @@ export async function setMembershipStatusAction(_prev: FormState, formData: Form
     message: result.data.updated ? (status === 'suspended' ? 'Suspended.' : 'Reactivated.') : 'Already in that state.',
   };
 }
+
+/**
+ * How long a quotation stands — configurability audit B-1.
+ *
+ * Was `VALIDITY_DAYS = 15` in `quotation-standards.ts`, printed on every
+ * quotation PDF as "valid for 15 days". The number is the corpus modal, which
+ * makes it a fine default and a poor rule. Whole days, 1–90; empty clears,
+ * and cleared reads as 15 again — never as zero.
+ */
+export async function setQuotationValidityAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const raw = String(formData.get('validity_days') ?? '').trim();
+  if (raw !== '') {
+    const parsed = Number(raw);
+    if (!/^[0-9]+$/.test(raw) || !Number.isInteger(parsed) || parsed < 1 || parsed > 90) {
+      return { status: 'error', message: 'Validity must be a whole number of days between 1 and 90.' };
+    }
+  }
+  const result = await setOrganizationSetting('quotation_validity_days', raw);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message:
+      raw === ''
+        ? 'Validity cleared — new quotations say 15 days again. Ones already drafted keep the clause they were drafted with.'
+        : `Set. New quotations say they are valid for ${raw} day${raw === '1' ? '' : 's'}; ones already drafted keep the clause they were drafted with.`,
+  };
+}
+
+/**
+ * When follow-ups may be sent — configurability audit B-2.
+ *
+ * Was `WINDOW_START_HOUR = 10` / `WINDOW_END_HOUR = 19` in
+ * `follow-up-rhythms.ts` (ADM-69). The database validates each hour's range;
+ * the ORDER of the pair is checked here, because the one-key-at-a-time door
+ * cannot see both halves, and the reader falls back to the default for a
+ * pair that does not make a window — so a bad save can never send at 03:00.
+ * Both empty clears both, and cleared reads as 10–19 again.
+ */
+export async function setOutreachWindowAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const startRaw = String(formData.get('window_start_hour') ?? '').trim();
+  const endRaw = String(formData.get('window_end_hour') ?? '').trim();
+
+  if ((startRaw === '') !== (endRaw === '')) {
+    return { status: 'error', message: 'Set both hours, or clear both to go back to 10:00–19:00.' };
+  }
+  if (startRaw !== '') {
+    const start = Number(startRaw);
+    const end = Number(endRaw);
+    if (!/^[0-9]+$/.test(startRaw) || !/^[0-9]+$/.test(endRaw) || start < 0 || start > 22 || end < 1 || end > 23) {
+      return { status: 'error', message: 'Hours are on the 24-hour clock: start 0–22, end 1–23.' };
+    }
+    if (start >= end) {
+      return { status: 'error', message: `A window from ${start}:00 to ${end}:00 has no hours in it. The end must be after the start.` };
+    }
+  }
+
+  // Start first, then end: if the second write is refused the reader still
+  // sees an unusable pair and keeps the default, so nothing half-applies.
+  const first = await setOrganizationSetting('outreach_window_start_hour', startRaw);
+  if (!first.ok) return { status: 'error', message: first.error.message };
+  const second = await setOrganizationSetting('outreach_window_end_hour', endRaw);
+  if (!second.ok) return { status: 'error', message: second.error.message };
+
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message:
+      startRaw === ''
+        ? 'Window cleared — follow-ups go out between 10:00 and 19:00 agency time again.'
+        : `Set. Follow-ups go out between ${startRaw}:00 and ${endRaw}:00 agency time, on business days. Ones already due are moved into the window on the next run.`,
+  };
+}

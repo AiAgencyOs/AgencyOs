@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject, listDependencies, listDeliverables, listEnvironments } from '@/modules/projects/queries';
-import { Badge, Card, EmptyState, humanize, IconIntegrations, IconProjects, PageHeader, statusTone } from '@/ui';
+import { Badge, Card, EmptyState, humanize, IconIntegrations, IconProjects, PageHeader, statusTone, PermissionDenied } from '@/ui';
 
 import { AddBuildForm, SubmitDeliverableForm } from '../deliverables-panel';
 import {
@@ -33,7 +33,7 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/builds`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();

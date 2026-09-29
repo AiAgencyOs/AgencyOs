@@ -24,6 +24,12 @@ import {
   parseInvoiceSequence,
   recordManualPaymentSchema,
   recordPaymentSubmissionSchema,
+  createPaymentAccountSchema,
+  setPaymentAccountStatusSchema,
+  updateExpenseSchema,
+  type UpdateExpenseInput,
+  type CreatePaymentAccountInput,
+  type SetPaymentAccountStatusInput,
   verifyPaymentSubmissionSchema,
   type RecordPaymentSubmissionInput,
   type VerifyPaymentSubmissionInput,
@@ -2237,6 +2243,136 @@ export async function recordExpense(input: RecordExpenseInput): Promise<Result<{
     console.error(JSON.stringify({ level: 'error', scope: 'recordExpense', detail: error?.message }));
     return err('INTERNAL', 'Could not record the expense.');
   }
+
+  return ok({ expenseId: data.id });
+}
+
+/* ── receiving accounts — Doc 15 §9, SCR-057 ─────────────────────────────── */
+
+/**
+ * Adds a receiving account. Owner/ops_admin (the same two roles RLS's
+ * payment_accounts_write names and that record manual payments). Empty
+ * instruction fields are dropped so the JSON holds only what a person typed.
+ */
+export async function createPaymentAccount(
+  input: CreatePaymentAccountInput,
+): Promise<Result<{ accountId: string; label: string }>> {
+  const parsed = createPaymentAccountSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid payment account.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'invoice.issue')) {
+    return err('FORBIDDEN', 'You do not have permission to manage receiving accounts.');
+  }
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const instructions: Record<string, string> = {};
+  for (const [key, value] of Object.entries(parsed.data.instructions)) {
+    if (value.trim()) instructions[key] = value.trim();
+  }
+  if (Object.keys(instructions).length === 0) {
+    return err('VALIDATION', 'Say how a client pays into this account — at least one detail is needed.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('finance')
+    .from('payment_accounts')
+    .insert({
+      organization_id: context.organizationId,
+      kind: parsed.data.kind,
+      label: parsed.data.label,
+      instructions,
+      created_by: context.userId,
+      ...(parsed.data.effectiveFrom ? { effective_from: parsed.data.effectiveFrom } : {}),
+    })
+    .select('id, label')
+    .single();
+
+  if (error || !data) {
+    console.error(JSON.stringify({ level: 'error', scope: 'createPaymentAccount', detail: error?.message }));
+    return err('INTERNAL', error?.message ?? 'Could not add the receiving account.');
+  }
+
+  return ok({ accountId: data.id, label: data.label });
+}
+
+/**
+ * Activates or deactivates a receiving account — §9 asks for it by name and
+ * it is the one edit the database allows once a claim has named the account.
+ * Deactivating also closes the effective window so history says when it
+ * stopped being offered.
+ */
+export async function setPaymentAccountStatus(
+  input: SetPaymentAccountStatusInput,
+): Promise<Result<{ accountId: string; status: 'active' | 'inactive' }>> {
+  const parsed = setPaymentAccountStatusSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid request.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'invoice.issue')) {
+    return err('FORBIDDEN', 'You do not have permission to manage receiving accounts.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('finance')
+    .from('payment_accounts')
+    .update({
+      status: parsed.data.status,
+      effective_to: parsed.data.status === 'inactive' ? new Date().toISOString() : null,
+    })
+    .eq('id', parsed.data.accountId)
+    .select('id, status')
+    .maybeSingle();
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setPaymentAccountStatus', detail: error.message }));
+    return err('INTERNAL', error.message);
+  }
+  if (!data) return err('NOT_FOUND', 'That receiving account is not visible to you.');
+
+  return ok({ accountId: data.id, status: data.status === 'inactive' ? 'inactive' : 'active' });
+}
+
+/** SCR-055 — correct an expense. Owner/ops_admin, the same two RLS (expenses_write, is_admin) names. */
+export async function updateExpense(input: UpdateExpenseInput): Promise<Result<{ expenseId: string }>> {
+  const parsed = updateExpenseSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid expense.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'invoice.issue')) {
+    return err('FORBIDDEN', 'You do not have permission to edit an expense.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('finance')
+    .from('expenses')
+    .update({
+      project_id: parsed.data.projectId ?? null,
+      category: parsed.data.category,
+      vendor: parsed.data.vendor ?? null,
+      description: parsed.data.description,
+      amount_minor: parsed.data.amountMinor,
+      incurred_on: parsed.data.incurredOn,
+      ...(parsed.data.currency ? { currency: parsed.data.currency } : {}),
+    })
+    .eq('id', parsed.data.expenseId)
+    .select('id')
+    .maybeSingle();
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'updateExpense', detail: error.message }));
+    return err('INTERNAL', 'Could not save the expense.');
+  }
+  if (!data) return err('NOT_FOUND', 'That expense is not visible to you.');
 
   return ok({ expenseId: data.id });
 }

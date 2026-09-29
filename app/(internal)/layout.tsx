@@ -1,15 +1,19 @@
 import Link from 'next/link';
 
 import { requireInternal } from '@/lib/auth/session';
-import { can, type Capability } from '@/lib/authz/permissions';
-import { humanize } from '@/ui';
+import { can } from '@/lib/authz/permissions';
+import { readOrganizationName } from '@/lib/admin/organization';
+import { Avatar, humanize, IconMore } from '@/ui';
 
 import { SignOutButton } from '../(auth)/sign-out-button';
+import { ActionBell } from './action-bell';
 import { CommandPalette } from './command-palette';
-import { BottomTabs, CurrentSectionTitle, MobileNav, SidebarNav, Wordmark } from './nav';
+import { BottomTabs, CurrentSectionTitle, HeaderTrail, MobileNav, SidebarNav, Wordmark } from './nav';
+import { visibleModulesFor } from './nav-config';
+import { CreateButton, HelpMenu, UserMenu } from './shell-controls';
 
 /**
- * Gate for the internal application, and the control plane's navigation.
+ * Gate for the internal application, and the control plane's shell.
  *
  * Route protection lives here rather than in middleware because the role claims
  * are only meaningful once the session is resolved, and a layout can redirect
@@ -20,99 +24,66 @@ import { BottomTabs, CurrentSectionTitle, MobileNav, SidebarNav, Wordmark } from
  * refuses to return rows to a principal without the right claims, so a bug here
  * leaks navigation, not data.
  *
- * The nav is grouped into sections so the growing control plane stays legible.
- * Each item still carries its own capability, and a group renders only if the
- * role can see at least one item in it. An item with no capability (Approvals)
- * is always shown: the queue admits exactly the internal roles its RLS policy
- * admits, and what a given approver may settle is decided per request under a
- * lock (ADM-08) — no static capability says that without being a worse copy.
+ * The navigation itself is a table in `nav-config.ts` — the screen
+ * architecture's fifteen modules, each item carrying the capability that
+ * guards its page. The layout filters that table by role once, and every
+ * presentation (rail, drawer, tabs, palette, breadcrumb, bell) reads the same
+ * filtered result, so a role can never reach a destination on one that it
+ * cannot reach on another. An item with no capability (Approvals) is always
+ * shown: the queue admits exactly the internal roles its RLS policy admits,
+ * and what a given approver may settle is decided per request under a lock
+ * (ADM-08) — no static capability says that without being a worse copy.
  *
- * The shell is a fixed rail plus a scrolling column on a desktop, and a top bar
- * plus bottom tabs on a phone. Both are fed by the same filtered list below, so
- * a role can never reach a destination on one that it cannot reach on the other.
+ * The shell is the screen architecture's §4 Global Header — search with a
+ * shortcut, quick create, notifications with a live count, the signed-in
+ * person and role — over a fixed dark rail on a desktop, and a top bar plus
+ * bottom tabs on a phone. The layout itself makes NO database read: the bell's
+ * count is fetched by the browser after paint and kept current by the live
+ * channel, so forty pages do not each pay for six queries before they render.
  */
-
-type NavItem = { href: string; label: string; capability?: Capability };
-type NavGroup = { title: string | null; items: NavItem[] };
-
-const GROUPS: NavGroup[] = [
-  {
-    title: null,
-    items: [
-      { href: '/dashboard', label: 'Overview', capability: 'project.read' },
-      { href: '/notifications', label: 'Notifications' },
-      { href: '/my-tasks', label: 'My tasks' },
-    ],
-  },
-  {
-    title: 'Core',
-    items: [
-      { href: '/leads', label: 'Leads', capability: 'lead.read' },
-      { href: '/sales-funnel', label: 'Sales funnel', capability: 'lead.read' },
-      { href: '/quotations', label: 'Quotations', capability: 'lead.read' },
-      { href: '/meetings', label: 'Meetings', capability: 'lead.read' },
-      { href: '/follow-ups', label: 'Follow-ups', capability: 'lead.read' },
-      { href: '/communication', label: 'Communication', capability: 'lead.read' },
-      { href: '/requirements', label: 'Requirements', capability: 'lead.read' },
-      { href: '/clients', label: 'Clients', capability: 'project.read' },
-      { href: '/projects', label: 'Projects', capability: 'project.read' },
-      { href: '/projects/escalations', label: 'Escalations', capability: 'project.read' },
-      { href: '/finance', label: 'Finance', capability: 'invoice.read' },
-      { href: '/invoices', label: 'Invoices', capability: 'invoice.read' },
-      { href: '/qa', label: 'QA', capability: 'project.read' },
-      { href: '/portfolio', label: 'Portfolio', capability: 'portfolio.write' },
-      { href: '/agents', label: 'Agents', capability: 'audit.read' },
-    ],
-  },
-  {
-    title: 'Operations',
-    items: [
-      { href: '/operations', label: 'Operations', capability: 'audit.read' },
-      { href: '/approvals', label: 'Approvals' },
-      { href: '/security', label: 'Security', capability: 'audit.read' },
-      { href: '/audit', label: 'Audit', capability: 'audit.read' },
-      { href: '/usage', label: 'Usage & costs', capability: 'audit.read' },
-      { href: '/reports', label: 'Reports', capability: 'project.read' },
-      { href: '/production-readiness', label: 'Production readiness', capability: 'organization.settings' },
-    ],
-  },
-  {
-    title: 'Configuration',
-    items: [
-      { href: '/integrations', label: 'Integrations', capability: 'organization.settings' },
-      { href: '/import', label: 'Import', capability: 'organization.settings' },
-      { href: '/settings', label: 'Settings', capability: 'organization.settings' },
-    ],
-  },
-];
-
 export default async function InternalLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const context = await requireInternal();
+  const organizationName = await readOrganizationName();
 
-  const visibleGroups = GROUPS.map((g) => ({
-    title: g.title,
-    items: g.items
-      .filter((i) => i.capability === undefined || can(context.role, i.capability))
-      .map(({ href, label }) => ({ href, label })),
-  })).filter((g) => g.items.length > 0);
+  const visibleGroups = visibleModulesFor(context.role);
 
   // The command palette searches exactly what the sidebar shows — already
   // capability-filtered, so it can only ever jump to a page this role may open.
   const commands = visibleGroups.flatMap((g) =>
-    g.items.map((i) => ({ href: i.href, label: i.label, group: g.title ?? 'Overview' })),
+    g.items.map((i) => ({ href: i.href, label: i.label, group: g.title ?? 'Command Center' })),
   );
 
   const identity = { email: context.email, role: context.role };
+  const displayName = context.fullName ?? context.email;
+  const helpLinks = (
+    [
+      ['/production-readiness', 'Production readiness', 'organization.settings'],
+      ['/integrations', 'Integrations', 'organization.settings'],
+      ['/audit', 'Audit log', 'audit.read'],
+      ['/notifications', 'Notifications', null],
+    ] as const
+  )
+    .filter(([, , cap]) => cap === null || can(context.role, cap))
+    .map(([href, label]) => ({ href, label }));
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Keyboard users land on the rail's forty links first; this jumps them
+          past it. Visually hidden until focused, so it costs sighted readers
+          nothing. */}
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-brand focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-brand-fg"
+      >
+        Skip to content
+      </a>
       {/* ── Desktop rail ──────────────────────────────────────────────────
           Fixed rather than a flex sibling, so a long page scrolls under a
           stationary nav instead of dragging it out of view. */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-surface md:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-sidebar-border bg-sidebar-bg md:flex">
         <div className="flex h-14 shrink-0 items-center px-4">
           <Link href="/dashboard" className="rounded-lg">
-            <Wordmark />
+            <Wordmark dark />
           </Link>
         </div>
 
@@ -120,22 +91,17 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
           <SidebarNav groups={visibleGroups} />
         </div>
 
-        <div className="shrink-0 border-t border-line p-3">
-          <div className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-[13px] font-semibold uppercase text-brand">
-              {context.email.slice(0, 2)}
-            </span>
+        <div className="shrink-0 border-t border-sidebar-border p-3">
+          <div className="flex items-center gap-2.5 rounded-lg border border-sidebar-border bg-sidebar-hover px-2 py-2">
+            <Avatar name={organizationName ?? displayName} size="md" square tone="warning" className="bg-accent text-accent-fg" />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-medium text-foreground">
-                {context.email}
-              </span>
-              <span className="block truncate text-[11px] text-muted">
-                {humanize(context.role)}
-              </span>
+              <span className="block truncate text-[13px] font-semibold text-sidebar-fg">{organizationName ?? 'Organisation'}</span>
+              <span className="block truncate text-[11px] text-sidebar-muted">{displayName}</span>
+              <span className="block truncate text-[10px] uppercase tracking-wider text-sidebar-muted">{humanize(context.role)}</span>
             </span>
-          </div>
-          <div className="mt-2">
-            <SignOutButton full />
+            <Link href="/settings" aria-label="Organisation settings" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-fg">
+              <IconMore size={16} />
+            </Link>
           </div>
         </div>
       </aside>
@@ -147,26 +113,37 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
             <MobileNav
               groups={visibleGroups}
               identity={identity}
-              signOut={<SignOutButton full />}
+              signOut={<SignOutButton full variant="sidebar" />}
             />
 
             <div className="min-w-0 flex-1 md:hidden">
               <CurrentSectionTitle groups={visibleGroups} />
             </div>
 
-            <div className="flex min-w-0 shrink-0 items-center md:flex-1">
+            {/* Where am I — module › page, from the same filtered table. */}
+            <div className="hidden min-w-0 flex-1 lg:block">
+              <HeaderTrail groups={visibleGroups} />
+            </div>
+
+            <div className="flex min-w-0 shrink-0 items-center justify-end gap-1.5 md:flex-1">
               <CommandPalette
                 commands={commands}
                 canCreateLead={can(context.role, 'lead.write')}
                 canCreateClient={can(context.role, 'project.write')}
+                canCreateQuotation={can(context.role, 'proposal.draft')}
+                canCreateTask={can(context.role, 'task.write')}
               />
+              <CreateButton enabled={can(context.role, 'lead.write') || can(context.role, 'project.write')} />
+              <ActionBell />
+              <HelpMenu links={helpLinks} />
+              <UserMenu name={displayName} email={context.email} role={context.role ?? "member"} signOut={<SignOutButton full variant="secondary" />} />
             </div>
           </div>
         </header>
 
         {/* Bottom padding clears the phone tab bar; a fixed bar over the last
             row of a table is the classic way to lose a delete button. */}
-        <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 pb-28 pt-5 sm:px-6 sm:pt-6 md:pb-10 lg:px-8">
+        <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[1400px] outline-none flex-1 px-4 pb-28 pt-5 sm:px-6 sm:pt-6 md:pb-10 lg:px-8">
           {children}
         </main>
       </div>

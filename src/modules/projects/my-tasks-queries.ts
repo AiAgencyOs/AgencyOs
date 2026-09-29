@@ -17,6 +17,7 @@ export type MyTaskDetail = {
   status: string;
   priority: string;
   dueOn: string | null;
+  estimateHours: number | null;
   assigneeId: string | null;
   completedAt: string | null;
   createdAt: string;
@@ -32,7 +33,7 @@ export async function listMyTasksDetailed(userId: string): Promise<MyTaskDetail[
   const { data: taskRows, error: tasksError } = await supabase
     .schema('projects')
     .from('tasks')
-    .select('id, title, description, status, priority, due_on, assignee_id, completed_at, created_at, project_id, module_id')
+    .select('id, title, description, status, priority, due_on, estimate_hours, assignee_id, completed_at, created_at, project_id, module_id')
     .eq('assignee_id', userId)
     .neq('status', 'done')
     .order('due_on', { ascending: true, nullsFirst: false });
@@ -63,6 +64,7 @@ export async function listMyTasksDetailed(userId: string): Promise<MyTaskDetail[
     status: t.status,
     priority: t.priority,
     dueOn: t.due_on,
+    estimateHours: t.estimate_hours === null ? null : Number(t.estimate_hours),
     assigneeId: t.assignee_id,
     completedAt: t.completed_at,
     createdAt: t.created_at,

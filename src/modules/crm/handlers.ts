@@ -763,7 +763,10 @@ async function renderQuotationDocument(
       // so a line drafted before the column existed draws exactly as it did.
       ...(Array.isArray(i.serves) ? { serves: i.serves as string[] } : {}),
   }));
-  const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems);
+  const { quotationValidityDays } = await import('@/lib/admin/operational-defaults');
+  const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems, {
+    validityDays: quotationValidityDays(org.settings as Record<string, unknown> | null),
+  });
 
   try {
     const rendered = await renderQuotationPdf({

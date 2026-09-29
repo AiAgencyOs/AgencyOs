@@ -198,7 +198,7 @@ describe('E. it is reachable', () => {
 
   test('and every route refuses a reader without permission', () => {
     for (const page of ALL_PAGES) {
-      assert.match(page, /if \(!can\(context\.role, 'project\.read'\)\) redirect\('\/dashboard'\)/);
+      assert.match(page, /if \(!can\(context\.role, 'project\.read'\)\) return <PermissionDenied \/>;/);
     }
     assert.match(OVERVIEW, /await requireInternal\(`\/projects\/\$\{projectId\}\/design`\)/);
   });

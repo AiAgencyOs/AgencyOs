@@ -74,6 +74,11 @@ import {
   removeEnvironment,
   addDependency,
   removeDependency,
+  updateTask,
+  updateProject,
+  updateProjectFile,
+  setMilestoneDueOn,
+  setDeliveryLead,
   shareUiVersionWithClient,
   recordUiVersionClientDecision,
   lockUiVersion,
@@ -1161,6 +1166,10 @@ export async function setTaskStatusAction(_prev: FormState, formData: FormData):
 
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath(`/projects/${projectId}/development`);
+  // The Board (SCR-020) reads the same `listDevelopmentBreakdown()` grouped
+  // by status instead of by module — added when the board grew a drag-and-
+  // drop write path onto this same action, so it needs revalidating too.
+  revalidatePath(`/projects/${projectId}/board`);
   return { status: 'success', message: 'Updated.' };
 }
 
@@ -1463,4 +1472,90 @@ export async function lockUiVersionAction(_prev: FormState, formData: FormData):
       ? 'Already locked — this did not change anything.'
       : 'Locked. This is now the exact prototype source.',
   };
+}
+
+export async function updateTaskAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const estimateRaw = String(formData.get('estimateHours') ?? '').trim();
+  const result = await updateTask({
+    taskId: String(formData.get('taskId') ?? ''),
+    projectId,
+    title: String(formData.get('title') ?? ''),
+    description: String(formData.get('description') ?? '').trim() || null,
+    priority: String(formData.get('priority') ?? 'p2') as 'p0' | 'p1' | 'p2' | 'p3',
+    assigneeId: String(formData.get('assigneeId') ?? '').trim() || null,
+    dueOn: String(formData.get('dueOn') ?? '').trim() || null,
+    estimateHours: estimateRaw ? Number(estimateRaw) : null,
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}/board`);
+  revalidatePath(`/projects/${projectId}/development`);
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath('/my-tasks');
+  return { status: 'success', message: 'Task saved.' };
+}
+
+export async function updateProjectAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const budgetRaw = String(formData.get('budget') ?? '').trim();
+  const budget = budgetRaw === '' ? null : Math.round(Number(budgetRaw) * 100);
+  const result = await updateProject({
+    projectId,
+    name: String(formData.get('name') ?? ''),
+    description: String(formData.get('description') ?? '').trim() || null,
+    startsOn: String(formData.get('startsOn') ?? '').trim() || null,
+    endsOn: String(formData.get('endsOn') ?? '').trim() || null,
+    budgetMinor: budget !== null && Number.isFinite(budget) ? budget : null,
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}/settings`);
+  revalidatePath('/projects');
+  return { status: 'success', message: 'Project saved.' };
+}
+
+/* ── PDF gap pass 6 ─────────────────────────────────────────────────────── */
+
+export async function updateProjectFileAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const description = String(formData.get('description') ?? '').trim();
+
+  const result = await updateProjectFile({
+    fileId: String(formData.get('fileId') ?? ''),
+    category: String(formData.get('category') ?? '') as never,
+    title: String(formData.get('title') ?? ''),
+    description: description || null,
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/files`);
+  return { status: 'success', message: 'File updated.' };
+}
+
+export async function setMilestoneDueOnAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const dueOn = String(formData.get('dueOn') ?? '').trim();
+
+  const result = await setMilestoneDueOn({
+    milestoneId: String(formData.get('milestoneId') ?? ''),
+    dueOn: dueOn || null,
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}/plan`);
+  revalidatePath(`/projects/${projectId}/calendar`);
+  return { status: 'success', message: result.data.dueOn ? `Due ${result.data.dueOn}.` : 'Due date cleared.' };
+}
+
+export async function setDeliveryLeadAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const deliveryLeadId = String(formData.get('deliveryLeadId') ?? '').trim();
+
+  const result = await setDeliveryLead({ projectId, deliveryLeadId: deliveryLeadId || null });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}/team`);
+  return { status: 'success', message: result.data.deliveryLeadId ? 'Delivery lead set.' : 'Delivery lead cleared.' };
 }

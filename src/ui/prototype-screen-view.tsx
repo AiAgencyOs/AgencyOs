@@ -47,8 +47,8 @@ export function PrototypeScreenView({ screens }: { screens: PrototypeArtifactScr
             onClick={() => setActiveKey(screen.screenKey)}
             className={`rounded-md border px-3 py-2 text-left text-sm ${
               screen.screenKey === active.screenKey
-                ? 'border-primary bg-primary/10 font-medium text-foreground'
-                : 'border-border text-muted hover:text-foreground'
+                ? 'border-brand bg-brand-soft font-medium text-foreground'
+                : 'border-line text-muted hover:text-foreground'
             }`}
           >
             {screen.screenKey}
@@ -104,13 +104,13 @@ function PrototypeElement({
             type="text"
             disabled
             placeholder="Mock data — not a working form"
-            className="rounded-md border border-border bg-surface px-3 py-2 text-sm text-faint"
+            className="rounded-md border border-line bg-surface px-3 py-2 text-sm text-faint"
           />
         </label>
       );
     case 'image_placeholder':
       return (
-        <div className="flex h-32 items-center justify-center rounded-md border border-dashed border-border text-xs text-faint">
+        <div className="flex h-32 items-center justify-center rounded-md border border-dashed border-line text-xs text-faint">
           {element.label}
         </div>
       );
@@ -124,8 +124,8 @@ function PrototypeElement({
           title={target ? undefined : 'Not wired to another screen in this build'}
           className={`inline-flex w-fit items-center gap-2 rounded-md border px-3 py-2 text-sm ${
             target
-              ? 'border-primary bg-primary text-primary-foreground hover:opacity-90'
-              : 'border-border text-faint'
+              ? 'border-brand bg-brand text-brand-fg hover:opacity-90'
+              : 'border-line text-faint'
           }`}
         >
           {element.label}

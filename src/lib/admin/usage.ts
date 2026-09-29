@@ -3,7 +3,7 @@ import 'server-only';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
-import { aggregateLedger, type AgentUsage, type UsageTotals } from './usage-eval';
+import { aggregateByDay, aggregateLedger, type AgentUsage, type DailyUsage, type UsageTotals } from './usage-eval';
 
 /**
  * AI usage and cost, from what the runtime actually recorded — G-186.
@@ -41,7 +41,13 @@ import { aggregateLedger, type AgentUsage, type UsageTotals } from './usage-eval
  */
 const CAP = 10_000;
 
-export type UsageView = { perAgent: AgentUsage[]; totals: UsageTotals; capped: boolean };
+export type UsageView = {
+  perAgent: AgentUsage[];
+  totals: UsageTotals;
+  capped: boolean;
+  /** Last 30 days that have a ledger row, oldest first — for the trend chart. Never backfilled with zero days (G-186's "invents nothing" rule). */
+  dailyTrend: DailyUsage[];
+};
 
 export async function getAgentUsage(): Promise<UsageView> {
   const supabase = await createClient();
@@ -49,12 +55,13 @@ export async function getAgentUsage(): Promise<UsageView> {
   const { data: ledger, error } = await supabase
     .schema('ai')
     .from('cost_ledger')
-    .select('agent_key, runs, input_tokens, output_tokens, cost_minor')
+    .select('day, agent_key, runs, input_tokens, output_tokens, cost_minor')
     .order('day', { ascending: false })
     .limit(CAP);
   if (error) unreadable('getAgentUsage', error);
 
   const rows = (ledger ?? []).map((r) => ({
+    day: r.day as string,
     agent_key: r.agent_key as string,
     runs: Number(r.runs),
     input_tokens: Number(r.input_tokens),
@@ -63,5 +70,12 @@ export async function getAgentUsage(): Promise<UsageView> {
   }));
 
   const { perAgent, totals } = aggregateLedger(rows);
-  return { perAgent, totals, capped: rows.length >= CAP };
+  // The ledger is fetched newest-first (so the CAP keeps the most recent
+  // history, not the oldest); the trend chart reads left-to-right, so it
+  // takes the most recent 30 calendar days off that same read and re-sorts
+  // them chronologically rather than re-querying.
+  const recentDays = [...new Set(rows.map((r) => r.day))].sort().slice(-30);
+  const dailyTrend = aggregateByDay(rows.filter((r) => recentDays.includes(r.day)));
+
+  return { perAgent, totals, capped: rows.length >= CAP, dailyTrend };
 }

@@ -3,12 +3,11 @@
 import Link from 'next/link';
 import { useActionState, useState } from 'react';
 
-import { setTaskStatusAction } from '@/modules/projects/actions';
+import { setTaskStatusAction, updateTaskAction } from '@/modules/projects/actions';
 import { IDLE_STATE } from '@/modules/identity/types';
 import type { MyTaskDetail } from '@/modules/projects/my-tasks-queries';
 import type { RosterMember } from '@/modules/projects/queries';
-import { updateTaskAction } from '@/modules/projects/task-actions';
-import { TASK_PRIORITIES, TASK_STATUSES } from '@/modules/projects/task-schema';
+import { TASK_STATUSES } from '@/modules/projects/schema';
 import {
   Badge,
   Drawer,
@@ -22,12 +21,16 @@ import {
   textareaClass,
 } from '@/ui';
 
+const PRIORITIES = ['p0', 'p1', 'p2', 'p3'] as const;
+
 /**
- * SCR-021 — the task drawer. Three forms, three doors, no client-side
- * guesswork: status goes through `setTaskStatusAction` (which owns
- * `completed_at`), everything else through `updateTaskAction`, and the
- * reassign is that same action carrying only `assigneeId`. Each shows its
- * own refusal beside the control that earned it.
+ * SCR-021 — the task drawer. Two doors, no client-side guesswork: status
+ * goes through `setTaskStatusAction` (which owns `completed_at`), and the
+ * task's own fields — title, description, priority, assignee, due date —
+ * through `updateTaskAction`, the same door the Board's card editor uses.
+ * Reassign is that same action with the assignee changed; the form carries
+ * every field because the door saves the whole record. Each shows its own
+ * refusal beside the control that earned it.
  */
 export function TaskDrawerButton({
   task,
@@ -43,7 +46,6 @@ export function TaskDrawerButton({
   const [open, setOpen] = useState(false);
   const [statusState, statusAction, statusPending] = useActionState(setTaskStatusAction, IDLE_STATE);
   const [editState, editAction, editPending] = useActionState(updateTaskAction, IDLE_STATE);
-  const [assignState, assignAction, assignPending] = useActionState(updateTaskAction, IDLE_STATE);
 
   return (
     <>
@@ -60,7 +62,7 @@ export function TaskDrawerButton({
         title={task.title}
         description={
           <>
-            <Link href={`/projects/${task.projectId}/development`} className="underline-offset-2 hover:underline">
+            <Link href={`/projects/${task.projectId}/board`} className="underline-offset-2 hover:underline">
               {task.projectName}
             </Link>
             {task.moduleName ? <> · {task.moduleName}</> : null}
@@ -92,20 +94,15 @@ export function TaskDrawerButton({
             <FormMessage status={statusState.status} message={statusState.message} />
           </form>
 
-          <form action={assignAction} className="flex flex-col gap-1.5">
+          <form action={editAction} className="flex flex-col gap-3 border-t border-line pt-4">
             <input type="hidden" name="projectId" value={task.projectId} />
             <input type="hidden" name="taskId" value={task.id} />
-            <label className={labelClass} htmlFor={`assignee-${task.id}`}>
-              Assigned to
-            </label>
-            <div className="flex items-center gap-2">
-              <select
-                id={`assignee-${task.id}`}
-                name="assigneeId"
-                defaultValue={task.assigneeId ?? ''}
-                className={selectClass}
-                disabled={assignPending}
-              >
+            <input type="hidden" name="estimateHours" value={task.estimateHours ?? ''} />
+            <div className="flex flex-col gap-1.5">
+              <label className={labelClass} htmlFor={`assignee-${task.id}`}>
+                Assigned to
+              </label>
+              <select id={`assignee-${task.id}`} name="assigneeId" defaultValue={task.assigneeId ?? ''} className={selectClass}>
                 <option value="">Unassigned</option>
                 {roster.map((m) => (
                   <option key={m.userId} value={m.userId}>
@@ -113,17 +110,8 @@ export function TaskDrawerButton({
                   </option>
                 ))}
               </select>
-              <button type="submit" disabled={assignPending} className={buttonClass('secondary', 'sm')}>
-                {assignPending ? 'Saving…' : 'Reassign'}
-              </button>
+              <p className="text-xs text-muted">Reassigning it to somebody else removes it from your list.</p>
             </div>
-            <p className="text-xs text-muted">Reassigning it to somebody else removes it from your list.</p>
-            <FormMessage status={assignState.status} message={assignState.message} />
-          </form>
-
-          <form action={editAction} className="flex flex-col gap-3 border-t border-line pt-4">
-            <input type="hidden" name="projectId" value={task.projectId} />
-            <input type="hidden" name="taskId" value={task.id} />
             <div className="flex flex-col gap-1.5">
               <label className={labelClass} htmlFor={`title-${task.id}`}>
                 Title
@@ -149,7 +137,7 @@ export function TaskDrawerButton({
                   Priority
                 </label>
                 <select id={`priority-${task.id}`} name="priority" defaultValue={task.priority} className={selectClass}>
-                  {TASK_PRIORITIES.map((p) => (
+                  {PRIORITIES.map((p) => (
                     <option key={p} value={p}>
                       {p.toUpperCase()}
                     </option>

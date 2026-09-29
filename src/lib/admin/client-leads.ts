@@ -65,3 +65,24 @@ export async function listClientLeads(clientAccountId: string): Promise<ClientLe
     createdAt: l.created_at,
   }));
 }
+
+export type ClientOpportunity = { id: string; leadId: string | null; name: string; stage: string; createdAt: string };
+
+/**
+ * The client's opportunities, newest first — the deal a quotation is drafted
+ * on (`/quotations/new?opportunity=`). `open` is the first one not yet won
+ * or lost, when there is one.
+ */
+export async function listClientOpportunities(clientAccountId: string): Promise<{ all: ClientOpportunity[]; open: ClientOpportunity | null }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('sales')
+    .from('opportunities')
+    .select('id, lead_id, name, stage, created_at')
+    .eq('client_account_id', clientAccountId)
+    .order('created_at', { ascending: false });
+  if (error) unreadable('listClientOpportunities', error);
+
+  const all = (data ?? []).map((o) => ({ id: o.id, leadId: o.lead_id, name: o.name, stage: o.stage, createdAt: o.created_at }));
+  return { all, open: all.find((o) => o.stage !== 'won' && o.stage !== 'lost') ?? null };
+}

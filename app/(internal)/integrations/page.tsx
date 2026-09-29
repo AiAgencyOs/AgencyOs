@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 
 import { getIntegrations } from '@/lib/admin/integrations';
 import type { Lifecycle } from '@/lib/admin/integrations-eval';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { PageHeader } from '@/ui';
+import { LiveRefresh } from '@/lib/realtime';
+import { PageHeader, PermissionDenied } from '@/ui';
 
 export const metadata: Metadata = { title: 'Integrations' };
 
@@ -29,7 +29,7 @@ const STYLE: Record<Lifecycle, { dot: string; text: string }> = {
 
 export default async function IntegrationsPage() {
   const context = await requireInternal('/integrations');
-  if (!can(context.role, 'organization.settings')) redirect('/dashboard');
+  if (!can(context.role, 'organization.settings')) return <PermissionDenied />;
 
   const { integrations, summary } = await getIntegrations();
 
@@ -44,6 +44,7 @@ export default async function IntegrationsPage() {
         configured at most until a person verifies them.
           </>
         }
+        actions={<LiveRefresh topics={['jobs']} />}
       />
 
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">

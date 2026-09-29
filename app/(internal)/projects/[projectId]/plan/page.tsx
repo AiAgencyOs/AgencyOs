@@ -1,13 +1,19 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
-import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { agencyClock } from '@/lib/admin/agency-clock';
+import { readClientName } from '@/lib/admin/clients';
 import { listEligibleMilestones } from '@/modules/finance/eligible-milestones-queries';
-import { getProject, listPaymentPlan, readPlanBoard } from '@/modules/projects/queries';
-import { Badge, PageHeader, StatusBadge, type Tone } from '@/ui';
+import { getProject, listMilestoneTaskCounts, listPaymentPlan, readPlanBoard } from '@/modules/projects/queries';
+import { Badge, Card, CardHeader, cx, Gantt, IconCalendar, IconCheck, IconClock, IconFlag, PermissionDenied, ProgressBar, Stat, StatGrid, StatusBadge, ViewAll, type GanttRow, type Tone } from '@/ui';
+
+import { MilestoneDueForm } from '../milestone-controls';
+import { MarkMilestoneMetForm, TriggerFinanceMilestoneForm } from './milestone-forms';
+
+import { WorkspaceHeader } from '../workspace-header';
 
 import { ProjectSubNav } from '../project-subnav';
 
@@ -22,7 +28,6 @@ import {
   DraftPlanForm,
   RaiseClarificationForm,
 } from './plan-forms';
-import { MarkMilestoneMetForm, TriggerFinanceMilestoneForm } from './milestone-forms';
 
 export const metadata: Metadata = { title: 'Operational plan' };
 
@@ -60,24 +65,69 @@ export default async function ProjectPlanPage({
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/plan`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const [board, paymentPlan, eligible, clock] = await Promise.all([
+  const [board, milestones, taskCounts, clock, clientName, eligible] = await Promise.all([
     readPlanBoard(projectId),
     listPaymentPlan(projectId),
-    listEligibleMilestones([projectId]),
+    listMilestoneTaskCounts(projectId),
     agencyClock(),
+    project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
+    listEligibleMilestones([projectId]),
   ]);
-  // Planning is project work, so it takes the same capability that changes a
-  // project. The doors check it again — this only decides what to render.
-  const mayPlan = can(context.role, 'project.write');
-  // SCR-023: the payment milestones' two doors, gated the way their services are.
+  // SCR-023: the two doors on a payment milestone, gated the way their
+  // services are. `nextToBill` is the same rule the project page applies.
   const mayMarkMet = can(context.role, 'milestone.write');
   const mayInvoice = can(context.role, 'invoice.create');
   const nextToBill = eligible[0] ?? null;
+
+  /**
+   * The milestone timeline — the reference's Gantt. `projects.milestones`
+   * stores a due date and the day it was met, never a start, so each bar is
+   * the window from the previous milestone's due date (or the project's
+   * start, or its creation) to this one's due date: the planned window in
+   * which it had to happen. The bar says exactly that in its caption;
+   * nothing here estimates a duration. A milestone with no due date has no
+   * bar and is listed as undated.
+   */
+  const today = clock.dayKey(new Date());
+  let previousEnd = project.starts_on ?? project.created_at.slice(0, 10);
+  let currentSeen = false;
+  const gantt: GanttRow[] = [];
+  const undated: typeof milestones = [];
+  for (const m of milestones) {
+    if (!m.due_on) {
+      undated.push(m);
+      continue;
+    }
+    const start = previousEnd < m.due_on ? previousEnd : m.due_on;
+    const state: GanttRow['state'] = m.met_at ? 'done' : m.due_on < today ? 'late' : currentSeen ? 'upcoming' : 'current';
+    if (!m.met_at && state !== 'late') currentSeen = true;
+    gantt.push({
+      id: m.id,
+      label: m.name,
+      caption: `${clock.date(start)} – ${clock.date(m.due_on)}${m.met_at ? ` · met ${clock.date(m.met_at)}` : ''}`,
+      start,
+      end: m.due_on,
+      state,
+      progress: m.met_at ? 100 : undefined,
+    });
+    previousEnd = m.due_on;
+  }
+  const met = milestones.filter((m) => m.met_at).length;
+  const late = gantt.filter((g) => g.state === 'late').length;
+  const next = milestones.find((m) => !m.met_at) ?? null;
+  const finalDue = milestones.length > 0 ? (milestones[milestones.length - 1]?.due_on ?? null) : null;
+  const daysLeft = finalDue ? Math.ceil((Date.parse(`${finalDue}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000) : null;
+  const upcoming = milestones.filter((m) => !m.met_at && m.due_on).slice(0, 5);
+  // Planning is project work, so it takes the same capability that changes a
+  // project. The doors check it again — this only decides what to render.
+  const mayPlan = can(context.role, 'project.write');
+  const mayDate = can(context.role, 'milestone.write');
+  const tasksFor = (id: string) => taskCounts.find((t) => t.milestoneId === id) ?? { milestoneId: id, total: 0, done: 0 };
   const { plan } = board;
   const openQuestions = board.clarifications.filter(
     (c) => c.status !== 'resolved' && c.status !== 'routed_to_change_request',
@@ -85,76 +135,106 @@ export default async function ProjectPlanPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        title="Operational plan"
-        description={`${project.name} — the blueprint Phase 2 hands to Phase 3.`}
-      />
+      <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={mayPlan} />
 
       <ProjectSubNav projectId={projectId} />
+
+      {milestones.length > 0 ? (
+        <StatGrid cols={5}>
+          <Stat label="Total milestones" value={String(milestones.length)} caption={undated.length > 0 ? `${undated.length} undated` : 'All dated'} tone="brand" icon={<IconFlag size={16} />} />
+          <Stat label="Completed" value={String(met)} caption={`${Math.round((met / milestones.length) * 100)}%`} tone="success" icon={<IconCheck size={16} />} />
+          <Stat label="In progress" value={String(gantt.filter((g) => g.state === 'current').length)} caption={next ? next.name : 'Nothing pending'} tone="info" icon={<IconClock size={16} />} />
+          <Stat label="Late" value={String(late)} caption={late > 0 ? 'Past due and not met' : 'Nothing overdue'} tone={late > 0 ? 'danger' : 'neutral'} icon={<IconClock size={16} />} />
+          <Stat label="Final delivery" value={finalDue ? clock.date(finalDue) : '—'} caption={daysLeft === null ? 'No final date' : daysLeft >= 0 ? `${daysLeft} days left` : `${-daysLeft} days overdue`} tone={daysLeft !== null && daysLeft < 0 ? 'danger' : 'accent'} icon={<IconCalendar size={16} />} />
+        </StatGrid>
+      ) : null}
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(18rem,1fr)]">
+        <div className="flex min-w-0 flex-col gap-4">
+          <Card>
+            <CardHeader
+              title="Project milestone timeline"
+              description="Each bar is the planned window that ends at the milestone's due date. Green is met, blue is the one in hand, red is past due."
+              actions={<ViewAll href={`/projects/${projectId}/calendar`} label="Calendar" />}
+            />
+            {gantt.length > 0 ? (
+              <Gantt rows={gantt} todayKey={today} />
+            ) : (
+              <p className="px-4 py-4 text-[13px] text-muted sm:px-5">No dated milestones yet — the payment plan on the project overview sets them.</p>
+            )}
+            {undated.length > 0 ? (
+              <p className="border-t border-line px-4 py-2 text-xs text-muted sm:px-5">
+                Undated: {undated.map((m) => m.name).join(', ')}
+              </p>
+            ) : null}
+          </Card>
+
+          {milestones.length > 0 ? (
+            <Card>
+              <CardHeader
+                title="Payment milestones"
+                description="Each milestone's due date, the work filed under it on the Board, and whether it has been met. Dates drive the timeline above and the calendar."
+              />
+              <ul className="divide-y divide-line">
+                {milestones.map((m) => {
+                  const t = tasksFor(m.id);
+                  const pct = t.total > 0 ? Math.round((t.done / t.total) * 100) : 0;
+                  return (
+                    <li key={m.id} className="flex flex-col gap-2 px-4 py-3 sm:px-5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[13px] font-medium">{m.position + 1}. {m.name}</span>
+                        <StatusBadge status={m.met_at ? 'completed' : m.due_on && m.due_on < today ? 'overdue' : m.status} />
+                        {m.payment_percent !== null ? <Badge mono>{Number(m.payment_percent)}%</Badge> : null}
+                        <span className="ml-auto text-xs text-muted">
+                          {m.met_at ? `met ${clock.date(m.met_at)}` : m.due_on ? `due ${clock.date(m.due_on)}` : 'no due date'}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="w-48">
+                          <ProgressBar value={pct} label={`${m.name} tasks done`} />
+                        </div>
+                        <span className="text-xs text-muted">
+                          {t.total === 0 ? 'No tasks filed under this milestone' : `${t.done}/${t.total} tasks done`}
+                        </span>
+                        {mayDate && !m.met_at ? <MilestoneDueForm projectId={projectId} milestoneId={m.id} dueOn={m.due_on} /> : null}
+                      </div>
+                      {(mayMarkMet && (m.status === 'in_progress' || m.status === 'submitted')) || nextToBill?.milestoneId === m.id ? (
+                        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-2">
+                          {nextToBill?.milestoneId === m.id ? (
+                            <span className="mr-auto text-xs text-muted">
+                              <Badge tone="brand">next to bill</Badge>
+                              {nextToBill.reason ? <> {nextToBill.reason}</> : null}
+                            </span>
+                          ) : null}
+                          {mayMarkMet && (m.status === 'in_progress' || m.status === 'submitted') ? (
+                            <MarkMilestoneMetForm projectId={projectId} milestoneId={m.id} />
+                          ) : null}
+                          {nextToBill?.milestoneId === m.id && nextToBill.eligible ? (
+                            mayInvoice ? (
+                              <TriggerFinanceMilestoneForm projectId={projectId} milestoneId={m.id} />
+                            ) : (
+                              <span className="text-xs text-muted">No permission to raise invoices.</span>
+                            )
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+          ) : null}
+
+          <div className="flex flex-col gap-6 [&>section]:rounded-xl [&>section]:border [&>section]:border-line [&>section]:bg-surface [&>section]:p-4 [&>section]:shadow-xs sm:[&>section]:p-5">
 
       <p className="max-w-2xl text-[13px] text-muted">
         Operational, never technical. Tables, APIs, coding tasks and UI belong to the Phase 5
         Development Planning Agent, and there is nowhere here to put them (Project Planning §5, §6).{' '}
-        <Link href={`/projects/${projectId}`} className="underline hover:text-fg">
+        <Link href={`/projects/${projectId}`} className="underline hover:text-foreground">
           Back to the project
         </Link>
         .
       </p>
-
-      <section className="flex flex-col gap-2">
-        <h2 className="text-[13px] font-semibold tracking-tight">
-          Payment milestones <span className="text-muted">({paymentPlan.length})</span>
-        </h2>
-        <p className="max-w-2xl text-[13px] text-muted">
-          The project’s payment plan. A milestone unlocks when the stage before it is paid; marking it
-          met records the moment delivery was complete and freezes the plan. The next one to bill is
-          the first priced milestone not yet paid for.
-        </p>
-        {paymentPlan.length === 0 ? (
-          <p className="text-[13px] text-muted">
-            No payment plan yet — it is configured on{' '}
-            <Link href={`/projects/${projectId}#billing`} className="underline hover:text-fg">
-              the project page
-            </Link>
-            .
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-1">
-            {paymentPlan.map((m) => {
-              const isNext = nextToBill?.milestoneId === m.id;
-              return (
-                <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line p-3 text-[13px]">
-                  <span className="flex min-w-0 flex-col gap-0.5">
-                    <span className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">{m.name}</span>
-                      <StatusBadge status={m.status} />
-                      {isNext ? <Badge tone="brand">next to bill</Badge> : null}
-                    </span>
-                    <span className="text-muted">
-                      {m.payment_percent !== null ? `${Number(m.payment_percent)}% · ` : 'unpriced · '}
-                      {m.due_on ? `due ${clock.date(`${m.due_on}T00:00:00`)}` : 'no due date'}
-                      {m.met_at ? ` · met ${clock.dateTime(m.met_at)}` : ''}
-                      {isNext && nextToBill?.reason ? ` · ${nextToBill.reason}` : ''}
-                    </span>
-                  </span>
-                  <span className="flex flex-wrap items-center gap-2">
-                    {mayMarkMet && (m.status === 'in_progress' || m.status === 'submitted') ? (
-                      <MarkMilestoneMetForm projectId={projectId} milestoneId={m.id} />
-                    ) : null}
-                    {isNext && nextToBill?.eligible ? (
-                      mayInvoice ? (
-                        <TriggerFinanceMilestoneForm projectId={projectId} milestoneId={m.id} />
-                      ) : (
-                        <span className="text-xs text-muted">No permission to raise invoices.</span>
-                      )
-                    ) : null}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
 
       {!plan ? (
         <section className="flex flex-col gap-3">
@@ -218,7 +298,7 @@ export default async function ProjectPlanPage({
                     <p className="text-muted">Ready when: {d.readinessCriteria}</p>
                     <p className="text-muted">Evidence: {d.evidenceRequired}</p>
                     {d.ambiguityNote ? (
-                      <p className="text-fg">Unclear: {d.ambiguityNote}</p>
+                      <p className="text-foreground">Unclear: {d.ambiguityNote}</p>
                     ) : null}
                     {!d.scopeItemId ? (
                       <p className="text-muted">
@@ -359,6 +439,73 @@ export default async function ProjectPlanPage({
           </section>
         </>
       )}
+          </div>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-4">
+          {next ? (
+            <Card>
+              <CardHeader title="Milestone details" description="The next one to meet." />
+              <div className="flex flex-col gap-2 px-4 pb-4 text-[13px] sm:px-5">
+                <p className="flex items-center gap-2 font-medium text-foreground">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-white"><IconFlag size={13} /></span>
+                  {next.name}
+                </p>
+                <dl className="grid grid-cols-[6rem_1fr] gap-y-1.5 text-muted">
+                  <dt>Due</dt>
+                  <dd className="text-foreground">{next.due_on ? clock.date(next.due_on) : 'Not dated'}</dd>
+                  <dt>Status</dt>
+                  <dd><StatusBadge status={next.status} dot={false} /></dd>
+                  <dt>Payment</dt>
+                  <dd className="text-foreground">{next.payment_percent === null ? 'None attached' : `${next.payment_percent}% of the plan`}</dd>
+                </dl>
+              </div>
+            </Card>
+          ) : null}
+
+          <Card>
+            <CardHeader title="Upcoming deadlines" />
+            {upcoming.length === 0 ? (
+              <p className="px-4 py-3 text-[13px] text-muted sm:px-5">Nothing dated ahead.</p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {upcoming.map((m) => {
+                  const d = m.due_on ? Math.ceil((Date.parse(`${m.due_on}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000) : null;
+                  return (
+                    <li key={m.id} className="flex items-center gap-3 px-4 py-2.5 text-[13px] sm:px-5">
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium text-foreground">{m.name}</span>
+                        <span className="block text-xs text-muted">{m.due_on ? clock.date(m.due_on) : ''}</span>
+                      </span>
+                      {d !== null ? (
+                        <span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium', d < 0 ? 'bg-danger-soft text-danger' : d <= 7 ? 'bg-warning-soft text-warning' : 'bg-info-soft text-info')}>
+                          {d < 0 ? `${-d} days overdue` : `${d} days left`}
+                        </span>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader title="Blueprint status" />
+            <div className="px-4 pb-4 text-[13px] sm:px-5">
+              {plan ? (
+                <p>
+                  Version {plan.version} · <Badge tone={PHASE_TONE[plan.status] ?? 'neutral'}>{plan.status}</Badge>
+                  <span className="mt-1 block text-xs text-muted">
+                    {board.deliverables.length} deliverable{board.deliverables.length === 1 ? '' : 's'} · {board.milestones.length} plan milestone{board.milestones.length === 1 ? '' : 's'} · {openQuestions.length} open question{openQuestions.length === 1 ? '' : 's'}
+                  </span>
+                </p>
+              ) : (
+                <p className="text-muted">No operational plan yet.</p>
+              )}
+            </div>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

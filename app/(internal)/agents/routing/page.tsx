@@ -1,10 +1,9 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 
 import { listRoutingPolicies } from '@/lib/admin/model-routing';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { PageHeader } from '@/ui';
+import { PageHeader, PermissionDenied } from '@/ui';
 
 import { RoutingPolicyForm } from './routing-form';
 
@@ -22,7 +21,7 @@ export const metadata: Metadata = { title: 'Model routing' };
  */
 export default async function ModelRoutingPage() {
   const context = await requireInternal('/agents/routing');
-  if (!can(context.role, 'organization.settings')) redirect('/agents');
+  if (!can(context.role, 'organization.settings')) return <PermissionDenied />;
 
   const policies = await listRoutingPolicies();
 

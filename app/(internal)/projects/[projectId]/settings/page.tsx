@@ -1,20 +1,15 @@
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { readAuditLog } from '@/lib/audit/queries';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import {
-  getProject,
-  listDevelopmentBreakdown,
-  listPaymentPlan,
-  readChangeRequests,
-} from '@/modules/projects/queries';
-import { Badge, Callout, Card, CardHeader, EmptyState, IconAudit, PageHeader, Stat, StatGrid } from '@/ui';
+import { getProject, listDevelopmentBreakdown, listPaymentPlan, readChangeRequests } from '@/modules/projects/queries';
+import { Badge, Callout, Card, CardHeader, EmptyState, IconAudit, PageHeader, PermissionDenied, Stat, StatGrid } from '@/ui';
 
-import { ProjectVisibilityForm } from '../settings-panel';
+import { ProjectDetailsForm, ProjectVisibilityForm } from '../settings-panel';
 import { ProjectSubNav } from '../project-subnav';
 
 export const metadata: Metadata = { title: 'Settings' };
@@ -26,19 +21,12 @@ export const metadata: Metadata = { title: 'Settings' };
  * PDF ask under this screen number) stays undone — there is no project-
  * template concept anywhere in the schema, and defining what one copies
  * (tasks? milestones? modules?) is a product decision, not a code gap.
- *
- * Added: the activity-count KPI (the same three timestamped events the
- * Activity tab lists), and the audit rows whose subject IS this project —
- * `audit.audit_log` is gated to `audit.read`, so the card says so for
- * anyone who cannot see it rather than showing them an empty list. Default
- * assignees and phase notifications are not built: `projects.projects`
- * carries no such column and no notification-preference table exists.
  */
 export default async function ProjectSettingsPage({ params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/settings`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
@@ -46,6 +34,10 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
   const canWrite = can(context.role, 'project.write');
   const canAudit = can(context.role, 'audit.read');
 
+  // SCR-027: the activity-count KPI (the same three timestamped events the
+  // Activity tab lists) and the audit rows whose subject IS this project.
+  // `audit.audit_log` is gated to `audit.read`, so the card says so for
+  // anyone who cannot see it rather than showing them an empty list.
   const [clock, { tasks }, milestones, changeRequests, audit] = await Promise.all([
     agencyClock(),
     listDevelopmentBreakdown(projectId),
@@ -53,7 +45,6 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
     readChangeRequests(projectId),
     canAudit ? readAuditLog({ subjectId: projectId, limit: 50 }) : Promise.resolve([]),
   ]);
-
   const tasksCompleted = tasks.filter((t) => t.completedAt !== null).length;
   const milestonesMet = milestones.filter((m) => m.met_at !== null).length;
   const changeRequestEvents = changeRequests.reduce((sum, cr) => sum + 1 + (cr.decidedAt ? 1 : 0), 0);
@@ -66,14 +57,33 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
       <ProjectSubNav projectId={projectId} />
 
       <StatGrid>
-        <Stat label="Activity events" value={String(activityCount)} href={`/projects/${projectId}/activity`} />
+        <Stat label="Activity events" value={String(activityCount)} caption="Tasks, milestones, change requests" href={`/projects/${projectId}/activity`} />
         <Stat label="Tasks completed" value={String(tasksCompleted)} />
         <Stat label="Milestones met" value={String(milestonesMet)} />
-        <Stat label="Audit rows" value={canAudit ? String(audit.length) : '—'} />
+        <Stat label="Audit rows" value={canAudit ? String(audit.length) : '—'} caption={canAudit ? 'Subject: this project' : 'Owner / ops admin only'} />
       </StatGrid>
 
       {canWrite ? (
-        <ProjectVisibilityForm projectId={projectId} current={project.visibility} />
+        <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 shadow-xs sm:p-5">
+          <h2 className="text-sm font-semibold tracking-tight">Project details</h2>
+          <p className="text-[13px] text-muted">The name, description, dates and budget the header and the projects list print. Status is changed on the Overview; billing on its own section.</p>
+          <ProjectDetailsForm
+            projectId={projectId}
+            name={project.name}
+            description={project.description}
+            startsOn={project.starts_on}
+            endsOn={project.ends_on}
+            budgetMinor={project.budget_minor}
+            currency={project.currency}
+          />
+        </section>
+      ) : null}
+
+      {canWrite ? (
+        <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 shadow-xs sm:p-5">
+          <h2 className="text-sm font-semibold tracking-tight">Client portal visibility</h2>
+          <ProjectVisibilityForm projectId={projectId} current={project.visibility} />
+        </section>
       ) : (
         <Callout tone="info">
           Client portal visibility is currently <strong>{project.visibility}</strong>. You do not have
@@ -85,18 +95,10 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
         <CardHeader
           title="Audit events for this project"
           description="Rows in the audit log whose subject is this project — status changes, visibility, conversion. Events on a task or milestone are recorded against that record, not here."
-          actions={
-            canAudit ? (
-              <Link href="/audit" className="text-[13px] text-muted underline-offset-2 hover:underline">
-                Full audit log
-              </Link>
-            ) : null
-          }
+          actions={canAudit ? <Link href="/audit?subject=project" className="text-[13px] text-muted underline-offset-2 hover:underline">Full audit log</Link> : null}
         />
         {!canAudit ? (
-          <p className="px-4 py-3 text-[13px] text-muted sm:px-5">
-            The audit log is readable by owners and ops admins only.
-          </p>
+          <p className="px-4 py-3 text-[13px] text-muted sm:px-5">The audit log is readable by owners and ops admins only.</p>
         ) : audit.length > 0 ? (
           <ul className="divide-y divide-line">
             {audit.map((a) => (

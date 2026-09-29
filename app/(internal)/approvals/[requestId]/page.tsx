@@ -84,7 +84,7 @@ export default async function ApprovalDetailPage({
       />
 
       <p className="text-xs text-muted">
-        <Link href="/approvals" className="underline underline-offset-2 hover:text-ink">
+        <Link href="/approvals" className="underline underline-offset-2 hover:text-foreground">
           Back to the queue
         </Link>
       </p>
@@ -119,7 +119,7 @@ export default async function ApprovalDetailPage({
             href={`/api/quotations/${request.subject_id}/pdf`}
             target="_blank"
             rel="noreferrer"
-            className="mt-3 block w-fit text-xs text-muted underline underline-offset-2 hover:text-ink"
+            className="mt-3 block w-fit text-xs text-muted underline underline-offset-2 hover:text-foreground"
           >
             Read the quotation
           </a>

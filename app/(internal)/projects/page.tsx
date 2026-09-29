@@ -1,22 +1,42 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { listProjectsFiltered, type FilteredProject } from '@/modules/projects/project-filters-queries';
+import { listPendingPaymentClaims } from '@/modules/finance/queries';
+import { readProjectFilterFacets } from '@/modules/projects/project-filters-queries';
+import { listPhaseFourEscalations, listProjectsForTable } from '@/modules/projects/queries';
+import { PROJECT_STATUSES } from '@/modules/projects/schema';
+import { SavedViewsBar } from '../saved-views-bar';
+import Link from 'next/link';
+
 import {
+  Avatar,
+  buttonClass,
   DataTable,
+  DEFAULT_PAGE_SIZE,
   EmptyState,
   FilterBar,
+  FilterChips,
+  humanize,
+  IconAlert,
+  IconInvoices,
   IconProjects,
-  PageHeader,
-  StatusBadge,
-  buttonClass,
   labelClass,
-  selectClass,
+  paginate,
+  Pagination,
+  PageHeader,
+  ProgressBar,
+  Stat,
+  StatGrid,
+  StatusBadge,
+  statusTone,
   type Column,
+  PermissionDenied,
+  selectClass,
+  sortRows,
+  type SortDirection,
 } from '@/ui';
 
 export const metadata: Metadata = { title: 'Projects' };
@@ -27,116 +47,221 @@ function money(minor: number | null, currency: string): string {
     .format(minor / 100);
 }
 
-const columnsFor = (clock: AgencyClock): Column<FilteredProject>[] => [
-  { key: 'name', header: 'Project', primary: true, cell: (p) => p.name },
-  { key: 'status', header: 'Status', badge: true, cell: (p) => <StatusBadge status={p.status} /> },
+type Row = Awaited<ReturnType<typeof listProjectsForTable>>[number];
+
+const columnsFor = (clock: AgencyClock): Column<Row>[] => [
   {
-    key: 'client',
-    header: 'Client',
+    key: 'name',
+    header: 'Project name',
+    primary: true,
     cell: (p) => (
-      <Link href={`/clients/${p.clientAccountId}`} className="underline-offset-2 hover:underline">
-        {p.clientName}
-      </Link>
+      <span className="flex items-center gap-2.5">
+        <Avatar name={p.name} size="md" square tone="neutral" className="bg-sidebar-bg text-sidebar-fg ring-0" />
+        <span className="min-w-0">
+          <span className="block truncate">{p.name}</span>
+          <span className="block truncate font-mono text-[11px] font-normal text-muted">{p.code}</span>
+        </span>
+      </span>
     ),
   },
-  { key: 'owner', header: 'Owner', cellClassName: 'text-muted', cell: (p) => p.deliveryLeadName ?? '—' },
+  { key: 'client', header: 'Client', desktopOnly: true, cellClassName: 'text-muted', cell: (p) => p.clientName ?? 'Internal' },
+  { key: 'status', header: 'Stage', badge: true, cell: (p) => <StatusBadge status={p.status} dot={false} /> },
+  {
+    key: 'progress',
+    header: 'Progress',
+    width: '11rem',
+    cell: (p) =>
+      p.milestonesTotal > 0 ? (
+        <ProgressBar value={(p.milestonesMet / p.milestonesTotal) * 100} label={`${p.name} milestones met`} />
+      ) : (
+        <span className="text-xs text-muted">No plan yet</span>
+      ),
+  },
+  {
+    key: 'due',
+    header: 'Due date',
+    align: 'right',
+    cellClassName: 'text-muted whitespace-nowrap',
+    cell: (p) => (p.endsOn ? clock.date(p.endsOn) : '—'),
+    sortKey: 'due',
+  },
   {
     key: 'budget',
     header: 'Budget',
     align: 'right',
     cellClassName: 'tabular',
-    cell: (p) => money(p.budgetMinor, p.currency),
+    cell: (p) => money(p.budget_minor, p.currency),
+    sortKey: 'budget',
   },
   {
     key: 'created',
     header: 'Created',
     align: 'right',
-    cellClassName: 'text-muted',
-    cell: (p) => clock.date(p.createdAt),
+    desktopOnly: true,
+    cellClassName: 'text-muted whitespace-nowrap',
+    cell: (p) => clock.date(p.created_at),
+    sortKey: 'created',
   },
 ];
+
+const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
+  budget: (a, b) => (a.budget_minor ?? 0) - (b.budget_minor ?? 0),
+  created: (a, b) => a.created_at.localeCompare(b.created_at),
+  due: (a, b) => (a.endsOn ?? '9999').localeCompare(b.endsOn ?? '9999'),
+};
 
 /**
  * Delivery pipeline. Same two-layer gate as the other internal pages.
  *
- * SCR-018: client and owner filters ride on `searchParams` through a GET
- * form, the same shape the leads and audit pages use, so a filtered list is a
- * URL somebody can send.
+ * SCR-018: `?client=` and `?owner=` narrow the table by client account and
+ * delivery lead through a GET form, the same shape the status chips use, so
+ * a filtered list is a URL somebody can send.
  */
 export default async function ProjectsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ client?: string; owner?: string }>;
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; client?: string; owner?: string }>;
 }) {
   const context = await requireInternal('/projects');
   const clock = await agencyClock();
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
-  const { client, owner } = await searchParams;
-  const { projects, clients, owners } = await listProjectsFiltered({
-    ...(client ? { clientId: client } : {}),
-    ...(owner ? { ownerId: owner } : {}),
+  const { page: pageParam, sort: sortKey, dir, status, client, owner } = await searchParams;
+  const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
+  const facetQuery = [client ? `client=${client}` : '', owner ? `owner=${owner}` : ''].filter(Boolean).join('&');
+  const currentQuery = [status ? `status=${status}` : '', facetQuery, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
+  const [allProjects, savedViews, escalations, pendingClaims, facets] = await Promise.all([
+    listProjectsForTable(),
+    listSavedViews('/projects'),
+    listPhaseFourEscalations(),
+    can(context.role, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
+    readProjectFilterFacets(),
+  ]);
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const late = allProjects.filter((p) => p.status !== 'completed' && p.status !== 'cancelled' && p.endsOn !== null && p.endsOn < todayKey);
+  const atRiskIds = new Set([...escalations.map((e) => e.projectId), ...late.map((p) => p.id)]);
+  const paymentBlockedIds = new Set(pendingClaims.map((c) => c.projectId));
+  const countByStatus = new Map<string, number>();
+  for (const p of allProjects) countByStatus.set(p.status, (countByStatus.get(p.status) ?? 0) + 1);
+  const filtered =
+    status === 'at_risk'
+      ? allProjects.filter((p) => atRiskIds.has(p.id))
+      : status === 'payment_blocked'
+        ? allProjects.filter((p) => paymentBlockedIds.has(p.id))
+        : status
+          ? allProjects.filter((p) => p.status === status)
+          : allProjects;
+  const faceted = filtered.filter((p) => {
+    const f = facets.byProject.get(p.id);
+    if (client && f?.clientAccountId !== client) return false;
+    if (owner && f?.deliveryLeadId !== owner) return false;
+    return true;
   });
-  const filtered = Boolean(client || owner);
+  const projects = sortRows(faceted, sortKey, direction, COMPARATORS);
+  const qs = (extra: string) => `/projects?${status ? `status=${status}&` : ''}${facetQuery ? `${facetQuery}&` : ''}${extra}`;
+  const chipHref = (s: string | null) => `/projects?${[s ? `status=${s}` : '', facetQuery].filter(Boolean).join('&')}`;
+  const { page, pageCount, rows: pageRows } = paginate(projects, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
-        title="Projects"
+        title="All projects"
         description={
-          projects.length === 0 && !filtered
+          allProjects.length === 0
             ? 'No projects yet. Winning a deal on a lead creates one.'
-            : `${projects.length} project${projects.length === 1 ? '' : 's'}${filtered ? ' matching the filter' : ''}.`
+            : `Every project, its stage and how far its plan has come · ${allProjects.length} project${allProjects.length === 1 ? '' : 's'}.`
         }
       />
 
-      <FilterBar>
-        <form action="/projects" method="GET" className="flex flex-wrap items-end gap-2">
-          <label className="flex flex-col gap-1">
-            <span className={labelClass}>Client</span>
-            <select name="client" defaultValue={client ?? ''} className={selectClass}>
-              <option value="">Any client</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className={labelClass}>Owner</span>
-            <select name="owner" defaultValue={owner ?? ''} className={selectClass}>
-              <option value="">Any owner</option>
-              {owners.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button type="submit" className={buttonClass('secondary', 'sm')}>
-            Filter
-          </button>
-          {filtered ? (
-            <Link href="/projects" className={buttonClass('ghost', 'sm')}>
-              Clear
-            </Link>
+      {allProjects.length > 0 ? (
+        <StatGrid cols={6}>
+          <Stat label="Total projects" value={String(allProjects.length)} caption={`${countByStatus.get('completed') ?? 0} completed · ${countByStatus.get('cancelled') ?? 0} cancelled`} tone="brand" icon={<IconProjects size={16} />} href="/projects" />
+          {(['planning', 'onboarding', 'active', 'on_hold'] as const).map((s) => (
+            <Stat key={s} label={humanize(s)} value={String(countByStatus.get(s) ?? 0)} tone={statusTone(s)} href={`/projects?status=${s}`} />
+          ))}
+          <Stat label="At risk" value={String(atRiskIds.size)} caption={`${escalations.length} escalated · ${late.length} past due`} tone={atRiskIds.size > 0 ? 'danger' : 'success'} icon={<IconAlert size={16} />} href="/projects?status=at_risk" />
+          {can(context.role, 'invoice.issue') ? (
+            <Stat label="Payment to verify" value={String(paymentBlockedIds.size)} caption={`${pendingClaims.length} claim${pendingClaims.length === 1 ? '' : 's'} waiting`} tone={paymentBlockedIds.size > 0 ? 'warning' : 'neutral'} icon={<IconInvoices size={16} />} href="/projects?status=payment_blocked" />
           ) : null}
-        </form>
-      </FilterBar>
+        </StatGrid>
+      ) : null}
+
+      {allProjects.length > 0 ? (
+        <FilterBar>
+          <FilterChips
+            options={[
+              { key: 'all', label: 'All', href: chipHref(null), active: !status },
+              { key: 'at_risk', label: `At risk (${atRiskIds.size})`, href: chipHref('at_risk'), active: status === 'at_risk' },
+              ...PROJECT_STATUSES.map((s) => ({
+                key: s,
+                label: `${humanize(s)} (${countByStatus.get(s) ?? 0})`,
+                href: chipHref(s),
+                active: status === s,
+              })),
+            ]}
+          />
+          <form action="/projects" method="GET" className="flex flex-wrap items-end gap-2">
+            {status ? <input type="hidden" name="status" value={status} /> : null}
+            <label className="flex flex-col gap-1">
+              <span className={labelClass}>Client</span>
+              <select name="client" defaultValue={client ?? ''} className={selectClass}>
+                <option value="">Any client</option>
+                {facets.clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className={labelClass}>Owner</span>
+              <select name="owner" defaultValue={owner ?? ''} className={selectClass}>
+                <option value="">Any owner</option>
+                {facets.owners.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="submit" className={buttonClass('secondary', 'sm')}>
+              Filter
+            </button>
+            {client || owner ? (
+              <Link href={status ? `/projects?status=${status}` : '/projects'} className={buttonClass('ghost', 'sm')}>
+                Clear
+              </Link>
+            ) : null}
+          </form>
+        </FilterBar>
+      ) : null}
+
+      <SavedViewsBar page="/projects" currentQuery={currentQuery} views={savedViews} />
 
       {projects.length > 0 ? (
-        <DataTable
-          rows={projects}
-          columns={columnsFor(clock)}
-          getKey={(p) => p.id}
-          href={(p) => `/projects/${p.id}`}
-        />
+        <>
+          <DataTable
+            rows={pageRows}
+            columns={columnsFor(clock)}
+            getKey={(p) => p.id}
+            href={(p) => `/projects/${p.id}`}
+            sort={{
+              key: sortKey,
+              direction,
+              makeHref: (key, nextDirection) => qs(`sort=${key}&dir=${nextDirection}`),
+            }}
+          />
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            makeHref={(p) => qs(`${sortKey ? `sort=${sortKey}&dir=${direction}&` : ''}page=${p}`)}
+          />
+        </>
       ) : (
         <EmptyState
           icon={<IconProjects size={22} />}
-          title={filtered ? 'No projects match' : 'No projects yet'}
-          description={filtered ? 'Try clearing the client or owner filter.' : 'Projects created from won deals will appear here.'}
+          title={status || client || owner ? 'No matching projects' : 'No projects yet'}
+          description={client || owner ? 'No project matches the client or owner filter.' : status ? `No project is currently "${humanize(status)}".` : 'Projects created from won deals will appear here.'}
         />
       )}
     </div>

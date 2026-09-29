@@ -4,7 +4,9 @@ import { revalidatePath } from 'next/cache';
 
 import type { FormState } from '@/modules/identity/types';
 
-import { markProductionReady, raiseDefect, settleDefect, draftTestPlan, addTestPlanItem, removeTestPlanItem, recordTestRun } from './service';
+import { markProductionReady, raiseDefect, settleDefect, draftTestPlan, addTestPlanItem, removeTestPlanItem, recordTestRun,
+  triageDefect,
+} from './service';
 
 /**
  * Server Actions for QA — G-306.
@@ -136,4 +138,20 @@ export async function recordTestRunAction(_prev: FormState, formData: FormData):
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath(`/projects/${String(formData.get('projectId') ?? '')}/qa`);
   return { status: 'success', message: 'Test run recorded.' };
+}
+
+export async function triageDefectAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const result = await triageDefect({
+    defectId: String(formData.get('defectId') ?? ''),
+    projectId,
+    assigneeId: String(formData.get('assigneeId') ?? '').trim() || null,
+    severity: String(formData.get('severity') ?? '') as 'blocker' | 'major' | 'minor' | 'trivial',
+    reason: String(formData.get('reason') ?? '').trim() || undefined,
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}/qa`);
+  revalidatePath('/qa');
+  return { status: 'success', message: 'Defect triaged.' };
 }
