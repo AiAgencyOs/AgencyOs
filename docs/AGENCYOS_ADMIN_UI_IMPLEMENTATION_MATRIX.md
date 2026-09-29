@@ -288,3 +288,20 @@ holds the period, split, P&L and CSV arithmetic (unit-tested). New routes:
 `/settings/finance`, `/projects/[id]/reports`, and CSV exports under
 `/api/{clients,sales/pipeline,finance/tax,audit}/export`, each behind the
 page's own capability.
+
+### Update 2026-09-30 — bucket D (owner decisions)
+
+| Screen | What changed | Files |
+|---|---|---|
+| Invoice detail | "Send on WhatsApp" (thread picker, honest not-configured state); "Reminders" section (automatic and by hand, delivery state) | `app/(internal)/invoices/[invoiceId]/whatsapp-send-panel.tsx`, `src/modules/finance/whatsapp-send-*.ts`, `reminder-*.ts`, `reminder-worker.ts` |
+| Settings › Finance | "Past-due reminders" card: on/off + interval (org columns) | `app/(internal)/settings/finance/reminder-policy-form.tsx` |
+| Payments › Reconciliation | Bank statement CSV import, proposed matches, Confirm match / Set aside | `app/(internal)/finance/payments/bank-import-panel.tsx`, `src/modules/finance/bank-csv.ts`, `bank-import-*.ts` |
+| Lead 360 composer | Template picker over approved + active templates | `app/(internal)/leads/[leadId]/template-send-form.tsx`, `src/modules/crm/template-send-*.ts` |
+| Project › Files | Storage uploads, versions, trash + restore, share links; honest unreachable state | `app/(internal)/projects/[projectId]/files-storage-panel.tsx`, `src/lib/files/storage.ts`, `src/modules/projects/files-storage-*.ts`, `app/api/files/share/[token]/route.ts` |
+| Task drawer / task page / project report | Log time, totals, Time card + CSV, margin line | `app/(internal)/time-log-panel.tsx`, `src/modules/projects/time-log-*.ts`, `src/modules/finance/margin*.ts`, `app/api/projects/[projectId]/report/time/route.ts` |
+| Project 360 / Create project / Settings › Templates | Save as template, Start from template, template list | `app/(internal)/projects/[projectId]/save-template-button.tsx`, `app/(internal)/settings/templates/*`, `src/modules/projects/project-template-*.ts` |
+| Agent detail | Owner status + caps forms; Refusals card; "Enforced by the runner" | `app/(internal)/agents/[agentKey]/controls-form.tsx`, `src/modules/agents/controls-*.ts`, `refusals-queries.ts`, `policy-enforcement.ts`, `src/lib/ai/policy-decision.ts`, `agent-policy.ts` |
+| Leads list / Lead 360 | Score column (sortable), Rescore all, Lead score card with reasons and inputs | `app/(internal)/leads/rescore-all-button.tsx`, `app/(internal)/leads/[leadId]/score-panel.tsx`, `src/modules/crm/lead-score*.ts` |
+| Project › Repository | Live from GitHub: link form, commits, open PRs, branch count, honest unreachable reason | `app/(internal)/projects/[projectId]/repository/github-panel.tsx`, `github-link-forms.tsx`, `src/lib/git/github.ts`, `src/modules/projects/repository-link-*.ts` |
+| Operations | Outbox row list with status filter and pagination (read-only) | `app/(internal)/operations/outbox-list.tsx`, `src/lib/observability/queries.ts` |
+| Integrations / Settings | "GitHub (read-only)" row; GitHub and Files config areas | `src/lib/admin/integrations-eval.ts`, `integrations.ts`, `config-status.ts` |

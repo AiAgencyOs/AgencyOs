@@ -367,6 +367,39 @@ region helper's file cap (a start-only slice in the new test was bounded
 by its comment marker). `npm test` 5905 pass / 52 fail (baseline);
 typecheck and ESLint clean; the thirteen guards green.
 
+### 9g. Bucket D build (2026-09-30, owner decisions)
+
+Four migrations (`20260930100000`–`130000`) applied on the local database
+(streams D3 and D4 also proved theirs idempotent in rolled-back
+transactions); PostgREST reloaded. Driven in the browser with read-back:
+lead rescored (score 10, three reasons, inputs stored, `lead.scored`
+audited) and rescore-all (20 of 21 leads); agent caps set (12 steps,
+₹50) and the agent disabled with a reason (`agent.caps_set`,
+`agent.disabled`); repository linked to `vercel/next.js` and the live
+read answering "Not reachable: GitHub refused the token" (`GITHUB_TOKEN`
+in this container is not a GitHub token); project saved as a template and
+listed under Settings › Templates; 1.5 h logged on a task, shown on the
+task and in the report's Time card next to the margin line; reminder
+policy on, every 5 days (`invoice_reminders.enabled`); a period opened,
+a two-line CSV imported, the NEFT line proposed against the ₹2,500
+payment by reference and amount, confirmed (`bank_statement_line.matched`,
+line `confirmed`, reconciliation item written) and the UPI line set aside
+with a reason; a template sent from the composer, queued through the
+chokepoint and failed with "WhatsApp sending is not configured on this
+deployment"; the cron tick observed one past-due invoice once its earlier
+sends were older than the interval, claimed a reminder row
+(`automatic = true`, `invoice.reminded`) and withheld it with the reason
+that the client has no thread of its own. Files tab renders "Storage is
+not reachable" on the local stack and refuses uploads. Fifteen touched
+routes screenshotted as owner: 0 console errors beyond the favicon 404.
+One fix on merge: `time-log-types.ts` carries the client-safe types
+(My Tasks had imported a server-only module). Guards: eleven green
+including the rewritten `no-invented-lead-score` (now asserting every
+score carries reasons and inputs) and `outbox-transactional` (exactly one
+read-only lister), plus the new `an-agent-is-held-to-its-permissions`,
+`finance-bank-csv`, `an-invoice-is-chased-on-whatsapp` and the D2 file.
+`npm test` 6033 pass / 52 fail (baseline); typecheck and ESLint clean.
+
 ## 10. Regression
 
 Unit: the failure set is byte-identical before and after (Node 22, 52

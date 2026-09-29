@@ -227,3 +227,32 @@ What remains needs an answer from the owner (asked one at a time):
 6. Reopening any bucket C decision: lead scoring (ADM-88), agent enable
    and cap edits (ADM-82), project templates, live Git, the outbox row
    list (D17), template sends from the composer, margin arithmetic.
+
+## Status after the bucket D build (2026-09-30, owner decisions applied)
+
+The owner answered the six questions above, one at a time, on
+2026-09-29; every answer is built, applied to the local database, driven
+in the browser with read-back, and audited. Nothing on this list remains
+open except the two-session realtime run that needs Docker.
+
+| # | Owner decision | Built as | Migration |
+|---|---|---|---|
+| 1 | Invoices go over WhatsApp through the governed door; reminders go automatically once past due | `sendInvoiceWhatsApp` (thread picker, text via `sendClientMessage`, PDF via `sendClientDocument`, recorded only after the text went); reminder policy on Settings › Finance (org columns `invoice_reminders_enabled`, `invoice_reminder_interval_days`); the cron tick observes past-due invoices, claims a reminder row (`automatic = true`) and sends through `followup.queued` so the 24-hour window and templates decide; "Reminders" section on the invoice | `20260930100000` |
+| 2 | Bank statement as CSV (date, description, amount, reference); the panel proposes matches | `parseBankCsv` + `proposeMatches` (pure, 18 tests); `finance.bank_statement_lines`; Import statement, Confirm match (writes the reconciliation item), Set aside with reason — on the Payments › Reconciliation card | `20260930100000` |
+| 3 | The runner enforces tool permissions and project assignments | `decideToolCall` / `decideProjectAction` (pure, deny by default); `dispatchToolUnderPolicy` before every tool; `openRun` refuses an unassigned project; refusals in `ai.agent_policy_refusals` (audited) and a "Refusals" card on the agent page | `20260930120000` |
+| 4 | Time logs: manual hours per task with date and note; totals per task, project, person; no billing effect | `projects.time_logs` (own-row RLS), three `security_invoker` total views, "Log time" on the task drawer and task page, "Time" card + CSV on the project report | `20260930110000` |
+| 5 | Files in Supabase Storage with versions, trash and signed share links | `project_files` gains object columns and version chains; `project_file_shares` + public `/api/files/share/[token]`; storage probed honestly ("Storage is not reachable" on the local stack, uploads refused) | `20260930110000` |
+| 6a | ADM-82 reopened: owner enables/disables an agent and edits its caps from the panel | `ai.set_agent_status` / `ai.set_agent_caps` (SECURITY DEFINER, owner-only, audited); forms on the agent page; non-owners read-only with the reason | `20260930120000` |
+| 6b | ADM-88 reopened: numeric lead score | `scoreLead` (pure, weights sum to 100, every score carries reasons and inputs); CHECK `leads_score_carries_its_reasons`; `crm.set_lead_score` door; Score column on Leads, Lead score card with reasons on Lead 360, Rescore / Rescore all; guard test rewritten to assert the new rule | `20260930120000` |
+| 6c | Project templates | `createProjectTemplateFromProject` / `createProjectFromTemplate` / `deleteProjectTemplate`; "Save as template" on Project 360, "Start from" in ⌘K Create project, Settings › Templates | `20260930110000` |
+| 6d | Margin on the project report | paid − (expenses + AI cost), stated as a cash-basis estimate; time is not costed because no cost rate exists in the schema (said on screen and in the CSV) | — |
+| 6e | Live Git (GitHub, read-only) | `projects.repository_links` + `link_repository` / `unlink_repository`; `src/lib/git/github.ts` never throws (not_configured / unauthorized / not_found / rate_limited / timeout); commits, open PRs and branch count on the Repository tab; "GitHub (read-only)" row on Integrations | `20260930130000` |
+| 6f | Outbox row list on Operations (D17) | `listOutboxEvents` in `src/lib/observability/queries.ts` — the one reader the rewritten `outbox-transactional` guard allows; status filter and pagination; read-only because no retry RPC exists for outbox rows | — |
+| 6g | Template sends from the Lead 360 composer | picker over approved + active templates; `sendTemplateMessage` through `send_outbound_message` → provider → `mark_outbound_delivery`; fails honestly when WhatsApp is not configured | — |
+
+Deviations stated on the screens rather than hidden: `outbox_events` has
+no `status`, `last_error` or `next_attempt_at` columns, so status is
+derived and the other two are not shown; a reminder whose client has no
+WhatsApp thread of its own and whose project has no group is recorded as
+withheld with that sentence; rescore-all is a bounded on-demand action
+(300 leads, oldest score first), not a cron kind.

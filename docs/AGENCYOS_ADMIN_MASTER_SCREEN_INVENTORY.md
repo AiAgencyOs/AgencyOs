@@ -45,7 +45,7 @@ a record that only its editor changes.
 | SCR-005 | Sales Overview & Pipeline | `/sales-funnel` | `lead.read` | `salesFunnel`, `listOpportunities` (Kanban, 3 open stages) | — | COMPLETE |
 | SCR-006 | Leads List | `/leads` | `lead.read` | `listLeadsForTable` (avatar + company cells), `listLeadsNeedingAttention`, saved views | — | COMPLETE |
 | SCR-007 | Lead 360 | `/leads/[leadId]` | `lead.read` | lead + `getLeadFacts`, conversation, requirements, quotations, meetings, follow-ups, timeline (three panes: information · chat · deal) | — | COMPLETE |
-| SCR-008 | Qualification & Scoring | `/leads/[leadId]` › Sales panel | `lead.read` | `crm.qualification_coverage` | — | GROUPED (ADM-88: no numeric score by decision) |
+| SCR-008 | Qualification & Scoring | `/leads/[leadId]` › Sales panel | `lead.read` | `crm.qualification_coverage`, `crm.leads.score` + `score_reasons` + `score_inputs` (`scoreLead`, `crm.set_lead_score`, 20260930120000) | — | COMPLETE (ADM-88 reversed by the owner 2026-09-29: numeric score, always with reasons) |
 | SCR-009 | Requirements Discovery | `/leads/[leadId]` › requirement decision | `lead.read` | `crm.requirement_versions` | — | GROUPED |
 | SCR-010 | Meetings | `/meetings`, `/meetings/[meetingId]` | `lead.read` | meetings, evidence, calendar verification | — | COMPLETE |
 | SCR-011 | Quotations List | `/quotations` | `lead.read` | `listProposals`, saved views | — | COMPLETE |
@@ -71,10 +71,10 @@ a record that only its editor changes.
 | SCR-021 | My Tasks | `/my-tasks` | internal | `listMyTasks` | — | COMPLETE |
 | SCR-022 | Project Calendar | `/projects/[projectId]/calendar` | `project.read` | tasks + milestones + meetings by date (`MonthGrid`) | — | COMPLETE |
 | SCR-023 | Project Milestones / Gantt | `/projects/[projectId]/plan` (Gantt) + `/calendar` | `project.read` | `listPaymentPlan` (`projects.milestones`), plan milestones | — | COMPLETE — bars are the planned windows between due dates (derived, labelled as such); the schema holds no start date, and the page says so |
-| SCR-024 | Project Files | `/projects/[projectId]/files` | `project.write` to add/edit | `projects.project_files` (link-based; rename/refile through `updateProjectFile`) | — | COMPLETE |
+| SCR-024 | Project Files | `/projects/[projectId]/files` | `project.write` to add/edit | `projects.project_files` (links and stored objects in Supabase Storage: versions, trash, `project_file_shares` signed links — 20260930110000) | — | COMPLETE |
 | SCR-025 | Project Team | `/projects/[projectId]/team` | `project.read` (`project.write` to set the lead) | `listProjectTeam`, `listInternalRoster`, `projects.delivery_lead_id` through `setDeliveryLead` | — | COMPLETE |
 | SCR-026 | Project Reports | `/projects/[projectId]/reports` (+ `/reports` org-wide) | `project.read` | plan, board, defects, invoices, expenses, agent spend — the tabs' own readers, no stored trend | — | COMPLETE |
-| SCR-027 | Project Settings, Activity & Templates | `/projects/[projectId]/settings`, `/activity` | `project.write` | visibility, activity timeline | — | COMPLETE (templates DECLINED — traceability row 27) |
+| SCR-027 | Project Settings, Activity & Templates | `/projects/[projectId]/settings`, `/activity` | `project.write` | visibility, activity timeline; `projects.project_templates` ("Save as template" on Project 360, "Start from" in Create project, Settings › Templates — 20260930110000) | — | COMPLETE (templates reopened by the owner 2026-09-29) |
 
 ### Requirements & Scope
 
@@ -104,7 +104,7 @@ a record that only its editor changes.
 | SCR-039 | Development Dashboard | `/development` (portfolio) → `/projects/[projectId]/development` | `project.read` | `readDevelopmentPortfolio` (4 reads, grouped) | tasks, deliverables, projects | COMPLETE (portfolio index added 2026-09-29) |
 | SCR-040 | Implementation Plan | `/projects/[projectId]/plan` | `project.write` | `readPlanBoard` (6 of 18 registers; rest derived — traceability row 40) | — | COMPLETE |
 | SCR-041 | Development Task Execution | `/projects/[projectId]/development` | `task.write` | modules → features → tasks | — | COMPLETE |
-| SCR-042 | Repository, Branch & Code Review | `/projects/[projectId]/repository` | `project.write` | `projects.repositories` (link-based) | — | PARTIAL — no live Git integration (owner-confirmed link model) |
+| SCR-042 | Repository, Branch & Code Review | `/projects/[projectId]/repository` | `project.write` | `projects.repositories` (typed links) + `projects.repository_links` read live from GitHub (`src/lib/git/github.ts`, 20260930130000) | — | COMPLETE (live Git reopened by the owner 2026-09-29; read-only) |
 | SCR-043 | Builds, Environments & Dependencies | `/projects/[projectId]/builds` | `project.write` | builds (deliverables), `environments`, `dependencies` | — | COMPLETE |
 
 ### QA & Release
@@ -125,7 +125,7 @@ a record that only its editor changes.
 | SCR-050 | Finance Overview | `/finance` | `invoice.read` | `listInvoices`, `listPayments`, `listExpenses`, pending claims (income vs expenses, payment status, top revenue, upcoming) | — | COMPLETE |
 | SCR-051 | Invoices | `/invoices` | `invoice.read` | `listInvoices`, saved views | — | COMPLETE |
 | SCR-052 | Invoice Detail / Create | `/invoices/[invoiceId]` | `invoice.issue` to act | invoice, items, billing profile (mode · GSTIN · address, `readInvoiceBillingProfile`), GST line, linked milestone, payments, payment claims (`listInvoicePaymentClaims`), receipts, refunds, receiving accounts | — | COMPLETE |
-| SCR-053 | Payments | `/finance/payments` | `invoice.read` | `listPayments` | — | COMPLETE |
+| SCR-053 | Payments | `/finance/payments` | `invoice.read` | `listPayments`, bank CSV import + proposed matches (`finance.bank_statement_lines`, 20260930100000) | — | COMPLETE |
 | SCR-054 | Payment Verification | `/invoices/verify` | `invoice.issue` | `listPendingPaymentClaims` (human-only gate) | — | COMPLETE |
 | SCR-055 | Expenses & Profitability | `/finance` (net profit, margin, expense breakdown) + `/finance/expenses` | `invoice.read` (`invoice.issue` to record/edit) | `listExpenses`, `listPayments`, `listInvoices`; `recordExpense`, `updateExpense` | — | COMPLETE — net = payments received − expenses recorded, margin over received; stated on the tile, not an accounting P&L |
 | SCR-056 | GST, Tax & Financial Reports | `/finance/tax` (+ `/api/finance/tax/export`) | `invoice.read` | `listTaxReportInvoices` split by the CONFIRMED billing mode (GST / non-GST / unconfirmed), period selector (month, quarter, Indian FY), receipts (`listReceipts`), cash-basis P&L against expenses, CSV | — | COMPLETE — no GST return generation (needs GST-portal integration, stated on the page) |
@@ -144,8 +144,8 @@ a record that only its editor changes.
 | ID | Screen | Route | Guard | Reads | Live | Status |
 |---|---|---|---|---|---|---|
 | SCR-061 | AI Workforce Dashboard | `/agents` | `audit.read` | agent registry, runnability, usage | — | COMPLETE |
-| SCR-062 | Agent Registry | `/agents` | `audit.read` | `ai.agents` (activation is an owner DB decision — ADM-82) | — | COMPLETE |
-| SCR-063 | Agent Detail & Permissions | `/agents/[agentKey]` | `audit.read` | definition, ceilings, recent runs, failures | — | COMPLETE |
+| SCR-062 | Agent Registry | `/agents` | `audit.read` | `ai.agents` (owner enables/disables and sets caps from the panel — `ai.set_agent_status` / `set_agent_caps`, ADM-82 reversed 2026-09-29) | — | COMPLETE |
+| SCR-063 | Agent Detail & Permissions | `/agents/[agentKey]` | `audit.read` | definition, ceilings, recent runs, failures, policy refusals (`ai.agent_policy_refusals` — the runner enforces tool permissions and assignments), owner status/caps forms | — | COMPLETE |
 | SCR-064 | Model Routing, Providers & Tools | `/agents/routing` | `organization.settings` | routing policies, provider vault status | — | COMPLETE |
 | SCR-065 | Agent Runs, Usage, Cost & Automations | `/agents/automations`, `/usage` | `audit.read` | runs, cost ledger, automations | — | COMPLETE |
 
@@ -153,7 +153,7 @@ a record that only its editor changes.
 
 | ID | Screen | Route | Guard | Reads | Live | Status |
 |---|---|---|---|---|---|---|
-| SCR-066 | Operations Dashboard | `/operations` | `audit.read` (`job.requeue` to act) | `operational_backlog`, dead jobs, requeue, job queue (`listQueuedJobs`), outbox counts | jobs, conversations, followUps | COMPLETE |
+| SCR-066 | Operations Dashboard | `/operations` | `audit.read` (`job.requeue` to act) | `operational_backlog`, dead jobs, requeue, job queue (`listQueuedJobs`), outbox counts and row list (`listOutboxEvents`, D17 reversed) | jobs, conversations, followUps | COMPLETE |
 | SCR-067 | System Health, Production Readiness & Alerts | `/operations` + `/production-readiness` + `/integrations` | `audit.read` / `organization.settings` | cron age, failed deliveries, integration lifecycle | jobs | GROUPED |
 
 ### Governance & Security
