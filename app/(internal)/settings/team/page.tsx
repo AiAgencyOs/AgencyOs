@@ -1,8 +1,11 @@
 import type { Metadata } from 'next';
 
+import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
+import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { listInternalRoster, listInternalRosterWithRoles, listTeamDefaults } from '@/modules/projects/queries';
+import { listMemberCostRates, type CostRateAccess } from '@/modules/team/cost-rate-queries';
 
 import { DefaultDesignReviewerForm, ProjectGroupIdentifierForm } from '../forms';
 import { MemberRolesPanel } from '../member-roles-panel';
@@ -11,13 +14,26 @@ import { TeamRosterPanel } from '../team-roster-panel';
 export const metadata: Metadata = { title: 'Settings — Team' };
 
 export default async function SettingsTeamPage() {
-  await requireInternal('/settings');
+  const context = await requireInternal('/settings');
 
   // G-267 — the people every new project group card is prepared with.
   const teamDefaults = await listTeamDefaults();
   const roster = await listInternalRoster();
   // G-310 — the same roster, with each person's additional roles attached.
   const rosterWithRoles = await listInternalRosterWithRoles();
+  // Decision E2 of 2026-09-30 — a person's cost rate, private to management.
+  // `organization.settings` is the owner's alone (they set); `audit.read` is
+  // owner and ops_admin, the pair member_cost_rates_select admits (they see);
+  // everybody else does not get the column, and the read is not even made.
+  const costRateAccess: CostRateAccess = can(context.role, 'organization.settings')
+    ? 'set'
+    : can(context.role, 'audit.read')
+      ? 'view'
+      : 'none';
+  const [costRates, clock] = await Promise.all([
+    costRateAccess === 'none' ? Promise.resolve({}) : listMemberCostRates(),
+    agencyClock(),
+  ]);
 
   const supabase = await createClient();
   const { data: orgRows } = await supabase
@@ -61,7 +77,7 @@ export default async function SettingsTeamPage() {
         their primary one; see the panel's own comment for exactly what that
         does and does not affect.
       */}
-      <MemberRolesPanel members={rosterWithRoles} />
+      <MemberRolesPanel members={rosterWithRoles} costRates={costRates} costRateAccess={costRateAccess} today={clock.dayKey(new Date())} />
 
       {/*
         Designer §4, G-300. The gate refuses until a named person holds it, and

@@ -99,8 +99,12 @@ describe('the migration carries every convention', () => {
 });
 
 describe('the margin is cash-basis and says so', () => {
-  it('paid minus (expenses plus AI cost), with the share of paid', () => {
-    const m = computeMargin({ paidMinor: 100_000, expensesMinor: 30_000, aiCostMinor: 5_000, timeCosted: false });
+  // Time cost joined the sum by decision E2 of 2026-09-30; its own rules
+  // (day-of-log rate, uncosted hours reported not zeroed) are pinned in
+  // tests/a-log-is-priced-on-its-day.test.ts. With no time cost the figure
+  // is what it was.
+  it('paid minus (expenses plus AI cost plus time cost), with the share of paid', () => {
+    const m = computeMargin({ paidMinor: 100_000, expensesMinor: 30_000, aiCostMinor: 5_000, timeCostMinor: 0, uncostedHours: 0 });
     assert.equal(m.costMinor, 35_000);
     assert.equal(m.marginMinor, 65_000);
     assert.equal(m.marginPercent, 65);
@@ -109,21 +113,23 @@ describe('the margin is cash-basis and says so', () => {
   });
 
   it('nothing paid means no percentage, not a division by zero', () => {
-    const m = computeMargin({ paidMinor: 0, expensesMinor: 1_000, aiCostMinor: 0, timeCosted: false });
+    const m = computeMargin({ paidMinor: 0, expensesMinor: 1_000, aiCostMinor: 0, timeCostMinor: 0, uncostedHours: 0 });
     assert.equal(m.marginMinor, -1_000);
     assert.equal(m.marginPercent, null);
   });
 
-  it('time is not costed anywhere: the reader never invents a rate, and the screen says so', () => {
-    // Code only: the reader's own comment names the columns that do NOT exist.
+  it('time is costed only through the day-of-log view: the reader never applies a rate itself, and the screen says so', () => {
+    // Code only: the reader reads the costed totals view and no rate table.
     const reader = read('src/modules/finance/margin-queries.ts').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-    assert.match(reader, /timeCosted: false/);
-    assert.doesNotMatch(reader, /time_logs|hourly|rate_minor|cost_rate/);
+    assert.match(reader, /time_log_totals_by_project/);
+    assert.match(reader, /cost_minor, uncosted_hours/);
+    assert.doesNotMatch(reader, /member_cost_rates|hourly_cost_minor|\* *hours|hours *\*/);
     const page = read('app/(internal)/projects/[projectId]/reports/page.tsx');
     assert.match(page, /cash-basis estimate/);
-    assert.match(page, /no cost rate exists in the schema/);
+    assert.match(page, /h uncosted — no rate on those days/);
     const csv = read('app/api/projects/[projectId]/report/route.ts');
-    assert.match(csv, /time not costed \(no cost rate in schema\)/);
+    assert.match(csv, /'time_cost', margin\.timeCostMinor/);
+    assert.match(csv, /'uncosted_hours', margin\.uncostedHours/);
   });
 });
 
