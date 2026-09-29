@@ -126,15 +126,22 @@ export default async function NotificationsPage() {
         <Card>
           <ul className="divide-y divide-line">
             {rows.map((r) => (
-              <li key={r.key}>
+              <li key={r.key} className="flex items-center gap-3 px-4 py-3 text-sm sm:px-5">
+                <Link href={r.href} className="flex min-w-0 flex-1 flex-col gap-0.5 rounded hover:bg-surface-hover">
+                  <span className={`font-medium ${r.urgent ? 'text-danger' : 'text-foreground'}`}>{r.title}</span>
+                  <span className="text-xs text-muted">{r.detail}</span>
+                </Link>
+                {/* SCR-003 "Escalate to owner": a deep link, not a state
+                    change. The owner's own queue is /approvals; a row that
+                    already lives there jumps to its own page instead. There
+                    is no notification-state table to record an escalation
+                    in, so this is read-only on purpose. */}
                 <Link
-                  href={r.href}
-                  className="flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-surface-hover sm:px-5"
+                  href={r.href === '/approvals' ? r.href : `/approvals?from=${encodeURIComponent(r.key)}`}
+                  className="shrink-0 text-xs font-medium text-brand hover:underline"
+                  title="Open the owner's approvals queue"
                 >
-                  <span className="flex min-w-0 flex-col gap-0.5">
-                    <span className={`font-medium ${r.urgent ? 'text-danger' : 'text-foreground'}`}>{r.title}</span>
-                    <span className="text-xs text-muted">{r.detail}</span>
-                  </span>
+                  Escalate to owner
                 </Link>
               </li>
             ))}

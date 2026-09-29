@@ -4,8 +4,11 @@ import { redirect } from 'next/navigation';
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { listLeads, listLeadsNeedingAttention } from '@/modules/crm/queries';
-import { EmptyState, IconLeads, PageHeader } from '@/ui';
+import { listLeadsNeedingAttention } from '@/modules/crm/queries';
+import { listLeadsForTable } from '@/modules/crm/lead-list-queries';
+import { LEAD_STATUSES, NURTURE_REASONS } from '@/modules/crm/schema';
+import { listInternalRoster } from '@/modules/projects/queries';
+import { EmptyState, FilterBar, FilterChips, IconLeads, PageHeader, humanize, inputClass, labelClass, selectClass, buttonClass } from '@/ui';
 import Link from 'next/link';
 
 import { LeadChatList, type ChatLead } from './chat-list';
@@ -82,14 +85,59 @@ function waitedFor(iso: string, now: Date): string {
   return `${Math.round(minutes / 1440)}d`;
 }
 
-export default async function LeadsPage() {
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function money(minor: number): string {
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(minor / 100);
+}
+
+type LeadsSearch = {
+  q?: string;
+  source?: string;
+  owner?: string;
+  status?: string;
+  tag?: string;
+  budgetMin?: string;
+  budgetMax?: string;
+  createdFrom?: string;
+  createdTo?: string;
+};
+
+export default async function LeadsPage({ searchParams }: { searchParams: Promise<LeadsSearch> }) {
   const context = await requireInternal('/leads');
   if (!can(context.role, 'lead.read')) redirect('/dashboard');
 
-  const leads = await listLeads();
+  // SCR-006 — server-side filters, read from the URL so a filtered list can
+  // be bookmarked or shared. Only values the schema names, or that parse,
+  // reach the database; a stranger is dropped rather than refused.
+  const params = await searchParams;
+  const q = (params.q ?? '').trim() || undefined;
+  const status = (LEAD_STATUSES as readonly string[]).includes(params.status ?? '') ? params.status : undefined;
+  const owner = params.owner === 'mine' ? context.userId : UUID.test(params.owner ?? '') ? params.owner : undefined;
+  const source = (params.source ?? '').trim() || undefined;
+  const tag = (params.tag ?? '').trim().toLowerCase() || undefined;
+  const createdFrom = DATE.test(params.createdFrom ?? '') ? params.createdFrom : undefined;
+  const createdTo = DATE.test(params.createdTo ?? '') ? params.createdTo : undefined;
+  const toMinor = (v: string | undefined) => {
+    const n = Number(v);
+    return v && Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : undefined;
+  };
+  const budgetMinMinor = toMinor(params.budgetMin);
+  const budgetMaxMinor = toMinor(params.budgetMax);
+  const filtering = Boolean(q || status || owner || source || tag || createdFrom || createdTo || budgetMinMinor !== undefined || budgetMaxMinor !== undefined);
+
+  const leads = await listLeadsForTable({ q, source, owner, status, tag, createdFrom, createdTo, budgetMinMinor, budgetMaxMinor });
   const waiting = await listLeadsNeedingAttention();
   const clock = await agencyClock();
   const now = new Date();
+
+  const canAssign = can(context.role, 'lead.assign');
+  const canWrite = can(context.role, 'lead.write');
+  const roster = canAssign || canWrite ? await listInternalRoster() : [];
+  const nameOf = (id: string | null) => (id ? (roster.find((m) => m.userId === id)?.fullName ?? id.slice(0, 8)) : null);
+  const sources = [...new Set(leads.map((l) => l.source))].sort();
+  if (source && !sources.includes(source)) sources.push(source);
 
   const rows: ChatLead[] = leads.map((lead) => ({
     id: lead.id,
@@ -99,7 +147,19 @@ export default async function LeadsPage() {
     contactName: lead.contact?.fullName ?? null,
     company: lead.contact?.company ?? null,
     time: chatTime(lead.created_at, now, clock),
+    ownerName: nameOf(lead.assigned_to),
+    tags: lead.tags,
+    budget: lead.budgetMinor === null ? null : money(lead.budgetMinor),
   }));
+
+  const preserve = { q, source, owner: params.owner === 'mine' ? 'mine' : owner, status, tag, budgetMin: params.budgetMin, budgetMax: params.budgetMax, createdFrom, createdTo };
+  const href = (over: Partial<Record<keyof typeof preserve, string | undefined>>) => {
+    const next = { ...preserve, ...over };
+    const query = new URLSearchParams();
+    for (const [k, v] of Object.entries(next)) if (v) query.set(k, v);
+    const qs = query.toString();
+    return `/leads${qs ? `?${qs}` : ''}`;
+  };
 
   return (
     <div className="flex flex-col gap-5">
@@ -142,8 +202,99 @@ export default async function LeadsPage() {
         </section>
       ) : null}
 
+      {/* SCR-006 — the filters. A GET form, so the URL is the filter. */}
+      <FilterBar>
+        <FilterChips
+          options={[
+            { key: 'any-source', label: 'Any source', href: href({ source: undefined }), active: !source },
+            ...sources.map((s) => ({ key: s, label: humanize(s), href: href({ source: s }), active: source === s })),
+          ]}
+        />
+        <FilterChips
+          options={[
+            { key: 'anyone', label: 'Anyone', href: href({ owner: undefined }), active: !owner },
+            { key: 'mine', label: 'Mine', href: href({ owner: 'mine' }), active: params.owner === 'mine' },
+            ...roster
+              .filter((m) => m.userId !== context.userId && leads.some((l) => l.assigned_to === m.userId))
+              .map((m) => ({ key: m.userId, label: m.fullName, href: href({ owner: m.userId }), active: owner === m.userId })),
+          ]}
+        />
+      </FilterBar>
+      <form action="/leads" method="GET" className="grid grid-cols-2 gap-3 rounded-lg border border-subtle bg-surface p-3 sm:grid-cols-4 lg:grid-cols-7">
+        {source ? <input type="hidden" name="source" value={source} /> : null}
+        {params.owner === 'mine' ? <input type="hidden" name="owner" value="mine" /> : owner ? <input type="hidden" name="owner" value={owner} /> : null}
+        <label className="col-span-2 flex flex-col gap-1">
+          <span className={labelClass}>Search</span>
+          <input type="search" name="q" defaultValue={q} placeholder="Lead title" className={inputClass} />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Status</span>
+          <select name="status" defaultValue={status ?? ''} className={selectClass}>
+            <option value="">Any</option>
+            {LEAD_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {humanize(s)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Tag</span>
+          <input name="tag" defaultValue={tag} className={inputClass} />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Budget ≥ ₹</span>
+          <input type="number" min="0" name="budgetMin" defaultValue={params.budgetMin} className={inputClass} />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Budget ≤ ₹</span>
+          <input type="number" min="0" name="budgetMax" defaultValue={params.budgetMax} className={inputClass} />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Created from</span>
+          <input type="date" name="createdFrom" defaultValue={createdFrom} className={inputClass} />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Created to</span>
+          <input type="date" name="createdTo" defaultValue={createdTo} className={inputClass} />
+        </label>
+        <div className="col-span-2 flex flex-wrap items-center gap-2 sm:col-span-4 lg:col-span-6">
+          <button type="submit" className={buttonClass('secondary', 'sm')}>
+            Apply filters
+          </button>
+          {filtering ? (
+            <Link href="/leads" className={buttonClass('ghost', 'sm')}>
+              Clear
+            </Link>
+          ) : null}
+          <span className="text-[12px] text-muted">
+            Budget bounds read the qualification&rsquo;s budget; a lead with none on file is left out when a bound is set. There is no
+            service column on a lead, so no service filter is offered.
+          </span>
+        </div>
+      </form>
+
       {leads.length > 0 ? (
-        <LeadChatList leads={rows} />
+        <LeadChatList
+          leads={rows}
+          bulk={
+            canAssign || canWrite
+              ? {
+                  roster: roster.map((m) => ({ userId: m.userId, fullName: m.fullName })),
+                  statuses: LEAD_STATUSES,
+                  nurtureReasons: NURTURE_REASONS,
+                  canAssign,
+                  canWrite,
+                }
+              : undefined
+          }
+        />
+      ) : filtering ? (
+        <EmptyState
+          icon={<IconLeads size={22} />}
+          title="No leads match these filters"
+          description="That is a count of rows, not a guess. Loosen a filter or clear them."
+        />
       ) : (
         <EmptyState
           icon={<IconLeads size={22} />}

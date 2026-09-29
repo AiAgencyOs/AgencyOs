@@ -67,7 +67,7 @@ export async function listProposalsForOpportunity(
   return data ?? [];
 }
 
-const PROPOSAL_LIST_SELECT = `${PROPOSAL_SELECT}, opportunities!inner(name, lead_id)`;
+const PROPOSAL_LIST_SELECT = `${PROPOSAL_SELECT}, opportunities!inner(name, lead_id, client_account_id)`;
 
 /**
  * Every quotation across every deal, newest first — SCR-011. The per-lead
@@ -117,6 +117,7 @@ export async function listProposals(filter?: { status?: string; limit?: number }
         opportunityName: opportunities.name,
         leadId: opportunities.lead_id,
         leadTitle: leadTitles.get(opportunities.lead_id) ?? 'Untitled lead',
+        clientAccountId: opportunities.client_account_id,
       };
     });
 }

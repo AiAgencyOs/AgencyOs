@@ -22,6 +22,15 @@ import {
   type LeadStatus,
 } from '@/modules/crm/schema';
 import { timezonePair, whenOf } from '@/modules/crm/meetings-view';
+import {
+  listDisqualificationHistory,
+  listRequirementSourceRefs,
+  readQualificationCoverage,
+} from '@/modules/crm/lead-insight-queries';
+import { readDealBillingMode, readOpportunityOwner } from '@/modules/sales/composer-queries';
+import { listInternalRoster } from '@/modules/projects/queries';
+
+import { SalesOwnerForm } from './composer-extras';
 
 import { MeetingRequestForm } from './meeting-request-form';
 import {
@@ -156,7 +165,14 @@ export default async function LeadConversationPage({
   const conversation = await getLatestConversation(leadId);
   const messages = conversation ? await listMessages(conversation.id) : [];
   const versions = conversation ? await listRequirementVersions(conversation.id) : [];
+  // SCR-009 — what each version was read from; SCR-007 — coverage and the
+  // disqualification history. All three are reads of rows that already
+  // existed and were shown nowhere on this page.
+  const sourceRefs = conversation ? await listRequirementSourceRefs(conversation.id) : new Map();
+  const coverage = await readQualificationCoverage(leadId);
+  const disqualifications = await listDisqualificationHistory(leadId);
   const mayWrite = can(context.role, 'lead.write');
+  const mayAssign = can(context.role, 'lead.assign');
   // The capability triple ADM-07 describes. Re-checked here for rendering only;
   // the service checks it again and RLS refuses the rows regardless.
   const mayDraft = can(context.role, 'proposal.draft');
@@ -181,6 +197,11 @@ export default async function LeadConversationPage({
   // per deal, and `draft_plan_set` and `draft_proposal` each supersede the
   // other kind, so a deal is offering either one quotation or one ladder.
   const planSet = opportunity ? await readLivePlanSet(opportunity.id, proposals) : null;
+  // SCR-012 — the composer's owner select and GST pre-fill. The billing mode
+  // exists only once the deal has a project with a confirmed profile.
+  const dealOwner = opportunity ? await readOpportunityOwner(opportunity.id) : null;
+  const dealBilling = opportunity ? await readDealBillingMode(opportunity.id) : null;
+  const roster = opportunity && mayAssign ? await listInternalRoster() : [];
   // `liveProposal` means the live STANDALONE quotation. A plan-set member is a
   // live proposal too — slots 1..3 of `proposals_live_version_key` — and
   // without this filter every single-quotation control below would fire on one
@@ -197,6 +218,15 @@ export default async function LeadConversationPage({
   const clock = await agencyClock();
   const now = new Date();
   const awaitingDecision = versions.filter((v) => v.status === 'proposed').length;
+  // SCR-009's KPI chips, derived from versions[].status and the latest
+  // still-standing payload. "Client-confirmed" is an accepted version the
+  // client was shown (sent_for_confirmation_at) before a person accepted
+  // it; "accepted" alone is the agency's decision without that step.
+  const acceptedVersions = versions.filter((v) => v.status === 'accepted');
+  const clientConfirmed = acceptedVersions.filter((v) => v.sent_for_confirmation_at).length;
+  const standing = versions.find((v) => v.status === 'accepted' || v.status === 'proposed');
+  const standingPayload = standing ? requirementPayloadSchema.safeParse(standing.payload) : null;
+  const openQuestions = standingPayload?.success ? standingPayload.data.openQuestions.length : null;
 
   /* ── Pane one: the conversation ─────────────────────────────────────── */
 
@@ -447,6 +477,74 @@ export default async function LeadConversationPage({
         </CardBody>
       </Card>
 
+      {/* SCR-007 — which of Document 09 §9's areas the conversation has
+          already answered, in the client's own words. Read only by project
+          onboarding until now. A count of facts, not a judgement (ADM-88):
+          no score is derived and none is shown. */}
+      <Card>
+        <CardHeader
+          title="Qualification coverage"
+          description="What the client has already said, by area. What is left to ask is the difference."
+          actions={
+            <Badge tone={coverage.covered.length === coverage.total ? 'success' : 'neutral'}>
+              {coverage.covered.length} of {coverage.total} areas
+            </Badge>
+          }
+        />
+        <CardBody className="flex flex-col gap-3">
+          {coverage.covered.length === 0 ? (
+            <p className="text-[13px] text-muted">
+              Nothing recorded yet. Coverage rows are written by the qualifier as the conversation answers an area; none has.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {coverage.covered.map((c) => (
+                <li key={c.area} className="flex flex-col gap-0.5">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <Badge tone="success" dot>{humanize(c.area)}</Badge>
+                    <span className="shrink-0 text-[11px] text-faint">{clock.date(c.createdAt)}</span>
+                  </div>
+                  <p className="text-[13px] leading-relaxed text-muted">&ldquo;{c.quote}&rdquo;</p>
+                </li>
+              ))}
+            </ul>
+          )}
+          {coverage.missing.length > 0 ? (
+            <p className="text-xs text-faint">
+              Still open: {coverage.missing.map((a) => humanize(a)).join(', ')}.
+            </p>
+          ) : null}
+        </CardBody>
+      </Card>
+
+      {/* SCR-007 — every time this lead was disqualified, and why. The row's
+          own reason column holds only the latest and is cleared on reopen;
+          the activity rows are the history. */}
+      {disqualifications.length > 0 ? (
+        <Card>
+          <CardHeader
+            title="Disqualification history"
+            description={`${disqualifications.length} time${disqualifications.length === 1 ? '' : 's'}, from lead_activities.`}
+          />
+          <CardBody>
+            <ol className="flex flex-col gap-2">
+              {disqualifications.map((d) => (
+                <li key={d.id} className="flex flex-col gap-0.5">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-[13px] font-medium text-danger">{d.reason}</span>
+                    <span className="shrink-0 text-[11px] text-faint">{clock.dateTime(d.occurredAt)}</span>
+                  </div>
+                  <p className="text-xs text-muted">
+                    {d.from ? `from ${humanize(d.from)}` : 'status change'}
+                    {d.actorId ? ` · by ${d.actorId.slice(0, 8)}` : ''}
+                  </p>
+                </li>
+              ))}
+            </ol>
+          </CardBody>
+        </Card>
+      ) : null}
+
       {/* Brief §23/§24, gap G-157: what the client asked to change, in their
           own words. Until this list existed the objection rows were read only
           by the agent's context file — the person who has to draft the
@@ -577,6 +675,8 @@ export default async function LeadConversationPage({
                             proposalId={m.id}
                             discountMinor={m.discount_minor}
                             taxMinor={m.tax_minor}
+                            subtotalMinor={m.subtotal_minor}
+                            billingMode={dealBilling?.mode ?? null}
                           />
                         </>
                       ) : null}
@@ -607,6 +707,21 @@ export default async function LeadConversationPage({
                   <PlanSetAnswerForm leadId={leadId} planSet={planSet} />
                 ) : null}
               </div>
+            ) : null}
+
+            {/* SCR-012 — who owns this deal. The row has carried an owner
+                since creation; this is the first place it is shown or changed. */}
+            {mayAssign && dealOwner ? (
+              <SalesOwnerForm
+                leadId={leadId}
+                opportunityId={opportunity.id}
+                ownerId={dealOwner.ownerId}
+                roster={roster.map((m) => ({ userId: m.userId, fullName: m.fullName, role: m.role }))}
+              />
+            ) : dealOwner ? (
+              <p className="text-[12.5px] text-muted">
+                Sales owner: {dealOwner.ownerId ? <span className="font-mono">{dealOwner.ownerId.slice(0, 8)}</span> : 'nobody'}
+              </p>
             ) : null}
 
             {mayDraft ? (
@@ -645,6 +760,8 @@ export default async function LeadConversationPage({
                       proposalId={liveProposal.id}
                       discountMinor={liveProposal.discount_minor}
                       taxMinor={liveProposal.tax_minor}
+                      subtotalMinor={liveProposal.subtotal_minor}
+                      billingMode={dealBilling?.mode ?? null}
                     />
                     <SubmitQuotationForm leadId={leadId} proposalId={liveProposal.id} />
                   </div>
@@ -742,11 +859,25 @@ export default async function LeadConversationPage({
             title="Extracted requirements"
             icon={<IconSparkle size={16} />}
             actions={
-              awaitingDecision > 0 ? (
-                <Badge tone="warning" dot>
-                  {awaitingDecision} awaiting you
-                </Badge>
-              ) : null
+              <>
+                {awaitingDecision > 0 ? (
+                  <Badge tone="warning" dot>
+                    {awaitingDecision} awaiting you
+                  </Badge>
+                ) : null}
+                {/* SCR-009's KPI chips — counts of versions by status, and
+                    the open questions on the version that stands. */}
+                {versions.length > 0 ? (
+                  <>
+                    <Badge tone="neutral">{versions.filter((v) => v.status === 'proposed').length} proposed</Badge>
+                    <Badge tone={clientConfirmed > 0 ? 'success' : 'neutral'}>{clientConfirmed} client-confirmed</Badge>
+                    <Badge tone="neutral">{acceptedVersions.length - clientConfirmed} accepted unconfirmed</Badge>
+                    {openQuestions !== null ? (
+                      <Badge tone={openQuestions > 0 ? 'warning' : 'success'}>{openQuestions} open question{openQuestions === 1 ? '' : 's'}</Badge>
+                    ) : null}
+                  </>
+                ) : null}
+              </>
             }
           />
           <CardBody className="flex flex-col gap-3">
@@ -825,6 +956,28 @@ export default async function LeadConversationPage({
                           Stored payload does not match the current requirement schema.
                         </p>
                       )}
+
+                      {/* SCR-009 — what this version was read from. The row
+                          holds a message count, the job that produced it and
+                          the confirmation message it went out in; it holds no
+                          list of message ids, so none is invented. */}
+                      {(() => {
+                        const ref = sourceRefs.get(v.id);
+                        if (!ref) return null;
+                        const parts = [
+                          ref.sourceMessageCount !== null ? `read ${ref.sourceMessageCount} message${ref.sourceMessageCount === 1 ? '' : 's'}` : null,
+                          ref.sourceJobId ? `job ${ref.sourceJobId.slice(0, 8)}` : null,
+                          ref.confirmationMessageId ? `sent to client as message ${ref.confirmationMessageId.slice(0, 8)}` : null,
+                        ].filter((x): x is string => Boolean(x));
+                        return parts.length > 0 ? (
+                          <p className="mt-2 font-mono text-[11px] text-faint">Source: {parts.join(' · ')}</p>
+                        ) : null;
+                      })()}
+
+                      {/* Editing a version is not offered: crm.requirement_versions
+                          is append-only except for status (a trigger refuses
+                          any payload change) and has no draft state — a change
+                          is a new extraction, which is the form below. */}
 
                       {/* The approval gate. The agent is L1: it proposes, a
                           human decides, and nothing downstream may treat a

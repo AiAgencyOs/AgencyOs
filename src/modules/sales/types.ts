@@ -45,6 +45,8 @@ export type ProposalListRow = ProposalListItem & {
   opportunityName: string;
   leadId: string;
   leadTitle: string;
+  /** SCR-011's client filter: the deal's account, null until one is linked. */
+  clientAccountId: string | null;
 };
 
 export type PlanSetView = {

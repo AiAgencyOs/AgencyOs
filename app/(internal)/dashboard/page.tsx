@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
+import { OVERVIEW_WINDOWS, overviewWindow } from '@/lib/admin/dashboard-window';
 import { getOverview } from '@/lib/admin/overview';
 import { isAvailable, levelLabel, overallStatus, type Avail } from '@/lib/admin/overview-eval';
 import { requireInternal } from '@/lib/auth/session';
@@ -13,9 +14,13 @@ import {
   CardHeader,
   cx,
   EmptyState,
+  FilterChips,
   IconAlert,
+  IconArrowUpRight,
   IconChevronRight,
   Stat,
+  StatGrid,
+  buttonClass,
   TONE_DOT,
   TONE_TEXT,
   type Tone,
@@ -80,12 +85,23 @@ function HealthRow({
   );
 }
 
-export default async function OverviewPage() {
+export default async function OverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ days?: string }>;
+}) {
   const context = await requireInternal('/dashboard');
   const role = context.role;
   const show = (cap: Capability) => can(role, cap);
 
-  const [o, clock] = await Promise.all([getOverview(), agencyClock()]);
+  // SCR-001's global date range. Only the four "happened over time" signals
+  // honour it (see dashboard-window.ts); the rest of the page is "right now"
+  // and has no window to honour. An unknown value falls back to the default
+  // rather than being sent to the database.
+  const { days } = await searchParams;
+  const sinceDays = overviewWindow(days);
+
+  const [o, clock] = await Promise.all([getOverview({ sinceDays }), agencyClock()]);
   const status = overallStatus({ backlog: o.backlog, cronAgeSeconds: o.cronAgeSeconds, failedDeliveries: o.failedDeliveries });
   const label = levelLabel(status.level);
 
@@ -132,6 +148,55 @@ export default async function OverviewPage() {
           {status.reason}
         </Callout>
       ) : null}
+
+      {/* SCR-001 — the window selector and what happened inside it. Counts
+          of rows with a timestamp in the range; nothing is projected. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-faint">Date range</span>
+          <FilterChips
+            options={OVERVIEW_WINDOWS.map((d) => ({
+              key: String(d),
+              label: `Last ${d} days`,
+              href: d === 30 ? '/dashboard' : `/dashboard?days=${d}`,
+              active: sinceDays === d,
+            }))}
+          />
+        </div>
+        {show('project.read') ? (
+          <Link href="/reports" className={buttonClass('secondary', 'sm')}>
+            Generate report
+            <IconArrowUpRight size={14} />
+          </Link>
+        ) : null}
+      </div>
+
+      <StatGrid>
+        <Stat
+          label="Leads created"
+          href={show('lead.read') ? '/leads' : undefined}
+          value={<Value value={num(o.window, (w) => String(w.leadsCreated))} />}
+          caption={`in the last ${sinceDays} days`}
+        />
+        <Stat
+          label="Deals won"
+          href={show('lead.read') ? '/sales-funnel' : undefined}
+          value={<Value value={num(o.window, (w) => String(w.dealsWon))} />}
+          caption={`closed won in the last ${sinceDays} days`}
+        />
+        <Stat
+          label="Invoices issued"
+          href={show('invoice.read') ? '/invoices' : undefined}
+          value={<Value value={num(o.window, (w) => String(w.invoicesIssued))} />}
+          caption={`issued in the last ${sinceDays} days`}
+        />
+        <Stat
+          label="Meetings completed"
+          href={show('lead.read') ? '/meetings?window=past' : undefined}
+          value={<Value value={num(o.window, (w) => String(w.meetingsCompleted))} />}
+          caption={`completed in the last ${sinceDays} days`}
+        />
+      </StatGrid>
 
       {/* Operational KPI tiles — real reads only, each linking to its detail page. */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">

@@ -10,9 +10,11 @@ import { filterCommands, type Command } from '@/lib/admin/command-palette-eval';
 import { globalSearch, type SearchResult } from '@/lib/admin/global-search';
 import { Button, cx, Field, FormMessage, IconChevronRight, IconSearch, inputClass } from '@/ui';
 
+import { CreateProjectForm, MilestoneInvoiceForm } from './quick-create-forms';
+
 const SEARCH_DEBOUNCE_MS = 200;
 
-type CreateMode = 'lead' | 'client' | null;
+type CreateMode = 'lead' | 'client' | 'project' | 'invoice' | null;
 
 /** One row the palette can show: a page/record to jump to, or an action to run. */
 type Entry = { key: string; label: string; group: string; href?: string; onSelect?: () => void };
@@ -37,10 +39,16 @@ export function CommandPalette({
   commands,
   canCreateLead = false,
   canCreateClient = false,
+  canCreateProject = false,
+  canCreateInvoice = false,
 }: {
   commands: Command[];
   canCreateLead?: boolean;
   canCreateClient?: boolean;
+  /** `project.write` — the by-hand project door (SCR-004). */
+  canCreateProject?: boolean;
+  /** `invoice.create` — the milestone-invoice picker (SCR-004). */
+  canCreateInvoice?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -84,25 +92,42 @@ export function CommandPalette({
     const entries: Entry[] = [];
     if (canCreateLead) entries.push({ key: 'create-lead', label: 'New lead', group: 'Create', onSelect: () => setCreateMode('lead') });
     if (canCreateClient) entries.push({ key: 'create-client', label: 'New client', group: 'Create', onSelect: () => setCreateMode('client') });
+    if (canCreateProject) entries.push({ key: 'create-project', label: 'New project', group: 'Create', onSelect: () => setCreateMode('project') });
+    if (canCreateInvoice) entries.push({ key: 'create-invoice', label: 'Invoice from milestone', group: 'Create', onSelect: () => setCreateMode('invoice') });
     if (entries.length === 0) return entries;
     const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
     if (terms.length === 0) return entries;
     return entries.filter((e) => terms.every((t) => `${e.label} ${e.group}`.toLowerCase().includes(t)));
-  }, [canCreateLead, canCreateClient, query]);
+  }, [canCreateLead, canCreateClient, canCreateProject, canCreateInvoice, query]);
 
   // Creates first — starting something new is rarer than finding something
   // that exists, but exactly as fast to offer, and "new lead" should not have
   // to outrank every page whose name contains "lead". Records next, since a
   // specific record is almost always what somebody typing more than a page
   // name is looking for.
-  const results = useMemo<Entry[]>(
-    () => [
+  const results = useMemo<Entry[]>(() => {
+    const trimmed = query.trim();
+    // SCR-002: the palette shows five per entity; the /search page shows all
+    // of them, with type and date filters. Offered whenever a record search
+    // is even possible, so an empty palette still has somewhere to go.
+    const seeAll: Entry[] =
+      trimmed.length >= 2
+        ? [
+            {
+              key: `see-all:${trimmed}`,
+              label: `See all results for “${trimmed}”`,
+              group: 'Search',
+              href: `/search?q=${encodeURIComponent(trimmed)}`,
+            },
+          ]
+        : [];
+    return [
       ...createEntries,
       ...records.map((r) => ({ key: r.href, label: r.label, group: r.group, href: r.href })),
+      ...seeAll,
       ...pageResults.map((c) => ({ key: c.href, label: c.label, group: c.group, href: c.href })),
-    ],
-    [createEntries, records, pageResults],
-  );
+    ];
+  }, [createEntries, records, pageResults, query]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -187,7 +212,11 @@ export function CommandPalette({
             aria-modal="true"
             aria-label="Command palette"
           >
-            {createMode ? (
+            {createMode === 'project' ? (
+              <CreateProjectForm onCancel={() => setCreateMode(null)} onCreated={go} />
+            ) : createMode === 'invoice' ? (
+              <MilestoneInvoiceForm onCancel={() => setCreateMode(null)} onCreated={go} />
+            ) : createMode ? (
               <CreateForm
                 mode={createMode}
                 onCancel={() => setCreateMode(null)}

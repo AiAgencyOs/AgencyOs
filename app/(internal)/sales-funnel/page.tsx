@@ -5,9 +5,10 @@ import { redirect } from 'next/navigation';
 import { getPricingReflex, getSalesFunnel, MIN_LEADS_TO_NAME_A_LEAK } from '@/lib/admin/sales-funnel';
 import { requireInternal } from '@/lib/auth/session';
 import { isOpenOpportunity, LOST_CATEGORY_LABELS, OPPORTUNITY_STAGES, type OpportunityStage } from '@/modules/sales/schema';
-import { listOpportunities } from '@/modules/sales/queries';
+import { listPipelineOpportunities } from '@/modules/sales/pipeline-queries';
+import { listInternalRoster } from '@/modules/projects/queries';
 import { can } from '@/lib/authz/permissions';
-import { PageHeader } from '@/ui';
+import { FilterChips, PageHeader, Stat, StatGrid, humanize } from '@/ui';
 
 export const metadata: Metadata = { title: 'Sales funnel' };
 
@@ -54,7 +55,13 @@ const hours = (h: number | null): string => {
   return `${Math.round(h / 24)}d`;
 };
 
-export default async function SalesFunnelPage() {
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export default async function SalesFunnelPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ source?: string; owner?: string }>;
+}) {
   const context = await requireInternal('/sales-funnel');
   if (!can(context.role, 'lead.read')) redirect('/dashboard');
 
@@ -62,10 +69,39 @@ export default async function SalesFunnelPage() {
   const reflex = await getPricingReflex();
   const widest = Math.max(...steps.map((s) => s.count), 1);
 
-  const opportunities = await listOpportunities();
+  // SCR-005 — source and owner filters. They apply to the pipeline (rows
+  // this page holds, with the lead's source and assignee on each) and to
+  // the deal KPIs computed from those rows. The funnel bars below come from
+  // `crm.sales_funnel`, a database function that takes only a window; it is
+  // shown unfiltered and says so, rather than being re-derived here.
+  const params = await searchParams;
+  const all = await listPipelineOpportunities();
+  const sources = [...new Set(all.map((o) => o.lead?.source).filter((v): v is string => Boolean(v)))].sort();
+  const source = sources.includes(params.source ?? '') ? params.source : undefined;
+  const owner = params.owner === 'mine' ? context.userId : UUID.test(params.owner ?? '') ? params.owner : undefined;
+  const ownerIds = [...new Set(all.map((o) => o.ownerId).filter((v): v is string => Boolean(v)))];
+  const roster = await listInternalRoster();
+  const nameOf = (id: string) => roster.find((m) => m.userId === id)?.fullName ?? id.slice(0, 8);
+
+  const filtered = all.filter((o) => (!source || o.lead?.source === source) && (!owner || o.ownerId === owner));
+  const filtering = Boolean(source || owner);
+
+  const href = (over: Partial<{ source: string; owner: string }>) => {
+    const next = { source: source ?? '', owner: params.owner === 'mine' ? 'mine' : (owner ?? ''), ...over };
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(next)) if (v) q.set(k, v);
+    const qs = q.toString();
+    return `/sales-funnel${qs ? `?${qs}` : ''}`;
+  };
+
   const openStages = OPPORTUNITY_STAGES.filter(isOpenOpportunity);
-  const open = opportunities.filter((o) => isOpenOpportunity(o.stage as OpportunityStage));
+  const open = filtered.filter((o) => isOpenOpportunity(o.stage as OpportunityStage));
   const byStage = new Map(openStages.map((stage) => [stage, open.filter((o) => o.stage === stage)]));
+  const won = filtered.filter((o) => o.stage === 'won');
+  const lost = filtered.filter((o) => o.stage === 'lost');
+  const kpiCurrency = open[0]?.currency ?? won[0]?.currency ?? 'INR';
+  const sumMinor = (rows: typeof filtered) => rows.filter((o) => o.currency === kpiCurrency).reduce((n, o) => n + o.value_minor, 0);
+  const mixedCurrency = filtered.some((o) => o.currency !== kpiCurrency);
 
   return (
     <div className="flex flex-col gap-5">
@@ -74,11 +110,51 @@ export default async function SalesFunnelPage() {
         description="Leads created in the last 90 days, and how far each got. Every number is a row somebody wrote."
       />
 
+      <nav aria-label="Pipeline filters" className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-subtle bg-surface px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-faint">Source</span>
+          <FilterChips
+            options={[
+              { key: 'any', label: 'Any', href: href({ source: '' }), active: !source },
+              ...sources.map((s) => ({ key: s, label: humanize(s), href: href({ source: s }), active: source === s })),
+            ]}
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-faint">Owner</span>
+          <FilterChips
+            options={[
+              { key: 'any', label: 'Anyone', href: href({ owner: '' }), active: !owner },
+              { key: 'mine', label: 'Mine', href: href({ owner: 'mine' }), active: params.owner === 'mine' },
+              ...ownerIds
+                .filter((id) => id !== context.userId)
+                .map((id) => ({ key: id, label: nameOf(id), href: href({ owner: id }), active: owner === id })),
+            ]}
+          />
+        </div>
+      </nav>
+
+      {/* SCR-005's KPI row — counts and sums over the filtered deals, not
+          estimates. Values are summed in one currency and the tile says when
+          a deal in another currency was left out of the sum. */}
+      <StatGrid>
+        <Stat label="Open deals" value={String(open.length)} caption={filtering ? 'matching the filters' : 'across every source and owner'} />
+        <Stat
+          label="Open pipeline value"
+          value={money(sumMinor(open), kpiCurrency)}
+          caption={mixedCurrency ? `${kpiCurrency} deals only — other currencies are not summed` : `sum of open deal values, ${kpiCurrency}`}
+        />
+        <Stat label="Won" value={String(won.length)} caption={won.length > 0 ? money(sumMinor(won), kpiCurrency) : 'no won deals in this set'} tone={won.length > 0 ? 'success' : 'neutral'} />
+        <Stat label="Lost" value={String(lost.length)} caption={filtered.length > 0 ? `of ${filtered.length} deal${filtered.length === 1 ? '' : 's'}` : 'no deals in this set'} tone={lost.length > 0 ? 'danger' : 'neutral'} />
+      </StatGrid>
+
       <section className="flex flex-col gap-2 rounded-lg border border-subtle bg-surface p-4">
         <p className="text-sm font-medium">Open pipeline</p>
         <p className="text-[12.5px] text-muted">
-          Every deal currently open, grouped by stage — a read of the same rows the funnel above
-          counts, not a board. {open.length} open deal{open.length === 1 ? '' : 's'}.
+          Every deal currently open, grouped by stage — a read of the same rows the funnel below
+          counts, not a board. {open.length} open deal{open.length === 1 ? '' : 's'}
+          {filtering ? ' matching the filters' : ''}.
+          {filtering ? ' The funnel bars below are the database function’s own count over the window and are not filtered.' : ''}
         </p>
         {open.length === 0 ? (
           <p className="mt-1 text-sm text-muted">No open deals right now.</p>
@@ -105,6 +181,8 @@ export default async function SalesFunnelPage() {
                             <span className="block truncate font-medium">{o.name}</span>
                             <span className="block text-[11.5px] text-muted">
                               {money(o.value_minor, o.currency)}
+                              {o.lead ? ` · ${humanize(o.lead.source)}` : ''}
+                              {o.ownerId ? ` · ${nameOf(o.ownerId)}` : ''}
                             </span>
                           </Link>
                         </li>

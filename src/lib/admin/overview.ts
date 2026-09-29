@@ -4,6 +4,7 @@ import { agencyClock } from './agency-clock';
 import { wouldRun } from './agent-eval';
 import { aiStatus } from './agent-status';
 import { configStatus } from './config-status';
+import { DEFAULT_OVERVIEW_WINDOW, readWindowActivity, type WindowActivity } from './dashboard-window';
 import { reactivationSummary, type ReactivationSummary } from './reactivation-summary';
 import { createClient } from '@/lib/db/server';
 import type { BacklogRow } from '@/lib/observability/backlog';
@@ -38,6 +39,8 @@ export type OverviewData = {
   today: Avail<TodayMeeting[]>;
   /** The prioritised queue SCR-001 calls for: what's overdue, soonest first. */
   needsAttention: Avail<AttentionItem[]>;
+  /** What happened inside the reader's chosen date range — SCR-001's window. */
+  window: Avail<WindowActivity>;
 };
 
 export type TodayMeeting = { id: string; title: string; at: string | null };
@@ -187,7 +190,8 @@ async function needsAttentionItems(): Promise<AttentionItem[]> {
     .slice(0, 8);
 }
 
-export async function getOverview(): Promise<OverviewData> {
+export async function getOverview(options: { sinceDays?: number } = {}): Promise<OverviewData> {
+  const sinceDays = options.sinceDays ?? DEFAULT_OVERVIEW_WINDOW;
   const config = configStatus();
   const clock = await agencyClock();
   const todayWindow = clock.today();
@@ -204,6 +208,7 @@ export async function getOverview(): Promise<OverviewData> {
     projectsOnHoldResult,
     today,
     needsAttention,
+    window,
   ] = await Promise.all([
     avail(readBacklog()),
     readCronAgeSeconds(), // already null-on-failure by design
@@ -223,6 +228,7 @@ export async function getOverview(): Promise<OverviewData> {
     avail(projectsOnHold()),
     avail(meetingsToday(todayWindow.from, todayWindow.to)),
     avail(needsAttentionItems()),
+    avail(readWindowActivity(sinceDays)),
   ]);
 
   const tokenConfigured = config.items.find((i) => i.key === 'WHATSAPP_ACCESS_TOKEN')?.present ?? false;
@@ -240,5 +246,6 @@ export async function getOverview(): Promise<OverviewData> {
     whatsapp: { tokenConfigured, numberConfigured },
     today,
     needsAttention,
+    window,
   };
 }

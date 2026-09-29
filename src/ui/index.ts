@@ -17,3 +17,4 @@ export * from './primitives/stat';
 export * from './primitives/drawer';
 export * from './primitives/filter-bar';
 export * from './patterns/whatsapp';
+export * from './primitives/month-grid';

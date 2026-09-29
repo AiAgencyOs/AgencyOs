@@ -123,10 +123,24 @@ export async function draftProposalAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  // SCR-012 — project type and duration have no column on sales.proposals;
+  // they are written as the first lines of the scope summary, which the
+  // composer's labels say. Nothing here is a field the row does not hold.
+  const projectType = String(formData.get('projectType') ?? '').trim();
+  const duration = String(formData.get('duration') ?? '').trim();
+  const bodyText = String(formData.get('body') ?? '').trim();
+  const body = [
+    projectType ? `Project type: ${projectType}` : '',
+    duration ? `Duration: ${duration}` : '',
+    bodyText,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
   const result = await draftProposal({
     opportunityId: String(formData.get('opportunityId') ?? ''),
     title: String(formData.get('title') ?? ''),
-    body: String(formData.get('body') ?? '') || undefined,
+    body: body || undefined,
     validUntil: String(formData.get('validUntil') ?? '') || undefined,
   });
 

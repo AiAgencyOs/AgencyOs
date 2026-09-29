@@ -12,6 +12,8 @@ import {
   StatusBadge,
 } from '@/ui';
 
+import { BulkActionsBar, type BulkRoster } from './bulk-actions-bar';
+
 /**
  * The chat list.
  *
@@ -35,11 +37,38 @@ export type ChatLead = {
   company: string | null;
   /** Already formatted server-side. */
   time: string;
+  /** SCR-006: what the bulk actions read and the row shows. */
+  ownerName?: string | null;
+  tags?: string[];
+  /** Already formatted server-side, or null when no budget is on file. */
+  budget?: string | null;
 };
 
-export function LeadChatList({ leads }: { leads: ChatLead[] }) {
+/**
+ * SCR-006's multi-select. Present only when the page decided the role may
+ * do at least one of the three bulk actions; the checkboxes are otherwise
+ * not drawn at all.
+ */
+export type BulkConfig = {
+  roster: BulkRoster;
+  statuses: readonly string[];
+  nurtureReasons: readonly string[];
+  canAssign: boolean;
+  canWrite: boolean;
+};
+
+export function LeadChatList({ leads, bulk }: { leads: ChatLead[]; bulk?: BulkConfig }) {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<string>('all');
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const statuses = useMemo(() => {
     const seen = new Map<string, number>();
@@ -96,6 +125,32 @@ export function LeadChatList({ leads }: { leads: ChatLead[] }) {
         </div>
       </div>
 
+      {bulk ? (
+        <div className="flex items-center gap-2 border-b border-[var(--wa-divider)] px-3 py-1.5 text-[12px] text-muted sm:px-4">
+          <input
+            type="checkbox"
+            aria-label="Select every lead shown"
+            checked={shown.length > 0 && shown.every((l) => selected.has(l.id))}
+            onChange={(e) =>
+              setSelected(e.target.checked ? new Set(shown.map((l) => l.id)) : new Set())
+            }
+          />
+          <span>Select all shown ({shown.length})</span>
+        </div>
+      ) : null}
+
+      {bulk && selected.size > 0 ? (
+        <BulkActionsBar
+          selected={[...selected]}
+          roster={bulk.roster}
+          statuses={bulk.statuses}
+          nurtureReasons={bulk.nurtureReasons}
+          canAssign={bulk.canAssign}
+          canWrite={bulk.canWrite}
+          onDone={() => setSelected(new Set())}
+        />
+      ) : null}
+
       {/* ── Rows ───────────────────────────────────────────────────────── */}
       {shown.length === 0 ? (
         <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
@@ -109,8 +164,18 @@ export function LeadChatList({ leads }: { leads: ChatLead[] }) {
       ) : (
         <ul className="min-h-0 flex-1 overflow-y-auto">
           {shown.map((lead) => (
-            <li key={lead.id}>
-              <Link href={`/leads/${lead.id}`} className="block">
+            <li key={lead.id} className={cx(bulk && 'flex items-stretch')}>
+              {bulk ? (
+                <label className="flex shrink-0 items-center px-3 sm:pl-4">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${lead.title}`}
+                    checked={selected.has(lead.id)}
+                    onChange={() => toggle(lead.id)}
+                  />
+                </label>
+              ) : null}
+              <Link href={`/leads/${lead.id}`} className="block min-w-0 flex-1">
                 <ChatListItem
                   name={lead.title}
                   time={lead.time}
@@ -128,6 +193,11 @@ export function LeadChatList({ leads }: { leads: ChatLead[] }) {
                   meta={
                     <>
                       <span className="text-[11px] text-faint">via {humanize(lead.source)}</span>
+                      {lead.ownerName ? <span className="text-[11px] text-faint"> · {lead.ownerName}</span> : null}
+                      {lead.budget ? <span className="text-[11px] text-faint"> · {lead.budget}</span> : null}
+                      {lead.tags && lead.tags.length > 0 ? (
+                        <span className="text-[11px] text-faint"> · {lead.tags.join(', ')}</span>
+                      ) : null}
                     </>
                   }
                 />

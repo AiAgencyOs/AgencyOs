@@ -159,6 +159,8 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
                 commands={commands}
                 canCreateLead={can(context.role, 'lead.write')}
                 canCreateClient={can(context.role, 'project.write')}
+                canCreateProject={can(context.role, 'project.write')}
+                canCreateInvoice={can(context.role, 'invoice.create')}
               />
             </div>
           </div>
