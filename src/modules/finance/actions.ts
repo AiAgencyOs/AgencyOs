@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import type { FormState } from '@/modules/identity/types';
 
-import { parseMinorUnits } from './schema';
+import { parseMinorUnits, PAYMENT_ACCOUNT_FIELDS, PAYMENT_ACCOUNT_KINDS, type PaymentAccountKind } from './schema';
 import {
   confirmBillingMode,
   generateInvoiceFromMilestone,
@@ -19,6 +19,8 @@ import {
   requestRefund,
   voidInvoice,
   recordExpense,
+  createPaymentAccount,
+  setPaymentAccountStatus,
 } from './service';
 
 /** Server Actions for milestone billing — thin wrappers over service.ts. */
@@ -435,4 +437,44 @@ export async function recordExpenseAction(_prev: FormState, formData: FormData):
 
   revalidatePath('/finance/expenses');
   return { status: 'success', message: 'Expense recorded.' };
+}
+
+/** SCR-057 — a receiving account the agency offers on its invoices (Doc 15 §9). */
+export async function createPaymentAccountAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const text = (name: string) => String(formData.get(name) ?? '').trim();
+  const kindRaw = text('kind');
+  if (!(PAYMENT_ACCOUNT_KINDS as readonly string[]).includes(kindRaw)) {
+    return { status: 'error', message: 'Pick what kind of account this is.' };
+  }
+  const kind = kindRaw as PaymentAccountKind;
+
+  const instructions: Record<string, string> = {};
+  for (const field of PAYMENT_ACCOUNT_FIELDS[kind]) instructions[field.key] = text(`field_${field.key}`);
+
+  const effectiveFrom = text('effectiveFrom');
+  const result = await createPaymentAccount({
+    kind,
+    label: text('label'),
+    instructions,
+    ...(effectiveFrom ? { effectiveFrom } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath('/settings/finance');
+  revalidatePath('/invoices');
+  return { status: 'success', message: `"${result.data.label}" added — new invoices can name it.` };
+}
+
+export async function setPaymentAccountStatusAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const status = String(formData.get('status') ?? '') === 'inactive' ? 'inactive' : 'active';
+  const result = await setPaymentAccountStatus({ accountId: String(formData.get('accountId') ?? ''), status });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath('/settings/finance');
+  return {
+    status: 'success',
+    message: result.data.status === 'inactive' ? 'Account deactivated — it stays on the invoices that already name it.' : 'Account active again.',
+  };
 }

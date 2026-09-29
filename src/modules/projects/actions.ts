@@ -74,11 +74,11 @@ import {
   removeEnvironment,
   addDependency,
   removeDependency,
+  updateTask,
+  updateProject,
   shareUiVersionWithClient,
   recordUiVersionClientDecision,
   lockUiVersion,
-  updateTask,
-  updateProject,
 } from './service';
 
 /** Server Actions for delivery — thin wrappers over service.ts. */

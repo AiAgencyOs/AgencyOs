@@ -376,7 +376,6 @@ export default async function LeadConversationPage({
           { label: 'Budget', value: budget ?? 'Not qualified yet' },
           ...(qualification.success && qualification.data.timelineNote ? [{ label: 'Timeline', value: qualification.data.timelineNote }] : []),
           ...(qualification.success && qualification.data.isDecisionMaker !== undefined ? [{ label: 'Decision maker', value: qualification.data.isDecisionMaker ? 'Yes' : 'No' }] : []),
-          ...(facts?.score !== null && facts?.score !== undefined ? [{ label: 'Lead score', value: <Badge tone={facts.score >= 70 ? 'success' : facts.score >= 40 ? 'warning' : 'neutral'}>{facts.score}</Badge> }] : []),
           ...(facts ? [{ label: 'Created on', value: clock.dateTime(facts.createdAt) }, { label: 'Last activity', value: clock.dateTime(facts.updatedAt) }] : []),
         ]}
       />
@@ -395,20 +394,6 @@ export default async function LeadConversationPage({
             )}
             {mayWrite ? <LeadTagsForm leadId={leadId} tags={facts.tags} /> : null}
           </div>
-        </Card>
-      ) : null}
-      {facts && facts.score !== null ? (
-        <Card>
-          <CardHeader title="Lead score" description="As the scorer recorded it — never re-derived here (ADM-88)." actions={<Badge tone={facts.score >= 70 ? 'success' : facts.score >= 40 ? 'warning' : 'neutral'}>{facts.score}</Badge>} />
-          {facts.scoreReasons.length > 0 ? (
-            <ul className="flex flex-col gap-1 px-4 pb-4 text-[13px] text-muted sm:px-5">
-              {facts.scoreReasons.map((r) => (
-                <li key={r} className="flex gap-2"><span aria-hidden className="text-faint">·</span>{r}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No reasons were recorded with this score.</p>
-          )}
         </Card>
       ) : null}
       <ActivityFeed

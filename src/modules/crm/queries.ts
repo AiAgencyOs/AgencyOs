@@ -798,9 +798,6 @@ export type LeadFacts = {
   updatedAt: string;
   nextFollowUpAt: string | null;
   tags: string[];
-  score: number | null;
-  /** The scorer's own reasons, as stored — printed, never re-derived (ADM-88). */
-  scoreReasons: string[];
 };
 
 /**
@@ -815,7 +812,7 @@ export async function getLeadFacts(leadId: string): Promise<LeadFacts | null> {
   const { data, error } = await supabase
     .schema('crm')
     .from('leads')
-    .select('id, assigned_to, created_at, updated_at, next_follow_up_at, tags, score, score_reasons, contacts:contact_id(full_name, phone, email, company)')
+    .select('id, assigned_to, created_at, updated_at, next_follow_up_at, tags, contacts:contact_id(full_name, phone, email, company)')
     .eq('id', leadId)
     .is('deleted_at', null)
     .maybeSingle();
@@ -842,7 +839,5 @@ export async function getLeadFacts(leadId: string): Promise<LeadFacts | null> {
     updatedAt: data.updated_at,
     nextFollowUpAt: data.next_follow_up_at,
     tags: data.tags ?? [],
-    score: data.score,
-    scoreReasons: Array.isArray(data.score_reasons) ? data.score_reasons.filter((r): r is string => typeof r === 'string') : [],
   };
 }

@@ -92,8 +92,8 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
   }
 
   const spend = await readProjectSpend(projectId);
-  const [screenCoverage, designAssets, sampleScreens] = await Promise.all([
-    readUiCoverage(projectId),
+  const screenCoverage = await readUiCoverage(projectId);
+  const [designAssets, sampleScreens] = await Promise.all([
     readDesignAssets(projectId),
     readSampleScreens(projectId, trail.themes.map((t) => t.id)),
   ]);
@@ -248,7 +248,16 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
           </Card>
 
           <div className="flex flex-col gap-4 [&>section]:rounded-xl [&>section]:border [&>section]:border-line [&>section]:bg-surface [&>section]:p-4 [&>section]:shadow-xs sm:[&>section]:p-5">
-            <Section title="Screen coverage" hint="Doc 12 §9. Blocking flags are the three the database refuses a design against; the rest are for a person to weigh.">
+            {/*
+              Doc 12 §9 and §20 — the coverage matrix. A REPORT, and deliberately
+              not a second gate: `projects.refuse_uncovered_design` already refuses
+              the three flags that are mechanically exact, and the rest are
+              judgement nobody has configured. Surfacing them is the control; adding
+              a threshold here would be inventing the business rule.
+            */}
+            <Section
+              title="Screen coverage"
+              hint="Doc 12 §9. Blocking flags are the three the database refuses a design against; the rest are for a person to weigh.">
               {screenCoverage.length === 0 ? (
                 <Nothing>Nothing is flagged. Every included scope item has a screen, and every screen has what §9 asks of it.</Nothing>
               ) : (
@@ -282,10 +291,17 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
                   <tbody>
                     {spend.map((row) => (
                       <tr key={row.phase ?? 'unattributed'} className="border-b border-line">
-                        <td className="py-1">{row.phase === null ? <span className="text-muted">phase not knowable</span> : `Phase ${row.phase}`}</td>
+                        <td className="py-1">
+                          {row.phase === null ? (
+                            <span className="text-muted">phase not knowable</span>
+                          ) : (
+                            `Phase ${row.phase}`
+                          )}
+                        </td>
                         <td className="py-1">{row.runs}</td>
                         <td className="py-1">{row.inputTokens.toLocaleString('en-IN')}</td>
                         <td className="py-1">{row.outputTokens.toLocaleString('en-IN')}</td>
+                        {/* Minor units, like every other money column in this system. */}
                         <td className="py-1">₹{(row.costMinor / 100).toFixed(2)}</td>
                       </tr>
                     ))}
@@ -293,7 +309,12 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
                 </table>
               )}
               {spend.some((r) => r.phase === null) ? (
-                <p className="max-w-2xl text-xs text-muted">A run whose phase is not knowable is still this project’s spend. Phase is recorded only where a run’s subject belongs to exactly one phase — guessing would make this table confidently wrong.</p>
+                <p className="max-w-2xl text-xs text-muted">
+                  A run whose phase is not knowable is still this project’s spend — dropping it would understate the total, and
+                  understating spend is the direction that matters. Phase is recorded only
+                  where a run’s subject belongs to exactly one phase — guessing would make this table
+                  confidently wrong.
+                </p>
               ) : null}
             </Section>
           </div>

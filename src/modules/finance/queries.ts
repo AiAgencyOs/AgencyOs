@@ -608,3 +608,220 @@ export async function listTaxInvoices(limit = 500): Promise<TaxInvoiceRow[]> {
     issuedAt: i.issued_at,
   }));
 }
+
+/* ── PDF gap pass 5 — Finance 37/38/39 ─────────────────────────────────── */
+
+export type InvoiceBillingProfile = {
+  id: string;
+  mode: 'gst' | 'non_gst';
+  version: number;
+  legalName: string | null;
+  gstin: string | null;
+  billingAddress: string | null;
+  billingState: string | null;
+  confirmedAt: string;
+};
+
+/**
+ * The active billing profile behind a project's invoices — what the invoice
+ * page prints as "who is billed, in which mode". Read, never computed: the
+ * mode was confirmed by a person (migration 20260917130000) and the tax on
+ * the invoice was set at issue time from it. Null when the project has not
+ * confirmed a mode yet, which the page says in words.
+ */
+export async function readInvoiceBillingProfile(projectId: string | null): Promise<InvoiceBillingProfile | null> {
+  if (!projectId) return null;
+  const supabase = await createClient();
+
+  const { data, error: profileError } = await supabase
+    .schema('finance')
+    .from('billing_profiles')
+    .select('id, mode, version, legal_name, gstin, billing_address, billing_state, confirmed_at')
+    .eq('project_id', projectId)
+    .eq('status', 'active')
+    .maybeSingle();
+
+  if (profileError) unreadable('readInvoiceBillingProfile', profileError);
+  if (!data) return null;
+
+  return {
+    id: data.id,
+    mode: data.mode === 'gst' ? 'gst' : 'non_gst',
+    version: data.version,
+    legalName: data.legal_name,
+    gstin: data.gstin,
+    billingAddress: data.billing_address,
+    billingState: data.billing_state,
+    confirmedAt: data.confirmed_at,
+  };
+}
+
+/**
+ * Every claim a client (or an admin on their behalf) has submitted against
+ * one invoice, newest first — the same rows `listPaymentClaims` reads for a
+ * whole project, scoped to the bill somebody is looking at.
+ */
+export async function listInvoicePaymentClaims(invoiceId: string): Promise<PaymentClaim[]> {
+  const supabase = await createClient();
+
+  const { data, error: claimsError } = await supabase
+    .schema('finance')
+    .from('payment_submissions')
+    .select(
+      'id, invoice_id, amount_minor, currency, method, reference, payer_name, paid_at, proof_url, status, submitted_at, verified_at, verification_evidence, rejected_reason, mismatch_note, payment_id',
+    )
+    .eq('invoice_id', invoiceId)
+    .order('submitted_at', { ascending: false });
+
+  if (claimsError) unreadable('listInvoicePaymentClaims', claimsError);
+  return data ?? [];
+}
+
+export type PaymentAccount = {
+  id: string;
+  kind: 'bank' | 'upi' | 'upi_qr' | 'gateway' | 'other';
+  label: string;
+  instructions: Record<string, string>;
+  status: 'active' | 'inactive';
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  createdAt: string;
+  /** How many claims name this account — once > 0 the database freezes its details. */
+  usedBy: number;
+};
+
+/**
+ * The agency's receiving accounts (Doc 15 §9) — SCR-057. Active first, then
+ * newest. `usedBy` is counted here so the settings screen can say *why* an
+ * account's details cannot be edited rather than letting the trigger refuse.
+ */
+export async function listPaymentAccounts(): Promise<PaymentAccount[]> {
+  const supabase = await createClient();
+
+  const [{ data, error: accountsError }, { data: uses, error: usesError }] = await Promise.all([
+    supabase
+      .schema('finance')
+      .from('payment_accounts')
+      .select('id, kind, label, instructions, status, effective_from, effective_to, created_at')
+      .order('status', { ascending: true })
+      .order('created_at', { ascending: false }),
+    supabase.schema('finance').from('payment_submissions').select('account_id').not('account_id', 'is', null),
+  ]);
+
+  if (accountsError) unreadable('listPaymentAccounts', accountsError);
+  if (usesError) unreadable('listPaymentAccounts.uses', usesError);
+
+  const useCount = new Map<string, number>();
+  for (const u of uses ?? []) {
+    if (u.account_id) useCount.set(u.account_id, (useCount.get(u.account_id) ?? 0) + 1);
+  }
+
+  return (data ?? []).map((a) => {
+    const raw = a.instructions && typeof a.instructions === 'object' && !Array.isArray(a.instructions) ? (a.instructions as Record<string, unknown>) : {};
+    const instructions: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw)) if (typeof v === 'string' && v.trim()) instructions[k] = v;
+    return {
+      id: a.id,
+      kind: (['bank', 'upi', 'upi_qr', 'gateway', 'other'].includes(a.kind) ? a.kind : 'other') as PaymentAccount['kind'],
+      label: a.label,
+      instructions,
+      status: a.status === 'inactive' ? 'inactive' : 'active',
+      effectiveFrom: a.effective_from,
+      effectiveTo: a.effective_to,
+      createdAt: a.created_at,
+      usedBy: useCount.get(a.id) ?? 0,
+    };
+  });
+}
+
+export type TaxReportInvoice = TaxInvoiceRow & {
+  projectId: string | null;
+  paidMinor: number;
+  /** The confirmed billing mode of the invoice's project, or null when none was confirmed. */
+  billingMode: 'gst' | 'non_gst' | null;
+  gstin: string | null;
+};
+
+/**
+ * `listTaxInvoices` joined to each project's active billing profile, so the
+ * GST & tax screen can split the register by the mode a person confirmed
+ * rather than by whether tax_minor happens to be non-zero (a GST invoice for
+ * a zero-rated line would otherwise be filed under "non-GST").
+ */
+export async function listTaxReportInvoices(limit = 1000): Promise<TaxReportInvoice[]> {
+  const supabase = await createClient();
+
+  const { data, error: invoicesError } = await supabase
+    .schema('finance')
+    .from('invoices')
+    .select('id, number, status, currency, subtotal_minor, tax_minor, total_minor, paid_minor, issued_at, project_id')
+    .not('status', 'in', '("draft","void")')
+    .order('issued_at', { ascending: false, nullsFirst: false })
+    .limit(limit);
+  if (invoicesError) unreadable('listTaxReportInvoices', invoicesError);
+
+  const rows = data ?? [];
+  const projectIds = [...new Set(rows.map((r) => r.project_id).filter((id): id is string => id !== null))];
+
+  const modeByProject = new Map<string, { mode: 'gst' | 'non_gst'; gstin: string | null }>();
+  if (projectIds.length > 0) {
+    const { data: profiles, error: profilesError } = await supabase
+      .schema('finance')
+      .from('billing_profiles')
+      .select('project_id, mode, gstin')
+      .in('project_id', projectIds)
+      .eq('status', 'active');
+    if (profilesError) unreadable('listTaxReportInvoices.profiles', profilesError);
+    for (const p of profiles ?? []) modeByProject.set(p.project_id, { mode: p.mode === 'gst' ? 'gst' : 'non_gst', gstin: p.gstin });
+  }
+
+  return rows.map((i) => {
+    const profile = i.project_id ? modeByProject.get(i.project_id) : undefined;
+    return {
+      id: i.id,
+      number: i.number,
+      status: i.status,
+      currency: i.currency,
+      subtotalMinor: i.subtotal_minor,
+      taxMinor: i.tax_minor,
+      totalMinor: i.total_minor,
+      paidMinor: i.paid_minor,
+      issuedAt: i.issued_at,
+      projectId: i.project_id,
+      billingMode: profile?.mode ?? null,
+      gstin: profile?.gstin ?? null,
+    };
+  });
+}
+
+export type ReceiptRow = {
+  id: string;
+  number: string;
+  invoiceId: string;
+  amountMinor: number;
+  currency: string;
+  issuedAt: string;
+};
+
+/** Every receipt the database generated on a verified payment, newest first. */
+export async function listReceipts(limit = 1000): Promise<ReceiptRow[]> {
+  const supabase = await createClient();
+
+  const { data, error: receiptsError } = await supabase
+    .schema('finance')
+    .from('receipts' as never)
+    .select('id, number, invoice_id, amount_minor, currency, issued_at')
+    .order('issued_at', { ascending: false })
+    .limit(limit);
+  if (receiptsError) unreadable('listReceipts', receiptsError);
+
+  type Raw = { id: string; number: string; invoice_id: string; amount_minor: number; currency: string; issued_at: string };
+  return ((data ?? []) as unknown as Raw[]).map((r) => ({
+    id: r.id,
+    number: r.number,
+    invoiceId: r.invoice_id,
+    amountMinor: r.amount_minor,
+    currency: r.currency,
+    issuedAt: r.issued_at,
+  }));
+}

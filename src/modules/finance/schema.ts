@@ -608,3 +608,48 @@ export const recordExpenseSchema = z.object({
 });
 
 export type RecordExpenseInput = z.infer<typeof recordExpenseSchema>;
+
+/** Doc 15 §9's own list of receiving channels — mirrors the payment_accounts CHECK. */
+export const PAYMENT_ACCOUNT_KINDS = ['bank', 'upi', 'upi_qr', 'gateway', 'other'] as const;
+export type PaymentAccountKind = (typeof PAYMENT_ACCOUNT_KINDS)[number];
+
+export const PAYMENT_ACCOUNT_KIND_LABEL: Record<PaymentAccountKind, string> = {
+  bank: 'Bank transfer',
+  upi: 'UPI',
+  upi_qr: 'UPI QR',
+  gateway: 'Payment gateway',
+  other: 'Other',
+};
+
+/**
+ * The instruction fields each kind prints on an invoice. Kept as a label
+ * map rather than columns for the reason the migration gives: a channel
+ * added later must be expressible without a migration.
+ */
+export const PAYMENT_ACCOUNT_FIELDS: Record<PaymentAccountKind, readonly { key: string; label: string }[]> = {
+  bank: [
+    { key: 'account_name', label: 'Account name' },
+    { key: 'account_number', label: 'Account number' },
+    { key: 'ifsc', label: 'IFSC' },
+    { key: 'bank_name', label: 'Bank' },
+    { key: 'branch', label: 'Branch' },
+  ],
+  upi: [{ key: 'vpa', label: 'UPI ID' }, { key: 'payee_name', label: 'Payee name' }],
+  upi_qr: [{ key: 'vpa', label: 'UPI ID' }, { key: 'qr_url', label: 'QR image URL' }],
+  gateway: [{ key: 'provider', label: 'Provider' }, { key: 'link', label: 'Payment link' }],
+  other: [{ key: 'instructions', label: 'Instructions' }],
+};
+
+export const createPaymentAccountSchema = z.object({
+  kind: z.enum(PAYMENT_ACCOUNT_KINDS),
+  label: z.string().trim().min(1, 'Give the account a label').max(120),
+  instructions: z.record(z.string(), z.string().trim().max(500)),
+  effectiveFrom: z.string().trim().optional(),
+});
+export type CreatePaymentAccountInput = z.infer<typeof createPaymentAccountSchema>;
+
+export const setPaymentAccountStatusSchema = z.object({
+  accountId: z.uuid(),
+  status: z.enum(['active', 'inactive']),
+});
+export type SetPaymentAccountStatusInput = z.infer<typeof setPaymentAccountStatusSchema>;
