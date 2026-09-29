@@ -15,7 +15,9 @@
  * accounting would be an agent that could skip them.
  */
 
+import { AgentPolicyRefusal, loadAgentPolicy, recordAgentPolicyRefusal } from '@/lib/ai/agent-policy';
 import { routedModelFor } from '@/lib/ai/agent-routing';
+import { decideProjectAction, projectIdOf } from '@/lib/ai/policy-decision';
 import { resolveProvider } from '@/lib/ai/router';
 import type { AiMessage, AiToolSpec, AiUsage, StructuredResponse } from '@/lib/ai/types';
 import type { createAdminClient } from '@/lib/db/admin';
@@ -78,6 +80,26 @@ export async function openRun(
   ctx: AgentContext,
   subject: { type: string; id: string; input: Json },
 ): Promise<string | null> {
+  /**
+   * Decision 3 (2026-09-29): before an agent acts on a project, the
+   * assignment is asked. Every project workflow names `projectId` in the
+   * input it opens with, so this is the one generic place the rule can sit
+   * — the workflow has read its subject and has not yet called the model.
+   * A refusal is still a run row (status `failed`, the reason as its error,
+   * so the agent's Failures list and the run explorer both show it), plus
+   * the refusal record and its audit entry, and then a throw that
+   * `runOneAgentJob` catches: `openRun` returns an id, and a workflow handed
+   * one would carry on.
+   */
+  const projectId = projectIdOf(subject.input);
+  const verdict = projectId
+    ? decideProjectAction({
+        agentKey: ctx.agent.key,
+        projectId,
+        assignedProjectIds: (await loadAgentPolicy(ctx.admin, ctx.job.organization_id, ctx.agent.key)).assignedProjectIds,
+      })
+    : ({ allowed: true } as const);
+
   const { data } = await ctx.admin
     .schema('ai')
     .from('agent_runs')
@@ -87,17 +109,49 @@ export async function openRun(
       trigger: `job:${ctx.job.id}`,
       subject_type: subject.type,
       subject_id: subject.id,
-      status: 'running',
+      status: verdict.allowed ? 'running' : 'failed',
       work_class: ctx.workClass,
       model: ctx.agent.default_model,
       input: subject.input,
       correlation_id: ctx.job.correlation_id ?? ctx.correlationId,
       started_at: new Date().toISOString(),
+      ...(verdict.allowed ? {} : { error: verdict.reason, finished_at: new Date().toISOString() }),
     })
     .select('id')
     .single();
 
-  return data?.id ?? null;
+  const runId = data?.id ?? null;
+
+  if (!verdict.allowed) {
+    await recordAgentPolicyRefusal(ctx.admin, {
+      organizationId: ctx.job.organization_id,
+      agentKey: ctx.agent.key,
+      kind: verdict.kind,
+      reason: verdict.reason,
+      runId,
+      projectId,
+    });
+    throw new AgentPolicyRefusal({ kind: verdict.kind, agentKey: ctx.agent.key, reason: verdict.reason, runId });
+  }
+
+  return runId;
+}
+
+/**
+ * A job the policy refused is parked dead at once, not retried: nothing
+ * about a retry changes the owner's assignments, and five attempts at the
+ * same refusal would be five refusal rows saying the same thing.
+ */
+export async function parkRefusedJob(admin: Admin, job: JobRow, refusal: AgentPolicyRefusal): Promise<void> {
+  logJobParked(job, job.kind, refusal.message);
+  const { error } = await admin
+    .schema('core')
+    .from('jobs')
+    .update({ status: 'dead', last_error: `refused by agent policy (${refusal.kind}): ${refusal.message}`, locked_at: null, locked_by: null })
+    .eq('id', job.id);
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'parkRefusedJob', jobId: job.id, detail: error.message }));
+  }
 }
 
 export async function finishRun(

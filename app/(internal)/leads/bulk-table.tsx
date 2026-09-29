@@ -30,6 +30,8 @@ export type BulkLeadRow = {
   created: string;
   budget: string | null;
   tags: string[];
+  /** ADM-88 (reversed 2026-09-29): the stored score, or null when unscored. */
+  score: number | null;
 };
 
 export function LeadBulkTable({
@@ -121,6 +123,7 @@ export function LeadBulkTable({
       cellClassName: 'text-xs text-muted',
       cell: (l) => (l.tags.length > 0 ? l.tags.join(', ') : '—'),
     },
+    { key: 'score', header: 'Score', align: 'right', cellClassName: 'tabular', cell: (l) => (l.score === null ? <span className="text-muted">—</span> : l.score), sortKey: 'score' },
     { key: 'created', header: 'Created', align: 'right', cellClassName: 'text-muted', cell: (l) => l.created, sortKey: 'created' },
     { key: 'activity', header: 'Last activity', align: 'right', cellClassName: 'text-muted', cell: (l) => l.lastActivity, sortKey: 'activity' },
   ];

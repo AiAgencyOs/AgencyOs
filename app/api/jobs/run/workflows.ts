@@ -110,7 +110,8 @@ import { resolveImageGenerator, resolveTranscriber } from '@/lib/ai/router';
 import { TRANSCRIPTION_MODEL } from '@/lib/ai/openai';
 import { IMAGE_GENERATION_MODEL } from '@/lib/ai/openrouter-image';
 
-import { dispatchableToolsFor, dispatchTool } from '@/modules/agents/tool-dispatch';
+import { dispatchToolUnderPolicy } from '@/modules/agents/policy-enforcement';
+import { dispatchableToolsFor } from '@/modules/agents/tool-dispatch';
 import { toolsFor } from '@/modules/agents/tools';
 
 import {
@@ -3643,14 +3644,17 @@ const QUALIFICATION_READ: AgentWorkflow = {
       ],
       tools,
       runId,
+      // Decision 3 (2026-09-29): the call is held to this tenant's tool
+      // permissions before `dispatchTool` sees it; a refusal is recorded.
       (toolCall) =>
-        dispatchTool({
+        dispatchToolUnderPolicy({
           admin,
           organizationId: job.organization_id,
           agentKey: ctx.agent.key,
           agentAutonomy: ctx.agent.autonomy_level as 'L0' | 'L1' | 'L2',
           toolName: toolCall.name,
           input: toolCall.input,
+          runId,
         }),
     );
 

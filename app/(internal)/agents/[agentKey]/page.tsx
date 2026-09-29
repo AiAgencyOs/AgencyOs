@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import { formatCostMinor, whyNotRun } from '@/lib/admin/agent-eval';
 import { listAgentProjectAssignments, listAgentToolPermissions } from '@/modules/agents/permissions-queries';
+import { listAgentPolicyRefusals } from '@/modules/agents/refusals-queries';
 import { KNOWN_TOOL_KEYS, boundToolKeysFor } from '@/modules/agents/permissions-schema';
 import { latestAgentValidation } from '@/modules/agents/validation-queries';
 import { listProjects } from '@/modules/projects/queries';
@@ -16,6 +17,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { Badge, Callout, Card, CardHeader, DetailList, DetailRow, EmptyState, IconAgents, PageHeader, StatusBadge, PermissionDenied } from '@/ui';
 
+import { AgentCapsForm, AgentStatusForm } from './controls-form';
 import { ProjectAssignments, ToolPermissionsList } from './policy-panel';
 import { ValidateAgentForm } from './validate-form';
 
@@ -33,8 +35,15 @@ function when(clock: AgencyClock, value: string): string {
 /**
  * Agent Detail — SCR-063. The registry row plus its run history, both
  * already-existing reads (aiStatus, ai.agent_runs) just never drilled into
- * from one agent. Still read-only: activation and limits are ADM-82's
- * owner-in-the-database decision, unchanged by this page.
+ * from one agent.
+ *
+ * ADM-82 — Decision: reversed by the owner on 2026-09-29. Activation and the
+ * two ceilings are now the owner's to set from this page, through
+ * `ai.set_agent_status` / `ai.set_agent_caps` (audited). Everyone else sees
+ * the values read-only, with the reason stated beside them.
+ *
+ * Decision 3 of the same day: the tool permissions and project assignments
+ * below are ENFORCED by the runner, and what it refused is listed here.
  */
 export default async function AgentDetailPage({ params }: { params: Promise<{ agentKey: string }> }) {
   const { agentKey } = await params;
@@ -61,10 +70,12 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ ag
   // Owner only to write: the doors refuse everyone else, so nobody else is
   // offered the controls.
   const mayEditPolicy = context.role === 'owner' && can(context.role, 'organization.settings');
-  const [toolPermissions, assignments, projects] = await Promise.all([
+  const [toolPermissions, assignments, projects, refusals] = await Promise.all([
     listAgentToolPermissions(agentKey),
     listAgentProjectAssignments(agentKey),
     mayEditPolicy ? listProjects(200) : Promise.resolve([]),
+    // Decision 3 (2026-09-29): what the runner refused under this policy.
+    listAgentPolicyRefusals(agentKey),
   ]);
   const boundTools = boundToolKeysFor(agentKey);
 
@@ -96,6 +107,17 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ ag
           <DetailRow label="Configuration version" value={agent.definitionVersion ? <code className="text-xs">{agent.definitionVersion}</code> : 'never stamped'} />
           <DetailRow label="Last validated" value={agent.lastValidatedAt ? when(clock, agent.lastValidatedAt) : 'never'} />
         </DetailList>
+        {/* ADM-82 — Decision: reversed by the owner on 2026-09-29. */}
+        {mayEditPolicy ? (
+          <div className="flex flex-col gap-4 border-t border-line px-4 py-4 sm:px-5">
+            <AgentStatusForm agentKey={agent.key} enabled={agent.enabled} />
+            <AgentCapsForm agentKey={agent.key} maxSteps={agent.maxSteps} maxCostMinor={agent.maxCostMinor} />
+          </div>
+        ) : (
+          <p className="border-t border-line px-4 py-3 text-xs text-muted sm:px-5">
+            Enabling, disabling and the ceilings are the owner&apos;s to change (ADM-82, reversed 2026-09-29); shown read-only for your role.
+          </p>
+        )}
       </Card>
 
       <Card>
@@ -145,16 +167,17 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ ag
         </div>
       </Card>
 
-      <Callout tone="info" title="A policy record, not yet enforcement">
-        The tool permissions and project assignments below are rows this organisation owns (ai.agent_tool_permissions, ai.agent_project_assignments).
-        The orchestrator does not read them yet: what an agent may call today is still decided by its definition (&quot;bound by definition&quot;) and its
-        autonomy level. Recording a denial here says what the owner wants; it does not stop a call.
+      <Callout tone="info" title="Enforced by the runner">
+        The tool permissions and project assignments below are rows this organisation owns (ai.agent_tool_permissions, ai.agent_project_assignments)
+        and the runner reads them before every call (decision 3, 2026-09-29). A tool with no allowing record is refused at call time — no record is a
+        refusal, not a default — on top of what the agent&apos;s definition binds and its autonomy admits. An agent assigned to any project works only on
+        those; assigned to none, on all. Every refusal is recorded below and in the audit log.
       </Callout>
 
       <Card>
         <CardHeader
           title="Tool permissions"
-          description={mayEditPolicy ? 'Allow or deny each tool for this agent, in this organisation. Owner only.' : 'What the owner has recorded for this agent. Only the owner may change it.'}
+          description={mayEditPolicy ? 'Allow or deny each tool for this agent, in this organisation. A tool with no record is refused when called. Owner only.' : 'What the owner has recorded for this agent. A tool with no record is refused when called. Only the owner may change it.'}
         />
         <ToolPermissionsList agentKey={agent.key} tools={KNOWN_TOOL_KEYS} boundTools={boundTools} recorded={toolPermissions} editable={mayEditPolicy} />
       </Card>
@@ -170,6 +193,43 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ ag
           projects={projects.map((p) => ({ id: p.id, name: p.name, code: p.code ?? '' }))}
           editable={mayEditPolicy}
         />
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Refusals"
+          description={
+            refusals.length === 0
+              ? 'Nothing has been refused under this organisation’s policy.'
+              : `${refusals.length} most recent thing${refusals.length === 1 ? '' : 's'} the runner refused this agent, newest first.`
+          }
+        />
+        {refusals.length > 0 ? (
+          <ul className="divide-y divide-line">
+            {refusals.map((r) => (
+              <li key={r.id} className="flex flex-col gap-1 px-4 py-3 text-[13px] sm:px-5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <Badge tone="danger">{r.kind.replace('_', ' ')}</Badge>
+                    {r.toolKey ? <code className="text-xs">{r.toolKey}</code> : null}
+                    {r.projectId ? (
+                      <Link href={`/projects/${r.projectId}`} className="underline-offset-2 hover:underline">
+                        {r.projectName ?? r.projectId.slice(0, 8)}
+                      </Link>
+                    ) : null}
+                    {r.runId ? (
+                      <Link href={`/usage/runs/${r.runId}`} className="font-mono text-xs text-muted underline-offset-2 hover:underline">
+                        run {r.runId.slice(0, 8)}
+                      </Link>
+                    ) : null}
+                  </span>
+                  <span className="text-xs text-muted">{when(clock, r.createdAt)}</span>
+                </div>
+                <p className="break-words text-muted">{r.reason}</p>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </Card>
 
       <Card>

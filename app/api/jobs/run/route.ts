@@ -2,7 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { authorizeCronRequest } from '@/lib/cron-auth';
 import { createAdminClient } from '@/lib/db/admin';
-import { failJob, logJobParked, type Admin, type JobRow } from './agent-run';
+import { failJob, logJobParked, parkRefusedJob, type Admin, type JobRow } from './agent-run';
+import { AgentPolicyRefusal } from '@/lib/ai/agent-policy';
 import { AGENT_JOB_KINDS, workflowFor } from './workflows';
 import { serverEnv } from '@/lib/env';
 import { newCorrelationId } from '@/lib/errors';
@@ -1052,9 +1053,19 @@ async function runOneAgentJob(
   }
 
   // ── and then the work, which is the only part that differs ──────────────
-  const outcome = await workflow.run({ admin, job, agent, correlationId, workClass: workflow.workClass });
-
-  return { jobId: job.id, agent: workflow.agentKey, ...outcome };
+  //
+  // Decision 3 (2026-09-29): a workflow that opens a run on a project the
+  // agent is not assigned to is stopped by `openRun` throwing
+  // AgentPolicyRefusal — recorded and audited there. Caught here, and the
+  // job is parked rather than retried: a retry would not change the policy.
+  try {
+    const outcome = await workflow.run({ admin, job, agent, correlationId, workClass: workflow.workClass });
+    return { jobId: job.id, agent: workflow.agentKey, ...outcome };
+  } catch (error) {
+    if (!(error instanceof AgentPolicyRefusal)) throw error;
+    await parkRefusedJob(admin, job, error);
+    return { jobId: job.id, agent: workflow.agentKey, status: 'failed', reason: 'agent policy', detail: error.message, runId: error.runId };
+  }
 }
 
 export async function GET(request: NextRequest) {
