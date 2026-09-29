@@ -10,7 +10,7 @@ import { Button, cx, humanize, inputClass, selectClass } from '@/ui';
 /**
  * The toolbar over a multi-selection of leads — SCR-006.
  *
- * Three actions, each the single-row door applied once per selected lead
+ * Four actions, each the single-row door applied once per selected lead
  * by `bulkLeadAction`; the outcomes come back one per lead and are shown
  * as they were said. No optimistic anything: the list re-renders from the
  * server after the call, and a lead the door refused stays exactly as it
@@ -20,7 +20,7 @@ import { Button, cx, humanize, inputClass, selectClass } from '@/ui';
  */
 export type BulkRoster = { userId: string; fullName: string }[];
 
-type Mode = 'assign' | 'status' | 'tag';
+type Mode = 'assign' | 'status' | 'tag' | 'follow_up';
 
 export function BulkActionsBar({
   selected,
@@ -47,6 +47,7 @@ export function BulkActionsBar({
   const [nurtureReason, setNurtureReason] = useState('');
   const [nurtureUntil, setNurtureUntil] = useState('');
   const [tag, setTag] = useState('');
+  const [followUpOn, setFollowUpOn] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<BulkLeadOutcome[] | null>(null);
@@ -67,7 +68,11 @@ export function BulkActionsBar({
               nurtureReason: (nurtureReason || undefined) as never,
               nurtureUntil: nurtureUntil || undefined,
             }
-          : { kind: 'tag' as const, leadIds: selected, tag };
+          : mode === 'tag'
+            ? { kind: 'tag' as const, leadIds: selected, tag }
+            : // A date input gives YYYY-MM-DD; the column is timestamptz, and
+              // 09:00 UTC is what the lead's own follow-up form writes.
+              { kind: 'follow_up' as const, leadIds: selected, nextFollowUpAt: followUpOn ? new Date(`${followUpOn}T09:00:00Z`).toISOString() : null };
     const result = await bulkLeadAction(input);
     setBusy(false);
     if (!result.ok) return setError(result.error.message);
@@ -80,6 +85,7 @@ export function BulkActionsBar({
     { key: 'assign', label: 'Assign owner', allowed: canAssign },
     { key: 'status', label: 'Set status', allowed: canWrite },
     { key: 'tag', label: 'Add tag', allowed: canWrite },
+    { key: 'follow_up', label: 'Set next follow-up', allowed: canWrite },
   ];
 
   return (
@@ -150,6 +156,13 @@ export function BulkActionsBar({
 
         {mode === 'tag' ? (
           <input value={tag} onChange={(e) => setTag(e.target.value)} maxLength={40} placeholder="Tag to add" className={cx(inputClass, 'max-w-xs')} aria-label="Tag" />
+        ) : null}
+
+        {mode === 'follow_up' ? (
+          <>
+            <input type="date" value={followUpOn} onChange={(e) => setFollowUpOn(e.target.value)} className={cx(inputClass, 'max-w-[11rem]')} aria-label="Next follow-up on" />
+            <span className="text-[12px] text-muted">Empty clears the reminder.</span>
+          </>
         ) : null}
 
         <Button type="button" variant="primary" size="sm" onClick={apply} disabled={busy || selected.length === 0 || (mode === 'tag' && !tag.trim())}>

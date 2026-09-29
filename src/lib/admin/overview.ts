@@ -124,7 +124,7 @@ async function projectsOnHold(): Promise<number> {
  * — the same rule `listMeetings` (crm module) applies, duplicated here rather
  * than imported: `lib/` may not depend on `modules/*` (ARCHITECTURE.md §3.2).
  */
-async function meetingsToday(from: Date, to: Date): Promise<TodayMeeting[]> {
+export async function meetingsToday(from: Date, to: Date): Promise<TodayMeeting[]> {
   const supabase = await createClient();
   const fromIso = from.toISOString();
   const toIso = to.toISOString();

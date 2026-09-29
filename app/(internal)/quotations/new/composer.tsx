@@ -5,6 +5,7 @@ import { useActionState, useMemo, useState } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
 import { composeQuotationAction, type ComposeQuotationState } from '@/modules/sales/actions';
+import { COMMERCIAL_TERMS } from '@/modules/sales/quotation-standards';
 import { Avatar, Badge, buttonClass, Callout, Card, CardHeader, cx, FormMessage, IconAlert, IconCheck, IconPlus, inputClass, labelClass, selectClass, textareaClass } from '@/ui';
 
 export type ComposerDeal = {
@@ -99,7 +100,7 @@ export function QuotationComposer({
 
   if (state.status === 'success' && state.leadId) {
     return (
-      <Callout tone="success" icon={<IconCheck size={16} />} title="Quotation created">
+      <Callout tone="success" icon={<IconCheck size={16} />} title={state.reference ? `Quotation ${state.reference} created` : 'Quotation created'}>
         {state.message}{' '}
         <Link href={`/leads/${state.leadId}#quotations`} className="font-medium underline underline-offset-2">
           Open it on the lead
@@ -179,11 +180,26 @@ export function QuotationComposer({
               <span className={labelClass}>Title</span>
               <input name="title" required maxLength={200} className={inputClass} defaultValue={deal?.leadTitle ?? ''} placeholder="Mobile app — design and build" />
             </label>
+            {/* SCR-012 — number and date. The number is DERIVED from the row
+                (G-170: Q-<year>-<six hex of the id>), so it exists the moment
+                the quotation does and not before; the composer says so
+                rather than showing a number it cannot yet know. */}
+            <div className="flex flex-col gap-1">
+              <span className={labelClass}>Quotation number</span>
+              <input value="Q-YYYY-…… — assigned on save" readOnly className={cx(inputClass, 'bg-surface-sunken text-muted')} aria-label="Quotation number" />
+              <span className="text-[11px] text-muted">Derived from the record's id and date when it is created; printed on the PDF and shown in the list.</span>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className={labelClass}>Date</span>
+              <input value={new Date().toISOString().slice(0, 10)} readOnly className={cx(inputClass, 'bg-surface-sunken text-muted')} aria-label="Quotation date" />
+              <span className="text-[11px] text-muted">Today — the row's created date.</span>
+            </div>
             <label className="flex flex-col gap-1">
               <span className={labelClass}>Valid until</span>
               <input name="validUntil" type="date" className={inputClass} defaultValue={defaultValidUntil} />
               <span className="text-[11px] text-muted">Default {validityDays} days, from Settings → Commercial.</span>
             </label>
+            <input type="hidden" name="currency" value={currency} />
             <label className="flex flex-col gap-1">
               <span className={labelClass}>Currency</span>
               <input value={currency} readOnly className={cx(inputClass, 'bg-surface-sunken')} />
@@ -379,6 +395,14 @@ export function QuotationComposer({
         ) : null}
 
         <Card>
+          <CardHeader title="Terms & conditions" description="One clause per line. Printed on the PDF as the commercial terms; the standard clauses are pre-filled and every edit is what the owner approves." />
+          <div className="flex flex-col gap-2 px-4 pb-4 sm:px-5">
+            <textarea name="commercialTerms" rows={6} maxLength={15000} defaultValue={COMMERCIAL_TERMS.join('\n')} className={textareaClass} aria-label="Commercial terms, one per line" />
+            <span className="text-[11px] text-muted">The validity clause is printed from the date above; leave it as it is unless this quotation's terms differ.</span>
+          </div>
+        </Card>
+
+        <Card>
           <CardHeader title="Approval" description="A quotation reaches the client only after the owner approves it." />
           <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
             <label className="flex items-center gap-2 text-[13px]">
@@ -400,6 +424,11 @@ export function QuotationComposer({
         <Link href="/quotations" className={buttonClass('ghost', 'md')}>
           Cancel
         </Link>
+        {/* SCR-012 — the document as it would render, before anything is
+            saved: the same form posts to the preview route in a new tab. */}
+        <button type="submit" formAction="/api/quotations/preview" formMethod="post" formTarget="_blank" disabled={pending || !deal} className={buttonClass('secondary', 'md')}>
+          Preview PDF
+        </button>
         <button type="submit" disabled={pending || !deal} className={buttonClass('primary', 'md')}>
           {pending ? 'Creating…' : submit ? 'Create and send for approval' : 'Save as draft'}
         </button>

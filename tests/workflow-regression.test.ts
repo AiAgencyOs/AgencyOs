@@ -53,7 +53,8 @@ describe('LEAD → SALES → CLIENT WON → PROJECT is unchanged', () => {
     assert.deepEqual(LEAD_TRANSITIONS, {
       new: ['qualifying', 'disqualified'],
       qualifying: ['qualified', 'nurture', 'disqualified'],
-      qualified: ['converted', 'nurture', 'disqualified'],
+      // SCR-008 (bucket F-B): back to discovery when the evidence is incomplete.
+      qualified: ['qualifying', 'converted', 'nurture', 'disqualified'],
       nurture: ['qualifying', 'qualified', 'disqualified'],
       disqualified: ['qualifying'],
       converted: [],

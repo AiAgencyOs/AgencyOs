@@ -25,7 +25,7 @@ export type LeadListItem = Pick<
  * as a chip and a subtitle there instead of a column.
  */
 export type LeadTableRow = Pick<LeadRow, 'id' | 'title' | 'status' | 'source' | 'assigned_to' | 'updated_at'> & {
-  contact: { fullName: string; company: string | null; phone: string | null } | null;
+  contact: { fullName: string; company: string | null; phone: string | null; email: string | null } | null;
   assignedEmail: string | null;
 };
 

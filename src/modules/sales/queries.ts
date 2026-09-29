@@ -43,7 +43,7 @@ export async function getOpportunityForLead(leadId: string): Promise<Opportunity
 // from the select string's *literal* type, and `a + b` widens it to `string`,
 // at which point every column comes back as an error object.
 const PROPOSAL_SELECT =
-  'id, opportunity_id, version, title, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, approval_request_id, sent_at, decided_at, created_at, plan_set_id, plan_slot, plan_label';
+  'id, opportunity_id, version, title, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, approval_request_id, sent_at, sent_message_ref, decided_at, created_at, plan_set_id, plan_slot, plan_label';
 
 /**
  * Every version raised against a deal, newest first.
@@ -195,7 +195,7 @@ export async function getProposal(proposalId: string): Promise<ProposalDetail | 
     .from('proposals')
     // Also a literal, for the reason above: a template string widens too.
     .select(
-      'id, opportunity_id, version, title, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, approval_request_id, sent_at, decided_at, created_at, plan_set_id, plan_slot, plan_label, body',
+      'id, opportunity_id, version, title, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, approval_request_id, sent_at, sent_message_ref, decided_at, created_at, plan_set_id, plan_slot, plan_label, body',
     )
     .eq('id', proposalId)
     .maybeSingle();

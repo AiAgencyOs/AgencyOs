@@ -41,6 +41,9 @@ export async function uploadProjectFileAction(_prev: FormState, formData: FormDa
   if (!result.ok) return { status: 'error', message: result.error.message };
 
   revalidateFiles(projectId);
+  // SCR-015/017 — the same door mounted on Client 360 revalidates that page too.
+  const clientId = String(formData.get('clientId') ?? '').trim();
+  if (/^[0-9a-f-]{36}$/i.test(clientId)) revalidatePath(`/clients/${clientId}`);
   return { status: 'success', message: result.data.version > 1 ? `Version ${result.data.version} uploaded.` : 'File uploaded.' };
 }
 

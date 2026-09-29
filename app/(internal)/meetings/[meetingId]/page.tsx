@@ -30,10 +30,12 @@ import {
 } from '@/modules/crm/queries';
 import { isAnalysisNote, parseAnalysisSections } from '@/modules/crm/analysis-sections';
 import { listMeetingMemoryAttachments, listProjectsForLead } from '@/modules/crm/meeting-memory-queries';
+import { listProjectOptionsForMeeting, readMeetingProjects } from '@/modules/crm/meeting-project-queries';
 import { isSettledMeeting, requirementPayloadSchema, type MeetingStatus } from '@/modules/crm/schema';
 import { Badge, Callout, Card, CardBody, CardHeader, IconArrowLeft, StatusBadge, cx, humanize, PermissionDenied } from '@/ui';
 
 import { AttachMeetingSummaryForm } from './attach-memory-form';
+import { MeetingProjectForm } from './project-link-form';
 import { MeetingControls } from './controls';
 
 export const metadata: Metadata = { title: 'Meeting' };
@@ -87,6 +89,10 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
   ]);
   const mayReadAudit = can(context.role, 'audit.read');
   const audit = mayReadAudit ? await readAuditLog({ subjectId: m.id, limit: 20 }) : [];
+  // SCR-010 — the project this meeting is about, and what it may be linked to.
+  const [projectLinks, projectOptions] = await Promise.all([readMeetingProjects([m.id]), can(context.role, 'lead.write') ? listProjectOptionsForMeeting() : Promise.resolve([])]);
+  const projectLink = projectLinks.get(m.id) ?? null;
+  const leadProjects = memoryProjects.map((p) => ({ id: p.id, name: p.name }));
 
   const now = new Date();
   const agencyZone = await getAgencyTimeZone();
@@ -147,6 +153,22 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
                 'Lead not readable'
               )}
               {m.lead?.assigned_to ? <span className="ml-2 text-muted">lead owner {m.lead.assigned_to.slice(0, 8)}</span> : <span className="ml-2 text-faint">no lead owner recorded</span>}
+            </Row>
+            {/* SCR-010 — the project this meeting is about, linked through
+                its own column and door; the lead's projects first. */}
+            <Row label="Project">
+              {projectLink ? (
+                <Link href={`/projects/${projectLink.projectId}`} className="underline underline-offset-2 hover:text-foreground">
+                  {projectLink.projectName}
+                </Link>
+              ) : (
+                <span className="text-muted">Not linked to a project</span>
+              )}
+              {mayWrite ? (
+                <div className="mt-1.5">
+                  <MeetingProjectForm meetingId={m.id} current={projectLink?.projectId ?? null} leadProjects={leadProjects} otherProjects={projectOptions} />
+                </div>
+              ) : null}
             </Row>
             <Row label="Requested">
               {m.requested_start_at ? `${at(m.requested_start_at)}${m.requested_window_end ? ` – ${local.clock(m.requested_window_end)}` : ''}` : 'No time requested'} · {humanize(m.requested_mode)}

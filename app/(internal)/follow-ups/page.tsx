@@ -6,6 +6,7 @@ import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { situationFor } from '@/modules/crm/follow-up-situations';
+import { readFollowUpContexts, type FollowUpContext } from '@/modules/crm/follow-up-context-queries';
 import { listFollowUpSequencesDetailed, listTemplateSituationMapping } from '@/modules/crm/follow-up-detail-queries';
 import { listInternalRoster } from '@/modules/projects/queries';
 import { SavedViewsBar } from '../saved-views-bar';
@@ -40,12 +41,17 @@ import {
 
 export const metadata: Metadata = { title: 'Follow-ups' };
 
-const STATUS_FILTERS = ['active', 'escalated', 'exhausted', 'stopped'];
+const STATUS_FILTERS = ['active', 'escalated', 'exhausted', 'stopped', 'completed', 'cancelled'];
+// SCR-013 — the PDF's five tiles, each a predicate over rows: due today,
+// overdue, upcoming (active, due later), paused (stopped), failed (the
+// worker's last attempt was blocked).
+const DUE_FILTERS = ['due_today', 'overdue', 'upcoming', 'failed'] as const;
+type DueFilter = (typeof DUE_FILTERS)[number];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Row = Awaited<ReturnType<typeof listFollowUpSequencesDetailed>>[number];
 
-const columnsFor = (clock: AgencyClock, viewOf: (r: Row) => SequenceDetailView): Column<Row>[] => [
+const columnsFor = (clock: AgencyClock, viewOf: (r: Row) => SequenceDetailView, contextOf: (r: Row) => FollowUpContext | undefined): Column<Row>[] => [
   {
     key: 'subject',
     header: 'Chasing',
@@ -67,6 +73,31 @@ const columnsFor = (clock: AgencyClock, viewOf: (r: Row) => SequenceDetailView):
         </span>
       </>
     ),
+  },
+  {
+    // SCR-013 — the client and project behind the chase, not only the lead.
+    key: 'context',
+    header: 'Client · project',
+    desktopOnly: true,
+    cellClassName: 'text-xs text-muted',
+    cell: (r) => {
+      const c = contextOf(r);
+      if (!c || (!c.clientAccountId && !c.projectId)) return '—';
+      return (
+        <span className="flex flex-col gap-0.5">
+          {c.clientAccountId ? (
+            <Link href={`/clients/${c.clientAccountId}`} className="hover:underline">
+              {c.clientName ?? c.clientAccountId.slice(0, 8)}
+            </Link>
+          ) : null}
+          {c.projectId ? (
+            <Link href={`/projects/${c.projectId}`} className="hover:underline">
+              {c.projectName ?? c.projectId.slice(0, 8)}
+            </Link>
+          ) : null}
+        </span>
+      );
+    },
   },
   {
     key: 'status',
@@ -112,7 +143,7 @@ const columnsFor = (clock: AgencyClock, viewOf: (r: Row) => SequenceDetailView):
     cell: (r) => (
       <span className="flex items-center justify-end gap-1">
         <SequenceDetailButton view={viewOf(r)} />
-        <SequenceControls sequenceId={r.id} status={r.status} />
+        <SequenceControls sequenceId={r.id} status={r.status} leadId={r.leadId} />
       </span>
     ),
   },
@@ -141,13 +172,14 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
 export default async function FollowUpsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; page?: string; sort?: string; dir?: string; channel?: string; owner?: string }>;
+  searchParams: Promise<{ status?: string; page?: string; sort?: string; dir?: string; channel?: string; owner?: string; due?: string }>;
 }) {
   const context = await requireInternal('/follow-ups');
   const clock = await agencyClock();
   if (!can(context.role, 'lead.read')) return <PermissionDenied />;
 
-  const { status, page: pageParam, sort: sortKey, dir, channel: channelParam, owner: ownerParam } = await searchParams;
+  const { status, page: pageParam, sort: sortKey, dir, channel: channelParam, owner: ownerParam, due: dueParam } = await searchParams;
+  const due = (DUE_FILTERS as readonly string[]).includes(dueParam ?? '') ? (dueParam as DueFilter) : undefined;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
   const [allSequences, rawSequences, savedViews, roster] = await Promise.all([
     listFollowUpSequencesDetailed({}),
@@ -164,22 +196,35 @@ export default async function FollowUpsPage({
   const ownerIds = [...new Set(allSequences.map((s) => s.ownerId).filter((id): id is string => id !== null))];
   const nameOf = (id: string | null) => (id ? (roster.find((m) => m.userId === id)?.fullName ?? id.slice(0, 8)) : null);
 
-  const keep = [status ? `status=${status}` : '', channel ? `channel=${channel}` : '', ownerParam === 'mine' ? 'owner=mine' : owner ? `owner=${owner}` : ''].filter(Boolean);
+  const keep = [status ? `status=${status}` : '', channel ? `channel=${channel}` : '', ownerParam === 'mine' ? 'owner=mine' : owner ? `owner=${owner}` : '', due ? `due=${due}` : ''].filter(Boolean);
   const currentQuery = [...keep, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
   const qs = (extra: string) => `/follow-ups?${[...keep, extra].filter(Boolean).join('&')}`;
-  const chipHref = (over: { status?: string; channel?: string; owner?: string }) => {
-    const next = { status: status ?? '', channel: channel ?? '', owner: ownerParam === 'mine' ? 'mine' : (owner ?? ''), ...over };
+  const chipHref = (over: { status?: string; channel?: string; owner?: string; due?: string }) => {
+    const next = { status: status ?? '', channel: channel ?? '', owner: ownerParam === 'mine' ? 'mine' : (owner ?? ''), due: due ?? '', ...over };
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(next)) if (v) q.set(k, v);
     const s = q.toString();
     return `/follow-ups${s ? `?${s}` : ''}`;
   };
 
-  const filteredRows = rawSequences.filter((s) => (!channel || s.channel === channel) && (!owner || s.ownerId === owner));
+  const nowIso = new Date().toISOString();
+  const todayKey = clock.dayKey(new Date());
+  const isDue = (s: Row, which: DueFilter): boolean => {
+    if (which === 'failed') return s.last_block_reason !== null && (s.status === 'active' || s.status === 'escalated');
+    if (s.status !== 'active' || s.next_due_at === null) return false;
+    if (which === 'due_today') return clock.dayKey(s.next_due_at) === todayKey;
+    if (which === 'overdue') return s.next_due_at < nowIso && clock.dayKey(s.next_due_at) !== todayKey;
+    return s.next_due_at > nowIso && clock.dayKey(s.next_due_at) !== todayKey;
+  };
+  const tile = (which: DueFilter) => allSequences.filter((s) => isDue(s, which)).length;
+  const filteredRows = rawSequences.filter((s) => (!channel || s.channel === channel) && (!owner || s.ownerId === owner) && (!due || isDue(s, due)));
+  // SCR-013 — the client and project behind each sequence shown.
+  const contexts = await readFollowUpContexts(filteredRows);
+  const contextOf = (r: Row) => contexts.get(r.id);
   const sequences = sortRows(filteredRows, sortKey, direction, COMPARATORS);
   const { page, pageCount, rows: pageRows } = paginate(sequences, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
   const mapping = await listTemplateSituationMapping(allSequences);
-  const filtering = Boolean(status || channel || owner);
+  const filtering = Boolean(status || channel || owner || due);
 
   const viewOf = (r: Row): SequenceDetailView => {
     const situation = situationFor(r.situation_key);
@@ -232,12 +277,14 @@ export default async function FollowUpsPage({
       />
 
       {allSequences.length > 0 ? (
-        <StatGrid cols={5}>
-          <Stat label="Sequences" value={String(allSequences.length)} tone="brand" icon={<IconClock size={16} />} href="/follow-ups" />
-          <Stat label="Active" value={String(allSequences.filter((r) => r.status === 'active').length)} caption={`${allSequences.filter((r) => r.status === 'active' && r.next_due_at && r.next_due_at <= new Date().toISOString()).length} due now`} tone="success" icon={<IconCheck size={16} />} href="/follow-ups?status=active" />
-          <Stat label="Escalated" value={String(allSequences.filter((r) => r.status === 'escalated').length)} caption="Waiting on a person" tone={allSequences.some((r) => r.status === 'escalated') ? 'warning' : 'neutral'} icon={<IconAlert size={16} />} href="/follow-ups?status=escalated" />
-          <Stat label="Stopped" value={String(allSequences.filter((r) => r.status === 'stopped').length)} tone="neutral" icon={<IconClock size={16} />} href="/follow-ups?status=stopped" />
-          <Stat label="Attempts sent" value={String(allSequences.reduce((n, r) => n + r.attempts_sent, 0))} caption="Across every sequence" tone="info" icon={<IconSend size={16} />} />
+        <StatGrid cols={6}>
+          {/* SCR-013 — the PDF's five, each a count that opens the list filtered to exactly it. */}
+          <Stat label="Due today" value={String(tile('due_today'))} caption="Active, due in the agency's today" tone={tile('due_today') > 0 ? 'brand' : 'neutral'} icon={<IconClock size={16} />} href="/follow-ups?due=due_today" />
+          <Stat label="Overdue" value={String(tile('overdue'))} caption="Active, due before today" tone={tile('overdue') > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} href="/follow-ups?due=overdue" />
+          <Stat label="Upcoming" value={String(tile('upcoming'))} caption="Active, due after today" tone="info" icon={<IconSend size={16} />} href="/follow-ups?due=upcoming" />
+          <Stat label="Paused" value={String(allSequences.filter((r) => r.status === 'stopped').length)} caption="Stopped by a person, resumable" tone="neutral" icon={<IconClock size={16} />} href="/follow-ups?status=stopped" />
+          <Stat label="Failed" value={String(tile('failed'))} caption="Last attempt blocked by the window or consent" tone={tile('failed') > 0 ? 'warning' : 'neutral'} icon={<IconAlert size={16} />} href="/follow-ups?due=failed" />
+          <Stat label="Escalated" value={String(allSequences.filter((r) => r.status === 'escalated').length)} caption={`${allSequences.reduce((n, r) => n + r.attempts_sent, 0)} attempts sent in all`} tone={allSequences.some((r) => r.status === 'escalated') ? 'warning' : 'neutral'} icon={<IconCheck size={16} />} href="/follow-ups?status=escalated" />
         </StatGrid>
       ) : null}
 
@@ -263,6 +310,12 @@ export default async function FollowUpsPage({
         ) : null}
         <FilterChips
           options={[
+            { key: 'due-any', label: 'Any time', href: chipHref({ due: '' }), active: !due },
+            ...DUE_FILTERS.map((d) => ({ key: d, label: `${humanize(d)} (${tile(d)})`, href: chipHref({ due: d }), active: due === d })),
+          ]}
+        />
+        <FilterChips
+          options={[
             { key: 'anyone', label: 'Any owner', href: chipHref({ owner: '' }), active: !owner },
             { key: 'mine', label: 'Mine', href: chipHref({ owner: 'mine' }), active: ownerParam === 'mine' },
             ...ownerIds
@@ -278,7 +331,7 @@ export default async function FollowUpsPage({
         <>
           <DataTable
             rows={pageRows}
-            columns={columnsFor(clock, viewOf)}
+            columns={columnsFor(clock, viewOf, contextOf)}
             getKey={(r) => r.id}
             sort={{
               key: sortKey,

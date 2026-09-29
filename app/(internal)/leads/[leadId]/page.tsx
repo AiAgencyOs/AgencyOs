@@ -20,6 +20,9 @@ import {
 import { readConversationWindow, readProjectGroupForLead } from '@/modules/crm/window-queries';
 import { listLeadServiceSuggestions, readLeadService } from '@/modules/crm/lead-service-queries';
 import { readLeadScore } from '@/modules/crm/lead-score-queries';
+import { readLeadScoreOverride } from '@/modules/crm/lead-score-override-queries';
+import { listSequencesForLead } from '@/modules/crm/lead-sequence-queries';
+import { situationFor } from '@/modules/crm/follow-up-situations';
 import { readRetryHistory } from '@/lib/observability/retry-queries';
 import {
   leadQualificationSchema,
@@ -73,6 +76,7 @@ import {
   IconMessage,
   IconPhone,
   IconPlus,
+  IconRupee,
   IconUser,
   QuickActions,
   ChatCanvas,
@@ -98,7 +102,8 @@ import { RequirementDecisionForm } from './requirement-decision-form';
 import { RequirementSetPanel } from './requirement-set-panel';
 import { RequirementReviseForm } from './requirement-revise-form';
 import { LeadServiceForm } from './service-form';
-import { RescoreLeadForm } from './score-panel';
+import { OverrideScoreForm, RescoreLeadForm } from './score-panel';
+import { SequenceControls } from '../../follow-ups/sequence-controls';
 import { RetryDeliveryForm } from '../../operations/retry-delivery-form';
 import {
   AssignOwnerForm,
@@ -202,6 +207,8 @@ export default async function LeadConversationPage({
   // ADM-88 — Decision: reversed by the owner on 2026-09-29: the score with
   // the reasons and inputs it was computed from, or null when never scored.
   const leadScore = await readLeadScore(leadId);
+  // SCR-008 — the human decision beside it, or null when the computed score stands.
+  const scoreOverride = await readLeadScoreOverride(leadId);
 
   const conversation = await getLatestConversation(leadId);
   const messages = conversation ? await listMessages(conversation.id) : [];
@@ -245,6 +252,8 @@ export default async function LeadConversationPage({
   const proposals = opportunity ? await listProposalsForOpportunity(opportunity.id) : [];
   const openObjections = await listOpenObjectionsForLead(leadId);
   const meetings = await listMeetingsForLead(leadId);
+  // SCR-007 — the follow-up sequences running against this lead, its proposals and its meetings.
+  const sequences = await listSequencesForLead({ leadId, proposalIds: proposals.map((p) => p.id), meetingIds: meetings.map((m) => m.id) });
   // SCR-012 — the composer's owner select and GST pre-fill. The billing mode
   // exists only once the deal has a project with a confirmed profile.
   const dealOwner = opportunity ? await readOpportunityOwner(opportunity.id) : null;
@@ -386,6 +395,8 @@ export default async function LeadConversationPage({
                 return (
                   <div key={m.id} className="contents">
                     {newDay ? <DayDivider>{dayLabel(at, now, clock)}</DayDivider> : null}
+                    {/* SCR-009 — an anchor per message, so a requirement version can point at what it read. */}
+                    <div id={`message-${m.id}`} className="contents scroll-mt-24">
                     <ChatBubble
                       outgoing={!incoming}
                       author={
@@ -425,6 +436,7 @@ export default async function LeadConversationPage({
                         ) : undefined
                       }
                     />
+                    </div>
                   </div>
                 );
               })
@@ -462,6 +474,12 @@ export default async function LeadConversationPage({
   /* ── The rail's actions and the information pane ────────────────────── */
 
   const phoneDigits = facts?.contactPhone?.replace(/[^\d]/g, '') ?? null;
+  // SCR-007 — last contact is the THREAD's last message, not the row's
+  // updated_at (which moves on a tag edit). Both directions, and the client's
+  // own last reply beside it.
+  const isIncoming = (m: { direction: string | null; author_type: string }) => m.direction === 'inbound' || (m.direction === null && m.author_type === 'client');
+  const lastMessage = messages.length > 0 ? messages[messages.length - 1]! : null;
+  const lastInbound = [...messages].reverse().find(isIncoming) ?? null;
   const budget = qualification.success && qualification.data.budgetMinor !== undefined ? money(qualification.data.budgetMinor, 'INR') : null;
 
   const quickActions = (
@@ -497,18 +515,45 @@ export default async function LeadConversationPage({
           { label: 'Budget', value: budget ?? 'Not qualified yet' },
           ...(qualification.success && qualification.data.timelineNote ? [{ label: 'Timeline', value: qualification.data.timelineNote }] : []),
           ...(qualification.success && qualification.data.isDecisionMaker !== undefined ? [{ label: 'Decision maker', value: qualification.data.isDecisionMaker ? 'Yes' : 'No' }] : []),
-          ...(facts ? [{ label: 'Created on', value: clock.dateTime(facts.createdAt) }, { label: 'Last activity', value: clock.dateTime(facts.updatedAt) }] : []),
+          ...(facts ? [{ label: 'Created on', value: clock.dateTime(facts.createdAt) }] : []),
+          { label: 'Last contact', value: lastMessage ? `${clock.dateTime(lastMessage.occurred_at)} · ${isIncoming(lastMessage) ? 'they wrote' : 'we wrote'}` : 'No message on the thread yet' },
+          ...(lastInbound ? [{ label: 'Last client reply', value: clock.dateTime(lastInbound.occurred_at) }] : []),
+          ...(facts ? [{ label: 'Row last updated', value: clock.dateTime(facts.updatedAt) }] : []),
         ]}
       />
       {/* ADM-88 — Decision: reversed by the owner on 2026-09-29. */}
       <Card>
         <CardHeader
           title="Lead score"
-          description={leadScore ? `${leadScore.score}/100 · computed ${clock.dateTime(leadScore.scoredAt)} from the facts below.` : 'Not scored yet. A score is computed from recorded facts and stored with its reasons; nothing is typed.'}
+          description={leadScore ? `Computed ${clock.dateTime(leadScore.scoredAt)} from the facts below.` : 'Not scored yet. A score is computed from recorded facts and stored with its reasons; nothing is typed.'}
           actions={mayWrite ? <RescoreLeadForm leadId={leadId} scored={leadScore !== null} /> : undefined}
         />
         {leadScore ? (
           <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+            {/* SCR-008 — AI suggestion vs human decision: two numbers, side by
+                side, never one overwriting the other. The override is a
+                person's, with their reason; the computed score stays. */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg border border-line bg-surface-sunken p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-faint">Computed (model)</p>
+                <p className="text-2xl tabular font-semibold">{leadScore.score}<span className="text-sm text-muted">/100</span></p>
+                <p className="text-xs text-muted">{leadScore.reasons.length} reasons, below</p>
+              </div>
+              <div className={`rounded-lg border p-3 ${scoreOverride ? 'border-brand/40 bg-brand-soft' : 'border-line bg-surface-sunken'}`}>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-faint">Human decision</p>
+                {scoreOverride ? (
+                  <>
+                    <p className="text-2xl tabular font-semibold">{scoreOverride.score}<span className="text-sm text-muted">/100</span></p>
+                    <p className="text-xs text-muted">
+                      &ldquo;{scoreOverride.reason}&rdquo; — {roster.find((m) => m.userId === scoreOverride.byUserId)?.fullName ?? scoreOverride.byUserId.slice(0, 8)}, {clock.dateTime(scoreOverride.at)}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-[13px] text-muted">None — the computed score stands.</p>
+                )}
+              </div>
+            </div>
+            {mayAssign ? <OverrideScoreForm leadId={leadId} current={scoreOverride ? { score: scoreOverride.score, reason: scoreOverride.reason } : null} /> : null}
             <ul className="divide-y divide-line rounded-lg border border-line">
               {leadScore.reasons.map((r) => (
                 <li key={r.code} className="flex items-start justify-between gap-3 px-3 py-1.5 text-[13px]">
@@ -985,14 +1030,26 @@ export default async function LeadConversationPage({
 
             {mayDraft ? (
               <>
-                {/* Drafting is always available: the next version is how every
-                    change is made once a version leaves draft. */}
-                <DraftQuotationForm
-                  leadId={leadId}
-                  opportunityId={opportunity.id}
-                  defaultTitle={lead.title}
-                  supersedes={liveProposal?.version ?? null}
-                />
+                {/* SCR-007 — "create quotation after requirements are
+                    accepted": the FIRST quotation on a deal waits for an
+                    accepted requirement version, which the draft then cites
+                    (§12). A deal that already has quotations keeps drafting
+                    the next version — that is how every change is made once
+                    a version leaves draft — and cites the accepted version
+                    when there is one. */}
+                {proposals.length === 0 && acceptedVersions.length === 0 ? (
+                  <Callout tone="info" icon={<IconInfo size={15} />}>
+                    A quotation is drafted once a requirement version is accepted. {versions.length === 0 ? 'None has been extracted yet — run the extraction below and decide on it.' : awaitingDecision > 0 ? `${awaitingDecision} version${awaitingDecision === 1 ? ' is' : 's are'} awaiting your decision below.` : 'No version is accepted; decide on one below or extract a new one.'}
+                  </Callout>
+                ) : (
+                  <DraftQuotationForm
+                    leadId={leadId}
+                    opportunityId={opportunity.id}
+                    defaultTitle={lead.title}
+                    supersedes={liveProposal?.version ?? null}
+                    requirementVersionId={acceptedVersions[0]?.id ?? null}
+                  />
+                )}
 
                 {/* Part H's other shape, offered only when there is no offer in
                     flight: drafting a set SUPERSEDES whatever is live, and a
@@ -1107,6 +1164,42 @@ export default async function LeadConversationPage({
                 );
               })}
             </ol>
+          )}
+        </CardBody>
+      </Card>
+
+      {/* ── Follow-up sequences (SCR-007) ────────────────────────────── */}
+      <Card id="sequences">
+        <CardHeader
+          title="Follow-up sequences"
+          description="The rhythms the worker runs against this lead, its quotations and its meetings. A decision here is a person's, with a reason, and audited."
+          actions={
+            <Link href="/follow-ups" className="text-xs text-muted underline underline-offset-2 hover:text-foreground">
+              All follow-ups
+            </Link>
+          }
+        />
+        <CardBody>
+          {sequences.length === 0 ? (
+            <p className="text-[13px] text-muted">No sequence has started on this lead. One starts by itself when a tracked situation is observed — a quotation with no reply, a missed meeting.</p>
+          ) : (
+            <ul className="flex flex-col divide-y divide-line">
+              {sequences.map((sq) => (
+                <li key={sq.id} className="flex flex-col gap-1.5 py-2 first:pt-0">
+                  <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                    <span className="font-medium">{situationFor(sq.situationKey)?.name ?? humanize(sq.situationKey)}</span>
+                    <StatusBadge status={sq.status} dot={false} />
+                    <span className="text-xs text-muted">on the {humanize(sq.subjectType)} · {sq.attemptsSent} sent</span>
+                    <span className="ml-auto text-xs text-muted">
+                      {sq.nextDueAt ? `next ${clock.dateTime(sq.nextDueAt)}` : sq.lastSentAt ? `last ${clock.dateTime(sq.lastSentAt)}` : ''}
+                    </span>
+                  </div>
+                  {sq.stopReason ? <p className="text-xs text-muted">{sq.stopReason}</p> : null}
+                  {sq.lastBlockReason && sq.status === 'active' ? <p className="text-xs text-warning">Last attempt blocked: {sq.lastBlockReason}</p> : null}
+                  {mayWrite ? <SequenceControls sequenceId={sq.id} status={sq.status} leadId={leadId} /> : null}
+                </li>
+              ))}
+            </ul>
           )}
         </CardBody>
       </Card>
@@ -1227,13 +1320,40 @@ export default async function LeadConversationPage({
                       {(() => {
                         const ref = sourceRefs.get(v.id);
                         if (!ref) return null;
-                        const parts = [
-                          ref.sourceMessageCount !== null ? `read ${ref.sourceMessageCount} message${ref.sourceMessageCount === 1 ? '' : 's'}` : null,
-                          ref.sourceJobId ? `job ${ref.sourceJobId.slice(0, 8)}` : null,
-                          ref.confirmationMessageId ? `sent to client as message ${ref.confirmationMessageId.slice(0, 8)}` : null,
-                        ].filter((x): x is string => Boolean(x));
-                        return parts.length > 0 ? (
-                          <p className="mt-2 font-mono text-[11px] text-faint">Source: {parts.join(' · ')}</p>
+                        // SCR-009 — the transcript it read: the messages that
+                        // existed when the version was written, the Nth of
+                        // them being the last one read. Links go to the
+                        // bubbles' own anchors in the pane beside this one.
+                        const readSoFar = messages.filter((m) => m.occurred_at <= v.created_at);
+                        const lastRead = ref.sourceMessageCount !== null && ref.sourceMessageCount > 0 ? (readSoFar[Math.min(ref.sourceMessageCount, readSoFar.length) - 1] ?? null) : null;
+                        const confirmation = ref.confirmationMessageId ? messages.find((m) => m.id === ref.confirmationMessageId) ?? null : null;
+                        const hasAny = ref.sourceMessageCount !== null || ref.sourceJobId || ref.confirmationMessageId;
+                        return hasAny ? (
+                          <p className="mt-2 font-mono text-[11px] text-faint">
+                            Source:{' '}
+                            {ref.sourceMessageCount !== null ? (
+                              lastRead ? (
+                                <a href={`#message-${lastRead.id}`} className="underline underline-offset-2 hover:text-foreground">
+                                  read {ref.sourceMessageCount} message{ref.sourceMessageCount === 1 ? '' : 's'} — up to {clock.dateTime(lastRead.occurred_at)}
+                                </a>
+                              ) : (
+                                `read ${ref.sourceMessageCount} message${ref.sourceMessageCount === 1 ? '' : 's'}`
+                              )
+                            ) : null}
+                            {ref.sourceJobId ? ` · job ${ref.sourceJobId.slice(0, 8)}` : ''}
+                            {ref.confirmationMessageId ? (
+                              <>
+                                {' · '}
+                                {confirmation ? (
+                                  <a href={`#message-${confirmation.id}`} className="underline underline-offset-2 hover:text-foreground">
+                                    sent to client {clock.dateTime(confirmation.occurred_at)}
+                                  </a>
+                                ) : (
+                                  `sent to client as message ${ref.confirmationMessageId.slice(0, 8)}`
+                                )}
+                              </>
+                            ) : null}
+                          </p>
                         ) : null;
                       })()}
 
@@ -1291,7 +1411,7 @@ export default async function LeadConversationPage({
           ...(facts?.contactCompany ? [{ label: 'Company', value: facts.contactCompany, icon: <IconUser size={14} /> }] : []),
           ...(budget ? [{ label: 'Budget', value: budget, icon: <IconInvoices size={14} /> }] : []),
           { label: 'Assigned to', value: facts?.assignedEmail ? facts.assignedEmail.split('@')[0] : 'Unassigned', icon: <IconUser size={14} /> },
-          ...(opportunity ? [{ label: 'Deal', value: humanize(dealStage), icon: <IconFlag size={14} /> }] : []),
+          ...(opportunity ? [{ label: 'Deal', value: humanize(dealStage), icon: <IconFlag size={14} /> }, { label: 'Deal value', value: money(opportunity.value_minor, opportunity.currency), icon: <IconRupee size={14} /> }] : []),
         ]}
         actions={
           <>

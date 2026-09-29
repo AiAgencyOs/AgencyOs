@@ -35,6 +35,11 @@ export type ClientListItem = {
   /** SCR-014 — the relationship owner (`core.client_accounts.owner_id`). */
   ownerId: string | null;
   ownerName: string | null;
+  /** SCR-014/015 — the billing identity, edited through core.update_client_account. */
+  legalName: string | null;
+  gstin: string | null;
+  pan: string | null;
+  billingAddress: string | null;
   projectsActive: number;
   projectsTotal: number;
   invoicedMinor: number;
@@ -143,7 +148,7 @@ export async function listClients(limit = 200): Promise<ClientListItem[]> {
   const { data: accounts, error: accountsError } = await supabase
     .schema('core')
     .from('client_accounts')
-    .select('id, name, billing_email, currency, status, created_at, tags, owner_id')
+    .select('id, name, billing_email, currency, status, created_at, tags, owner_id, legal_name, gstin, pan, billing_address')
     .order('created_at', { ascending: false })
     .limit(limit);
   if (accountsError) unreadable('listClients.accounts', accountsError);
@@ -183,6 +188,10 @@ export async function listClients(limit = 200): Promise<ClientListItem[]> {
       tags: a.tags ?? [],
       ownerId: a.owner_id,
       ownerName: a.owner_id ? (owners.get(a.owner_id) ?? null) : null,
+      legalName: a.legal_name,
+      gstin: a.gstin,
+      pan: a.pan,
+      billingAddress: a.billing_address,
       projectsActive: clientProjects.filter((p) => ACTIVE_PROJECT_STATUSES.has(p.status)).length,
       projectsTotal: clientProjects.length,
       invoicedMinor,
@@ -198,7 +207,7 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
   const { data: account, error: accountError } = await supabase
     .schema('core')
     .from('client_accounts')
-    .select('id, name, billing_email, currency, status, created_at, tags, owner_id')
+    .select('id, name, billing_email, currency, status, created_at, tags, owner_id, legal_name, gstin, pan, billing_address')
     .eq('id', clientAccountId)
     .maybeSingle();
   if (accountError) unreadable('getClient.account', accountError);
@@ -465,6 +474,10 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
     tags: account.tags ?? [],
     ownerId: account.owner_id,
     ownerName: account.owner_id ? (owners.get(account.owner_id) ?? null) : null,
+    legalName: account.legal_name,
+    gstin: account.gstin,
+    pan: account.pan,
+    billingAddress: account.billing_address,
     projectsActive: projectRows.filter((p) => ACTIVE_PROJECT_STATUSES.has(p.status)).length,
     projectsTotal: projectRows.length,
     invoicedMinor,

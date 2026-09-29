@@ -675,6 +675,11 @@ describe('F. the schema the provider is asked to decode against', () => {
       'niceToHaves',
       'exclusions',
       'designReferences',
+      // SCR-009 (bucket F-B): the four fields the versioned requirement carries.
+      'userRoles',
+      'platforms',
+      'integrations',
+      'timelineBudgetNotes',
     ]);
   });
 
@@ -755,6 +760,11 @@ describe('F. the schema the provider is asked to decode against', () => {
       niceToHaves: ['A loyalty points system'],
       exclusions: ['No native mobile app'],
       designReferences: ['https://example.com/inspiration'],
+      // SCR-009 (bucket F-B).
+      userRoles: ['Customer', 'Salon staff'],
+      platforms: ['Web'],
+      integrations: ['Razorpay'],
+      timelineBudgetNotes: 'Before Diwali; budget not yet stated.',
     };
 
     assert.equal(requirementPayloadSchema.safeParse(payload).success, true);

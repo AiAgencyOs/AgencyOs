@@ -45,12 +45,15 @@ export function DraftQuotationForm({
   opportunityId,
   defaultTitle,
   supersedes,
+  requirementVersionId,
 }: {
   leadId: string;
   opportunityId: string;
   defaultTitle: string;
   /** The version this draft would supersede, if one is live (§16). */
   supersedes: number | null;
+  /** SCR-007 — the accepted requirement version the price is built against (§12), cited on the row. */
+  requirementVersionId?: string | null;
 }) {
   const [state, action, pending] = useActionState(draftProposalAction, IDLE_STATE);
 
@@ -58,6 +61,7 @@ export function DraftQuotationForm({
     <form action={action} className="flex flex-col gap-2">
       <input type="hidden" name="leadId" value={leadId} />
       <input type="hidden" name="opportunityId" value={opportunityId} />
+      {requirementVersionId ? <input type="hidden" name="requirementVersionId" value={requirementVersionId} /> : null}
 
       <label className={label} htmlFor="quotation-title">
         Quotation title

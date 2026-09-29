@@ -51,12 +51,15 @@ export function UploadFileForm({
   reachable,
   parentFileId,
   compact,
+  clientId,
 }: {
   projectId: string;
   reachable: boolean;
   /** Set to upload a new version of that file instead of a new file. */
   parentFileId?: string;
   compact?: boolean;
+  /** SCR-015/017 — when mounted on Client 360, the client page to revalidate too. */
+  clientId?: string;
 }) {
   const [state, action, pending] = useActionState(uploadProjectFileAction, IDLE_STATE);
   const disabled = pending || !reachable;
@@ -64,6 +67,7 @@ export function UploadFileForm({
   return (
     <form action={action} className="flex flex-col gap-3">
       <input type="hidden" name="projectId" value={projectId} />
+      {clientId ? <input type="hidden" name="clientId" value={clientId} /> : null}
       {parentFileId ? <input type="hidden" name="parentFileId" value={parentFileId} /> : null}
       <div className="flex flex-col gap-1">
         <label className={labelClass}>{parentFileId ? 'New version' : 'File'}</label>

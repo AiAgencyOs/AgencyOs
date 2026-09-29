@@ -27,6 +27,10 @@ import {
   submitProposal,
 } from './service';
 import { setOpportunityOwner } from './owner-service';
+import { setProposalTerms } from './terms-service';
+import { COMMERCIAL_TERMS } from './quotation-standards';
+import { termsFromText } from './terms-schema';
+import { quotationReferenceCode } from '@/lib/pdf/quotation';
 
 /** Server Actions for the sales pipeline — thin wrappers over service.ts. */
 
@@ -147,6 +151,9 @@ export async function draftProposalAction(
     title: String(formData.get('title') ?? ''),
     body: body || undefined,
     validUntil: String(formData.get('validUntil') ?? '') || undefined,
+    // SCR-007 — the accepted requirement version the Lead 360 gates
+    // drafting on; §12's "built against" citation on the row.
+    requirementVersionId: String(formData.get('requirementVersionId') ?? '') || undefined,
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };
@@ -454,7 +461,7 @@ export async function createClientAccountAction(
  * first refusal, reporting how far it got so nothing is silently half-done.
  * Nothing here computes a total — the pricing door does, from the rows.
  */
-export type ComposeQuotationState = FormState & { proposalId?: string; leadId?: string };
+export type ComposeQuotationState = FormState & { proposalId?: string; leadId?: string; reference?: string };
 
 export async function composeQuotationAction(
   _prev: ComposeQuotationState,
@@ -488,6 +495,8 @@ export async function composeQuotationAction(
   if (!drafted.ok) return { status: 'error', message: drafted.error.message };
   const proposalId = drafted.data.proposalId;
   const version = drafted.data.version;
+  // SCR-012 — the number the PDF prints, derived from the row (G-170).
+  const reference = quotationReferenceCode(proposalId, new Date().toISOString());
 
   // SCR-012 — the sales owner, through its own door (`lead.assign`). A
   // refusal here does not undo the draft; it is reported beside the result.
@@ -496,6 +505,15 @@ export async function composeQuotationAction(
   if (ownerId) {
     const owned = await setOpportunityOwner({ opportunityId, ownerId });
     if (!owned.ok) ownerNote = ` The owner was not changed: ${owned.error.message}`;
+  }
+
+  // SCR-012 — the edited terms, on the draft's document. Only when they
+  // differ from the standard clauses: an untouched textarea stores nothing
+  // and the PDF prints exactly what it always did.
+  const terms = termsFromText(String(formData.get('commercialTerms') ?? ''));
+  if (terms.length > 0 && terms.join('\n') !== COMMERCIAL_TERMS.join('\n')) {
+    const termed = await setProposalTerms({ proposalId, terms });
+    if (!termed.ok) ownerNote += ` The terms were not saved: ${termed.error.message}`;
   }
 
   for (const [i, line] of lines.entries()) {
@@ -537,8 +555,9 @@ export async function composeQuotationAction(
   revalidatePath('/quotations');
   return {
     status: 'success',
-    message: `${submit ? `Quotation v${version} drafted, priced and sent to the owner for approval.` : `Quotation v${version} drafted and priced. Submit it for approval from the lead when it is ready.`}${ownerNote}`,
+    message: `${submit ? `Quotation ${reference} v${version} drafted, priced and sent to the owner for approval.` : `Quotation ${reference} v${version} drafted and priced. Submit it for approval from the lead when it is ready.`}${ownerNote}`,
     proposalId,
     leadId,
+    reference,
   };
 }

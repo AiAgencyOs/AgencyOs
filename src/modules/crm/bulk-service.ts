@@ -6,7 +6,7 @@ import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
 import { bulkLeadActionSchema, type BulkLeadActionInput, type BulkLeadOutcome } from './bulk-schema';
-import { setLeadOwner, setLeadStatus, setLeadTags } from './service';
+import { setLeadFollowUp, setLeadOwner, setLeadStatus, setLeadTags } from './service';
 
 /**
  * The leads list's bulk loop — SCR-006.
@@ -63,7 +63,9 @@ export async function bulkLeadAction(input: BulkLeadActionInput): Promise<Result
               nurtureReason: parsed.data.nurtureReason,
               nurtureUntil: parsed.data.nurtureUntil,
             })
-          : await addLeadTag(leadId, parsed.data.tag);
+          : parsed.data.kind === 'tag'
+            ? await addLeadTag(leadId, parsed.data.tag)
+            : await setLeadFollowUp({ leadId, nextFollowUpAt: parsed.data.nextFollowUpAt });
 
     outcomes.push(
       result.ok
@@ -77,7 +79,11 @@ export async function bulkLeadAction(input: BulkLeadActionInput): Promise<Result
                   : 'Assignment cleared.'
                 : parsed.data.kind === 'status'
                   ? `Moved to ${parsed.data.status}.`
-                  : `Tagged “${parsed.data.tag}”.`,
+                  : parsed.data.kind === 'tag'
+                    ? `Tagged “${parsed.data.tag}”.`
+                    : parsed.data.nextFollowUpAt
+                      ? 'Next follow-up set.'
+                      : 'Follow-up cleared.',
           }
         : { leadId, ok: false, message: result.error.message },
     );

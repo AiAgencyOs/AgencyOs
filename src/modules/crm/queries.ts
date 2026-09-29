@@ -61,7 +61,7 @@ export async function listLeads(limit = 100): Promise<LeadListItem[]> {
   }));
 }
 
-const TABLE_SELECT = 'id, title, status, source, assigned_to, updated_at, contacts(full_name, company, phone)';
+const TABLE_SELECT = 'id, title, status, source, assigned_to, updated_at, contacts(full_name, company, phone, email)';
 
 /**
  * The full-table view of the pipeline — phone, assignee, last activity — for
@@ -100,7 +100,7 @@ export async function listLeadsForTable(limit = 500): Promise<LeadTableRow[]> {
     assigned_to: row.assigned_to,
     updated_at: row.updated_at,
     contact: row.contacts
-      ? { fullName: row.contacts.full_name, company: row.contacts.company, phone: row.contacts.phone }
+      ? { fullName: row.contacts.full_name, company: row.contacts.company, phone: row.contacts.phone, email: row.contacts.email }
       : null,
     assignedEmail: row.assigned_to ? (emailById.get(row.assigned_to) ?? null) : null,
   }));

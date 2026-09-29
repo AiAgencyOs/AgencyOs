@@ -77,6 +77,17 @@ export function RequirementReviseForm({
           <Lines id="rev-niceToHaves" label="Nice to have" hint="one per line" value={payload.niceToHaves.join('\n')} />
           <Lines id="rev-designReferences" label="Design references" hint="one per line" value={payload.designReferences.join('\n')} />
           <Lines id="rev-openQuestions" label="Open questions" hint="one per line" value={payload.openQuestions.join('\n')} />
+          {/* SCR-009 (bucket F-B) — the four fields the versioned requirement carries. */}
+          <Lines id="rev-userRoles" label="User roles" hint="one per line, who uses it" value={payload.userRoles.join('\n')} />
+          <Lines id="rev-platforms" label="Platforms" hint="one per line, web / iOS / Android…" value={payload.platforms.join('\n')} />
+          <Lines id="rev-integrations" label="Integrations" hint="one per line, what it must talk to" value={payload.integrations.join('\n')} />
+          <div className="flex flex-col gap-1">
+            <label className={labelClass} htmlFor="rev-timelineBudgetNotes">
+              Timeline and budget notes
+              <span className="ml-1 font-normal text-muted">— in the client&rsquo;s words</span>
+            </label>
+            <textarea id="rev-timelineBudgetNotes" name="timelineBudgetNotes" maxLength={2000} defaultValue={payload.timelineBudgetNotes} rows={2} className={textareaClass} />
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
