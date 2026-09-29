@@ -11,43 +11,49 @@ export { computeMargin, MARGIN_LABEL, type Margin, type MarginInputs } from './m
  * Margin on the project report. Decision: reversed by the owner on
  * 2026-09-29 — earlier passes left the money figures side by side with
  * "no margin is computed"; the owner has asked for one, labelled a
- * cash-basis estimate.
+ * cash-basis estimate. Time costed by decision E2 of 2026-09-30.
  *
- *   margin = paid revenue − (expenses recorded + AI cost)
+ *   margin = paid revenue − (expenses recorded + AI cost + time cost)
  *
  * PAID, not invoiced: cash basis means what has actually arrived. Expenses
  * are `finance.expenses` rows on the project; AI cost is what the runtime
  * recorded on `ai.agent_runs` attributed to the project (`cost_minor`,
- * never a rate applied here). Time is NOT costed: no cost-rate column
- * exists anywhere in the schema (searched 2026-09-30: no cost_rate,
- * hourly_rate or rate_minor on any table), so hours logged under decision
- * 4 cannot be turned into money without inventing a rate — the screen
- * says so beside the figure. The arithmetic is `computeMargin` in
- * margin.ts, a pure function the test pins; this reader only gathers the
- * three sums.
+ * never a rate applied here). Time cost is `projects.time_log_totals_by_project`'s
+ * `cost_minor`: each log priced at the rate in force for its person ON THE
+ * DAY OF THE LOG (`core.member_cost_rates`, via `projects.time_log_costs`),
+ * so a rate change never rewrites an earlier month. Hours with no rate on
+ * their day come back as `uncosted_hours` and are shown, not zeroed. The
+ * arithmetic is `computeMargin` in margin.ts, a pure function the test
+ * pins; this reader only gathers the sums. The views are security_invoker:
+ * a reader who may not see rates sees every hour as uncosted.
  *
  * Currency: expenses and paid amounts are in the project's currency; AI
- * cost is recorded in INR. Where they differ the AI term is still
- * subtracted (the report already prints it in INR) and the label says so.
+ * cost and time cost are recorded in INR. Where they differ the INR terms
+ * are still subtracted (the report already prints them in INR) and the
+ * label says so.
  */
 
-/** The three sums for one project, each under the reader's own RLS. Any failed read refuses. */
+/** The sums for one project, each under the reader's own RLS. Any failed read refuses. */
 export async function readProjectMargin(projectId: string): Promise<Margin> {
   const supabase = await createClient();
 
-  const [paidRes, expensesRes, runsRes] = await Promise.all([
+  const [paidRes, expensesRes, runsRes, timeRes] = await Promise.all([
     supabase.schema('finance').from('invoices').select('paid_minor, status').eq('project_id', projectId),
     supabase.schema('finance').from('expenses').select('amount_minor').eq('project_id', projectId),
     // `project_id` postdates the generated types (see ai-cost-queries.ts), hence the casts.
     supabase.schema('ai').from('agent_runs').select('cost_minor').eq('project_id' as never, projectId),
+    supabase.schema('projects').from('time_log_totals_by_project').select('cost_minor, uncosted_hours').eq('project_id', projectId),
   ]);
   if (paidRes.error) unreadable('readProjectMargin.invoices', paidRes.error);
   if (expensesRes.error) unreadable('readProjectMargin.expenses', expensesRes.error);
   if (runsRes.error) unreadable('readProjectMargin.aiRuns', runsRes.error);
+  if (timeRes.error) unreadable('readProjectMargin.timeCost', timeRes.error);
 
   const paidMinor = (paidRes.data ?? []).reduce((n, i) => n + (i.status === 'void' ? 0 : i.paid_minor), 0);
   const expensesMinor = (expensesRes.data ?? []).reduce((n, e) => n + e.amount_minor, 0);
   const aiCostMinor = ((runsRes.data ?? []) as { cost_minor: number | null }[]).reduce((n, r) => n + (r.cost_minor ?? 0), 0);
+  const timeCostMinor = (timeRes.data ?? []).reduce((n, t) => n + Number(t.cost_minor ?? 0), 0);
+  const uncostedHours = Math.round((timeRes.data ?? []).reduce((n, t) => n + Number(t.uncosted_hours ?? 0), 0) * 100) / 100;
 
-  return computeMargin({ paidMinor, expensesMinor, aiCostMinor, timeCosted: false });
+  return computeMargin({ paidMinor, expensesMinor, aiCostMinor, timeCostMinor, uncostedHours });
 }

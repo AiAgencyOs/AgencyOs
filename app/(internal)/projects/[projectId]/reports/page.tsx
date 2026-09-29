@@ -102,9 +102,11 @@ export default async function ProjectReportPage({
     listInternalRoster(),
     agencyClock(),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
-    // Decision 4 of 2026-09-29: hours logged, per person and per task.
+    // Decision 4 of 2026-09-29: hours logged, per person and per task; costed
+    // at each person's day-of-log rate by decision E2 of 2026-09-30. The cost
+    // figures render only where `invoice.read` holds (mayReadMoney).
     readProjectTime(projectId),
-    // Margin — decision: reversed by the owner on 2026-09-29. Cash basis.
+    // Margin — decision: reversed by the owner on 2026-09-29. Cash basis, time cost included.
     mayReadMoney ? readProjectMargin(projectId) : Promise.resolve(null),
   ]);
   const timeCsvHref = `/api/projects/${projectId}/report/time`;
@@ -276,7 +278,15 @@ export default async function ProjectReportPage({
         <Card>
           <CardHeader
             title="Time"
-            description={time.entryCount > 0 ? `${time.totalHours} h logged in ${time.entryCount} entr${time.entryCount === 1 ? 'y' : 'ies'} by ${time.people.length} ${time.people.length === 1 ? 'person' : 'people'}. Hours only — no rate is recorded, so nothing here is billed.` : 'No time logged yet. Hours are logged per task from the task drawer (decision 4 of 2026-09-29).'}
+            description={
+              time.entryCount > 0
+                ? `${time.totalHours} h logged in ${time.entryCount} entr${time.entryCount === 1 ? 'y' : 'ies'} by ${time.people.length} ${time.people.length === 1 ? 'person' : 'people'}.${
+                    mayReadMoney
+                      ? ` Cost ${money(time.costMinor, 'INR')} at each person's rate on the day of the log${time.uncostedHours > 0 ? `; ${time.uncostedHours} h uncosted — no rate on those days` : ''}. Cost, not billing.`
+                      : ' Nothing here is billed.'
+                  }`
+                : 'No time logged yet. Hours are logged per task from the task drawer (decision 4 of 2026-09-29).'
+            }
             actions={
               <a href={timeCsvHref} className={buttonClass('ghost', 'sm')}>
                 <IconDownload size={14} />
@@ -292,7 +302,11 @@ export default async function ProjectReportPage({
                   {time.people.map((p) => (
                     <li key={p.personId} className="flex items-baseline justify-between gap-2">
                       <span className="truncate">{p.personName}</span>
-                      <span className="tabular text-muted">{p.hours} h · {p.entries}</span>
+                      <span className="tabular text-muted">
+                        {p.hours} h · {p.entries}
+                        {mayReadMoney ? ` · ${money(p.costMinor, 'INR')}` : ''}
+                        {mayReadMoney && p.uncostedHours > 0 ? <span className="ml-1 text-warning">{p.uncostedHours} h uncosted</span> : null}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -303,7 +317,11 @@ export default async function ProjectReportPage({
                   {time.tasks.slice(0, 12).map((t) => (
                     <li key={t.taskId} className="flex items-baseline justify-between gap-2">
                       <Link href={`/projects/${projectId}/development/tasks/${t.taskId}`} className="truncate underline-offset-2 hover:underline">{t.taskTitle}</Link>
-                      <span className="tabular text-muted">{t.hours} h · {t.entries}</span>
+                      <span className="tabular text-muted">
+                        {t.hours} h · {t.entries}
+                        {mayReadMoney ? ` · ${money(t.costMinor, 'INR')}` : ''}
+                        {mayReadMoney && t.uncostedHours > 0 ? <span className="ml-1 text-warning">{t.uncostedHours} h uncosted</span> : null}
+                      </span>
                     </li>
                   ))}
                   {time.tasks.length > 12 ? <li className="text-xs text-muted">and {time.tasks.length - 12} more in the CSV.</li> : null}
@@ -331,14 +349,15 @@ export default async function ProjectReportPage({
 
         {mayReadMoney ? (
           <Card className="xl:col-span-2">
-            {/* Margin — decision: reversed by the owner on 2026-09-29. Cash-basis estimate: paid − (expenses + AI cost). */}
+            {/* Margin — decision: reversed by the owner on 2026-09-29. Cash-basis estimate: paid − (expenses + AI cost + time cost); time costed per person by decision E2 of 2026-09-30. */}
             <CardHeader title="Money" description="Invoiced and paid against budget and recorded cost, and the margin between what was paid and what was spent — a cash-basis estimate." actions={<ViewAll href="/finance/expenses" label="Expenses" />} />
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 px-4 pb-4 text-[13px] sm:grid-cols-5 sm:px-5">
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 px-4 pb-4 text-[13px] sm:grid-cols-6 sm:px-5">
               <div><dt className="text-xs text-muted">Budget</dt><dd className="tabular font-medium">{budget > 0 ? money(budget, currency) : '—'}</dd></div>
               <div><dt className="text-xs text-muted">Invoiced</dt><dd className="tabular font-medium">{money(invoiced, currency)}</dd></div>
               <div><dt className="text-xs text-muted">Paid</dt><dd className="tabular font-medium text-success">{money(paid, currency)}</dd></div>
               <div><dt className="text-xs text-muted">Expenses recorded</dt><dd className="tabular font-medium text-danger">{money(spent, currency)}</dd></div>
               <div><dt className="text-xs text-muted">AI cost</dt><dd className="tabular font-medium">{aiCost > 0 ? money(aiCost, 'INR') : '—'}</dd></div>
+              <div><dt className="text-xs text-muted">Time cost</dt><dd className="tabular font-medium">{margin && margin.timeCostMinor > 0 ? money(margin.timeCostMinor, 'INR') : '—'}</dd></div>
             </dl>
             {margin ? (
               <div className="mx-4 mb-4 rounded-lg border border-line bg-canvas px-4 py-3 sm:mx-5">
@@ -350,8 +369,9 @@ export default async function ProjectReportPage({
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-muted">
-                  {money(margin.paidMinor, currency)} paid − ({money(margin.expensesMinor, currency)} expenses + {money(margin.aiCostMinor, 'INR')} AI cost). Invoiced-but-unpaid amounts are not counted.
-                  {' '}Logged time is not costed: no cost rate exists in the schema, so hours stay hours.
+                  {money(margin.paidMinor, currency)} paid − ({money(margin.expensesMinor, currency)} expenses + {money(margin.aiCostMinor, 'INR')} AI cost + {money(margin.timeCostMinor, 'INR')} time cost). Invoiced-but-unpaid amounts are not counted.
+                  {' '}Time is costed at each person&rsquo;s rate on the day of the log.
+                  {margin.uncostedHours > 0 ? <span className="text-warning"> {margin.uncostedHours} h uncosted — no rate on those days; those hours are not in the cost.</span> : null}
                 </p>
               </div>
             ) : null}

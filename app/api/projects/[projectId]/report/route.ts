@@ -76,8 +76,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
 
   // Margin — decision: reversed by the owner on 2026-09-29. Appended as its
   // own block, only for a reader who may read money, in minor units as the
-  // rows are stored. Cash basis: paid − (expenses + AI cost); time is not
-  // costed because no rate exists.
+  // rows are stored. Cash basis: paid − (expenses + AI cost + time cost);
+  // time costed at each person's day-of-log rate (decision E2 of
+  // 2026-09-30), with uncosted hours carried as their own row rather than
+  // silently priced at zero.
   if (can(context.role, 'invoice.read')) {
     const margin = await readProjectMargin(projectId);
     lines.push('');
@@ -85,7 +87,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
     lines.push(['paid', margin.paidMinor, 'cash-basis estimate'].map(csvCell).join(','));
     lines.push(['expenses', margin.expensesMinor, 'recorded'].map(csvCell).join(','));
     lines.push(['ai_cost', margin.aiCostMinor, 'recorded, INR'].map(csvCell).join(','));
-    lines.push(['margin', margin.marginMinor, `${margin.label}; time not costed (no cost rate in schema)`].map(csvCell).join(','));
+    lines.push(['time_cost', margin.timeCostMinor, 'logged hours at the rate in force on the day of each log, INR'].map(csvCell).join(','));
+    lines.push(['uncosted_hours', margin.uncostedHours, 'hours with no rate on their day — not in time_cost'].map(csvCell).join(','));
+    lines.push(['margin', margin.marginMinor, `${margin.label}; paid − (expenses + ai_cost + time_cost)`].map(csvCell).join(','));
   }
 
   const slug = project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'project';

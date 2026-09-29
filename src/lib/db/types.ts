@@ -1587,6 +1587,64 @@ export type Database = {
           },
         ]
       }
+      member_cost_rates: {
+        Row: {
+          created_at: string
+          currency: string
+          effective_from: string
+          hourly_cost_minor: number
+          id: string
+          note: string | null
+          organization_id: string
+          set_by: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          currency?: string
+          effective_from: string
+          hourly_cost_minor: number
+          id?: string
+          note?: string | null
+          organization_id: string
+          set_by: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          currency?: string
+          effective_from?: string
+          hourly_cost_minor?: number
+          id?: string
+          note?: string | null
+          organization_id?: string
+          set_by?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "member_cost_rates_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "member_cost_rates_set_by_fkey"
+            columns: ["set_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "member_cost_rates_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       memberships: {
         Row: {
           created_at: string
@@ -2129,6 +2187,18 @@ export type Database = {
         Args: { p_membership_id: string; p_status: string }
         Returns: {
           outcome: string
+        }[]
+      }
+      set_member_cost_rate: {
+        Args: {
+          p_effective_from: string
+          p_hourly_cost_minor: number
+          p_note?: string
+          p_user_id: string
+        }
+        Returns: {
+          outcome: string
+          rate_id: string | null
         }[]
       }
       set_notification_state: {
@@ -8310,36 +8380,61 @@ export type Database = {
       }
     }
     Views: {
+      time_log_costs: {
+        Row: {
+          cost_minor: number | null
+          created_at: string | null
+          hourly_cost_minor: number | null
+          hours: number | null
+          id: string | null
+          logged_on: string | null
+          note: string | null
+          organization_id: string | null
+          person_id: string | null
+          project_id: string | null
+          rate_currency: string | null
+          rate_effective_from: string | null
+          rate_missing: boolean | null
+          task_id: string | null
+        }
+        Relationships: []
+      }
       time_log_totals_by_person: {
         Row: {
+          cost_minor: number | null
           entries: number | null
           hours: number | null
           last_logged_on: string | null
           organization_id: string | null
           person_id: string | null
           project_id: string | null
+          uncosted_hours: number | null
         }
         Relationships: []
       }
       time_log_totals_by_project: {
         Row: {
+          cost_minor: number | null
           entries: number | null
           hours: number | null
           last_logged_on: string | null
           organization_id: string | null
           people: number | null
           project_id: string | null
+          uncosted_hours: number | null
         }
         Relationships: []
       }
       time_log_totals_by_task: {
         Row: {
+          cost_minor: number | null
           entries: number | null
           hours: number | null
           last_logged_on: string | null
           organization_id: string | null
           project_id: string | null
           task_id: string | null
+          uncosted_hours: number | null
         }
         Relationships: []
       }

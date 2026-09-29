@@ -4,9 +4,12 @@ import { useActionState } from 'react';
 
 import { grantSecondaryRoleAction, revokeSecondaryRoleAction, setMembershipStatusAction } from './actions';
 import type { RosterMemberWithRoles } from '@/modules/projects/queries';
+import type { CostRateAccess, MemberCostRates } from '@/modules/team/cost-rate-types';
 import { INTERNAL_ROLES } from '@/lib/auth/claims';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { Badge, buttonClass } from '@/ui';
+
+import { CostRateCell } from './cost-rate-cell';
 
 /**
  * Multirole — G-310.
@@ -110,7 +113,15 @@ function StatusToggle({ membershipId, status }: { membershipId: string; status: 
   );
 }
 
-function MemberRow({ member }: { member: RosterMemberWithRoles }) {
+type CostRateProps = {
+  /** Decision E2 of 2026-09-30 — the owner sets, ops_admin reads, nobody else sees the cell. */
+  costRates?: Record<string, MemberCostRates>;
+  costRateAccess?: CostRateAccess;
+  /** Today's ISO day in agency time, the default "from" date of a new rate. */
+  today?: string;
+};
+
+function MemberRow({ member, costRates, costRateAccess = 'none', today = '' }: { member: RosterMemberWithRoles } & CostRateProps) {
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
       <span className="flex flex-wrap items-center gap-2">
@@ -126,11 +137,14 @@ function MemberRow({ member }: { member: RosterMemberWithRoles }) {
         <GrantForm membershipId={member.membershipId} alreadyHeld={[member.role, ...member.secondaryRoles]} />
         <StatusToggle membershipId={member.membershipId} status={member.status} />
       </span>
+      {costRateAccess !== 'none' ? (
+        <CostRateCell userId={member.userId} rates={costRates?.[member.userId]} access={costRateAccess} today={today} />
+      ) : null}
     </li>
   );
 }
 
-export function MemberRolesPanel({ members }: { members: RosterMemberWithRoles[] }) {
+export function MemberRolesPanel({ members, costRates, costRateAccess, today }: { members: RosterMemberWithRoles[] } & CostRateProps) {
   return (
     <div className="flex flex-col gap-2">
       <h2 className="text-[13px] font-semibold tracking-tight">Roles</h2>
@@ -146,6 +160,14 @@ export function MemberRolesPanel({ members }: { members: RosterMemberWithRoles[]
         which database rows they can read or write — that is still governed by the primary role
         alone.
       </p>
+      {costRateAccess && costRateAccess !== 'none' ? (
+        <p className="text-xs text-muted">
+          Cost rate (decision E2 of 2026-09-30): rupees per hour from a date, private to management. It
+          prices logged hours on the project report for readers who may read money and touches no
+          invoice. A log is priced at the rate in force on its own day, so a new rate never rewrites an
+          earlier cost. {costRateAccess === 'set' ? 'Owner sets it; there is no edit or delete — correct a rate by setting the right one from the same date.' : 'Only the owner sets it.'}
+        </p>
+      ) : null}
       <p className="text-xs text-muted">
         Suspending a membership revokes access without deleting the person&rsquo;s history — their
         audit trail and authored records stay intact. It takes effect on their next sign-in or
@@ -158,7 +180,7 @@ export function MemberRolesPanel({ members }: { members: RosterMemberWithRoles[]
       ) : (
         <ul className="flex flex-col gap-1">
           {members.map((member) => (
-            <MemberRow key={member.membershipId} member={member} />
+            <MemberRow key={member.membershipId} member={member} costRates={costRates} costRateAccess={costRateAccess} today={today} />
           ))}
         </ul>
       )}

@@ -207,7 +207,9 @@ describe('F. the write path is owner-gated at the application layer too (defense
   });
 
   test('the panel is rendered on the settings page, not built and unreachable', () => {
-    assert.match(PAGE, /<MemberRolesPanel members={rosterWithRoles} \/>/);
+    // Decision E2 of 2026-09-30 put the cost-rate props on the same element;
+    // the pin is that the roster reaches the panel, not that nothing else does.
+    assert.match(PAGE, /<MemberRolesPanel members={rosterWithRoles}[^>]*\/>/);
     assert.match(PAGE, /const rosterWithRoles = await listInternalRosterWithRoles\(\);/);
   });
 });
