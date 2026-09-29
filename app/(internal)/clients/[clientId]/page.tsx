@@ -431,7 +431,7 @@ export default async function ClientDetailPage({
             )}
           </Card>
           <Card>
-            <CardHeader title="Announcements" description="Published for clients — a record of what was announced, not a send. WhatsApp broadcast is declined on record (traceability row 59)." />
+            <CardHeader title="Announcements" description="Published for clients — a record of what was announced, not a send. A governed send to many clients is a campaign under Communication › Campaigns." />
             {clientAnnouncements.length > 0 ? (
               <ul className="divide-y divide-line">
                 {clientAnnouncements.map((a) => (

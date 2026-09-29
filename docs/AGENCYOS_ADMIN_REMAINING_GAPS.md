@@ -267,6 +267,11 @@ withheld with that sentence; rescore-all is a bounded on-demand action
 | E4 | Two-session realtime test as a script and CI job | `tests/e2e/realtime-two-sessions.spec.mjs` + `.github/workflows/realtime.yml` (also runs the eight fixture-dependent verifiers on a fresh database); Leads and Payment verification pages now carry `LiveRefresh` so the push can be observed there | — |
 | E5 | GSTR-1 / GSTR-3B exports | pure `gstr.ts` with pinned top-level keys and spec version; agency GST identity (GSTIN, state code, default SAC) set by the owner; per-profile state code derived from the state name, never guessed; unresolved invoices listed on screen and left out of the file | `20260930160000` |
 
-Nothing from the PDF, the blueprint (A01–A34) or the owner's decisions
-remains unbuilt. What is left is the first green run of the realtime
-workflow in CI and a manual screen-reader pass.
+Every screen the PDF numbers exists and every owner decision is built.
+That sentence used to continue "nothing from the PDF remains unbuilt";
+an element-by-element audit on 2026-09-30 (`AGENCYOS_ADMIN_PDF_ELEMENT_AUDIT.md`)
+showed it was not true at the level of individual KPIs, buttons and
+sub-panels: of 979 elements the PDF lists, 707 are built, 199 partial,
+69 missing, 4 declined. The audit document is the record of what is
+left; the screen-level statuses in the inventory stay, with that
+document as their qualifier.

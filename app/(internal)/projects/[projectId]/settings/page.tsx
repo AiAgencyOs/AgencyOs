@@ -171,8 +171,9 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
       </section>
 
       <Callout tone="info">
-        Project templates are not built — nothing in this product defines what a template copies
-        (tasks, milestones, modules), so this page does not invent one.
+        Project templates: save this project as a template from its header (&ldquo;Save as template&rdquo;),
+        start a new project from one in ⌘K › Create project, and manage them under{' '}
+        <Link href="/settings/templates" className="underline">Settings › Templates</Link>.
       </Callout>
     </div>
   );

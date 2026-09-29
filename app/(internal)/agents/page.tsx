@@ -165,7 +165,7 @@ export default async function AgentsPage() {
     <div className="flex flex-col gap-5">
       <PageHeader
         title="AI Workforce"
-        description="Your AI agents, models, tools and automation workflows — what is enforced, and what they actually did. Enabling an agent or changing its limits is an owner decision made in the database (ADM-82)."
+        description="Your AI agents, models, tools and automation workflows — what is enforced, and what they actually did. The owner enables or disables an agent and sets its caps on the agent's own page (ADM-82 reversed 2026-09-29); every change is audited."
         actions={
           <>
             <Link href="/usage" className={buttonClass('secondary', 'sm')}>

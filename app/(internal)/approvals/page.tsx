@@ -303,8 +303,8 @@ export default async function ApprovalsPage({
           <div className="flex flex-col gap-1">
             <h2 className="text-[13px] font-semibold tracking-tight">Policies in force</h2>
             <p className="text-xs text-muted">
-              What needs a decision, and from whom. Read-only — these are configured in the database
-              and changing one is an owner-only, audited authority change.
+              What needs a decision, and from whom. Read-only here — the owner changes a policy under
+              Settings › Approvals, and every change is an audited authority change.
             </p>
           </div>
 
