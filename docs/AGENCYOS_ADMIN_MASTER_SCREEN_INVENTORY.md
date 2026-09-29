@@ -128,7 +128,7 @@ a record that only its editor changes.
 | SCR-053 | Payments | `/finance/payments` | `invoice.read` | `listPayments`, bank CSV import + proposed matches (`finance.bank_statement_lines`, 20260930100000) | — | COMPLETE |
 | SCR-054 | Payment Verification | `/invoices/verify` | `invoice.issue` | `listPendingPaymentClaims` (human-only gate) | — | COMPLETE |
 | SCR-055 | Expenses & Profitability | `/finance` (net profit, margin, expense breakdown) + `/finance/expenses` | `invoice.read` (`invoice.issue` to record/edit) | `listExpenses`, `listPayments`, `listInvoices`; `recordExpense`, `updateExpense` | — | COMPLETE — net = payments received − expenses recorded, margin over received; stated on the tile, not an accounting P&L |
-| SCR-056 | GST, Tax & Financial Reports | `/finance/tax` (+ `/api/finance/tax/export`) | `invoice.read` | `listTaxReportInvoices` split by the CONFIRMED billing mode (GST / non-GST / unconfirmed), period selector (month, quarter, Indian FY), receipts (`listReceipts`), cash-basis P&L against expenses, CSV | — | COMPLETE — no GST return generation (needs GST-portal integration, stated on the page) |
+| SCR-056 | GST, Tax & Financial Reports | `/finance/tax` (+ `/api/finance/tax/export`) | `invoice.read` | `listTaxReportInvoices` split by the CONFIRMED billing mode (GST / non-GST / unconfirmed), period selector (month, quarter, Indian FY), receipts (`listReceipts`), cash-basis P&L against expenses, CSV | — | COMPLETE — GSTR-1 / GSTR-3B offline-tool JSON exports (`gstr.ts`, 20260930160000); no filing API by decision (needs GST-portal integration, stated on the page) |
 
 ### Communication
 
@@ -136,7 +136,7 @@ a record that only its editor changes.
 |---|---|---|---|---|---|---|
 | SCR-057 | Communication Center | `/communication` | `lead.read` | conversations, rollups | — | COMPLETE |
 | SCR-058 | WhatsApp / Conversations | `/leads/[leadId]` › thread | `lead.read` | `listMessages` (chat view, 24-hour window state) | — | GROUPED |
-| SCR-059 | Templates & Announcements | `/settings/communication` | `organization.settings` | `crm.whatsapp_templates` registry, outreach limits, sending window | — | COMPLETE (broadcast DECLINED — traceability row 59) |
+| SCR-059 | Templates & Announcements | `/settings/communication`, `/communication/campaigns` | `organization.settings` | `crm.whatsapp_templates` registry, outreach limits, sending window; `crm.campaigns` + `campaign_recipients` (four-eyes approval, cron worker, 20260930140000) | — | COMPLETE (broadcast reopened by the owner 2026-09-30 as a governed campaign) |
 | SCR-060 | Delivery Failures, Outbox & Meeting Notes | `/operations` + `/meetings/[meetingId]` | `audit.read` | failed deliveries, deferred sends, meeting evidence | jobs, conversations, followUps | COMPLETE |
 
 ### AI Workforce
@@ -182,7 +182,7 @@ a record that only its editor changes.
 | COMPLETE | 60 | — (008, 027, 042 moved here on 2026-09-30 after the owner reopened them) |
 | GROUPED | 11 | 002, 004, 009, 016, 026, 029, 038, 048, 058, 067 + 003's bell |
 | PARTIAL | 0 | — (056 files no GST return by design: the register and P&L are complete, filing is the accountant's) |
-| DECLINED (sub-features) | 1 | 059 broadcast (mass WhatsApp send — kept declined; outreach limits and consent make a broadcast a per-thread send) |
+| DECLINED (sub-features) | 0 | — (059 broadcast reopened 2026-09-30 as a governed campaign: `/communication/campaigns`, every recipient a per-thread send the consent, window and outreach rules decide) |
 | MISSING | 0 | — |
 
 Every PARTIAL names a real schema or integration gap rather than UI work
@@ -224,9 +224,9 @@ left undone; each is recorded with its reasoning in
 | A29 | Incidents / Recovery Queue | SCR-066 |
 | A30 | Users / Roles / Access | SCR-069 (`/security/users`) |
 | A31 | Organization Settings | SCR-071 |
-| A32 | Profile / Preferences | not built — P2 in the blueprint; no requirement in the 71-screen architecture |
+| A32 | Profile / Preferences | `/profile` — built 2026-09-30 on the owner's decision (`core.user_preferences`, own-row RLS, `update_own_profile`, `set_own_preferences`; the timezone preference drives every displayed date) |
 | A33 | Readiness / Release View | SCR-049 |
-| A34 | Help / System Documentation | not built — P2 in the blueprint; no requirement in the 71-screen architecture |
+| A34 | Help / System Documentation | `/help` — built 2026-09-30; generated from this inventory by `scripts/build-help.mjs` (guarded: stale JSON fails a test), header "?" resolves the current route |
 
 ## 4. Rules for changing this file
 

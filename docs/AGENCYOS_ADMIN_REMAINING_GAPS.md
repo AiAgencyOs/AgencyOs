@@ -256,3 +256,17 @@ derived and the other two are not shown; a reminder whose client has no
 WhatsApp thread of its own and whose project has no group is recorded as
 withheld with that sentence; rescore-all is a bounded on-demand action
 (300 leads, oldest score first), not a cron kind.
+
+## Status after the bucket E build (2026-09-30, second round of owner decisions)
+
+| # | Owner decision | Built as | Migration |
+|---|---|---|---|
+| E1 | Broadcast reopened as a governed campaign | `crm.campaigns` / `campaign_recipients`; four-eyes approval (approver ≠ creator); audience expanded at approval by the same pure function the preview uses; cron worker claims 25 per tick and sends each recipient through the shared template door, so consent, the 24-hour window and the outreach allowance decide each one; closed set of refusal reasons; `/communication/campaigns` list, new-campaign form with live recipient count, detail with per-recipient outcomes | `20260930140000` |
+| E2 | Time costed at a per-person hourly rate | `core.member_cost_rates` (append-only, owner-set, ops_admin may read); `projects.time_log_costs` prices each log at the rate in force on its day; margin = paid − (expenses + AI cost + time cost); uncosted hours reported, never zeroed; cost visible only behind `invoice.read` | `20260930170000` |
+| E3 | Profile / Preferences and Help | `core.user_preferences` (own-row RLS, follows the person across tenants), `/profile`, timezone preference drives the display clock; `/help` generated from the inventory (71 entries, guarded), header "?" resolves the route | `20260930150000` |
+| E4 | Two-session realtime test as a script and CI job | `tests/e2e/realtime-two-sessions.spec.mjs` + `.github/workflows/realtime.yml` (also runs the eight fixture-dependent verifiers on a fresh database); Leads and Payment verification pages now carry `LiveRefresh` so the push can be observed there | — |
+| E5 | GSTR-1 / GSTR-3B exports | pure `gstr.ts` with pinned top-level keys and spec version; agency GST identity (GSTIN, state code, default SAC) set by the owner; per-profile state code derived from the state name, never guessed; unresolved invoices listed on screen and left out of the file | `20260930160000` |
+
+Nothing from the PDF, the blueprint (A01–A34) or the owner's decisions
+remains unbuilt. What is left is the first green run of the realtime
+workflow in CI and a manual screen-reader pass.

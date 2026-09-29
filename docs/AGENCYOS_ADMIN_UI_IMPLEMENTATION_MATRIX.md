@@ -305,3 +305,16 @@ page's own capability.
 | Project › Repository | Live from GitHub: link form, commits, open PRs, branch count, honest unreachable reason | `app/(internal)/projects/[projectId]/repository/github-panel.tsx`, `github-link-forms.tsx`, `src/lib/git/github.ts`, `src/modules/projects/repository-link-*.ts` |
 | Operations | Outbox row list with status filter and pagination (read-only) | `app/(internal)/operations/outbox-list.tsx`, `src/lib/observability/queries.ts` |
 | Integrations / Settings | "GitHub (read-only)" row; GitHub and Files config areas | `src/lib/admin/integrations-eval.ts`, `integrations.ts`, `config-status.ts` |
+
+### Update 2026-09-30 — bucket E
+
+| Screen | What changed | Files |
+|---|---|---|
+| Communication › Campaigns (new) | List, new campaign (template picker, audience filter, live count), detail (approve by a second admin, cancel with reason, per-recipient outcomes) | `app/(internal)/communication/campaigns/**`, `src/modules/crm/campaign-*.ts`, `template-send-service.ts` (shared `sendTemplateToConversation`) |
+| Settings › Team | Cost rate cell: current rate, owner "Set rate" with effective-from, history | `app/(internal)/settings/cost-rate-cell.tsx`, `src/modules/team/cost-rate-*.ts` |
+| Project report, time CSV | Time cost per person/task, uncosted hours, margin includes time cost | `src/modules/finance/margin*.ts`, `src/modules/projects/time-log-queries.ts`, `app/api/projects/[projectId]/report/**` |
+| Profile (new) | Identity card, name, avatar (honest when storage unreachable), preferences | `app/(internal)/profile/*`, `src/modules/identity/profile-*.ts`, `src/lib/admin/agency-clock.ts` |
+| Help (new) | Generated screen guide with search; header "?" resolves the route | `app/(internal)/help/*`, `app/(internal)/help-link.tsx`, `scripts/build-help.mjs`, `src/lib/help/*` |
+| Settings › Finance | GST identity form (owner) | `app/(internal)/settings/finance/gst-identity-form.tsx`, `src/modules/finance/gst-identity-*.ts` |
+| Finance › GST & tax | GSTR-1 / GSTR-3B buttons, identity-incomplete and unresolved callouts | `app/(internal)/finance/tax/page.tsx`, `app/api/finance/gst/**`, `src/modules/finance/gstr.ts`, `gst-states.ts` |
+| Leads, Payment verification | `LiveRefresh` mounted so the realtime push is observable | `app/(internal)/leads/page.tsx`, `app/(internal)/invoices/verify/page.tsx` |

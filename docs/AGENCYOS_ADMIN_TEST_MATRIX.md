@@ -106,8 +106,16 @@ Google/WhatsApp/AI integrations (no credentials — the screens correctly say
 
 ## 5. Realtime multi-session E2E (brief tests 1–13)
 
-**Push path: not run** — the local stack has no Realtime server. What was
-verified live instead: the publication holds exactly the 39 tables the
+**Push path: scripted and wired to CI, awaiting its first green run.**
+`tests/e2e/realtime-two-sessions.spec.mjs` (`npm run e2e:realtime`) signs
+in two browser contexts and runs the five scenarios below verbatim, each
+tied to a service-role read-back; `.github/workflows/realtime.yml` starts
+Supabase with the pinned CLI, builds and serves the app, runs the eight
+fixture-dependent verifiers against the fresh database, stops and restarts
+the realtime container for the degrade scenario, and uploads screenshots
+and `summary.json`. The container this work was done in has no Docker, so
+the run itself is CI's; §9h records its state. What was verified live here
+instead: the publication holds exactly the 39 tables the
 topics name (`pg_publication_tables`, re-applying the migration is a no-op),
 and the client's honest fallback (*Reconnecting*, then polling) in a real
 browser. The status machine and topic↔publication correspondence are unit
@@ -400,6 +408,33 @@ read-only lister), plus the new `an-agent-is-held-to-its-permissions`,
 `finance-bank-csv`, `an-invoice-is-chased-on-whatsapp` and the D2 file.
 `npm test` 6033 pass / 52 fail (baseline); typecheck and ESLint clean.
 
+### 9h. Bucket E build (2026-09-30, the second round of owner decisions)
+
+Four migrations (`20260930140000`–`170000`) applied and re-applied on the
+local database (idempotent); PostgREST reloaded. Driven in the browser with
+read-back: preferences saved (timezone Europe/London, digest weekly,
+WhatsApp on — the header clock followed; `preferences.updated`), name
+saved (`profile.updated`); help page lists all 71 screens and the header
+"?" resolves `/invoices` to its entry; a cost rate set for the owner
+(₹1,200/h from 2026-09-01, `cost_rate.set`) priced the 1.5 h log on its
+day at ₹1,800 and the margin line now reads paid − (expenses + AI cost +
+time cost), while a genuine member account sees no cost, margin or rate
+on the report or the team page; a GSTIN failing the checksum was refused,
+a valid one accepted (`organization.gst_identity_set`), and both GSTR-1
+(`gstin, fp, version, hash, b2b, b2cl, b2cs, hsn, doc_issue`) and GSTR-3B
+(`gstin, ret_period, sup_details, inter_sup, itc_elg, inward_sup,
+intr_ltfee`) downloaded (`gst.exported` × 2); a campaign created by the
+owner over 20 leads could not be approved by its creator, was approved by
+a second admin (ops_admin), and one cron tick claimed all 20 — 18 refused
+`no_conversation`, 2 failed with the provider's "not configured" sentence,
+campaign `done` with `campaign.started|recipient.refused × 20|done`
+audited. Ten new routes screenshotted as owner and member, two at phone
+width: 0 console errors beyond the favicon 404. Guards: 18 files, 320
+assertions green, including the four new ones. `npm test` 6138 pass / 52
+fail (baseline); typecheck and ESLint clean; `build:help --check` current;
+`check:record` agrees on every derived count (the two remaining items are
+CI-only: the Node 26 test summary and a full-depth clone).
+
 ## 10. Regression
 
 Unit: the failure set is byte-identical before and after (Node 22, 52
@@ -411,8 +446,6 @@ transitions need their own seeded fixtures and were not driven.
 
 ## 11. Open items, in priority order
 
-1. Run §5 (push realtime, two sessions) on an environment with Docker.
-2. Re-run the eight fixture-dependent verifiers on a fresh scratch database (`apply-migrations-locally.sh` without `KEEP`, then the stack) — 71/80 pass on the QA-mutated one.
-3. A screen-reader pass (axe is done: 10/10 screens clean).
-4. A screen-reader pass through the harness.
-5. Confirm `roadmap.json`'s derived test counts against CI's Node 26 run.
+1. The first green run of `.github/workflows/realtime.yml` (§5 push path and the eight fixture-dependent verifiers on a fresh database). The workflow is on the branch; it runs on `workflow_dispatch`, pull requests and pushes to `main`.
+2. A screen-reader pass through the harness (axe is done: 10/10 screens clean).
+3. `roadmap.json`'s three test counts (`tests`, `testSuites`, `testsPassing`) are derived from Node 22's TAP output plus a count of `it()` calls in the 31 files that cannot load there; CI's Node 26 summary is the source and `check:record` will say if they differ.
