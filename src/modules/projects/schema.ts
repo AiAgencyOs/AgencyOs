@@ -386,6 +386,14 @@ export const updateProjectFileSchema = z.object({
   category: z.enum(PROJECT_FILE_CATEGORIES),
   title: z.string().trim().min(1, 'A file needs a title').max(200),
   description: z.string().trim().max(1000).nullable(),
+  // SCR-024 (20261001120000): the folder inside the category — rename/move.
+  folder: z
+    .string()
+    .trim()
+    .max(200)
+    .transform((v) => v.replace(/^\/+|\/+$/g, ''))
+    .refine((v) => v === '' || !/(\/\/|\.\.)/.test(v), 'A folder is a path like mockups/mobile — no empty segments and no "..".')
+    .default(''),
 });
 export type UpdateProjectFileInput = z.infer<typeof updateProjectFileSchema>;
 

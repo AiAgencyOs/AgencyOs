@@ -107,50 +107,50 @@ screen exists; at element level it does not hold.
 
 | SCR | Element | Status | What is missing |
 |---|---|---|---|
-| 018 | Total/active/blocked/completed | PARTIAL | No blocked count |
-| 018 | Phase distribution / Phase filter / Health filter | PARTIAL ×3 | Status, not lifecycle phase; "At risk" chip only |
-| 018 | Archive completed project | MISSING | No archive state |
-| 019 | Project links | MISSING | No links panel on the overview |
-| 019 | Upcoming events | PARTIAL | Milestones only, no meetings |
-| 019 | Send project update | MISSING | No control |
-| 019 | Create task/meeting/file | PARTIAL | Add task link only |
-| 020 | Phase/priority/assignee filters | PARTIAL | No phase filter |
-| 020 | Link evidence | PARTIAL | Generic URL attachment |
-| 022 | Create task/milestone/meeting from a day | PARTIAL | Milestone is a link to Plan |
-| 022 | Sync supported calendars | MISSING | Not built |
-| 023 | Total/completed/in-progress/pending | PARTIAL | "Late" instead of pending |
-| 023 | Milestone detail panel / Milestone tasks | PARTIAL ×2 | Next milestone only; counts, no task list |
-| 023 | Open tasks | MISSING | No link from milestone to tasks |
-| 024 | Total files/storage | PARTIAL | No storage size |
-| 024 | Folder tree | PARTIAL | Flat category grid |
-| 024 | Preview drawer | MISSING | No preview |
-| 024 | Rename/move stored files, share internally | PARTIAL | Rename only for links; share is a public signed link |
-| 025 | Active now | MISSING | Presence not drawn |
-| 025 | Invite/assign, assign/remove member, set project role, project defaults | PARTIAL ×4 | Agency-wide default team only |
-| 026 | Project health | MISSING | No health panel on the report |
-| 026 | Export PDF | PARTIAL | CSV only |
-| 026 | Open underlying risk/task/event | PARTIAL | Card-level links only |
-| 027 | Template selection on project settings | PARTIAL | Only in ⌘K Create project |
-| 027 | Project template detail | PARTIAL | List with counts, no detail |
+| 018 | Total/active/blocked/completed | BUILT | `app/(internal)/projects/page.tsx` — Blocked tile from `readProjectLifecycles` (blocked task / unmet dependency), opens `?health=blocked` |
+| 018 | Phase distribution / Phase filter / Health filter | BUILT ×3 | `app/(internal)/projects/page.tsx` — lifecycle phase tiles (`lifecyclePhaseOf`), `?phase=` and `?health=` filters |
+| 018 | Archive completed project | BUILT | `app/(internal)/projects/archive-button.tsx` → `projects.archive_project` (completed only, audited); `?archived=1` shows them |
+| 019 | Project links | BUILT | `app/(internal)/projects/[projectId]/links-panel.tsx` — `projects.project_links` |
+| 019 | Upcoming events | BUILT | `app/(internal)/projects/[projectId]/page.tsx` — milestones and the deal's meetings, dated ahead |
+| 019 | Send project update | BUILT | `app/(internal)/projects/[projectId]/project-update-form.tsx` → `sendProjectUpdate` through `sendClientMessage` (client) or recorded (internal) |
+| 019 | Create task/meeting/file | BUILT | `app/(internal)/projects/[projectId]/create-in-place.tsx` (task), `ProposeMeetingOnDayForm`, `AddProjectFileForm` on the overview |
+| 020 | Phase/priority/assignee filters | BUILT | `app/(internal)/projects/[projectId]/board/board-client.tsx` — phase = payment milestone filter; assignees from `project_members` with roster fallback |
+| 020 | Link evidence | BUILT | `app/(internal)/task-collab-panel.tsx` — `task_attachments.kind` (screenshot, log, url, file) |
+| 022 | Create task/milestone/meeting from a day | BUILT | `app/(internal)/projects/[projectId]/calendar/add-milestone-form.tsx` → `projects.add_unpriced_milestone` |
+| 022 | Sync supported calendars | BUILT | `app/(internal)/projects/[projectId]/calendar/calendar-feed-panel.tsx` + `app/api/projects/[projectId]/calendar.ics/route.ts` (signed ICS feed) |
+| 023 | Total/completed/in-progress/pending | BUILT | `app/(internal)/projects/[projectId]/plan/page.tsx` — Pending tile beside Late |
+| 023 | Milestone detail panel / Milestone tasks | BUILT ×2 | `app/(internal)/projects/[projectId]/plan/page.tsx` — `?milestone=` picker, detail panel with its task list (`listTasksByMilestone`) |
+| 023 | Open tasks | BUILT | `app/(internal)/projects/[projectId]/plan/page.tsx` — "Open tasks on the Board" → `/board?milestone=` |
+| 024 | Total files/storage | BUILT | `app/(internal)/projects/[projectId]/files/page.tsx` — storage used = sum of stored versions' sizes |
+| 024 | Folder tree | BUILT | `app/(internal)/projects/[projectId]/files/page.tsx` — `project_files.folder` tree per category |
+| 024 | Preview drawer | BUILT | `app/(internal)/projects/[projectId]/files/file-preview-drawer.tsx` — images and PDFs via the signed download route |
+| 024 | Rename/move stored files, share internally | BUILT | `app/(internal)/projects/[projectId]/files-panel.tsx` (rename/move with folder, stored files too); internal share list beside the public links in `files/page.tsx` |
+| 025 | Active now | BUILT | `app/(internal)/projects/[projectId]/team/page.tsx` — "Active today" and "last active" from the audit log (`readLastActive`); no "online" is claimed |
+| 025 | Invite/assign, assign/remove member, set project role, project defaults | BUILT ×4 | `app/(internal)/projects/[projectId]/team/members-panel.tsx` — `projects.project_members` doors; defaults on Settings |
+| 026 | Project health | BUILT | `app/(internal)/projects/[projectId]/reports/page.tsx` — `projectHealth` panel, each reason linked |
+| 026 | Export PDF | BUILT | `app/api/projects/[projectId]/report/pdf/route.ts` via `src/lib/pdf/project-report.ts` |
+| 026 | Open underlying risk/task/event | BUILT | `app/(internal)/projects/[projectId]/reports/page.tsx` — open defects and overdue tasks each link to their row |
+| 027 | Template selection on project settings | BUILT | `app/(internal)/projects/[projectId]/settings/template-select-panel.tsx` → `projects.set_project_template` |
+| 027 | Project template detail | BUILT | `app/(internal)/projects/[projectId]/settings/page.tsx` — the followed template's modules, milestones, scope, onboarding, tasks |
 
 ## Requirements & Scope (028–031)
 
 | SCR | Element | Status | What is missing |
 |---|---|---|---|
-| 028 | Recent requirement changes | PARTIAL | Awaiting-decision queue only |
-| 028 | Request clarification / Create change request from the dashboard | PARTIAL ×2 | Exist on Plan/Scope pages only |
-| 028 | Export scope summary | MISSING | No route |
+| 028 | Recent requirement changes | BUILT | `app/(internal)/requirements/page.tsx` — `readRecentRequirementChanges` (change requests raised/decided, baselines frozen, plan questions) |
+| 028 | Request clarification / Create change request from the dashboard | BUILT ×2 | `app/(internal)/requirements/requirements-doors.tsx` — the Plan/Scope pages' own doors with a project picker |
+| 028 | Export scope summary | BUILT | `app/api/requirements/scope-summary/route.ts` (org-wide CSV) and `app/api/projects/[projectId]/scope/export/route.ts` (per project) |
 | 029 | Objectives | PARTIAL | Summary only |
 | 029 | User roles / Platforms / Integrations | MISSING ×3 | Not in the requirement payload |
 | 029 | Business rules / Non-functional requirements | PARTIAL ×2 | Merged into "Constraints and rules" |
 | 029 | Request client clarification | PARTIAL | Whole-version send only |
 | 029 | Link to quotation/design/development task | PARTIAL | Read-only "Cited by" |
-| 030 | Approval evidence | PARTIAL | Frozen date only |
-| 031 | Paid / in-progress counts | PARTIAL | Not counted |
-| 031 | Payment gate | PARTIAL | Project-wide invoice counts, not the CR's invoice |
-| 031 | Send quotation | PARTIAL | Link to draft on the lead |
-| 031 | Trigger finance | MISSING | No invoice from a change request |
-| 031 | Implement after payment where required | PARTIAL | Apply is not payment-gated |
+| 030 | Approval evidence | BUILT | `app/(internal)/projects/[projectId]/scope/approval-form.tsx` → `projects.record_scope_approval_evidence` (approved_by/at, evidence url, note) |
+| 031 | Paid / in-progress counts | BUILT | `app/(internal)/projects/[projectId]/change-request-panel.tsx` — Paid / In progress / Awaiting payment tiles |
+| 031 | Payment gate | BUILT | `app/(internal)/projects/[projectId]/change-request-panel.tsx` — the request's OWN invoice (`change_requests.invoice_id`) |
+| 031 | Send quotation | BUILT | `app/(internal)/projects/[projectId]/change-request-panel.tsx` — `sendProposalAction` on the project's client thread |
+| 031 | Trigger finance | BUILT | `src/modules/finance/change-request-invoice-service.ts` → `finance.create_change_request_invoice` (milestone-less invoice through `create_milestone_invoice`) |
+| 031 | Implement after payment where required | BUILT | `projects.apply_change_request` refuses `not_invoiced` / `unpaid` for a paid change; the Apply button says so first |
 
 ## Design & Prototype (032–038)
 

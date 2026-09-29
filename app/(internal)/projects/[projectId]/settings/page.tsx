@@ -8,6 +8,8 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject, listDevelopmentBreakdown, listInternalRoster, listPaymentPlan, readChangeRequests } from '@/modules/projects/queries';
 import { readProjectDefaults } from '@/modules/projects/project-defaults-queries';
+import { getProjectTemplate, listProjectTemplates } from '@/modules/projects/project-template-queries';
+import { TemplateSelectForm } from './template-select-panel';
 import { Badge, Callout, Card, CardHeader, EmptyState, IconAudit, PageHeader, PermissionDenied, Stat, StatGrid, StatusBadge } from '@/ui';
 
 import { ProjectDetailsForm, ProjectVisibilityForm } from '../settings-panel';
@@ -49,6 +51,8 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
     readProjectDefaults(projectId),
     listInternalRoster(),
   ]);
+  // SCR-027: template selection and the chosen template's detail.
+  const [templates, template] = await Promise.all([listProjectTemplates(), project.template_id ? getProjectTemplate(project.template_id) : Promise.resolve(null)]);
   const members = roster.map((m) => ({ userId: m.userId, fullName: m.fullName }));
   // SCR-027: adding or removing another person's watch is owner / ops_admin
   // (project.sign_off's two roles), which `project_watchers_write` mirrors.
@@ -170,11 +174,58 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
         <WatchersPanel projectId={projectId} watchers={defaults.watchers} roster={members} mayManageOthers={mayManageWatchers} selfId={context.userId} />
       </section>
 
-      <Callout tone="info">
-        Project templates: save this project as a template from its header (&ldquo;Save as template&rdquo;),
-        start a new project from one in ⌘K › Create project, and manage them under{' '}
-        <Link href="/settings/templates" className="underline">Settings › Templates</Link>.
-      </Callout>
+      {/* SCR-027: template selection and template detail. The selection is a
+          record of which template this project follows — recorded when it was
+          created from one, changeable here; nothing is re-applied. */}
+      <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 shadow-xs sm:p-5">
+        <h2 className="text-sm font-semibold tracking-tight">Project template</h2>
+        <p className="text-[13px] text-muted">
+          The saved template this project follows. Recorded when a project is created from one (⌘K › Create project › From template) and changeable here; changing it re-applies nothing — the structure a template carries is written when the project is created. Manage templates under{' '}
+          <Link href="/settings/templates" className="underline">Settings › Templates</Link>.
+        </p>
+        {canWrite ? (
+          <TemplateSelectForm projectId={projectId} current={project.template_id} templates={templates} />
+        ) : (
+          <p className="text-[13px]">{template ? `Follows “${template.name}”.` : 'No template recorded.'} <span className="text-muted">You do not have permission to change it.</span></p>
+        )}
+        {template ? (
+          <div className="flex flex-col gap-2 rounded-lg border border-line bg-canvas p-3 text-[13px]">
+            <p className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">{template.name}</span>
+              {template.description ? <span className="text-muted">{template.description}</span> : null}
+              <span className="ml-auto text-xs text-muted">saved {clock.date(template.createdAt)}{template.createdByName ? ` by ${template.createdByName}` : ''}</span>
+            </p>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <Badge tone="neutral">{template.counts.modules} module{template.counts.modules === 1 ? '' : 's'}</Badge>
+              <Badge tone="neutral">{template.counts.features} feature{template.counts.features === 1 ? '' : 's'}</Badge>
+              <Badge tone={template.counts.milestones > 0 && template.milestonePercent !== 100 ? 'warning' : 'neutral'}>{template.counts.milestones} milestone{template.counts.milestones === 1 ? '' : 's'}{template.counts.milestones > 0 ? ` · ${template.milestonePercent}%` : ''}</Badge>
+              <Badge tone="neutral">{template.counts.scopeItems} scope item{template.counts.scopeItems === 1 ? '' : 's'}</Badge>
+              <Badge tone="neutral">{template.counts.tasks} task title{template.counts.tasks === 1 ? '' : 's'}</Badge>
+              <Badge tone="neutral">{template.counts.onboarding} onboarding item{template.counts.onboarding === 1 ? '' : 's'}</Badge>
+            </div>
+            {template.items.modules.length > 0 ? (
+              <ul className="flex flex-col gap-1">
+                {template.items.modules.map((m) => (
+                  <li key={m.name}>
+                    <span className="font-medium">{m.name}</span>
+                    {m.features.length > 0 ? <span className="text-muted"> — {m.features.map((f) => f.name).join(', ')}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {template.items.milestones.length > 0 ? (
+              <p className="text-muted">Milestones: {template.items.milestones.map((m) => `${m.name} (${m.percent}%)`).join(' · ')}</p>
+            ) : null}
+            {template.items.scopeItems.length > 0 ? (
+              <p className="text-muted">Scope: {template.items.scopeItems.map((s) => `${s.title} (${s.inclusion})`).join(' · ')}</p>
+            ) : null}
+            {template.items.onboarding.length > 0 ? (
+              <p className="text-muted">Onboarding: {template.items.onboarding.map((o) => o.label).join(' · ')}</p>
+            ) : null}
+            {template.items.tasks.length > 0 ? <p className="text-muted">Task titles: {template.items.tasks.map((t) => t.title).join(' · ')}</p> : null}
+          </div>
+        ) : null}
+      </section>
     </div>
   );
 }

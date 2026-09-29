@@ -7,19 +7,44 @@ import { readClientName } from '@/lib/admin/clients';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { clientEnv } from '@/lib/env';
-import { listProjectFileTree, listTrashedFiles, readStorageStatus } from '@/modules/projects/files-storage-queries';
+import { listProjectFileTree, listTrashedFiles, readStorageStatus, type ProjectFileHead } from '@/modules/projects/files-storage-queries';
+import { listProjectMembers } from '@/modules/projects/project-members-queries';
+import { PROJECT_ROLE_LABEL } from '@/modules/projects/project-members-schema';
 import { getProject } from '@/modules/projects/queries';
 import { PROJECT_FILE_CATEGORIES } from '@/modules/projects/schema';
-import { ActivityFeed, Card, CardHeader, cx, EmptyState, humanize, IconAttach, IconFile, IconUpload, PermissionDenied, TONE_CHIP, type Tone } from '@/ui';
+import { ActivityFeed, Card, CardHeader, cx, EmptyState, humanize, IconAttach, IconFile, IconUpload, PermissionDenied, Stat, StatGrid, TONE_CHIP, type Tone } from '@/ui';
 
 import { AddProjectFileForm, EditFileForm } from '../files-panel';
 import { StorageNotice, StoredFileRow, TrashList, UploadFileForm, type FileLabels } from '../files-storage-panel';
 import { ProjectSubNav } from '../project-subnav';
 import { WorkspaceHeader } from '../workspace-header';
 
+import { FilePreviewButton } from './file-preview-drawer';
+
 export const metadata: Metadata = { title: 'Files' };
 
 const FOLDER_TONES: Tone[] = ['info', 'accent', 'success', 'warning', 'danger', 'brand', 'neutral'];
+
+function bytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+/** The folder tree inside one category: every folder path and its ancestors, with file counts. */
+function folderTree(files: readonly ProjectFileHead[]): { path: string; depth: number; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const f of files) {
+    if (!f.folder) continue;
+    const parts = f.folder.split('/');
+    for (let i = 1; i <= parts.length; i += 1) {
+      const path = parts.slice(0, i).join('/');
+      counts.set(path, (counts.get(path) ?? 0) + (i === parts.length ? 1 : 0));
+    }
+  }
+  return [...counts.keys()].sort().map((path) => ({ path, depth: path.split('/').length - 1, count: files.filter((f) => f.folder === path || f.folder.startsWith(`${path}/`)).length }));
+}
 
 /**
  * SCR-024 — Project Files. Since decision 5 of 2026-09-29 a file here is
@@ -28,18 +53,25 @@ const FOLDER_TONES: Tone[] = ['info', 'accent', 'success', 'warning', 'danger', 
  * trash with a restore door, and signed share links. The storage probe is
  * read first: when the bucket does not answer the page says so in words
  * and every storage control is drawn disabled — the local stack has no
- * storage service, and that state is shown, never papered over. Sizes are
- * shown only for stored files, because only those have one recorded.
+ * storage service, and that state is shown, never papered over.
+ *
+ * Since 20261001120000: total storage (the sum of every stored version's
+ * recorded size — links have none and are counted as files, not bytes), a
+ * folder tree inside each category (`project_files.folder`), a preview
+ * drawer for images and PDFs through the signed download route, rename /
+ * move for stored files through the same update door links use, and the
+ * INTERNAL share — who on the project can open a file through the internal
+ * link — drawn beside the public share links so the two are never confused.
  */
 export default async function ProjectFilesPage({
   params,
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ category?: string; view?: string }>;
+  searchParams: Promise<{ category?: string; folder?: string; view?: string }>;
 }) {
   const { projectId } = await params;
-  const { category, view } = await searchParams;
+  const { category, folder, view } = await searchParams;
 
   const context = await requireInternal(`/projects/${projectId}/files`);
   if (!can(context.role, 'project.read')) return <PermissionDenied />;
@@ -48,16 +80,19 @@ export default async function ProjectFilesPage({
   if (!project) notFound();
 
   const editable = can(context.role, 'project.write');
-  const [allFiles, trashed, storage, clock, clientName] = await Promise.all([
+  const [allFiles, trashed, storage, clock, clientName, members] = await Promise.all([
     listProjectFileTree(projectId),
     listTrashedFiles(projectId),
     context.organizationId ? readStorageStatus(context.organizationId) : Promise.resolve({ reachable: false as const, bucket: 'project-files', reason: 'No organization on this session.' }),
     agencyClock(),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
+    listProjectMembers(projectId),
   ]);
-  const files = category ? allFiles.filter((f) => f.category === category) : allFiles;
+  const inCategory = category ? allFiles.filter((f) => f.category === category) : allFiles;
+  const files = folder ? inCategory.filter((f) => f.folder === folder || f.folder.startsWith(`${folder}/`)) : inCategory;
   const countBy = (c: string) => allFiles.filter((f) => f.category === c).length;
   const showTrash = view === 'trash';
+  const tree = folderTree(inCategory);
 
   // Pre-formatted dates, keyed by row id, for the client rows.
   const labels: FileLabels = {};
@@ -70,6 +105,11 @@ export default async function ProjectFilesPage({
 
   const base = `/projects/${projectId}/files`;
   const stored = allFiles.filter((f) => f.stored).length;
+  // SCR-024 "Total files/storage": every stored version's recorded size.
+  const storageBytes = allFiles.reduce((n, f) => n + f.versions.reduce((m, v) => m + (v.sizeBytes ?? 0), 0), 0);
+  const versionCount = allFiles.reduce((n, f) => n + f.versions.length, 0);
+  const liveShares = allFiles.reduce((n, f) => n + f.shares.filter((s) => s.live).length, 0);
+  const href = (c?: string, dir?: string) => `${base}${[c ? `category=${c}` : '', dir ? `folder=${encodeURIComponent(dir)}` : ''].filter(Boolean).length ? `?${[c ? `category=${c}` : '', dir ? `folder=${encodeURIComponent(dir)}` : ''].filter(Boolean).join('&')}` : ''}`;
 
   return (
     <div className="flex flex-col gap-5">
@@ -91,6 +131,14 @@ export default async function ProjectFilesPage({
       <ProjectSubNav projectId={projectId} />
 
       <StorageNotice status={storage} />
+
+      {/* SCR-024: total files and storage — real sums over real rows; each tile opens the list it counts. */}
+      <StatGrid cols={4}>
+        <Stat label="Total files" value={String(allFiles.length)} caption={`${stored} stored · ${allFiles.length - stored} linked`} tone="brand" icon={<IconAttach size={16} />} href={base} />
+        <Stat label="Storage used" value={storageBytes > 0 ? bytes(storageBytes) : '—'} caption={stored > 0 ? `${versionCount} stored version${versionCount === 1 ? '' : 's'}` : 'No stored file yet; links take no storage'} tone="info" icon={<IconUpload size={16} />} />
+        <Stat label="Public share links" value={String(liveShares)} caption="live, not expired or revoked" tone={liveShares > 0 ? 'warning' : 'neutral'} icon={<IconFile size={16} />} />
+        <Stat label="Trash" value={String(trashed.length)} caption="restorable" tone="neutral" icon={<IconAttach size={16} />} href={`${base}?view=trash`} />
+      </StatGrid>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(18rem,1fr)]">
         <div className="flex min-w-0 flex-col gap-4">
@@ -114,7 +162,7 @@ export default async function ProjectFilesPage({
               </li>
               {PROJECT_FILE_CATEGORIES.map((c, i) => (
                 <li key={c}>
-                  <Link href={`${base}?category=${c}`} className={cx('flex flex-col gap-2 rounded-xl border bg-surface p-3 shadow-xs transition-colors hover:bg-surface-hover', category === c ? 'border-brand/40' : 'border-line')}>
+                  <Link href={href(c)} className={cx('flex flex-col gap-2 rounded-xl border bg-surface p-3 shadow-xs transition-colors hover:bg-surface-hover', category === c ? 'border-brand/40' : 'border-line')}>
                     <span className={cx('flex h-9 w-9 items-center justify-center rounded-lg', TONE_CHIP[FOLDER_TONES[i % FOLDER_TONES.length] ?? 'neutral'])}><IconFile size={16} /></span>
                     <span className="text-[13px] font-medium">{humanize(c)}</span>
                     <span className="text-xs text-muted">{countBy(c)} file{countBy(c) === 1 ? '' : 's'}</span>
@@ -122,6 +170,26 @@ export default async function ProjectFilesPage({
                 </li>
               ))}
             </ul>
+            {/* SCR-024 "Folder tree": the folders inside the chosen category (or every category), as a tree. */}
+            {tree.length > 0 ? (
+              <nav aria-label="Folder tree" className="mt-3 rounded-xl border border-line bg-surface p-3 shadow-xs">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted">{category ? `${humanize(category)} folders` : 'Folders across categories'}</p>
+                <ul className="flex flex-col gap-0.5 text-[13px]">
+                  <li>
+                    <Link href={href(category)} className={cx('inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-surface-hover', !folder ? 'font-medium text-foreground' : 'text-muted')}>
+                      <IconFile size={12} /> {category ? humanize(category) : 'All'} (root)
+                    </Link>
+                  </li>
+                  {tree.map((node) => (
+                    <li key={node.path} style={{ paddingLeft: `${node.depth * 1.25 + 0.75}rem` }}>
+                      <Link href={href(category, node.path)} className={cx('inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-surface-hover', folder === node.path ? 'font-medium text-foreground' : 'text-muted')}>
+                        <IconFile size={12} /> {node.path.split('/').pop()} <span className="text-xs text-faint">({node.count})</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            ) : null}
           </div>
 
           {showTrash ? (
@@ -135,14 +203,48 @@ export default async function ProjectFilesPage({
             </Card>
           ) : (
             <Card>
-              <CardHeader title={category ? `${humanize(category)} files` : 'Recent files'} description={`${files.length} file${files.length === 1 ? '' : 's'}, newest first. A stored file opens its latest version; expand a row for its versions and share links.`} />
+              <CardHeader
+                title={folder ? `${humanize(category ?? 'all')} / ${folder}` : category ? `${humanize(category)} files` : 'Recent files'}
+                description={`${files.length} file${files.length === 1 ? '' : 's'}, newest first. A stored file opens its latest version; expand a row for its versions, the internal share and the public share links.`}
+              />
               {files.length > 0 ? (
                 <ul className="divide-y divide-line">
                   {files.map((f) => (
-                    <StoredFileRow key={f.id} file={f} projectId={projectId} editable={editable} reachable={storage.reachable} labels={labels} appUrl={clientEnv.NEXT_PUBLIC_APP_URL}>
-                      {!f.stored ? (
+                    <StoredFileRow
+                      key={f.id}
+                      file={f}
+                      projectId={projectId}
+                      editable={editable}
+                      reachable={storage.reachable}
+                      labels={labels}
+                      appUrl={clientEnv.NEXT_PUBLIC_APP_URL}
+                      extra={f.stored ? <FilePreviewButton projectId={projectId} fileId={f.latest.id} title={f.title} contentType={f.latest.contentType} stored={f.stored} reachable={storage.reachable} /> : null}
+                      internalShare={
+                        f.stored ? (
+                          <div className="flex flex-col gap-1 text-xs">
+                            <p className="font-medium">Internal share</p>
+                            <p className="text-muted">
+                              Anyone on the project opens it through the internal link, under their own sign-in: <code className="rounded bg-surface-sunken px-1">{`${clientEnv.NEXT_PUBLIC_APP_URL}/api/projects/${projectId}/files/${f.latest.id}/download`}</code>
+                            </p>
+                            {members.length === 0 ? (
+                              <p className="text-muted">No project members recorded yet — every internal role with project access can still open it. Put people on the project from the Team tab.</p>
+                            ) : (
+                              <ul className="flex flex-wrap gap-1">
+                                {members.map((m) => (
+                                  <li key={m.id} className="rounded-full border border-line px-2 py-0.5">
+                                    {m.fullName} <span className="text-muted">· {PROJECT_ROLE_LABEL[m.projectRole]}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        ) : null
+                      }
+                    >
+                      {editable ? (
                         <EditFileForm
-                          file={{ id: f.id, category: f.category, title: f.title, url: f.url ?? '', description: f.description, uploadedByName: f.uploadedByName, createdAt: f.createdAt }}
+                          file={{ id: f.id, category: f.category, title: f.title, ...(f.url ? { url: f.url } : {}), description: f.description, uploadedByName: f.uploadedByName, createdAt: f.createdAt }}
+                          folder={f.folder}
                           projectId={projectId}
                         />
                       ) : null}
@@ -152,8 +254,8 @@ export default async function ProjectFilesPage({
               ) : (
                 <EmptyState
                   icon={<IconAttach size={22} />}
-                  title={category ? 'No matching files' : 'No files yet'}
-                  description={category ? `No files are filed under “${humanize(category)}”.` : 'Upload a file to storage, or link one from wherever it already lives — a Drive folder, a Figma file, a build host.'}
+                  title={category || folder ? 'No matching files' : 'No files yet'}
+                  description={folder ? `Nothing is filed under “${folder}”.` : category ? `No files are filed under “${humanize(category)}”.` : 'Upload a file to storage, or link one from wherever it already lives — a Drive folder, a Figma file, a build host.'}
                 />
               )}
             </Card>
@@ -167,7 +269,7 @@ export default async function ProjectFilesPage({
             items={allFiles.slice(0, 6).map((f) => ({
               id: f.id,
               title: `${f.latest.uploadedByName ?? f.uploadedByName ?? 'Someone'} ${f.stored ? (f.latest.version > 1 ? `uploaded v${f.latest.version} of` : 'uploaded') : 'linked'} ${f.title}`,
-              detail: humanize(f.category),
+              detail: `${humanize(f.category)}${f.folder ? ` / ${f.folder}` : ''}`,
               when: clock.dateTime(f.latest.createdAt),
               tone: 'info',
               icon: <IconUpload size={13} />,

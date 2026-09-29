@@ -171,6 +171,11 @@ export async function applyChangeRequest(input: {
       return err('NOT_FOUND', 'That change request does not exist.');
     case 'not_approved':
       return err('CONFLICT', 'Only an approved change request can be applied to the baseline.');
+    // SCR-031 (20261001120000): a paid change is applied after it is paid for.
+    case 'not_invoiced':
+      return err('CONFLICT', 'This is a paid change and no invoice has been raised for it yet. Raise its invoice (Trigger finance) and apply once it is paid.');
+    case 'unpaid':
+      return err('CONFLICT', 'This paid change’s invoice is not paid yet. It is applied to the baseline once the invoice is paid.');
     case 'no_baseline':
       return err('CONFLICT', 'This project has no active scope baseline to open the next version from.');
     case 'draft_exists':

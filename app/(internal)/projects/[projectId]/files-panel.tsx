@@ -74,8 +74,14 @@ export function RemoveFileButton({ projectId, fileId }: { projectId: string; fil
   );
 }
 
-export function EditFileForm({ file, projectId }: { file: ProjectFile; projectId: string }) {
+/**
+ * Rename / move — the link door's own update, since 20261001120000 with the
+ * folder inside the category (SCR-024), and offered for STORED files too:
+ * title, category and folder are row facts; the object never moves.
+ */
+export function EditFileForm({ file, projectId, folder = '' }: { file: Omit<ProjectFile, 'url'> & { url?: string }; projectId: string; folder?: string }) {
   const [state, action, pending] = useActionState(updateProjectFileAction, IDLE_STATE);
+  const stored = !file.url;
 
   return (
     <form action={action} className="flex flex-col gap-2 rounded-lg border border-line bg-canvas p-3">
@@ -96,10 +102,14 @@ export function EditFileForm({ file, projectId }: { file: ProjectFile; projectId
         </label>
       </div>
       <label className="flex flex-col gap-1">
+        <span className={labelClass}>Folder (inside the category)</span>
+        <input name="folder" maxLength={200} defaultValue={folder} className={inputClass} placeholder="mockups/mobile — empty for the category root" />
+      </label>
+      <label className="flex flex-col gap-1">
         <span className={labelClass}>Description</span>
         <textarea name="description" maxLength={1000} defaultValue={file.description ?? ''} className={textareaClass} rows={2} />
       </label>
-      <p className="text-xs text-muted">The link itself is not editable — a different place is a different file. Remove and link again.</p>
+      <p className="text-xs text-muted">{stored ? 'Moving a file changes where it is filed, not the stored object — every version stays where it is.' : 'The link itself is not editable — a different place is a different file. Remove and link again.'}</p>
       <div className="flex flex-wrap items-center gap-3">
         <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
           {pending ? 'Saving…' : 'Save'}

@@ -51,7 +51,7 @@ export async function readTaskCollabFor(taskIds: readonly string[], clock: Agenc
     supabase
       .schema('projects')
       .from('task_attachments')
-      .select('id, task_id, title, url, added_by, created_at')
+      .select('id, task_id, title, url, kind, added_by, created_at')
       .in('task_id', ids)
       .order('created_at', { ascending: true }),
   ]);
@@ -97,7 +97,7 @@ export async function readTaskCollabFor(taskIds: readonly string[], clock: Agenc
     out[i.task_id]?.checklist.push({ id: i.id, label: i.label, position: i.position, doneAt: i.done_at, doneBy: i.done_by, doneByName: nameOf(i.done_by), doneLabel: i.done_at ? clock.dateTime(i.done_at) : null });
   }
   for (const a of attachments.data ?? []) {
-    out[a.task_id]?.attachments.push({ id: a.id, title: a.title, url: a.url, addedByName: nameOf(a.added_by), createdAt: a.created_at, createdLabel: clock.dateTime(a.created_at) });
+    out[a.task_id]?.attachments.push({ id: a.id, title: a.title, url: a.url, kind: a.kind, addedByName: nameOf(a.added_by), createdAt: a.created_at, createdLabel: clock.dateTime(a.created_at) });
   }
   for (const entry of Object.values(out)) {
     const total = entry.checklist.length;

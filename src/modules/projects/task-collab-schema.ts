@@ -31,10 +31,15 @@ export const setChecklistItemDoneSchema = z.object({
 
 export const removeChecklistItemSchema = z.object({ itemId: z.uuid() });
 
+/** SCR-020 — what a link is evidence of (migration 20261001120000). */
+export const TASK_EVIDENCE_KINDS = ['screenshot', 'log', 'url', 'file'] as const;
+export type TaskEvidenceKind = (typeof TASK_EVIDENCE_KINDS)[number];
+
 export const addTaskAttachmentSchema = z.object({
   taskId: z.uuid(),
   title: z.string().trim().min(1, 'Give the link a title.').max(200),
   url,
+  kind: z.enum(TASK_EVIDENCE_KINDS).default('url'),
 });
 
 export const removeTaskAttachmentSchema = z.object({ attachmentId: z.uuid() });

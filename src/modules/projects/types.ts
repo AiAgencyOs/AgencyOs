@@ -23,6 +23,9 @@ export type ProjectDetail = ProjectListItem &
     // SCR-018: why it was last paused, resumed or cancelled, and when.
     | 'status_reason'
     | 'status_changed_at'
+    // SCR-018/027 (20261001120000): the archive mark, and the template followed.
+    | 'archived_at'
+    | 'template_id'
   >;
 
 /** A milestone as the payment plan renders it. */

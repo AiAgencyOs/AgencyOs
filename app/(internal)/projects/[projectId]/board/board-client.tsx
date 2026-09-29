@@ -45,6 +45,9 @@ export type BoardTask = KanbanItem & {
   priority: string;
   assigneeId: string | null;
   assigneeName: string | null;
+  /** SCR-020: the payment milestone ("phase") the task is filed under. */
+  milestoneId: string | null;
+  milestoneName: string | null;
   moduleId: string | null;
   moduleName: string | null;
   dueOn: string | null;
@@ -55,6 +58,8 @@ export type BoardTask = KanbanItem & {
 
 export type BoardModule = { id: string; name: string };
 export type BoardPerson = { userId: string; fullName: string };
+/** SCR-020: the payment milestone a task is filed under — the Board's "phase" filter. */
+export type BoardMilestone = { id: string; name: string };
 
 const PRIORITY: Record<string, { label: string; tone: 'danger' | 'warning' | 'info' | 'neutral' }> = {
   p0: { label: 'Critical', tone: 'danger' },
@@ -95,6 +100,9 @@ export function ProjectBoard({
   modules,
   people,
   roster,
+  rosterSource = 'roster',
+  milestones = [],
+  initialMilestone,
   canWrite,
   collab,
 }: {
@@ -104,8 +112,13 @@ export function ProjectBoard({
   modules: BoardModule[];
   /** People with a task on this board — the assignee filter. */
   people: BoardPerson[];
-  /** Everyone in the organisation — who a task may be assigned to. */
+  /** Who a task may be assigned to — the project's members, or the organisation roster when it has none (20261001120000). */
   roster: BoardPerson[];
+  rosterSource?: 'members' | 'roster';
+  /** SCR-020: the payment milestones — the "phase" filter. */
+  milestones?: BoardMilestone[];
+  /** `?milestone=` — the Plan page's "open tasks" link lands here pre-filtered. */
+  initialMilestone?: string;
   canWrite: boolean;
   /** Comments, checklist, attachments and the blocker per task id — SCR-020. */
   collab: Record<string, TaskCollab>;
@@ -116,6 +129,7 @@ export function ProjectBoard({
   const [assignee, setAssignee] = useState('');
   const [priority, setPriority] = useState('');
   const [moduleFilter, setModuleFilter] = useState('');
+  const [milestoneFilter, setMilestoneFilter] = useState(initialMilestone ?? '');
   const [adding, setAdding] = useState<string | null>(null);
   const [openTask, setOpenTask] = useState<BoardTask | null>(null);
   // A card dropped on Blocked waits here for its reason — the drop's promise
@@ -154,9 +168,10 @@ export function ProjectBoard({
         (!q || t.title.toLowerCase().includes(q)) &&
         (!assignee || (assignee === 'unassigned' ? t.assigneeId === null : t.assigneeId === assignee)) &&
         (!priority || t.priority === priority) &&
-        (!moduleFilter || t.moduleId === moduleFilter),
+        (!moduleFilter || t.moduleId === moduleFilter) &&
+        (!milestoneFilter || (milestoneFilter === 'none' ? t.milestoneId === null : t.milestoneId === milestoneFilter)),
     );
-  }, [tasks, query, assignee, priority, moduleFilter]);
+  }, [tasks, query, assignee, priority, moduleFilter, milestoneFilter]);
 
   const filtered = visible.length !== tasks.length;
 
@@ -202,6 +217,19 @@ export function ProjectBoard({
             </option>
           ))}
         </select>
+        {/* SCR-020: the phase filter — the payment milestone a task is filed under. */}
+        {milestones.length > 0 ? (
+          <select aria-label="Filter by phase" value={milestoneFilter} onChange={(e) => setMilestoneFilter(e.target.value)} className={cx(selectClass, 'sm:w-auto sm:min-w-[9rem]')}>
+            <option value="">All phases</option>
+            {milestones.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+            <option value="none">No milestone</option>
+          </select>
+        ) : null}
+        {rosterSource === 'members' ? <span className="text-[11px] text-muted" title="Assignees are the project's members; the organisation roster is offered when a project has none.">assignees: project members</span> : null}
         <span className="ml-auto text-xs text-muted">
           {filtered ? `${visible.length} of ${tasks.length}` : tasks.length} task{tasks.length === 1 ? '' : 's'}
           {filtered ? (
@@ -212,6 +240,7 @@ export function ProjectBoard({
                 setAssignee('');
                 setPriority('');
                 setModuleFilter('');
+                setMilestoneFilter('');
               }}
               className="ml-2 font-medium text-brand hover:underline"
             >

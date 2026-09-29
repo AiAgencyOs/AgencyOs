@@ -19,6 +19,10 @@ import {
 } from '@/modules/projects/queries';
 import { listReportTasks, weekStartOf, weeksBetween } from '@/modules/projects/report-queries';
 import { readProjectTime } from '@/modules/projects/time-log-queries';
+import { listPaymentClaims } from '@/modules/finance/queries';
+import { readBlockersAcrossProjects } from '@/modules/projects/blockers-queries';
+import { projectHealth } from '@/modules/projects/project-health';
+import { listPhaseFourEscalations } from '@/modules/projects/queries';
 import { listDefects } from '@/modules/qa/queries';
 import { blocksDelivery, type DefectSeverity, type DefectStatus } from '@/modules/qa/schema';
 import {
@@ -109,7 +113,15 @@ export default async function ProjectReportPage({
     // Margin — decision: reversed by the owner on 2026-09-29. Cash basis, time cost included.
     mayReadMoney ? readProjectMargin(projectId) : Promise.resolve(null),
   ]);
+  // SCR-026: the health panel's inputs — the same facts the projects list and
+  // the PDF export read, through one pure rule (`projectHealth`).
+  const [blockers, escalations, claims] = await Promise.all([
+    readBlockersAcrossProjects(),
+    listPhaseFourEscalations(),
+    mayReadMoney ? listPaymentClaims(projectId) : Promise.resolve([]),
+  ]);
   const timeCsvHref = `/api/projects/${projectId}/report/time`;
+  const pdfHref = `/api/projects/${projectId}/report/pdf`;
 
   const currency = project.currency;
   const { tasks, modules } = breakdown;
@@ -163,6 +175,19 @@ export default async function ProjectReportPage({
   const aiCost = spend.reduce((n, r) => n + r.costMinor, 0);
   const aiRuns = spend.reduce((n, r) => n + r.runs, 0);
   const budget = project.budget_minor ?? 0;
+  const milestonesOverdue = plan.filter((m) => !m.met_at && m.due_on && m.due_on < today).length;
+  const mine = blockers.find((b) => b.projectId === projectId);
+  const health = projectHealth({
+    status: project.status,
+    blockedTasks: mine?.blockedTasks.length ?? 0,
+    unmetDependencies: mine?.dependencies.length ?? 0,
+    overdueTasks: tasksOverdue,
+    overdueMilestones: milestonesOverdue,
+    blockingDefects: blocking,
+    escalations: escalations.filter((e) => e.projectId === projectId).length,
+    pendingClaims: claims.filter((c) => c.status === 'pending').length,
+  });
+  const overdueTasks = tasks.filter((t) => t.status !== 'done' && t.dueOn && t.dueOn < today);
 
   return (
     <div className="flex flex-col gap-5">
@@ -193,7 +218,36 @@ export default async function ProjectReportPage({
           <IconDownload size={14} />
           Export CSV
         </a>
+        {/* SCR-026: the report as a document, through src/lib/pdf — the same readers and the same health rule as this page. */}
+        <a href={`${pdfHref}?from=${from}&to=${to}`} className={buttonClass('secondary', 'sm')}>
+          <IconDownload size={14} />
+          Export PDF
+        </a>
       </FilterBar>
+
+      {/* SCR-026: project health — one rule (projectHealth) shared with the projects list and the PDF; each reason links to where it is fixed. */}
+      <Card>
+        <CardHeader
+          title={`Project health: ${health.label}`}
+          description={health.reasons.length === 0 ? 'No blocked work, nothing past due, no release-blocking defect.' : `${health.reasons.length} reason${health.reasons.length === 1 ? '' : 's'}.`}
+        />
+        {health.reasons.length > 0 ? (
+          <ul className="flex flex-wrap gap-2 px-4 pb-4 sm:px-5">
+            {health.reasons.map((r) => (
+              <li key={r}>
+                <Link
+                  href={
+                    /task/.test(r) ? `/projects/${projectId}/board` : /milestone/.test(r) ? `/projects/${projectId}/plan` : /defect/.test(r) ? `/projects/${projectId}/qa` : /claim/.test(r) ? `/projects/${projectId}` : /escalation/.test(r) ? '/projects/escalations' : `/projects/${projectId}/plan`
+                  }
+                  className={cx('inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset', health.level === 'blocked' ? 'bg-danger-soft text-danger ring-danger/25' : 'bg-warning-soft text-warning ring-warning/30')}
+                >
+                  {r}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </Card>
 
       <StatGrid cols={5}>
         <Stat label="Completion" value={`${completion}%`} caption={plan.length > 0 ? `${milestonesMet} of ${plan.length} milestones met` : `${tasksDone} of ${tasks.length} tasks done`} tone="brand" icon={<IconFlag size={16} />} href={`/projects/${projectId}/plan`} />
@@ -344,7 +398,33 @@ export default async function ProjectReportPage({
               />
             </div>
           )}
-          {tasksOverdue > 0 ? <p className="border-t border-line px-4 py-2 text-xs text-warning sm:px-5">{tasksOverdue} task{tasksOverdue === 1 ? '' : 's'} past due on the Board.</p> : null}
+          {/* SCR-026: each risk opens the underlying defect or task, not just the card. */}
+          {openDefects.length > 0 ? (
+            <ul className="divide-y divide-line border-t border-line">
+              {openDefects.slice(0, 8).map((d) => (
+                <li key={d.id}>
+                  <Link href={`/projects/${projectId}/qa#defect-${d.id}`} className="flex items-center justify-between gap-2 px-4 py-1.5 text-[13px] hover:bg-surface-hover sm:px-5">
+                    <span className="truncate">{d.title}</span>
+                    <span className={cx('shrink-0 text-xs', d.severity === 'blocker' ? 'text-danger' : 'text-muted')}>{humanize(d.severity)}</span>
+                  </Link>
+                </li>
+              ))}
+              {openDefects.length > 8 ? <li className="px-4 py-1.5 text-xs text-muted sm:px-5">and {openDefects.length - 8} more on the QA tab.</li> : null}
+            </ul>
+          ) : null}
+          {overdueTasks.length > 0 ? (
+            <ul className="divide-y divide-line border-t border-line">
+              {overdueTasks.slice(0, 6).map((t) => (
+                <li key={t.id}>
+                  <Link href={`/projects/${projectId}/development/tasks/${t.id}`} className="flex items-center justify-between gap-2 px-4 py-1.5 text-[13px] hover:bg-surface-hover sm:px-5">
+                    <span className="truncate">{t.title}</span>
+                    <span className="shrink-0 text-xs text-warning">past due {t.dueOn ? clock.date(t.dueOn) : ''}</span>
+                  </Link>
+                </li>
+              ))}
+              {overdueTasks.length > 6 ? <li className="px-4 py-1.5 text-xs text-muted sm:px-5">and {overdueTasks.length - 6} more on the Board.</li> : null}
+            </ul>
+          ) : null}
         </Card>
 
         {mayReadMoney ? (

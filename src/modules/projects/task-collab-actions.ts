@@ -81,11 +81,12 @@ export async function addTaskAttachmentAction(_prev: FormState, formData: FormDa
     taskId,
     title: String(formData.get('title') ?? ''),
     url: String(formData.get('url') ?? ''),
+    kind: (String(formData.get('kind') ?? '') || 'url') as never,
   });
   if (!result.ok) return { status: 'error', message: result.error.message };
 
   revalidateTask(projectId, taskId);
-  return { status: 'success', message: 'Link attached.' };
+  return { status: 'success', message: 'Evidence attached.' };
 }
 
 export async function removeTaskAttachmentAction(_prev: FormState, formData: FormData): Promise<FormState> {

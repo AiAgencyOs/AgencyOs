@@ -14,7 +14,7 @@ export type TaskChecklistItem = {
   doneByName: string | null;
   doneLabel: string | null;
 };
-export type TaskAttachment = { id: string; title: string; url: string; addedByName: string | null; createdAt: string; createdLabel: string };
+export type TaskAttachment = { id: string; title: string; url: string; /** SCR-020: screenshot | log | url | file. */ kind: string; addedByName: string | null; createdAt: string; createdLabel: string };
 
 export type TaskCollab = {
   taskId: string;

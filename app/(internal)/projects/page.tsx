@@ -5,7 +5,9 @@ import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listPendingPaymentClaims } from '@/modules/finance/queries';
+import { HEALTH_FILTERS, LIFECYCLE_PHASE_LABEL, LIFECYCLE_PHASES, healthOf, type HealthFilter, type LifecyclePhase } from '@/modules/projects/project-archive-schema';
 import { readProjectFilterFacets } from '@/modules/projects/project-filters-queries';
+import { readProjectLifecycles } from '@/modules/projects/project-lifecycle-queries';
 import { listPhaseFourEscalations, listProjectsForTable } from '@/modules/projects/queries';
 import { PROJECT_STATUSES } from '@/modules/projects/schema';
 import { SavedViewsBar } from '../saved-views-bar';
@@ -13,6 +15,7 @@ import Link from 'next/link';
 
 import {
   Avatar,
+  Badge,
   buttonClass,
   DataTable,
   DEFAULT_PAGE_SIZE,
@@ -39,6 +42,8 @@ import {
   type SortDirection,
 } from '@/ui';
 
+import { ArchiveProjectButton } from './archive-button';
+
 export const metadata: Metadata = { title: 'Projects' };
 
 function money(minor: number | null, currency: string): string {
@@ -47,9 +52,12 @@ function money(minor: number | null, currency: string): string {
     .format(minor / 100);
 }
 
-type Row = Awaited<ReturnType<typeof listProjectsForTable>>[number];
+type Row = Awaited<ReturnType<typeof listProjectsForTable>>[number] & { phase: LifecyclePhase; health: HealthFilter; archivedAt: string | null };
 
-const columnsFor = (clock: AgencyClock): Column<Row>[] => [
+const HEALTH_LABEL: Record<HealthFilter, string> = { healthy: 'Healthy', at_risk: 'At risk', blocked: 'Blocked' };
+const HEALTH_TONE: Record<HealthFilter, 'success' | 'warning' | 'danger'> = { healthy: 'success', at_risk: 'warning', blocked: 'danger' };
+
+const columnsFor = (clock: AgencyClock, mayArchive: boolean): Column<Row>[] => [
   {
     key: 'name',
     header: 'Project name',
@@ -79,6 +87,9 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
         <StatusBadge status={p.status} dot={false} />
       ),
   },
+  // SCR-018: the lifecycle phase (derived from the phase tables) and health.
+  { key: 'phase', header: 'Phase', badge: true, cell: (p) => <Badge tone={p.phase === 'archived' ? 'neutral' : 'info'}>{LIFECYCLE_PHASE_LABEL[p.phase]}</Badge> },
+  { key: 'health', header: 'Health', badge: true, desktopOnly: true, cell: (p) => <Badge tone={HEALTH_TONE[p.health]} dot>{HEALTH_LABEL[p.health]}</Badge> },
   {
     key: 'progress',
     header: 'Progress',
@@ -115,6 +126,17 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     cell: (p) => clock.date(p.created_at),
     sortKey: 'created',
   },
+  ...(mayArchive
+    ? [
+        {
+          key: 'archive',
+          header: '',
+          align: 'right' as const,
+          // SCR-018: archive a COMPLETED project. The door refuses any other status.
+          cell: (p: Row) => (p.status === 'completed' && !p.archivedAt ? <ArchiveProjectButton projectId={p.id} projectName={p.name} compact /> : p.archivedAt ? <span className="text-xs text-muted">archived {clock.date(p.archivedAt)}</span> : null),
+        },
+      ]
+    : []),
 ];
 
 const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
@@ -123,39 +145,73 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
   due: (a, b) => (a.endsOn ?? '9999').localeCompare(b.endsOn ?? '9999'),
 };
 
+function isPhase(value: string | undefined): value is LifecyclePhase {
+  return (LIFECYCLE_PHASES as readonly string[]).includes(value ?? '');
+}
+function isHealth(value: string | undefined): value is HealthFilter {
+  return (HEALTH_FILTERS as readonly string[]).includes(value ?? '');
+}
+
 /**
  * Delivery pipeline. Same two-layer gate as the other internal pages.
  *
  * SCR-018: `?client=` and `?owner=` narrow the table by client account and
  * delivery lead through a GET form, the same shape the status chips use, so
- * a filtered list is a URL somebody can send.
+ * a filtered list is a URL somebody can send. `?phase=` filters on the
+ * lifecycle phase (derived from the phase tables, never stored), `?health=`
+ * on healthy / at risk / blocked, and `?archived=1` shows archived
+ * projects, which are otherwise hidden. Every KPI tile opens the list
+ * filtered to exactly its number.
  */
 export default async function ProjectsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; client?: string; owner?: string }>;
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; client?: string; owner?: string; phase?: string; health?: string; archived?: string }>;
 }) {
   const context = await requireInternal('/projects');
   const clock = await agencyClock();
   if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
-  const { page: pageParam, sort: sortKey, dir, status, client, owner } = await searchParams;
+  const { page: pageParam, sort: sortKey, dir, status, client, owner, phase: rawPhase, health: rawHealth, archived } = await searchParams;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
-  const facetQuery = [client ? `client=${client}` : '', owner ? `owner=${owner}` : ''].filter(Boolean).join('&');
+  const phase = isPhase(rawPhase) ? rawPhase : undefined;
+  const health = isHealth(rawHealth) ? rawHealth : undefined;
+  const showArchived = archived === '1' || phase === 'archived';
+  const facetQuery = [client ? `client=${client}` : '', owner ? `owner=${owner}` : '', phase ? `phase=${phase}` : '', health ? `health=${health}` : '', showArchived && phase !== 'archived' ? 'archived=1' : '']
+    .filter(Boolean)
+    .join('&');
   const currentQuery = [status ? `status=${status}` : '', facetQuery, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
-  const [allProjects, savedViews, escalations, pendingClaims, facets] = await Promise.all([
+  const [rawProjects, savedViews, escalations, pendingClaims, facets, lifecycles] = await Promise.all([
     listProjectsForTable(),
     listSavedViews('/projects'),
     listPhaseFourEscalations(),
     can(context.role, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
     readProjectFilterFacets(),
+    readProjectLifecycles(),
   ]);
   const todayKey = new Date().toISOString().slice(0, 10);
-  const late = allProjects.filter((p) => p.status !== 'completed' && p.status !== 'cancelled' && p.endsOn !== null && p.endsOn < todayKey);
+  const late = rawProjects.filter((p) => p.status !== 'completed' && p.status !== 'cancelled' && p.endsOn !== null && p.endsOn < todayKey);
   const atRiskIds = new Set([...escalations.map((e) => e.projectId), ...late.map((p) => p.id)]);
   const paymentBlockedIds = new Set(pendingClaims.map((c) => c.projectId));
+
+  const everything: Row[] = rawProjects.map((p) => {
+    const life = lifecycles.get(p.id);
+    return {
+      ...p,
+      phase: life?.phase ?? (p.status === 'completed' ? 'completed' : 'onboarding'),
+      archivedAt: life?.archivedAt ?? null,
+      health: healthOf({ atRisk: atRiskIds.has(p.id) || paymentBlockedIds.has(p.id), blocked: life?.blocked ?? false }),
+    };
+  });
+  // Archived projects stay out of every count and chip unless asked for.
+  const allProjects = showArchived ? everything : everything.filter((p) => p.archivedAt === null);
+  const archivedCount = everything.filter((p) => p.archivedAt !== null).length;
   const countByStatus = new Map<string, number>();
   for (const p of allProjects) countByStatus.set(p.status, (countByStatus.get(p.status) ?? 0) + 1);
+  const countByPhase = new Map<LifecyclePhase, number>();
+  for (const p of allProjects) countByPhase.set(p.phase, (countByPhase.get(p.phase) ?? 0) + 1);
+  const blocked = allProjects.filter((p) => p.health === 'blocked');
+
   const filtered =
     status === 'at_risk'
       ? allProjects.filter((p) => atRiskIds.has(p.id))
@@ -168,12 +224,15 @@ export default async function ProjectsPage({
     const f = facets.byProject.get(p.id);
     if (client && f?.clientAccountId !== client) return false;
     if (owner && f?.deliveryLeadId !== owner) return false;
+    if (phase && p.phase !== phase) return false;
+    if (health && p.health !== health) return false;
     return true;
   });
   const projects = sortRows(faceted, sortKey, direction, COMPARATORS);
   const qs = (extra: string) => `/projects?${status ? `status=${status}&` : ''}${facetQuery ? `${facetQuery}&` : ''}${extra}`;
   const chipHref = (s: string | null) => `/projects?${[s ? `status=${s}` : '', facetQuery].filter(Boolean).join('&')}`;
   const { page, pageCount, rows: pageRows } = paginate(projects, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
+  const mayArchive = can(context.role, 'project.write');
 
   return (
     <div className="flex flex-col gap-5">
@@ -182,24 +241,36 @@ export default async function ProjectsPage({
         description={
           allProjects.length === 0
             ? 'No projects yet. Winning a deal on a lead creates one.'
-            : `Every project, its stage and how far its plan has come · ${allProjects.length} project${allProjects.length === 1 ? '' : 's'}.`
+            : `Every project, its stage and how far its plan has come · ${allProjects.length} project${allProjects.length === 1 ? '' : 's'}${archivedCount > 0 && !showArchived ? ` · ${archivedCount} archived` : ''}.`
         }
       />
 
       {allProjects.length > 0 ? (
         <StatGrid cols={6}>
           <Stat label="Total projects" value={String(allProjects.length)} caption={`${countByStatus.get('completed') ?? 0} completed · ${countByStatus.get('cancelled') ?? 0} cancelled`} tone="brand" icon={<IconProjects size={16} />} href="/projects" />
-          {(['planning', 'onboarding', 'active', 'on_hold'] as const).map((s) => (
-            <Stat key={s} label={humanize(s)} value={String(countByStatus.get(s) ?? 0)} tone={statusTone(s)} href={`/projects?status=${s}`} />
-          ))}
-          <Stat label="At risk" value={String(atRiskIds.size)} caption={`${escalations.length} escalated · ${late.length} past due`} tone={atRiskIds.size > 0 ? 'danger' : 'success'} icon={<IconAlert size={16} />} href="/projects?status=at_risk" />
+          <Stat label="Active" value={String(countByStatus.get('active') ?? 0)} tone={statusTone('active')} href="/projects?status=active" />
+          {/* SCR-018: a blocked count — a blocked task, an unmet plan dependency, an escalation or a hold. */}
+          <Stat label="Blocked" value={String(blocked.length)} caption="Blocked work or an unmet dependency" tone={blocked.length > 0 ? 'danger' : 'success'} icon={<IconAlert size={16} />} href="/projects?health=blocked" />
+          <Stat label="At risk" value={String(atRiskIds.size)} caption={`${escalations.length} escalated · ${late.length} past due`} tone={atRiskIds.size > 0 ? 'warning' : 'success'} icon={<IconAlert size={16} />} href="/projects?status=at_risk" />
+          <Stat label="Completed" value={String(countByStatus.get('completed') ?? 0)} caption={archivedCount > 0 ? `${archivedCount} archived` : undefined} tone={statusTone('completed')} href="/projects?status=completed" />
           {can(context.role, 'invoice.issue') ? (
             <Stat label="Payment to verify" value={String(paymentBlockedIds.size)} caption={`${pendingClaims.length} claim${pendingClaims.length === 1 ? '' : 's'} waiting`} tone={paymentBlockedIds.size > 0 ? 'warning' : 'neutral'} icon={<IconInvoices size={16} />} href="/projects?status=payment_blocked" />
-          ) : null}
+          ) : (
+            <Stat label="On hold" value={String(countByStatus.get('on_hold') ?? 0)} tone={statusTone('on_hold')} href="/projects?status=on_hold" />
+          )}
         </StatGrid>
       ) : null}
 
+      {/* SCR-018: the lifecycle-phase distribution — each tile opens the list filtered to that phase. */}
       {allProjects.length > 0 ? (
+        <StatGrid cols={6}>
+          {LIFECYCLE_PHASES.filter((p) => p !== 'archived').map((p) => (
+            <Stat key={p} label={LIFECYCLE_PHASE_LABEL[p]} value={String(countByPhase.get(p) ?? 0)} tone={phase === p ? 'brand' : 'neutral'} href={`/projects?phase=${p}`} />
+          ))}
+        </StatGrid>
+      ) : null}
+
+      {allProjects.length > 0 || archivedCount > 0 ? (
         <FilterBar>
           <FilterChips
             options={[
@@ -237,10 +308,36 @@ export default async function ProjectsPage({
                 ))}
               </select>
             </label>
+            <label className="flex flex-col gap-1">
+              <span className={labelClass}>Phase</span>
+              <select name="phase" defaultValue={phase ?? ''} className={selectClass}>
+                <option value="">Any phase</option>
+                {LIFECYCLE_PHASES.map((p) => (
+                  <option key={p} value={p}>
+                    {LIFECYCLE_PHASE_LABEL[p]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className={labelClass}>Health</span>
+              <select name="health" defaultValue={health ?? ''} className={selectClass}>
+                <option value="">Any health</option>
+                {HEALTH_FILTERS.map((h) => (
+                  <option key={h} value={h}>
+                    {HEALTH_LABEL[h]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-1.5 pb-2 text-[13px]">
+              <input type="checkbox" name="archived" value="1" defaultChecked={showArchived} />
+              Show archived ({archivedCount})
+            </label>
             <button type="submit" className={buttonClass('secondary', 'sm')}>
               Filter
             </button>
-            {client || owner ? (
+            {client || owner || phase || health || showArchived ? (
               <Link href={status ? `/projects?status=${status}` : '/projects'} className={buttonClass('ghost', 'sm')}>
                 Clear
               </Link>
@@ -255,7 +352,7 @@ export default async function ProjectsPage({
         <>
           <DataTable
             rows={pageRows}
-            columns={columnsFor(clock)}
+            columns={columnsFor(clock, mayArchive)}
             getKey={(p) => p.id}
             href={(p) => `/projects/${p.id}`}
             sort={{
@@ -273,8 +370,18 @@ export default async function ProjectsPage({
       ) : (
         <EmptyState
           icon={<IconProjects size={22} />}
-          title={status || client || owner ? 'No matching projects' : 'No projects yet'}
-          description={client || owner ? 'No project matches the client or owner filter.' : status ? `No project is currently "${humanize(status)}".` : 'Projects created from won deals will appear here.'}
+          title={status || client || owner || phase || health ? 'No matching projects' : 'No projects yet'}
+          description={
+            client || owner
+              ? 'No project matches the client or owner filter.'
+              : phase
+                ? `No project is in the ${LIFECYCLE_PHASE_LABEL[phase].toLowerCase()} phase.`
+                : health
+                  ? `No project is ${HEALTH_LABEL[health].toLowerCase()}.`
+                  : status
+                    ? `No project is currently "${humanize(status)}".`
+                    : 'Projects created from won deals will appear here.'
+          }
         />
       )}
     </div>

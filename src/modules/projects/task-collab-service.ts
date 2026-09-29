@@ -172,6 +172,7 @@ export async function addTaskAttachment(input: AddTaskAttachmentInput): Promise<
       task_id: parsed.data.taskId,
       title: parsed.data.title,
       url: parsed.data.url,
+      kind: parsed.data.kind,
       added_by: context.userId,
     })
     .select('id')
