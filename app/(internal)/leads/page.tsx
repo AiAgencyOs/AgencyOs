@@ -7,6 +7,7 @@ import { can } from '@/lib/authz/permissions';
 import { LEAD_STATUSES, NURTURE_REASONS } from '@/modules/crm/schema';
 import { listLeadsForTable, listLeadsNeedingAttention } from '@/modules/crm/queries';
 import { readLeadFacts } from '@/modules/crm/lead-list-queries';
+import { readLeadServices } from '@/modules/crm/lead-service-queries';
 import { listInternalRoster } from '@/modules/projects/queries';
 import {
   Avatar,
@@ -163,12 +164,16 @@ export default async function LeadsPage({
     budgetMax?: string;
     createdFrom?: string;
     createdTo?: string;
+    service?: string;
   }>;
 }) {
   const context = await requireInternal('/leads');
   if (!can(context.role, 'lead.read')) return <PermissionDenied />;
 
-  const { status, page: pageParam, sort: sortKey, dir, q, source, owner, budgetMin, budgetMax, createdFrom: createdFromParam, createdTo: createdToParam } = await searchParams;
+  const { status, page: pageParam, sort: sortKey, dir, q, source, owner, budgetMin, budgetMax, createdFrom: createdFromParam, createdTo: createdToParam, service: serviceParam } = await searchParams;
+  // SCR-006 — `?service=`: the lead's recorded service, matched whole and
+  // case-insensitively; the datalist offers the distinct values in use.
+  const service = (serviceParam ?? '').trim().slice(0, 80);
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
   // SCR-006 — budget and created-date bounds. Only a value that parses is
   // applied; a stranger is dropped. Budgets are typed in rupees and compared
@@ -190,6 +195,7 @@ export default async function LeadsPage({
     budgetMaxMinor !== undefined ? `budgetMax=${budgetMax}` : '',
     createdFrom ? `createdFrom=${createdFrom}` : '',
     createdTo ? `createdTo=${createdTo}` : '',
+    service ? `service=${encodeURIComponent(service)}` : '',
   ].filter(Boolean);
   const currentQuery = [...keep, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
   const qs = (extra: string) => `/leads?${[...keep, extra].filter(Boolean).join('&')}`;
@@ -202,6 +208,7 @@ export default async function LeadsPage({
   ]);
   const now = new Date();
   const facts = await readLeadFacts(allLeads.map((l) => l.id));
+  const services = await readLeadServices(allLeads.map((l) => l.id));
   const canWriteLeads = can(context.role, 'lead.write');
   const roster = canWriteLeads ? await listInternalRoster() : [];
   const boundedByBudget = budgetMinMinor !== undefined || budgetMaxMinor !== undefined;
@@ -222,7 +229,8 @@ export default async function LeadsPage({
           return b !== null && (budgetMinMinor === undefined || b >= budgetMinMinor) && (budgetMaxMinor === undefined || b <= budgetMaxMinor);
         })()) &&
       (!createdFrom || (facts.get(l.id)?.createdAt ?? '') >= `${createdFrom}T00:00:00`) &&
-      (!createdTo || (facts.get(l.id)?.createdAt ?? '') <= `${createdTo}T23:59:59.999Z`),
+      (!createdTo || (facts.get(l.id)?.createdAt ?? '') <= `${createdTo}T23:59:59.999Z`) &&
+      (!service || (services.byLead.get(l.id) ?? '').toLowerCase() === service.toLowerCase()),
   );
   const sources = [...new Set(allLeads.map((l) => l.source))].sort();
   const owners = [...new Map(allLeads.filter((l) => l.assigned_to && l.assignedEmail).map((l) => [l.assigned_to as string, l.assignedEmail as string])).entries()];
@@ -346,10 +354,16 @@ export default async function LeadsPage({
           <input type="number" min="0" name="budgetMax" defaultValue={budgetMax ?? ''} placeholder="Budget ≤ ₹" aria-label="Budget at most" className={cx(inputClass, 'w-32')} />
           <input type="date" name="createdFrom" defaultValue={createdFrom ?? ''} aria-label="Created from" className={cx(inputClass, 'w-40')} />
           <input type="date" name="createdTo" defaultValue={createdTo ?? ''} aria-label="Created to" className={cx(inputClass, 'w-40')} />
+          <input name="service" list="leads-service-values" defaultValue={service} maxLength={80} placeholder="Service" aria-label="Service" className={cx(inputClass, 'w-40')} />
+          <datalist id="leads-service-values">
+            {services.distinct.map((s) => (
+              <option key={s} value={s} />
+            ))}
+          </datalist>
           <button type="submit" className={buttonClass('secondary', 'sm')}>
             Apply
           </button>
-          {q || source || owner || boundedByBudget || createdFrom || createdTo ? (
+          {q || source || owner || boundedByBudget || createdFrom || createdTo || service ? (
             <Link href={status ? `/leads?status=${status}` : '/leads'} className="text-xs font-medium text-brand hover:underline">
               Reset
             </Link>
@@ -416,9 +430,9 @@ export default async function LeadsPage({
       ) : (
         <EmptyState
           icon={<IconLeads size={22} />}
-          title={status || q || source || owner || boundedByBudget || createdFrom || createdTo ? 'No matching leads' : 'No leads yet'}
+          title={status || q || source || owner || boundedByBudget || createdFrom || createdTo || service ? 'No matching leads' : 'No leads yet'}
           description={
-            q || source || owner || boundedByBudget || createdFrom || createdTo
+            q || source || owner || boundedByBudget || createdFrom || createdTo || service
               ? 'No lead matches these filters.'
               : status
               ? `No leads are currently "${humanize(status)}".`

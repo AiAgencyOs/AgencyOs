@@ -117,7 +117,7 @@ export type MessageMediaKind =
 
 export type ConversationMessage = Pick<
   MessageRow,
-  'id' | 'seq' | 'author_type' | 'body' | 'occurred_at' | 'media_description'
+  'id' | 'seq' | 'author_type' | 'body' | 'occurred_at' | 'media_description' | 'retry_of' | 'retry_count'
 > & {
   /** 'outbound' for a message AgencyOS sent, 'inbound' for one it received, null if unstated. */
   direction: 'inbound' | 'outbound' | null;

@@ -19,9 +19,20 @@ export type FailedDeliveryRow = {
   body: string;
   metadata: Record<string, unknown> | null;
   occurredAt: string;
+  /** SCR-057/060 — the row's id and its retry facts; absent only in older callers. */
+  id?: string;
+  conversationId?: string;
+  retryOf?: string | null;
+  retryCount?: number;
 };
 
 export type FailedDeliveryView = {
+  /** The message id, for the retry control. Null when the row did not carry one. */
+  id: string | null;
+  /** How many times a person has retried this message (SCR-060). */
+  retryCount: number;
+  /** The failed message this one was itself a retry of, if any. */
+  retryOf: string | null;
   authorType: string;
   /** The provider's error as written, or a stated fallback when none was recorded. */
   reason: string;
@@ -53,6 +64,9 @@ function previewOf(body: string): string {
 export function viewFailedDelivery(row: FailedDeliveryRow): FailedDeliveryView {
   const meta = row.metadata ?? {};
   return {
+    id: row.id ?? null,
+    retryCount: row.retryCount ?? 0,
+    retryOf: row.retryOf ?? null,
     authorType: row.authorType,
     reason: str(meta.error) ?? 'No provider error was recorded — worth investigating.',
     preview: previewOf(row.body),

@@ -29,9 +29,11 @@ import {
   listRequirementVersions,
 } from '@/modules/crm/queries';
 import { isAnalysisNote, parseAnalysisSections } from '@/modules/crm/analysis-sections';
+import { listMeetingMemoryAttachments, listProjectsForLead } from '@/modules/crm/meeting-memory-queries';
 import { isSettledMeeting, requirementPayloadSchema, type MeetingStatus } from '@/modules/crm/schema';
 import { Badge, Callout, Card, CardBody, CardHeader, IconArrowLeft, StatusBadge, cx, humanize, PermissionDenied } from '@/ui';
 
+import { AttachMeetingSummaryForm } from './attach-memory-form';
 import { MeetingControls } from './controls';
 
 export const metadata: Metadata = { title: 'Meeting' };
@@ -73,11 +75,15 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
   const m = await getMeeting(meetingId);
   if (!m) notFound();
 
-  const [evidence, jobs, chain, versions] = await Promise.all([
+  const [evidence, jobs, chain, versions, memoryProjects, memoryAttachments] = await Promise.all([
     listMeetingEvidence(m.id),
     listMeetingJobs(m.id),
     listMeetingChain(m.supersedes_id),
     m.conversation_id ? listRequirementVersions(m.conversation_id) : Promise.resolve([]),
+    // SCR-017 — the projects this meeting's lead reaches, and what of this
+    // meeting is already in a project's memory.
+    listProjectsForLead(m.lead_id),
+    listMeetingMemoryAttachments(m.id),
   ]);
   const mayReadAudit = can(context.role, 'audit.read');
   const audit = mayReadAudit ? await readAuditLog({ subjectId: m.id, limit: 20 }) : [];
@@ -320,6 +326,38 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
                 </li>
               ))}
             </ol>
+          )}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Project memory"
+          description="SCR-017 — files this meeting's newest summary (or typed notes) as a project-scoped memory, with the evidence row as its source. Owner or ops admin."
+          actions={<Badge tone="neutral">{memoryAttachments.length}</Badge>}
+        />
+        <CardBody className="flex flex-col gap-3">
+          {memoryAttachments.length === 0 ? (
+            <p className="text-[13px] text-muted">Nothing from this meeting is in a project's memory yet.</p>
+          ) : (
+            <ul className="flex flex-col gap-1 text-[13px]">
+              {memoryAttachments.map((a) => (
+                <li key={a.memoryId} className="flex flex-wrap items-center gap-2">
+                  <Link href={`/projects/${a.projectId}`} className="underline underline-offset-2">{a.projectName ?? a.projectId.slice(0, 8)}</Link>
+                  <Badge tone={a.confidence === 'explicit' ? 'success' : 'info'}>{a.confidence}</Badge>
+                  <span className="text-xs text-faint">from evidence {a.evidenceId.slice(0, 8)} · {agencyClockNow.dateTime(a.createdAt)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {mayWrite ? (
+            evidence.some((e) => (e.kind === 'summary' || e.kind === 'notes') && e.body) ? (
+              <AttachMeetingSummaryForm meetingId={m.id} projects={memoryProjects} />
+            ) : (
+              <p className="text-[12px] text-muted">Nothing to attach yet — add typed notes or a summary as evidence first.</p>
+            )
+          ) : (
+            <p className="text-[12px] text-muted">Attaching to project memory is for the owner or an ops admin.</p>
           )}
         </CardBody>
       </Card>

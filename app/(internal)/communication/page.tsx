@@ -6,6 +6,8 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
 import { listDeferredSends, listFailedDeliveries } from '@/lib/observability/queries';
+import { readRetryHistory } from '@/lib/observability/retry-queries';
+import { RetryDeliveryForm } from '../operations/retry-delivery-form';
 import { listAnnouncements } from '@/modules/crm/announcements-queries';
 import { listLeadAssignees } from '@/modules/crm/escalation-queries';
 import { listActiveConversations } from '@/modules/crm/queries';
@@ -75,10 +77,12 @@ export default async function CommunicationCenterPage() {
   const now = Date.now();
 
   const paused = conversations.filter((c) => c.agentPausedAt);
-  // SCR-057: the escalation queue — longest wait first. No "retry" on a
-  // failed delivery: the failure is stamped on the message itself and
-  // carries no job id, so there is nothing to requeue; /operations holds
-  // the full history and a re-send is a decision made from the thread.
+  // SCR-057/060: a failed delivery can be retried here — a new send through
+  // the same door, so the window and consent decide again — and each row
+  // says how its retries went.
+  const retryHistory = await readRetryHistory(failedDeliveries.map((f) => f.id).filter((id): id is string => Boolean(id)));
+  const mayRetry = can(context.role, 'lead.write');
+  // SCR-057: the escalation queue — longest wait first.
   const waiting = [...paused].sort((a, b) => new Date(a.agentPausedAt!).getTime() - new Date(b.agentPausedAt!).getTime());
   const approvedTemplates = templates.filter((t) => t.active && t.status === 'approved').length;
   const channels = new Map<string, number>();
@@ -178,7 +182,17 @@ export default async function CommunicationCenterPage() {
                     <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger"><IconAlert size={13} /></span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13px] text-foreground">{f.body}</span>
-                      <span className="block text-[11px] text-faint">{clock.dateTime(f.occurredAt)}</span>
+                      <span className="block text-[11px] text-faint">
+                        {clock.dateTime(f.occurredAt)}
+                        {' · '}
+                        {(f.retryCount ?? 0) === 0
+                          ? 'not retried'
+                          : `retried ${f.retryCount} time${f.retryCount === 1 ? '' : 's'}${(() => {
+                              const last = f.id ? retryHistory.get(f.id)?.last : undefined;
+                              return last ? `, last ${last.delivery ?? 'unrecorded'}${last.error ? ` — ${last.error}` : ''}` : '';
+                            })()}`}
+                      </span>
+                      {mayRetry && f.id ? <span className="mt-1 block"><RetryDeliveryForm messageId={f.id} /></span> : null}
                     </span>
                   </li>
                 ))}

@@ -126,7 +126,7 @@ export async function listFailedDeliveries(limit = 50): Promise<FailedDeliveryRo
   const { data, error } = await supabase
     .schema('crm')
     .from('conversation_messages')
-    .select('author_type, body, metadata, occurred_at')
+    .select('id, conversation_id, author_type, body, metadata, occurred_at, retry_of, retry_count')
     .eq('metadata->>delivery', 'failed')
     .order('occurred_at', { ascending: false })
     .limit(limit);
@@ -134,10 +134,14 @@ export async function listFailedDeliveries(limit = 50): Promise<FailedDeliveryRo
   if (error) unreadable('listFailedDeliveries', error);
 
   return (data ?? []).map((m) => ({
+    id: m.id as string,
+    conversationId: m.conversation_id as string,
     authorType: m.author_type as string,
     body: m.body as string,
     metadata: (m.metadata ?? null) as Record<string, unknown> | null,
     occurredAt: m.occurred_at as string,
+    retryOf: (m.retry_of ?? null) as string | null,
+    retryCount: (m.retry_count ?? 0) as number,
   }));
 }
 

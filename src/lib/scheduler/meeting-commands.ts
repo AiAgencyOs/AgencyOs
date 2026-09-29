@@ -103,6 +103,8 @@ export async function requestMeeting(input: {
   timezone: string;
   purpose?: string;
   conversationId?: string | null;
+  /** SCR-022 — a requested start named by the caller (the calendar day), as an ISO instant. */
+  requestedStartAt?: string | null;
 }): Promise<Result<Requested>> {
   const parsed = z
     .object({
@@ -111,9 +113,10 @@ export async function requestMeeting(input: {
       timezone: z.string().min(1).max(64),
       purpose: z.string().max(2000).optional(),
       conversationId: z.string().uuid().nullish(),
+      requestedStartAt: z.string().datetime({ offset: true }).nullish(),
     })
     .safeParse(input);
-  if (!parsed.success) return err('VALIDATION', 'That is not a valid lead, mode or timezone.');
+  if (!parsed.success) return err('VALIDATION', 'That is not a valid lead, mode, timezone or time.');
 
   const auth = await authorise();
   if (!auth.ok) return auth;
@@ -124,6 +127,7 @@ export async function requestMeeting(input: {
     p_timezone: parsed.data.timezone,
     ...(parsed.data.purpose ? { p_purpose: parsed.data.purpose } : {}),
     ...(parsed.data.conversationId ? { p_conversation_id: parsed.data.conversationId } : {}),
+    ...(parsed.data.requestedStartAt ? { p_requested_start_at: parsed.data.requestedStartAt } : {}),
   } as never);
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'crm.request_meeting', detail: error.message }));
