@@ -356,7 +356,15 @@ try {
   // number is free for the next run.
   const invoices = await rest('GET', 'finance', `invoices?number=like.${MARKER}*&select=id`);
   for (const inv of Array.isArray(invoices.json) ? invoices.json : []) {
-    await rest('DELETE', 'core', `outbox_events?payload->>invoice_id=eq.${inv.id}`);
+    // Its events (invoice.created/issued, payment.recorded, invoice.paid) name
+    // the invoice as their subject; and a runner tick elsewhere may already
+    // have turned invoice.paid into a milestone.unlock job. Both go, or the
+    // next verifier's tick dies on an invoice that no longer exists.
+    const events = await rest('GET', 'core', `outbox_events?subject_type=eq.invoice&subject_id=eq.${inv.id}&select=id`);
+    for (const ev of Array.isArray(events.json) ? events.json : []) {
+      await rest('DELETE', 'core', `jobs?dedupe_key=like.evt:${ev.id}:*`);
+    }
+    await rest('DELETE', 'core', `outbox_events?subject_type=eq.invoice&subject_id=eq.${inv.id}`);
     await rest('DELETE', 'finance', `receipts?invoice_id=eq.${inv.id}`);
     await rest('DELETE', 'finance', `payments?invoice_id=eq.${inv.id}`);
     await rest('DELETE', 'finance', `invoices?id=eq.${inv.id}`);
