@@ -242,11 +242,11 @@ export default async function QuotationsPage({
   const expiredCount = all.filter(isExpired).length;
   // SCR-011 — the overall total: every quotation in the list's currency,
   // and beside it the live ones (sent or approved) as the figure in play.
+  const currency = all[0]?.currency ?? 'INR';
   const totalValue = all.filter((p) => p.currency === currency).reduce((n, p) => n + p.total_minor, 0);
   const projectOptions = [...new Map([...projectsByDeal.values()].map((p) => [p.projectId, p.projectName])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const quotations = sortRows(filteredRows, sortKey, direction, COMPARATORS);
   const countBy = (s: string) => all.filter((p) => p.status === s).length;
-  const currency = all[0]?.currency ?? 'INR';
   const currencyMixed = all.some((p) => p.currency !== currency);
   const sumBy = (pred: (p: Row) => boolean) => all.filter((p) => p.currency === currency && pred(p)).reduce((n, p) => n + p.total_minor, 0);
   const expiringSoon = all.filter((p) => p.valid_until !== null && p.valid_until >= todayKey && p.valid_until <= soonKey && (p.status === 'sent' || p.status === 'approved')).length;

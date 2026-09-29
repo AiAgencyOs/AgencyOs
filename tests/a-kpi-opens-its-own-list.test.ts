@@ -176,6 +176,10 @@ describe('the finance gate queue and the quick actions are on the dashboard', ()
 
   it('the Today card carries follow-up reminders', () => {
     assert.match(dashboard, /listFollowUpReminders\(todayWindow\)/);
-    assert.match(dashboard, /reminders\.map\(\(r\) =>/);
+    // The rows are drawn by the shared Today card (SCR-005 shares it), fed
+    // from the dashboard's own read.
+    assert.match(dashboard, /reminders=\{reminders\}/);
+    const today = read('app/(internal)/today-card.tsx');
+    assert.match(today, /reminders\.map\(\(r\) =>/);
   });
 });
