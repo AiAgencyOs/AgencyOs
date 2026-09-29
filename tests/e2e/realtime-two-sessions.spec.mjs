@@ -601,7 +601,11 @@ try {
 
     const b = await ctxB.newPage();
     await b.goto(`${APP}/operations`, { waitUntil: 'networkidle' });
-    await b.locator('li', { hasText: kind }).getByRole('button', { name: 'Requeue' }).click();
+    // SCR-060 (bucket F): a requeue carries a reason, so the form refuses a
+    // bare click — B says why, as a person would, then requeues.
+    const deadRow = b.locator('li', { hasText: kind });
+    await deadRow.getByLabel('Reason').fill(`${MARKER}: revived by the two-session run`);
+    await deadRow.getByRole('button', { name: 'Requeue' }).click();
     let requeued = null;
     for (let i = 0; i < 60; i += 1) {
       requeued = one(await rest('GET', 'core', `jobs?id=eq.${job.id}&select=id,status,attempts`));
