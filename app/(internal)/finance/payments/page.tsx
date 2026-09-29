@@ -7,10 +7,15 @@ import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listPayments, listPendingPaymentClaims } from '@/modules/finance/queries';
+import { listPaymentSubmissions } from '@/modules/finance/overview-queries';
+
+import { ClaimsDrawerList } from './claims-drawer';
 import { SavedViewsBar } from '../../saved-views-bar';
 import {
   Badge,
   Callout,
+  Card,
+  CardHeader,
   DataTable,
   DEFAULT_PAGE_SIZE,
   EmptyState,
@@ -122,11 +127,40 @@ export default async function PaymentsPage({
   const currentQuery = [status ? `status=${status}` : '', sortKey ? `sort=${sortKey}&dir=${direction}` : '']
     .filter(Boolean)
     .join('&');
-  const [allPayments, savedViews, pendingClaims] = await Promise.all([
+  const [allPayments, savedViews, pendingClaims, claims] = await Promise.all([
     listPayments(),
     listSavedViews('/finance/payments'),
     can(context.role, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
+    listPaymentSubmissions('all', 300),
   ]);
+  // SCR-053's four KPIs count the claims table and say so: "submitted" is
+  // what clients said, "verified" / "rejected" the answers, "pending" what
+  // has none yet. The ledger rows below are money that moved. No
+  // reconciliation control: `finance.reconciliations` exists with no
+  // service over it, and a button onto a table with no door would be a fake.
+  const pendingCount = claims.filter((c) => c.status === 'pending_verification' || c.status === 'mismatch').length;
+  const verifiedCount = claims.filter((c) => c.status === 'verified').length;
+  const rejectedCount = claims.filter((c) => c.status === 'rejected').length;
+  const claimViews = claims.map((c) => ({
+    id: c.id,
+    invoiceId: c.invoiceId,
+    invoiceNumber: c.invoiceNumber,
+    clientName: c.clientName,
+    amountLabel: money(c.amountMinor, c.currency),
+    method: c.method,
+    reference: c.reference,
+    payerName: c.payerName,
+    paidAtLabel: c.paidAt ? clock.date(c.paidAt) : null,
+    proofUrl: c.proofUrl,
+    status: c.status,
+    submittedAtLabel: clock.dateTime(c.submittedAt),
+    verifiedAtLabel: c.verifiedAt ? clock.dateTime(c.verifiedAt) : null,
+    verifiedByName: c.verifiedByName,
+    verificationEvidence: c.verificationEvidence,
+    rejectedReason: c.rejectedReason,
+    mismatchNote: c.mismatchNote,
+    paymentId: c.paymentId,
+  }));
   const filtered = status ? allPayments.filter((p) => p.status === status) : allPayments;
   const payments = sortRows(filtered, sortKey, direction, COMPARATORS);
   const { page, pageCount, rows: pageRows } = paginate(payments, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
@@ -160,6 +194,13 @@ export default async function PaymentsPage({
         </Callout>
       ) : null}
 
+      <StatGrid>
+        <Stat label="Submitted" value={String(claims.length)} caption="Claims clients made, all time" href="#claims" />
+        <Stat label="Pending" value={String(pendingCount)} caption="Awaiting a decision" tone={pendingCount > 0 ? 'warning' : 'neutral'} href="/invoices/verify" />
+        <Stat label="Verified" value={String(verifiedCount)} caption="Claims somebody confirmed" tone={verifiedCount > 0 ? 'success' : 'neutral'} />
+        <Stat label="Rejected" value={String(rejectedCount)} caption="Refused, with a reason" tone={rejectedCount > 0 ? 'danger' : 'neutral'} />
+      </StatGrid>
+
       {byCurrency.size > 0 ? (
         <StatGrid>
           {[...byCurrency.entries()].map(([currency, total]) => (
@@ -167,6 +208,7 @@ export default async function PaymentsPage({
               key={currency}
               label={`Captured (${currency})`}
               value={money(total, currency)}
+              caption="Ledger payments the provider confirmed"
               tone="success"
               icon={<IconInvoices size={16} />}
             />
@@ -221,6 +263,18 @@ export default async function PaymentsPage({
           }
         />
       )}
+
+      <Card id="claims">
+        <CardHeader
+          title="Payment claims"
+          description="What clients said they paid, newest first, with the proof and the decision. A claim is not money — the register above is."
+        />
+        {claimViews.length > 0 ? (
+          <ClaimsDrawerList claims={claimViews} />
+        ) : (
+          <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No claim has been recorded yet.</p>
+        )}
+      </Card>
     </div>
   );
 }

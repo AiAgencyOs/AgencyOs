@@ -1,11 +1,17 @@
 import type { Metadata } from 'next';
 
+import Link from 'next/link';
+
 import { getIntegrations } from '@/lib/admin/integrations';
 import type { Lifecycle } from '@/lib/admin/integrations-eval';
+import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
-import { PageHeader, PermissionDenied } from '@/ui';
+import { PageHeader, PermissionDenied, buttonClass } from '@/ui';
+
+import { VerifyAiProviderForm, VerifyCalendarForm, VerifyWhatsAppButton } from '../settings/forms';
+import { IntegrationsList } from './integrations-list';
 
 export const metadata: Metadata = { title: 'Integrations' };
 
@@ -31,7 +37,36 @@ export default async function IntegrationsPage() {
   const context = await requireInternal('/integrations');
   if (!can(context.role, 'organization.settings')) return <PermissionDenied />;
 
-  const { integrations, summary } = await getIntegrations();
+  const [{ integrations, summary }, settings] = await Promise.all([getIntegrations(), readOperationalSettings()]);
+  // SCR-067 / SCR-070: one verify control per integration that has an
+  // action — the SAME forms Settings and /agents use, behind
+  // verifyWhatsAppAction / verifyAiProviderAction / verifyCalendarAction —
+  // and the non-secret identifiers each row can honestly show.
+  const whatsappNumberId = settingText(settings, 'whatsapp_phone_number_id');
+  const whatsappVerifiedAt = settingInstant(settings, 'whatsapp_verified_at');
+  const whatsappVerifiedNumber = settingText(settings, 'whatsapp_verified_number');
+  const providerVerifiedAt = settingInstant(settings, 'ai_provider_verified_at');
+  const providerVerifiedModel = settingText(settings, 'ai_provider_verified_model');
+  const calendarVerifiedAt = settingInstant(settings, 'calendar_verified_at');
+  const calendarVerifiedName = settingText(settings, 'calendar_verified_calendar');
+  const verify: Record<string, React.ReactNode> = {
+    whatsapp: (
+      <span className="flex flex-wrap items-center gap-2">
+        <VerifyWhatsAppButton />
+        <span className="text-xs text-muted">{whatsappVerifiedAt ? `last verified with Meta ${whatsappVerifiedAt}${whatsappVerifiedNumber ? ` — ${whatsappVerifiedNumber}` : ''}` : 'never verified with Meta'}</span>
+      </span>
+    ),
+    'ai-provider': <VerifyAiProviderForm lastVerifiedAt={providerVerifiedAt} model={providerVerifiedModel} />,
+  };
+  const identifiers: Record<string, { label: string; value: string }[]> = {
+    whatsapp: [
+      { label: 'Phone number id', value: whatsappNumberId ?? 'not set' },
+      ...(whatsappVerifiedNumber ? [{ label: 'Verified number', value: whatsappVerifiedNumber }] : []),
+    ],
+    'ai-provider': providerVerifiedModel ? [{ label: 'Verified model', value: providerVerifiedModel }] : [],
+  };
+  const verifiedCount = summary.VERIFIED ?? 0;
+  const configuredCount = summary.CONFIGURED ?? 0;
 
   return (
     <div className="flex flex-col gap-5">
@@ -44,8 +79,22 @@ export default async function IntegrationsPage() {
         configured at most until a person verifies them.
           </>
         }
-        actions={<LiveRefresh topics={['jobs']} />}
+        actions={
+          <>
+            <LiveRefresh topics={['jobs']} />
+            <Link href="/agents#vault" className={buttonClass('secondary', 'sm')}>
+              Provider key vault
+            </Link>
+            <Link href="/settings/communication" className={buttonClass('secondary', 'sm')}>
+              WhatsApp credentials
+            </Link>
+          </>
+        }
       />
+
+      <p className="text-[13px] text-muted">
+        {verifiedCount} verified · {configuredCount} configured but unproven · {integrations.length - verifiedCount - configuredCount} not configured, degraded or failed.
+      </p>
 
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
         {(['VERIFIED', 'CONFIGURED', 'DEGRADED', 'NOT_CONFIGURED', 'FAILED', 'DISABLED'] as Lifecycle[]).map((lc) => (
@@ -56,29 +105,13 @@ export default async function IntegrationsPage() {
         ))}
       </div>
 
-      <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-surface">
-        {integrations.map((i) => (
-          <li key={i.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-4 py-3 text-sm">
-            <div className="flex flex-col">
-              <a href={i.href} className="flex items-center gap-2 font-medium hover:underline">
-                <span className={`inline-block h-2 w-2 rounded-full ${STYLE[i.lifecycle].dot}`} aria-hidden />
-                {i.name}
-              </a>
-              <span className="text-xs text-muted">
-                {i.category} · {i.detail}
-              </span>
-            </div>
-            <span className="flex items-center gap-2 text-xs">
-              <span className={STYLE[i.lifecycle].text}>{i.lifecycle.replace('_', ' ')}</span>
-              {i.external ? (
-                <span className="rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted">
-                  external
-                </span>
-              ) : null}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <IntegrationsList integrations={integrations} verify={verify} identifiers={identifiers} vaultHref="/agents#vault" />
+
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface px-4 py-3 text-[13px]">
+        <span className="font-medium">Google Calendar</span>
+        <span className="text-muted">— not in the lifecycle registry; verified on demand against Google (ADM-102).</span>
+        <VerifyCalendarForm lastVerifiedAt={calendarVerifiedAt} calendar={calendarVerifiedName} />
+      </div>
 
       <p className="text-xs text-muted">
         A failed row means a live read did not succeed (DATA UNAVAILABLE) — not that the integration is definitely broken,

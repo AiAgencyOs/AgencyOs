@@ -7,8 +7,11 @@ import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listInvoices, listPendingPaymentClaims } from '@/modules/finance/queries';
-import { INVOICE_STATUSES } from '@/modules/finance/schema';
+import { listBillableMilestones, listBillingClients, listInvoicesFiltered } from '@/modules/finance/overview-queries';
+import { INVOICE_STATUSES, milestoneInvoiceability } from '@/modules/finance/schema';
+import { listProjects } from '@/modules/projects/queries';
 import { SavedViewsBar } from '../saved-views-bar';
+import { CreateFromMilestoneForm } from './create-from-milestone-form';
 import {
   Callout,
   DataTable,
@@ -34,6 +37,9 @@ import {
   cx,
   inputClass,
   buttonClass,
+  Card,
+  CardHeader,
+  selectClass,
 } from '@/ui';
 
 export const metadata: Metadata = { title: 'Invoices' };
@@ -109,22 +115,40 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
 export default async function InvoicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; q?: string }>;
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; q?: string; client?: string; project?: string }>;
 }) {
   const context = await requireInternal('/invoices');
   const clock = await agencyClock();
   if (!can(context.role, 'invoice.read')) return <PermissionDenied />;
 
-  const { page: pageParam, sort: sortKey, dir, status, q } = await searchParams;
+  const { page: pageParam, sort: sortKey, dir, status, q, client: clientId, project: projectId } = await searchParams;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
-  const keep = [status ? `status=${status}` : '', q ? `q=${encodeURIComponent(q)}` : ''].filter(Boolean);
+  const keep = [
+    status ? `status=${status}` : '',
+    q ? `q=${encodeURIComponent(q)}` : '',
+    clientId ? `client=${encodeURIComponent(clientId)}` : '',
+    projectId ? `project=${encodeURIComponent(projectId)}` : '',
+  ].filter(Boolean);
   const currentQuery = [...keep, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
   const qs = (extra: string) => `/invoices?${[...keep, extra].filter(Boolean).join('&')}`;
-  const [allInvoices, pendingClaims, savedViews] = await Promise.all([
-    listInvoices(500),
+  const canCreate = can(context.role, 'invoice.create');
+  // SCR-051: client and project filters are applied by the reader at the
+  // database; the milestone picker needs every invoice (to know which
+  // milestones are already billed) and every milestone, unfiltered.
+  const [allInvoices, pendingClaims, savedViews, clients, projects, milestones, everyInvoice] = await Promise.all([
+    listInvoicesFiltered({ clientId, projectId }),
     can(context.role, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
     listSavedViews('/invoices'),
+    listBillingClients(),
+    listProjects(500),
+    canCreate ? listBillableMilestones() : Promise.resolve([]),
+    canCreate ? listInvoices(2000) : Promise.resolve([]),
   ]);
+  const invoicedMilestones = new Set(everyInvoice.map((i) => i.milestone_id).filter((id): id is string => id !== null));
+  const eligible = milestones
+    .filter((m) => !invoicedMilestones.has(m.id))
+    .filter((m) => milestoneInvoiceability({ status: m.status, amountMinor: m.amountMinor, paymentPercent: m.paymentPercent }).ok)
+    .map((m) => ({ id: m.id, projectId: m.projectId, name: m.name, position: m.position, amountLabel: money(m.amountMinor, m.currency) }));
   const needle = (q ?? '').trim().toLowerCase();
   const unpaid = (i: Row) => i.status === 'issued' || i.status === 'partially_paid' || i.status === 'overdue';
   const rawInvoices = allInvoices.filter(
@@ -169,14 +193,47 @@ export default async function InvoicesPage({
             ...INVOICE_STATUSES.map((st) => ({ key: st, label: `${humanize(st)} (${countBy(st)})`, href: `/invoices?status=${st}${q ? `&q=${encodeURIComponent(q)}` : ''}`, active: status === st })),
           ]}
         />
-        <form method="get" action="/invoices" className="flex items-center gap-2">
+        <form method="get" action="/invoices" className="flex flex-wrap items-center gap-2">
           {status ? <input type="hidden" name="status" value={status} /> : null}
           <input name="q" defaultValue={q ?? ''} placeholder="Invoice number…" aria-label="Search invoices" className={cx(inputClass, 'w-48')} />
+          <select name="client" defaultValue={clientId ?? ''} aria-label="Client" className={cx(selectClass, 'w-44')}>
+            <option value="">Every client</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <select name="project" defaultValue={projectId ?? ''} aria-label="Project" className={cx(selectClass, 'w-44')}>
+            <option value="">Every project</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
           <button type="submit" className={buttonClass('secondary', 'sm')}>
-            Search
+            Apply
           </button>
+          {clientId || projectId ? (
+            <Link href="/invoices" className={buttonClass('ghost', 'sm')}>
+              Clear
+            </Link>
+          ) : null}
         </form>
       </FilterBar>
+
+      {canCreate ? (
+        <Card>
+          <CardHeader
+            title="Create from a milestone"
+            description="A draft, from a milestone the payment plan says may be billed and nothing has invoiced yet. Issuing it is a separate step on the invoice."
+          />
+          <div className="px-4 pb-4 sm:px-5">
+            <CreateFromMilestoneForm projects={projects.map((p) => ({ id: p.id, name: p.name }))} milestones={eligible} />
+          </div>
+        </Card>
+      ) : null}
 
       <SavedViewsBar page="/invoices" currentQuery={currentQuery} views={savedViews} />
 

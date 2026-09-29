@@ -29,13 +29,13 @@ function show(value: unknown): string {
 export default async function AuditPage({
   searchParams,
 }: {
-  searchParams: Promise<{ action?: string; subject?: string; actor?: string; from?: string; to?: string }>;
+  searchParams: Promise<{ action?: string; subject?: string; actor?: string; from?: string; to?: string; correlation?: string }>;
 }) {
   const context = await requireInternal('/audit');
   const clock = await agencyClock();
   if (!can(context.role, 'audit.read')) return <PermissionDenied />;
 
-  const { action, subject, actor, from, to } = await searchParams;
+  const { action, subject, actor, from, to, correlation } = await searchParams;
   const isoDay = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
   const fromDay = isoDay(from);
   const toDay = isoDay(to);
@@ -45,6 +45,8 @@ export default async function AuditPage({
       actionPrefix: action,
       subjectType: subject,
       actorType: actor,
+      // SCR-066: the audit half of an event chain, linked from /operations.
+      correlationId: correlation && correlation.trim() ? correlation.trim() : undefined,
       from: fromDay ? `${fromDay}T00:00:00Z` : undefined,
       to: toDay ? `${toDay}T23:59:59.999Z` : undefined,
       limit: 100,
@@ -55,7 +57,7 @@ export default async function AuditPage({
 
   const qs = (over: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
-    const merged = { action, subject, actor, from: fromDay, to: toDay, ...over };
+    const merged = { action, subject, actor, from: fromDay, to: toDay, correlation, ...over };
     for (const [k, v] of Object.entries(merged)) if (v) p.set(k, v);
     const s = p.toString();
     return s ? `?${s}` : '';

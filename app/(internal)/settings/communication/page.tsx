@@ -4,6 +4,9 @@ import { reactivationSummary } from '@/lib/admin/reactivation-summary';
 import { requireInternal } from '@/lib/auth/session';
 import { createClient } from '@/lib/db/server';
 import { readInternalGroup, readInternalRecipient } from '@/modules/crm/queries';
+import { listWhatsAppTemplates, listWhatsAppTemplateVersions } from '@/modules/crm/template-queries';
+import { agencyClock } from '@/lib/admin/agency-clock';
+import { Badge, Stat, StatGrid, StatusBadge } from '@/ui';
 
 import {
   InternalGroupForm,
@@ -67,6 +70,14 @@ export default async function SettingsCommunicationPage() {
 
   const reactivation = await reactivationSummary();
 
+  // SCR-059 — the registry by the numbers, and its history. Categories are
+  // the situations a template answers; languages are what it answers in.
+  const clock = await agencyClock();
+  const [allTemplates, templateVersions] = await Promise.all([listWhatsAppTemplates(), listWhatsAppTemplateVersions(50)]);
+  const categories = new Set(allTemplates.map((t) => t.situationKey)).size;
+  const languages = new Set(allTemplates.map((t) => t.languageCode)).size;
+  const approved = allTemplates.filter((t) => t.status === 'approved' && t.active).length;
+
   return (
     <div className="flex flex-col gap-5">
       {/*
@@ -111,7 +122,40 @@ export default async function SettingsCommunicationPage() {
           be delivered as a template Meta has approved. Register which approved template answers which
           situation; the wording itself lives at Meta.
         </p>
+        <StatGrid>
+          <Stat label="Templates" value={allTemplates.length} caption="registered, any status" />
+          <Stat label="Approved" value={approved} tone={approved > 0 ? 'success' : 'neutral'} caption="active and approved by Meta" />
+          <Stat label="Categories" value={categories} caption="situations with a template" />
+          <Stat label="Languages" value={languages} caption="distinct language codes" />
+        </StatGrid>
         <WhatsAppTemplatesForm registered={whatsappTemplates} />
+
+        <h2 className="text-[13px] font-semibold tracking-tight">Template history</h2>
+        <p className="text-xs text-muted">
+          Every change to a registration, newest first, as <code className="text-xs">crm.whatsapp_template_versions</code> recorded it.
+        </p>
+        {templateVersions.length === 0 ? (
+          <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] text-muted">No change has been recorded yet.</p>
+        ) : (
+          <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-surface">
+            {templateVersions.map((v) => (
+              <li key={v.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2.5 text-[13px]">
+                <span className="flex flex-wrap items-center gap-2">
+                  <code className="text-xs">{v.templateName}</code>
+                  <Badge tone="neutral">{v.languageCode}</Badge>
+                  <StatusBadge status={v.status} />
+                  {!v.active ? <Badge tone="neutral">inactive</Badge> : null}
+                  {v.parameters.length > 0 ? <span className="text-xs text-muted">{v.parameters.join(', ')}</span> : null}
+                </span>
+                <span className="text-xs text-muted">
+                  {clock.dateTime(v.recordedAt)}
+                  {v.changedBy ? ` · by ${v.changedBy.slice(0, 8)}` : ''}
+                  {v.changeReason ? ` · ${v.changeReason}` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
 
         <h2 className="text-[13px] font-semibold tracking-tight">How often AgencyOS starts a conversation</h2>
         <p className="text-xs text-muted">

@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import { formatCostMinor } from '@/lib/admin/agent-eval';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { getAgentRunWithSteps } from '@/lib/admin/agent-runs';
+import { listJobsByCorrelation, listRunsByCorrelation } from '@/lib/admin/run-chain';
 import { formatDurationMs, runDurationMs, stepToolName } from '@/lib/admin/agent-runs-eval';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
@@ -47,6 +48,13 @@ export default async function AgentRunPage({ params }: { params: Promise<{ runId
   const found = await getAgentRunWithSteps(runId);
   if (!found) notFound();
   const { run, steps } = found;
+  // SCR-065: the retries and dead letters of this piece of work — every job
+  // and sibling run carrying the same correlation id.
+  const [chainJobs, siblings] = run.correlationId
+    ? await Promise.all([listJobsByCorrelation(run.correlationId), listRunsByCorrelation(run.correlationId)])
+    : [[], []];
+  const deadJobs = chainJobs.filter((j) => j.status === 'dead');
+  const attempts = chainJobs.reduce((n, j) => n + j.attempts, 0);
 
   const cost = (minor: number) => `₹${formatCostMinor(minor) ?? '0.00'}`;
   const duration = formatDurationMs(runDurationMs(run.startedAt, run.finishedAt));
@@ -101,6 +109,52 @@ export default async function AgentRunPage({ params }: { params: Promise<{ runId
         <Stat label="Output tokens" value={N.format(run.outputTokens)} caption="Across the run" />
         <Stat label="Cost" value={cost(run.costMinor)} caption={steps.length > 0 && stepsCost !== run.costMinor ? `Steps sum to ${cost(stepsCost)}` : 'What the runtime wrote down'} tone="brand" />
       </StatGrid>
+
+      <Card>
+        <CardHeader
+          title="Retries & dead letters"
+          description={
+            run.correlationId
+              ? `${chainJobs.length} job${chainJobs.length === 1 ? '' : 's'} share this correlation id · ${attempts} attempt${attempts === 1 ? '' : 's'} in all${deadJobs.length > 0 ? ` · ${deadJobs.length} dead` : ''}${siblings.length > 1 ? ` · ${siblings.length} runs` : ''}`
+              : 'No correlation id, so no job or sibling run can be linked to this one.'
+          }
+          actions={deadJobs.length > 0 ? <ViewAll href="/operations" label="Requeue on Operations" /> : <ViewAll href="/operations" label="Operations" />}
+        />
+        {chainJobs.length > 0 ? (
+          <ul className="divide-y divide-line">
+            {chainJobs.map((j) => (
+              <li key={j.id} className="flex flex-col gap-1 px-4 py-2.5 text-[13px] sm:px-5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="flex items-center gap-2">
+                    <span className="font-medium">{j.kind}</span>
+                    <StatusBadge status={j.status} />
+                  </span>
+                  <span className="tabular text-xs text-muted">{j.attempts}/{j.maxAttempts} attempts · {clock.dateTime(j.updatedAt)}</span>
+                </div>
+                {j.lastError ? <p className="break-words text-xs text-danger">{j.lastError}</p> : null}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {siblings.length > 1 ? (
+          <ul className="divide-y divide-line border-t border-line">
+            {siblings.map((s) => (
+              <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-[13px] sm:px-5">
+                <span className="flex items-center gap-2">
+                  {s.id === run.id ? (
+                    <span className="font-mono text-xs">{s.id.slice(0, 8)}</span>
+                  ) : (
+                    <Link href={`/usage/runs/${s.id}`} className="font-mono text-xs underline-offset-2 hover:underline">{s.id.slice(0, 8)}</Link>
+                  )}
+                  <span>{s.agentKey}</span>
+                  <StatusBadge status={s.status} />
+                </span>
+                <span className="text-xs text-muted">{clock.dateTime(s.createdAt)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </Card>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(19rem,1fr)]">
         <Card>
