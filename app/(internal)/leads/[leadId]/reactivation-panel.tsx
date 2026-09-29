@@ -16,6 +16,11 @@ import { enrollLeadAction, removeLeadAction } from './reactivation-actions';
  * assumed here. Nothing sends on enrolment: a lead only receives the inactive
  * rhythm once the org pilot is on and the timezone, provider and WhatsApp are
  * configured.
+ *
+ * `EnrolLeadForm` is the enrol half on its own — SCR-013 mounts it on the
+ * Follow-ups screen's Reactivation cohort rows ("Enroll eligible lead with
+ * consent"), through the same `enrollLeadAction` and therefore the same
+ * `crm.add_lead_to_reactivation_pilot` door. One form, one door.
  */
 
 /** One alias, so the buttons below match every other button in the product. */
@@ -23,6 +28,40 @@ const button = buttonClass('secondary', 'sm');
 
 function Status({ state }: { state: { status: string; message?: string } }) {
   return <FormMessage status={state.status} message={state.message} />;
+}
+
+export function EnrolLeadForm({
+  leadId,
+  consentEligible,
+  compact = false,
+}: {
+  leadId: string;
+  consentEligible: boolean;
+  /** A row-sized variant: the button and the door's answer, no explanatory copy. */
+  compact?: boolean;
+}) {
+  const [enrollState, enroll, enrolling] = useActionState(enrollLeadAction, IDLE_STATE);
+
+  return (
+    <form action={enroll} className={compact ? 'flex flex-wrap items-center justify-end gap-2' : 'flex flex-col gap-2'}>
+      <input type="hidden" name="leadId" value={leadId} />
+      <button
+        type="submit"
+        disabled={enrolling || !consentEligible}
+        title={consentEligible ? undefined : 'No granted WhatsApp consent for this contact'}
+        className={compact ? button : `${button} self-start`}
+      >
+        {enrolling ? 'Enrolling…' : compact ? 'Enrol with consent' : 'Enrol in cohort'}
+      </button>
+      {!consentEligible && !compact ? (
+        <p className="text-xs text-muted">
+          This lead&rsquo;s contact has no granted WhatsApp consent, so it cannot be enrolled.
+          Record consent first.
+        </p>
+      ) : null}
+      <Status state={enrollState} />
+    </form>
+  );
 }
 
 export function ReactivationPanel({
@@ -34,7 +73,6 @@ export function ReactivationPanel({
   inPilot: boolean;
   consentEligible: boolean;
 }) {
-  const [enrollState, enroll, enrolling] = useActionState(enrollLeadAction, IDLE_STATE);
   const [removeState, remove, removing] = useActionState(removeLeadAction, IDLE_STATE);
 
   return (
@@ -59,24 +97,7 @@ export function ReactivationPanel({
             <Status state={removeState} />
           </form>
         ) : (
-          <form action={enroll} className="flex flex-col gap-2">
-            <input type="hidden" name="leadId" value={leadId} />
-            <button
-              type="submit"
-              disabled={enrolling || !consentEligible}
-              title={consentEligible ? undefined : 'No granted WhatsApp consent for this contact'}
-              className={`${button} self-start`}
-            >
-              {enrolling ? 'Enrolling…' : 'Enrol in cohort'}
-            </button>
-            {!consentEligible ? (
-              <p className="text-xs text-muted">
-                This lead&rsquo;s contact has no granted WhatsApp consent, so it cannot be enrolled.
-                Record consent first.
-              </p>
-            ) : null}
-            <Status state={enrollState} />
-          </form>
+          <EnrolLeadForm leadId={leadId} consentEligible={consentEligible} />
         )}
       </div>
     </details>

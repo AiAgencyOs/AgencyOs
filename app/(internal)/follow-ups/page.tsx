@@ -8,8 +8,11 @@ import { can } from '@/lib/authz/permissions';
 import { situationFor } from '@/modules/crm/follow-up-situations';
 import { readFollowUpContexts, type FollowUpContext } from '@/modules/crm/follow-up-context-queries';
 import { listFollowUpSequencesDetailed, listTemplateSituationMapping } from '@/modules/crm/follow-up-detail-queries';
+import { listReactivationCohort } from '@/modules/crm/reactivation-queries';
+import { isReactivationCohortFilter } from '@/modules/crm/reactivation-types';
 import { listInternalRoster } from '@/modules/projects/queries';
 import { SavedViewsBar } from '../saved-views-bar';
+import { ReactivationCohortSection } from './reactivation-cohort';
 import { SequenceControls } from './sequence-controls';
 import { SequenceDetailButton, type SequenceDetailView } from './sequence-drawer';
 import {
@@ -26,6 +29,7 @@ import {
   IconAlert,
   IconCheck,
   IconClock,
+  IconRefresh,
   IconSend,
   PageHeader,
   paginate,
@@ -172,21 +176,29 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
 export default async function FollowUpsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; page?: string; sort?: string; dir?: string; channel?: string; owner?: string; due?: string }>;
+  searchParams: Promise<{ status?: string; page?: string; sort?: string; dir?: string; channel?: string; owner?: string; due?: string; cohort?: string }>;
 }) {
   const context = await requireInternal('/follow-ups');
   const clock = await agencyClock();
   if (!can(context, 'lead.read')) return <PermissionDenied />;
 
-  const { status, page: pageParam, sort: sortKey, dir, channel: channelParam, owner: ownerParam, due: dueParam } = await searchParams;
+  const { status, page: pageParam, sort: sortKey, dir, channel: channelParam, owner: ownerParam, due: dueParam, cohort: cohortParam } = await searchParams;
   const due = (DUE_FILTERS as readonly string[]).includes(dueParam ?? '') ? (dueParam as DueFilter) : undefined;
+  // SCR-013 — the Reactivation cohort sub-screen: `cohort=` opens it on a chip.
+  const cohortFilter = isReactivationCohortFilter(cohortParam) ? cohortParam : null;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
-  const [allSequences, rawSequences, savedViews, roster] = await Promise.all([
+  const [allSequences, rawSequences, savedViews, roster, cohort] = await Promise.all([
     listFollowUpSequencesDetailed({}),
     listFollowUpSequencesDetailed({ status }),
     listSavedViews('/follow-ups'),
     listInternalRoster(),
+    listReactivationCohort(),
   ]);
+  // Enrolment is the reactivation door's capability (`organization.settings`,
+  // the same the lead page and the Import desk check); the section says so
+  // to everyone else instead of showing a button the door would refuse.
+  const mayEnrol = can(context, 'organization.settings');
+  const cohortHref = (f: string) => `/follow-ups${f ? `?cohort=${f}` : ''}#reactivation`;
 
   // SCR-013 — channel and owner. Only a value the rows actually carry is
   // applied; a stranger is dropped rather than sent anywhere.
@@ -266,7 +278,7 @@ export default async function FollowUpsPage({
         }
         actions={
           <div className="flex flex-wrap gap-3 text-[13px]">
-            <Link href="/import" className="text-brand hover:underline">
+            <Link href={cohortHref('all')} className="text-brand hover:underline">
               Reactivation cohort →
             </Link>
             <Link href="/settings/communication" className="text-brand hover:underline">
@@ -276,7 +288,7 @@ export default async function FollowUpsPage({
         }
       />
 
-      {allSequences.length > 0 ? (
+      {allSequences.length > 0 || cohort.rows.length > 0 ? (
         <StatGrid cols={6}>
           {/* SCR-013 — the PDF's five, each a count that opens the list filtered to exactly it. */}
           <Stat label="Due today" value={String(tile('due_today'))} caption="Active, due in the agency's today" tone={tile('due_today') > 0 ? 'brand' : 'neutral'} icon={<IconClock size={16} />} href="/follow-ups?due=due_today" />
@@ -285,6 +297,8 @@ export default async function FollowUpsPage({
           <Stat label="Paused" value={String(allSequences.filter((r) => r.status === 'stopped').length)} caption="Stopped by a person, resumable" tone="neutral" icon={<IconClock size={16} />} href="/follow-ups?status=stopped" />
           <Stat label="Failed" value={String(tile('failed'))} caption="Last attempt blocked by the window or consent" tone={tile('failed') > 0 ? 'warning' : 'neutral'} icon={<IconAlert size={16} />} href="/follow-ups?due=failed" />
           <Stat label="Escalated" value={String(allSequences.filter((r) => r.status === 'escalated').length)} caption={`${allSequences.reduce((n, r) => n + r.attempts_sent, 0)} attempts sent in all`} tone={allSequences.some((r) => r.status === 'escalated') ? 'warning' : 'neutral'} icon={<IconCheck size={16} />} href="/follow-ups?status=escalated" />
+          {/* SCR-013 — the reactivation cohort: consented, no open follow-up, quiet ≥ N days. Opens the section on every row. */}
+          <Stat label="Reactivation cohort" value={String(cohort.rows.length)} caption={`Consent recorded, quiet ${cohort.inactiveDays}+ days, no open follow-up`} tone={cohort.rows.length > 0 ? 'brand' : 'neutral'} icon={<IconRefresh size={16} />} href={cohortHref('all')} />
         </StatGrid>
       ) : null}
 
@@ -357,6 +371,10 @@ export default async function FollowUpsPage({
           action={filtering ? <Link href="/follow-ups" className={buttonClass('secondary', 'sm')}>Clear filters</Link> : <Link href="/leads" className={buttonClass('secondary', 'sm')}>Open leads</Link>}
         />
       )}
+
+      {/* SCR-013 — the Reactivation cohort sub-screen: who a reactivation could
+          honestly reach, and the lead page's own enrol door on each row. */}
+      <ReactivationCohortSection cohort={cohort} filter={cohortFilter} expanded={cohortFilter !== null} mayEnrol={mayEnrol} clock={clock} hrefFor={cohortHref} />
 
       {/* SCR-013 — situation ↔ template. A situation whose sequences leave
           the 24-hour window can only continue through an approved template
