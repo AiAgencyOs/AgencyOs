@@ -62,6 +62,7 @@ import {
  * different things to one client — and cross-module access goes through
  * service.ts, never a sibling's schema.
  */
+import { quotationValidityDays } from '@/lib/admin/operational-defaults';
 import { quotationSectionsFor } from './quotation-standards';
 
 export { quotationMessage } from './schema';
@@ -1153,7 +1154,7 @@ class SurroundingsUnreadable extends Error {}
 async function quotationDocumentSurroundings(
   supabase: Awaited<ReturnType<typeof createClient>>,
   opportunityId: string | null,
-): Promise<{ organizationName: string; timeZone: string; preparedFor: string | null; contactLine: string | null }> {
+): Promise<{ organizationName: string; timeZone: string; preparedFor: string | null; contactLine: string | null; validityDays: number }> {
   const { data: org, error: orgError } = await supabase
     .schema('core')
     .from('organizations')
@@ -1208,6 +1209,8 @@ async function quotationDocumentSurroundings(
     timeZone: org.timezone ?? 'UTC',
     preparedFor,
     contactLine: quotationContactLine(org.settings),
+    // Configurability audit B-1 — the owner's validity, or the old constant.
+    validityDays: quotationValidityDays(org.settings as Record<string, unknown> | null),
   };
 }
 
@@ -1286,7 +1289,9 @@ export async function quotationPdfForProposal(
       // so a line drafted before the column existed draws exactly as it did.
       ...(Array.isArray(i.serves) ? { serves: i.serves as string[] } : {}),
     }));
-    const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems);
+    const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems, {
+      validityDays: surroundings.validityDays,
+    });
     const rendered = await renderQuotationPdf({
       ...surroundings,
       // G-194 — who signed it, off the row and never joined: the name was
@@ -1499,7 +1504,9 @@ export async function sendProposal(
       // so a line drafted before the column existed draws exactly as it did.
       ...(Array.isArray(i.serves) ? { serves: i.serves as string[] } : {}),
     }));
-    const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems);
+    const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems, {
+      validityDays: surroundings.validityDays,
+    });
     const rendered = await renderQuotationPdf({
       ...surroundings,
       // G-194 — who signed it, off the row and never joined: the name was

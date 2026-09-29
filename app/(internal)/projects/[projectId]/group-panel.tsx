@@ -60,7 +60,7 @@ export function ProjectGroupPanel({
           {!matches && group.title ? (
             <p className="text-[13px] text-muted">
               The standard name for this project is{' '}
-              <span className="text-fg">{group.title}</span> — rename it in WhatsApp if you want
+              <span className="text-foreground">{group.title}</span> — rename it in WhatsApp if you want
               them to match.
             </p>
           ) : null}
@@ -69,7 +69,7 @@ export function ProjectGroupPanel({
         <>
           <p className="text-[13px] leading-relaxed text-muted">
             One of the three conditions for this project officially starting (ADM-13).{' '}
-            <strong className="text-fg">AgencyOS cannot create it</strong> — WhatsApp gives no API
+            <strong className="text-foreground">AgencyOS cannot create it</strong> — WhatsApp gives no API
             for making a group or adding people to one — so create it on your phone, then paste its
             id on the group form.
           </p>
@@ -88,7 +88,7 @@ export function ProjectGroupPanel({
             <>
               <p className="text-[13px] text-muted">
                 The standard name cannot be composed yet — it is missing{' '}
-                <strong className="text-fg">{group.missing.join(', ')}</strong>.
+                <strong className="text-foreground">{group.missing.join(', ')}</strong>.
               </p>
               {/*
                 Named rather than guessed. A name assembled around a missing

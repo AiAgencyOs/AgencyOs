@@ -1,12 +1,13 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { agencyClock, clockFor, getAgencyTimeZone, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import {
   getLatestConversation,
+  getLeadFacts,
   getLeadHeader,
   getLeadPipeline,
   getLeadReactivation,
@@ -28,9 +29,9 @@ import {
   readQualificationCoverage,
 } from '@/modules/crm/lead-insight-queries';
 import { readDealBillingMode, readOpportunityOwner } from '@/modules/sales/composer-queries';
-import { listInternalRoster } from '@/modules/projects/queries';
 
 import { SalesOwnerForm } from './composer-extras';
+import { listInternalRoster } from '@/modules/projects/queries';
 
 import { MeetingRequestForm } from './meeting-request-form';
 import {
@@ -48,12 +49,27 @@ import {
   type ProposalStatus,
 } from '@/modules/sales/schema';
 import {
+  ActivityFeed,
+  Avatar,
   Badge,
+  buttonClass,
   Callout,
   Card,
   CardBody,
   CardHeader,
   ChatBubble,
+  DetailPanel,
+  EntityHeader,
+  HeaderFigure,
+  IconCalendar,
+  IconClock,
+  IconFlag,
+  IconInvoices,
+  IconMessage,
+  IconPhone,
+  IconPlus,
+  IconUser,
+  QuickActions,
   ChatCanvas,
   ChatHeader,
   ComposerBar,
@@ -64,15 +80,20 @@ import {
   IconLock,
   IconSparkle,
   StatusBadge,
+  StatusStepper,
   SystemNote,
   humanize,
+  PermissionDenied,
 } from '@/ui';
 
 import { ExtractionForm, MessageForm, SendToClientForm } from './message-form';
 import { RequirementDecisionForm } from './requirement-decision-form';
 import {
+  AssignOwnerForm,
   ConvertForm,
   DealStageForm,
+  LeadTagsForm,
+  PauseAgentForm,
   DealTermsForm,
   FollowUpForm,
   LeadNoteForm,
@@ -100,6 +121,7 @@ import { ReactivationPanel } from './reactivation-panel';
 import { WaitingForSomebody } from './waiting-banner';
 import { StartConversationForm } from './start-form';
 import { LeadWorkspace } from './workspace';
+import { TrailLabel } from '../../trail-label';
 
 export const metadata: Metadata = { title: 'Requirement collection' };
 
@@ -157,10 +179,12 @@ export default async function LeadConversationPage({
   const { leadId } = await params;
 
   const context = await requireInternal(`/leads/${leadId}`);
-  if (!can(context.role, 'lead.read')) redirect('/dashboard');
+  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
 
   const lead = await getLeadHeader(leadId);
   if (!lead) notFound();
+  const facts = await getLeadFacts(leadId);
+  const roster = await listInternalRoster();
 
   const conversation = await getLatestConversation(leadId);
   const messages = conversation ? await listMessages(conversation.id) : [];
@@ -189,6 +213,10 @@ export default async function LeadConversationPage({
   const proposals = opportunity ? await listProposalsForOpportunity(opportunity.id) : [];
   const openObjections = await listOpenObjectionsForLead(leadId);
   const meetings = await listMeetingsForLead(leadId);
+  // SCR-012 — the composer's owner select and GST pre-fill. The billing mode
+  // exists only once the deal has a project with a confirmed profile.
+  const dealOwner = opportunity ? await readOpportunityOwner(opportunity.id) : null;
+  const dealBilling = opportunity ? await readDealBillingMode(opportunity.id) : null;
   const agencyZone = await getAgencyTimeZone();
   // At most one, and the database is what makes that true:
   // `proposals_live_version_key` is a partial unique index over exactly these
@@ -197,11 +225,6 @@ export default async function LeadConversationPage({
   // per deal, and `draft_plan_set` and `draft_proposal` each supersede the
   // other kind, so a deal is offering either one quotation or one ladder.
   const planSet = opportunity ? await readLivePlanSet(opportunity.id, proposals) : null;
-  // SCR-012 — the composer's owner select and GST pre-fill. The billing mode
-  // exists only once the deal has a project with a confirmed profile.
-  const dealOwner = opportunity ? await readOpportunityOwner(opportunity.id) : null;
-  const dealBilling = opportunity ? await readDealBillingMode(opportunity.id) : null;
-  const roster = opportunity && mayAssign ? await listInternalRoster() : [];
   // `liveProposal` means the live STANDALONE quotation. A plan-set member is a
   // live proposal too — slots 1..3 of `proposals_live_version_key` — and
   // without this filter every single-quotation control below would fire on one
@@ -329,7 +352,7 @@ export default async function LeadConversationPage({
           </ChatCanvas>
 
           {mayWrite ? (
-            <ComposerBar>
+            <ComposerBar id="composer">
               <MessageForm conversationId={conversation.id} leadId={leadId} />
               <SendToClientForm conversationId={conversation.id} leadId={leadId} />
             </ComposerBar>
@@ -345,12 +368,85 @@ export default async function LeadConversationPage({
     </div>
   );
 
+  /* ── The rail's actions and the information pane ────────────────────── */
+
+  const phoneDigits = facts?.contactPhone?.replace(/[^\d]/g, '') ?? null;
+  const budget = qualification.success && qualification.data.budgetMinor !== undefined ? money(qualification.data.budgetMinor, 'INR') : null;
+
+  const quickActions = (
+    <QuickActions
+      actions={[
+        ...(facts?.contactPhone ? [{ label: 'Call now', icon: <IconPhone size={13} />, href: `tel:${facts.contactPhone}` }] : []),
+        ...(phoneDigits ? [{ label: 'Open in WhatsApp', icon: <IconMessage size={13} />, href: `https://wa.me/${phoneDigits}`, tone: 'whatsapp' as const }] : []),
+        ...(mayDraft && opportunity ? [{ label: 'Create quote', icon: <IconInvoices size={13} />, href: '#quotations' }] : []),
+        ...(mayWrite ? [{ label: 'Schedule follow-up', icon: <IconCalendar size={13} />, href: '#sales' }, { label: 'Add note', icon: <IconPlus size={13} />, href: '#sales' }] : []),
+        { label: 'Meetings', icon: <IconClock size={13} />, href: '#meetings' },
+        ...(opportunity && dealStage === 'won' ? [{ label: 'Handoff packet', icon: <IconFlag size={13} />, href: `/handoffs/${opportunity.id}` }] : []),
+        { label: 'All leads', icon: <IconUser size={13} />, href: '/leads' },
+      ]}
+    />
+  );
+
+  const side = (
+    <div className="flex flex-col gap-4">
+      <DetailPanel
+        title="Lead information"
+        actions={mayWrite ? <a href="#sales" className="text-xs font-medium text-brand hover:underline">Edit</a> : undefined}
+        rows={[
+          { label: 'Name', value: facts?.contactName ?? lead.title },
+          { label: 'Phone', value: facts?.contactPhone ? <span className="font-mono">{facts.contactPhone}</span> : 'Not on file' },
+          ...(facts?.contactEmail ? [{ label: 'Email', value: facts.contactEmail }] : []),
+          ...(facts?.contactCompany ? [{ label: 'Company', value: facts.contactCompany }] : []),
+          { label: 'Source', value: humanize(lead.source) },
+          { label: 'Status', value: <StatusBadge status={leadStatus} /> },
+          ...(opportunity ? [{ label: 'Deal stage', value: <StatusBadge status={dealStage} /> }] : []),
+          { label: 'Assigned to', value: facts?.assignedEmail ? facts.assignedEmail.split('@')[0] : 'Unassigned' },
+          { label: 'Budget', value: budget ?? 'Not qualified yet' },
+          ...(qualification.success && qualification.data.timelineNote ? [{ label: 'Timeline', value: qualification.data.timelineNote }] : []),
+          ...(qualification.success && qualification.data.isDecisionMaker !== undefined ? [{ label: 'Decision maker', value: qualification.data.isDecisionMaker ? 'Yes' : 'No' }] : []),
+          ...(facts ? [{ label: 'Created on', value: clock.dateTime(facts.createdAt) }, { label: 'Last activity', value: clock.dateTime(facts.updatedAt) }] : []),
+        ]}
+      />
+      {facts && (facts.tags.length > 0 || mayWrite) ? (
+        <Card>
+          <CardHeader title="Tags" />
+          <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+            {facts.tags.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {facts.tags.map((t) => (
+                  <Badge key={t} tone="info">{t}</Badge>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[13px] text-muted">No tags yet.</p>
+            )}
+            {mayWrite ? <LeadTagsForm leadId={leadId} tags={facts.tags} /> : null}
+          </div>
+        </Card>
+      ) : null}
+      <ActivityFeed
+        title="Recent activity"
+        compact
+        emptyTitle="Nothing recorded yet"
+        items={timeline.slice(0, 6).map((e) => ({
+          id: `${e.evidence_type}:${e.evidence_id}:${e.occurred_at}`,
+          title: e.event_type.split('.').map((part) => humanize(part)).join(' · '),
+          detail: e.summary,
+          when: clock.date(e.occurred_at),
+          tone: /lost|disqualif|fail|reject/.test(e.event_type) ? ('danger' as const) : /won|convert|accept|approv/.test(e.event_type) ? ('success' as const) : ('brand' as const),
+        }))}
+      />
+    </div>
+  );
+
   /* ── Pane two: what the business knows ──────────────────────────────── */
 
   const details = (
     <div className="flex flex-col gap-4">
+      {quickActions}
+
       {/* ── Sales pipeline ───────────────────────────────────────────── */}
-      <Card>
+      <Card id="sales">
         <CardHeader
           title="Sales"
           actions={
@@ -371,6 +467,64 @@ export default async function LeadConversationPage({
           {pipeline?.disqualified_reason ? (
             <Callout tone="danger">Disqualified: {pipeline.disqualified_reason}</Callout>
           ) : null}
+
+          {/* SCR-007 — every time this lead was disqualified, and why. The
+              row's own reason column holds only the latest and is cleared on
+              reopen; the activity rows are the history. */}
+          {disqualifications.length > 0 ? (
+            <div className="rounded-lg border border-line bg-surface-sunken p-3">
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
+                Disqualification history · {disqualifications.length}
+              </p>
+              <ol className="flex flex-col gap-1.5">
+                {disqualifications.map((d) => (
+                  <li key={d.id} className="flex flex-col gap-0.5">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-[13px] font-medium text-danger">{d.reason}</span>
+                      <span className="shrink-0 text-[11px] text-faint">{clock.dateTime(d.occurredAt)}</span>
+                    </div>
+                    <p className="text-xs text-muted">
+                      {d.from ? `from ${humanize(d.from)}` : 'status change'}
+                      {d.actorId ? ` · by ${roster.find((m) => m.userId === d.actorId)?.fullName ?? d.actorId.slice(0, 8)}` : ''}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
+
+          {/* SCR-007 — which of Document 09 §9's areas the conversation has
+              already answered, in the client's own words. Read only by project
+              onboarding until now. A count of facts, not a judgement (ADM-88):
+              no score is derived and none is shown. */}
+          <div className="rounded-lg border border-line bg-surface-sunken p-3">
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-faint">Qualification coverage</p>
+              <Badge tone={coverage.covered.length === coverage.total ? 'success' : 'neutral'}>
+                {coverage.covered.length} of {coverage.total} areas
+              </Badge>
+            </div>
+            {coverage.covered.length === 0 ? (
+              <p className="text-[13px] text-muted">
+                Nothing recorded yet. Coverage rows are written as the conversation answers an area; none has.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-1.5">
+                {coverage.covered.map((c) => (
+                  <li key={c.area} className="flex flex-col gap-0.5">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <Badge tone="success" dot>{humanize(c.area)}</Badge>
+                      <span className="shrink-0 text-[11px] text-faint">{clock.date(c.createdAt)}</span>
+                    </div>
+                    <p className="text-[13px] leading-relaxed text-muted">&ldquo;{c.quote}&rdquo;</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {coverage.missing.length > 0 ? (
+              <p className="mt-2 text-xs text-faint">Still open: {coverage.missing.map((a) => humanize(a)).join(', ')}.</p>
+            ) : null}
+          </div>
 
           {/* Blueprint §8: the WON state is "Converted + handoff link". The
               packet exists from the moment of the win (G-232), before any
@@ -393,6 +547,8 @@ export default async function LeadConversationPage({
                 allowed={(LEAD_TRANSITIONS[leadStatus] ?? []).filter((s) => s !== 'converted')}
               />
               <FollowUpForm leadId={leadId} current={pipeline?.next_follow_up_at ?? null} />
+              <AssignOwnerForm leadId={leadId} current={facts?.assignedTo ?? null} roster={roster.map((r) => ({ userId: r.userId, fullName: r.fullName }))} />
+              {conversation && !conversation.agent_paused_at ? <PauseAgentForm conversationId={conversation.id} leadId={leadId} /> : null}
 
               <details className="rounded-lg border border-line bg-surface px-3 py-2">
                 <summary className="cursor-pointer text-[13px] font-semibold">
@@ -477,74 +633,6 @@ export default async function LeadConversationPage({
         </CardBody>
       </Card>
 
-      {/* SCR-007 — which of Document 09 §9's areas the conversation has
-          already answered, in the client's own words. Read only by project
-          onboarding until now. A count of facts, not a judgement (ADM-88):
-          no score is derived and none is shown. */}
-      <Card>
-        <CardHeader
-          title="Qualification coverage"
-          description="What the client has already said, by area. What is left to ask is the difference."
-          actions={
-            <Badge tone={coverage.covered.length === coverage.total ? 'success' : 'neutral'}>
-              {coverage.covered.length} of {coverage.total} areas
-            </Badge>
-          }
-        />
-        <CardBody className="flex flex-col gap-3">
-          {coverage.covered.length === 0 ? (
-            <p className="text-[13px] text-muted">
-              Nothing recorded yet. Coverage rows are written by the qualifier as the conversation answers an area; none has.
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {coverage.covered.map((c) => (
-                <li key={c.area} className="flex flex-col gap-0.5">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <Badge tone="success" dot>{humanize(c.area)}</Badge>
-                    <span className="shrink-0 text-[11px] text-faint">{clock.date(c.createdAt)}</span>
-                  </div>
-                  <p className="text-[13px] leading-relaxed text-muted">&ldquo;{c.quote}&rdquo;</p>
-                </li>
-              ))}
-            </ul>
-          )}
-          {coverage.missing.length > 0 ? (
-            <p className="text-xs text-faint">
-              Still open: {coverage.missing.map((a) => humanize(a)).join(', ')}.
-            </p>
-          ) : null}
-        </CardBody>
-      </Card>
-
-      {/* SCR-007 — every time this lead was disqualified, and why. The row's
-          own reason column holds only the latest and is cleared on reopen;
-          the activity rows are the history. */}
-      {disqualifications.length > 0 ? (
-        <Card>
-          <CardHeader
-            title="Disqualification history"
-            description={`${disqualifications.length} time${disqualifications.length === 1 ? '' : 's'}, from lead_activities.`}
-          />
-          <CardBody>
-            <ol className="flex flex-col gap-2">
-              {disqualifications.map((d) => (
-                <li key={d.id} className="flex flex-col gap-0.5">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-[13px] font-medium text-danger">{d.reason}</span>
-                    <span className="shrink-0 text-[11px] text-faint">{clock.dateTime(d.occurredAt)}</span>
-                  </div>
-                  <p className="text-xs text-muted">
-                    {d.from ? `from ${humanize(d.from)}` : 'status change'}
-                    {d.actorId ? ` · by ${d.actorId.slice(0, 8)}` : ''}
-                  </p>
-                </li>
-              ))}
-            </ol>
-          </CardBody>
-        </Card>
-      ) : null}
-
       {/* Brief §23/§24, gap G-157: what the client asked to change, in their
           own words. Until this list existed the objection rows were read only
           by the agent's context file — the person who has to draft the
@@ -582,7 +670,7 @@ export default async function LeadConversationPage({
 
       {/* ── Quotations (G-011, ADM-07) ───────────────────────────────── */}
       {opportunity ? (
-        <Card>
+        <Card id="quotations">
           <CardHeader
             title="Quotations"
             actions={
@@ -625,7 +713,7 @@ export default async function LeadConversationPage({
                         href={`/api/quotations/${p.id}/pdf`}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-[11px] text-muted underline underline-offset-2 hover:text-ink"
+                        className="text-[11px] text-muted underline underline-offset-2 hover:text-foreground"
                       >
                         PDF
                       </a>
@@ -720,7 +808,7 @@ export default async function LeadConversationPage({
               />
             ) : dealOwner ? (
               <p className="text-[12.5px] text-muted">
-                Sales owner: {dealOwner.ownerId ? <span className="font-mono">{dealOwner.ownerId.slice(0, 8)}</span> : 'nobody'}
+                Sales owner: {dealOwner.ownerId ? (roster.find((m) => m.userId === dealOwner.ownerId)?.fullName ?? dealOwner.ownerId.slice(0, 8)) : 'nobody'}
               </p>
             ) : null}
 
@@ -800,7 +888,7 @@ export default async function LeadConversationPage({
       ) : null}
 
       {/* ── Meetings (A08/A09, G-234) ────────────────────────────────── */}
-      <Card>
+      <Card id="meetings">
         <CardHeader
           title="Meetings"
           actions={
@@ -1004,16 +1092,66 @@ export default async function LeadConversationPage({
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <div className="hidden items-center gap-2 text-[13px] text-muted lg:flex">
-        <Link href="/leads" className="flex items-center gap-1.5 hover:text-foreground">
-          <IconArrowLeft size={15} />
-          Leads
-        </Link>
-        <span className="text-faint">/</span>
-        <span className="truncate font-medium text-foreground">{lead.title}</span>
-      </div>
+      <TrailLabel name={lead.title} />
+      <EntityHeader
+        name={lead.title}
+        tile={<Avatar name={facts?.contactName ?? lead.title} size="xl" />}
+        status={<StatusBadge status={leadStatus} />}
+        subtitle={
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {facts?.contactPhone ? (
+              <span className="inline-flex items-center gap-1 font-mono">
+                <IconPhone size={12} />
+                {facts.contactPhone}
+              </span>
+            ) : null}
+            <span>via {humanize(lead.source)}</span>
+            {facts ? <span>Added {clock.dateTime(facts.createdAt)}</span> : null}
+          </span>
+        }
+        facts={[
+          ...(facts?.contactCompany ? [{ label: 'Company', value: facts.contactCompany, icon: <IconUser size={14} /> }] : []),
+          ...(budget ? [{ label: 'Budget', value: budget, icon: <IconInvoices size={14} /> }] : []),
+          { label: 'Assigned to', value: facts?.assignedEmail ? facts.assignedEmail.split('@')[0] : 'Unassigned', icon: <IconUser size={14} /> },
+          ...(opportunity ? [{ label: 'Deal', value: humanize(dealStage), icon: <IconFlag size={14} /> }] : []),
+        ]}
+        actions={
+          <>
+            <Link href="/leads" className={buttonClass('secondary', 'sm')}>
+              <IconArrowLeft size={14} />
+              Leads
+            </Link>
+            {mayWrite && conversation ? (
+              <a href="#composer" className={buttonClass('whatsapp', 'sm')}>
+                <IconMessage size={14} />
+                Send message
+              </a>
+            ) : null}
+          </>
+        }
+        aside={
+          <HeaderFigure
+            value={pipeline?.next_follow_up_at ? clock.dateTime(pipeline.next_follow_up_at) : 'None set'}
+            label="Next follow-up"
+          >
+            {mayWrite ? (
+              <a href="#sales" className="text-[11px] font-medium text-brand hover:underline">
+                {pipeline?.next_follow_up_at ? 'Change' : 'Schedule'}
+              </a>
+            ) : null}
+          </HeaderFigure>
+        }
+      >
+        <div className="mt-4 border-t border-line pt-4">
+          <StatusStepper
+            status={leadStatus}
+            happyPath={['new', 'qualifying', 'qualified', 'converted']}
+            offRamps={['nurture', 'disqualified']}
+          />
+        </div>
+      </EntityHeader>
 
-      <LeadWorkspace chat={chat} details={details} detailsCount={awaitingDecision} />
+      <LeadWorkspace chat={chat} details={details} side={side} detailsCount={awaitingDecision} />
     </div>
   );
 }

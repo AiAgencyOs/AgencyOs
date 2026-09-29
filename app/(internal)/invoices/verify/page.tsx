@@ -1,12 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listPendingPaymentClaims } from '@/modules/finance/queries';
-import { Card, EmptyState, IconInvoices, PageHeader, StatusBadge } from '@/ui';
+import { Card, EmptyState, IconInvoices, PageHeader, StatusBadge, PermissionDenied } from '@/ui';
 
 import { VerifyClaimForm } from '../../projects/[projectId]/claims-panel';
 
@@ -36,7 +35,7 @@ function when(clock: AgencyClock, value: string): string {
 export default async function PaymentVerificationPage() {
   const context = await requireInternal('/invoices/verify');
   const clock = await agencyClock();
-  if (!can(context.role, 'invoice.issue')) redirect('/invoices');
+  if (!can(context.role, 'invoice.issue')) return <PermissionDenied />;
 
   const claims = await listPendingPaymentClaims();
 

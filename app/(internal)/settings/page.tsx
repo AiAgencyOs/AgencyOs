@@ -83,7 +83,7 @@ export default async function SettingsGeneralPage() {
         const items = status.items.filter((i) => i.area === area);
         if (items.length === 0) return null;
         return (
-          <div key={area} className="flex flex-col gap-2">
+          <div key={area} className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
             <h2 className="text-[13px] font-semibold tracking-tight">{area}</h2>
             <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-surface">
               {items.map((item) => (
@@ -111,7 +111,7 @@ export default async function SettingsGeneralPage() {
       })}
 
       {problems.length > 0 ? (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
           <h2 className="text-[13px] font-semibold tracking-tight">Not ready for production</h2>
           <ul className="flex flex-col gap-1 rounded-lg border border-warning/30 px-4 py-3 text-sm">
             {problems.map((p) => (
@@ -128,7 +128,7 @@ export default async function SettingsGeneralPage() {
         still reading "Demo Agency" one step before the first real client.
         Owner only, audited, and the database refuses any other write.
       */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">Agency name</h2>
         <p className="text-xs text-muted">
           The letterhead on every quotation PDF a client keeps, and the sender of every
@@ -137,7 +137,7 @@ export default async function SettingsGeneralPage() {
         <OrganizationNameForm current={organizationName} />
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">Quotation contact details</h2>
         <p className="text-xs text-muted">
           Printed under the agency name on every quotation PDF, so a client who forwards the
@@ -148,7 +148,7 @@ export default async function SettingsGeneralPage() {
         <QuotationContactForm email={contactEmail} phone={contactPhone} location={contactLocation} />
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">Agency timezone</h2>
         <p className="text-xs text-muted">
           {timezone
@@ -158,7 +158,7 @@ export default async function SettingsGeneralPage() {
         <TimezoneForm current={timezone} />
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">Scheduler</h2>
         <div
           className={`flex items-baseline justify-between rounded-lg border px-4 py-3 text-sm ${cronStale ? 'border-danger/30 text-danger' : 'border-line text-muted'}`}

@@ -1,12 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
 import { getSecurityPosture } from '@/lib/admin/security';
 import { isClean, securityChecks } from '@/lib/admin/security-eval';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { Badge, Callout, Card, cx, IconAlert, IconCheck, PageHeader, TONE_DOT } from '@/ui';
+import { Badge, Callout, Card, cx, IconAlert, IconCheck, PageHeader, TONE_DOT, PermissionDenied } from '@/ui';
 
 export const metadata: Metadata = { title: 'Security' };
 
@@ -23,7 +22,7 @@ export const metadata: Metadata = { title: 'Security' };
  */
 export default async function SecurityPage() {
   const context = await requireInternal('/security');
-  if (!can(context.role, 'audit.read')) redirect('/dashboard');
+  if (!can(context.role, 'audit.read')) return <PermissionDenied />;
 
   const posture = await getSecurityPosture();
   const checks = securityChecks(posture);

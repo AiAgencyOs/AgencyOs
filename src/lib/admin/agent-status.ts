@@ -208,3 +208,41 @@ export async function listHandoffs(limit = 100): Promise<HandoffRow[]> {
     completedAt: h.completed_at,
   }));
 }
+
+export type RecentAgentRun = AgentRunRow & { agentKey: string };
+
+/**
+ * The most recent runs across every agent — the AI Workforce dashboard's
+ * activity feed. The same `ai.agent_runs` rows `listAgentRuns` reads for one
+ * agent, without the filter; RLS scopes them to the caller's organisation.
+ */
+export async function listRecentAgentRuns(limit = 8): Promise<RecentAgentRun[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('ai')
+    .from('agent_runs')
+    .select(
+      'id, agent_key, trigger, subject_type, subject_id, status, model, input_tokens, output_tokens, cost_minor, step_count, error, created_at',
+    )
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) unreadable('listRecentAgentRuns', error);
+
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    agentKey: r.agent_key,
+    trigger: r.trigger,
+    subjectType: r.subject_type,
+    subjectId: r.subject_id,
+    status: r.status,
+    model: r.model,
+    inputTokens: r.input_tokens,
+    outputTokens: r.output_tokens,
+    costMinor: r.cost_minor,
+    stepCount: r.step_count,
+    error: r.error,
+    createdAt: r.created_at,
+  }));
+}

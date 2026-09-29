@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
 import { agencyClock, clockFor, getAgencyTimeZone } from '@/lib/admin/agency-clock';
 import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
@@ -19,7 +18,7 @@ import {
 } from '@/modules/crm/meetings-view';
 import { listJobsForMeetings, listMeetings } from '@/modules/crm/queries';
 import { MEETING_MODES, MEETING_STATUSES } from '@/modules/crm/schema';
-import { Badge, Callout, EmptyState, IconClock, MonthGrid, PageHeader, StatusBadge, cx, humanize, monthGridDays } from '@/ui';
+import { Badge, Callout, EmptyState, IconCalendar, IconClock, MonthGrid, PageHeader, Stat, StatGrid, StatusBadge, cx, humanize, statusTone, PermissionDenied, type CalendarEntry } from '@/ui';
 
 import { VerifyCalendarForm } from '../settings/forms';
 
@@ -49,7 +48,7 @@ export default async function MeetingsPage({
   searchParams: Promise<{ window?: string; status?: string; mode?: string; owner?: string; view?: string; month?: string }>;
 }) {
   const context = await requireInternal('/meetings');
-  if (!can(context.role, 'lead.read')) redirect('/dashboard');
+  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
 
   const params = await searchParams;
   const now = new Date();
@@ -57,25 +56,22 @@ export default async function MeetingsPage({
   const clock = await agencyClock();
 
   // SCR-010 — the month calendar. `?view=calendar&month=YYYY-MM` swaps the
-  // day-grouped list for a grid over one agency-zone month; the same reader,
-  // the same filters, a different window. Month boundaries are taken from
-  // the agency clock's own "today" so the grid's days are agency days.
+  // day-grouped list for the shared MonthGrid over one agency-zone month;
+  // the same reader, the same filters, a different window. Month bounds
+  // are taken from the agency clock's own "today" so the grid's days are
+  // agency days rather than the server's.
   const calendar = params.view === 'calendar';
   const todayKey = clock.dayKey(now);
   const monthMatch = MONTH.exec(params.month ?? '');
   const year = monthMatch ? Number(monthMatch[1]) : Number(todayKey.slice(0, 4));
   const month = monthMatch && Number(monthMatch[2]) >= 1 && Number(monthMatch[2]) <= 12 ? Number(monthMatch[2]) : Number(todayKey.slice(5, 7));
-  // The zone's offset at "today": the difference between the UTC instant the
-  // agency day starts and midnight UTC of the same calendar date.
+  const monthKey = `${year}-${String(month).padStart(2, '0')}`;
   const zoneOffsetMs = clock.today(now).from.getTime() - Date.parse(`${todayKey}T00:00:00Z`);
   const monthStart = new Date(Date.UTC(year, month - 1, 1) + zoneOffsetMs);
   const monthEnd = new Date(Date.UTC(year, month, 1) + zoneOffsetMs);
-  const monthKey = (y: number, m: number) => `${y}-${String(m).padStart(2, '0')}`;
-  const prevMonth = month === 1 ? monthKey(year - 1, 12) : monthKey(year, month - 1);
-  const nextMonth = month === 12 ? monthKey(year + 1, 1) : monthKey(year, month + 1);
 
   const window = calendar
-    ? { key: 'month' as const, from: monthStart, to: monthEnd, label: `${monthKey(year, month)} (${agencyZone})`, chip: 'Month' }
+    ? { key: 'month' as const, from: monthStart, to: monthEnd, label: `${monthKey} (${agencyZone})`, chip: 'Month' }
     : meetingWindow(params.window, now, agencyZone);
   // Only a filter the schema names is applied; a stranger is ignored, not
   // passed to the database as a string it would refuse.
@@ -107,7 +103,7 @@ export default async function MeetingsPage({
       mode,
       owner: params.owner === 'mine' ? 'mine' : owner,
       view: calendar ? 'calendar' : '',
-      month: calendar && monthMatch ? monthKey(year, month) : '',
+      month: calendar && monthMatch ? monthKey : '',
       ...over,
     };
     for (const [k, v] of Object.entries(next)) if (v) q.set(k, v);
@@ -115,31 +111,21 @@ export default async function MeetingsPage({
     return `/meetings${s ? `?${s}` : ''}`;
   };
 
-  // The grid's cells: one chip per meeting on its agency day.
-  const cells = new Map<string, React.ReactNode>();
+  // The grid's entries: one per meeting on its agency day. Agreed times are
+  // the brand tone, requested-only ones neutral, cancelled ones muted.
+  const entriesByDate: Record<string, CalendarEntry[]> = {};
   if (calendar) {
     for (const group of groups) {
       if (!group.day) continue;
-      cells.set(
-        group.day,
-        group.rows.map((m) => {
-          const when = whenOf(m);
-          return (
-            <Link
-              key={m.id}
-              href={`/meetings/${m.id}`}
-              className={cx(
-                'block truncate rounded px-1 py-0.5 text-[11px] leading-tight hover:bg-surface-hover',
-                m.status === 'cancelled' ? 'text-faint line-through' : when.kind === 'confirmed' ? 'bg-brand-soft text-brand' : 'bg-surface-sunken text-muted',
-              )}
-              title={`${m.contact?.full_name ?? m.lead?.title ?? 'Unnamed lead'} · ${humanize(m.status)}`}
-            >
-              {when.kind === 'unscheduled' ? '' : `${clock.clock(when.start)} `}
-              {m.contact?.full_name ?? m.lead?.title ?? 'Unnamed lead'}
-            </Link>
-          );
-        }),
-      );
+      entriesByDate[group.day] = group.rows.map((m) => {
+        const when = whenOf(m);
+        const who = m.contact?.full_name ?? m.lead?.title ?? 'Unnamed lead';
+        return {
+          label: `${when.kind === 'unscheduled' ? '' : `${clock.clock(when.start)} `}${who}`,
+          tone: m.status === 'cancelled' || m.status === 'no_show' ? 'neutral' : when.kind === 'confirmed' ? 'brand' : 'info',
+          href: `/meetings/${m.id}`,
+        };
+      });
     }
   }
 
@@ -153,8 +139,16 @@ export default async function MeetingsPage({
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Meetings"
-        description={`Every meeting the system knows about, in the window you choose. Times are shown in each meeting's own zone. ${calendar ? `Slots are read from google:${calendar.calendarId} and booked as calendar events from a meeting's page.` : 'No calendar credential is configured: a booking is a row written by a person, and nothing is offered.'}`}
+        description={`Every meeting the system knows about, in the window you choose. Times are shown in each meeting's own zone. ${googleCalendar ? `Slots are read from google:${googleCalendar.calendarId} and booked as calendar events from a meeting's page.` : 'No calendar credential is configured: a booking is a row written by a person, and nothing is offered.'}`}
       />
+
+      <StatGrid cols={6}>
+        <Stat label="In this window" value={String(rows.length)} caption={window.chip} tone="brand" icon={<IconCalendar size={16} />} />
+        {(['requested', 'booked', 'completed', 'cancelled', 'no_show'] as const).map((s) => {
+          const n = rows.filter((r) => r.status === s).length;
+          return <Stat key={s} label={humanize(s)} value={String(n)} tone={n === 0 ? 'neutral' : statusTone(s)} icon={<IconClock size={16} />} href={href({ status: s })} />;
+        })}
+      </StatGrid>
 
       {/* Blueprint §8: a BLOCKED state names the blocker and its owner. G-242: three states, said. */}
       {googleCalendar ? (
@@ -176,7 +170,7 @@ export default async function MeetingsPage({
         </Callout>
       )}
 
-      <nav aria-label="Window and filters" className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-subtle bg-surface px-3 py-2">
+      <nav aria-label="Window and filters" className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-line bg-surface px-3 py-2">
         <div className="flex items-center gap-1">
           <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-faint">View</span>
           <Link href={href({ view: '', month: '' })} className={chip(!calendar)} aria-current={!calendar ? 'true' : undefined}>
@@ -225,16 +219,10 @@ export default async function MeetingsPage({
 
       {calendar ? (
         <>
-          <MonthGrid
-            days={monthGridDays(year, month, todayKey)}
-            cells={cells}
-            title={`${new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' })} · ${agencyZone}`}
-            prevHref={href({ view: 'calendar', month: prevMonth, window: '' })}
-            nextHref={href({ view: 'calendar', month: nextMonth, window: '' })}
-          />
+          <MonthGrid month={monthKey} entriesByDate={entriesByDate} todayKey={todayKey} monthHref={(m) => href({ view: 'calendar', month: m, window: '' })} />
           <p className="px-1 text-[12px] text-faint">
-            {rows.length} meeting{rows.length === 1 ? '' : 's'} in this month{status || mode || owner ? ' matching the filters' : ''}
-            {rows.length >= LIMIT ? ` — bounded at ${LIMIT}; narrow the filters to see the rest` : ''}. Agreed times are highlighted; requested-but-unagreed ones are muted; a meeting with no time recorded is not on the grid.
+            {rows.length} meeting{rows.length === 1 ? '' : 's'} in {monthKey} ({agencyZone}){status || mode || owner ? ' matching the filters' : ''}
+            {rows.length >= LIMIT ? ` — bounded at ${LIMIT}; narrow the filters to see the rest` : ''}. Agreed times are highlighted; requested-but-unagreed ones are lighter; a meeting with no time recorded is not on the grid.
           </p>
         </>
       ) : rows.length === 0 ? (
@@ -273,7 +261,7 @@ export default async function MeetingsPage({
                     <li key={m.id}>
                       <Link
                         href={`/meetings/${m.id}`}
-                        className="flex flex-col gap-1.5 rounded-lg border border-subtle bg-surface p-3 transition-colors hover:border-line-strong hover:bg-surface-hover"
+                        className="flex flex-col gap-1.5 rounded-lg border border-line bg-surface p-3 transition-colors hover:border-line-strong hover:bg-surface-hover"
                       >
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">

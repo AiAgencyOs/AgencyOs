@@ -49,3 +49,41 @@ export async function readOpportunityOwner(opportunityId: string): Promise<Oppor
   if (error) unreadable('readOpportunityOwner', error);
   return { opportunityId, ownerId: data?.owner_id ?? null };
 }
+
+/**
+ * The confirmed billing mode of every deal that already has a project —
+ * the composer's GST pre-fill (SCR-012), in two bounded reads rather than
+ * one per deal. A deal absent from the result has no project, or a project
+ * with no active billing profile: the toggle is manual for it.
+ */
+export async function listDealBillingModes(opportunityIds: readonly string[]): Promise<Map<string, 'gst' | 'non_gst'>> {
+  const modes = new Map<string, 'gst' | 'non_gst'>();
+  if (opportunityIds.length === 0) return modes;
+
+  const supabase = await createClient();
+  const { data: projects, error: projectError } = await supabase
+    .schema('projects')
+    .from('projects')
+    .select('id, opportunity_id')
+    .in('opportunity_id', [...opportunityIds])
+    .is('deleted_at', null);
+  if (projectError) unreadable('listDealBillingModes.projects', projectError);
+  const rows = (projects ?? []).filter((p): p is typeof p & { opportunity_id: string } => p.opportunity_id !== null);
+  if (rows.length === 0) return modes;
+
+  const { data: profiles, error: profileError } = await supabase
+    .schema('finance')
+    .from('billing_profiles')
+    .select('project_id, mode')
+    .in('project_id', rows.map((p) => p.id))
+    .eq('status', 'active');
+  if (profileError) unreadable('listDealBillingModes.profiles', profileError);
+
+  const modeByProject = new Map<string, string | null>();
+  for (const p of profiles ?? []) modeByProject.set(p.project_id, p.mode);
+  for (const p of rows) {
+    const mode = modeByProject.get(p.id);
+    if (mode === 'gst' || mode === 'non_gst') modes.set(p.opportunity_id, mode);
+  }
+  return modes;
+}

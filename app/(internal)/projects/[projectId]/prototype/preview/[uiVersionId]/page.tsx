@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject, getPrototypeArtifactByUiVersion } from '@/modules/projects/queries';
-import { Badge, Card, EmptyState, IconProjects, PageHeader } from '@/ui';
+import { Badge, Card, EmptyState, IconProjects, PageHeader, PermissionDenied } from '@/ui';
 
 import { PrototypeScreenView } from '@/ui/prototype-screen-view';
 
@@ -36,7 +36,7 @@ export default async function PrototypePreviewPage({
   const { projectId, uiVersionId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/prototype/preview/${uiVersionId}`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();

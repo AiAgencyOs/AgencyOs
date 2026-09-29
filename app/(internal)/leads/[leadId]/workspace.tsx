@@ -5,13 +5,15 @@ import { useState } from 'react';
 import { cx } from '@/ui';
 
 /**
- * Two panes: the conversation, and everything the business knows about it.
+ * Three panes: what the business knows about the person, the conversation,
+ * and what to do about it — the reference's Lead 360 layout, with the chat
+ * in the middle where a chat belongs and the deal beside it, the way
+ * WhatsApp Web puts contact info in a rail.
  *
- * On a desktop both are on screen — the chat where a chat belongs and the deal
- * beside it, the way WhatsApp Web puts contact info in a right rail. Below
- * `lg` there is not room for two columns, so they become two tabs and the chat
- * is the one that opens first: that is what somebody reaching for a phone came
- * to read.
+ * At `xl` all three are on screen. Between `lg` and `xl` there is room for
+ * two columns, so the information pane folds into the top of the deal
+ * column. Below `lg` the panes become two tabs and the chat is the one that
+ * opens first: that is what somebody reaching for a phone came to read.
  *
  * The panes are rendered on the server and passed in as props. This component
  * owns which one is visible and nothing else, so no query, capability check or
@@ -20,10 +22,13 @@ import { cx } from '@/ui';
 export function LeadWorkspace({
   chat,
   details,
+  side,
   detailsCount,
 }: {
   chat: React.ReactNode;
   details: React.ReactNode;
+  /** Read-only information about the lead — rendered beside the chat at `xl`, above the details below it. */
+  side?: React.ReactNode;
   /** Badge on the Details tab, so a proposal awaiting a decision is visible from the chat. */
   detailsCount?: number;
 }) {
@@ -49,9 +54,11 @@ export function LeadWorkspace({
         </Tab>
       </div>
 
-      <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(340px,380px)]">
+      <div className={cx('grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(340px,380px)]', side ? 'xl:grid-cols-[minmax(16rem,0.85fr)_minmax(0,1.6fr)_minmax(320px,1fr)]' : null)}>
+        {side ? <div className={cx('hidden min-w-0 xl:block', tab === 'details' ? 'block' : 'hidden')}>{side}</div> : null}
         <div className={cx('min-w-0', tab === 'chat' ? 'block' : 'hidden lg:block')}>{chat}</div>
         <div className={cx('min-w-0', tab === 'details' ? 'block' : 'hidden lg:block')}>
+          {side ? <div className="mb-4 hidden lg:block xl:hidden">{side}</div> : null}
           {details}
         </div>
       </div>
@@ -75,7 +82,7 @@ function Tab({
       aria-selected={active}
       onClick={onClick}
       className={cx(
-        'flex min-h-10 flex-1 items-center justify-center rounded-lg px-3 text-[13px] font-medium transition-colors',
+        'flex min-h-10 flex-1 items-center justify-center rounded-lg text-[13px] font-medium transition-colors',
         active ? 'bg-brand text-brand-fg shadow-xs' : 'text-muted hover:bg-surface-hover',
       )}
     >

@@ -1,23 +1,14 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
-import { listPendingApprovals } from '@/modules/approvals/queries';
-import { listFailedDeliveries, listDeadJobs } from '@/lib/observability/queries';
-import { listPendingPaymentClaims } from '@/modules/finance/queries';
-import { listOpenDefects } from '@/modules/qa/queries';
-import { listMyTasks } from '@/modules/projects/queries';
-import { Card, EmptyState, IconCheck, PageHeader } from '@/ui';
+import { LiveRefresh } from '@/lib/realtime';
+import { Card, EmptyState, FilterBar, FilterChips, IconCheck, PageHeader } from '@/ui';
+
+import { ACTION_CATEGORY_LABEL, categoryOf, listActionItems } from './action-items';
 
 export const metadata: Metadata = { title: 'Notifications' };
-
-function when(clock: AgencyClock, value: string): string {
-  return clock.dateTime(value);
-}
-
-type Row = { key: string; title: string; detail: string; href: string; urgent: boolean };
 
 /**
  * Notifications & Action Center — SCR-003. Every source here already has
@@ -25,91 +16,19 @@ type Row = { key: string; title: string; detail: string; href: string; urgent: b
  * tied together before — an owner had to open six pages to answer "what
  * needs me right now". No new state, no snooze/dismiss mechanism: every row
  * traces to the real record on the page it links to, and resolving it there
- * is what removes it from this list on the next load.
+ * is what removes it from this list. The list is live: the same tables that
+ * feed it push a refresh when they change (`LiveRefresh`), and the header
+ * bell's count is this list's length.
  */
-export default async function NotificationsPage() {
+export default async function NotificationsPage({ searchParams }: { searchParams: Promise<{ category?: string; severity?: string }> }) {
   const context = await requireInternal('/notifications');
   const clock = await agencyClock();
-
-  const show = (cap: Parameters<typeof can>[1]) => can(context.role, cap);
-
-  const [approvals, failedDeliveries, deadJobs, paymentClaims, defects, myTasks] = await Promise.all([
-    listPendingApprovals(),
-    show('audit.read') ? listFailedDeliveries() : Promise.resolve([]),
-    show('job.requeue') || show('audit.read') ? listDeadJobs() : Promise.resolve([]),
-    show('invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
-    show('project.read') ? listOpenDefects() : Promise.resolve([]),
-    listMyTasks(context.userId),
-  ]);
-
-  const now = Date.now();
-  const rows: Row[] = [];
-
-  for (const a of approvals) {
-    const overdue = a.sla_due_at ? new Date(a.sla_due_at).getTime() <= now : false;
-    rows.push({
-      key: `approval-${a.id}`,
-      title: a.summary ?? `${a.subject_type} approval`,
-      detail: overdue ? `overdue since ${when(clock, a.sla_due_at!)}` : a.sla_due_at ? `due ${when(clock, a.sla_due_at)}` : 'no deadline set',
-      href: '/approvals',
-      urgent: overdue,
-    });
-  }
-
-  for (const c of paymentClaims) {
-    rows.push({
-      key: `claim-${c.id}`,
-      title: `Payment claim — ${c.invoiceNumber}`,
-      detail: `${c.clientName ?? 'unknown client'} · claimed ${when(clock, c.submitted_at)}`,
-      href: '/invoices/verify',
-      urgent: c.status === 'mismatch',
-    });
-  }
-
-  const blockers = defects.filter((d) => d.severity === 'blocker' || d.severity === 'major');
-  for (const d of blockers) {
-    rows.push({
-      key: `defect-${d.id}`,
-      title: d.title,
-      detail: `${d.severity} · ${d.projectName}`,
-      href: '/qa',
-      urgent: d.severity === 'blocker',
-    });
-  }
-
-  for (const j of deadJobs) {
-    rows.push({
-      key: `job-${j.id}`,
-      title: `Dead job — ${j.kind}`,
-      detail: j.last_error ?? 'no error recorded',
-      href: '/operations',
-      urgent: true,
-    });
-  }
-
-  for (const f of failedDeliveries) {
-    rows.push({
-      key: `delivery-${f.occurredAt}`,
-      title: 'Failed client delivery',
-      detail: when(clock, f.occurredAt),
-      href: '/operations',
-      urgent: false,
-    });
-  }
-
-  const overdueTasks = myTasks.filter((t) => t.dueOn && t.dueOn < clock.dayKey(new Date()));
-  for (const t of overdueTasks) {
-    rows.push({
-      key: `task-${t.id}`,
-      title: t.title,
-      detail: `${t.projectName} · overdue — ${clock.date(t.dueOn!)}`,
-      href: '/my-tasks',
-      urgent: true,
-    });
-  }
-
-  rows.sort((a, b) => Number(b.urgent) - Number(a.urgent));
-  const urgentCount = rows.filter((r) => r.urgent).length;
+  const { category, severity } = await searchParams;
+  const all = await listActionItems(context, clock);
+  const urgentCount = all.filter((r) => r.urgent).length;
+  const categories = [...new Set(all.map(categoryOf))];
+  const rows = all.filter((r) => (!category || categoryOf(r) === category) && (!severity || (severity === 'urgent' ? r.urgent : !r.urgent)));
+  const link = (c?: string, s?: string) => `/notifications?${[c ? `category=${c}` : '', s ? `severity=${s}` : ''].filter(Boolean).join('&')}`;
 
   return (
     <div className="flex flex-col gap-5">
@@ -120,7 +39,26 @@ export default async function NotificationsPage() {
             ? 'Nothing needs your attention right now.'
             : `${rows.length} item${rows.length === 1 ? '' : 's'} need attention${urgentCount > 0 ? `, ${urgentCount} urgent` : ''}.`
         }
+        actions={<LiveRefresh topics={['approvals', 'finance', 'jobs', 'qa', 'tasks', 'conversations']} />}
       />
+
+      {all.length > 0 ? (
+        <FilterBar>
+          <FilterChips
+            options={[
+              { key: 'all', label: `All (${all.length})`, href: link(undefined, severity), active: !category },
+              ...categories.map((c) => ({ key: c, label: `${ACTION_CATEGORY_LABEL[c] ?? c} (${all.filter((r) => categoryOf(r) === c).length})`, href: link(c, severity), active: category === c })),
+            ]}
+          />
+          <FilterChips
+            options={[
+              { key: 'any', label: 'Any severity', href: link(category), active: !severity },
+              { key: 'urgent', label: `Urgent (${urgentCount})`, href: link(category, 'urgent'), active: severity === 'urgent' },
+              { key: 'normal', label: `Normal (${all.length - urgentCount})`, href: link(category, 'normal'), active: severity === 'normal' },
+            ]}
+          />
+        </FilterBar>
+      ) : null}
 
       {rows.length > 0 ? (
         <Card>
@@ -128,16 +66,19 @@ export default async function NotificationsPage() {
             {rows.map((r) => (
               <li key={r.key} className="flex items-center gap-3 px-4 py-3 text-sm sm:px-5">
                 <Link href={r.href} className="flex min-w-0 flex-1 flex-col gap-0.5 rounded hover:bg-surface-hover">
-                  <span className={`font-medium ${r.urgent ? 'text-danger' : 'text-foreground'}`}>{r.title}</span>
+                  <span className={`font-medium ${r.urgent ? 'text-danger' : 'text-foreground'}`}>
+                    {r.urgent ? <span className="sr-only">Urgent: </span> : null}
+                    {r.title}
+                  </span>
                   <span className="text-xs text-muted">{r.detail}</span>
                 </Link>
                 {/* SCR-003 "Escalate to owner": a deep link, not a state
-                    change. The owner's own queue is /approvals; a row that
-                    already lives there jumps to its own page instead. There
-                    is no notification-state table to record an escalation
-                    in, so this is read-only on purpose. */}
+                    change. The owner's queue is /approvals; a row that
+                    already lives there opens its own target. There is no
+                    notification-state table to record an escalation in, so
+                    this is read-only on purpose. */}
                 <Link
-                  href={r.href === '/approvals' ? r.href : `/approvals?from=${encodeURIComponent(r.key)}`}
+                  href={r.href.startsWith('/approvals') ? r.href : `/approvals?from=${encodeURIComponent(r.key)}`}
                   className="shrink-0 text-xs font-medium text-brand hover:underline"
                   title="Open the owner's approvals queue"
                 >
@@ -148,7 +89,7 @@ export default async function NotificationsPage() {
           </ul>
         </Card>
       ) : (
-        <EmptyState icon={<IconCheck size={22} />} title="All clear" description="No pending approvals, failed deliveries, overdue tasks or open blockers." />
+        <EmptyState icon={<IconCheck size={22} />} title={all.length > 0 ? 'Nothing in this filter' : 'All clear'} description={all.length > 0 ? 'Widen the filters to see the rest.' : 'No pending approvals, failed deliveries, overdue tasks or open blockers.'} />
       )}
     </div>
   );

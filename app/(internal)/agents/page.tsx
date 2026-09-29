@@ -1,157 +1,307 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
-import { aiStatus } from '@/lib/admin/agent-status';
-import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
-import { providerCredentialStatus } from '@/lib/ai/vault';
-import { createClient } from '@/lib/db/server';
-
-import { SetProviderCredentialForm, VerifyAiProviderForm } from '../settings/forms';
 import { formatCostMinor, whyNotRun, wouldRun } from '@/lib/admin/agent-eval';
+import { aiStatus, listRecentAgentRuns } from '@/lib/admin/agent-status';
 import { agencyClock } from '@/lib/admin/agency-clock';
+import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
+import { getAgentUsage } from '@/lib/admin/usage';
+import { providerCredentialStatus } from '@/lib/ai/vault';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { Badge, Callout, Card, IconAlert, IconCheck, PageHeader, Stat } from '@/ui';
+import { createClient } from '@/lib/db/server';
+import {
+  ActivityFeed,
+  Avatar,
+  Badge,
+  buttonClass,
+  Callout,
+  Card,
+  CardHeader,
+  DataTable,
+  DonutChart,
+  IconAgents,
+  IconAlert,
+  IconCheck,
+  IconClock,
+  IconRupee,
+  IconSettings,
+  IconSparkle,
+  IconUsage,
+  PageHeader,
+  PermissionDenied,
+  ProgressBar,
+  QuickActions,
+  Stat,
+  StatGrid,
+  StatusBadge,
+  TrendChart,
+  ViewAll,
+  humanize,
+  type Column,
+} from '@/ui';
 
-export const metadata: Metadata = { title: 'Agents' };
+import { SetProviderCredentialForm, VerifyAiProviderForm } from '../settings/forms';
+
+export const metadata: Metadata = { title: 'AI Workforce' };
+
+function compact(n: number): string {
+  return new Intl.NumberFormat('en-IN', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
+}
 
 /**
- * The AI agent registry and provider posture — read-only.
+ * The AI Workforce dashboard — the agent registry and provider posture,
+ * laid out as the reference's AI screen: six figures, the activity trend,
+ * the status donut, top agents by usage, the agent table, and the recent
+ * runs feed. Read-only, as before.
  *
  * The audit's clearest safety note lives here: a browser write to `ai.agents`
  * would reopen the cross-tenant break migration `…380000` closed, and agent
  * ACTIVATION is an owner decision withheld by ADM-82. So this page changes
- * nothing. It answers "which agents exist, are they on, what may they do, and
- * would they run right now?" from the enforced state — enabled, autonomy,
- * model, ceilings, last validation — and the single provider boolean, never a
- * key. Gated on `audit.read` (owner + ops_admin), the operational-visibility
- * capability, the same one /operations uses.
+ * nothing. It answers "which agents exist, are they on, what may they do,
+ * would they run right now, and what did they actually do?" from the
+ * enforced state and the cost ledger — never a key. Gated on `audit.read`.
  */
 export default async function AgentsPage() {
   const context = await requireInternal('/agents');
   const clock = await agencyClock();
-  if (!can(context.role, 'audit.read')) redirect('/dashboard');
+  if (!can(context.role, 'audit.read')) return <PermissionDenied />;
 
-  const { providerConfigured, providers, agents } = await aiStatus();
-  // G-236: the recorded verification, beside the control that writes it.
-  const settings = await readOperationalSettings();
+  const [{ providerConfigured, providers, agents }, settings, usage, recentRuns] = await Promise.all([
+    aiStatus(),
+    readOperationalSettings(),
+    getAgentUsage(),
+    listRecentAgentRuns(8),
+  ]);
   const providerVerifiedAt = settingInstant(settings, 'ai_provider_verified_at');
   const providerVerifiedModel = settingText(settings, 'ai_provider_verified_model');
   const enabledCount = agents.filter((a) => a.enabled).length;
   const runnable = agents.filter((a) => wouldRun(a, providerConfigured)).length;
+  const idle = enabledCount - runnable;
+  const disabled = agents.length - enabledCount;
 
-  // The vault — ADM-84 §9 overturned 2026-09-20. Admin-only, same as the rest
-  // of this callout; a non-admin never even asks (RLS would refuse it anyway).
   const isAdmin = can(context.role, 'organization.settings');
   const vaultStatus = isAdmin ? await providerCredentialStatus(await createClient()) : null;
+
+  const usageByAgent = new Map(usage.perAgent.map((u) => [u.agentKey, u]));
+  const nameByKey = new Map(agents.map((a) => [a.key, a.displayName]));
+  const topAgents = [...usage.perAgent].sort((a, b) => b.runs - a.runs).slice(0, 5);
+  const totalRuns = usage.totals.runs;
+  const failedRecent = recentRuns.filter((r) => r.status === 'failed').length;
+  const avgSteps = recentRuns.length > 0 ? Math.round(recentRuns.reduce((n, r) => n + r.stepCount, 0) / recentRuns.length) : null;
+
+  const trend = usage.dailyTrend.map((d) => ({ day: clock.date(`${d.day}T12:00:00Z`), runs: d.runs, cost: d.costMinor / 100 }));
+
+  const statusData = [
+    { label: 'Would run', value: runnable },
+    { label: 'Enabled, blocked', value: idle },
+    { label: 'Disabled', value: disabled },
+  ].filter((d) => d.value > 0);
+
+  type AgentRow = (typeof agents)[number];
+  const columns: Column<AgentRow>[] = [
+    {
+      key: 'name',
+      header: 'Agent',
+      primary: true,
+      cell: (a) => (
+        <span className="flex items-center gap-2.5">
+          <Avatar name={a.displayName} size="sm" square />
+          <span className="min-w-0">
+            <span className="block truncate">{a.displayName}</span>
+            <span className="block truncate font-mono text-[10px] font-normal text-muted">{a.key}</span>
+          </span>
+        </span>
+      ),
+    },
+    { key: 'role', header: 'Role', desktopOnly: true, cellClassName: 'max-w-[18rem] truncate text-muted', cell: (a) => a.description ?? '—' },
+    { key: 'model', header: 'Model', desktopOnly: true, cellClassName: 'font-mono text-xs text-muted', cell: (a) => a.defaultModel ?? '—' },
+    {
+      key: 'status',
+      header: 'Status',
+      badge: true,
+      cell: (a) => {
+        const blocked = whyNotRun(a, providerConfigured);
+        return <Badge tone={blocked ? (a.enabled ? 'warning' : 'neutral') : 'success'} dot>{blocked ? (a.enabled ? 'Blocked' : 'Disabled') : 'Active'}</Badge>;
+      },
+    },
+    { key: 'runs', header: 'Runs', align: 'right', cellClassName: 'tabular', cell: (a) => String(usageByAgent.get(a.key)?.runs ?? 0) },
+    { key: 'cost', header: 'Cost', align: 'right', desktopOnly: true, cellClassName: 'tabular text-muted', cell: (a) => { const c = formatCostMinor(usageByAgent.get(a.key)?.costMinor ?? 0); return c ? `₹${c}` : '—'; } },
+  ];
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
-        title="Agents"
-        description="The AI agent registry and provider status, read-only. Enabling an agent or changing its limits is an owner decision made in the database (ADM-82), not from here — this shows what is enforced."
+        title="AI Workforce"
+        description="Your AI agents, models, tools and automation workflows — what is enforced, and what they actually did. Enabling an agent or changing its limits is an owner decision made in the database (ADM-82)."
         actions={
-          <span className="flex items-center gap-3">
-            <Link href="/agents/automations" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
-              Automations
+          <>
+            <Link href="/usage" className={buttonClass('secondary', 'sm')}>
+              <IconUsage size={14} />
+              Agent logs
             </Link>
             {isAdmin ? (
-              <Link href="/agents/routing" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
+              <Link href="/agents/routing" className={buttonClass('secondary', 'sm')}>
+                <IconSettings size={14} />
                 Model routing
               </Link>
             ) : null}
-          </span>
+            <Link href="/agents/automations" className={buttonClass('primary', 'sm')}>
+              <IconSparkle size={14} />
+              Automations
+            </Link>
+          </>
         }
       />
 
-      <Callout
-        tone={providerConfigured ? 'success' : 'warning'}
-        icon={providerConfigured ? <IconCheck size={16} /> : <IconAlert size={16} />}
-        title="AI provider"
-      >
-        {providerConfigured
-          ? providerVerifiedAt
-            ? `configured (${providers.join(', ')}) and verified — a real call answered ${providerVerifiedAt}${providerVerifiedModel ? ` (${providerVerifiedModel})` : ''}`
-            : `configured (${providers.join(', ')}) — registered, and no real call has been recorded yet`
-          : 'not configured — set ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY or OPENROUTER_API_KEY (ADM-85); until then no agent can run and nothing is faked'}
-        {providerConfigured && isAdmin ? (
-          <div className="mt-2">
-            <VerifyAiProviderForm lastVerifiedAt={providerVerifiedAt} model={providerVerifiedModel} />
-          </div>
-        ) : null}
-      </Callout>
+      {!providerConfigured ? (
+        <Callout tone="warning" icon={<IconAlert size={16} />} title="AI provider not configured">
+          Set ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY or OPENROUTER_API_KEY (ADM-85), or store a key in the vault below. Until then no agent can run and nothing is faked.
+        </Callout>
+      ) : null}
 
-      {isAdmin ? (
-        <Card className="flex flex-col gap-2.5 p-4 text-sm sm:p-5">
-          <span className="font-semibold">Provider key vault</span>
-          <p className="text-xs text-muted">
-            A key entered here is encrypted and stored (ADM-84 §9 overturned 2026-09-20); env-set keys still take
-            precedence. Once stored, a key is never shown again — only whether it is present and when it was last set.
-          </p>
-          {vaultStatus?.ok ? (
-            <ul className="flex flex-wrap gap-3 text-xs">
-              {vaultStatus.data.map((row) => (
-                <li key={row.provider} className="flex items-center gap-1">
-                  <Badge tone={row.configured ? 'success' : 'neutral'}>{row.provider}</Badge>
-                  <span className="text-muted">{row.configured ? `set ${row.updatedAt}` : 'not set'}</span>
+      <StatGrid cols={6}>
+        <Stat label="Total agents" value={String(agents.length)} caption={`${enabledCount} enabled`} tone="brand" icon={<IconAgents size={16} />} />
+        <Stat label="Would run now" value={String(runnable)} caption={providerConfigured ? `Provider: ${providers.join(', ')}` : 'No provider'} tone={runnable > 0 ? 'success' : 'neutral'} icon={<IconSparkle size={16} />} />
+        <Stat label="Runs recorded" value={compact(totalRuns)} caption={usage.capped ? 'Ledger capped' : 'All time'} tone="info" icon={<IconCheck size={16} />} href="/usage" />
+        <Stat label="Tokens used" value={compact(usage.totals.inputTokens + usage.totals.outputTokens)} caption={`${compact(usage.totals.inputTokens)} in · ${compact(usage.totals.outputTokens)} out`} tone="accent" icon={<IconUsage size={16} />} href="/usage" />
+        <Stat label="AI cost" value={`₹${formatCostMinor(usage.totals.costMinor) ?? '0'}`} caption="From the cost ledger" tone="warning" icon={<IconRupee size={16} />} href="/usage" />
+        <Stat label="Recent failures" value={String(failedRecent)} caption={avgSteps === null ? 'No runs yet' : `avg ${avgSteps} steps · last ${recentRuns.length}`} tone={failedRecent > 0 ? 'danger' : 'neutral'} icon={<IconClock size={16} />} />
+      </StatGrid>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)]">
+        <Card>
+          <CardHeader title="Agent activity" description="Runs per day from the cost ledger." />
+          <div className="p-4 sm:p-5">
+            {trend.length === 0 ? (
+              <p className="py-6 text-center text-[13px] text-muted">No runs recorded yet.</p>
+            ) : (
+              <TrendChart data={trend} xKey="day" series={[{ key: 'runs', label: 'Runs' }]} height={200} />
+            )}
+          </div>
+        </Card>
+        <Card>
+          <CardHeader title="Agent status" />
+          <div className="p-4 sm:p-5">
+            {statusData.length === 0 ? (
+              <p className="py-6 text-center text-[13px] text-muted">No agents registered.</p>
+            ) : (
+              <DonutChart data={statusData} colors={['var(--success)', 'var(--warning)', 'var(--faint)']} totalLabel="Total agents" height={150} />
+            )}
+          </div>
+        </Card>
+        <Card>
+          <CardHeader title="Top agents by usage" actions={<ViewAll href="/usage" />} />
+          {topAgents.length === 0 ? (
+            <p className="px-4 py-4 text-[13px] text-muted sm:px-5">No runs recorded yet.</p>
+          ) : (
+            <ul className="flex flex-col gap-3 p-4 sm:p-5">
+              {topAgents.map((u) => (
+                <li key={u.agentKey} className="flex items-center gap-3">
+                  <Avatar name={nameByKey.get(u.agentKey) ?? u.agentKey} size="md" square />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-baseline justify-between gap-2">
+                      <Link href={`/agents/${u.agentKey}`} className="truncate text-[13px] font-medium text-foreground hover:text-brand">
+                        {nameByKey.get(u.agentKey) ?? u.agentKey}
+                      </Link>
+                      <span className="tabular shrink-0 text-xs text-muted">{u.runs} runs</span>
+                    </span>
+                    <ProgressBar value={totalRuns > 0 ? (u.runs / totalRuns) * 100 : 0} tone="brand" size="sm" label={`${nameByKey.get(u.agentKey) ?? u.agentKey} share of runs`} className="mt-1 w-full" />
+                  </span>
                 </li>
               ))}
             </ul>
-          ) : null}
-          <SetProviderCredentialForm />
+          )}
         </Card>
-      ) : null}
-
-      <div className="grid grid-cols-3 gap-3">
-        <Stat label="Agents" value={agents.length} />
-        <Stat label="Enabled" value={enabledCount} />
-        <Stat label="Would run now" value={runnable} tone={runnable > 0 ? 'success' : 'neutral'} />
       </div>
 
-      <ul className="flex flex-col gap-3">
-        {agents.map((a) => {
-          const blocked = whyNotRun(a, providerConfigured);
-          const cost = formatCostMinor(a.maxCostMinor);
-          return (
-            <li key={a.key}>
-              <Card className="flex flex-col gap-2.5 p-4 text-sm sm:p-5">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="flex min-w-0 items-baseline gap-2">
-                  <Link href={`/agents/${a.key}`} className="font-semibold hover:underline underline-offset-2">
-                    {a.displayName}
-                  </Link>
-                  <code className="text-xs text-muted">{a.key}</code>
-                </div>
-                <Badge tone={blocked ? 'neutral' : 'success'} dot>
-                  {blocked ? `would not run — ${blocked}` : 'would run'}
-                </Badge>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(19rem,1fr)]">
+        <div className="flex min-w-0 flex-col gap-4">
+          <Card>
+            <CardHeader title="AI agents" description="The registry, as enforced. Open an agent for its runs and limits." />
+            <div className="px-4 pb-4 sm:px-5">
+              <DataTable dense rows={agents} columns={columns} getKey={(a) => a.key} href={(a) => `/agents/${a.key}`} />
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="AI provider"
+              actions={<Badge tone={providerConfigured ? 'success' : 'warning'} dot>{providerConfigured ? 'Configured' : 'Not configured'}</Badge>}
+              description={
+                providerConfigured
+                  ? providerVerifiedAt
+                    ? `${providers.join(', ')} — verified: a real call answered ${providerVerifiedAt}${providerVerifiedModel ? ` (${providerVerifiedModel})` : ''}.`
+                    : `${providers.join(', ')} — registered; no real call has been recorded yet.`
+                  : 'No provider key is registered.'
+              }
+            />
+            {providerConfigured && isAdmin ? (
+              <div className="px-4 pb-4 sm:px-5">
+                <VerifyAiProviderForm lastVerifiedAt={providerVerifiedAt} model={providerVerifiedModel} />
               </div>
-              <p className="text-[13px] leading-relaxed text-muted">{a.description}</p>
-              <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted">
-                <span>autonomy <span className="text-foreground">{a.autonomyLevel}</span></span>
-                <span>model <span className="text-foreground">{a.defaultModel ?? '—'}</span></span>
-                <span>effort <span className="text-foreground">{a.defaultEffort ?? '—'}</span></span>
-                <span>max steps <span className="text-foreground">{a.maxSteps ?? '—'}</span></span>
-                <span>max cost <span className="text-foreground">{cost ? `₹${cost}` : '—'}</span></span>
-                <span>
-                  validated{' '}
-                  <span className="text-foreground">
-                    {a.lastValidatedAt ? clock.date(a.lastValidatedAt) : 'never'}
-                    {a.definitionVersion ? ` · ${a.definitionVersion}` : ''}
-                  </span>
-                </span>
-              </div>
-              {!a.enabled && a.disabledReason ? (
+            ) : null}
+            {isAdmin ? (
+              <div className="flex flex-col gap-2.5 border-t border-line px-4 py-4 text-sm sm:px-5">
+                <span className="font-semibold">Provider key vault</span>
                 <p className="text-xs text-muted">
-                  <span className="uppercase tracking-wide">disabled:</span> {a.disabledReason}
+                  A key entered here is encrypted and stored (ADM-84 §9 overturned 2026-09-20); env-set keys still take precedence. Once stored, a key is never shown again — only whether it is present and when it was last set.
                 </p>
-              ) : null}
-              </Card>
-            </li>
-          );
-        })}
-      </ul>
+                {vaultStatus?.ok ? (
+                  <ul className="flex flex-wrap gap-3 text-xs">
+                    {vaultStatus.data.map((row) => (
+                      <li key={row.provider} className="flex items-center gap-1">
+                        <Badge tone={row.configured ? 'success' : 'neutral'}>{row.provider}</Badge>
+                        <span className="text-muted">{row.configured ? `set ${row.updatedAt}` : 'not set'}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                <SetProviderCredentialForm />
+              </div>
+            ) : null}
+          </Card>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-4">
+          <ActivityFeed
+            title="Recent agent activity"
+            viewAllHref="/usage"
+            emptyTitle="No runs yet"
+            emptyDescription="Every run an agent makes is recorded here, with its outcome."
+            compact
+            items={recentRuns.map((r) => ({
+              id: r.id,
+              title: `${nameByKey.get(r.agentKey) ?? r.agentKey} · ${humanize(r.trigger)}`,
+              detail: r.error ? r.error : `${r.stepCount} step${r.stepCount === 1 ? '' : 's'}${r.model ? ` · ${r.model}` : ''}${r.subjectType ? ` · ${humanize(r.subjectType)}` : ''}`,
+              when: clock.dateTime(r.createdAt),
+              tone: r.status === 'failed' ? 'danger' : r.status === 'succeeded' || r.status === 'completed' ? 'success' : 'info',
+              icon: r.status === 'failed' ? <IconAlert size={13} /> : <IconSparkle size={13} />,
+              href: `/agents/${r.agentKey}`,
+            }))}
+          />
+          <Card>
+            <CardHeader title="Run outcomes" description="The last few runs, by status." />
+            <ul className="flex flex-wrap gap-2 px-4 pb-4 sm:px-5">
+              {[...new Set(recentRuns.map((r) => r.status))].map((s) => (
+                <li key={s}>
+                  <StatusBadge status={s} />
+                  <span className="ml-1 text-xs text-muted">{recentRuns.filter((r) => r.status === s).length}</span>
+                </li>
+              ))}
+              {recentRuns.length === 0 ? <li className="text-[13px] text-muted">Nothing recorded.</li> : null}
+            </ul>
+          </Card>
+          <QuickActions
+            actions={[
+              { label: 'Agent logs', icon: <IconUsage size={13} />, href: '/usage' },
+              ...(isAdmin ? [{ label: 'Model routing', icon: <IconSettings size={13} />, href: '/agents/routing' }] : []),
+              { label: 'Automations', icon: <IconSparkle size={13} />, href: '/agents/automations' },
+              { label: 'Integrations', icon: <IconAgents size={13} />, href: '/integrations' },
+            ]}
+          />
+        </div>
+      </div>
     </div>
   );
 }

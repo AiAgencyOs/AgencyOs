@@ -199,3 +199,14 @@ export const recordTestRunSchema = z
   });
 
 export type RecordTestRunInput = z.infer<typeof recordTestRunSchema>;
+
+/** Triage: who takes a defect and how bad it is — `qa.defects.assignee_id` / `severity`. */
+export const triageDefectSchema = z.object({
+  defectId: z.uuid(),
+  projectId: z.uuid(),
+  assigneeId: z.uuid().nullable(),
+  severity: z.enum(DEFECT_SEVERITIES),
+  /** Required when the severity changes — a downgrade with no reason is a bug hidden by silence. */
+  reason: z.string().trim().max(500).optional(),
+});
+export type TriageDefectInput = z.infer<typeof triageDefectSchema>;

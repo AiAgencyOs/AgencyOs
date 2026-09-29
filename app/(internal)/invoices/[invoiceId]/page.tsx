@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
-import { Badge, DataTable, DetailList, DetailRow, StatusBadge } from '@/ui';
+import { Badge, DataTable, DetailList, DetailPanel, DetailRow, StatusBadge, PermissionDenied } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 import {
   getClientAccountName,
@@ -12,11 +12,16 @@ import {
   listInvoiceItems,
   listInvoicePayments,
   listInvoiceReceipts,
+  listInvoicePaymentClaims,
+  listPaymentAccounts,
   listRefunds,
+  readInvoiceBillingProfile,
   readNetReceived,
 } from '@/modules/finance/queries';
 import {
   displayPaymentReference,
+  PAYMENT_ACCOUNT_FIELDS,
+  PAYMENT_ACCOUNT_KIND_LABEL,
   PAYABLE_INVOICE_STATUSES,
   PAYMENT_METHODS,
   type InvoiceStatus,
@@ -63,18 +68,23 @@ export default async function InvoicePage({
   const context = await requireInternal(`/invoices/${invoiceId}`);
 
   const clock = await agencyClock();
-  if (!can(context.role, 'invoice.read')) redirect('/dashboard');
+  if (!can(context.role, 'invoice.read')) return <PermissionDenied />;
 
   const invoice = await getInvoice(invoiceId);
   if (!invoice) notFound();
 
-  const [items, payments, receipts, clientName, project] = await Promise.all([
+  const [items, payments, receipts, clientName, project, billing, claims, accounts] = await Promise.all([
     listInvoiceItems(invoiceId),
     listInvoicePayments(invoiceId),
     listInvoiceReceipts(invoiceId),
     getClientAccountName(invoice.client_account_id),
     invoice.project_id ? getProject(invoice.project_id) : Promise.resolve(null),
+    readInvoiceBillingProfile(invoice.project_id),
+    listInvoicePaymentClaims(invoiceId),
+    listPaymentAccounts(),
   ]);
+  const receivingAccounts = accounts.filter((a) => a.status === 'active');
+  const taxRatePct = invoice.subtotal_minor > 0 ? Math.round((invoice.tax_minor / invoice.subtotal_minor) * 1000) / 10 : 0;
 
   // The milestone name comes from the plan the project page already renders,
   // so the two screens agree on what a milestone is called.
@@ -169,25 +179,104 @@ export default async function InvoicePage({
           getKey={(i) => i.id}
         />
 
-        <div className="ml-auto w-full max-w-xs rounded-xl border border-line bg-surface px-4 shadow-xs">
-          <DetailList>
-            <DetailRow
-              label="Subtotal"
-              value={<span className="tabular">{money(invoice.subtotal_minor, invoice.currency)}</span>}
+        <div className="grid gap-4 lg:grid-cols-[1fr_minmax(0,20rem)]">
+          <div className="flex flex-col gap-4">
+            <DetailPanel
+              title="Billed to"
+              rows={[
+                { label: 'Client', value: clientName ?? '—' },
+                { label: 'Legal name', value: billing?.legalName ?? '—' },
+                {
+                  label: 'Billing mode',
+                  value: billing ? (
+                    <Badge tone={billing.mode === 'gst' ? 'brand' : 'neutral'} mono>
+                      {billing.mode === 'gst' ? 'GST' : 'Non-GST'} · v{billing.version}
+                    </Badge>
+                  ) : (
+                    <span className="text-warning">not confirmed</span>
+                  ),
+                },
+                { label: 'GSTIN', value: billing?.gstin ? <span className="font-mono text-xs">{billing.gstin}</span> : '—' },
+                { label: 'State', value: billing?.billingState ?? '—' },
+                { label: 'Address', value: billing?.billingAddress ? <span className="whitespace-pre-line">{billing.billingAddress}</span> : '—' },
+                { label: 'Confirmed', value: billing ? when(clock, billing.confirmedAt) : '—' },
+              ]}
             />
-            <DetailRow
-              label="Tax"
-              value={<span className="tabular">{money(invoice.tax_minor, invoice.currency)}</span>}
-            />
-            <DetailRow
-              label={<span className="font-semibold text-foreground">Total</span>}
-              value={
-                <span className="tabular text-base font-semibold">
-                  {money(invoice.total_minor, invoice.currency)}
-                </span>
-              }
-            />
-          </DetailList>
+            {milestone && project ? (
+              <DetailPanel
+                title="Linked milestone"
+                rows={[
+                  { label: 'Milestone', value: `${milestone.position + 1}. ${milestone.name}` },
+                  { label: 'Project', value: <Link href={`/projects/${project.id}`} className="hover:underline">{project.name}</Link> },
+                  { label: 'Share', value: `${milestone.payment_percent}% of the plan` },
+                  { label: 'Milestone value', value: <span className="tabular">{money(milestone.amount_minor, invoice.currency)}</span> },
+                  { label: 'Plan', value: <Link href={`/projects/${project.id}/plan`} className="text-brand hover:underline">Open payment plan</Link> },
+                ]}
+              />
+            ) : null}
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <div className="rounded-xl border border-line bg-surface px-4 shadow-xs">
+              <DetailList>
+                <DetailRow
+                  label="Subtotal"
+                  value={<span className="tabular">{money(invoice.subtotal_minor, invoice.currency)}</span>}
+                />
+                <DetailRow
+                  label={billing?.mode === 'gst' ? `GST${taxRatePct ? ` @ ${taxRatePct}%` : ''}` : 'Tax'}
+                  value={<span className="tabular">{money(invoice.tax_minor, invoice.currency)}</span>}
+                />
+                <DetailRow
+                  label={<span className="font-semibold text-foreground">Total</span>}
+                  value={
+                    <span className="tabular text-base font-semibold">
+                      {money(invoice.total_minor, invoice.currency)}
+                    </span>
+                  }
+                />
+                <DetailRow
+                  label="Paid"
+                  value={<span className="tabular text-success">{money(invoice.paid_minor, invoice.currency)}</span>}
+                />
+                <DetailRow
+                  label="Outstanding"
+                  value={<span className={`tabular ${outstanding > 0 ? 'text-warning' : ''}`}>{money(outstanding, invoice.currency)}</span>}
+                />
+              </DetailList>
+            </div>
+
+            <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4 shadow-xs">
+              <div className="flex items-baseline justify-between gap-2">
+                <h3 className="text-[13px] font-semibold tracking-tight">Pay into</h3>
+                <Link href="/settings/finance" className="text-xs text-brand hover:underline">Manage</Link>
+              </div>
+              {receivingAccounts.length === 0 ? (
+                <p className="text-xs text-muted">No active receiving account. Add one under Settings › Finance so the client knows where to pay.</p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {receivingAccounts.map((a) => (
+                    <li key={a.id} className="rounded-lg border border-line bg-canvas px-3 py-2 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold">{a.label}</span>
+                        <Badge mono>{PAYMENT_ACCOUNT_KIND_LABEL[a.kind]}</Badge>
+                      </div>
+                      <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+                        {PAYMENT_ACCOUNT_FIELDS[a.kind]
+                          .filter((f) => a.instructions[f.key])
+                          .map((f) => (
+                            <div key={f.key} className="contents">
+                              <dt className="text-muted">{f.label}</dt>
+                              <dd className="font-mono">{a.instructions[f.key]}</dd>
+                            </div>
+                          ))}
+                      </dl>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
         </div>
         {invoice.notes ? (
           <p className="whitespace-pre-line text-sm text-muted">{invoice.notes}</p>
@@ -267,6 +356,47 @@ export default async function InvoicePage({
             No payments recorded. An invoice is never marked paid on its own — somebody records
             money, and then somebody confirms they have seen it on the statement (ADM-04). Both
             steps, or the invoice stays unpaid and the next milestone stays shut.
+          </p>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-[13px] font-semibold tracking-tight">
+          Payment claims <span className="text-muted">({claims.length})</span>
+        </h2>
+        {claims.length > 0 ? (
+          <DataTable
+            rows={claims}
+            dense
+            columns={[
+              { key: 'submitted', header: 'Submitted', primary: true, cell: (c) => when(clock, c.submitted_at) },
+              { key: 'amount', header: 'Amount', align: 'right', cellClassName: 'tabular font-medium', cell: (c) => money(c.amount_minor, c.currency) },
+              { key: 'method', header: 'Method', badge: true, cell: (c) => <Badge mono>{c.method}</Badge> },
+              { key: 'reference', header: 'Reference', cellClassName: 'font-mono text-xs text-muted', cell: (c) => c.reference ?? '—' },
+              { key: 'payer', header: 'Payer', cellClassName: 'text-muted', cell: (c) => c.payer_name ?? '—' },
+              { key: 'status', header: 'Status', badge: true, cell: (c) => <StatusBadge status={c.status} /> },
+              {
+                key: 'outcome',
+                header: 'Outcome',
+                align: 'right',
+                cellClassName: 'text-xs text-muted',
+                cell: (c) =>
+                  c.verified_at
+                    ? `verified ${when(clock, c.verified_at)}`
+                    : c.rejected_reason
+                      ? `rejected: ${c.rejected_reason}`
+                      : c.mismatch_note
+                        ? `mismatch: ${c.mismatch_note}`
+                        : c.status === 'pending_verification'
+                          ? 'awaiting verification'
+                          : '—',
+              },
+            ]}
+            getKey={(c) => c.id}
+          />
+        ) : (
+          <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
+            No claims submitted. A claim is what a client (or an admin on their behalf) says was paid; it becomes a payment above only once somebody verifies it under <Link href="/invoices/verify" className="text-brand hover:underline">Verify payments</Link>.
           </p>
         )}
       </section>

@@ -20,47 +20,52 @@
   color-scheme: light;
 
   /* ── Surfaces ─────────────────────────────────────────────────────────── */
-  --background: #fbfaf4; /* the desk the app sits on */
+  --background: #f5f7fb; /* the desk the app sits on — the reference's cool grey canvas */
   --surface: #ffffff; /* cards, panels, rows */
-  --surface-sunken: #f6f4e6; /* table headers, insets, code */
-  --surface-hover: #f1eede;
+  --surface-sunken: #f8fafc; /* table headers, insets, code */
+  --surface-hover: #f1f5f9;
   --surface-overlay: #ffffff; /* dialogs, popovers, sheets */
 
   /* ── Ink ──────────────────────────────────────────────────────────────── */
-  --foreground: #12293a;
-  --muted: #4d6b7a; /* secondary text — passes AA on --surface */
-  --faint: #7e99a6; /* tertiary: timestamps, units, hints */
+  --foreground: #0f172a;
+  --muted: #475569; /* secondary text — 7.5:1 on --surface */
+  --faint: #5b6b7d; /* tertiary: timestamps, units, hints — 5.2:1 on white, 4.7:1 on the canvas */
 
   /* ── Lines ────────────────────────────────────────────────────────────── */
-  --line: rgb(18 41 58 / 0.11);
-  --line-strong: rgb(18 41 58 / 0.22);
+  --line: rgb(15 23 42 / 0.09);
+  --line-strong: rgb(15 23 42 / 0.2);
 
-  /* ── Brand ────────────────────────────────────────────────────────────── */
-  --brand: #0d4a61;
-  --brand-hover: #0a3a4d;
+  /* ── Brand ────────────────────────────────────────────────────────────────
+     Indigo, adopted from the AgencyOS Enterprise Admin Panel reference
+     screenshots (`admin panel ui single truth/`) as the single brand/accent
+     colour across the whole product — replacing the earlier teal-navy brand.
+     ─────────────────────────────────────────────────────────────────────── */
+  --brand: #4f46e5;
+  --brand-hover: #4338ca;
   --brand-fg: #ffffff;
-  --brand-soft: rgb(13 74 97 / 0.10);
+  --brand-soft: rgb(79 70 229 / 0.10);
 
   /* ── Accent ───────────────────────────────────────────────────────────────
-     The orange the brand is recognised by. It is a *surface* colour, not an
-     ink: white on it is 2.6:1 and even the darkest usable text only reaches
-     5.8:1, so it fills buttons, marks the current nav item and brands the
-     wordmark — and never sets a paragraph, a link or a label.
+     A lighter step of the same indigo family, kept as a distinct token (not
+     a duplicate of `--brand`) because a handful of components — the active
+     nav rail, the wordmark badge — want a slightly brighter tone than a
+     primary button does. Unlike the previous orange accent, white text on
+     this indigo clears AA comfortably, so it may set text, not just fills.
      ─────────────────────────────────────────────────────────────────────── */
-  --accent: #f58220;
-  --accent-hover: #e4761a;
-  --accent-fg: #12293a;
-  --accent-soft: rgb(245 130 32 / 0.15);
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --accent-fg: #ffffff;
+  --accent-soft: rgb(99 102 241 / 0.15);
 
   /* ── Semantic ─────────────────────────────────────────────────────────── */
   --success: #1e7a4c;
-  --success-soft: rgb(60 184 120 / 0.16);
+  --success-soft: rgb(60 184 120 / 0.10);
   --warning: #a8480a;
-  --warning-soft: rgb(217 119 6 / 0.14);
+  --warning-soft: rgb(217 119 6 / 0.10);
   --danger: #be123c;
-  --danger-soft: rgb(225 29 72 / 0.11);
+  --danger-soft: rgb(225 29 72 / 0.09);
   --info: #1b4fa8;
-  --info-soft: rgb(27 79 168 / 0.11);
+  --info-soft: rgb(27 79 168 / 0.09);
 
   /* ── WhatsApp ─────────────────────────────────────────────────────────────
      The lead surface is a WhatsApp client, so it uses WhatsApp's own palette
@@ -87,6 +92,21 @@
   --wa-system-fg: #54656f;
   --wa-composer: #f0f2f5;
 
+  /* ── Sidebar ──────────────────────────────────────────────────────────────
+     The desktop nav rail is permanently dark, independent of the light/dark
+     canvas toggle above — the reference screenshots show one fixed dark-navy
+     rail regardless of theme. Kept as its own namespace for the same reason
+     `--wa-*` is: a `sidebar-` token appearing outside the rail is a bug you
+     can grep for, and the rail never has to be re-derived from `--surface`.
+     ─────────────────────────────────────────────────────────────────────── */
+  --sidebar-bg: #0f1115;
+  --sidebar-border: rgb(255 255 255 / 0.08);
+  --sidebar-fg: #e5e7eb;
+  --sidebar-muted: #94a3b8;
+  --sidebar-hover: rgb(255 255 255 / 0.06);
+  --sidebar-active-bg: #4f46e5;
+  --sidebar-active-fg: #ffffff;
+
   /* ── Elevation ────────────────────────────────────────────────────────── */
   --elevation-xs: 0 1px 2px rgb(15 23 42 / 0.05);
   --elevation-sm: 0 1px 3px rgb(15 23 42 / 0.07), 0 1px 2px rgb(15 23 42 / 0.04);
@@ -107,20 +127,20 @@
 
     --foreground: #e6f0f4;
     --muted: #9fb8c4;
-    --faint: #708f9c;
+    --faint: #86a3b0;
 
     --line: rgb(255 255 255 / 0.1);
     --line-strong: rgb(255 255 255 / 0.22);
 
-    --brand: #5cb8d6;
-    --brand-hover: #7fcbe4;
-    --brand-fg: #08202b;
-    --brand-soft: rgb(92 184 214 / 0.16);
+    --brand: #818cf8;
+    --brand-hover: #a5b4fc;
+    --brand-fg: #0b1023;
+    --brand-soft: rgb(129 140 248 / 0.18);
 
-    --accent: #ff9440;
-    --accent-hover: #ffa85e;
-    --accent-fg: #0a2029;
-    --accent-soft: rgb(255 148 64 / 0.17);
+    --accent: #a5b4fc;
+    --accent-hover: #c7d2fe;
+    --accent-fg: #0b1023;
+    --accent-soft: rgb(165 180 252 / 0.18);
 
     --success: #4ecb8d;
     --success-soft: rgb(78 203 141 / 0.15);
@@ -210,6 +230,14 @@
   --color-wa-system: var(--wa-system);
   --color-wa-system-fg: var(--wa-system-fg);
   --color-wa-composer: var(--wa-composer);
+
+  --color-sidebar-bg: var(--sidebar-bg);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-fg: var(--sidebar-fg);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-hover: var(--sidebar-hover);
+  --color-sidebar-active-bg: var(--sidebar-active-bg);
+  --color-sidebar-active-fg: var(--sidebar-active-fg);
 
   --shadow-xs: var(--elevation-xs);
   --shadow-sm: var(--elevation-sm);
@@ -455,4 +483,12 @@ body {
   to {
     transform: none;
   }
+}
+
+/* A horizontal rail (tabs, funnel, timeline) scrolls on a phone without a bar. */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }

@@ -104,7 +104,7 @@ export function ChatHeader({
       <div className="min-w-0 flex-1">
         <p className="truncate text-[15px] font-semibold leading-tight">{name}</p>
         {status ? (
-          <p className="truncate text-[12px] leading-tight opacity-80">{status}</p>
+          <p className="truncate text-[12px] leading-tight">{status}</p>
         ) : null}
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}
@@ -397,12 +397,16 @@ export function ChatListItem({
 export function ComposerBar({
   className,
   children,
+  id,
 }: {
   className?: string;
   children: React.ReactNode;
+  /** An anchor target, so a "Send message" button can jump to the composer. */
+  id?: string;
 }) {
   return (
     <div
+      id={id}
       className={cx(
         'shrink-0 border-t border-[var(--wa-divider)] bg-[var(--wa-composer)] px-2 py-2 sm:px-3',
         className,

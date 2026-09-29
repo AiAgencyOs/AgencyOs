@@ -1,0 +1,77 @@
+{"level":"error","scope":"listInvoices","detail":"could not connect to server"}
+{"level":"error","scope":"getInvoice","detail":"could not connect to server"}
+{"level":"error","scope":"listInvoicePayments","detail":"could not connect to server"}
+{"level":"error","scope":"listLeads","detail":"could not connect to server"}
+{"level":"error","scope":"getLeadHeader","detail":"could not connect to server"}
+{"level":"error","scope":"listLeadActivities","detail":"could not connect to server"}
+{"level":"error","scope":"listProjects","detail":"could not connect to server"}
+{"level":"error","scope":"getProject","detail":"could not connect to server"}
+{"level":"error","scope":"listOpportunities","detail":"could not connect to server"}
+{"level":"error","scope":"reactivationSummary","detail":"could not connect to server"}
+{"level":"error","scope":"aiStatus","detail":"could not connect to server"}
+{"level":"error","scope":"listMeetingsForLead","detail":"could not connect to server"}
+{"level":"error","scope":"listMeetingEvidence","detail":"could not connect to server"}
+{"level":"error","scope":"listMeetingChain","detail":"could not connect to server"}
+{"level":"error","scope":"readWonHandoffPacket","detail":"could not connect to server"}
+▶ A. a read that failed
+  ✔ finance.listInvoices refuses rather than rendering an empty page (0.976334ms)
+  ✔ finance.getInvoice refuses rather than rendering an empty page (0.16975ms)
+  ✔ finance.listInvoicePayments refuses rather than rendering an empty page (0.094709ms)
+  ✔ crm.listLeads refuses rather than rendering an empty page (0.187042ms)
+  ✔ crm.getLeadHeader refuses rather than rendering an empty page (0.17ms)
+  ✔ crm.listLeadActivities refuses rather than rendering an empty page (0.105417ms)
+  ✔ projects.listProjects refuses rather than rendering an empty page (0.097459ms)
+  ✔ projects.getProject refuses rather than rendering an empty page (0.232584ms)
+  ✔ sales.listOpportunities refuses rather than rendering an empty page (0.100625ms)
+  ✔ admin.reactivationSummary refuses rather than rendering an empty page (0.135166ms)
+  ✔ admin.aiStatus refuses rather than rendering an empty page (0.083208ms)
+  ✖ crm.getMeeting refuses rather than rendering an empty page (0.32575ms)
+  ✔ crm.listMeetingsForLead refuses rather than rendering an empty page (0.080334ms)
+  ✔ crm.listMeetingEvidence refuses rather than rendering an empty page (0.06925ms)
+  ✔ crm.listMeetingChain refuses rather than rendering an empty page (0.065459ms)
+  ✔ sales.readWonHandoffPacket refuses rather than rendering an empty page (0.07075ms)
+✖ A. a read that failed (3.640958ms)
+▶ B. a read that genuinely found nothing
+  ✔ an empty list is still an empty list (0.565083ms)
+  ✔ a missing single row is still null (0.059875ms)
+✔ B. a read that genuinely found nothing (0.661292ms)
+▶ C. every reader in the repository
+  ✔ there are query files to scan, so a pass means something (0.138375ms)
+  ✔ approvals/queries.ts turns no error into an empty answer (0.299792ms)
+  ✔ approvals/queries.ts reports every read failure (0.096667ms)
+  ✔ crm/queries.ts turns no error into an empty answer (0.137542ms)
+  ✔ crm/queries.ts reports every read failure (0.073ms)
+  ✔ finance/queries.ts turns no error into an empty answer (0.054542ms)
+  ✔ finance/queries.ts reports every read failure (0.05325ms)
+  ✔ portal/queries.ts turns no error into an empty answer (0.048375ms)
+  ✔ portal/queries.ts reports every read failure (0.046958ms)
+  ✔ projects/queries.ts turns no error into an empty answer (0.06675ms)
+  ✔ projects/queries.ts reports every read failure (0.04075ms)
+  ✔ qa/queries.ts turns no error into an empty answer (0.043625ms)
+  ✔ qa/queries.ts reports every read failure (0.029917ms)
+  ✔ sales/queries.ts turns no error into an empty answer (0.05575ms)
+  ✔ sales/queries.ts reports every read failure (0.04175ms)
+✔ C. every reader in the repository (1.342459ms)
+ℹ tests 33
+ℹ suites 3
+ℹ pass 32
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 134.425667
+
+✖ failing tests:
+
+test at tests/_zz-rf-probe.test.ts:98:5
+✖ crm.getMeeting refuses rather than rendering an empty page (0.32575ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection: crm.getMeeting answered instead of failing — an empty page for an unanswered read
+      at async TestContext.<anonymous> (file:///Users/bussenhancer/AgencyOS/tests/_zz-rf-probe.test.ts:101:7)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    operator: 'rejects',
+    diff: 'simple'
+  }

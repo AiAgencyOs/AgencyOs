@@ -317,3 +317,36 @@ export async function readWonHandoffPacket(opportunityId: string): Promise<Hando
   }
   return parsed.data;
 }
+
+export type PaymentStructureRow = {
+  name: string;
+  minAmountMinor: number | null;
+  maxAmountMinor: number | null;
+  milestones: Array<{ label: string; pct: number }>;
+};
+
+/**
+ * The agency's active payment structures with their milestone ladders, for
+ * the composer's schedule preview — the rows `readPaymentStructures` in
+ * service.ts returns, read here because a page calls queries.
+ */
+export async function listPaymentStructures(): Promise<PaymentStructureRow[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('sales')
+    .from('payment_structures')
+    .select('name, min_amount_minor, max_amount_minor, payment_milestones(position, label, pct)')
+    .eq('active', true)
+    .order('name');
+  if (error) unreadable('listPaymentStructures', error);
+
+  return (data ?? []).map((row) => ({
+    name: row.name,
+    minAmountMinor: row.min_amount_minor,
+    maxAmountMinor: row.max_amount_minor,
+    milestones: [...(row.payment_milestones ?? [])]
+      .sort((a, b) => a.position - b.position)
+      .map((m) => ({ label: m.label, pct: Number(m.pct) })),
+  }));
+}
