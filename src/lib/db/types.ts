@@ -39,6 +39,47 @@ export type Database = {
           },
         ]
       }
+      agent_project_assignments: {
+        Row: {
+          active: boolean
+          agent_key: string
+          assigned_by: string | null
+          created_at: string
+          id: string
+          organization_id: string
+          project_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          agent_key: string
+          assigned_by?: string | null
+          created_at?: string
+          id?: string
+          organization_id: string
+          project_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          agent_key?: string
+          assigned_by?: string | null
+          created_at?: string
+          id?: string
+          organization_id?: string
+          project_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_project_assignments_agent_key_fkey"
+            columns: ["agent_key"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
       agent_runs: {
         Row: {
           agent_key: string
@@ -187,6 +228,47 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "agent_runs"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_tool_permissions: {
+        Row: {
+          agent_key: string
+          allowed: boolean
+          created_at: string
+          id: string
+          note: string | null
+          organization_id: string
+          tool_key: string
+          updated_at: string
+        }
+        Insert: {
+          agent_key: string
+          allowed?: boolean
+          created_at?: string
+          id?: string
+          note?: string | null
+          organization_id: string
+          tool_key: string
+          updated_at?: string
+        }
+        Update: {
+          agent_key?: string
+          allowed?: boolean
+          created_at?: string
+          id?: string
+          note?: string | null
+          organization_id?: string
+          tool_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_tool_permissions_agent_key_fkey"
+            columns: ["agent_key"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["key"]
           },
         ]
       }
@@ -655,6 +737,27 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      set_agent_project_assignment: {
+        Args: {
+          p_active: boolean
+          p_agent_key: string
+          p_project_id: string
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      set_agent_tool_permission: {
+        Args: {
+          p_agent_key: string
+          p_allowed: boolean
+          p_note?: string
+          p_tool_key: string
+        }
+        Returns: {
+          outcome: string
+        }[]
       }
     }
     Enums: {
@@ -5985,6 +6088,8 @@ export type Database = {
           id: string
           organization_id: string
           project_id: string
+          rollback_plan: string | null
+          smoke_checklist: Json
           status: string
           summary: string | null
           updated_at: string
@@ -5998,6 +6103,8 @@ export type Database = {
           id?: string
           organization_id: string
           project_id: string
+          rollback_plan?: string | null
+          smoke_checklist?: Json
           status?: string
           summary?: string | null
           updated_at?: string
@@ -6011,6 +6118,8 @@ export type Database = {
           id?: string
           organization_id?: string
           project_id?: string
+          rollback_plan?: string | null
+          smoke_checklist?: Json
           status?: string
           summary?: string | null
           updated_at?: string
@@ -7130,6 +7239,26 @@ export type Database = {
           total: number
         }[]
       }
+      set_handover_rollback_plan: {
+        Args: {
+          p_handover_id: string
+          p_rollback_plan: string
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      set_handover_smoke_item: {
+        Args: {
+          p_done: boolean
+          p_handover_id: string
+          p_label: string
+          p_remove?: boolean
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
       confirm_group_created: {
         Args: { p_note?: string; p_setup_id: string }
         Returns: {
@@ -7591,36 +7720,102 @@ export type Database = {
         }
         Relationships: []
       }
+      test_case_results: {
+        Row: {
+          created_at: string
+          evidence_url: string | null
+          executed_at: string
+          executed_by: string | null
+          id: string
+          notes: string | null
+          organization_id: string
+          status: string
+          test_plan_item_id: string
+          test_run_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          evidence_url?: string | null
+          executed_at?: string
+          executed_by?: string | null
+          id?: string
+          notes?: string | null
+          organization_id: string
+          status: string
+          test_plan_item_id: string
+          test_run_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          evidence_url?: string | null
+          executed_at?: string
+          executed_by?: string | null
+          id?: string
+          notes?: string | null
+          organization_id?: string
+          status?: string
+          test_plan_item_id?: string
+          test_run_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "test_case_results_test_plan_item_id_fkey"
+            columns: ["test_plan_item_id"]
+            isOneToOne: false
+            referencedRelation: "test_plan_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "test_case_results_test_run_id_fkey"
+            columns: ["test_run_id"]
+            isOneToOne: false
+            referencedRelation: "test_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       test_plan_items: {
         Row: {
           category: string
           created_at: string
           critical_path: boolean
+          expected_result: string | null
           id: string
           organization_id: string
           plan_id: string
+          preconditions: string | null
           reason: string
           scope_item_id: string
+          steps: string | null
         }
         Insert: {
           category: string
           created_at?: string
           critical_path?: boolean
+          expected_result?: string | null
           id?: string
           organization_id: string
           plan_id: string
+          preconditions?: string | null
           reason: string
           scope_item_id: string
+          steps?: string | null
         }
         Update: {
           category?: string
           created_at?: string
           critical_path?: boolean
+          expected_result?: string | null
           id?: string
           organization_id?: string
           plan_id?: string
+          preconditions?: string | null
           reason?: string
           scope_item_id?: string
+          steps?: string | null
         }
         Relationships: [
           {
@@ -7634,6 +7829,8 @@ export type Database = {
       }
       test_plans: {
         Row: {
+          approved_at: string | null
+          approved_by: string | null
           created_at: string
           drafted_by: string | null
           drafted_by_agent: string | null
@@ -7641,8 +7838,11 @@ export type Database = {
           organization_id: string
           project_id: string
           scope_version_id: string
+          status: string
         }
         Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
           created_at?: string
           drafted_by?: string | null
           drafted_by_agent?: string | null
@@ -7650,8 +7850,11 @@ export type Database = {
           organization_id: string
           project_id: string
           scope_version_id: string
+          status?: string
         }
         Update: {
+          approved_at?: string | null
+          approved_by?: string | null
           created_at?: string
           drafted_by?: string | null
           drafted_by_agent?: string | null
@@ -7659,13 +7862,16 @@ export type Database = {
           organization_id?: string
           project_id?: string
           scope_version_id?: string
+          status?: string
         }
         Relationships: []
       }
       test_runs: {
         Row: {
+          browser: string | null
           created_at: string
           deliverable_id: string
+          device: string | null
           evidence_url: string | null
           executed_at: string
           executed_by: string | null
@@ -7673,15 +7879,19 @@ export type Database = {
           failed: number
           id: string
           organization_id: string
+          os: string | null
           passed: number
+          perf_notes: string | null
           project_id: string
           skipped: number
           suite: string
           total: number
         }
         Insert: {
+          browser?: string | null
           created_at?: string
           deliverable_id: string
+          device?: string | null
           evidence_url?: string | null
           executed_at?: string
           executed_by?: string | null
@@ -7689,15 +7899,19 @@ export type Database = {
           failed: number
           id?: string
           organization_id: string
+          os?: string | null
           passed: number
+          perf_notes?: string | null
           project_id: string
           skipped?: number
           suite: string
           total: number
         }
         Update: {
+          browser?: string | null
           created_at?: string
           deliverable_id?: string
+          device?: string | null
           evidence_url?: string | null
           executed_at?: string
           executed_by?: string | null
@@ -7705,7 +7919,9 @@ export type Database = {
           failed?: number
           id?: string
           organization_id?: string
+          os?: string | null
           passed?: number
+          perf_notes?: string | null
           project_id?: string
           skipped?: number
           suite?: string
@@ -7737,13 +7953,32 @@ export type Database = {
         Args: {
           p_category: string
           p_critical_path?: boolean
+          p_expected_result?: string
           p_plan_id: string
+          p_preconditions?: string
           p_reason: string
           p_scope_item_id: string
+          p_steps?: string
         }
         Returns: {
           id: string
           outcome: string
+        }[]
+      }
+      approve_test_plan: {
+        Args: { p_plan_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      record_test_case_results: {
+        Args: {
+          p_results: Json
+          p_test_run_id: string
+        }
+        Returns: {
+          outcome: string
+          recorded: number
         }[]
       }
       remove_test_plan_item: {
@@ -7764,10 +7999,14 @@ export type Database = {
       }
       record_test_run: {
         Args: {
+          p_browser?: string
           p_deliverable_id: string
+          p_device?: string
           p_evidence_url?: string
           p_failed: number
+          p_os?: string
           p_passed: number
+          p_perf_notes?: string
           p_skipped?: number
           p_suite: string
           p_total: number

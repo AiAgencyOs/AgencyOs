@@ -5,14 +5,17 @@ import { useActionState } from 'react';
 import {
   addTestPlanItemAction,
   draftTestPlanAction,
-  recordTestRunAction,
   removeTestPlanItemAction,
 } from '@/modules/qa/actions';
+import { recordTestRunWithResultsAction } from '@/modules/qa/case-results-actions';
+import type { TestCaseResultRow } from '@/modules/qa/case-results-queries';
 import { TEST_CATEGORIES, TEST_RUN_SUITES } from '@/modules/qa/schema';
-import type { TestPlanRow, TestRunRow } from '@/modules/qa/queries';
+import type { TestPlanItemRow, TestPlanRow, TestRunRow } from '@/modules/qa/queries';
 import type { ScopeItemRow } from '@/modules/projects/queries';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { Badge, FormMessage, buttonClass, inputClass, labelClass, selectClass } from '@/ui';
+
+import { ApproveTestPlanForm, CaseDetails, CaseFieldsInputs, RunEnvironmentInputs, RunResultsGrid, RunResultsList } from './qa/case-results-panel';
 
 /**
  * SCR-045's Test Plan screen. `qa.draft_test_plan` / `.add_test_plan_item` /
@@ -80,6 +83,7 @@ function AddItemForm({
         <label className={labelClass}>Why this category applies</label>
         <input name="reason" required maxLength={600} className={inputClass} placeholder="Moves money; a bug here costs a client directly." />
       </div>
+      <CaseFieldsInputs />
       <label className="flex items-center gap-2 text-[13px]">
         <input type="checkbox" name="criticalPath" />
         Critical path
@@ -112,16 +116,28 @@ export function TestPlanCard({
   plan,
   scopeItems,
   editable,
+  canApprove = false,
 }: {
   projectId: string;
   plan: TestPlanRow;
   scopeItems: ScopeItemRow[];
   editable: boolean;
+  /** `project.sign_off` — the approve door refuses everyone else, so nobody else is offered it. */
+  canApprove?: boolean;
 }) {
+  // An approved plan accepts no new item and loses none (qa.add_test_plan_item
+  // / remove_test_plan_item refuse plan_approved); a control whose only
+  // outcome is a refusal is a form built to fail, so none is offered.
+  const approved = plan.status === 'approved';
+  const mayEdit = editable && !approved;
+
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-sm font-semibold">Test plan — baseline v{plan.scopeVersionNumber}</span>
+        <span className="flex items-center gap-2 text-sm font-semibold">
+          Test plan — baseline v{plan.scopeVersionNumber}
+          <Badge tone={approved ? 'success' : 'neutral'}>{approved ? 'approved' : 'draft'}</Badge>
+        </span>
         <span className="text-xs text-muted">{plan.draftedByAgent ? `agent: ${plan.draftedByAgent}` : 'drafted by a person'}</span>
       </div>
 
@@ -136,8 +152,9 @@ export function TestPlanCard({
                   {item.criticalPath ? <Badge tone="warning">critical path</Badge> : null}
                 </span>
                 <span className="text-muted">{item.reason}</span>
+                <CaseDetails item={item} />
               </span>
-              {editable ? <RemoveItemButton projectId={projectId} itemId={item.id} /> : null}
+              {mayEdit ? <RemoveItemButton projectId={projectId} itemId={item.id} /> : null}
             </li>
           ))}
         </ul>
@@ -145,7 +162,8 @@ export function TestPlanCard({
         <p className="text-[13px] text-muted">Nothing planned yet.</p>
       )}
 
-      {editable ? <AddItemForm projectId={projectId} planId={plan.id} scopeItems={scopeItems} /> : null}
+      {mayEdit ? <AddItemForm projectId={projectId} planId={plan.id} scopeItems={scopeItems} /> : null}
+      {!approved && canApprove && plan.items.length > 0 ? <ApproveTestPlanForm projectId={projectId} planId={plan.id} /> : null}
     </div>
   );
 }
@@ -159,11 +177,15 @@ export function TestPlanCard({
 function RecordTestRunForm({
   projectId,
   builds,
+  planItems,
 }: {
   projectId: string;
   builds: { id: string; title: string; version: number }[];
+  planItems: TestPlanItemRow[];
 }) {
-  const [state, action, pending] = useActionState(recordTestRunAction, IDLE_STATE);
+  // The existing recordTestRun door first, then recordTestCaseResults
+  // beside it — the run's totals stay the source of total/passed/failed.
+  const [state, action, pending] = useActionState(recordTestRunWithResultsAction, IDLE_STATE);
 
   if (builds.length === 0) {
     return <p className="text-[13px] text-muted">No build deliverable exists yet — nothing to test.</p>;
@@ -219,6 +241,8 @@ function RecordTestRunForm({
         <label className={labelClass}>Evidence link (optional)</label>
         <input name="evidenceUrl" type="url" className={inputClass} placeholder="https://ci.example.com/run/123" />
       </div>
+      <RunEnvironmentInputs />
+      <RunResultsGrid planItems={planItems} />
       <button type="submit" disabled={pending} className={`${buttonClass('secondary', 'sm')} self-start`}>
         {pending ? 'Recording…' : 'Record run'}
       </button>
@@ -232,11 +256,16 @@ export function TestRunsCard({
   runs,
   builds,
   editable,
+  planItems = [],
+  results,
 }: {
   projectId: string;
   runs: TestRunRow[];
   builds: { id: string; title: string; version: number }[];
   editable: boolean;
+  planItems?: TestPlanItemRow[];
+  /** Per-case results by run id — `listTestCaseResults`. */
+  results?: Map<string, TestCaseResultRow[]>;
 }) {
   const buildLabel = new Map(builds.map((b) => [b.id, `v${b.version}`]));
 
@@ -248,19 +277,24 @@ export function TestRunsCard({
         <ul className="flex flex-col gap-1">
           {runs.map((run) => (
             <li key={run.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
-              <span className="flex items-center gap-2">
+              <span className="flex flex-wrap items-center gap-2">
                 <Badge tone={run.failed > 0 || run.skipped > 0 ? 'warning' : 'success'}>{run.suite}</Badge>
                 <span className="text-muted">{buildLabel.get(run.deliverableId) ?? 'build'}</span>
                 <span className="tabular">
                   {run.passed}/{run.total} passed
                   {run.skipped > 0 ? `, ${run.skipped} skipped` : ''}
                 </span>
+                {run.device || run.browser || run.os ? (
+                  <span className="text-xs text-muted">{[run.device, run.browser, run.os].filter(Boolean).join(' · ')}</span>
+                ) : null}
               </span>
               {run.evidenceUrl ? (
                 <a href={run.evidenceUrl} target="_blank" rel="noreferrer" className="text-xs underline underline-offset-2">
                   evidence
                 </a>
               ) : null}
+              {run.perfNotes ? <span className="w-full text-xs text-muted">Performance: {run.perfNotes}</span> : null}
+              <RunResultsList results={results?.get(run.id) ?? []} planItems={planItems} />
             </li>
           ))}
         </ul>
@@ -268,7 +302,7 @@ export function TestRunsCard({
         <p className="text-[13px] text-muted">No test runs recorded yet.</p>
       )}
 
-      {editable ? <RecordTestRunForm projectId={projectId} builds={builds} /> : null}
+      {editable ? <RecordTestRunForm projectId={projectId} builds={builds} planItems={planItems} /> : null}
     </div>
   );
 }

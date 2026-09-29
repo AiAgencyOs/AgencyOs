@@ -8,6 +8,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listApprovalsForSubject } from '@/modules/approvals/queries';
 import { readPaymentLadder } from '@/modules/finance/queries';
+import { readHandoverRelease } from '@/modules/projects/handover-release-queries';
 import { getProject, listDeliverables, readCompletionSummary } from '@/modules/projects/queries';
 import { listDefects, listTestRuns, readProjectQuality, readTestPlan } from '@/modules/qa/queries';
 import { readHandoverPackage, readProductionReadiness, readProductionReadyAt } from '@/modules/qa/release-queries';
@@ -35,6 +36,7 @@ import {
 import { ProjectSubNav } from '../project-subnav';
 import { ProductionReadyForm } from '../qa-panel';
 import { WorkspaceHeader } from '../workspace-header';
+import { RollbackPlanForm, SmokeChecklist } from './release-panel';
 
 export const metadata: Metadata = { title: 'Release gate' };
 
@@ -92,7 +94,7 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
   const mayReadInvoices = can(context.role, 'invoice.read');
   const maySignOff = can(context.role, 'project.sign_off');
 
-  const [clientName, ladder, summary, quality, defects, deliverables, plan, runs, handover, readiness, readyAt] =
+  const [clientName, ladder, summary, quality, defects, deliverables, plan, runs, handover, readiness, readyAt, release] =
     await Promise.all([
       project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
       // Same rule the Overview applies: the ladder is a finance read.
@@ -106,7 +108,9 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
       readHandoverPackage(projectId),
       readProductionReadiness(projectId),
       readProductionReadyAt(projectId),
+      readHandoverRelease(projectId),
     ]);
+  const mayWrite = can(context.role, 'project.write');
 
   // listDeliverables orders by kind, then version descending — the first
   // build row is the latest one.
@@ -249,7 +253,39 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
           : { mark: 'fail', fact: `Still ${humanize(handover.status)} — ${plural(handover.items.length, 'item')} in the package so far.` }),
   };
 
-  const items: GateItem[] = [blockersItem, majorsItem, buildItem, testsItem, planItem, paymentItem, handoverItem];
+  // SCR-049 — the smoke checklist and rollback plan, recorded on the
+  // handover (20260929170000). Reports, not gates: `mark_production_ready`
+  // reads neither, and the line says so by carrying no "gate" badge.
+  const smokeDone = release ? release.smokeChecklist.filter((i) => i.doneAt !== null).length : 0;
+  const smokeTotal = release ? release.smokeChecklist.length : 0;
+  const smokeItem: GateItem = {
+    key: 'smoke',
+    label: 'Smoke checklist complete',
+    hardGate: false,
+    href: `${base}/release`,
+    hrefLabel: 'Release · smoke checklist',
+    ...(release === null
+      ? { mark: 'unknown', fact: 'No handover has been prepared, so there is no checklist to tick.' }
+      : smokeTotal === 0
+        ? { mark: 'unknown', fact: 'No smoke check has been listed on the handover.' }
+        : smokeDone === smokeTotal
+          ? { mark: 'pass', fact: `All ${plural(smokeTotal, 'smoke check')} ticked. A report beside the gate — the sign-off door does not read it.` }
+          : { mark: 'fail', fact: `${smokeDone} of ${plural(smokeTotal, 'smoke check')} ticked. A report beside the gate — the sign-off door does not read it.` }),
+  };
+  const rollbackItem: GateItem = {
+    key: 'rollback',
+    label: 'Rollback plan recorded',
+    hardGate: false,
+    href: `${base}/release`,
+    hrefLabel: 'Release · rollback plan',
+    ...(release === null
+      ? { mark: 'unknown', fact: 'No handover has been prepared, so there is nowhere to record one.' }
+      : release.rollbackPlan
+        ? { mark: 'pass', fact: 'A rollback plan is written on the handover. A report, not a gate.' }
+        : { mark: 'fail', fact: 'No rollback plan has been written on the handover. A report, not a gate.' }),
+  };
+
+  const items: GateItem[] = [blockersItem, majorsItem, buildItem, testsItem, planItem, paymentItem, handoverItem, rollbackItem, smokeItem];
   const counts = items.reduce(
     (acc, i) => ({ ...acc, [i.mark]: acc[i.mark] + 1 }),
     { pass: 0, fail: 0, unknown: 0 } as Record<GateMark, number>,
@@ -418,6 +454,46 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
               </CardBody>
             ) : (
               <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No build has been submitted as a deliverable.</p>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Rollback plan"
+              description="How this release is undone if it fails. Recorded on the handover; the sign-off door does not read it."
+            />
+            {release ? (
+              <CardBody>
+                {mayWrite ? (
+                  <RollbackPlanForm projectId={projectId} handoverId={release.id} current={release.rollbackPlan} />
+                ) : release.rollbackPlan ? (
+                  <p className="whitespace-pre-line text-[13px] text-muted">{release.rollbackPlan}</p>
+                ) : (
+                  <p className="text-[13px] text-muted">No rollback plan recorded.</p>
+                )}
+              </CardBody>
+            ) : (
+              <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No handover prepared — a rollback plan is recorded on the handover.</p>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader
+              title={`Smoke checklist${smokeTotal > 0 ? ` (${smokeDone}/${smokeTotal})` : ''}`}
+              description="What is checked on the deployed candidate. A report the gate summary shows; not a gate."
+            />
+            {release ? (
+              <CardBody>
+                <SmokeChecklist
+                  projectId={projectId}
+                  handoverId={release.id}
+                  items={release.smokeChecklist}
+                  editable={mayWrite}
+                  formatDate={Object.fromEntries(release.smokeChecklist.flatMap((i) => (i.doneAt ? [[i.doneAt, clock.dateTime(i.doneAt)]] : [])))}
+                />
+              </CardBody>
+            ) : (
+              <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No handover prepared — the checklist lives on the handover.</p>
             )}
           </Card>
 

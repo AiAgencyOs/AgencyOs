@@ -7,6 +7,7 @@ import { can } from '@/lib/authz/permissions';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { getProject, listDeliverables, listInternalRoster, readScopeBaseline } from '@/modules/projects/queries';
 import { listTestPlanVersions, listTestRunDetails, readDefectHistory } from '@/modules/qa/dashboard-queries';
+import { listTestCaseResults } from '@/modules/qa/case-results-queries';
 import { listDefects, listTestRuns, readTestPlan } from '@/modules/qa/queries';
 import { EmptyState, IconCheck, PageHeader, PermissionDenied } from '@/ui';
 
@@ -30,7 +31,7 @@ export default async function TestPlanPage({ params }: { params: Promise<{ proje
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const [{ active }, plan, deliverables, runs, runDetails, planVersions, defects, roster, clock] = await Promise.all([
+  const [{ active }, plan, deliverables, runs, runDetails, planVersions, defects, roster, clock, caseResults] = await Promise.all([
     readScopeBaseline(projectId),
     readTestPlan(projectId),
     listDeliverables(projectId),
@@ -40,11 +41,14 @@ export default async function TestPlanPage({ params }: { params: Promise<{ proje
     listDefects(projectId),
     listInternalRoster(),
     agencyClock(),
+    listTestCaseResults(projectId),
   ]);
   // SCR-047 — the fix / retest trail, one read for every defect on the project.
   const history = await readDefectHistory(defects.map((d) => d.id));
   const canWrite = can(context.role, 'project.write');
   const canRecordRuns = can(context.role, 'task.write');
+  // SCR-045 — approving the plan is the QA sign-off's own role (owner, ops admin).
+  const canApprove = can(context.role, 'project.sign_off');
   const builds = deliverables.filter((d) => d.kind === 'build').map((d) => ({ id: d.id, title: d.title, version: d.version }));
 
   return (
@@ -68,7 +72,7 @@ export default async function TestPlanPage({ params }: { params: Promise<{ proje
           }
         />
       ) : plan ? (
-        <TestPlanCard projectId={projectId} plan={plan} scopeItems={active.items} editable={canWrite} />
+        <TestPlanCard projectId={projectId} plan={plan} scopeItems={active.items} editable={canWrite} canApprove={canApprove} />
       ) : (
         <>
           <EmptyState icon={<IconCheck size={22} />} title="No test plan yet" description={`Baseline v${active.version} is frozen and ready to plan against.`} />
@@ -76,7 +80,7 @@ export default async function TestPlanPage({ params }: { params: Promise<{ proje
         </>
       )}
 
-      <TestRunsCard projectId={projectId} runs={runs} builds={builds} editable={canRecordRuns} />
+      <TestRunsCard projectId={projectId} runs={runs} builds={builds} editable={canRecordRuns} planItems={plan?.items ?? []} results={caseResults} />
 
       <QaInsights
         projectId={projectId}

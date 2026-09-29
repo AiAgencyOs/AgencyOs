@@ -295,6 +295,9 @@ export async function addTestPlanItem(input: AddTestPlanItemInput): Promise<Resu
     p_category: parsed.data.category,
     p_reason: parsed.data.reason,
     p_critical_path: parsed.data.criticalPath,
+    ...(parsed.data.preconditions ? { p_preconditions: parsed.data.preconditions } : {}),
+    ...(parsed.data.steps ? { p_steps: parsed.data.steps } : {}),
+    ...(parsed.data.expectedResult ? { p_expected_result: parsed.data.expectedResult } : {}),
   });
 
   if (error) {
@@ -310,6 +313,8 @@ export async function addTestPlanItem(input: AddTestPlanItemInput): Promise<Resu
       return ok({ itemId: row.id });
     case 'already_planned':
       return err('CONFLICT', 'This item already has that category planned.');
+    case 'plan_approved':
+      return err('CONFLICT', 'This plan is approved; what was approved is what is tested.');
     case 'wrong_baseline':
       return err('VALIDATION', 'That scope item is not part of this plan’s baseline.');
     case 'bad_category':
@@ -347,6 +352,8 @@ export async function removeTestPlanItem(input: RemoveTestPlanItemInput): Promis
   switch (row?.outcome) {
     case 'removed':
       return ok({ removed: true });
+    case 'plan_approved':
+      return err('CONFLICT', 'This plan is approved; what was approved is what is tested.');
     case 'not_found':
       return err('NOT_FOUND', 'Item not found.');
     default:
@@ -381,6 +388,10 @@ export async function recordTestRun(input: RecordTestRunInput): Promise<Result<{
     p_failed: parsed.data.failed,
     p_skipped: parsed.data.skipped,
     ...(parsed.data.evidenceUrl ? { p_evidence_url: parsed.data.evidenceUrl } : {}),
+    ...(parsed.data.device ? { p_device: parsed.data.device } : {}),
+    ...(parsed.data.browser ? { p_browser: parsed.data.browser } : {}),
+    ...(parsed.data.os ? { p_os: parsed.data.os } : {}),
+    ...(parsed.data.perfNotes ? { p_perf_notes: parsed.data.perfNotes } : {}),
   });
 
   if (error) {

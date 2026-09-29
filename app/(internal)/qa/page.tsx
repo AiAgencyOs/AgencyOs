@@ -5,6 +5,7 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
+import { listPerformanceNotes, readCompatibilityMatrix } from '@/modules/qa/compatibility-queries';
 import { listRetestQueue, readCoverageMatrix } from '@/modules/qa/dashboard-queries';
 import { listOpenDefects, readOrgTestCoverage, readSuiteCoverage, type OpenDefect } from '@/modules/qa/queries';
 import {
@@ -48,8 +49,10 @@ function countBy(defects: OpenDefect[], severity: string): number {
  * writer of their own on each project's QA panel; this dashboard adds the
  * org-wide coverage question that panel can't answer on its own — how many
  * projects have a plan at all, and how much testing has actually run
- * recently — alongside the defect list. No device matrix is drawn: nothing
- * in the schema records devices, and a grid of phones would be decoration.
+ * recently — alongside the defect list. The device × browser matrix is
+ * drawn from what compatibility runs recorded (`qa.test_runs.device` /
+ * `browser` / `os`, 20260929170000) and nothing else: a run that did not say
+ * where it ran is counted beside the grid, not placed in it.
  *
  * Gated on project.read, same as the per-project QA panel this aggregates —
  * no new capability, and no client ever reaches this (Doc 14: "a client is
@@ -60,7 +63,15 @@ export default async function QaDashboardPage() {
   const clock = await agencyClock();
   if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
-  const [defects, coverage, suiteCoverage, matrix, retest] = await Promise.all([listOpenDefects(), readOrgTestCoverage(), readSuiteCoverage(), readCoverageMatrix(), listRetestQueue()]);
+  const [defects, coverage, suiteCoverage, matrix, retest, compat, perfNotes] = await Promise.all([
+    listOpenDefects(),
+    readOrgTestCoverage(),
+    readSuiteCoverage(),
+    readCoverageMatrix(),
+    listRetestQueue(),
+    readCompatibilityMatrix(),
+    listPerformanceNotes(),
+  ]);
   const blockers = countBy(defects, 'blocker');
   const majors = countBy(defects, 'major');
   const runs = coverage.runsLast30Days;
@@ -190,6 +201,71 @@ export default async function QaDashboardPage() {
                   </tbody>
                 </table>
               </div>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Compatibility matrix"
+              description={`Device × browser, from compatibility-suite runs in the last 90 days. Each cell is runs recorded and tests failed — a report, not a gate.${compat.unplaced > 0 ? ` ${compat.unplaced} run${compat.unplaced === 1 ? '' : 's'} recorded no device or browser and sit${compat.unplaced === 1 ? 's' : ''} outside the grid.` : ''}`}
+            />
+            {compat.devices.length === 0 ? (
+              <EmptyState icon={<IconList size={22} />} title="No placed compatibility run" description="A cell appears once a compatibility run records the device and browser it ran on." />
+            ) : (
+              <div className="overflow-x-auto px-4 pb-4 sm:px-5">
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-wider text-muted">
+                      <th className="py-2 pr-3">Device</th>
+                      {compat.browsers.map((b) => (
+                        <th key={b} className="py-2 pr-3 text-right">{b}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {compat.devices.map((d) => (
+                      <tr key={d} className="border-b border-line last:border-0">
+                        <td className="py-2 pr-3 font-medium">{d}</td>
+                        {compat.browsers.map((b) => {
+                          const cell = compat.cells.get(`${d}|${b}`);
+                          return (
+                            <td key={b} className="py-2 pr-3 text-right tabular">
+                              {cell ? (
+                                <span className={cell.failed > 0 ? 'text-danger' : 'text-success'}>
+                                  {cell.runs} run{cell.runs === 1 ? '' : 's'} · {cell.failed} failed
+                                </span>
+                              ) : (
+                                <span className="text-muted">—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader title="Performance notes" description="What performance-suite runs measured, in the tester's words. No target is applied — Doc 14 §16 says targets are project-specific and none is configured." />
+            {perfNotes.length === 0 ? (
+              <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No performance run has recorded notes.</p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {perfNotes.map((n) => (
+                  <li key={n.runId} className="flex flex-col gap-1 px-4 py-2 text-[13px] sm:px-5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <Link href={`/projects/${n.projectId}/qa`} className="font-medium hover:underline">{n.projectName}</Link>
+                      <span className="text-xs text-muted">
+                        {n.passed}/{n.total} passed{n.failed > 0 ? ` · ${n.failed} failed` : ''}{n.device ? ` · ${n.device}` : ''} · {clock.date(n.executedAt)}
+                      </span>
+                    </div>
+                    <p className="whitespace-pre-line text-muted">{n.perfNotes}</p>
+                  </li>
+                ))}
+              </ul>
             )}
           </Card>
 
