@@ -82,7 +82,7 @@ screen exists; at element level it does not hold.
 | 012 | Preview PDF | BUILT | `app/api/quotations/preview/route.ts` + `src/modules/sales/preview-service.ts` (same renderer, nothing saved) |
 | 013 | Due today, overdue, upcoming, paused, failed | BUILT | `app/(internal)/follow-ups/page.tsx` (five tiles, each opening `?due=`/`?status=`) |
 | 013 | Lead/client/project context | BUILT | `src/modules/crm/follow-up-context-queries.ts`, column in `follow-ups/page.tsx` |
-| 013 | Reactivation cohort | PARTIAL | Link to Import only — the cohort is the Import desk's own screen; not moved in F-B |
+| 013 | Reactivation cohort | BUILT | `app/(internal)/follow-ups/reactivation-cohort.tsx` (section + tile on `follow-ups/page.tsx`, `?cohort=`), `src/modules/crm/reactivation-queries.ts` (consent via `crm.reactivation_priority`, no open follow-up, quiet ≥ 30 days), enrol = the lead page's `EnrolLeadForm` → `crm.add_lead_to_reactivation_pilot`; rows link to the lead and its Import batch |
 | 013 | Schedule, reschedule, complete, pause, cancel | BUILT | `crm.decide_follow_up_sequence` (20261001110000), `src/modules/crm/follow-up-decision-*.ts`, `follow-ups/sequence-controls.tsx` (schedule = the lead's follow-up form, also on the Sales dashboard) |
 
 ## Clients (014–017)
@@ -210,7 +210,7 @@ screen exists; at element level it does not hold.
 | 053 | Unmatched KPI / Record payment proof / Reject with reason | BUILT ×3 | `app/(internal)/finance/payments/page.tsx` (Unmatched tile; `RecordClaimForm` / `VerifyClaimForm` mounted on Payments) |
 | 055 | Project margin / Project profitability / Vendor-tool costs | BUILT ×3 | `app/(internal)/finance/expenses/page.tsx` (margin column on Budget vs actual; `src/modules/finance/vendor-rollup.ts`) |
 | 055 | Budget vs actual | BUILT | Decision F5 (reopened): `src/modules/finance/budget-variance.ts` (`computeBudgetVariance`) on `app/(internal)/projects/[projectId]/reports/page.tsx` and `app/(internal)/finance/expenses/page.tsx` |
-| 056 | GST configuration / Configure tax profile / Export PDF | PARTIAL ×2, BUILT ×1 | GST configuration and tax profile stay on Settings; Export PDF: `app/api/finance/tax/pdf/route.ts` → `src/lib/pdf/tax-report.ts` |
+| 056 | GST configuration / Configure tax profile / Export PDF | BUILT ×3 | GST configuration + Configure tax profile: `app/(internal)/finance/tax/gst-configuration-card.tsx` (mounted on `finance/tax/page.tsx`, header action `#gst-configuration`; the same `settings/finance/gst-identity-form.tsx` → `core.set_gst_identity`, owner only, audited; effective-since from the audit trail; registration type / period basis / filing frequency stated as not recorded); Export PDF: `app/api/finance/tax/pdf/route.ts` → `src/lib/pdf/tax-report.ts` |
 | 056 | Export history | BUILT | `app/(internal)/finance/tax/page.tsx` (`finance.gst_exports`, written by `app/api/finance/gst/gstr-export.ts`) |
 
 ## Communication (057–061)
@@ -242,7 +242,7 @@ screen exists; at element level it does not hold.
 | 069 | Role assignment / Grant-revoke role | BUILT | `src/lib/authz/permissions.ts`, `src/lib/auth/session.ts` (`can(context, …)` reads the union; `core.holds_role` in the database) |
 | 069 | Incident/security exception history | BUILT | `app/(internal)/security/incidents/page.tsx` (`security.incidents`) |
 | 069 | Review access / Investigate security event | BUILT | `app/(internal)/security/users/access-review-panel.tsx` (`security.access_reviews`), `app/(internal)/security/page.tsx` (Investigate → incident with the entry as evidence) |
-| 070 | Update non-secret identifiers | PARTIAL | Edited on Settings › Communication |
+| 070 | Update non-secret identifiers | BUILT | `app/(internal)/integrations/integrations-list.tsx` (drawer section per integration + "Update identifiers" row button) fed by `integrations/page.tsx`: the same `settings/forms.tsx` `WhatsAppNumberForm` / `TestRecipientForm` → `core.set_organization_setting` (audited), each with `SettingHistory` and its effective date; environment-carried identifiers (calendar id, alert webhook, GitHub token scopes) shown as presence, stated as not editable from the panel; "Open secure key storage" per integration |
 | 071 | Security/integrations shortcuts / Preview impact before saving high-risk settings | BUILT | `app/(internal)/settings/page.tsx` (shortcuts card), `app/(internal)/settings/high-risk-forms.tsx` (preview step from `src/lib/admin/settings-impact.ts`) |
 | 071 | Provider vault references / Current value-effective date-history | BUILT | `app/(internal)/settings/page.tsx` (vault link), `app/(internal)/settings/setting-history.tsx` (per-setting history from `src/lib/admin/settings-history.ts`) |
 

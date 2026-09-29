@@ -3,8 +3,9 @@ import Link from 'next/link';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { listSavedViews } from '@/lib/admin/saved-views';
+import { readSettingHistory } from '@/lib/admin/settings-history';
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
+import { can, hasRole } from '@/lib/authz/permissions';
 import { listExpenses, listReceipts, listTaxReportInvoices } from '@/modules/finance/queries';
 import {
   expensesInPeriod,
@@ -37,6 +38,7 @@ import {
   IconInvoices,
   IconLock,
   IconRupee,
+  IconSettings,
   IconTrendUp,
   paginate,
   Pagination,
@@ -50,6 +52,7 @@ import {
   type SortDirection,
 } from '@/ui';
 
+import { GstConfigurationCard } from './gst-configuration-card';
 import { PeriodSelect } from './period-select';
 import { LockPeriodForm, UnlockPeriodForm } from './period-lock';
 
@@ -139,7 +142,7 @@ export default async function TaxReportPage({
   };
   const currentQuery = qs({}).slice(1);
 
-  const [allInvoices, allReceipts, allExpenses, savedViews, locks, gstIdentity, gstrRows, gstExports] = await Promise.all([
+  const [allInvoices, allReceipts, allExpenses, savedViews, locks, gstIdentity, gstrRows, gstExports, settingHistory] = await Promise.all([
     listTaxReportInvoices(),
     listReceipts(),
     listExpenses(),
@@ -149,7 +152,12 @@ export default async function TaxReportPage({
     listGstrInvoices(),
     // SCR-056: the export history table.
     listGstExports(),
+    // SCR-056: when the tax profile was last set — `organization.gst_identity_set` in the audit trail.
+    readSettingHistory(),
   ]);
+  const gstIdentitySetAt = settingHistory.get('gst_identity')?.[0]?.at ?? null;
+  // The door's own rule (core.set_gst_identity checks is_owner): owner only.
+  const mayConfigureTax = hasRole(context, 'owner');
   // E5: the GSTR files are drawn from this same window. What the file would
   // OMIT is worked out here so the screen can say it before the download.
   const returnPeriod = returnPeriodFor(period);
@@ -184,6 +192,10 @@ export default async function TaxReportPage({
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <PeriodSelect value={periodValue} options={taxPeriodOptions(today)} preserve={{ mode: modeFilter ?? undefined, sort: sortKey, dir: sortKey ? direction : undefined }} />
+            {/* SCR-056: "Configure tax profile" — the GST configuration section below, with the owner's form on it. */}
+            <a href="#gst-configuration" className={buttonClass(mayConfigureTax ? 'primary' : 'secondary', 'sm')}>
+              <IconSettings size={14} /> Configure tax profile
+            </a>
             <a href={`/api/finance/tax/export${qs({ page: undefined, sort: undefined, dir: undefined, mode: undefined })}`} className={buttonClass('secondary', 'sm')}>
               <IconDownload size={14} /> Export CSV
             </a>
@@ -206,6 +218,9 @@ export default async function TaxReportPage({
       />
 
       <SavedViewsBar page="/finance/tax" currentQuery={currentQuery} views={savedViews} />
+
+      {/* SCR-056: GST configuration — the tax profile, on the tax page, through the Settings form and door. */}
+      <GstConfigurationCard identity={gstIdentity} issues={identityIssues} mayConfigure={mayConfigureTax} effectiveSince={gstIdentitySetAt ? clock.dateTime(gstIdentitySetAt) : null} />
 
       {/*
         Period lock — SCR-056. A filed return is a number reported; the lock
@@ -318,7 +333,7 @@ export default async function TaxReportPage({
           <div className="px-4 py-3 sm:px-5">
             <Callout tone="warning">
               The exports refuse until the agency’s own GST identity is complete: {identityIssues.map((i) => i.reason).join(' ')}{' '}
-              <Link href="/settings/finance" className="font-medium text-brand hover:underline">Set it under Settings › Finance</Link> (owner only).
+              <a href="#gst-configuration" className="font-medium text-brand hover:underline">Configure the tax profile above</a> (owner only).
             </Callout>
           </div>
         ) : null}

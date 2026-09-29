@@ -202,6 +202,8 @@ export async function setWhatsAppNumberAction(_prev: FormState, formData: FormDa
   const result = await setOrganizationSetting('whatsapp_phone_number_id', String(formData.get('phone_number_id') ?? ''));
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath('/settings');
+  // SCR-070 — the same form is mounted on the integration's own row.
+  revalidatePath('/integrations');
   return {
     status: 'success',
     message: result.data.cleared
@@ -214,6 +216,7 @@ export async function setTestRecipientAction(_prev: FormState, formData: FormDat
   const result = await setOrganizationSetting('whatsapp_test_recipient', String(formData.get('test_recipient') ?? ''));
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath('/settings');
+  revalidatePath('/integrations');
   return {
     status: 'success',
     message: result.data.cleared
