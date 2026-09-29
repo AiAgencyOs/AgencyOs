@@ -12,22 +12,9 @@ import { unreadable } from '@/lib/result';
  * is counted); entries come from the table. Every failed read refuses.
  */
 
-export type TimeLogEntry = {
-  id: string;
-  taskId: string;
-  personId: string;
-  personName: string;
-  hours: number;
-  loggedOn: string;
-  note: string | null;
-  createdAt: string;
-};
+import { emptyTaskTime, type TaskTime, type TimeLogEntry } from './time-log-types';
 
-export type TaskTime = {
-  taskId: string;
-  totalHours: number;
-  entries: TimeLogEntry[];
-};
+export { emptyTaskTime, type TaskTime, type TimeLogEntry };
 
 export type PersonTotal = { personId: string; personName: string; hours: number; entries: number; lastLoggedOn: string | null };
 export type TaskTotal = { taskId: string; taskTitle: string; hours: number; entries: number; lastLoggedOn: string | null };
@@ -39,10 +26,6 @@ export type ProjectTime = {
   tasks: TaskTotal[];
   entries: TimeLogEntry[];
 };
-
-export function emptyTaskTime(taskId: string): TaskTime {
-  return { taskId, totalHours: 0, entries: [] };
-}
 
 async function namesFor(userIds: readonly string[]): Promise<Map<string, string>> {
   const ids = [...new Set(userIds)];

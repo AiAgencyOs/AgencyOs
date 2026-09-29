@@ -5,7 +5,7 @@ import { useActionState, useEffect, useRef } from 'react';
 
 import { IDLE_STATE, type FormState } from '@/modules/identity/types';
 import { addTimeLogAction, deleteTimeLogAction, updateTimeLogAction } from '@/modules/projects/time-log-actions';
-import type { TaskTime } from '@/modules/projects/time-log-queries';
+import type { TaskTime } from '@/modules/projects/time-log-types';
 import { buttonClass, FormMessage, IconClock, inputClass, labelClass, textareaClass } from '@/ui';
 
 /**

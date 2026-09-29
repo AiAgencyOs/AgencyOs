@@ -8,7 +8,7 @@ import { IDLE_STATE } from '@/modules/identity/types';
 import type { MyTaskDetail } from '@/modules/projects/my-tasks-queries';
 import type { RosterMember } from '@/modules/projects/queries';
 import { emptyTaskCollab, type TaskCollab } from '@/modules/projects/task-collab-types';
-import { emptyTaskTime, type TaskTime } from '@/modules/projects/time-log-queries';
+import { emptyTaskTime, type TaskTime } from '@/modules/projects/time-log-types';
 import { TASK_STATUSES } from '@/modules/projects/schema';
 import {
   Badge,
