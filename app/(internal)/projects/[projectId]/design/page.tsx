@@ -68,12 +68,9 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const [trail, roster, clock, clientName] = await Promise.all([
-    readDesignTrail(projectId),
-    listInternalRoster(),
-    agencyClock(),
-    project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
-  ]);
+  // The trail and the roster together — two reads, one moment (G-287).
+  const [trail, roster] = await Promise.all([readDesignTrail(projectId), listInternalRoster()]);
+  const [clock, clientName] = await Promise.all([agencyClock(), project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null)]);
   const { phase } = trail;
   const mayDecide = can(context.role, 'project.write');
 
@@ -94,8 +91,8 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
     );
   }
 
-  const [spend, screenCoverage, designAssets, sampleScreens] = await Promise.all([
-    readProjectSpend(projectId),
+  const spend = await readProjectSpend(projectId);
+  const [screenCoverage, designAssets, sampleScreens] = await Promise.all([
     readUiCoverage(projectId),
     readDesignAssets(projectId),
     readSampleScreens(projectId, trail.themes.map((t) => t.id)),
@@ -129,13 +126,42 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
         <Stat label="Sample screens" value={String(sampleScreens.samples.length)} caption={`${withPreview} with a preview`} tone="info" icon={<IconPalette size={16} />} />
         <Stat label="Theme options" value={String(trail.themes.length)} caption={trail.themes.length > 0 ? `${trail.themes.filter((t) => t.clientStatus === 'selected').length} selected by the client` : undefined} tone="accent" icon={<IconSparkle size={16} />} href={`/projects/${projectId}/design/themes`} />
         <Stat label="Pending review" value={String(pendingInternal + pendingAdmin)} caption={`${pendingInternal} internal · ${pendingAdmin} admin`} tone={pendingInternal + pendingAdmin > 0 ? 'warning' : 'success'} icon={<IconClock size={16} />} />
-        <Stat label="Revision rounds" value={`${phase.revisionCount}/${phase.revisionLimit}`} caption="Client rounds used" tone={phase.revisionCount >= phase.revisionLimit ? 'danger' : 'neutral'} icon={<IconUsers size={16} />} />
+        <Stat label="Revision rounds" value={`${phase.revisionCount}/${phase.revisionLimit}`} caption="Client rounds used, as stored" tone="neutral" icon={<IconUsers size={16} />} />
         <Stat label="Phase status" value={humanize(phase.state)} caption={phase.blockedReason ? 'Blocked' : trail.handoff ? 'Handed to Phase 4' : `Started ${when(phase.startedAt)}`} tone={phase.blockedReason ? 'danger' : trail.handoff ? 'success' : 'info'} icon={phase.blockedReason ? <IconAlert size={16} /> : <IconCheck size={16} />} />
       </StatGrid>
 
-      {phase.blockedReason ? (
-        <p className="rounded-xl border border-danger/30 bg-danger-soft px-4 py-3 text-[13px] text-danger">{phase.blockedReason}</p>
-      ) : null}
+      {/* §8 — Phase 3 Overview. The counts are printed as stored and never
+          compared here: the ceiling is the database's rule, and this page
+          takes no decision of its own: comparing them here would be a second opinion on a rule the database already holds. */}
+      <div className="grid gap-4 lg:grid-cols-2 [&>section]:rounded-xl [&>section]:border [&>section]:border-line [&>section]:bg-surface [&>section]:p-4 [&>section]:shadow-xs sm:[&>section]:p-5">
+        <Section title="Overview">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={PHASE_TONE[phase.state] ?? 'neutral'}>{phase.state.replace(/_/g, ' ')}</Badge>
+            <span className="text-[13px] text-muted">
+              started {when(phase.startedAt)}
+              {phase.completedAt ? ` · completed ${when(phase.completedAt)}` : ''}
+            </span>
+            <span className="text-[13px] text-muted">· {phase.revisionCount} of {phase.revisionLimit} client revision rounds used</span>
+          </div>
+          {phase.blockedReason ? <p className="max-w-2xl rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-[13px] text-danger">{phase.blockedReason}</p> : null}
+          {!phase.reviewerUserId ? <Nothing>No internal design reviewer is assigned. The internal gate refuses until somebody holds it, and nothing reaches Admin until it passes.</Nothing> : null}
+        </Section>
+        <Section title="Screen baseline" hint="The screen list and its content baseline, as finalized. A later change is a new version.">
+          {!trail.baseline ? (
+            <Nothing>No screen baseline has been drafted.</Nothing>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={trail.baseline.status === 'finalized' ? 'success' : 'neutral'}>
+                v{trail.baseline.version} · {trail.baseline.status}
+              </Badge>
+              <span className="text-[13px] text-muted">{trail.baseline.screenCount} screens</span>
+              <Link href={`/projects/${projectId}/plan`} className="text-[13px] underline hover:text-foreground">
+                the plan it was built from
+              </Link>
+            </div>
+          )}
+        </Section>
+      </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.9fr)_minmax(18rem,1fr)]">
         <div className="flex min-w-0 flex-col gap-4">

@@ -1194,8 +1194,6 @@ export async function readDesignTrail(projectId: string): Promise<DesignTrailVie
   const [
     { data: baseline, error: baselineError },
     { data: themes, error: themesError },
-    { data: reviews, error: reviewsError },
-    { data: adminDecisions, error: adminError },
     { data: shares, error: sharesError },
     { data: clientDecisions, error: clientError },
     { data: revisions, error: revisionsError },
@@ -1215,18 +1213,6 @@ export async function readDesignTrail(projectId: string): Promise<DesignTrailVie
       .select('id, option_index, name, direction_summary, version, origin, internal_review_status, admin_status, client_status, figma_file_key, figma_node_id, figma_node_name, figma_verified_at, figma_version, preview_asset_url')
       .eq('phase_three_id', phase.id)
       .order('option_index', { ascending: true }),
-    supabase
-      .schema('projects')
-      .from('design_reviews')
-      .select('id, theme_option_id, result, comments, created_at')
-      .eq('phase_three_id', phase.id)
-      .order('created_at', { ascending: false }),
-    supabase
-      .schema('projects')
-      .from('admin_design_decisions')
-      .select('id, theme_option_id, decision, reason, created_at')
-      .eq('phase_three_id', phase.id)
-      .order('created_at', { ascending: false }),
     supabase
       .schema('projects')
       .from('client_design_shares')
@@ -1259,8 +1245,6 @@ export async function readDesignTrail(projectId: string): Promise<DesignTrailVie
   // Admin goes instead of reading WhatsApp.
   if (baselineError) unreadable('readDesignTrail.baseline', baselineError);
   if (themesError) unreadable('readDesignTrail.themes', themesError);
-  if (reviewsError) unreadable('readDesignTrail.reviews', reviewsError);
-  if (adminError) unreadable('readDesignTrail.adminDecisions', adminError);
   if (sharesError) unreadable('readDesignTrail.shares', sharesError);
   if (clientError) unreadable('readDesignTrail.clientDecisions', clientError);
   if (revisionsError) unreadable('readDesignTrail.revisions', revisionsError);
@@ -1268,6 +1252,34 @@ export async function readDesignTrail(projectId: string): Promise<DesignTrailVie
 
   const themeRows = (themes ?? []) as Record<string, unknown>[];
   const themeIds = themeRows.map((t) => t.id as string);
+
+  // A review and an admin decision belong to a THEME OPTION, not to the
+  // phase — neither table carries `phase_three_id` (the column this read
+  // once filtered on, which made the whole Design tab throw for any project
+  // that had reached Phase 3; found live on 2026-09-29 against the
+  // verifier's fixture). Read them by the themes just found.
+  let reviews: Record<string, unknown>[] = [];
+  let adminDecisions: Record<string, unknown>[] = [];
+  if (themeIds.length > 0) {
+    const [{ data: reviewRows, error: reviewsError }, { data: adminRows, error: adminError }] = await Promise.all([
+      supabase
+        .schema('projects')
+        .from('design_reviews')
+        .select('id, theme_option_id, result, comments, created_at')
+        .in('theme_option_id', themeIds)
+        .order('created_at', { ascending: false }),
+      supabase
+        .schema('projects')
+        .from('admin_design_decisions')
+        .select('id, theme_option_id, decision, reason, created_at')
+        .in('theme_option_id', themeIds)
+        .order('created_at', { ascending: false }),
+    ]);
+    if (reviewsError) unreadable('readDesignTrail.reviews', reviewsError);
+    if (adminError) unreadable('readDesignTrail.adminDecisions', adminError);
+    reviews = (reviewRows ?? []) as Record<string, unknown>[];
+    adminDecisions = (adminRows ?? []) as Record<string, unknown>[];
+  }
 
   // §12 makes a colour belong to a theme, so the palettes are read by theme
   // rather than by project — there is no project column to read them by.
