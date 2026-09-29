@@ -30,9 +30,10 @@ export const metadata: Metadata = { title: 'Test plan' };
  * baseline to point at (Doc 14 §3); if none is active yet, this page sends
  * the reader to the Scope tab rather than rendering a dead end.
  */
-export default async function TestPlanPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ compare?: string; baseline?: string }> }) {
+export default async function TestPlanPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ compare?: string; baseline?: string; defects?: string; severity?: string }> }) {
   const { projectId } = await params;
-  const { compare, baseline } = await searchParams;
+  // SCR-047: ?defects=open|fixed|reopened and ?severity= filter the bug list — the KPI tiles' own links.
+  const { compare, baseline, defects: defectsFilter, severity: severityFilter } = await searchParams;
 
   const context = await requireInternal(`/projects/${projectId}/qa`);
   if (!can(context, 'project.read')) return <PermissionDenied />;
@@ -93,7 +94,7 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
           }
         />
       ) : plan ? (
-        <TestPlanCard projectId={projectId} plan={plan} scopeItems={active.items} editable={canWrite} canApprove={canApprove} />
+        <TestPlanCard projectId={projectId} plan={plan} scopeItems={active.items} editable={canWrite} canApprove={canApprove} tasks={tasks.map((t) => ({ id: t.id, title: t.title, status: t.status }))} />
       ) : (
         <>
           <EmptyState icon={<IconCheck size={22} />} title="No test plan yet" description={`Baseline v${active.version} is frozen and ready to plan against.`} />
@@ -276,6 +277,7 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
         roster={roster.map((m) => ({ userId: m.userId, fullName: m.fullName }))}
         builds={deliverables.map((d) => ({ id: d.id, kind: d.kind, version: d.version, title: d.title }))}
         mayWrite={canWrite}
+        filter={{ defects: defectsFilter, severity: severityFilter }}
       />
     </div>
   );

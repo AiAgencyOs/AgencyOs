@@ -3,7 +3,7 @@ import Link from 'next/link';
 import type { AgencyClock } from '@/lib/admin/agency-clock';
 import type { DefectHistoryEntry, TestPlanVersion, TestRunDetail } from '@/modules/qa/dashboard-queries';
 import type { Defect } from '@/modules/qa/types';
-import { Badge, Card, CardHeader, humanize, Stat, StatGrid, statusTone, type Tone } from '@/ui';
+import { Badge, Card, CardHeader, FilterChips, humanize, Stat, StatGrid, statusTone, type Tone } from '@/ui';
 
 import { DefectTriageForm, RaiseDefectForm, SettleDefectForm } from '../qa-panel';
 
@@ -20,11 +20,14 @@ import { DefectTriageForm, RaiseDefectForm, SettleDefectForm } from '../qa-panel
  *   · plan versions, one per scope baseline the project has frozen;
  *   · runs with the tester and the time on the row, and a "raise a defect
  *     from this run" door that pre-fills the build;
- *   · the defect register's three waits — awaiting a developer (`open`),
- *     awaiting retest (`fixed`), reopened (an audit `defect.open` on an
- *     UPDATE) — and each defect's fix / retest trail from the audit log.
- *
- * `qa.defects` has no task column, so no linked task is drawn (bucket B).
+ *   · the defect register's four tiles — open by severity, awaiting a
+ *     developer (`open`), awaiting retest (`fixed`), reopened (an audit
+ *     `defect.open` on an UPDATE) — each a link to the list filtered to
+ *     exactly that number (?defects=, ?severity=), and each defect's fix /
+ *     retest trail from the audit log. Every bug row links to its own page
+ *     (SCR-047, `qa/bugs/[defectId]`), which carries the evidence list and
+ *     the linked build; the task (`task_id`) and the build (`build_id`) are
+ *     drawn on the row too.
  */
 
 const SEVERITY_TONE: Record<string, Tone> = { blocker: 'danger', major: 'warning', minor: 'info', trivial: 'neutral' };
@@ -50,6 +53,7 @@ export function QaInsights({
   roster,
   builds,
   mayWrite,
+  filter,
 }: {
   projectId: string;
   clock: AgencyClock;
@@ -64,6 +68,8 @@ export function QaInsights({
   roster: { userId: string; fullName: string }[];
   builds: { id: string; kind: string; version: number; title: string }[];
   mayWrite: boolean;
+  /** SCR-047: the bug list's filter, from the page's search params. */
+  filter?: { defects?: string; severity?: string };
 }) {
   // ── per suite ──────────────────────────────────────────────────────────
   const suites = [...new Set([...runs.map((r) => r.suite), ...planItems.map((i) => i.category)])].sort();
@@ -85,22 +91,51 @@ export function QaInsights({
   // ── defects ────────────────────────────────────────────────────────────
   const awaitingDeveloper = defects.filter((d) => d.status === 'open').length;
   const awaitingRetest = defects.filter((d) => d.status === 'fixed').length;
-  const reopened = defects.filter((d) => (history.get(d.id) ?? []).some((h) => h.action === 'defect.open')).length;
+  const isReopened = (d: Defect) => (history.get(d.id) ?? []).some((h) => h.action === 'defect.open');
+  const reopened = defects.filter(isReopened).length;
+  const openBySeverity = (['blocker', 'major', 'minor', 'trivial'] as const).map((s) => ({ severity: s, count: defects.filter((d) => d.status === 'open' && d.severity === s).length }));
+
+  // The list the tiles open: exactly the rows each tile counted.
+  const defectsFilter = filter?.defects && ['open', 'fixed', 'reopened'].includes(filter.defects) ? filter.defects : undefined;
+  const severityFilter = filter?.severity && ['blocker', 'major', 'minor', 'trivial'].includes(filter.severity) ? filter.severity : undefined;
+  const visibleDefects = defects.filter((d) => {
+    if (defectsFilter === 'open' && d.status !== 'open') return false;
+    if (defectsFilter === 'fixed' && d.status !== 'fixed') return false;
+    if (defectsFilter === 'reopened' && !isReopened(d)) return false;
+    if (severityFilter && d.severity !== severityFilter) return false;
+    return true;
+  });
+  const base = `/projects/${projectId}/qa`;
+  const listHref = (q: { defects?: string; severity?: string }) => {
+    const params = new URLSearchParams();
+    if (q.defects) params.set('defects', q.defects);
+    if (q.severity) params.set('severity', q.severity);
+    const qs = params.toString();
+    return `${base}${qs ? `?${qs}` : ''}#defects`;
+  };
+  const filtered = defectsFilter !== undefined || severityFilter !== undefined;
 
   const buildLabel = new Map(builds.map((b) => [b.id, `v${b.version} — ${b.title}`]));
 
   return (
     <>
-      <StatGrid cols={4}>
+      <StatGrid cols={5}>
         <Stat
           label="Regression pass rate"
           value={regressionRate === null ? '—' : `${regressionRate}%`}
           caption={regression && regression.runs > 0 ? `${regression.passed} of ${regressionOutcomes} results, ${regression.runs} run${regression.runs === 1 ? '' : 's'}` : 'no regression run recorded'}
           tone={regressionRate === null ? 'neutral' : regressionRate >= 90 ? 'success' : regressionRate >= 70 ? 'warning' : 'danger'}
         />
-        <Stat label="Awaiting a developer" value={String(awaitingDeveloper)} caption="open defects" tone={awaitingDeveloper > 0 ? 'warning' : 'success'} />
-        <Stat label="Awaiting retest" value={String(awaitingRetest)} caption="fixed, not yet verified by QA" tone={awaitingRetest > 0 ? 'info' : 'success'} />
-        <Stat label="Reopened" value={String(reopened)} caption="a fix that did not hold, at least once" tone={reopened > 0 ? 'danger' : 'success'} />
+        <Stat
+          label="Open by severity"
+          value={String(awaitingDeveloper)}
+          caption={openBySeverity.map((s) => `${s.count} ${s.severity}`).join(' · ')}
+          tone={openBySeverity[0]!.count > 0 ? 'danger' : openBySeverity[1]!.count > 0 ? 'warning' : awaitingDeveloper > 0 ? 'info' : 'success'}
+          href={listHref({ defects: 'open' })}
+        />
+        <Stat label="Awaiting a developer" value={String(awaitingDeveloper)} caption="open defects" tone={awaitingDeveloper > 0 ? 'warning' : 'success'} href={listHref({ defects: 'open' })} />
+        <Stat label="Awaiting retest" value={String(awaitingRetest)} caption="fixed, not yet verified by QA" tone={awaitingRetest > 0 ? 'info' : 'success'} href={listHref({ defects: 'fixed' })} />
+        <Stat label="Reopened" value={String(reopened)} caption="a fix that did not hold, at least once" tone={reopened > 0 ? 'danger' : 'success'} href={listHref({ defects: 'reopened' })} />
       </StatGrid>
 
       <Card>
@@ -210,20 +245,40 @@ export function QaInsights({
       </Card>
 
       <Card>
-        <CardHeader
-          title={`Defects (${defects.length})`}
-          description="Who has it, how bad it is, and what has happened to it. A developer marks it fixed; QA verifies or reopens."
-          actions={
-            <a href={`/api/projects/${projectId}/qa/evidence`} className="text-xs underline underline-offset-2">
-              Evidence summary (CSV)
-            </a>
-          }
-        />
+        <div id="defects">
+          <CardHeader
+            title={filtered ? `Defects (${visibleDefects.length} of ${defects.length})` : `Defects (${defects.length})`}
+            description="Who has it, how bad it is, and what has happened to it. A developer marks it fixed; QA verifies or reopens. Open a bug for its page — reproduction, evidence, linked task and build, and the full history."
+            actions={
+              <a href={`/api/projects/${projectId}/qa/evidence`} className="text-xs underline underline-offset-2">
+                Evidence summary (CSV)
+              </a>
+            }
+          />
+        </div>
+        <div className="px-4 pb-3 sm:px-5">
+          <FilterChips
+            options={[
+              { key: 'all', label: 'All', href: listHref({ severity: severityFilter }), active: defectsFilter === undefined },
+              { key: 'open', label: `Open (${awaitingDeveloper})`, href: listHref({ defects: 'open', severity: severityFilter }), active: defectsFilter === 'open' },
+              { key: 'fixed', label: `Awaiting retest (${awaitingRetest})`, href: listHref({ defects: 'fixed', severity: severityFilter }), active: defectsFilter === 'fixed' },
+              { key: 'reopened', label: `Reopened (${reopened})`, href: listHref({ defects: 'reopened', severity: severityFilter }), active: defectsFilter === 'reopened' },
+              ...openBySeverity.map((s) => ({ key: s.severity, label: humanize(s.severity), href: listHref({ defects: defectsFilter, severity: severityFilter === s.severity ? undefined : s.severity }), active: severityFilter === s.severity })),
+            ]}
+          />
+        </div>
         {defects.length === 0 ? (
           <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No defect has been raised.</p>
+        ) : visibleDefects.length === 0 ? (
+          <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">
+            No defect matches this filter.{' '}
+            <Link href={listHref({})} className="underline underline-offset-2">
+              Show all
+            </Link>
+          </p>
         ) : (
           <ul className="divide-y divide-line">
-            {defects.map((d) => {
+            {visibleDefects.map((d) => {
               const trail = history.get(d.id) ?? [];
               const assignee = roster.find((m) => m.userId === d.assignee_id);
               return (
@@ -232,18 +287,32 @@ export function QaInsights({
                     <span className="flex flex-wrap items-center gap-2">
                       <Badge tone={SEVERITY_TONE[d.severity] ?? 'neutral'}>{d.severity}</Badge>
                       <Badge tone={statusTone(d.status)}>{humanize(d.status)}</Badge>
-                      <span className="font-medium">{d.title}</span>
+                      <Link href={`/projects/${projectId}/qa/bugs/${d.id}`} className="font-medium hover:underline">
+                        {d.title}
+                      </Link>
                     </span>
                     <span className="text-xs text-muted">
                       {assignee ? assignee.fullName : 'unassigned'} · raised {clock.date(d.created_at)}
                     </span>
                   </div>
-                  {d.task_id ? (
-                    <p className="text-xs text-muted">
-                      Task:{' '}
-                      <Link href={`/projects/${projectId}/development/tasks/${d.task_id}`} className="underline underline-offset-2 hover:text-foreground">
-                        {tasks.find((t) => t.id === d.task_id)?.title ?? 'open task'}
-                      </Link>
+                  {d.task_id || d.build_id ? (
+                    <p className="flex flex-wrap gap-x-3 text-xs text-muted">
+                      {d.task_id ? (
+                        <span>
+                          Task:{' '}
+                          <Link href={`/projects/${projectId}/development/tasks/${d.task_id}`} className="underline underline-offset-2 hover:text-foreground">
+                            {tasks.find((t) => t.id === d.task_id)?.title ?? 'open task'}
+                          </Link>
+                        </span>
+                      ) : null}
+                      {d.build_id ? (
+                        <span>
+                          Build:{' '}
+                          <Link href={`/projects/${projectId}/builds`} className="underline underline-offset-2 hover:text-foreground">
+                            {buildLabel.get(d.build_id) ?? 'build'}
+                          </Link>
+                        </span>
+                      ) : null}
                     </p>
                   ) : null}
                   {trail.length > 0 ? (

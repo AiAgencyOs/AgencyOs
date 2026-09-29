@@ -109,7 +109,7 @@ export async function listRetestQueue(limit = 200): Promise<RetestDefect[]> {
     .schema('qa')
     .from('defects')
     .select(
-      'id, severity, status, title, reproduction, expected, actual, environment, evidence_url, resolution, deliverable_id, verified_at, created_at, updated_at, project_id, assignee_id, task_id, run_id',
+      'id, severity, status, title, reproduction, expected, actual, environment, evidence_url, resolution, deliverable_id, verified_at, created_at, updated_at, project_id, assignee_id, task_id, run_id, build_id',
     )
     .eq('status', 'fixed')
     .order('updated_at', { ascending: true })
@@ -287,7 +287,7 @@ export async function readQaEvidence(projectId: string): Promise<QaEvidence> {
     supabase
       .schema('qa')
       .from('defects')
-      .select('id, severity, status, title, reproduction, expected, actual, environment, evidence_url, resolution, deliverable_id, verified_at, created_at, assignee_id, task_id, run_id')
+      .select('id, severity, status, title, reproduction, expected, actual, environment, evidence_url, resolution, deliverable_id, verified_at, created_at, assignee_id, task_id, run_id, build_id')
       .eq('project_id', projectId)
       .order('created_at', { ascending: true }),
     supabase.schema('projects').from('deliverables').select('id, title, version').eq('project_id', projectId),

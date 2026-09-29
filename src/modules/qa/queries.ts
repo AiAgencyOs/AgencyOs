@@ -17,7 +17,7 @@ import type { Defect, ProjectQuality } from './types';
  */
 
 const SELECT =
-  'id, severity, status, title, reproduction, expected, actual, environment, evidence_url, resolution, deliverable_id, verified_at, created_at, assignee_id, task_id, run_id';
+  'id, severity, status, title, reproduction, expected, actual, environment, evidence_url, resolution, deliverable_id, verified_at, created_at, assignee_id, task_id, run_id, build_id';
 
 export async function listDefects(projectId: string): Promise<Defect[]> {
   const supabase = await createClient();
@@ -198,6 +198,8 @@ export type TestPlanItemRow = {
   preconditions: string | null;
   steps: string | null;
   expectedResult: string | null;
+  /** SCR-045 (20261001160000): the project task this case exercises, or none. */
+  taskId: string | null;
 };
 
 export type TestPlanRow = {
@@ -247,7 +249,7 @@ export async function readTestPlan(projectId: string): Promise<TestPlanRow | nul
   const { data: itemRows, error: itemsError } = await supabase
     .schema('qa')
     .from('test_plan_items')
-    .select('id, scope_item_id, category, reason, critical_path, preconditions, steps, expected_result')
+    .select('id, scope_item_id, category, reason, critical_path, preconditions, steps, expected_result, task_id')
     .eq('plan_id', planRow.id)
     .order('created_at', { ascending: true });
 
@@ -282,6 +284,7 @@ export async function readTestPlan(projectId: string): Promise<TestPlanRow | nul
       preconditions: i.preconditions,
       steps: i.steps,
       expectedResult: i.expected_result,
+      taskId: i.task_id,
     })),
   };
 }
