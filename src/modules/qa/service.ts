@@ -67,6 +67,7 @@ export async function raiseDefect(input: RaiseDefectInput): Promise<Result<{ def
       actual: parsed.data.actual ?? null,
       environment: parsed.data.environment ?? null,
       evidence_url: parsed.data.evidenceUrl ?? null,
+      run_id: parsed.data.runId ?? null,
       reported_by: context.userId,
     })
     .select('id')
@@ -146,7 +147,7 @@ export async function settleDefect(input: SettleDefectInput): Promise<Result<{ s
 /** The row `projects.mark_production_ready` returns. */
 type ProductionReadyRow = {
   /** `held` (SCR-044, 20260929190000): a release hold stands; `unmet` carries its reason. */
-  outcome: 'ready' | 'already_ready' | 'not_found' | 'not_ready' | 'held';
+  outcome: 'ready' | 'already_ready' | 'not_found' | 'not_ready' | 'held' | 'payment_unverified';
   unmet: string[] | null;
 };
 
@@ -222,6 +223,16 @@ export async function markProductionReady(projectId: string): Promise<Result<{ r
     case 'not_ready': {
       const reasons = (row.unmet ?? []).map((key) => NOT_READY[key] ?? key);
       return err('CONFLICT', `This project is not production ready: ${reasons.join(', ')}.`);
+    }
+
+    // Decision F1 (2026-09-30): the final payment is not verified. unmet
+    // carries the invoice number (or 'no invoice') and the milestone name.
+    case 'payment_unverified': {
+      const [invoice, milestone] = row.unmet ?? [];
+      return err(
+        'CONFLICT',
+        `The final payment is not verified: ${invoice && invoice !== 'no invoice' ? `invoice ${invoice}` : 'no invoice'}${milestone ? ` for milestone "${milestone}"` : ''} is not paid, net-verified or claim-verified. Verify it on Finance › Payments, or the owner records an override with a reason on the Release tab.`,
+      );
     }
 
     // SCR-044: a person's hold, quoted in their words. Lifted on the Release tab.

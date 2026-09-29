@@ -27,7 +27,7 @@ export async function requeueJobAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const result = await requeueJob(String(formData.get('jobId') ?? ''));
+  const result = await requeueJob(String(formData.get('jobId') ?? ''), String(formData.get('reason') ?? ''));
 
   if (!result.ok) {
     return { status: 'error', message: result.error.message };
@@ -66,7 +66,7 @@ export async function requeueJobsAction(
   let requeued = 0;
   let refused = 0;
   for (const jobId of jobIds) {
-    const result = await requeueJob(jobId);
+    const result = await requeueJob(jobId, String(formData.get('reason') ?? ''));
     if (result.ok) requeued += 1;
     else refused += 1;
   }

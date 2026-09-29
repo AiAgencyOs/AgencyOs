@@ -15,6 +15,7 @@ import { proposeMatches, type MatchCandidate } from '@/modules/finance/bank-csv'
 
 import { ConfirmBankLineMatchForm, IgnoreBankLineForm, ImportBankStatementForm } from './bank-import-panel';
 import { ClaimsDrawerList } from './claims-drawer';
+import { RecordClaimForm, VerifyClaimForm } from '../../projects/[projectId]/claims-panel';
 import {
   AddReconciliationItemForm,
   CloseReconciliationForm,
@@ -201,6 +202,14 @@ export default async function PaymentsPage({
     ).map((p) => [p.lineId, p]),
   );
   const pendingBankLines = bankLines.filter((l) => l.status === 'pending').length;
+  // SCR-053: what nobody has matched — pending bank lines and captured
+  // payments no person has confirmed. Both are counts of real rows.
+  const unconfirmedPayments = allPayments.filter((p) => p.status === 'captured' && !p.verified_at).length;
+  const unmatchedCount = pendingBankLines + unconfirmedPayments;
+  // Invoices a claim can still be recorded against — those the ledger has
+  // not settled. Derived from the payments' own invoice rows so this page
+  // needs no second invoice reader.
+  const claimableInvoices = [...new Map(claims.filter((c) => c.status !== 'verified').map((c) => [c.invoiceId, { id: c.invoiceId, number: c.invoiceNumber, status: 'issued' }])).values()];
   // SCR-053's four KPIs count the claims table and say so: "submitted" is
   // what clients said, "verified" / "rejected" the answers, "pending" what
   // has none yet. The ledger rows below are money that moved.
@@ -260,12 +269,49 @@ export default async function PaymentsPage({
         </Callout>
       ) : null}
 
-      <StatGrid>
+      <StatGrid cols={5}>
         <Stat label="Submitted" value={String(claims.length)} caption="Claims clients made, all time" href="#claims" />
-        <Stat label="Pending" value={String(pendingCount)} caption="Awaiting a decision" tone={pendingCount > 0 ? 'warning' : 'neutral'} href="/invoices/verify" />
+        <Stat label="Pending" value={String(pendingCount)} caption="Awaiting a decision" tone={pendingCount > 0 ? 'warning' : 'neutral'} href="#decide" />
         <Stat label="Verified" value={String(verifiedCount)} caption="Claims somebody confirmed" tone={verifiedCount > 0 ? 'success' : 'neutral'} />
         <Stat label="Rejected" value={String(rejectedCount)} caption="Refused, with a reason" tone={rejectedCount > 0 ? 'danger' : 'neutral'} />
+        {/* SCR-053: unmatched is a count — bank lines nobody has matched or set aside, plus captured payments nobody has confirmed. */}
+        <Stat label="Unmatched" value={String(unmatchedCount)} caption={`${pendingBankLines} bank line${pendingBankLines === 1 ? '' : 's'} · ${unconfirmedPayments} unconfirmed payment${unconfirmedPayments === 1 ? '' : 's'}`} tone={unmatchedCount > 0 ? 'warning' : 'success'} href="#reconciliation" />
       </StatGrid>
+
+      {/*
+        SCR-053: record proof and decide claims from Payments itself — the
+        SAME forms and doors the project page and the verification queue use
+        (one implementation, three entry points). Recording a claim moves no
+        money; a decision here is the decision, audited by the door.
+      */}
+      {mayReconcile ? (
+        <Card id="decide">
+          <CardHeader
+            title="Record proof · decide claims"
+            description={pendingClaims.length === 0 ? 'No claim is waiting. Record what a client says they paid below.' : `${pendingClaims.length} claim${pendingClaims.length === 1 ? '' : 's'} waiting — verify with evidence, or reject with a reason.`}
+          />
+          <div className="flex flex-col gap-4 px-4 pb-4 sm:px-5">
+            {pendingClaims.length > 0 ? (
+              <ul className="flex flex-col gap-3">
+                {pendingClaims.map((c) => (
+                  <li key={c.id} className="rounded-lg border border-line bg-canvas p-3 text-[13px]">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <span className="font-semibold tabular">{money(c.amount_minor, c.currency)} · <Link href={`/invoices/${c.invoice_id}`} className="font-mono text-xs underline-offset-2 hover:underline">{c.invoiceNumber}</Link></span>
+                      <span className="text-xs text-muted">{c.clientName ?? 'Unknown client'} · claimed {clock.date(c.submitted_at)}{c.proof_url ? ' · ' : ''}{c.proof_url ? <a href={c.proof_url} target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">proof</a> : null}</span>
+                    </div>
+                    <VerifyClaimForm projectId={c.projectId ?? null} claim={c} />
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {claimableInvoices.length > 0 ? (
+              <RecordClaimForm projectId="" invoices={claimableInvoices} />
+            ) : (
+              <p className="text-[13px] text-muted">No issued invoice is open for a claim right now.</p>
+            )}
+          </div>
+        </Card>
+      ) : null}
 
       {byCurrency.size > 0 ? (
         <StatGrid>

@@ -17,7 +17,7 @@ import type { Defect, ProjectQuality } from './types';
  */
 
 const SELECT =
-  'id, severity, status, title, reproduction, expected, actual, environment, evidence_url, resolution, deliverable_id, verified_at, created_at, assignee_id, task_id';
+  'id, severity, status, title, reproduction, expected, actual, environment, evidence_url, resolution, deliverable_id, verified_at, created_at, assignee_id, task_id, run_id';
 
 export async function listDefects(projectId: string): Promise<Defect[]> {
   const supabase = await createClient();
@@ -300,6 +300,12 @@ export type TestRunRow = {
   browser: string | null;
   os: string | null;
   perfNotes: string | null;
+  /** SCR-046 (bucket F): a run has a life — open while worked, closed once with its counts. */
+  status: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  blocked: number;
+  rerunOf: string | null;
 };
 
 /**
@@ -314,7 +320,7 @@ export async function listTestRuns(projectId: string, limit = 100): Promise<Test
   const { data, error: runsError } = await supabase
     .schema('qa')
     .from('test_runs')
-    .select('id, deliverable_id, suite, total, passed, failed, skipped, evidence_url, executed_at, device, browser, os, perf_notes')
+    .select('id, deliverable_id, suite, total, passed, failed, skipped, evidence_url, executed_at, device, browser, os, perf_notes, status, started_at, ended_at, blocked, rerun_of')
     .eq('project_id', projectId)
     .order('executed_at', { ascending: false })
     .limit(limit);
@@ -335,5 +341,10 @@ export async function listTestRuns(projectId: string, limit = 100): Promise<Test
     browser: r.browser,
     os: r.os,
     perfNotes: r.perf_notes,
+    status: r.status,
+    startedAt: r.started_at,
+    endedAt: r.ended_at,
+    blocked: r.blocked,
+    rerunOf: r.rerun_of,
   }));
 }

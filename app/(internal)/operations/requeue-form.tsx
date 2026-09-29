@@ -3,7 +3,7 @@
 import { useActionState } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
-import { buttonClass } from '@/ui';
+import { buttonClass, inputClass } from '@/ui';
 
 import { requeueJobAction } from './actions';
 
@@ -27,6 +27,8 @@ export function RequeueForm({ jobId }: { jobId: string }) {
   return (
     <form action={action} className="mt-2 flex flex-wrap items-center gap-2">
       <input type="hidden" name="jobId" value={jobId} />
+      {/* SCR-060 (bucket F): the reason travels with the requeue and lands in the audit log. */}
+      <input name="reason" required minLength={5} maxLength={600} placeholder="Why revive it?" aria-label="Reason" className={`${inputClass} h-8 w-56 text-xs`} />
 
       <button
         type="submit"

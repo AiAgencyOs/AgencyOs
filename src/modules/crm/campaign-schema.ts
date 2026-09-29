@@ -26,6 +26,8 @@ export const campaignAudienceSchema = z.object({
   lastActivityDays: z.preprocess(blank, z.coerce.number().int().min(1).max(3650).optional()),
   createdFrom: z.preprocess(blank, z.string().regex(DATE, 'Use a date like 2026-09-30.').optional()),
   createdTo: z.preprocess(blank, z.string().regex(DATE, 'Use a date like 2026-09-30.').optional()),
+  /** SCR-059 (bucket F): the leads behind one project — through the opportunity the project was won from. */
+  projectId: z.preprocess(blank, z.uuid().optional()),
 });
 export type CampaignAudience = z.infer<typeof campaignAudienceSchema>;
 
@@ -33,6 +35,8 @@ export const createCampaignSchema = z.object({
   name: z.string().trim().min(1, 'Give the campaign a name.').max(120, 'Keep the name under 120 characters.'),
   templateId: z.uuid('Choose an approved template.'),
   audience: campaignAudienceSchema,
+  /** SCR-059 (bucket F): an ISO moment before which the worker sends nothing. Blank means as soon as approved. */
+  scheduledFor: z.preprocess(blank, z.string().trim().max(40).optional()),
 });
 /** As the form hands it over: strings, before zod coerces and narrows them. */
 export type CreateCampaignInput = z.input<typeof createCampaignSchema>;
@@ -56,6 +60,8 @@ export type AudienceCandidate = {
   createdAt: string;
   updatedAt: string;
   conversationId: string | null;
+  /** The projects this lead is behind (via sales.opportunities → projects.projects). Absent in older callers. */
+  projectIds?: readonly string[];
 };
 
 export type AudienceRecipient = { leadId: string; conversationId: string | null };
@@ -89,7 +95,8 @@ export function expandAudience(
         (!tag || c.tags.some((t) => t.toLowerCase() === tag)) &&
         (activeSince === undefined || new Date(c.updatedAt).getTime() >= activeSince) &&
         (!createdFrom || c.createdAt >= createdFrom) &&
-        (!createdTo || c.createdAt <= createdTo),
+        (!createdTo || c.createdAt <= createdTo) &&
+        (!filter.projectId || (c.projectIds ?? []).includes(filter.projectId)),
     )
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.leadId.localeCompare(b.leadId))
     .map((c) => ({ leadId: c.leadId, conversationId: c.conversationId }));
@@ -106,6 +113,7 @@ export function describeAudience(filter: CampaignAudience): string {
     filter.lastActivityDays !== undefined ? `active in the last ${filter.lastActivityDays}d` : '',
     filter.createdFrom ? `created from ${filter.createdFrom}` : '',
     filter.createdTo ? `created to ${filter.createdTo}` : '',
+    filter.projectId ? 'one project' : '',
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(' · ') : 'every lead';
 }

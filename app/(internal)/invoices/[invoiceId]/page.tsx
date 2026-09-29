@@ -36,6 +36,10 @@ import { buttonClass } from '@/ui';
 
 import { RecordRefundForm, RequestRefundForm } from './refund-panel';
 import { RecordInvoiceSendForm } from './send-panel';
+import { SendInvoiceEmailForm } from './email-send-panel';
+import { RecordClaimForm } from '../../projects/[projectId]/claims-panel';
+import { emailTransportState } from '@/lib/email/transport';
+import { readClientBillingEmail } from '@/modules/finance/invoice-list-queries';
 import { SendInvoiceWhatsAppForm } from './whatsapp-send-panel';
 
 import { IssueInvoiceForm, RecordPaymentForm, VoidInvoiceForm,
@@ -106,6 +110,11 @@ export default async function InvoicePage({
     readInvoiceReminderPolicy(),
   ]);
   const receivingAccounts = accounts.filter((a) => a.status === 'active');
+  // SCR-051: the email transport's own state (configured or the words about
+  // what is missing) and the client's billing address as the default recipient.
+  const transportState = mayIssueInvoice ? emailTransportState() : null;
+  const emailTransport = transportState === null ? null : transportState.configured ? { configured: true as const, label: transportState.label } : { configured: false as const, reason: transportState.reason };
+  const billingEmail = mayIssueInvoice ? await readClientBillingEmail(invoice.client_account_id) : null;
   const taxRatePct = invoice.subtotal_minor > 0 ? Math.round((invoice.tax_minor / invoice.subtotal_minor) * 1000) / 10 : 0;
 
   // The milestone name comes from the plan the project page already renders,
@@ -430,6 +439,13 @@ export default async function InvoicePage({
             No claims submitted. A claim is what a client (or an admin on their behalf) says was paid; it becomes a payment above only once somebody verifies it under <Link href="/invoices/verify" className="text-brand hover:underline">Verify payments</Link>.
           </p>
         )}
+        {/* SCR-052: attach the client's proof on the invoice itself — the same form and door the project page and Finance use. */}
+        {mayIssue && !isDraft && status !== 'void' && status !== 'paid' ? (
+          <div className="rounded-lg border border-line bg-surface p-3">
+            <p className="mb-2 text-xs font-medium text-muted">Attach what the client says they paid, with proof</p>
+            <RecordClaimForm projectId={invoice.project_id ?? ''} invoices={[{ id: invoice.id, number: invoice.number, status: invoice.status }]} />
+          </div>
+        ) : null}
       </section>
 
       {/*
@@ -469,6 +485,8 @@ export default async function InvoicePage({
               below stays for a send made outside AgencyOS.
             */}
             <SendInvoiceWhatsAppForm invoiceId={invoice.id} threads={threads} configured={whatsappReady} />
+            {/* SCR-051: the bill by email through a real transport, or the honest not-configured state. */}
+            {emailTransport ? <SendInvoiceEmailForm invoiceId={invoice.id} defaultTo={billingEmail} defaultKind={sends.some((s) => s.kind === 'sent') ? 'reminder' : 'sent'} transport={emailTransport} /> : null}
             <RecordInvoiceSendForm invoiceId={invoice.id} defaultKind={sends.some((s) => s.kind === 'sent') ? 'reminder' : 'sent'} />
           </>
         ) : null}

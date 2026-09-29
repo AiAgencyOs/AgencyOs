@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef } from 'react';
 
+import { scheduleAnnouncementAction } from '@/modules/crm/announcement-schedule-actions';
 import { createAnnouncementAction, setAnnouncementStatusAction } from '@/modules/crm/announcements-actions';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { Badge, buttonClass, cx, FormMessage, inputClass, selectClass, StatusBadge, textareaClass } from '@/ui';
@@ -14,6 +15,8 @@ export type AnnouncementView = {
   audience: string;
   status: string;
   when: string;
+  /** SCR-059 (bucket F): ISO moment the tick publishes this draft, when one is set. */
+  scheduledFor?: string | null;
 };
 
 /**
@@ -43,11 +46,29 @@ export function AnnouncementsPanel({ announcements, canWrite }: { announcements:
               </div>
               <p className="whitespace-pre-wrap text-muted">{a.body}</p>
               {canWrite && a.status !== 'archived' ? <StatusButtons id={a.id} status={a.status} /> : null}
+              {canWrite && a.status === 'draft' ? <ScheduleForm id={a.id} scheduledFor={a.scheduledFor ?? null} /> : null}
             </li>
           ))}
         </ul>
       )}
     </div>
+  );
+}
+
+/** SCR-059 (bucket F): set or clear the moment the tick publishes a draft (`crm.schedule_announcement`, owner only). */
+function ScheduleForm({ id, scheduledFor }: { id: string; scheduledFor: string | null }) {
+  const [state, action, pending] = useActionState(scheduleAnnouncementAction, IDLE_STATE);
+  const local = scheduledFor ? new Date(new Date(scheduledFor).getTime() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : '';
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="announcementId" value={id} />
+      <input name="scheduledFor" type="datetime-local" defaultValue={local} aria-label="Publish at" className={cx(inputClass, 'h-8 text-xs')} />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Saving…' : scheduledFor ? 'Reschedule' : 'Schedule'}
+      </button>
+      {scheduledFor ? <span className="text-xs text-muted">Clear the field and save to unschedule.</span> : null}
+      <FormMessage status={state.status} message={state.message} />
+    </form>
   );
 }
 

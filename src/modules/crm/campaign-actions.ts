@@ -25,6 +25,7 @@ function audienceFrom(formData: FormData): CampaignAudienceInput {
     lastActivityDays: text('lastActivityDays'),
     createdFrom: text('createdFrom'),
     createdTo: text('createdTo'),
+    projectId: text('projectId'),
   };
 }
 
@@ -42,6 +43,7 @@ export async function createCampaignAction(_prev: FormState, formData: FormData)
     name: text('name'),
     templateId: text('templateId'),
     audience: audienceFrom(formData),
+    scheduledFor: text('scheduledFor'),
   });
   if (!result.ok) return { status: 'error', message: result.error.message };
 

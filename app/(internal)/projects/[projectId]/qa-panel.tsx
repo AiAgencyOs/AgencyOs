@@ -50,17 +50,21 @@ export function RaiseDefectForm({
   projectId,
   deliverables,
   defaultDeliverableId,
+  defaultRunId,
 }: {
   projectId: string;
   deliverables: { id: string; kind: string; version: number; title: string }[];
   /** SCR-046 — raised from a run row, the build is filled in. */
   defaultDeliverableId?: string;
+  /** SCR-046 (bucket F) — raised from a run row, the defect names the run that found it. */
+  defaultRunId?: string;
 }) {
   const [state, action, pending] = useActionState(raiseDefectAction, IDLE_STATE);
 
   return (
     <form action={action} className="flex flex-col gap-2">
       <input type="hidden" name="projectId" value={projectId} />
+      {defaultRunId ? <input type="hidden" name="runId" value={defaultRunId} /> : null}
 
       <div className="flex flex-wrap gap-2">
         <div className="flex min-w-48 flex-1 flex-col gap-1">

@@ -33,6 +33,8 @@ import {
 } from '@/lib/observability/queries';
 
 import { DeadLettersList } from './dead-letters-list';
+import { readEscalationsByKey } from '@/lib/admin/escalations';
+import { EscalateControl } from '../notifications/escalate-form';
 
 export const metadata: Metadata = { title: 'Operations' };
 
@@ -112,6 +114,10 @@ export default async function OperationsPage({
   // SCR-060 — how each failed message's retries went, newest attempt first.
   const retryHistory = await readRetryHistory(failed.map((f) => f.id).filter((id): id is string => id !== null));
   const mayRetry = can(context.role, 'lead.write');
+  // SCR-060 (bucket F): "Escalate to Admin" on a failed delivery — F-A's
+  // core.escalations, subject_type 'delivery', the message id as the key.
+  const escalationsByKey = await readEscalationsByKey();
+  const canAnswerEscalation = can(context.role, 'audit.read');
 
   // SCR-060 — failures by code. Meta's errors open with a code or a short
   // phrase before the first colon/parenthesis; grouping on that prefix turns
@@ -380,7 +386,22 @@ export default async function OperationsPage({
                 </p>
                 {/* SCR-057 — a retry is a new send through the same door; the
                     window and consent decide it again. */}
-                {mayRetry && m.id ? <div className="mt-2"><RetryDeliveryForm messageId={m.id} /></div> : null}
+                {mayRetry && m.id ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <RetryDeliveryForm messageId={m.id} />
+                    <EscalateControl
+                      subjectType="delivery"
+                      subjectKey={m.id}
+                      title={`Failed delivery: ${m.reason}`}
+                      canAnswer={canAnswerEscalation}
+                      compact
+                      escalation={(() => {
+                        const e = escalationsByKey.get(m.id);
+                        return e ? { id: e.id, toRole: e.toRole, reason: e.reason, state: e.state, fromUserName: e.fromUserName, acknowledgedByName: e.acknowledgedByName, createdAtLabel: clock.dateTime(e.createdAt) } : null;
+                      })()}
+                    />
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>

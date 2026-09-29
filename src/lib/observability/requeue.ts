@@ -29,16 +29,26 @@ import { err, ok, type Result } from '@/lib/result';
 
 /** The row `core.requeue_job` returns. */
 type RequeueRow = {
-  outcome: 'requeued' | 'not_found' | 'not_dead';
+  outcome: 'requeued' | 'not_found' | 'not_dead' | 'no_reason';
   job_status: string | null;
   attempts: number | null;
 };
 
 export type Requeued = { jobId: string; attempts: number };
 
-export async function requeueJob(jobId: string): Promise<Result<Requeued>> {
+/**
+ * SCR-060 (bucket F): the requeue carries the operator's reason. It goes
+ * through `core.requeue_job_with_reason`, which records the words in
+ * audit.audit_log and then calls `core.requeue_job` exactly as before — the
+ * decision under the row lock is unchanged.
+ */
+export async function requeueJob(jobId: string, reason?: string): Promise<Result<Requeued>> {
   if (!/^[0-9a-f-]{36}$/i.test(jobId)) {
     return err('VALIDATION', 'That is not a job id.');
+  }
+  const words = (reason ?? '').trim();
+  if (reason !== undefined && words.length < 5) {
+    return err('VALIDATION', 'Say why this job is being revived — at least five characters.');
   }
 
   const context = await requireInternal();
@@ -48,7 +58,11 @@ export async function requeueJob(jobId: string): Promise<Result<Requeued>> {
 
   const supabase = await createClient();
 
-  const { data, error } = await supabase.schema('core').rpc('requeue_job', { p_job_id: jobId });
+  // With words, the audited door (SCR-060); without, the original — a caller
+  // that predates the reason keeps working and keeps its test.
+  const { data, error } = words
+    ? await supabase.schema('core').rpc('requeue_job_with_reason', { p_job_id: jobId, p_reason: words })
+    : await supabase.schema('core').rpc('requeue_job', { p_job_id: jobId });
 
   if (error) {
     console.error(
@@ -74,6 +88,9 @@ export async function requeueJob(jobId: string): Promise<Result<Requeued>> {
 
     case 'not_found':
       return err('NOT_FOUND', 'That job is not in this queue.');
+
+    case 'no_reason':
+      return err('VALIDATION', 'Say why this job is being revived — at least five characters.');
 
     // Not an error the operator caused, and worth quoting the status back: a
     // job that is queued again was almost certainly requeued by somebody else

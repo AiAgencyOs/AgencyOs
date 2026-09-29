@@ -13,6 +13,8 @@ export type AnnouncementRow = {
   status: AnnouncementStatus;
   publishedAt: string | null;
   archivedAt: string | null;
+  /** SCR-059 (bucket F): the moment the tick publishes a draft, or null. */
+  scheduledFor: string | null;
   createdAt: string;
 };
 
@@ -22,7 +24,7 @@ export async function listAnnouncements(filter: { audience?: AnnouncementAudienc
   let query = supabase
     .schema('crm')
     .from('announcements')
-    .select('id, title, body, audience, status, published_at, archived_at, created_at')
+    .select('id, title, body, audience, status, published_at, archived_at, scheduled_for, created_at')
     .order('created_at', { ascending: false })
     .limit(filter.limit ?? 100);
   if (filter.audience) query = query.eq('audience', filter.audience);
@@ -38,6 +40,7 @@ export async function listAnnouncements(filter: { audience?: AnnouncementAudienc
     status: a.status as AnnouncementStatus,
     publishedAt: a.published_at,
     archivedAt: a.archived_at,
+    scheduledFor: a.scheduled_for,
     createdAt: a.created_at,
   }));
 }

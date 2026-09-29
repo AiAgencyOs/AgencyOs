@@ -9,6 +9,9 @@ import { can } from '@/lib/authz/permissions';
 import { listApprovalsForSubject } from '@/modules/approvals/queries';
 import { readPaymentLadder } from '@/modules/finance/queries';
 import { readHandoverRelease } from '@/modules/projects/handover-release-queries';
+import { readDeploymentDependencies } from '@/modules/projects/deployment-deps-queries';
+import { listReleasePaymentOverrides, readFinalPaymentState } from '@/modules/projects/release-payment-queries';
+import { readPerformanceSummary, readSecuritySummary } from '@/modules/qa/summary-queries';
 import { readReleaseHold } from '@/modules/projects/release-hold-queries';
 import { getProject, listDeliverables, readCompletionSummary } from '@/modules/projects/queries';
 import { listDefects, listTestRuns, readProjectQuality, readTestPlan } from '@/modules/qa/queries';
@@ -39,6 +42,8 @@ import { ProductionReadyForm } from '../qa-panel';
 import { WorkspaceHeader } from '../workspace-header';
 import { RollbackPlanForm, SmokeChecklist } from './release-panel';
 import { HoldReleaseForm, LiftReleaseHoldForm } from './release-hold-panel';
+import { DeploymentDependencies } from './deployment-deps-panel';
+import { OverrideReleasePaymentForm } from './release-payment-panel';
 
 export const metadata: Metadata = { title: 'Release gate' };
 
@@ -115,6 +120,17 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
       readReleaseHold(projectId),
     ]);
   const mayWrite = can(context.role, 'project.write');
+  // Decision F1 (2026-09-30) and SCR-049 (bucket F): the payment gate as the
+  // door reads it, the owner's overrides, deployment dependencies, and the
+  // security and performance summaries beside the QA one.
+  const [paymentState, overrides, deployment, security, performance] = await Promise.all([
+    readFinalPaymentState(projectId),
+    listReleasePaymentOverrides(projectId),
+    readDeploymentDependencies(projectId),
+    readSecuritySummary(projectId),
+    readPerformanceSummary(projectId),
+  ]);
+  const paymentGateOpen = paymentState.state === 'verified' || paymentState.state === 'overridden' || paymentState.state === 'no_priced_milestone';
 
   // listDeliverables orders by kind, then version descending — the first
   // build row is the latest one.
@@ -139,25 +155,25 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
 
   // ── the checklist ────────────────────────────────────────────────────────
 
+  // Decision F1 (2026-09-30): the final payment IS a hard gate now —
+  // mark_production_ready answers payment_unverified until the final priced
+  // milestone's invoice is paid, net-verified or carries a verified claim, or
+  // an owner override is recorded. The ladder stays as the wider picture.
   const paymentItem: GateItem = {
     key: 'payment',
     label: 'Final payment verified',
-    hardGate: false,
-    href: base,
-    hrefLabel: 'Overview · payment ladder',
-    ...(ladder === null
-      ? { mark: 'unknown', fact: 'Not visible to your role — the payment ladder is a finance read (invoice.read).' }
-      : !ladder.measurable
-        ? { mark: 'unknown', fact: 'No payment plan on this project adds to 100%, so there is no percentage to verify against.' }
-        : ladder.gate.open
-          ? {
-              mark: 'pass',
-              fact: `100% of the payment plan is verified — ${ladder.verifiedMilestones} of ${plural(ladder.milestones, 'priced milestone')}.`,
-            }
-          : {
-              mark: 'fail',
-              fact: `${ladder.verifiedPercent ?? 0}% verified; ${ladder.gate.shortfallPercent}% is still to be verified (${ladder.verifiedMilestones} of ${plural(ladder.milestones, 'priced milestone')}).`,
-            }),
+    hardGate: true,
+    href: paymentState.invoiceId ? `/invoices/${paymentState.invoiceId}` : base,
+    hrefLabel: paymentState.invoiceId ? `Invoice ${paymentState.invoiceNumber ?? ''}` : 'Overview · payment ladder',
+    ...(paymentState.state === 'verified'
+      ? { mark: 'pass', fact: `The final milestone "${paymentState.milestoneName ?? ''}" is paid or verified (invoice ${paymentState.invoiceNumber ?? ''}).${ladder?.measurable ? ` ${ladder.verifiedPercent ?? 0}% of the plan is verified overall.` : ''}` }
+      : paymentState.state === 'overridden'
+        ? { mark: 'pass', fact: `Overridden by the owner${overrides[0] ? ` ${clock.dateTime(overrides[0].createdAt)}${overrides[0].overriddenByName ? ` (${overrides[0].overriddenByName})` : ''}: "${overrides[0].reason}"` : ''}. Audited as release.payment_overridden.` }
+        : paymentState.state === 'no_priced_milestone'
+          ? { mark: 'unknown', fact: 'No priced milestone on this project, so there is no final payment to verify; the door does not gate on it.' }
+          : paymentState.state === 'no_invoice'
+            ? { mark: 'fail', fact: `The final milestone "${paymentState.milestoneName ?? ''}" has no live invoice. Raise and issue it, then verify the payment — or the owner records an override with a reason.` }
+            : { mark: 'fail', fact: `Invoice ${paymentState.invoiceNumber ?? ''} for the final milestone "${paymentState.milestoneName ?? ''}" is not paid, net-verified or claim-verified yet.` }),
   };
 
   // SCR-044 — the one line a person decides. A HARD gate: mark_production_ready
@@ -313,6 +329,7 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
   // The same three answers `mark_production_ready` reads before it writes.
   const unmet: string[] = [
     ...(hold ? [`a release hold is on: "${hold.reason}"`] : []),
+    ...(paymentGateOpen ? [] : [`the final payment is not verified (${paymentState.invoiceNumber ?? 'no invoice'})`]),
     ...(readiness.noOpenBlockers ? [] : ['there are open blocker defects']),
     ...(readiness.noOpenMajors ? [] : ['there are open major defects']),
     ...(readiness.buildApproved ? [] : ['the client has not approved a build']),
@@ -435,11 +452,76 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
                       : `Refused because ${unmet.join(', and ')}.`}
                   </p>
                   <p className="text-xs text-muted">
-                    Payment, test runs and the handover are not part of the door — a project can be production ready and unpaid. There is no override past ADM-19&apos;s three conditions; a release hold is the one thing a person adds to them.
+                    Decision F1 (2026-09-30): the final payment is part of the door — sign-off is refused until it is verified, or the owner records an override with a reason. Test runs and the handover stay reports beside it; a release hold is the one thing a person adds on top.
                   </p>
                   {maySignOff ? <ProductionReadyForm projectId={projectId} /> : <p className="text-xs text-muted">Signing off needs project.sign_off (owner or ops admin).</p>}
                 </>
               )}
+            </CardBody>
+          </Card>
+
+          {/* Decision F1: the owner's override, drawn only while the gate refuses and only for the owner; the door decides both again. */}
+          {!paymentGateOpen ? (
+            <Card>
+              <CardHeader title="Payment gate" description="The door refuses payment_unverified. The owner may override it with a reason; the override is kept and audited." />
+              <CardBody>
+                {context.role === 'owner' ? <OverrideReleasePaymentForm projectId={projectId} /> : <p className="text-[13px] text-muted">Only the owner may override the payment gate.</p>}
+              </CardBody>
+            </Card>
+          ) : overrides.length > 0 ? (
+            <Card>
+              <CardHeader title="Payment gate overrides" description="Recorded by the owner; audited release.payment_overridden." />
+              <ul className="divide-y divide-line">
+                {overrides.map((o) => (
+                  <li key={o.id} className="px-4 py-2 text-[13px] sm:px-5">
+                    <span className="block whitespace-pre-wrap">{o.reason}</span>
+                    <span className="text-xs text-muted">{clock.dateTime(o.createdAt)}{o.overriddenByName ? ` · ${o.overriddenByName}` : ''}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
+
+          {/* SCR-049 (bucket F): deployment dependencies on the handover — a report beside the gate. */}
+          <Card>
+            <CardHeader title="Deployment dependencies" description="What the deployment waits on — DNS, a vendor key, a client sign-off. Recorded on the handover; the sign-off door does not read it." />
+            <CardBody>
+              {deployment ? (
+                <DeploymentDependencies projectId={projectId} handoverId={deployment.handoverId} dependencies={deployment.dependencies} editable={mayWrite} />
+              ) : (
+                <p className="text-[13px] text-muted">No handover has been prepared, so there is nowhere to record them yet.</p>
+              )}
+            </CardBody>
+          </Card>
+
+          {/* SCR-049 (bucket F): security and performance summaries beside the QA one. */}
+          <Card>
+            <CardHeader title="Security summary" description="Security-suite runs and open defects that read as security issues (by their title). A report." />
+            <CardBody className="text-[13px]">
+              {security.latest ? (
+                <p>
+                  Latest security run {clock.dateTime(security.latest.executedAt)}: {security.latest.passed}/{security.latest.total} passed{security.latest.failed > 0 ? <span className="text-danger">, {security.latest.failed} failed</span> : null}
+                  {security.latest.evidenceUrl ? <> · <a href={security.latest.evidenceUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">evidence</a></> : null}
+                  {' '}· {security.runs} closed run{security.runs === 1 ? '' : 's'} in all.
+                </p>
+              ) : (
+                <p className="text-muted">No security-suite run has been closed on this project.</p>
+              )}
+              <p className={`mt-1 ${security.openSecurityDefects > 0 ? 'text-danger' : 'text-muted'}`}>{security.openSecurityDefects} open defect{security.openSecurityDefects === 1 ? '' : 's'} read as security issues.</p>
+            </CardBody>
+          </Card>
+          <Card>
+            <CardHeader title="Performance summary" description="Budgets against the latest attached metrics, performance-suite runs and stability incidents. A report — Doc 14 §16 leaves the threshold with the project." actions={<ViewAll href={`${base}/qa`} label="QA" />} />
+            <CardBody className="text-[13px]">
+              <p>
+                {performance.budgets.length === 0 ? 'No performance budget set.' : `${performance.budgets.length} budget${performance.budgets.length === 1 ? '' : 's'}: `}
+                {performance.budgets.length > 0 ? (
+                  <>
+                    <span className={performance.overBudget > 0 ? 'text-danger' : 'text-success'}>{performance.overBudget} over</span>, {performance.budgets.length - performance.overBudget - performance.unmeasured} within, {performance.unmeasured} unmeasured.
+                  </>
+                ) : null}
+              </p>
+              <p className="mt-1 text-muted">{performance.runs} performance run{performance.runs === 1 ? '' : 's'} · <span className={performance.incidentsOpen > 0 ? 'text-danger' : ''}>{performance.incidentsOpen} open incident{performance.incidentsOpen === 1 ? '' : 's'}</span> of {performance.incidentsTotal}.</p>
             </CardBody>
           </Card>
 

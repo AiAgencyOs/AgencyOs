@@ -43,6 +43,7 @@ export async function raiseDefectAction(_prev: FormState, formData: FormData): P
     actual: optional('actual'),
     environment: optional('environment'),
     evidenceUrl: optional('evidenceUrl'),
+    runId: optional('runId'),
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };

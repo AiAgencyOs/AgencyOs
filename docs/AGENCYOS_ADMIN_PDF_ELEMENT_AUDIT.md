@@ -188,40 +188,40 @@ screen exists; at element level it does not hold.
 
 | SCR | Element | Status | What is missing |
 |---|---|---|---|
-| 044 | Recent runs / Bug trend | MISSING ×2 | Not on `/qa` |
-| 044 | Release candidate / Open run-bug-build / Assign retest / Block release / Generate QA evidence summary | PARTIAL ×5 | Per project only or badge only |
+| 044 | Recent runs / Bug trend | BUILT ×2 | `app/(internal)/qa/page.tsx` (recent runs table; bug trend `TrendChart` from `src/modules/qa/bug-trend.ts`) |
+| 044 | Release candidate / Open run-bug-build / Assign retest / Block release / Generate QA evidence summary | BUILT ×5 | `app/(internal)/qa/page.tsx` (RC column, run/bug/build links, evidence summary) + `app/(internal)/qa/qa-forms.tsx` (assign retest via `qa.assign_retest`, block release via the Release tab's `HoldReleaseForm`) |
 | 045 | Linked task / Import test case | PARTIAL ×2 | Scope link only; no import |
-| 046 | Pass/fail/blocked counts / Start-end time / Defects created / Retest history | PARTIAL ×4 | No blocked, no start/end, no run-defect link, per-defect history |
-| 046 | Rerun failed cases / Close run when complete | MISSING ×2 | No rerun, no run lifecycle |
+| 046 | Pass/fail/blocked counts / Start-end time / Defects created / Retest history | BUILT ×4 | `app/(internal)/projects/[projectId]/qa/page.tsx` (run lifecycle card: blocked, started/ended, defects per run via `qa.defects.run_id`, retest assignments `qa.retest_assignments`) |
+| 046 | Rerun failed cases / Close run when complete | BUILT ×2 | `app/(internal)/projects/[projectId]/qa/run-lifecycle-panel.tsx` (`qa.open_test_run` / `qa.close_test_run` / `qa.rerun_test_run`, 20261001140000) |
 | 047 | Bug detail / Evidence / Linked task-build | PARTIAL ×3 | Inline rows; evidence only in CSV; build not shown |
-| 048 | Performance budgets / Stability incidents / Schedule suite / Compare baseline | MISSING ×4 | Not built, no decision on record |
-| 048 | Attach metrics | PARTIAL | Free text |
-| 049 | Security/performance/QA summary | PARTIAL | QA only |
-| 049 | Deployment dependencies | MISSING | Not on release or readiness |
-| 049 | Final payment verified before launch (guardrail) | PARTIAL | Release door explicitly does not gate on payment |
+| 048 | Performance budgets / Stability incidents / Schedule suite / Compare baseline | BUILT ×4 | `app/(internal)/projects/[projectId]/qa/page.tsx` (`qa.performance_budgets`, `qa.stability_incidents`, `qa.suite_schedules` fired by the tick via `src/modules/qa/schedule-worker.ts`, `src/modules/qa/baseline.ts`) |
+| 048 | Attach metrics | BUILT | `app/(internal)/projects/[projectId]/qa/run-lifecycle-panel.tsx` (`MetricForm` → `qa.metric_results`) |
+| 049 | Security/performance/QA summary | BUILT | `app/(internal)/projects/[projectId]/release/page.tsx` (`readSecuritySummary`, `readPerformanceSummary` in `src/modules/qa/summary-queries.ts`) |
+| 049 | Deployment dependencies | BUILT | `app/(internal)/projects/[projectId]/release/deployment-deps-panel.tsx` (`projects.handovers.deployment_dependencies`, `projects.set_deployment_dependency`) |
+| 049 | Final payment verified before launch (guardrail) | BUILT | Decision F1: `projects.mark_production_ready` refuses `payment_unverified` (`projects.final_payment_state`); owner override `projects.override_release_payment` → `app/(internal)/projects/[projectId]/release/release-payment-panel.tsx` |
 
 ## Finance (050–056)
 
 | SCR | Element | Status | What is missing |
 |---|---|---|---|
-| 050 | Create invoice | PARTIAL | Links to Projects |
-| 051 | Draft/issued counts / GST filters / Milestone filter / Linked milestone column / Reminder history / Send by email | PARTIAL ×6 | Missing tiles/filters; email is record-only |
-| 052 | Attach client proof on the invoice | PARTIAL | Only on Finance and the project page |
-| 053 | Unmatched KPI / Record payment proof / Reject with reason | PARTIAL ×3 | Elsewhere |
-| 055 | Project margin / Project profitability / Vendor-tool costs | PARTIAL ×3 | On the project report only; no vendor rollup |
-| 055 | Budget vs actual | DECLINED | Gaps doc row 55 |
-| 056 | GST configuration / Configure tax profile / Export PDF | PARTIAL ×3 | On Settings; no PDF |
-| 056 | Export history | MISSING | Exports audited, not listed |
+| 050 | Create invoice | BUILT | `app/(internal)/finance/page.tsx` (`CreateFromMilestoneForm`, the Invoices page's own door) |
+| 051 | Draft/issued counts / GST filters / Milestone filter / Linked milestone column / Reminder history / Send by email | BUILT ×6 | `app/(internal)/invoices/page.tsx` (tiles, `?gst=`, `?milestone=`, milestone column, `reminder-history-drawer.tsx`); `app/(internal)/invoices/[invoiceId]/email-send-panel.tsx` → `src/lib/email/transport.ts` (Resend / SMTP, honest not-configured) |
+| 052 | Attach client proof on the invoice | BUILT | `app/(internal)/invoices/[invoiceId]/page.tsx` (`RecordClaimForm`, the shared door) |
+| 053 | Unmatched KPI / Record payment proof / Reject with reason | BUILT ×3 | `app/(internal)/finance/payments/page.tsx` (Unmatched tile; `RecordClaimForm` / `VerifyClaimForm` mounted on Payments) |
+| 055 | Project margin / Project profitability / Vendor-tool costs | BUILT ×3 | `app/(internal)/finance/expenses/page.tsx` (margin column on Budget vs actual; `src/modules/finance/vendor-rollup.ts`) |
+| 055 | Budget vs actual | BUILT | Decision F5 (reopened): `src/modules/finance/budget-variance.ts` (`computeBudgetVariance`) on `app/(internal)/projects/[projectId]/reports/page.tsx` and `app/(internal)/finance/expenses/page.tsx` |
+| 056 | GST configuration / Configure tax profile / Export PDF | PARTIAL ×2, BUILT ×1 | GST configuration and tax profile stay on Settings; Export PDF: `app/api/finance/tax/pdf/route.ts` → `src/lib/pdf/tax-report.ts` |
+| 056 | Export history | BUILT | `app/(internal)/finance/tax/page.tsx` (`finance.gst_exports`, written by `app/api/finance/gst/gstr-export.ts`) |
 
 ## Communication (057–061)
 
 | SCR | Element | Status | What is missing |
 |---|---|---|---|
-| 057 | Unread count / Announcements due / Create announcement | PARTIAL ×3 | No unread; no due; Manage link only |
-| 059 | Scheduled announcements | MISSING | No scheduling |
-| 059 | Template detail / Audience-project selection / Send preview / Schedule-send | PARTIAL ×4 | Row only; no project audience; count only; no schedule time |
-| 060 | Retry count / Requeue with reason | PARTIAL ×2 | No retry tile; bare Requeue |
-| 060 | Escalate to Admin | MISSING | Not built |
+| 057 | Unread count / Announcements due / Create announcement | BUILT ×3 | `app/(internal)/communication/page.tsx` (`listUnansweredConversations`, due tile, `AnnouncementsPanel` mounted with the schedule form) |
+| 059 | Scheduled announcements | BUILT | `crm.announcements.scheduled_for` + `crm.schedule_announcement`; published by the tick (`src/modules/crm/announcement-worker.ts`) |
+| 059 | Template detail / Audience-project selection / Send preview / Schedule-send | BUILT ×4 | `app/(internal)/communication/templates/[templateId]/page.tsx`; `new-campaign-form.tsx` (project audience, send-from time); `campaigns/[campaignId]/page.tsx` (send preview via `src/modules/crm/campaign-preview-queries.ts`) |
+| 060 | Retry count / Requeue with reason | BUILT ×2 | `app/(internal)/communication/page.tsx` (Retries tile); `app/(internal)/operations/requeue-form.tsx` → `core.requeue_job_with_reason` |
+| 060 | Escalate to Admin | BUILT | `app/(internal)/operations/page.tsx` and `app/(internal)/communication/page.tsx` mount F-A's `EscalateControl` (`core.escalations`, subject_type `delivery`) |
 | 061 | Open model/tool detail | PARTIAL | Agent and run drill-down only |
 
 ## AI Workforce, Operations, Governance, Integrations, Settings (062–071)

@@ -9,6 +9,7 @@ import { isDayKey, shiftDay } from '@/lib/admin/month-grid';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { readProjectMargin } from '@/modules/finance/margin-queries';
+import { readProjectBudgetVariance } from '@/modules/finance/budget-variance-queries';
 import { listExpenses, listProjectInvoices } from '@/modules/finance/queries';
 import {
   getProject,
@@ -120,6 +121,10 @@ export default async function ProjectReportPage({
     listPhaseFourEscalations(),
     mayReadMoney ? listPaymentClaims(projectId) : Promise.resolve([]),
   ]);
+  // Budget vs actual — decision F5 of 2026-09-30 (reopened): the budget
+  // against expenses + AI cost + time cost, with the monthly burn. The same
+  // pure function Finance › Expenses uses.
+  const variance = mayReadMoney ? await readProjectBudgetVariance(projectId) : null;
   const timeCsvHref = `/api/projects/${projectId}/report/time`;
   const pdfHref = `/api/projects/${projectId}/report/pdf`;
 
@@ -453,6 +458,36 @@ export default async function ProjectReportPage({
                   {' '}Time is costed at each person&rsquo;s rate on the day of the log.
                   {margin.uncostedHours > 0 ? <span className="text-warning"> {margin.uncostedHours} h uncosted — no rate on those days; those hours are not in the cost.</span> : null}
                 </p>
+              </div>
+            ) : null}
+            {variance ? (
+              <div className="mx-4 mb-4 rounded-lg border border-line bg-canvas px-4 py-3 sm:mx-5">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="text-xs font-medium text-muted">Budget vs actual · decision F5</span>
+                  {variance.varianceMinor !== null ? (
+                    <span className={cx('tabular text-base font-semibold', variance.standing === 'over' ? 'text-danger' : variance.standing === 'under' ? 'text-success' : 'text-foreground')}>
+                      {variance.varianceMinor < 0 ? '−' : ''}{money(Math.abs(variance.varianceMinor), currency)} {variance.standing === 'over' ? 'over' : variance.standing === 'under' ? 'under' : 'on'} budget
+                      <span className="ml-2 text-xs font-normal text-muted">{variance.consumedPercent}% consumed</span>
+                    </span>
+                  ) : (
+                    <span className="text-[13px] text-muted">No budget recorded — the variance is unknowable, not zero.</span>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-muted">
+                  {mayReadMoney ? `Actual ${money(variance.actualMinor, currency)} = ${money(variance.expensesMinor, currency)} expenses + ${money(variance.aiCostMinor, 'INR')} AI cost + ${money(variance.timeCostMinor, 'INR')} time cost.` : null}
+                  {variance.averageBurnMinor > 0 ? ` Average burn ${money(variance.averageBurnMinor, currency)} per month over ${variance.monthly.filter((m) => m.totalMinor > 0).length} month${variance.monthly.filter((m) => m.totalMinor > 0).length === 1 ? '' : 's'} with cost${variance.monthsLeftAtBurn !== null ? `; ${variance.monthsLeftAtBurn} month${variance.monthsLeftAtBurn === 1 ? '' : 's'} of budget left at that burn` : ''}.` : ' Nothing has burned yet.'}
+                  {mayReadMoney && variance.uncostedHours > 0 ? <span className="text-warning"> {variance.uncostedHours} h uncosted — no rate on those days.</span> : null}
+                </p>
+                {variance.monthly.length > 0 ? (
+                  <ul className="mt-2 flex flex-wrap gap-2 text-xs">
+                    {variance.monthly.slice(-12).map((m) => (
+                      <li key={m.month} className="rounded-md border border-line bg-surface px-2 py-1 tabular">
+                        <span className="text-muted">{m.month}</span> {money(m.totalMinor, currency)}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                <p className="mt-1 text-[11px] text-faint">Months by calendar date of the expense or log, and UTC for an AI run.</p>
               </div>
             ) : null}
             {budget > 0 ? (

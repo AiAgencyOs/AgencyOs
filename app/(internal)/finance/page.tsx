@@ -5,7 +5,10 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listExpenses, listPayments, listPendingPaymentClaims } from '@/modules/finance/queries';
-import { listBillingClients, listInvoicesFiltered } from '@/modules/finance/overview-queries';
+import { listBillableMilestones, listBillingClients, listInvoicesFiltered } from '@/modules/finance/overview-queries';
+import { listInvoices } from '@/modules/finance/queries';
+import { milestoneInvoiceability } from '@/modules/finance/schema';
+import { CreateFromMilestoneForm } from '../invoices/create-from-milestone-form';
 import { listProjects } from '@/modules/projects/queries';
 
 import { RecordClaimForm } from '../projects/[projectId]/claims-panel';
@@ -88,6 +91,20 @@ export default async function FinanceOverviewPage({
   const days = daysParam && /^\d+$/.test(daysParam) ? Number(daysParam) : undefined;
   const filtered = Boolean(days || clientId || projectId);
   const canIssue = can(context.role, 'invoice.issue');
+
+  // SCR-050: creating an invoice from here, through the same door the
+  // Invoices page uses — a milestone the payment plan says may be billed and
+  // nothing has invoiced yet.
+  const canCreate = can(context.role, 'invoice.create');
+  const [billableMilestones, everyInvoice] = await Promise.all([
+    canCreate ? listBillableMilestones() : Promise.resolve([]),
+    canCreate ? listInvoices(2000) : Promise.resolve([]),
+  ]);
+  const invoicedMilestones = new Set(everyInvoice.map((i) => i.milestone_id).filter((id): id is string => id !== null));
+  const eligibleMilestones = billableMilestones
+    .filter((m) => !invoicedMilestones.has(m.id))
+    .filter((m) => milestoneInvoiceability({ status: m.status, amountMinor: m.amountMinor, paymentPercent: m.paymentPercent }).ok)
+    .map((m) => ({ id: m.id, projectId: m.projectId, name: m.name, position: m.position, amountLabel: money(m.amountMinor, m.currency) }));
 
   const [invoices, allPayments, allExpenses, pendingClaims, projects, clients] = await Promise.all([
     listInvoicesFiltered({ days, clientId, projectId }),
@@ -435,6 +452,14 @@ export default async function FinanceOverviewPage({
             is where somebody checks it. Only invoices that can still take
             money are offered.
           */}
+          {canCreate ? (
+            <Card>
+              <CardHeader title="Create invoice" description="A draft from a milestone the payment plan says may be billed. Issuing it is a separate step on the invoice." />
+              <div className="px-4 pb-4 sm:px-5">
+                <CreateFromMilestoneForm projects={projects.map((p) => ({ id: p.id, name: p.name }))} milestones={eligibleMilestones} />
+              </div>
+            </Card>
+          ) : null}
           {canIssue ? (
             <Card>
               <CardHeader title="Record a payment claim" description="What a client says they paid. Nothing moves until it is verified." />

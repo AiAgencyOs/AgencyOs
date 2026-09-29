@@ -75,6 +75,7 @@ export type CampaignAudienceInput = {
   lastActivityDays?: string;
   createdFrom?: string;
   createdTo?: string;
+  projectId?: string;
 };
 
 export type CampaignPreviewState =

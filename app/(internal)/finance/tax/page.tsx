@@ -19,6 +19,7 @@ import {
 import { listTaxPeriodLocks, lockStateFor } from '@/modules/finance/tax-lock-queries';
 import { describeStateCode, gstIdentityIssues, returnPeriodFor, selectForReturn } from '@/modules/finance/gstr';
 import { listGstrInvoices, readGstIdentity } from '@/modules/finance/gstr-queries';
+import { listGstExports } from '@/modules/finance/gst-export-queries';
 import { SavedViewsBar } from '../../saved-views-bar';
 import {
   Badge,
@@ -138,7 +139,7 @@ export default async function TaxReportPage({
   };
   const currentQuery = qs({}).slice(1);
 
-  const [allInvoices, allReceipts, allExpenses, savedViews, locks, gstIdentity, gstrRows] = await Promise.all([
+  const [allInvoices, allReceipts, allExpenses, savedViews, locks, gstIdentity, gstrRows, gstExports] = await Promise.all([
     listTaxReportInvoices(),
     listReceipts(),
     listExpenses(),
@@ -146,6 +147,8 @@ export default async function TaxReportPage({
     listTaxPeriodLocks(),
     readGstIdentity(),
     listGstrInvoices(),
+    // SCR-056: the export history table.
+    listGstExports(),
   ]);
   // E5: the GSTR files are drawn from this same window. What the file would
   // OMIT is worked out here so the screen can say it before the download.
@@ -183,6 +186,10 @@ export default async function TaxReportPage({
             <PeriodSelect value={periodValue} options={taxPeriodOptions(today)} preserve={{ mode: modeFilter ?? undefined, sort: sortKey, dir: sortKey ? direction : undefined }} />
             <a href={`/api/finance/tax/export${qs({ page: undefined, sort: undefined, dir: undefined, mode: undefined })}`} className={buttonClass('secondary', 'sm')}>
               <IconDownload size={14} /> Export CSV
+            </a>
+            {/* SCR-056: the same figures as a PDF, rendered from the same split. */}
+            <a href={`/api/finance/tax/pdf${qs({ page: undefined, sort: undefined, dir: undefined, mode: undefined })}`} className={buttonClass('secondary', 'sm')}>
+              <IconFile size={14} /> Export PDF
             </a>
             {gstrReady ? (
               <>
@@ -333,6 +340,30 @@ export default async function TaxReportPage({
               getKey={(u) => u.invoiceId}
             />
           </div>
+        ) : null}
+      </Card>
+
+      {/* SCR-056: export history — every GSTR file the panel produced, from finance.gst_exports. */}
+      <Card>
+        <CardHeader
+          icon={<IconDownload size={16} />}
+          title="Export history"
+          description={gstExports.length === 0 ? 'No GSTR file has been exported yet.' : `${gstExports.length} export${gstExports.length === 1 ? '' : 's'}, newest first — which return period, what the file held, what it left out.`}
+        />
+        {gstExports.length > 0 ? (
+          <DataTable
+            rows={gstExports}
+            dense
+            columns={[
+              { key: 'when', header: 'Exported', primary: true, cell: (e) => clock.dateTime(e.createdAt) },
+              { key: 'kind', header: 'File', badge: true, cell: (e) => <Badge tone="brand" mono>{e.kind === 'gstr1' ? 'GSTR-1' : 'GSTR-3B'}</Badge> },
+              { key: 'period', header: 'Period', cellClassName: 'text-muted', cell: (e) => `${e.periodLabel} · ${e.returnPeriod.slice(0, 2)}/${e.returnPeriod.slice(2)}` },
+              { key: 'counts', header: 'In the file', desktopOnly: true, cellClassName: 'text-muted', cell: (e) => Object.entries(e.counts).filter(([, n]) => n > 0).map(([k, n]) => `${k} ${n}`).join(' · ') || '—' },
+              { key: 'omitted', header: 'Omitted', align: 'right', cell: (e) => (e.omitted.length > 0 ? <span className="text-warning" title={e.omitted.join(', ')}>{e.omitted.length}</span> : <span className="text-muted">0</span>) },
+              { key: 'by', header: 'By', desktopOnly: true, cellClassName: 'text-muted', cell: (e) => e.exportedByName ?? '—' },
+            ]}
+            getKey={(e) => e.id}
+          />
         ) : null}
       </Card>
 
