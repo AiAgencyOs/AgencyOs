@@ -17,38 +17,14 @@ import { unreadable } from '@/lib/result';
  * `core.memberships` → `core.users`, the same route `readTaskDetail` takes.
  */
 
-export type TaskComment = { id: string; body: string; authorId: string | null; authorName: string; createdAt: string; createdLabel: string };
-export type TaskChecklistItem = {
-  id: string;
-  label: string;
-  position: number;
-  doneAt: string | null;
-  doneBy: string | null;
-  doneByName: string | null;
-  doneLabel: string | null;
-};
-export type TaskAttachment = { id: string; title: string; url: string; addedByName: string | null; createdAt: string; createdLabel: string };
-
-export type TaskCollab = {
-  taskId: string;
-  comments: TaskComment[];
-  checklist: TaskChecklistItem[];
-  /** Ticked / total, and the percentage the progress bar draws. */
-  progress: { done: number; total: number; percent: number };
-  attachments: TaskAttachment[];
-  blocked: { reason: string | null; at: string | null; sinceLabel: string | null };
-};
-
-export function emptyTaskCollab(taskId: string): TaskCollab {
-  return {
-    taskId,
-    comments: [],
-    checklist: [],
-    progress: { done: 0, total: 0, percent: 0 },
-    attachments: [],
-    blocked: { reason: null, at: null, sinceLabel: null },
-  };
-}
+export {
+  emptyTaskCollab,
+  type TaskAttachment,
+  type TaskChecklistItem,
+  type TaskCollab,
+  type TaskComment,
+} from './task-collab-types';
+import { emptyTaskCollab, type TaskCollab } from './task-collab-types';
 
 /** The labels are printed here, through the agency's clock, because the drawers that show them are client components. */
 export async function readTaskCollabFor(taskIds: readonly string[], clock: AgencyClock): Promise<Record<string, TaskCollab>> {

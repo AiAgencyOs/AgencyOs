@@ -13,7 +13,7 @@ import {
   removeTaskAttachmentAction,
   setChecklistItemDoneAction,
 } from '@/modules/projects/task-collab-actions';
-import type { TaskCollab } from '@/modules/projects/task-collab-queries';
+import type { TaskCollab } from '@/modules/projects/task-collab-types';
 import {
   Avatar,
   buttonClass,
