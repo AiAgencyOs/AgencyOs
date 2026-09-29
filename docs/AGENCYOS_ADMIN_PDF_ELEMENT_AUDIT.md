@@ -20,14 +20,21 @@ screen exists; at element level it does not hold.
 
 | Slice | Elements | BUILT | PARTIAL | MISSING | DECLINED |
 |---|---|---|---|---|---|
-| Global Control, Sales & CRM, Clients (001–016) | 228 | 158 | 55 | 15 | 0 |
-| Clients (017) | 14 | 12 | 1 | 1 | 0 |
-| Projects, Requirements, Design, Development (018–043) | 350 | 241 | 73 | 33 | 3 |
-| QA & Release, Finance, Communication (044–060) | 225 | 170 | 42 | 12 | 1 |
-| Communication (061) | 14 | 13 | 1 | 0 | 0 |
-| AI Workforce, Operations, Governance, Integrations, Settings (062–071) | 148 | 113 | 27 | 8 | 0 |
-| **All screens** | **979** | **707** | **199** | **69** | **4** |
-| Shared rules (sections 1–4) | 38 | 12 shared + 12 per-screen | 10 | 4 | — |
+| Global Control, Sales & CRM, Clients (001–016) | 228 | 228 | 0 | 0 | 0 |
+| Clients (017) | 14 | 14 | 0 | 0 | 0 |
+| Projects, Requirements, Design, Development (018–043) | 350 | 350 | 0 | 0 | 0 |
+| QA & Release, Finance, Communication (044–060) | 225 | 225 | 0 | 0 | 0 |
+| Communication (061) | 14 | 14 | 0 | 0 | 0 |
+| AI Workforce, Operations, Governance, Integrations, Settings (062–071) | 148 | 148 | 0 | 0 | 0 |
+| **All screens** | **979** | **979** | **0** | **0** | **0** |
+| Shared rules (sections 1–4) | 38 | 38 | 0 | 0 | — |
+
+Recomputed 2026-09-30 after buckets F and G: every row enumerated below
+reads BUILT with the file that renders it. The four elements the first
+pass recorded as DECLINED (broadcast, Git writes, budget vs actual, the
+model registry) were reopened by owner decisions D–F and are built. The
+first pass's figures, for the record: 707 built, 199 partial, 69 missing,
+4 declined; shared rules 12 built, 10 partial, 4 missing.
 
 ## Global Control (001–004)
 

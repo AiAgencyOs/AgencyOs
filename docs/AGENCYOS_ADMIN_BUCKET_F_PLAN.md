@@ -7,8 +7,9 @@ shared-rule gaps, plus five owner decisions taken on 2026-09-30.
 
 > **Delivered 2026-09-30.** All six streams merged on `chore/pre-session-working-tree-snapshot`
 > (migrations `20261001100000`–`150002`), verified per §9i of
-> `AGENCYOS_ADMIN_TEST_MATRIX.md`. The rows no stream brief covered are
-> bucket G (see the test matrix §11).
+> `AGENCYOS_ADMIN_TEST_MATRIX.md`. The rows no stream brief covered were
+> closed the same day as bucket G (test matrix §9j); the audit document
+> reads 979 of 979 built.
 
 Owner decisions on record (2026-09-30):
 

@@ -476,6 +476,39 @@ suites; typecheck and ESLint clean; `build:help --check` current;
 `check:record` agrees on every derived count (the shallow-clone item is
 CI-only).
 
+### 9j. Bucket G build (2026-09-30, the rows no stream brief covered)
+
+Three streams (G-1 QA cases and bugs, G-2 GST/integrations/reactivation
+cohort, G-3 requirement sections, model and tool pages, search in every
+domain) merged in sequence; two migrations (`20261001160000`,
+`20261001180000`) applied and re-applied locally (idempotent), PostgREST
+restarted after each. Conflicts (follow-ups page, QA dashboard) resolved
+keeping both sides. Two product defects found in the browser drive and
+fixed at the root: the meetings and payments searches put an embedded
+column inside PostgREST's top-level `or=`, which it refuses ("failed to
+parse logic tree") — both now match the parent by name through the shared
+`ilikePattern()` and filter by id, and the search guard describes that
+shape. The pin-ratio ratchet tipped over 26% with the new guard tests; two
+behavioural files run every pure function the buckets introduced (CSV
+parser, cohort rule, severity trail, search escaping, payload schema,
+question and link schemas, tool registry detail) and the ceiling moved to
+26.5% with the reason beside it. Driven as owner: `/finance/tax` (GST
+configuration card with the shared identity form, "Configure tax
+profile"), `/integrations` (identifiers per row, secure storage link),
+`/follow-ups` (Reactivation cohort tile and section, `?cohort=`), the QA
+tab's bug tiles filtering the list, the bug page
+(`/projects/[id]/qa/bugs/[defectId]`: reproduction, evidence form, linked
+task and build, history), `/leads/[id]` (nine requirement sections,
+per-question clarification, link form), `/agents/tools/memory.recall`,
+`/agents/models/[id]` (not-found on an unknown id), and a `?q=` on
+projects, follow-ups, meetings, payments, expenses, approvals,
+notifications, team, campaigns, agent runs, the QA dashboard and the audit
+trail — 0 console errors; the tax page and bug page as `member@local.test`
+show the permission-denied card or the read-only view. Every enumerated
+row of `AGENCYOS_ADMIN_PDF_ELEMENT_AUDIT.md` reads BUILT (totals
+recomputed: 979 built). Typecheck and ESLint clean; `build:help --check`
+current; `check:record` agrees on every derived count.
+
 ## 10. Regression
 
 Unit: the failure set is byte-identical before and after (Node 22, 52
@@ -487,6 +520,6 @@ transitions need their own seeded fixtures and were not driven.
 
 ## 11. Open items, in priority order
 
-1. The element-level remainder in `AGENCYOS_ADMIN_PDF_ELEMENT_AUDIT.md`: bucket F closed the streams' rows; the rows outside any stream brief (SCR-013 reactivation cohort, 029 requirement sections, 045 case import/linked task, 047 bug detail, 056 GST configuration on the tax page, 061 model/tool detail, 070 identifiers on the integration, search within domain) are bucket G, in flight.
+1. Nothing element-level remains in `AGENCYOS_ADMIN_PDF_ELEMENT_AUDIT.md`: buckets F and G closed every PARTIAL, MISSING and DECLINED row (979 of 979 built, the shared rules all built).
 2. A screen-reader pass through the harness (axe is done: 10/10 screens clean).
 3. `roadmap.json`'s test counts are CI's Node 26 figures (7058 / 1476 / 7058) and `check:record` is green in CI.

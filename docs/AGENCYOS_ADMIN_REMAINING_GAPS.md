@@ -271,7 +271,9 @@ Every screen the PDF numbers exists and every owner decision is built.
 That sentence used to continue "nothing from the PDF remains unbuilt";
 an element-by-element audit on 2026-09-30 (`AGENCYOS_ADMIN_PDF_ELEMENT_AUDIT.md`)
 showed it was not true at the level of individual KPIs, buttons and
-sub-panels: of 979 elements the PDF lists, 707 are built, 199 partial,
-69 missing, 4 declined. The audit document is the record of what is
-left; the screen-level statuses in the inventory stay, with that
-document as their qualifier.
+sub-panels: of 979 elements the PDF lists, 707 were built, 199 partial,
+69 missing, 4 declined. Buckets F and G (2026-09-30) closed every one of
+those rows — the audit document now reads 979 built, and the four
+declined elements were reopened by owner decisions and built. The
+audit document stays as the element-level record beside the inventory's
+screen-level statuses.
