@@ -25,6 +25,7 @@ import {
   type SortDirection,
 } from '@/ui';
 
+import { EditExpenseForm } from './expense-edit';
 import { RecordExpenseForm } from './expense-form';
 
 export const metadata: Metadata = { title: 'Expenses' };
@@ -37,7 +38,12 @@ function money(minor: number, currency: string): string {
 
 type Row = Awaited<ReturnType<typeof listExpenses>>[number];
 
-const columnsFor = (clock: AgencyClock, projectName: (id: string | null) => string): Column<Row>[] => [
+const columnsFor = (
+  clock: AgencyClock,
+  projectName: (id: string | null) => string,
+  editable: boolean,
+  projects: readonly { id: string; name: string }[],
+): Column<Row>[] => [
   { key: 'description', header: 'What', primary: true, cell: (e) => e.description },
   { key: 'category', header: 'Category', badge: true, cell: (e) => e.category },
   { key: 'vendor', header: 'Vendor', cellClassName: 'text-muted', cell: (e) => e.vendor ?? '—' },
@@ -58,6 +64,9 @@ const columnsFor = (clock: AgencyClock, projectName: (id: string | null) => stri
     cell: (e) => clock.date(e.incurredOn),
     sortKey: 'incurred',
   },
+  ...(editable
+    ? [{ key: 'edit', header: '', align: 'right' as const, desktopOnly: true, cell: (e: Row) => <EditExpenseForm expense={e} projects={projects} /> }]
+    : []),
 ];
 
 const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
@@ -191,7 +200,7 @@ export default async function ExpensesPage({
         <>
           <DataTable
             rows={pageRows}
-            columns={columnsFor(clock, projectName)}
+            columns={columnsFor(clock, projectName, canRecord, projects.map((p) => ({ id: p.id, name: p.name })))}
             getKey={(e) => e.id}
             sort={{
               key: sortKey,

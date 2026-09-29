@@ -347,6 +347,32 @@ export async function listScopeVersionHistory(projectId: string): Promise<ScopeV
   }));
 }
 
+/**
+ * The items of any one scope version — the compare view (SCR-029). The
+ * baseline reader only returns the active and draft versions; a dispute
+ * needs the superseded one beside the current one, item by item.
+ */
+export async function listScopeItemsForVersion(scopeVersionId: string): Promise<ScopeItemRow[]> {
+  const supabase = await createClient();
+
+  const { data, error: itemsError } = await supabase
+    .schema('projects')
+    .from('scope_items')
+    .select('id, scope_version_id, title, detail, inclusion, acceptance_criteria, position')
+    .eq('scope_version_id', scopeVersionId)
+    .order('position', { ascending: true });
+  if (itemsError) unreadable('listScopeItemsForVersion', itemsError);
+
+  return (data ?? []).map((i) => ({
+    id: i.id,
+    title: i.title,
+    detail: i.detail,
+    inclusion: i.inclusion,
+    acceptanceCriteria: i.acceptance_criteria,
+    position: i.position,
+  }));
+}
+
 export type ChangeRequestRow = {
   id: string;
   source: string;

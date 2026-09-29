@@ -26,6 +26,8 @@ import {
   recordPaymentSubmissionSchema,
   createPaymentAccountSchema,
   setPaymentAccountStatusSchema,
+  updateExpenseSchema,
+  type UpdateExpenseInput,
   type CreatePaymentAccountInput,
   type SetPaymentAccountStatusInput,
   verifyPaymentSubmissionSchema,
@@ -2335,4 +2337,42 @@ export async function setPaymentAccountStatus(
   if (!data) return err('NOT_FOUND', 'That receiving account is not visible to you.');
 
   return ok({ accountId: data.id, status: data.status === 'inactive' ? 'inactive' : 'active' });
+}
+
+/** SCR-055 — correct an expense. Owner/ops_admin, the same two RLS (expenses_write, is_admin) names. */
+export async function updateExpense(input: UpdateExpenseInput): Promise<Result<{ expenseId: string }>> {
+  const parsed = updateExpenseSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid expense.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'invoice.issue')) {
+    return err('FORBIDDEN', 'You do not have permission to edit an expense.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('finance')
+    .from('expenses')
+    .update({
+      project_id: parsed.data.projectId ?? null,
+      category: parsed.data.category,
+      vendor: parsed.data.vendor ?? null,
+      description: parsed.data.description,
+      amount_minor: parsed.data.amountMinor,
+      incurred_on: parsed.data.incurredOn,
+      ...(parsed.data.currency ? { currency: parsed.data.currency } : {}),
+    })
+    .eq('id', parsed.data.expenseId)
+    .select('id')
+    .maybeSingle();
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'updateExpense', detail: error.message }));
+    return err('INTERNAL', 'Could not save the expense.');
+  }
+  if (!data) return err('NOT_FOUND', 'That expense is not visible to you.');
+
+  return ok({ expenseId: data.id });
 }

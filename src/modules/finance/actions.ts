@@ -21,6 +21,7 @@ import {
   recordExpense,
   createPaymentAccount,
   setPaymentAccountStatus,
+  updateExpense,
 } from './service';
 
 /** Server Actions for milestone billing — thin wrappers over service.ts. */
@@ -477,4 +478,29 @@ export async function setPaymentAccountStatusAction(_prev: FormState, formData: 
     status: 'success',
     message: result.data.status === 'inactive' ? 'Account deactivated — it stays on the invoices that already name it.' : 'Account active again.',
   };
+}
+
+export async function updateExpenseAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const text = (name: string) => String(formData.get(name) ?? '').trim();
+  const amount = parseMinorUnits(text('amount'));
+  if (amount === null) return { status: 'error', message: 'That is not an amount.' };
+
+  const projectId = text('projectId');
+  const vendor = text('vendor');
+
+  const result = await updateExpense({
+    expenseId: text('expenseId'),
+    category: text('category') as never,
+    description: text('description'),
+    amountMinor: amount,
+    incurredOn: text('incurredOn'),
+    ...(projectId ? { projectId } : {}),
+    ...(vendor ? { vendor } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath('/finance/expenses');
+  revalidatePath('/finance/tax');
+  return { status: 'success', message: 'Expense updated.' };
 }

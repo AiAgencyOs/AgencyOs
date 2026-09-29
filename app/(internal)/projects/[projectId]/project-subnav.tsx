@@ -1,5 +1,6 @@
 import {
   IconActivity,
+  IconTrendUp,
   IconCalendar,
   IconCheck,
   IconCode,
@@ -42,6 +43,7 @@ export function ProjectSubNav({ projectId }: { projectId: string }) {
     { href: `${base}/files`, label: 'Files', icon: <IconFile size={15} /> },
     { href: `${base}/team`, label: 'Team', icon: <IconUsers size={15} /> },
     { href: `${base}/activity`, label: 'Activity', icon: <IconActivity size={15} /> },
+    { href: `${base}/reports`, label: 'Reports', icon: <IconTrendUp size={15} /> },
     { href: `${base}/settings`, label: 'Settings', icon: <IconSettings size={15} /> },
   ];
   return <TabStrip tabs={tabs} label="Project sections" />;

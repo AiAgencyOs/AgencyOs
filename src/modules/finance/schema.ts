@@ -653,3 +653,7 @@ export const setPaymentAccountStatusSchema = z.object({
   status: z.enum(['active', 'inactive']),
 });
 export type SetPaymentAccountStatusInput = z.infer<typeof setPaymentAccountStatusSchema>;
+
+/** SCR-055 — correct a recorded expense. Same fields as recording; the row keeps its id and recorder. */
+export const updateExpenseSchema = recordExpenseSchema.extend({ expenseId: z.uuid() });
+export type UpdateExpenseInput = z.infer<typeof updateExpenseSchema>;
