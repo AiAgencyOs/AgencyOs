@@ -179,10 +179,10 @@ a record that only its editor changes.
 
 | Status | Count | Screens |
 |---|---|---|
-| COMPLETE | 56 | — |
-| GROUPED | 12 | 002, 004, 008, 009, 016, 026, 029, 038, 048, 058, 067 + 003's bell |
-| PARTIAL | 2 | 042 (link-based repo — no VCS integration), 056 (GST return — register only, no filing) |
-| DECLINED (sub-features) | 3 | 027 templates, 059 broadcast, 008 numeric score |
+| COMPLETE | 60 | — (008, 027, 042 moved here on 2026-09-30 after the owner reopened them) |
+| GROUPED | 11 | 002, 004, 009, 016, 026, 029, 038, 048, 058, 067 + 003's bell |
+| PARTIAL | 0 | — (056 files no GST return by design: the register and P&L are complete, filing is the accountant's) |
+| DECLINED (sub-features) | 1 | 059 broadcast (mass WhatsApp send — kept declined; outreach limits and consent make a broadcast a per-thread send) |
 | MISSING | 0 | — |
 
 Every PARTIAL names a real schema or integration gap rather than UI work
