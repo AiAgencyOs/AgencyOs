@@ -37,6 +37,7 @@ export function useLive({
   enabled?: boolean;
 }): LiveState {
   const [state, dispatch] = useReducer(reduceLive, undefined, initialLiveState);
+  const stallCleanupRef = useRef<(() => void) | null>(null);
 
   // The latest callback, read at fire time, so the subscription effect does
   // not tear down and rejoin the channel every render the parent re-creates
@@ -80,34 +81,57 @@ export function useLive({
         });
       }
       // A channel that never answers is not "connecting", it is failing:
-      // without this a dead socket would show Connecting for ever.
+      // without this a dead socket would show Connecting for ever. And a
+      // channel that stays down is failing AGAIN every window: once the
+      // socket itself is gone, supabase-js retries the transport with its own
+      // backoff and reports nothing per attempt, so the one CHANNEL_ERROR it
+      // did report would leave the pill on Reconnecting for as long as the
+      // server is away. Counting each silent window as a failure is what lets
+      // the reducer reach Degraded (the two-session run proved it never did).
       let answered = false;
-      const joinTimer = setTimeout(() => {
-        if (!cancelled && !answered) dispatch({ type: 'error' });
-      }, JOIN_TIMEOUT_MS);
+      let stallTimer: ReturnType<typeof setTimeout> | null = null;
+      const armStall = () => {
+        if (stallTimer) clearTimeout(stallTimer);
+        stallTimer = setTimeout(() => {
+          if (cancelled) return;
+          dispatch({ type: 'error' });
+          armStall();
+        }, JOIN_TIMEOUT_MS);
+      };
+      const disarmStall = () => {
+        if (stallTimer) clearTimeout(stallTimer);
+        stallTimer = null;
+      };
+      stallCleanupRef.current = disarmStall;
+      armStall();
       channel.subscribe((status) => {
         if (cancelled) return;
         answered = true;
-        clearTimeout(joinTimer);
         switch (status) {
           case 'SUBSCRIBED':
+            disarmStall();
             dispatch({ type: 'subscribed' });
             break;
           case 'CHANNEL_ERROR':
           case 'TIMED_OUT':
             dispatch({ type: 'error' });
+            armStall();
             break;
           case 'CLOSED':
             dispatch({ type: 'closed' });
+            armStall();
             break;
         }
       });
+      void answered;
     })().catch(() => {
       if (!cancelled) dispatch({ type: 'error' });
     });
 
     return () => {
       cancelled = true;
+      stallCleanupRef.current?.();
+      stallCleanupRef.current = null;
       if (channel) void supabase.removeChannel(channel);
     };
   }, [key, enabled]);

@@ -372,7 +372,8 @@ try {
     await b.locator('#qc-title').fill(title);
     await b.locator('#qc-contact-name').fill(`${MARKER} contact`);
     await b.locator('#qc-email').fill(`${MARKER}-contact@example.invalid`);
-    await b.getByRole('button', { name: 'Create' }).click();
+    // The header carries its own "Create" menu button; the palette's submit is the one meant.
+    await b.getByRole('dialog', { name: 'Command palette' }).getByRole('button', { name: 'Create', exact: true }).click();
     await b.waitForURL(/\/leads\/[0-9a-f-]{36}/, { timeout: 30_000 });
     const leadId = b.url().match(/\/leads\/([0-9a-f-]{36})/)[1];
     await shot(b, 'lead-created-B');
@@ -418,6 +419,22 @@ try {
     // the identity-less caller the engine allows — the job runner's path —
     // raises it, with a summary that names this run.
     const summaryText = `${MARKER} approval`;
+    // A fresh database carries no approval policy for this organisation, and
+    // request_approval answers no_policy rather than defaulting open. The run
+    // states its own ladder (one rung, ops_admin, 24 h) and removes it after.
+    const policy = one(
+      await rest('POST', 'approvals', 'approval_policies', {
+        organization_id: org,
+        subject_type: 'deliverable',
+        min_amount_minor: 0,
+        required_role: 'ops_admin',
+        sla_hours: 24,
+        audience: 'internal',
+        active: true,
+      }),
+    );
+    c.assert(policy?.id, 'an approval policy for deliverables exists for this run', JSON.stringify(policy));
+    cleanup.push(() => rest('DELETE', 'approvals', `approval_policies?id=eq.${policy.id}`));
     const raised = one(
       await rest('POST', 'approvals', 'rpc/request_approval', {
         p_organization_id: org,
@@ -515,7 +532,7 @@ try {
       claim = one(await rest('GET', 'finance', `payment_submissions?invoice_id=eq.${invoice.id}&select=id,status,reference,amount_minor,invoice_id`));
       if (!claim) await sleep(250);
     }
-    c.assert(claim?.status === 'pending' && claim.reference === reference, 'finance.payment_submissions holds the pending claim', JSON.stringify(claim));
+    c.assert(claim?.status === 'pending_verification' && claim.reference === reference, 'finance.payment_submissions holds the pending claim', JSON.stringify(claim));
     c.dbReadBack.claim = claim;
     cleanup.unshift(() => rest('DELETE', 'finance', `payment_submissions?id=eq.${claim.id}`));
     await shot(b, 'claim-recorded-B');
@@ -589,11 +606,11 @@ try {
     await b.goto(`${APP}/operations`, { waitUntil: 'networkidle' });
     await b.locator('li', { hasText: kind }).getByRole('button', { name: 'Requeue' }).click();
     let requeued = null;
-    for (let i = 0; i < 60 && requeued?.status === 'dead'; i += 1) {
+    for (let i = 0; i < 60; i += 1) {
       requeued = one(await rest('GET', 'core', `jobs?id=eq.${job.id}&select=id,status,attempts`));
-      if (requeued?.status === 'dead') await sleep(250);
+      if (requeued && requeued.status !== 'dead') break;
+      await sleep(250);
     }
-    if (!requeued) requeued = one(await rest('GET', 'core', `jobs?id=eq.${job.id}&select=id,status,attempts`));
     c.assert(requeued && requeued.status !== 'dead', 'core.jobs.status left dead (requeued)', JSON.stringify(requeued));
     c.dbReadBack.requeued = requeued;
     await shot(b, 'job-requeued-B');
