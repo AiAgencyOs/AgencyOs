@@ -50,7 +50,7 @@ type View = (typeof VIEWS)[number];
 const KINDS = ['task', 'milestone', 'meeting'] as const;
 type Kind = (typeof KINDS)[number];
 
-type CalendarEntry = { date: string; label: string; kind: Kind; status: string; overdue: boolean; time: string | null; href: string };
+type CalendarEntry = { id: string; date: string; label: string; kind: Kind; status: string; overdue: boolean; time: string | null; href: string };
 
 function viewOf(value: string | undefined): View {
   return (VIEWS as readonly string[]).includes(value ?? '') ? (value as View) : 'month';
@@ -135,19 +135,20 @@ export default async function ProjectCalendarPage({
   if (kinds.has('task')) {
     for (const t of tasks) {
       if (!t.dueOn || t.status === 'done') continue;
-      entries.push({ date: t.dueOn, label: t.title, kind: 'task', status: t.status, overdue: t.dueOn < today, time: null, href: `/projects/${projectId}/board` });
+      entries.push({ id: `task-${t.id}`, date: t.dueOn, label: t.title, kind: 'task', status: t.status, overdue: t.dueOn < today, time: null, href: `/projects/${projectId}/board` });
     }
   }
   if (kinds.has('milestone')) {
     for (const m of milestones) {
       if (!m.due_on || m.status === 'met') continue;
-      entries.push({ date: m.due_on, label: m.name, kind: 'milestone', status: m.status, overdue: m.due_on < today, time: null, href: `/projects/${projectId}/plan` });
+      entries.push({ id: `milestone-${m.id}`, date: m.due_on, label: m.name, kind: 'milestone', status: m.status, overdue: m.due_on < today, time: null, href: `/projects/${projectId}/plan` });
     }
   }
   if (kinds.has('meeting')) {
     for (const m of meetings) {
       if (!m.startAt) continue;
       entries.push({
+        id: `meeting-${m.id}`,
         date: clock.dayKey(m.startAt),
         label: `${humanize(m.mode ?? 'meeting')}${m.outcome ? ` · ${humanize(m.outcome)}` : ''}`,
         kind: 'meeting',
@@ -251,7 +252,7 @@ export default async function ProjectCalendarPage({
                     </div>
                     <ul className="mt-1.5 flex flex-col gap-1">
                       {(byDate.get(key) ?? []).map((e) => (
-                        <li key={`${e.kind}-${e.label}-${key}`}>
+                        <li key={`${e.id}-${key}`}>
                           <Link href={e.href} className={cx('block w-full truncate rounded px-1.5 py-0.5 text-xs', e.overdue ? 'bg-danger-soft text-danger' : e.kind === 'milestone' ? 'bg-brand-soft text-brand' : e.kind === 'meeting' ? 'bg-accent-soft text-accent' : 'bg-info-soft text-info')}>
                             {e.time ? <span className="mr-1 tabular opacity-80">{e.time}</span> : null}
                             {e.label}
@@ -282,7 +283,7 @@ export default async function ProjectCalendarPage({
                 {dayEntries.length > 0 ? (
                   <ul className="flex flex-col gap-1">
                     {dayEntries.map((e) => (
-                      <li key={`${e.kind}-${e.label}`} className="flex flex-wrap items-center gap-2 text-[13px]">
+                      <li key={e.id} className="flex flex-wrap items-center gap-2 text-[13px]">
                         <Badge tone={e.kind === 'milestone' ? 'brand' : e.kind === 'meeting' ? 'accent' : 'info'}>{e.kind}</Badge>
                         {e.time ? <span className="tabular text-xs text-muted">{e.time}</span> : null}
                         <Link href={e.href} className="hover:text-brand">{e.label}</Link>
@@ -366,7 +367,7 @@ export default async function ProjectCalendarPage({
                       </div>
                       <ul className="mt-1 flex flex-col gap-1">
                         {dayEntries.map((e) => (
-                          <li key={`${e.kind}-${e.label}-${date}`} className="flex flex-wrap items-center gap-2 text-[13px]">
+                          <li key={`${e.id}-${date}`} className="flex flex-wrap items-center gap-2 text-[13px]">
                             <Badge tone={e.kind === 'milestone' ? 'brand' : e.kind === 'meeting' ? 'accent' : 'info'}>{e.kind}</Badge>
                             {e.time ? <span className="tabular text-xs text-muted">{e.time}</span> : null}
                             <Link href={e.href} className="hover:text-brand">
@@ -394,7 +395,7 @@ export default async function ProjectCalendarPage({
             ) : (
               <ul className="divide-y divide-line">
                 {upcoming.map((e) => (
-                  <li key={`${e.kind}-${e.label}-${e.date}`} className="flex items-center gap-3 px-4 py-2.5 sm:px-5">
+                  <li key={e.id} className="flex items-center gap-3 px-4 py-2.5 sm:px-5">
                     <span className="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-lg bg-brand-soft text-brand">
                       <span className="text-[9px] font-semibold uppercase leading-none">{formatDayKey(e.date, { month: 'short' })}</span>
                       <span className="tabular text-base font-semibold leading-tight">{e.date.slice(8, 10)}</span>
