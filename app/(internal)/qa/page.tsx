@@ -5,6 +5,7 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
+import { listRetestQueue, readCoverageMatrix } from '@/modules/qa/dashboard-queries';
 import { listOpenDefects, readOrgTestCoverage, readSuiteCoverage, type OpenDefect } from '@/modules/qa/queries';
 import {
   Avatar,
@@ -59,7 +60,7 @@ export default async function QaDashboardPage() {
   const clock = await agencyClock();
   if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
-  const [defects, coverage, suiteCoverage] = await Promise.all([listOpenDefects(), readOrgTestCoverage(), readSuiteCoverage()]);
+  const [defects, coverage, suiteCoverage, matrix, retest] = await Promise.all([listOpenDefects(), readOrgTestCoverage(), readSuiteCoverage(), readCoverageMatrix(), listRetestQueue()]);
   const blockers = countBy(defects, 'blocker');
   const majors = countBy(defects, 'major');
   const runs = coverage.runsLast30Days;
@@ -148,6 +149,67 @@ export default async function QaDashboardPage() {
               </div>
             ) : (
               <EmptyState icon={<IconCheck size={22} />} title="No open defects" description="Every raised defect has been fixed, waived, or is not currently blocking anything." />
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader title="Coverage matrix" description="Test-plan items per category, by project — a report of what is planned, not a gate. Readiness and retest columns are the project's own figures." />
+            {matrix.rows.length === 0 ? (
+              <EmptyState icon={<IconList size={22} />} title="No test plans yet" description="A row appears once a project drafts a test plan against a frozen scope." />
+            ) : (
+              <div className="overflow-x-auto px-4 pb-4 sm:px-5">
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-wider text-muted">
+                      <th className="py-2 pr-3">Project</th>
+                      {matrix.categories.map((c) => (
+                        <th key={c} className="py-2 pr-3 text-right">{humanize(c)}</th>
+                      ))}
+                      <th className="py-2 pr-3 text-right">Total</th>
+                      <th className="py-2 pr-3 text-right">Retest</th>
+                      <th className="py-2 pr-3 text-right">Blocking</th>
+                      <th className="py-2 text-right">Ready</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matrix.rows.map((r) => (
+                      <tr key={r.projectId} className="border-b border-line last:border-0">
+                        <td className="py-2 pr-3">
+                          <Link href={`/projects/${r.projectId}/qa`} className="font-medium hover:underline">{r.projectName}</Link>
+                          {r.scopeVersion !== null ? <span className="ml-1 text-xs text-muted">scope v{r.scopeVersion}</span> : null}
+                        </td>
+                        {matrix.categories.map((c) => (
+                          <td key={c} className="py-2 pr-3 text-right tabular text-muted">{r.counts[c] ?? 0}</td>
+                        ))}
+                        <td className="py-2 pr-3 text-right tabular font-medium">{r.total}</td>
+                        <td className={`py-2 pr-3 text-right tabular ${r.awaitingRetest > 0 ? 'text-warning' : 'text-muted'}`}>{r.awaitingRetest}</td>
+                        <td className={`py-2 pr-3 text-right tabular ${r.openBlocking > 0 ? 'text-danger' : 'text-muted'}`}>{r.openBlocking}</td>
+                        <td className="py-2 text-right">{r.productionReadyAt ? <Badge tone="success">ready</Badge> : <Badge tone="neutral">not yet</Badge>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader title={`Retest queue (${retest.length})`} description="Defects marked fixed and waiting for somebody to verify them, oldest fix first. Verify on the project's Quality section." />
+            {retest.length === 0 ? (
+              <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">Nothing is waiting for a retest.</p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {retest.slice(0, 20).map((d) => (
+                  <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-[13px] sm:px-5">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <Badge tone={d.severity === 'blocker' ? 'danger' : d.severity === 'major' ? 'warning' : 'neutral'}>{d.severity}</Badge>
+                      <Link href={`/projects/${d.projectId}/qa`} className="truncate font-medium hover:underline">{d.title}</Link>
+                      <span className="text-xs text-muted">{d.projectName}</span>
+                    </span>
+                    <span className="text-xs text-muted">{d.assignee_id ? 'assigned' : 'unassigned'} · raised {clock.date(d.created_at)}</span>
+                  </li>
+                ))}
+              </ul>
             )}
           </Card>
         </div>
