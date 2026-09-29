@@ -33,79 +33,94 @@ production build · tests where meaningful.
 `verify-tenancy-guards.mjs` 15/15 against a live local Postgres (found and
 fixed two pre-existing tenancy gaps).
 
-## 4. Live browser verification
+## 4. Live browser verification — this pass (2026-09-29, second round)
 
-**This pass: none.** The container has no Docker daemon (`supabase start`
-cannot run) and no Supabase project credentials, so no internal page can be
-rendered past the login redirect. Nothing below is claimed for this pass.
+Done after all — without Docker. `scripts/local-qa/` (new) stands the real
+application on a scratch Postgres 16 (`apply-migrations-locally.sh`, all
+**309** migrations applied, seed applied, 129/129 tables with RLS), a real
+PostgREST 13.0.4, and a fake GoTrue whose tokens are stamped by the repo's
+own `core.custom_access_token_hook`. Chromium (Playwright) then drove the
+real pages. Everything below is from `qa-report.json` and `e2e.mjs` output.
 
-Prior session (real Supabase, real signed-in sessions, Owner unless noted):
-Dashboard rendered with dark rail and KPI chips · 375 px viewport: stacked
-KPIs, bottom tabs, drawer · Client 360 note added end-to-end · Project Board
-card dragged (`setTaskStatusAction`) · Sales Pipeline stage moved · Calendar
-grid vs agenda agree after an off-by-one fix · Usage chart rendered after a
-server→client callback crash was fixed · `client_admin` confirmed redirected
-to `/portal` on every internal URL tried.
+| Check | Result |
+|---|---|
+| Sign-in through `/auth/callback` → `verifyOtp` → `bootstrap_first_owner` | ✓ the first user became `owner` through the real RPC, exactly as on a fresh install |
+| 61 owner routes at 1440×900 (every rail item, every project tab, Lead 360, Client 360, agent detail, all 5 Settings tabs) | **61/61 HTTP 200, 0 server errors, 0 console errors** (via `localhost`; via `127.0.0.1` Next's dev server adds 14 cross-origin 403s per page — a dev-server artifact) |
+| 8 routes at 390×844 (phone) | 8/8 200, stacked KPI cards, card lists, bottom tabs, drawer |
+| Role matrix: `finance`, `contractor`, `member`, `client_admin` | finance: `/invoices` ✓, `/invoices/verify` **denied**, `/leads` denied, `/settings` denied, `/audit` denied · contractor: `/projects` ✓, `/leads`/`/settings`/`/agents` denied · member: `/leads`/`/projects` ✓, `/finance`/`/settings` denied · client_admin: every internal URL → `/portal`. All as the capability matrix says. |
+| B-1 quotation validity form | `0` → "Validity must be a whole number of days between 1 and 90." · `30` → saved sentence, value persisted after reload, `audit.audit_log` row `organization.setting_set` with old/new value |
+| B-2 outreach window form | `18→9` → "A window from 18:00 to 9:00 has no hours in it…" · `9→18` → saved, both keys set, two audit rows |
+| Header bell | `aria-label="Notifications — 1 item need attention"`, badge `1`, count fetched after paint (layout makes no DB read) |
+| Sidebar | Finance module auto-expands on `/finance/payments`, exactly that item is `aria-current`, breadcrumb reads *Finance › Payments* |
+| Skip link | first Tab stop is "Skip to content"; Enter focuses `#main` |
+| Sticky table header | `/leads` with 18 rows: 7 sticky `<th>` inside a bounded scroll box; short tables unchanged |
+| Live pill with no realtime server | *Connecting* → *Reconnecting* after the 10 s join timeout (observed at 32 s), polling safety net active; never claims Live |
+| Kanban board | rendered 5 columns from real `projects.tasks`; **a React hydration mismatch was found** (dnd-kit's module-counter `aria-describedby` ids) **and fixed** (`useId` on `DndContext`); re-verified clean |
+| Dashboard | **Recent-leads table clipped its columns at half width — found and fixed** (phone moved under the title, grid 1.35:1); KPI chips, health strip, needs-attention/today panels render from real reads |
+| Settings | **forms were bare full-width inputs — fixed** (each section is a card, content column bounded, h2 scale) |
+
+Not driven live: drag-and-drop on the board (pointer choreography), the
+Google/WhatsApp/AI integrations (no credentials — the screens correctly say
+"not configured"), PDF rendering.
 
 ## 5. Realtime multi-session E2E (brief tests 1–13)
 
-**Not run — environment.** Requires a live Postgres with the
-`supabase_realtime` publication and two browser sessions. Procedure, for the
-next environment that has Docker:
+**Push path: not run** — the local stack has no Realtime server. What was
+verified live instead: the publication holds exactly the 39 tables the
+topics name (`pg_publication_tables`, re-applying the migration is a no-op),
+and the client's honest fallback (*Reconnecting*, then polling) in a real
+browser. The status machine and topic↔publication correspondence are unit
+tested. On an environment with Docker, `npm run verify:db:up` gives a
+Realtime server and the procedure is:
 
 ```
-npm run verify:db:up            # local Supabase, all 309 migrations
-npm run dev
-# Session A: /leads  ·  Session B: create a lead via ⌘K → New lead
-# expect A's list and the dashboard KPI to update without refresh; pill says Live
-# Session A: /approvals · B: raise + decide an approval → A updates after the decision commits, never before
-# Session A: /invoices/verify · B: submit a payment claim → A shows it; verify in B → A shows PAID after the RPC returns
+# Session A: /leads  ·  Session B: ⌘K → New lead → A's list and the dashboard KPI update; pill says Live
+# Session A: /approvals · B: raise + decide → A updates after the decision commits, never before
+# Session A: /invoices/verify · B: submit a claim → A shows it; verify in B → A shows PAID after the RPC returns
 # Session A: /operations · fail a job → A shows it; requeue → A clears it
-# Kill the realtime container → pill says Reconnecting, then Degraded; restart → Live and the list catches up
+# Stop the realtime container → Reconnecting, then Degraded; start it → Live and the list catches up
 ```
-
-What IS verified without a database: the status machine's promises
-(`realtime-connection.test.ts`) and that every subscribed table is published
-(`realtime-topics.test.ts`).
 
 ## 6. Permissions
 
-Static: `admin-nav-config.test.ts` proves the rail for `owner`, `finance`,
-`contractor` and an unknown role; every page re-checks `can()` and RLS is the
-final word (unchanged). Live role-matrix click-through: **not done** (no DB).
+Static (`admin-nav-config.test.ts`) **and live** (§4 role matrix): four
+roles signed in through the real hook, every probe landed where the
+capability matrix says. RLS is the final word and was on throughout.
 
 ## 7. Accessibility
 
-Code-level (see design system §Accessibility): landmarks, `aria-current`,
-`aria-expanded`, `aria-sort`, `aria-live` status, skip link, reduced motion,
-icon labels. **No screen-reader pass, no automated axe/contrast run** — the
-pages cannot be rendered here.
+Live: skip link, landmarks, `aria-current`, `aria-expanded`, the bell's
+label, the live pill's `role="status"` — all confirmed in the DOM. Not yet:
+a screen-reader pass and an axe/contrast run (the harness can host one).
 
 ## 8. Responsive
 
-Code-level: every list uses `DataTable` (cards under `lg`), the rail hides
-under `md`, the two new portfolio pages use the same primitives. **No
-viewport screenshot pass this session.**
+Live at 390×844 on 8 screens: no horizontal overflow, tables as cards,
+bottom tabs reachable. Tablet widths (768/1024) not captured.
 
 ## 9. Visual QA against the 44 reference screenshots
 
-Screen-by-screen side-by-side: **not done this session** (cannot render).
-Token/shell-level correspondence (dark rail, indigo accent, KPI chips,
-sectioned modules, breadcrumb, bell with count, status chips) is by
-inspection of the code against `AGENCYOS_UI_SOURCE_AUDIT.md` §2's
-reference-to-screen map.
+Live at 1440 on 61 screens against the reference-to-screen map in the
+source audit §4: shell (dark sectioned rail, wordmark + tagline, search + ⌘K,
+bell with count, breadcrumb), KPI tiles with pastel chips, chip statuses,
+Kanban, entity headers with stage stepper (Lead 360), cards with right-rail
+panels — correspond. Two drifts found and fixed this round (dashboard table,
+settings forms). Charts render only where data exists (usage trend was
+empty on the seed).
 
 ## 10. Regression
 
-The full suite's failure set is byte-identical before and after this pass
-(diffed by test name), so no existing behaviour regressed at the unit level.
-Business flows (Lead-to-Close, onboarding, prototype, QA, finance, handover)
-were not driven live — same reason.
+Unit: the failure set is byte-identical before and after (Node 22, 52
+`mock.module` failures in both). Live: the business flows that the seed can
+reach — sign-in and bootstrap, lead list/360, project 360 and every tab,
+client 360 with a note form, settings writes with audit — all exercised;
+lead-to-close, onboarding, prototype, QA runs, finance and handover
+transitions need their own seeded fixtures and were not driven.
 
 ## 11. Open items, in priority order
 
-1. Run §5 on an environment with Docker; record the two-session results here.
-2. Run the 82 `db:verify:*` scripts against a local Postgres (CI does; this container cannot).
-3. Screen-reader + axe pass on the five highest-traffic screens.
-4. Screenshot pass at 1440 / 1024 / 768 / 375 for the 71 screens.
+1. Run §5 (push realtime, two sessions) on an environment with Docker.
+2. Point `.env.verify.local` at the local gateway and run the 82 `db:verify:*` scripts (CI does this; not tried here).
+3. axe + screen-reader pass through the harness on the five highest-traffic screens.
+4. Tablet captures (768 / 1024) and a drag-and-drop run on the board.
 5. Confirm `roadmap.json`'s derived test counts against CI's Node 26 run.

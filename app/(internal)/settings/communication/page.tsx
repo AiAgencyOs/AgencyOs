@@ -75,7 +75,7 @@ export default async function SettingsCommunicationPage() {
         — an approval waiting, a conversation handed to a person — answered
         `no_group` and went nowhere.
       */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">Internal group</h2>
         <p className="text-xs text-muted">
           Where the agent asks for a person — an approval that needs deciding, a client it has
@@ -93,7 +93,7 @@ export default async function SettingsCommunicationPage() {
         prefer the person, because a channel that delivers outranks one that
         cannot.
       */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">Announcements number</h2>
         <p className="text-xs text-muted">
           A person&rsquo;s own WhatsApp — approvals with the full quotation and its PDF, and
@@ -103,7 +103,7 @@ export default async function SettingsCommunicationPage() {
         <InternalRecipientForm current={internalRecipient} />
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">Messages outside the 24-hour window</h2>
         <p className="text-xs text-muted">
           WhatsApp only carries a free-form message within 24 hours of the client&rsquo;s last message.
@@ -178,7 +178,7 @@ export default async function SettingsCommunicationPage() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">WhatsApp</h2>
         <p className="text-xs text-muted">
           Whether the tokens are set is shown on the General tab. This checks the number itself with Meta — a

@@ -73,7 +73,7 @@ export default async function SettingsCommercialPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">What the work costs</h2>
         <p className="text-xs text-muted">
           {pricingModelConfigured
@@ -100,7 +100,7 @@ export default async function SettingsCommercialPage() {
         />
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">When the client pays</h2>
         <p className="text-xs text-muted">
           {paymentTerms
@@ -130,7 +130,7 @@ export default async function SettingsCommercialPage() {
         <ThirdPartyChargesForm charges={charges} />
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">Limits on what the agent may do alone</h2>
         <p className="text-xs text-muted">
           {anyLimitSet
@@ -145,7 +145,7 @@ export default async function SettingsCommercialPage() {
         />
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">An offer the agent may apply</h2>
         <p className="text-xs text-muted">
           {offer

@@ -94,4 +94,7 @@ carry a known age), degraded transport (`LiveRefresh`'s status pill).
 - **Client portal** (`app/(client)/`) keeps the previous light theme; the
   dark shell is the internal admin's only.
 - **No screen-reader or contrast-tool pass has been run** — see the test
-  matrix.
+  matrix. Landmarks, labels, skip link and sticky header were confirmed
+  in a real browser on 2026-09-29 (`scripts/local-qa/`).
+- **Settings** sections are cards in a bounded column (`settings/layout.tsx`);
+  the forms themselves keep their single-column field stacks.

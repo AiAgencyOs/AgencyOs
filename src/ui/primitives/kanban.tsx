@@ -11,7 +11,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { useState } from 'react';
+import { useState, useId } from 'react';
 
 import { cx, TONE_DOT, type Tone } from '../tokens';
 
@@ -50,6 +50,11 @@ export function KanbanBoard<T extends KanbanItem>({
   disabled?: boolean;
   className?: string;
 }) {
+  // dnd-kit numbers its aria-describedby ids from a module counter, which
+  // runs separately on the server and in the browser and produced a React
+  // hydration mismatch on every board (live QA, 2026-09-29). A stable id
+  // from React makes both renders agree.
+  const dndId = useId();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   // Optimistic column assignment, reconciled by whatever `items` the caller
@@ -86,7 +91,7 @@ export function KanbanBoard<T extends KanbanItem>({
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
+    <DndContext id={dndId} sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
       <div className={cx('grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5', className)}>
         {columns.map((col) => (
           <KanbanColumnView key={col.id} column={col} count={items.filter((i) => columnIdFor(i) === col.id).length}>

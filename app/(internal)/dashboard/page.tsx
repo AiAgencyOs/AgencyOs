@@ -143,12 +143,19 @@ export default async function OverviewPage() {
   ]);
 
   const leadColumns: Column<(typeof recentLeads)[number]>[] = [
-    { key: 'title', header: 'Lead', primary: true, cell: (l) => l.title },
+    // The phone number is the Lead 360's, not this card's: at half the canvas
+    // a sixth column clipped the ones that decide what to open (live QA,
+    // 2026-09-29). It sits under the title on a phone-sized card instead.
     {
-      key: 'phone',
-      header: 'Phone',
-      cellClassName: 'font-mono text-xs text-muted',
-      cell: (l) => l.contactPhone ?? '—',
+      key: 'title',
+      header: 'Lead',
+      primary: true,
+      cell: (l) => (
+        <>
+          <span className="block">{l.title}</span>
+          {l.contactPhone ? <span className="block font-mono text-[11px] text-muted">{l.contactPhone}</span> : null}
+        </>
+      ),
     },
     { key: 'source', header: 'Source', desktopOnly: true, cellClassName: 'text-muted', cell: (l) => humanize(l.source) },
     { key: 'status', header: 'Status', badge: true, cell: (l) => <StatusBadge status={l.status} /> },
@@ -293,7 +300,7 @@ export default async function OverviewPage() {
       ) : null}
 
       {canSeeLeads || canSeeProjects ? (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid gap-4 xl:grid-cols-[1.35fr_1fr]">
           {canSeeLeads ? (
             <Card>
               <CardHeader title="Recent leads" description="Most recently active first." />

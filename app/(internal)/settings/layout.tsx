@@ -40,7 +40,10 @@ export default async function SettingsLayout({ children }: { children: React.Rea
         }
       />
       <SettingsTabs tabs={TABS} />
-      {children}
+      {/* A bounded column: a form field the full width of a 1400px canvas
+          reads as a text area, not a setting. Each page's sections are
+          cards (screen architecture §4, "rounded cards"). */}
+      <div className="max-w-4xl [&_h2]:text-sm">{children}</div>
     </div>
   );
 }

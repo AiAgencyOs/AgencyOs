@@ -8,6 +8,9 @@ import { createClient } from '@/lib/db/client';
 import { initialLiveState, pollIntervalMs, reduceLive, type LiveState } from './connection';
 import { channelNameFor, tablesFor, type Topic } from './topics';
 
+/** How long a join may stay unanswered before it counts as a failure. */
+const JOIN_TIMEOUT_MS = 10_000;
+
 /**
  * A screen's subscription to the database.
  *
@@ -76,8 +79,16 @@ export function useLive({
           onChangeRef.current();
         });
       }
+      // A channel that never answers is not "connecting", it is failing:
+      // without this a dead socket would show Connecting for ever.
+      let answered = false;
+      const joinTimer = setTimeout(() => {
+        if (!cancelled && !answered) dispatch({ type: 'error' });
+      }, JOIN_TIMEOUT_MS);
       channel.subscribe((status) => {
         if (cancelled) return;
+        answered = true;
+        clearTimeout(joinTimer);
         switch (status) {
           case 'SUBSCRIBED':
             dispatch({ type: 'subscribed' });

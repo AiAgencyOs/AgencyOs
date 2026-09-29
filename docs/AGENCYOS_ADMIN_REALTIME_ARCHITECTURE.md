@@ -56,6 +56,9 @@ its `PageHeader` actions.
 
 ## Reconnect, catch-up, and "no delay"
 
+- **A join that never answers is a failure**: 10 s without SUBSCRIBED counts
+  as an error (`JOIN_TIMEOUT_MS`), so a dead socket shows *Reconnecting*,
+  not *Connecting* for ever — observed live with no realtime server.
 - **Reconnect** is the Supabase client's own backoff; the reducer reports
   it. While reconnecting the screen polls every 20 s, degraded 30 s — never
   slower than the polling it replaced.
@@ -93,8 +96,9 @@ dropped; retrying. Data refreshes on reconnect.").
 - Verified: the status machine (unit tests), the topic ↔ publication
   correspondence (unit test reading the migration), typecheck, lint,
   production build.
-- **Not verified in this environment:** the migration applying to a live
-  Postgres and a two-session "create in A, see in B" run — the container
-  has no Docker daemon and no Supabase project. `npm run verify:db:up` then
-  opening two browsers is the procedure; the test matrix records this as
-  the open item.
+- Verified live on a scratch Postgres 16: all 309 migrations apply; the
+  publication holds exactly the 39 topic tables; re-applying is a no-op; in
+  a real browser with no Realtime server the pill degrades honestly.
+- **Not verified:** a two-session "create in A, see in B" run over a real
+  Realtime server — needs Docker (`npm run verify:db:up`); procedure in the
+  test matrix §5.
