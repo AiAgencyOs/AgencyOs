@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
-import { readDevelopmentPortfolio } from '@/modules/projects/queries';
+import { readDevelopmentPortfolio, readPlanCoverageByProject, type PlanCoverage } from '@/modules/projects/queries';
 import {
   Badge,
   DataTable,
@@ -20,7 +20,7 @@ import {
 
 export const metadata: Metadata = { title: 'Development' };
 
-type Row = Awaited<ReturnType<typeof readDevelopmentPortfolio>>[number];
+type Row = Awaited<ReturnType<typeof readDevelopmentPortfolio>>[number] & { coverage: PlanCoverage };
 
 function Progress({ done, total }: { done: number; total: number }) {
   const pct = total === 0 ? 0 : Math.round((done / total) * 100);
@@ -79,6 +79,26 @@ const COLUMNS: Column<Row>[] = [
     cell: (p) => (p.tasks.blocked > 0 ? <span className="font-medium text-danger">{p.tasks.blocked}</span> : <span className="text-muted">0</span>),
   },
   {
+    key: 'plan',
+    header: 'Plan',
+    desktopOnly: true,
+    cell: (p) =>
+      p.coverage.planStatus ? (
+        <span className="flex items-center gap-1.5">
+          <span className="tabular text-xs text-muted">v{p.coverage.planVersion}</span>
+          <StatusBadge status={p.coverage.planStatus} dot={false} />
+        </span>
+      ) : (
+        <Badge tone="neutral">no plan</Badge>
+      ),
+  },
+  {
+    key: 'qa',
+    header: 'QA handoff',
+    desktopOnly: true,
+    cell: (p) => (p.coverage.hasTestPlan ? <Badge tone="success">test plan drafted</Badge> : <Badge tone="neutral">no test plan</Badge>),
+  },
+  {
     key: 'build',
     header: 'Latest build',
     desktopOnly: true,
@@ -106,7 +126,8 @@ export default async function DevelopmentPortfolioPage() {
   const context = await requireInternal('/development');
   if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
-  const rows = await readDevelopmentPortfolio();
+  const [portfolio, coverage] = await Promise.all([readDevelopmentPortfolio(), readPlanCoverageByProject()]);
+  const rows: Row[] = portfolio.map((r) => ({ ...r, coverage: coverage.get(r.id) ?? { planStatus: null, planVersion: null, hasTestPlan: false } }));
   const inBuild = rows.filter((r) => r.tasks.total > 0 && r.tasks.done < r.tasks.total);
   const blocked = rows.reduce((n, r) => n + r.tasks.blocked, 0);
   const inReview = rows.reduce((n, r) => n + r.tasks.inReview, 0);
@@ -122,11 +143,13 @@ export default async function DevelopmentPortfolioPage() {
       />
 
       {rows.length > 0 ? (
-        <StatGrid cols={4}>
+        <StatGrid cols={6}>
           <Stat label="Projects in build" value={String(inBuild.length)} tone="brand" icon={<IconCode size={16} />} caption="tasks planned and not all done" />
           <Stat label="Blocked tasks" value={String(blocked)} tone={blocked > 0 ? 'danger' : 'neutral'} caption={blockedProjects > 0 ? `across ${blockedProjects} project${blockedProjects === 1 ? '' : 's'}` : 'nothing blocked'} />
           <Stat label="Tasks in review" value={String(inReview)} tone={inReview > 0 ? 'info' : 'neutral'} caption="awaiting QA or a reviewer" />
           <Stat label="Builds recorded" value={String(rows.reduce((n, r) => n + r.builds.total, 0))} tone="neutral" caption="build deliverables across projects" />
+          <Stat label="Without an active plan" value={String(rows.filter((r) => r.coverage.planStatus !== 'active').length)} tone={rows.some((r) => r.coverage.planStatus !== 'active') ? 'warning' : 'success'} caption="Phase 2 blueprint not active" />
+          <Stat label="Without a test plan" value={String(rows.filter((r) => !r.coverage.hasTestPlan).length)} tone={rows.some((r) => !r.coverage.hasTestPlan) ? 'warning' : 'success'} caption="QA handoff not drafted" />
         </StatGrid>
       ) : null}
 

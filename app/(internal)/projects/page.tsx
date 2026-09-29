@@ -4,7 +4,8 @@ import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { listProjectsForTable } from '@/modules/projects/queries';
+import { listPendingPaymentClaims } from '@/modules/finance/queries';
+import { listPhaseFourEscalations, listProjectsForTable } from '@/modules/projects/queries';
 import { PROJECT_STATUSES } from '@/modules/projects/schema';
 import { SavedViewsBar } from '../saved-views-bar';
 import {
@@ -15,6 +16,8 @@ import {
   FilterBar,
   FilterChips,
   humanize,
+  IconAlert,
+  IconInvoices,
   IconProjects,
   paginate,
   Pagination,
@@ -114,10 +117,26 @@ export default async function ProjectsPage({
   const { page: pageParam, sort: sortKey, dir, status } = await searchParams;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
   const currentQuery = [status ? `status=${status}` : '', sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
-  const [allProjects, savedViews] = await Promise.all([listProjectsForTable(), listSavedViews('/projects')]);
+  const [allProjects, savedViews, escalations, pendingClaims] = await Promise.all([
+    listProjectsForTable(),
+    listSavedViews('/projects'),
+    listPhaseFourEscalations(),
+    can(context.role, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
+  ]);
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const late = allProjects.filter((p) => p.status !== 'completed' && p.status !== 'cancelled' && p.endsOn !== null && p.endsOn < todayKey);
+  const atRiskIds = new Set([...escalations.map((e) => e.projectId), ...late.map((p) => p.id)]);
+  const paymentBlockedIds = new Set(pendingClaims.map((c) => c.projectId));
   const countByStatus = new Map<string, number>();
   for (const p of allProjects) countByStatus.set(p.status, (countByStatus.get(p.status) ?? 0) + 1);
-  const filtered = status ? allProjects.filter((p) => p.status === status) : allProjects;
+  const filtered =
+    status === 'at_risk'
+      ? allProjects.filter((p) => atRiskIds.has(p.id))
+      : status === 'payment_blocked'
+        ? allProjects.filter((p) => paymentBlockedIds.has(p.id))
+        : status
+          ? allProjects.filter((p) => p.status === status)
+          : allProjects;
   const projects = sortRows(filtered, sortKey, direction, COMPARATORS);
   const qs = (extra: string) => `/projects?${status ? `status=${status}&` : ''}${extra}`;
   const { page, pageCount, rows: pageRows } = paginate(projects, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
@@ -135,10 +154,14 @@ export default async function ProjectsPage({
 
       {allProjects.length > 0 ? (
         <StatGrid cols={6}>
-          <Stat label="Total projects" value={String(allProjects.length)} tone="brand" icon={<IconProjects size={16} />} />
-          {PROJECT_STATUSES.filter((s) => s !== 'cancelled').map((s) => (
+          <Stat label="Total projects" value={String(allProjects.length)} caption={`${countByStatus.get('completed') ?? 0} completed · ${countByStatus.get('cancelled') ?? 0} cancelled`} tone="brand" icon={<IconProjects size={16} />} href="/projects" />
+          {(['planning', 'onboarding', 'active', 'on_hold'] as const).map((s) => (
             <Stat key={s} label={humanize(s)} value={String(countByStatus.get(s) ?? 0)} tone={statusTone(s)} href={`/projects?status=${s}`} />
           ))}
+          <Stat label="At risk" value={String(atRiskIds.size)} caption={`${escalations.length} escalated · ${late.length} past due`} tone={atRiskIds.size > 0 ? 'danger' : 'success'} icon={<IconAlert size={16} />} href="/projects?status=at_risk" />
+          {can(context.role, 'invoice.issue') ? (
+            <Stat label="Payment to verify" value={String(paymentBlockedIds.size)} caption={`${pendingClaims.length} claim${pendingClaims.length === 1 ? '' : 's'} waiting`} tone={paymentBlockedIds.size > 0 ? 'warning' : 'neutral'} icon={<IconInvoices size={16} />} href="/projects?status=payment_blocked" />
+          ) : null}
         </StatGrid>
       ) : null}
 
@@ -147,6 +170,7 @@ export default async function ProjectsPage({
           <FilterChips
             options={[
               { key: 'all', label: 'All', href: '/projects', active: !status },
+              { key: 'at_risk', label: `At risk (${atRiskIds.size})`, href: '/projects?status=at_risk', active: status === 'at_risk' },
               ...PROJECT_STATUSES.map((s) => ({
                 key: s,
                 label: `${humanize(s)} (${countByStatus.get(s) ?? 0})`,

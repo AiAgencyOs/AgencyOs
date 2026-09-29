@@ -53,6 +53,7 @@ import { can } from '@/lib/authz/permissions';
 import {
   listDeliverables,
   listDevelopmentBreakdown,
+  listInternalRoster,
   listOnboardingItems,
   listProjectFiles,
   listProjectTeam,
@@ -98,7 +99,7 @@ function money(minor: number, currency: string): string {
 }
 
 import { AddDeliverableForm, SubmitDeliverableForm } from './deliverables-panel';
-import { ProductionReadyForm, RaiseDefectForm, SettleDefectForm } from './qa-panel';
+import { DefectTriageForm, ProductionReadyForm, RaiseDefectForm, SettleDefectForm } from './qa-panel';
 import { RecordClaimForm, VerifyClaimForm } from './claims-panel';
 import { ProjectGroupPanel } from './group-panel';
 import { PhaseTwoPanel } from './phase-two-panel';
@@ -248,10 +249,11 @@ export default async function ProjectPage({
    * (Development, Team, Files, Activity), so the overview can never disagree
    * with the tab it summarises.
    */
-  const [{ tasks }, team, files, clientName] = await Promise.all([
+  const [{ tasks }, team, files, roster, clientName] = await Promise.all([
     listDevelopmentBreakdown(projectId),
     listProjectTeam(projectId),
     listProjectFiles(projectId),
+    listInternalRoster(),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
   ]);
   const nameByUser = new Map(team.map((m) => [m.userId, m.fullName]));
@@ -978,6 +980,8 @@ export default async function ProjectPage({
                 <p className="mt-1 whitespace-pre-wrap text-[13px] text-muted">{d.reproduction}</p>
                 {d.resolution ? <p className="mt-1 text-[13px]">{d.resolution}</p> : null}
 
+                {d.assignee_id ? <p className="mt-1 text-xs text-muted">Assigned to {roster.find((r) => r.userId === d.assignee_id)?.fullName ?? 'a member'}</p> : null}
+                {mayWriteProject ? <DefectTriageForm projectId={projectId} defect={d} roster={roster.map((r) => ({ userId: r.userId, fullName: r.fullName }))} /> : null}
                 {mayWriteProject ? <SettleDefectForm projectId={projectId} defect={d} /> : null}
               </li>
             ))}

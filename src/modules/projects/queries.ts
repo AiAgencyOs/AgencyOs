@@ -2740,3 +2740,103 @@ export async function listProjectsForTable(limit = 200): Promise<ProjectTableRow
     milestonesTotal: progress.get(r.id)?.total ?? 0,
   }));
 }
+
+
+export type RequirementsOverview = {
+  frozenScopes: number;
+  openChangeRequests: number;
+  pendingApprovalChangeRequests: number;
+  openClarifications: number;
+  projects: {
+    projectId: string;
+    projectName: string;
+    scopeVersion: number | null;
+    scopeStatus: string | null;
+    openChangeRequests: number;
+    openClarifications: number;
+  }[];
+};
+
+/**
+ * The org-wide state of scope — SCR-028's other half. Counts are read from
+ * the tables' own status vocabularies (the CHECK constraints in
+ * 20260808…scope): a scope is frozen once `status <> 'draft'`, a change
+ * request is open until approved / rejected / implemented / closed, a
+ * clarification is open until resolved or routed. Four bounded reads, no
+ * per-project fan-out.
+ */
+export async function readRequirementsOverview(): Promise<RequirementsOverview> {
+  const supabase = await createClient();
+
+  const [{ data: projects, error: projectsError }, { data: scopes, error: scopesError }, { data: crs, error: crsError }, { data: planQs, error: planQsError }, { data: uiQs, error: uiQsError }] =
+    await Promise.all([
+      supabase.schema('projects').from('projects').select('id, name').is('deleted_at', null).limit(500),
+      supabase.schema('projects').from('scope_versions').select('project_id, version, status').order('version', { ascending: false }).limit(2000),
+      supabase.schema('projects').from('change_requests').select('project_id, status').limit(2000),
+      supabase.schema('projects').from('plan_clarifications').select('plan_id, status, project_plans:plan_id(project_id)').limit(2000),
+      supabase.schema('projects').from('clarification_requests').select('project_id, status').limit(2000),
+    ]);
+  if (projectsError) unreadable('readRequirementsOverview.projects', projectsError);
+  if (scopesError) unreadable('readRequirementsOverview.scopes', scopesError);
+  if (crsError) unreadable('readRequirementsOverview.changeRequests', crsError);
+  if (planQsError) unreadable('readRequirementsOverview.planClarifications', planQsError);
+  if (uiQsError) unreadable('readRequirementsOverview.clarifications', uiQsError);
+
+  const OPEN_CR = new Set(['submitted', 'analysing', 'classified', 'pending_approval']);
+  const OPEN_Q = new Set(['open', 'asked', 'answered']);
+
+  const latestScope = new Map<string, { version: number; status: string }>();
+  for (const sv of scopes ?? []) if (!latestScope.has(sv.project_id)) latestScope.set(sv.project_id, { version: sv.version, status: sv.status });
+  const activeScope = new Map<string, { version: number; status: string }>();
+  for (const sv of scopes ?? []) if (sv.status === 'active' && !activeScope.has(sv.project_id)) activeScope.set(sv.project_id, { version: sv.version, status: sv.status });
+
+  const crByProject = new Map<string, number>();
+  for (const cr of crs ?? []) if (OPEN_CR.has(cr.status)) crByProject.set(cr.project_id, (crByProject.get(cr.project_id) ?? 0) + 1);
+
+  const qByProject = new Map<string, number>();
+  for (const q of planQs ?? []) {
+    const embedded = q.project_plans as unknown as { project_id: string } | { project_id: string }[] | null;
+    const pid = Array.isArray(embedded) ? embedded[0]?.project_id : embedded?.project_id;
+    if (pid && OPEN_Q.has(q.status)) qByProject.set(pid, (qByProject.get(pid) ?? 0) + 1);
+  }
+  for (const q of uiQs ?? []) if (q.status === 'open') qByProject.set(q.project_id, (qByProject.get(q.project_id) ?? 0) + 1);
+
+  return {
+    frozenScopes: (scopes ?? []).filter((sv) => sv.status !== 'draft').length,
+    openChangeRequests: (crs ?? []).filter((cr) => OPEN_CR.has(cr.status)).length,
+    pendingApprovalChangeRequests: (crs ?? []).filter((cr) => cr.status === 'pending_approval').length,
+    openClarifications: [...qByProject.values()].reduce((n, c) => n + c, 0),
+    projects: (projects ?? []).map((p) => {
+      const scope = activeScope.get(p.id) ?? latestScope.get(p.id) ?? null;
+      return {
+        projectId: p.id,
+        projectName: p.name,
+        scopeVersion: scope?.version ?? null,
+        scopeStatus: scope?.status ?? null,
+        openChangeRequests: crByProject.get(p.id) ?? 0,
+        openClarifications: qByProject.get(p.id) ?? 0,
+      };
+    }),
+  };
+}
+
+export type PlanCoverage = { planStatus: string | null; planVersion: number | null; hasTestPlan: boolean };
+
+/** Per project: the latest operational plan's status and whether a QA test plan exists — the Development index's two missing columns. */
+export async function readPlanCoverageByProject(): Promise<Map<string, PlanCoverage>> {
+  const supabase = await createClient();
+  const [{ data: plans, error: plansError }, { data: testPlans, error: testPlansError }] = await Promise.all([
+    supabase.schema('projects').from('project_plans').select('project_id, version, status').order('version', { ascending: false }).limit(2000),
+    supabase.schema('qa').from('test_plans').select('project_id').limit(2000),
+  ]);
+  if (plansError) unreadable('readPlanCoverageByProject.plans', plansError);
+  if (testPlansError) unreadable('readPlanCoverageByProject.testPlans', testPlansError);
+
+  const out = new Map<string, PlanCoverage>();
+  for (const pl of plans ?? []) if (!out.has(pl.project_id)) out.set(pl.project_id, { planStatus: pl.status, planVersion: pl.version, hasTestPlan: false });
+  for (const tp of testPlans ?? []) {
+    const cur = out.get(tp.project_id) ?? { planStatus: null, planVersion: null, hasTestPlan: false };
+    out.set(tp.project_id, { ...cur, hasTestPlan: true });
+  }
+  return out;
+}

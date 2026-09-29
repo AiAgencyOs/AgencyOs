@@ -7,6 +7,7 @@ import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listInvoices, listPendingPaymentClaims } from '@/modules/finance/queries';
+import { INVOICE_STATUSES } from '@/modules/finance/schema';
 import { SavedViewsBar } from '../saved-views-bar';
 import {
   Callout,
@@ -23,6 +24,16 @@ import {
   PermissionDenied,
   sortRows,
   type SortDirection,
+  Stat,
+  StatGrid,
+  FilterBar,
+  FilterChips,
+  IconCheck,
+  IconClock,
+  humanize,
+  cx,
+  inputClass,
+  buttonClass,
 } from '@/ui';
 
 export const metadata: Metadata = { title: 'Invoices' };
@@ -98,21 +109,35 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
 export default async function InvoicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; sort?: string; dir?: string }>;
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; q?: string }>;
 }) {
   const context = await requireInternal('/invoices');
   const clock = await agencyClock();
   if (!can(context.role, 'invoice.read')) return <PermissionDenied />;
 
-  const { page: pageParam, sort: sortKey, dir } = await searchParams;
+  const { page: pageParam, sort: sortKey, dir, status, q } = await searchParams;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
-  const currentQuery = sortKey ? `sort=${sortKey}&dir=${direction}` : '';
-  const [rawInvoices, pendingClaims, savedViews] = await Promise.all([
-    listInvoices(),
+  const keep = [status ? `status=${status}` : '', q ? `q=${encodeURIComponent(q)}` : ''].filter(Boolean);
+  const currentQuery = [...keep, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
+  const qs = (extra: string) => `/invoices?${[...keep, extra].filter(Boolean).join('&')}`;
+  const [allInvoices, pendingClaims, savedViews] = await Promise.all([
+    listInvoices(500),
     can(context.role, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
     listSavedViews('/invoices'),
   ]);
+  const needle = (q ?? '').trim().toLowerCase();
+  const unpaid = (i: Row) => i.status === 'issued' || i.status === 'partially_paid' || i.status === 'overdue';
+  const rawInvoices = allInvoices.filter(
+    (i) => (!status || (status === 'unpaid' ? unpaid(i) : i.status === status)) && (!needle || i.number.toLowerCase().includes(needle)),
+  );
   const invoices = sortRows(rawInvoices, sortKey, direction, COMPARATORS);
+  const countBy = (st: string) => allInvoices.filter((i) => i.status === st).length;
+  const currency = allInvoices[0]?.currency ?? 'INR';
+  const sum = (pred: (i: Row) => boolean) => allInvoices.filter((i) => i.currency === currency && pred(i)).reduce((n, i) => n + i.total_minor - (pred === unpaid ? i.paid_minor : 0), 0);
+  const outstanding = allInvoices.filter((i) => i.currency === currency && unpaid(i)).reduce((n, i) => n + i.total_minor - i.paid_minor, 0);
+  const overdueAmount = allInvoices.filter((i) => i.currency === currency && i.status === 'overdue').reduce((n, i) => n + i.total_minor - i.paid_minor, 0);
+  const paidAmount = allInvoices.filter((i) => i.currency === currency && i.status === 'paid').reduce((n, i) => n + i.total_minor, 0);
+  void sum;
   const { page, pageCount, rows: pageRows } = paginate(invoices, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
 
   return (
@@ -125,6 +150,33 @@ export default async function InvoicesPage({
             : `${invoices.length} invoice${invoices.length === 1 ? '' : 's'}.`
         }
       />
+
+      {allInvoices.length > 0 ? (
+        <StatGrid cols={5}>
+          <Stat label="Invoices" value={String(allInvoices.length)} caption={`${countBy('draft')} draft · ${countBy('pending_approval')} awaiting approval`} tone="brand" icon={<IconInvoices size={16} />} href="/invoices" />
+          <Stat label="Paid" value={String(countBy('paid'))} caption={money(paidAmount, currency)} tone="success" icon={<IconCheck size={16} />} href="/invoices?status=paid" />
+          <Stat label="Unpaid" value={String(allInvoices.filter(unpaid).length)} caption={`${money(outstanding, currency)} outstanding`} tone={outstanding > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/invoices?status=unpaid" />
+          <Stat label="Overdue" value={String(countBy('overdue'))} caption={money(overdueAmount, currency)} tone={countBy('overdue') > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} href="/invoices?status=overdue" />
+          <Stat label="Void" value={String(countBy('void'))} caption="Cancelled bills" tone="neutral" icon={<IconInvoices size={16} />} href="/invoices?status=void" />
+        </StatGrid>
+      ) : null}
+
+      <FilterBar>
+        <FilterChips
+          options={[
+            { key: 'all', label: `All (${allInvoices.length})`, href: q ? `/invoices?q=${encodeURIComponent(q)}` : '/invoices', active: !status },
+            { key: 'unpaid', label: `Unpaid (${allInvoices.filter(unpaid).length})`, href: `/invoices?status=unpaid${q ? `&q=${encodeURIComponent(q)}` : ''}`, active: status === 'unpaid' },
+            ...INVOICE_STATUSES.map((st) => ({ key: st, label: `${humanize(st)} (${countBy(st)})`, href: `/invoices?status=${st}${q ? `&q=${encodeURIComponent(q)}` : ''}`, active: status === st })),
+          ]}
+        />
+        <form method="get" action="/invoices" className="flex items-center gap-2">
+          {status ? <input type="hidden" name="status" value={status} /> : null}
+          <input name="q" defaultValue={q ?? ''} placeholder="Invoice number…" aria-label="Search invoices" className={cx(inputClass, 'w-48')} />
+          <button type="submit" className={buttonClass('secondary', 'sm')}>
+            Search
+          </button>
+        </form>
+      </FilterBar>
 
       <SavedViewsBar page="/invoices" currentQuery={currentQuery} views={savedViews} />
 
@@ -149,13 +201,13 @@ export default async function InvoicesPage({
             sort={{
               key: sortKey,
               direction,
-              makeHref: (key, nextDirection) => `/invoices?sort=${key}&dir=${nextDirection}`,
+              makeHref: (key, nextDirection) => qs(`sort=${key}&dir=${nextDirection}`),
             }}
           />
           <Pagination
             page={page}
             pageCount={pageCount}
-            makeHref={(p) => `/invoices?${sortKey ? `sort=${sortKey}&dir=${direction}&` : ''}page=${p}`}
+            makeHref={(p) => qs(`${sortKey ? `sort=${sortKey}&dir=${direction}&` : ''}page=${p}`)}
           />
         </>
       ) : (

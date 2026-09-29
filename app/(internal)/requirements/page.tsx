@@ -5,6 +5,7 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listProposedRequirements } from '@/modules/crm/queries';
+import { readRequirementsOverview } from '@/modules/projects/queries';
 import {
   Avatar,
   Badge,
@@ -42,7 +43,7 @@ export default async function RequirementsPage() {
   if (!can(context.role, 'lead.read')) return <PermissionDenied />;
   const clock = await agencyClock();
 
-  const proposed = await listProposedRequirements();
+  const [proposed, overview] = await Promise.all([listProposedRequirements(), readRequirementsOverview()]);
   const now = Date.now();
   const ageDays = (iso: string) => Math.floor((now - new Date(iso).getTime()) / 86_400_000);
   const fromAgent = proposed.filter((r) => r.source === 'agent').length;
@@ -88,6 +89,35 @@ export default async function RequirementsPage() {
         <Stat label="Drafted by hand" value={String(proposed.length - fromAgent)} tone="info" icon={<IconUser size={16} />} />
         <Stat label="Waiting 3+ days" value={String(stale)} caption={oldest === null ? undefined : `Oldest: ${oldest} day${oldest === 1 ? '' : 's'}`} tone={stale > 0 ? 'danger' : 'success'} icon={<IconCheck size={16} />} />
       </StatGrid>
+
+      <StatGrid cols={4}>
+        <Stat label="Frozen scopes" value={String(overview.frozenScopes)} caption="Scope versions past draft" tone="success" icon={<IconCheck size={16} />} />
+        <Stat label="Open change requests" value={String(overview.openChangeRequests)} caption={`${overview.pendingApprovalChangeRequests} awaiting approval`} tone={overview.openChangeRequests > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/approvals" />
+        <Stat label="Open clarifications" value={String(overview.openClarifications)} caption="Plan and UI questions not resolved" tone={overview.openClarifications > 0 ? 'info' : 'neutral'} icon={<IconSparkle size={16} />} />
+        <Stat label="Projects with scope" value={String(overview.projects.filter((p) => p.scopeVersion !== null).length)} caption={`of ${overview.projects.length}`} tone="brand" icon={<IconUser size={16} />} href="/projects" />
+      </StatGrid>
+
+      <Card>
+        <CardHeader title="Requirement sets by project" description="The scope version each project works to, and what is open against it." />
+        {overview.projects.length === 0 ? (
+          <EmptyState title="No projects yet" />
+        ) : (
+          <div className="px-4 pb-4 sm:px-5">
+            <DataTable
+              dense
+              rows={overview.projects}
+              getKey={(p) => p.projectId}
+              href={(p) => `/projects/${p.projectId}/scope`}
+              columns={[
+                { key: 'project', header: 'Project', primary: true, cell: (p) => p.projectName },
+                { key: 'scope', header: 'Scope version', cell: (p) => (p.scopeVersion === null ? <Badge tone="neutral">none</Badge> : <span className="flex items-center gap-1.5"><span className="font-mono text-xs">v{p.scopeVersion}</span><Badge tone={p.scopeStatus === 'active' ? 'success' : 'neutral'}>{p.scopeStatus ?? '—'}</Badge></span>) },
+                { key: 'crs', header: 'Open change requests', align: 'right', cellClassName: 'tabular', cell: (p) => String(p.openChangeRequests) },
+                { key: 'qs', header: 'Open clarifications', align: 'right', cellClassName: 'tabular', cell: (p) => String(p.openClarifications) },
+              ]}
+            />
+          </div>
+        )}
+      </Card>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(18rem,1fr)]">
         <Card>
