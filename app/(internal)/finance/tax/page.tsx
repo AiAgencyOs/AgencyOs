@@ -17,6 +17,8 @@ import {
   type TaxTotals,
 } from '@/modules/finance/tax-report';
 import { listTaxPeriodLocks, lockStateFor } from '@/modules/finance/tax-lock-queries';
+import { describeStateCode, gstIdentityIssues, returnPeriodFor, selectForReturn } from '@/modules/finance/gstr';
+import { listGstrInvoices, readGstIdentity } from '@/modules/finance/gstr-queries';
 import { SavedViewsBar } from '../../saved-views-bar';
 import {
   Badge,
@@ -30,6 +32,7 @@ import {
   EmptyState,
   humanize,
   IconDownload,
+  IconFile,
   IconInvoices,
   IconLock,
   IconRupee,
@@ -135,13 +138,21 @@ export default async function TaxReportPage({
   };
   const currentQuery = qs({}).slice(1);
 
-  const [allInvoices, allReceipts, allExpenses, savedViews, locks] = await Promise.all([
+  const [allInvoices, allReceipts, allExpenses, savedViews, locks, gstIdentity, gstrRows] = await Promise.all([
     listTaxReportInvoices(),
     listReceipts(),
     listExpenses(),
     listSavedViews('/finance/tax'),
     listTaxPeriodLocks(),
+    readGstIdentity(),
+    listGstrInvoices(),
   ]);
+  // E5: the GSTR files are drawn from this same window. What the file would
+  // OMIT is worked out here so the screen can say it before the download.
+  const returnPeriod = returnPeriodFor(period);
+  const identityIssues = gstIdentityIssues(gstIdentity);
+  const gstrSelection = selectForReturn(gstrRows, period);
+  const gstrReady = returnPeriod !== null && identityIssues.length === 0;
   // SCR-056: the lock state of THIS window. The resolver's half-open ISO
   // instants become calendar days, the shape finance.tax_period_locks holds.
   const lockWindow = period.from && period.to ? { start: period.from.slice(0, 10), end: period.to.slice(0, 10) } : null;
@@ -173,6 +184,16 @@ export default async function TaxReportPage({
             <a href={`/api/finance/tax/export${qs({ page: undefined, sort: undefined, dir: undefined, mode: undefined })}`} className={buttonClass('secondary', 'sm')}>
               <IconDownload size={14} /> Export CSV
             </a>
+            {gstrReady ? (
+              <>
+                <a href={`/api/finance/gst/gstr1${qs({ page: undefined, sort: undefined, dir: undefined, mode: undefined })}`} className={buttonClass('secondary', 'sm')}>
+                  <IconFile size={14} /> GSTR-1 (JSON)
+                </a>
+                <a href={`/api/finance/gst/gstr3b${qs({ page: undefined, sort: undefined, dir: undefined, mode: undefined })}`} className={buttonClass('secondary', 'sm')}>
+                  <IconFile size={14} /> GSTR-3B (JSON)
+                </a>
+              </>
+            ) : null}
           </div>
         }
       />
@@ -258,6 +279,62 @@ export default async function TaxReportPage({
           “Unconfirmed”, not under GST or non-GST — confirm the mode on each project’s Billing section so the return can be filed from this screen.
         </Callout>
       ) : null}
+
+      {/*
+        GSTR-1 / GSTR-3B — bucket E5 (owner decision 2026-09-30). The two
+        files are drawn from the GST register of THIS window in the shape the
+        GST portal's offline tool reads. Nothing is guessed: an invoice the
+        file cannot state (no place-of-supply code, a GSTIN that fails its
+        checksum, a non-INR currency, no lines) is listed here and omitted
+        from the file, and the agency's own identity comes from Settings.
+      */}
+      <Card>
+        <CardHeader
+          icon={<IconFile size={16} />}
+          title="GST returns (offline-tool JSON)"
+          description={
+            returnPeriod
+              ? `Return period ${returnPeriod.slice(0, 2)}/${returnPeriod.slice(2)} — ${gstrSelection.ready.length} GST invoice${gstrSelection.ready.length === 1 ? '' : 's'} in the file${gstrSelection.voided.length > 0 ? `, ${gstrSelection.voided.length} void counted as cancelled documents` : ''}${gstrSelection.excluded.nonGst > 0 ? `, ${gstrSelection.excluded.nonGst} non-GST left out` : ''}${gstrSelection.excluded.unconfirmed > 0 ? `, ${gstrSelection.excluded.unconfirmed} unconfirmed left out` : ''}. GSTR-3B states ITC and inward supplies as nil: no purchase register exists here.`
+              : 'A return is for one month or one quarter. Pick either above to export GSTR-1 and GSTR-3B; a financial year, a custom range and "All time" are not return periods.'
+          }
+          actions={
+            identityIssues.length > 0 ? (
+              <Badge tone="warning" dot>identity incomplete</Badge>
+            ) : gstrSelection.unresolved.length > 0 ? (
+              <Badge tone="warning" dot>{gstrSelection.unresolved.length} unresolved</Badge>
+            ) : returnPeriod ? (
+              <Badge tone="success" dot>ready</Badge>
+            ) : null
+          }
+        />
+        {identityIssues.length > 0 ? (
+          <div className="px-4 py-3 sm:px-5">
+            <Callout tone="warning">
+              The exports refuse until the agency’s own GST identity is complete: {identityIssues.map((i) => i.reason).join(' ')}{' '}
+              <Link href="/settings/finance" className="font-medium text-brand hover:underline">Set it under Settings › Finance</Link> (owner only).
+            </Callout>
+          </div>
+        ) : null}
+        {gstrSelection.unresolved.length > 0 ? (
+          <div className="flex flex-col gap-3 px-4 py-3 sm:px-5">
+            <Callout tone="warning">
+              Unresolved — {gstrSelection.unresolved.length} GST invoice{gstrSelection.unresolved.length === 1 ? ' is' : 's are'} left OUT of both files because the file cannot state
+              {gstrSelection.unresolved.length === 1 ? ' it' : ' them'} without guessing. Fix each where it says and export again; the agency files from{' '}
+              {gstIdentity.stateCode ? describeStateCode(gstIdentity.stateCode) : 'an unset state'}.
+            </Callout>
+            <DataTable
+              rows={gstrSelection.unresolved}
+              dense
+              columns={[
+                { key: 'number', header: 'Invoice', primary: true, cellClassName: 'font-mono text-xs', cell: (u) => u.number },
+                { key: 'reason', header: 'What is missing', cell: (u) => u.reason },
+                { key: 'fix', header: 'Fix at', cellClassName: 'text-muted', cell: (u) => <Link href={u.fixHref} className="text-brand hover:underline">{u.fixLabel}</Link> },
+              ]}
+              getKey={(u) => u.invoiceId}
+            />
+          </div>
+        ) : null}
+      </Card>
 
       {splits.length === 0 ? (
         <EmptyState icon={<IconInvoices size={22} />} title="Nothing issued in this period" description="Pick a wider period, or issue an invoice. Tax figures appear once an invoice is issued." />
