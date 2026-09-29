@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
-import { Badge, DataTable, DetailList, DetailRow, StatusBadge } from '@/ui';
+import { Badge, DataTable, DetailList, DetailRow, StatusBadge, PermissionDenied } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 import {
   getClientAccountName,
@@ -63,7 +63,7 @@ export default async function InvoicePage({
   const context = await requireInternal(`/invoices/${invoiceId}`);
 
   const clock = await agencyClock();
-  if (!can(context.role, 'invoice.read')) redirect('/dashboard');
+  if (!can(context.role, 'invoice.read')) return <PermissionDenied />;
 
   const invoice = await getInvoice(invoiceId);
   if (!invoice) notFound();

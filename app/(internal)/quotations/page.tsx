@@ -1,21 +1,28 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listProposals } from '@/modules/sales/queries';
+import { SavedViewsBar } from '../saved-views-bar';
 import {
   Badge,
   DataTable,
+  DEFAULT_PAGE_SIZE,
   EmptyState,
   FilterBar,
   FilterChips,
   humanize,
   IconInvoices,
+  paginate,
+  Pagination,
   PageHeader,
   statusTone,
   type Column,
+  PermissionDenied,
+  sortRows,
+  type SortDirection,
 } from '@/ui';
 
 export const metadata: Metadata = { title: 'Quotations' };
@@ -56,6 +63,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     align: 'right',
     cellClassName: 'tabular font-medium',
     cell: (p) => money(p.total_minor, p.currency),
+    sortKey: 'total',
   },
   {
     key: 'valid_until',
@@ -63,6 +71,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     align: 'right',
     cellClassName: 'text-muted',
     cell: (p) => (p.valid_until ? clock.date(p.valid_until) : '—'),
+    sortKey: 'valid_until',
   },
   {
     key: 'created',
@@ -70,8 +79,15 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     align: 'right',
     cellClassName: 'text-muted',
     cell: (p) => clock.date(p.created_at),
+    sortKey: 'created',
   },
 ];
+
+const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
+  total: (a, b) => a.total_minor - b.total_minor,
+  valid_until: (a, b) => (a.valid_until ?? '').localeCompare(b.valid_until ?? ''),
+  created: (a, b) => a.created_at.localeCompare(b.created_at),
+};
 
 /**
  * Every quotation across every deal — SCR-011. The per-lead quotation panel
@@ -86,14 +102,23 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
 export default async function QuotationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; page?: string; sort?: string; dir?: string }>;
 }) {
   const context = await requireInternal('/quotations');
   const clock = await agencyClock();
-  if (!can(context.role, 'lead.read')) redirect('/dashboard');
+  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
 
-  const { status } = await searchParams;
-  const quotations = await listProposals({ status });
+  const { status, page: pageParam, sort: sortKey, dir } = await searchParams;
+  const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
+  const currentQuery = [status ? `status=${status}` : '', sortKey ? `sort=${sortKey}&dir=${direction}` : '']
+    .filter(Boolean)
+    .join('&');
+  const [rawQuotations, savedViews] = await Promise.all([
+    listProposals({ status }),
+    listSavedViews('/quotations'),
+  ]);
+  const quotations = sortRows(rawQuotations, sortKey, direction, COMPARATORS);
+  const { page, pageCount, rows: pageRows } = paginate(quotations, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
 
   return (
     <div className="flex flex-col gap-5">
@@ -120,13 +145,30 @@ export default async function QuotationsPage({
         />
       </FilterBar>
 
+      <SavedViewsBar page="/quotations" currentQuery={currentQuery} views={savedViews} />
+
       {quotations.length > 0 ? (
-        <DataTable
-          rows={quotations}
-          columns={columnsFor(clock)}
-          getKey={(p) => p.id}
-          href={(p) => `/leads/${p.leadId}`}
-        />
+        <>
+          <DataTable
+            rows={pageRows}
+            columns={columnsFor(clock)}
+            getKey={(p) => p.id}
+            href={(p) => `/leads/${p.leadId}`}
+            sort={{
+              key: sortKey,
+              direction,
+              makeHref: (key, nextDirection) =>
+                `/quotations?${status ? `status=${status}&` : ''}sort=${key}&dir=${nextDirection}`,
+            }}
+          />
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            makeHref={(p) =>
+              `/quotations?${status ? `status=${status}&` : ''}${sortKey ? `sort=${sortKey}&dir=${direction}&` : ''}page=${p}`
+            }
+          />
+        </>
       ) : (
         <EmptyState
           icon={<IconInvoices size={22} />}

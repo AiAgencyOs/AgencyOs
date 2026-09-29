@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 
 import { getSalesFunnel } from '@/lib/admin/sales-funnel';
 import { requireInternal } from '@/lib/auth/session';
@@ -7,9 +6,7 @@ import { can } from '@/lib/authz/permissions';
 import { listInvoices } from '@/modules/finance/queries';
 import { listOpenDefects } from '@/modules/qa/queries';
 import { listProjects } from '@/modules/projects/queries';
-import { Card, CardHeader, PageHeader } from '@/ui';
-
-import { SimpleBarChart } from './simple-bar-chart';
+import { BarChart, Card, CardHeader, PageHeader, PermissionDenied } from '@/ui';
 
 export const metadata: Metadata = { title: 'Reports' };
 
@@ -47,7 +44,7 @@ const SEVERITY_COLOR: Record<string, string> = {
  */
 export default async function ReportsPage() {
   const context = await requireInternal('/reports');
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const [funnel, projects, invoices, defects] = await Promise.all([
     getSalesFunnel(),
@@ -96,14 +93,14 @@ export default async function ReportsPage() {
         <Card>
           <CardHeader title="Sales pipeline" description={`${funnel.counts.leads} leads in the last 90 days`} />
           <div className="px-2 pb-4 sm:px-3">
-            {funnelData.length > 0 ? <SimpleBarChart data={funnelData} /> : <p className="px-3 text-[13px] text-muted">No leads in this window.</p>}
+            {funnelData.length > 0 ? <BarChart data={funnelData} /> : <p className="px-3 text-[13px] text-muted">No leads in this window.</p>}
           </div>
         </Card>
 
         <Card>
           <CardHeader title="Projects by status" description={`${projects.length} project${projects.length === 1 ? '' : 's'}`} />
           <div className="px-2 pb-4 sm:px-3">
-            {projectData.length > 0 ? <SimpleBarChart data={projectData} /> : <p className="px-3 text-[13px] text-muted">No projects yet.</p>}
+            {projectData.length > 0 ? <BarChart data={projectData} /> : <p className="px-3 text-[13px] text-muted">No projects yet.</p>}
           </div>
         </Card>
 
@@ -111,7 +108,7 @@ export default async function ReportsPage() {
           <CardHeader title="Open defects by severity" description={defects.length === 0 ? 'None open' : `${defects.length} open`} />
           <div className="px-2 pb-4 sm:px-3">
             {defectData.length > 0 ? (
-              <SimpleBarChart data={defectData} colors={defectData.map((d) => SEVERITY_COLOR[d.label] ?? 'var(--muted)')} />
+              <BarChart data={defectData} colors={defectData.map((d) => SEVERITY_COLOR[d.label] ?? 'var(--muted)')} />
             ) : (
               <p className="px-3 text-[13px] text-muted">No open defects.</p>
             )}
@@ -125,14 +122,14 @@ export default async function ReportsPage() {
               [...byCurrency.entries()].map(([currency, totals]) => (
                 <div key={currency}>
                   <p className="px-3 text-xs font-medium text-muted">{currency}</p>
-                  <SimpleBarChart
+                  <BarChart
                     height={160}
                     data={[
                       { label: 'Invoiced', value: totals.invoiced },
                       { label: 'Received', value: totals.paid },
                     ]}
                     colors={['var(--brand)', 'var(--success)']}
-                    valueFormatter={(v) => money(v, currency)}
+                    currency={currency}
                   />
                   <p className="px-3 text-xs text-muted">
                     {money(totals.invoiced, currency)} invoiced · {money(totals.paid, currency)} received

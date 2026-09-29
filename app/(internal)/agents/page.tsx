@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
 import { aiStatus } from '@/lib/admin/agent-status';
 import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
@@ -12,7 +11,7 @@ import { formatCostMinor, whyNotRun, wouldRun } from '@/lib/admin/agent-eval';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { Badge, Callout, Card, IconAlert, IconCheck, PageHeader, Stat } from '@/ui';
+import { Badge, Callout, Card, IconAgents, IconAlert, IconCheck, IconSparkle, PageHeader, Stat, PermissionDenied } from '@/ui';
 
 export const metadata: Metadata = { title: 'Agents' };
 
@@ -31,7 +30,7 @@ export const metadata: Metadata = { title: 'Agents' };
 export default async function AgentsPage() {
   const context = await requireInternal('/agents');
   const clock = await agencyClock();
-  if (!can(context.role, 'audit.read')) redirect('/dashboard');
+  if (!can(context.role, 'audit.read')) return <PermissionDenied />;
 
   const { providerConfigured, providers, agents } = await aiStatus();
   // G-236: the recorded verification, beside the control that writes it.
@@ -104,9 +103,14 @@ export default async function AgentsPage() {
       ) : null}
 
       <div className="grid grid-cols-3 gap-3">
-        <Stat label="Agents" value={agents.length} />
-        <Stat label="Enabled" value={enabledCount} />
-        <Stat label="Would run now" value={runnable} tone={runnable > 0 ? 'success' : 'neutral'} />
+        <Stat label="Agents" value={agents.length} icon={<IconAgents size={16} />} />
+        <Stat label="Enabled" value={enabledCount} icon={<IconCheck size={16} />} />
+        <Stat
+          label="Would run now"
+          value={runnable}
+          tone={runnable > 0 ? 'success' : 'neutral'}
+          icon={<IconSparkle size={16} />}
+        />
       </div>
 
       <ul className="flex flex-col gap-3">

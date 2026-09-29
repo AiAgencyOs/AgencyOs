@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject, readPlanBoard } from '@/modules/projects/queries';
-import { Badge, PageHeader, type Tone } from '@/ui';
+import { Badge, PageHeader, type Tone, PermissionDenied } from '@/ui';
 
 import { ProjectSubNav } from '../project-subnav';
 
@@ -57,7 +57,7 @@ export default async function ProjectPlanPage({
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/plan`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
@@ -83,7 +83,7 @@ export default async function ProjectPlanPage({
       <p className="max-w-2xl text-[13px] text-muted">
         Operational, never technical. Tables, APIs, coding tasks and UI belong to the Phase 5
         Development Planning Agent, and there is nowhere here to put them (Project Planning §5, §6).{' '}
-        <Link href={`/projects/${projectId}`} className="underline hover:text-fg">
+        <Link href={`/projects/${projectId}`} className="underline hover:text-foreground">
           Back to the project
         </Link>
         .
@@ -151,7 +151,7 @@ export default async function ProjectPlanPage({
                     <p className="text-muted">Ready when: {d.readinessCriteria}</p>
                     <p className="text-muted">Evidence: {d.evidenceRequired}</p>
                     {d.ambiguityNote ? (
-                      <p className="text-fg">Unclear: {d.ambiguityNote}</p>
+                      <p className="text-foreground">Unclear: {d.ambiguityNote}</p>
                     ) : null}
                     {!d.scopeItemId ? (
                       <p className="text-muted">

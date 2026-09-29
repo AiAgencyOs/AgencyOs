@@ -41,6 +41,10 @@ export type LedgerRow = {
   cost_minor: number;
 };
 
+export type LedgerDayRow = { day: string; runs: number; cost_minor: number };
+
+export type DailyUsage = { day: string; runs: number; costMinor: number };
+
 /**
  * The same answer, from the rollup.
  *
@@ -75,4 +79,26 @@ export function aggregateLedger(rows: readonly LedgerRow[]): {
       costMinor: perAgent.reduce((n, a) => n + a.costMinor, 0),
     },
   };
+}
+
+/**
+ * The ledger by day instead of by agent — the trend a spend page's own line
+ * chart needs. Summed across every agent and model on that day, same
+ * "invents nothing" rule as `aggregateLedger`: a day nobody ran anything is
+ * simply absent rather than a manufactured zero-height point, so the caller
+ * decides whether to fill gaps for a continuous axis or plot only what
+ * happened.
+ */
+export function aggregateByDay(rows: readonly LedgerDayRow[]): DailyUsage[] {
+  const byDay = new Map<string, DailyUsage>();
+  for (const r of rows) {
+    let d = byDay.get(r.day);
+    if (!d) {
+      d = { day: r.day, runs: 0, costMinor: 0 };
+      byDay.set(r.day, d);
+    }
+    d.runs += r.runs;
+    d.costMinor += r.cost_minor;
+  }
+  return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day));
 }

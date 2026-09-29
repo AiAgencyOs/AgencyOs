@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
@@ -12,7 +12,7 @@ import {
   readProjectSpend,
   readUiCoverage,
 } from '@/modules/projects/queries';
-import { Badge, PageHeader } from '@/ui';
+import { Badge, PageHeader, PermissionDenied } from '@/ui';
 
 import { ProjectSubNav } from '../project-subnav';
 import { DesignSubNav } from './design-subnav';
@@ -65,7 +65,7 @@ export default async function ProjectDesignPage({
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/design`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
@@ -85,7 +85,7 @@ export default async function ProjectDesignPage({
         <Nothing>
           Phase 3 has not started for this project. It opens when Phase 2 completes and the plan is
           active.{' '}
-          <Link href={`/projects/${projectId}`} className="underline hover:text-fg">
+          <Link href={`/projects/${projectId}`} className="underline hover:text-foreground">
             Back to the project
           </Link>
           .
@@ -119,7 +119,7 @@ export default async function ProjectDesignPage({
       <p className="max-w-2xl text-[13px] text-muted">
         Phase status, the screen baseline, the coverage report and project spend. Theme and colour
         options, the review queues, the client loop and the final lock are on their own tabs above.{' '}
-        <Link href={`/projects/${projectId}`} className="underline hover:text-fg">
+        <Link href={`/projects/${projectId}`} className="underline hover:text-foreground">
           Back to the project
         </Link>
         .
@@ -168,7 +168,7 @@ export default async function ProjectDesignPage({
             <span className="text-[13px] text-muted">{trail.baseline.screenCount} screens</span>
             <Link
               href={`/projects/${projectId}/plan`}
-              className="text-[13px] underline hover:text-fg"
+              className="text-[13px] underline hover:text-foreground"
             >
               the plan it was built from
             </Link>

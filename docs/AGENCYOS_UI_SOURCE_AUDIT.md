@@ -1,0 +1,311 @@
+# AgencyOS Admin Panel UI — Source-of-Truth Audit
+
+Stage 1 discovery deliverable for the planned admin panel redesign. Read-only
+analysis of the design source folder; no application code was touched.
+
+**Source folder:** `/Users/bussenhancer/AgencyOS/admin panel ui single truth/`
+
+**Files audited:**
+- 1 PDF — `AgencyOS_Enterprise_Admin_Panel_Complete_Screen_Architecture.pdf` (83 pages, read in full: pages 1-40 by the orchestrating session, pages 41-83 by this audit)
+- 43 JPEG screenshots — `WhatsApp Image 2026-09-21 at 12.24.5x/12.25.0x-14.jpeg` (all 43 reviewed individually)
+
+---
+
+## 1. The PDF: 71-screen information architecture
+
+Structure of the document: p.1 cover, p.2 "Locked UX and Governance
+Principles", p.3 the 71-screen baseline table (by module), p.4
+Phase-to-Admin-Panel visibility matrix, p.5 shared components/screen rules,
+pp.7-8 full 71-screen inventory table, pp.9-80 one page per screen (Purpose /
+Header-Summary-KPI area / Main content & sub-screens / Primary actions /
+Guardrails-status-rules-and-traceability / Implementation checklist),
+p.81-82 §7 "Admin Manageability Matrix — What Must Be Configurable", p.83 §8
+"UI Implementation and QA Checklist" + "Definition of UI architecture
+complete."
+
+### Full 71-screen inventory (module + screen + primary lifecycle phase)
+
+**Global Control (001-004)**
+| # | Screen | Phase |
+|---|---|---|
+| 001 | Command Center | cross-phase |
+| 002 | Global Search | cross-phase |
+| 003 | Notifications & Action Center | cross-phase |
+| 004 | Quick Create / Command Palette | cross-phase |
+
+**Sales & CRM (005-013)**
+| # | Screen | Phase |
+|---|---|---|
+| 005 | Sales Overview & Pipeline | Phase 1-2 |
+| 006 | Leads List | Phase 1-2 |
+| 007 | Lead 360 | Phase 1-2 |
+| 008 | Qualification & Scoring | Phase 1-2 |
+| 009 | Requirements Discovery | Phase 1-2 |
+| 010 | Meetings | Phase 1-2 |
+| 011 | Quotations List | Phase 1-2 |
+| 012 | Create / Edit Quotation | Phase 1-2 |
+| 013 | Follow-ups & Nurture | Phase 1-2 |
+
+**Clients (014-017)**
+| # | Screen | Phase |
+|---|---|---|
+| 014 | Client Management | Phase 2-8 |
+| 015 | Client 360 | Phase 2-8 |
+| 016 | Client Projects & Commercials | Phase 2-8 |
+| 017 | Client Communication, Files & Notes | Phase 2-8 |
+
+**Projects (018-027)**
+| # | Screen | Phase |
+|---|---|---|
+| 018 | All Projects | Phase 2-8 |
+| 019 | Project Overview | Phase 2-8 |
+| 020 | Project Board | Phase 2-8 |
+| 021 | My Tasks | Phase 2-8 |
+| 022 | Project Calendar | Phase 2-8 |
+| 023 | Project Milestones / Gantt | Phase 2-8 |
+| 024 | Project Files | Phase 2-8 |
+| 025 | Project Team | Phase 2-8 |
+| 026 | Project Reports | Phase 2-8 |
+| 027 | Project Settings, Activity & Templates | Phase 2-8 |
+
+**Requirements & Scope (028-031)**
+| # | Screen | Phase |
+|---|---|---|
+| 028 | Requirements Dashboard | Phase 2-3 |
+| 029 | Requirement Set / Detail | Phase 2-3 |
+| 030 | Scope Versions & Freeze | Phase 2-3 |
+| 031 | Change Requests & Traceability | cross-phase |
+
+**Design & Prototype (032-038)**
+| # | Screen | Phase |
+|---|---|---|
+| 032 | Design Dashboard | Phase 3-4 |
+| 033 | UI Theme Finalization | Phase 3 |
+| 034 | Screen Inventory | Phase 3-4 |
+| 035 | Screen Detail / Coverage Matrix | Phase 4 |
+| 036 | Design Review & Approval | Phase 3-4 |
+| 037 | Prototype Builds & Review | Phase 4 |
+| 038 | Assets, Brand Kit & Feedback History | Phase 3-5 |
+
+**Development (039-043)**
+| # | Screen | Phase |
+|---|---|---|
+| 039 | Development Dashboard | Phase 5 |
+| 040 | Implementation Plan | Phase 5 |
+| 041 | Development Task Execution | Phase 5 |
+| 042 | Repository, Branch & Code Review | Phase 5 |
+| 043 | Builds, Environments & Dependencies | Phase 5-7 |
+
+**QA & Release (044-049)**
+| # | Screen | Phase |
+|---|---|---|
+| 044 | QA Dashboard | Phase 4-7 |
+| 045 | Test Plan & Cases | Phase 4-6 |
+| 046 | Test Runs | Phase 4-7 |
+| 047 | Bugs & Defects | Phase 4-8 |
+| 048 | Regression, Compatibility & Performance | Phase 5-7 |
+| 049 | Production Readiness & Release Candidate | Phase 6-7 |
+
+**Finance (050-056)**
+| # | Screen | Phase |
+|---|---|---|
+| 050 | Finance Overview | Phase 2-8 |
+| 051 | Invoices | Phase 2-8 |
+| 052 | Invoice Detail / Create | Phase 2-8 |
+| 053 | Payments | Phase 2-8 |
+| 054 | Payment Verification | Phase 2-8 |
+| 055 | Expenses & Profitability | cross-phase internal |
+| 056 | GST, Tax & Financial Reports | cross-phase internal |
+
+**Communication (057-060)**
+| # | Screen | Phase |
+|---|---|---|
+| 057 | Communication Center | cross-phase |
+| 058 | WhatsApp / Conversations | Phase 1-8 |
+| 059 | Templates & Announcements | cross-phase |
+| 060 | Delivery Failures, Outbox & Meeting Notes | cross-phase |
+
+**AI Workforce (061-065)**
+| # | Screen | Phase |
+|---|---|---|
+| 061 | AI Workforce Dashboard | internal cross-phase |
+| 062 | Agent Registry | internal cross-phase |
+| 063 | Agent Detail & Permissions | internal cross-phase |
+| 064 | Model Routing, Providers & Tools | internal cross-phase |
+| 065 | Agent Runs, Usage, Cost & Automations | internal cross-phase |
+
+**Operations (066-067)**
+| # | Screen | Phase |
+|---|---|---|
+| 066 | Operations Dashboard | cross-phase |
+| 067 | System Health, Production Readiness & Alerts | cross-phase |
+
+**Governance & Security (068-069)**
+| # | Screen | Phase |
+|---|---|---|
+| 068 | Approval Center, Policies & Overrides | cross-phase |
+| 069 | Security, Roles & Audit Log | cross-phase |
+
+**Integrations (070)**
+| # | Screen | Phase |
+|---|---|---|
+| 070 | Integrations Center & Import | cross-phase |
+
+**Organization Settings (071)**
+| # | Screen | Phase |
+|---|---|---|
+| 071 | Organization Settings & Business Rules | cross-phase |
+
+### Section 7 — Admin Manageability Matrix (what must be configurable)
+Organized under: Organization & Identity, Commercial Rules, Project
+Defaults, Communication, AI Workforce, Finance, Governance & Security. This
+is the checklist the redesigned Organization Settings screen (SCR-071) must
+satisfy — see p.81-82 for the full itemized list.
+
+### Section 8 — UI Implementation and QA Checklist / Definition of Complete
+Key locked rules for the redesign (p.83):
+- Implement left navigation exactly as the organized modules — do not
+  recreate a single overloaded Settings page.
+- Build reusable primitives: page header, KPI card, data table, filter bar,
+  drawer, empty state, error state, approval banner, activity timeline.
+- Every phase-specific output must be traceable: who did what, which
+  version, which approval, which client response, which evidence.
+- Map every screen action to a backend capability/permission/event *before*
+  calling the screen complete.
+- Add RLS/tenant-isolation and resource-level permission tests for all
+  CRUD/approval actions.
+- Test loading/empty/error/permission/stale/integration-failure states for
+  all 71 screens and key sub-screens.
+- Desktop is the primary operating mode; tablet/mobile must preserve
+  critical actions without horizontal chaos.
+- **Definition of complete:** all 71 numbered screens/sub-screens have an
+  implemented route or intentionally grouped tab/drawer, every locked phase
+  artifact is visible, every critical action is permissioned and auditable,
+  and no business-critical configuration/workflow is hidden in an
+  unstructured page.
+
+---
+
+## 2. The 43 screenshots: visual design language
+
+All 43 images depict what is overwhelmingly the **same consistent design
+system** — a dark-sidebar SaaS project-management/CRM tool for a fictional
+sample project ("GanxTV (OTT App)", client "Mehta Enterprises"), used
+throughout as illustrative content, with owner user "Sonu Shah."
+
+**Recurring visual patterns (present across nearly all 43 images):**
+
+- **Sidebar (left, ~240px, dark navy/near-black, e.g. `#0F1115`-ish):**
+  AgencyOS logo + tagline "Run. Grow. Scale." at top; icon+label nav items
+  grouped by module (Command Center, Sales & CRM, Clients, Projects,
+  Requirements, Design & Prototype, Development, QA & Release, Finance,
+  Communication, AI Workforce, Reports/Analytics & Costs, Integrations,
+  Security & Audit, Organization/Settings); expandable accordion sub-items;
+  active item highlighted with a filled indigo/blue pill; user card pinned
+  at the bottom (avatar, name, role).
+- **Top bar:** global search input with a visible "⌘K"-style affordance,
+  placeholder text scoped to the page ("Search projects, clients, tasks,
+  files…"); "+ Create" split-button; notification bell with a red count
+  badge; help icon; user avatar + name + role + chevron.
+- **Breadcrumbs** directly under the top bar (e.g. `Projects > GanxTV (OTT
+  App) > Milestones`).
+- **Page header:** large title + one-line description, right-aligned action
+  buttons (secondary "Edit"/"Share" outline buttons + one filled
+  indigo/blue primary CTA, often with a "More ▾" overflow).
+- **KPI/stat card row:** small rounded-square colored icon chip (pastel
+  background, saturated icon), a large number, a label, and a small
+  delta/trend badge (up/down arrow + percentage, green for positive/red for
+  negative).
+- **Tab strip** for entity sub-navigation (Overview / Tasks / Milestones /
+  Files / Team / Activity / Settings, etc.) — underline-style active tab in
+  indigo/blue.
+- **Data tables:** light/white background, muted-gray header row, avatar +
+  name compound cells, right-aligned numeric/currency columns, pill-shaped
+  **status chips** with a consistent color vocabulary — green (Won/Active/
+  Completed/Approved/Paid/Verified/Healthy), amber/orange (Pending/In
+  Progress/Contacted/Overdue-warning), red (Overdue/Blocked/Failed/Lost),
+  blue (In Progress/New/Negotiation), purple/gray (Low priority/Draft/Idle).
+- **Kanban boards:** column-per-status (To Do / In Progress / Review /
+  Completed / Blocked), card-based tasks with colored tag chips
+  (feature/bug/priority), due-date + avatar footer.
+- **Charts:** donut/pie charts for distribution (leads by source, task
+  distribution, agent status), line/area charts for trends (pipeline value,
+  income vs. expenses, agent activity), horizontal progress bars for
+  workload/budget.
+- **Right-hand contextual panel:** entity detail card (Project Details,
+  Client Details, Task Details, Milestone Details) with an "Edit" link,
+  related-items lists, and a grid of icon+label "Quick Actions" buttons.
+- **Calendar (month grid)** and **Gantt/timeline chart** views also appear
+  as dedicated tab views on Projects.
+- **Color system:** primary action color is an indigo/blue (~`#4F46E5`
+  range); page background is a very light blue-gray (~`#F5F7FB`); cards are
+  white with a soft border/shadow; status/category chips use a broader
+  pastel palette (green/amber/red/blue/purple) on near-white fills.
+- **Typography:** clean sans-serif (Inter-like), bold page/card titles,
+  medium-weight table headers, muted-gray secondary/meta text; currency
+  throughout is ₹ (INR); dates as `DD Mon YYYY`.
+- **Density:** information-dense dashboards (5-6 KPI tiles + 2-3 supporting
+  panels per screen is typical), consistent 3-column right-rail pattern on
+  detail pages.
+
+This is a coherent, implementable design language: dark sidebar shell +
+light content canvas + card/table/chip vocabulary + a single indigo/blue
+accent, generalizable to the full 71-screen IA.
+
+---
+
+## 3. Conflicts and ambiguities
+
+1. **Screenshots are a generic PM/CRM SaaS template, not a literal render of
+   the governed 71-screen spec.** The PDF is heavily governance-oriented —
+   guardrails, audit trails, approval gates, "evidence not a self-reported
+   score," payment-gated milestone progression, RBAC/tenant isolation. None
+   of that vocabulary appears in the screenshots, which read as a
+   friendly, conventional project-management dashboard (more
+   Asana/ClickUp/Monday-styled) with upward-trending percentages and warm
+   activity feeds. **Conclusion: treat the screenshots as a source for
+   visual language (colors, typography, card/table/chip/nav conventions)
+   only — not as a literal screen-content or IA source.** The PDF remains
+   the sole source of truth for what each of the 71 screens must contain.
+
+2. **Screenshot IA is flatter than the PDF's 71-screen granularity.** The
+   screenshots show one generic "Development" Kanban tab per project, one
+   "QA & Testing" tab, one "Communication" tab, etc., where the PDF spec
+   splits, e.g., Development into 5 distinct screens (Dashboard,
+   Implementation Plan, Task Execution, Repository/Code Review,
+   Builds/Environments/Dependencies) and QA & Release into 6. The redesign
+   will need to fit the PDF's finer-grained screen set into the
+   screenshots' visual shell (e.g. as sub-tabs or drawers within a module),
+   which the PDF's own p.83 checklist explicitly anticipates ("intentionally
+   grouped tab/drawer" satisfies "screen implemented").
+
+3. **One screenshot is a different product, not the AgencyOS admin panel.**
+   `WhatsApp Image 2026-09-21 at 12.25.05 (1).jpeg` shows a distinct,
+   white-sidebar "AgencyOS [GanxTV Admin Dashboard]" — actually the sample
+   OTT app's *own end-customer-facing admin panel* (Content, Users, Plans &
+   Subscriptions, Banners, Ads Management, Categories, Publishers), i.e. a
+   nested "product admin panel that AgencyOS would build for a client,"
+   not AgencyOS's own agency admin panel. It uses a different visual system
+   (light sidebar, different icon set, different nav labels) than the other
+   42 images. **This single image should be excluded as a design source for
+   the AgencyOS admin panel redesign** — it illustrates a different
+   deliverable (a client-project output) that happens to sit in the same
+   screenshot batch.
+
+4. **A third, currently-live visual reality exists in the codebase and
+   disagrees with both.** `app/(internal)/**` already runs on a custom,
+   functioning, in-house design system (`src/ui/*` — see the implementation
+   matrix doc) with its own token/color/component vocabulary. It does not
+   currently look like the dark-sidebar screenshots (no dark sidebar shell,
+   different status-color mapping, different component set — no Kanban
+   board or donut-chart primitives yet). The redesign is therefore a true
+   **reskin over a functionally complete backend**, not a greenfield build:
+   the 71 screens' *data and actions* mostly already exist and work; what's
+   missing is this specific dark-sidebar/card/chip visual layer plus a few
+   new primitives (drawer, filter bar already partially missing per the
+   existing `docs/admin-panel-screen-traceability.md` audit).
+
+5. **Sample data throughout the screenshots (GanxTV OTT App, Mehta
+   Enterprises, Sonu Shah) is placeholder/demo content**, not real AgencyOS
+   production data — expected and fine for a design reference, but should
+   not be mistaken for a data-model source.

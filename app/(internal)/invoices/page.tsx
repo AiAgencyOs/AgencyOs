@@ -1,13 +1,29 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 
 import Link from 'next/link';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listInvoices, listPendingPaymentClaims } from '@/modules/finance/queries';
-import { Callout, DataTable, EmptyState, IconAlert, IconInvoices, PageHeader, StatusBadge, type Column } from '@/ui';
+import { SavedViewsBar } from '../saved-views-bar';
+import {
+  Callout,
+  DataTable,
+  DEFAULT_PAGE_SIZE,
+  EmptyState,
+  IconAlert,
+  IconInvoices,
+  paginate,
+  Pagination,
+  PageHeader,
+  StatusBadge,
+  type Column,
+  PermissionDenied,
+  sortRows,
+  type SortDirection,
+} from '@/ui';
 
 export const metadata: Metadata = { title: 'Invoices' };
 
@@ -37,6 +53,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     align: 'right',
     cellClassName: 'tabular font-medium',
     cell: (i) => money(i.total_minor, i.currency),
+    sortKey: 'total',
   },
   {
     key: 'paid',
@@ -44,6 +61,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     align: 'right',
     cellClassName: 'tabular text-muted',
     cell: (i) => money(i.paid_minor, i.currency),
+    sortKey: 'paid',
   },
   {
     key: 'issued',
@@ -51,6 +69,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     align: 'right',
     cellClassName: 'text-muted',
     cell: (i) => (i.issued_at ? clock.date(i.issued_at) : '—'),
+    sortKey: 'issued',
   },
   {
     key: 'due',
@@ -58,8 +77,16 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     align: 'right',
     cellClassName: 'text-muted',
     cell: (i) => (i.due_at ? clock.date(i.due_at) : '—'),
+    sortKey: 'due',
   },
 ];
+
+const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
+  total: (a, b) => a.total_minor - b.total_minor,
+  paid: (a, b) => a.paid_minor - b.paid_minor,
+  issued: (a, b) => (a.issued_at ?? '').localeCompare(b.issued_at ?? ''),
+  due: (a, b) => (a.due_at ?? '').localeCompare(b.due_at ?? ''),
+};
 
 /**
  * Invoice list.
@@ -68,15 +95,25 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
  * hiding the nav entry is not access control, and RLS refuses the rows
  * independently of both.
  */
-export default async function InvoicesPage() {
+export default async function InvoicesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string }>;
+}) {
   const context = await requireInternal('/invoices');
   const clock = await agencyClock();
-  if (!can(context.role, 'invoice.read')) redirect('/dashboard');
+  if (!can(context.role, 'invoice.read')) return <PermissionDenied />;
 
-  const [invoices, pendingClaims] = await Promise.all([
+  const { page: pageParam, sort: sortKey, dir } = await searchParams;
+  const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
+  const currentQuery = sortKey ? `sort=${sortKey}&dir=${direction}` : '';
+  const [rawInvoices, pendingClaims, savedViews] = await Promise.all([
     listInvoices(),
     can(context.role, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
+    listSavedViews('/invoices'),
   ]);
+  const invoices = sortRows(rawInvoices, sortKey, direction, COMPARATORS);
+  const { page, pageCount, rows: pageRows } = paginate(invoices, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
 
   return (
     <div className="flex flex-col gap-5">
@@ -88,6 +125,8 @@ export default async function InvoicesPage() {
             : `${invoices.length} invoice${invoices.length === 1 ? '' : 's'}.`
         }
       />
+
+      <SavedViewsBar page="/invoices" currentQuery={currentQuery} views={savedViews} />
 
       {pendingClaims.length > 0 ? (
         <Callout tone="warning" icon={<IconAlert size={16} />}>
@@ -101,12 +140,24 @@ export default async function InvoicesPage() {
       ) : null}
 
       {invoices.length > 0 ? (
-        <DataTable
-          rows={invoices}
-          columns={columnsFor(clock)}
-          getKey={(i) => i.id}
-          href={(i) => `/invoices/${i.id}`}
-        />
+        <>
+          <DataTable
+            rows={pageRows}
+            columns={columnsFor(clock)}
+            getKey={(i) => i.id}
+            href={(i) => `/invoices/${i.id}`}
+            sort={{
+              key: sortKey,
+              direction,
+              makeHref: (key, nextDirection) => `/invoices?sort=${key}&dir=${nextDirection}`,
+            }}
+          />
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            makeHref={(p) => `/invoices?${sortKey ? `sort=${sortKey}&dir=${direction}&` : ''}page=${p}`}
+          />
+        </>
       ) : (
         <EmptyState
           icon={<IconInvoices size={22} />}

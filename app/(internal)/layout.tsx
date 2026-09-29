@@ -109,10 +109,10 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
       {/* ── Desktop rail ──────────────────────────────────────────────────
           Fixed rather than a flex sibling, so a long page scrolls under a
           stationary nav instead of dragging it out of view. */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-surface md:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-sidebar-border bg-sidebar-bg md:flex">
         <div className="flex h-14 shrink-0 items-center px-4">
           <Link href="/dashboard" className="rounded-lg">
-            <Wordmark />
+            <Wordmark dark />
           </Link>
         </div>
 
@@ -120,22 +120,22 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
           <SidebarNav groups={visibleGroups} />
         </div>
 
-        <div className="shrink-0 border-t border-line p-3">
+        <div className="shrink-0 border-t border-sidebar-border p-3">
           <div className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-[13px] font-semibold uppercase text-brand">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sidebar-active-bg text-[13px] font-semibold uppercase text-sidebar-active-fg">
               {context.email.slice(0, 2)}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-medium text-foreground">
+              <span className="block truncate text-[13px] font-medium text-sidebar-fg">
                 {context.email}
               </span>
-              <span className="block truncate text-[11px] text-muted">
+              <span className="block truncate text-[11px] text-sidebar-muted">
                 {humanize(context.role)}
               </span>
             </span>
           </div>
           <div className="mt-2">
-            <SignOutButton full />
+            <SignOutButton full variant="sidebar" />
           </div>
         </div>
       </aside>
@@ -147,7 +147,7 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
             <MobileNav
               groups={visibleGroups}
               identity={identity}
-              signOut={<SignOutButton full />}
+              signOut={<SignOutButton full variant="sidebar" />}
             />
 
             <div className="min-w-0 flex-1 md:hidden">

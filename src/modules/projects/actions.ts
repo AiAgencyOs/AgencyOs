@@ -1157,6 +1157,10 @@ export async function setTaskStatusAction(_prev: FormState, formData: FormData):
 
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath(`/projects/${projectId}/development`);
+  // The Board (SCR-020) reads the same `listDevelopmentBreakdown()` grouped
+  // by status instead of by module — added when the board grew a drag-and-
+  // drop write path onto this same action, so it needs revalidating too.
+  revalidatePath(`/projects/${projectId}/board`);
   return { status: 'success', message: 'Updated.' };
 }
 

@@ -1,13 +1,12 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listActiveConversations } from '@/modules/crm/queries';
 import { listDeferredSends, listFailedDeliveries } from '@/lib/observability/queries';
-import { Badge, Card, CardHeader, EmptyState, IconInbox, PageHeader } from '@/ui';
+import { Badge, Card, CardHeader, EmptyState, IconInbox, PageHeader, PermissionDenied } from '@/ui';
 
 export const metadata: Metadata = { title: 'Communication' };
 
@@ -24,7 +23,7 @@ function when(clock: AgencyClock, value: string): string {
  */
 export default async function CommunicationCenterPage() {
   const context = await requireInternal('/communication');
-  if (!can(context.role, 'lead.read')) redirect('/dashboard');
+  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
   const clock = await agencyClock();
 
   const [conversations, failedDeliveries, deferred] = await Promise.all([

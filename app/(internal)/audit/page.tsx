@@ -1,11 +1,10 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 
 import { auditActionPrefixes, readAuditLog } from '@/lib/audit/queries';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { Badge, Card, EmptyState, FilterBar, FilterChips, IconAudit, PageHeader } from '@/ui';
+import { Badge, Card, EmptyState, FilterBar, FilterChips, IconAudit, PageHeader, PermissionDenied } from '@/ui';
 
 export const metadata: Metadata = { title: 'Audit log' };
 
@@ -28,7 +27,7 @@ export default async function AuditPage({
 }) {
   const context = await requireInternal('/audit');
   const clock = await agencyClock();
-  if (!can(context.role, 'audit.read')) redirect('/dashboard');
+  if (!can(context.role, 'audit.read')) return <PermissionDenied />;
 
   const { action } = await searchParams;
   const [entries, prefixes] = await Promise.all([

@@ -1,7 +1,11 @@
 import 'server-only';
 
+import { z } from 'zod';
+
+import { requireInternal } from '@/lib/auth/session';
+import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
-import { unreadable } from '@/lib/result';
+import { err, ok, unreadable, type Result } from '@/lib/result';
 
 /**
  * `core.client_accounts` has no owning module (ARCHITECTURE.md §2 — core
@@ -59,11 +63,19 @@ export type ClientCommunicationThread = {
   messages: ClientMessage[];
 };
 
+export type ClientNote = {
+  id: string;
+  body: string;
+  createdByEmail: string | null;
+  createdAt: string;
+};
+
 export type ClientDetail = ClientListItem & {
   projects: { id: string; name: string; status: string; budgetMinor: number | null; currency: string }[];
   invoices: { id: string; number: string; status: string; totalMinor: number; paidMinor: number; currency: string }[];
   files: ClientFile[];
   communication: ClientCommunicationThread[];
+  notes: ClientNote[];
 };
 
 /** How many of a project group's most recent messages the client page previews. */
@@ -254,6 +266,39 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
     }
   }
 
+  // SCR-017's notes half — the one piece of that screen with no reader to
+  // roll up, unlike files/communication above (core.client_notes, added
+  // alongside this read). Internal-only, most-recent-first: the same
+  // append-only shape crm.lead_activities notes already use, never a thread.
+  // A manual second lookup for the author's email, not a PostgREST embed —
+  // matching this file's own "no embed, join in memory" convention above.
+  const { data: noteRows, error: notesError } = await supabase
+    .schema('core')
+    .from('client_notes')
+    .select('id, body, created_at, created_by')
+    .eq('client_account_id', clientAccountId)
+    .order('created_at', { ascending: false });
+  if (notesError) unreadable('getClient.notes', notesError);
+
+  const noteAuthorIds = [...new Set((noteRows ?? []).map((n) => n.created_by).filter((id): id is string => id !== null))];
+  let authorEmailById = new Map<string, string>();
+  if (noteAuthorIds.length > 0) {
+    const { data: authors, error: authorsError } = await supabase
+      .schema('core')
+      .from('users')
+      .select('id, email')
+      .in('id', noteAuthorIds);
+    if (authorsError) unreadable('getClient.noteAuthors', authorsError);
+    authorEmailById = new Map((authors ?? []).map((a) => [a.id, a.email]));
+  }
+
+  const notes: ClientNote[] = (noteRows ?? []).map((n) => ({
+    id: n.id,
+    body: n.body,
+    createdByEmail: n.created_by ? (authorEmailById.get(n.created_by) ?? null) : null,
+    createdAt: n.created_at,
+  }));
+
   return {
     id: account.id,
     name: account.name,
@@ -283,5 +328,60 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
     })),
     files: fileRows,
     communication,
+    notes,
   };
+}
+
+export const addClientNoteSchema = z.object({
+  clientAccountId: z.uuid(),
+  body: z.string().trim().min(1).max(5000),
+});
+
+export type AddClientNoteInput = z.infer<typeof addClientNoteSchema>;
+
+/**
+ * Appends a note — never edits or deletes one, the same append-only
+ * convention `addLeadNote` (src/modules/crm/service.ts) uses. Reuses
+ * `project.write` rather than a new capability: this repo's convention is to
+ * attach a new door to an existing capability that already means "may add
+ * operational detail to a record I can see" (`invoice.issue` covers
+ * expenses, `lead.write` covers lead notes) rather than minting a narrow new
+ * one per note-shaped feature.
+ */
+export async function addClientNote(input: AddClientNoteInput): Promise<Result<{ added: true }>> {
+  const parsed = addClientNoteSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Note could not be validated.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to add notes.');
+  }
+
+  const supabase = await createClient();
+  const { data: client } = await supabase
+    .schema('core')
+    .from('client_accounts')
+    .select('id, organization_id')
+    .eq('id', parsed.data.clientAccountId)
+    .maybeSingle();
+
+  if (!client) return err('NOT_FOUND', 'Client not found.');
+
+  const { error } = await supabase.schema('core').from('client_notes').insert({
+    organization_id: client.organization_id,
+    client_account_id: client.id,
+    body: parsed.data.body,
+    created_by: context.userId,
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'addClientNote', detail: error.message }));
+    return err('INTERNAL', 'Could not save the note.');
+  }
+
+  return ok({ added: true });
 }

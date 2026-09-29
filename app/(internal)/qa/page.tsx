@@ -1,12 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listOpenDefects, readOrgTestCoverage, readSuiteCoverage, type OpenDefect } from '@/modules/qa/queries';
-import { Badge, Card, EmptyState, IconCheck, PageHeader, Stat, StatGrid, type Tone } from '@/ui';
+import { AutoRefresh, Badge, Card, EmptyState, IconAlert, IconCheck, IconClock, PageHeader, Stat, StatGrid, type Tone, PermissionDenied } from '@/ui';
 
 export const metadata: Metadata = { title: 'QA' };
 
@@ -46,7 +45,7 @@ function countBy(defects: OpenDefect[], severity: string): number {
 export default async function QaDashboardPage() {
   const context = await requireInternal('/qa');
   const clock = await agencyClock();
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const [defects, coverage, suiteCoverage] = await Promise.all([
     listOpenDefects(),
@@ -67,13 +66,14 @@ export default async function QaDashboardPage() {
             ? 'No open defects across any project.'
             : `${defects.length} open defect${defects.length === 1 ? '' : 's'} across every project, most severe first.`
         }
+        actions={<AutoRefresh intervalMs={30000} />}
       />
 
       <StatGrid>
-        <Stat label="Blockers" value={String(blockers)} tone={blockers > 0 ? 'danger' : 'success'} />
-        <Stat label="Major" value={String(majors)} tone={majors > 0 ? 'warning' : 'success'} />
-        <Stat label="Minor" value={String(minors)} />
-        <Stat label="Trivial" value={String(trivials)} />
+        <Stat label="Blockers" value={String(blockers)} tone={blockers > 0 ? 'danger' : 'success'} icon={<IconAlert size={16} />} />
+        <Stat label="Major" value={String(majors)} tone={majors > 0 ? 'warning' : 'success'} icon={<IconAlert size={16} />} />
+        <Stat label="Minor" value={String(minors)} icon={<IconCheck size={16} />} />
+        <Stat label="Trivial" value={String(trivials)} icon={<IconCheck size={16} />} />
       </StatGrid>
 
       <StatGrid>
@@ -81,13 +81,15 @@ export default async function QaDashboardPage() {
           label="Projects with a test plan"
           value={`${coverage.projectsWithPlan} / ${coverage.totalProjects}`}
           tone={coverage.projectsWithPlan < coverage.totalProjects ? 'warning' : 'success'}
+          icon={<IconCheck size={16} />}
         />
-        <Stat label="Runs in last 30 days" value={String(coverage.runsLast30Days)} />
-        <Stat label="Passed (30d)" value={String(coverage.passedLast30Days)} tone="success" />
+        <Stat label="Runs in last 30 days" value={String(coverage.runsLast30Days)} icon={<IconClock size={16} />} />
+        <Stat label="Passed (30d)" value={String(coverage.passedLast30Days)} tone="success" icon={<IconCheck size={16} />} />
         <Stat
           label="Failed (30d)"
           value={String(coverage.failedLast30Days)}
           tone={coverage.failedLast30Days > 0 ? 'danger' : 'success'}
+          icon={<IconAlert size={16} />}
         />
       </StatGrid>
 

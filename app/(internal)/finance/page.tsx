@@ -1,12 +1,23 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listInvoices, listPendingPaymentClaims } from '@/modules/finance/queries';
-import { Card, CardHeader, IconChevronRight, PageHeader, Stat, StatGrid, StatusBadge } from '@/ui';
+import {
+  Card,
+  CardHeader,
+  IconAlert,
+  IconCheck,
+  IconChevronRight,
+  IconInvoices,
+  PageHeader,
+  Stat,
+  StatGrid,
+  StatusBadge,
+  PermissionDenied,
+} from '@/ui';
 
 export const metadata: Metadata = { title: 'Finance' };
 
@@ -35,7 +46,7 @@ function when(clock: AgencyClock, value: string): string {
 export default async function FinanceOverviewPage() {
   const context = await requireInternal('/finance');
   const clock = await agencyClock();
-  if (!can(context.role, 'invoice.read')) redirect('/dashboard');
+  if (!can(context.role, 'invoice.read')) return <PermissionDenied />;
 
   const [invoices, pendingClaims] = await Promise.all([
     listInvoices(500),
@@ -68,16 +79,18 @@ export default async function FinanceOverviewPage() {
 
       {[...byCurrency.entries()].map(([currency, totals]) => (
         <StatGrid key={currency}>
-          <Stat label={`Invoiced (${currency})`} value={money(totals.invoiced, currency)} />
-          <Stat label={`Received (${currency})`} value={money(totals.paid, currency)} tone="success" />
+          <Stat label={`Invoiced (${currency})`} value={money(totals.invoiced, currency)} icon={<IconInvoices size={16} />} />
+          <Stat label={`Received (${currency})`} value={money(totals.paid, currency)} tone="success" icon={<IconCheck size={16} />} />
           <Stat
             label={`Outstanding (${currency})`}
             value={money(totals.invoiced - totals.paid, currency)}
             tone={totals.invoiced - totals.paid > 0 ? 'warning' : 'neutral'}
+            icon={<IconAlert size={16} />}
           />
           <Stat
             label="Collection rate"
             value={totals.invoiced > 0 ? `${Math.round((totals.paid / totals.invoiced) * 100)}%` : '—'}
+            icon={<IconInvoices size={16} />}
           />
         </StatGrid>
       ))}

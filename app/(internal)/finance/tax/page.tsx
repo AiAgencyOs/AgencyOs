@@ -1,11 +1,27 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listTaxInvoices } from '@/modules/finance/queries';
-import { DataTable, EmptyState, IconInvoices, PageHeader, Stat, StatGrid, StatusBadge, type Column } from '@/ui';
+import { SavedViewsBar } from '../../saved-views-bar';
+import {
+  DataTable,
+  DEFAULT_PAGE_SIZE,
+  EmptyState,
+  IconInvoices,
+  paginate,
+  Pagination,
+  PageHeader,
+  Stat,
+  StatGrid,
+  StatusBadge,
+  type Column,
+  PermissionDenied,
+  sortRows,
+  type SortDirection,
+} from '@/ui';
 
 export const metadata: Metadata = { title: 'GST & tax' };
 
@@ -20,11 +36,18 @@ type Row = Awaited<ReturnType<typeof listTaxInvoices>>[number];
 const columnsFor = (clock: AgencyClock): Column<Row>[] => [
   { key: 'number', header: 'Number', primary: true, cellClassName: 'font-mono text-xs', cell: (i) => i.number },
   { key: 'status', header: 'Status', badge: true, cell: (i) => <StatusBadge status={i.status} /> },
-  { key: 'subtotal', header: 'Subtotal', align: 'right', cellClassName: 'tabular', cell: (i) => money(i.subtotalMinor, i.currency) },
-  { key: 'tax', header: 'Tax', align: 'right', cellClassName: 'tabular font-medium', cell: (i) => money(i.taxMinor, i.currency) },
-  { key: 'total', header: 'Total', align: 'right', cellClassName: 'tabular', cell: (i) => money(i.totalMinor, i.currency) },
-  { key: 'issued', header: 'Issued', align: 'right', cellClassName: 'text-muted', cell: (i) => (i.issuedAt ? clock.date(i.issuedAt) : '—') },
+  { key: 'subtotal', header: 'Subtotal', align: 'right', cellClassName: 'tabular', cell: (i) => money(i.subtotalMinor, i.currency), sortKey: 'subtotal' },
+  { key: 'tax', header: 'Tax', align: 'right', cellClassName: 'tabular font-medium', cell: (i) => money(i.taxMinor, i.currency), sortKey: 'tax' },
+  { key: 'total', header: 'Total', align: 'right', cellClassName: 'tabular', cell: (i) => money(i.totalMinor, i.currency), sortKey: 'total' },
+  { key: 'issued', header: 'Issued', align: 'right', cellClassName: 'text-muted', cell: (i) => (i.issuedAt ? clock.date(i.issuedAt) : '—'), sortKey: 'issued' },
 ];
+
+const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
+  subtotal: (a, b) => a.subtotalMinor - b.subtotalMinor,
+  tax: (a, b) => a.taxMinor - b.taxMinor,
+  total: (a, b) => a.totalMinor - b.totalMinor,
+  issued: (a, b) => (a.issuedAt ?? '').localeCompare(b.issuedAt ?? ''),
+};
 
 /**
  * GST & Tax — SCR-056's invoice register and tax summary. Reports what was
@@ -34,12 +57,21 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
  * compute tax" boundary. No GST filing/return generation: that needs a
  * real GST-portal integration this deployment does not have.
  */
-export default async function TaxReportPage() {
+export default async function TaxReportPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string }>;
+}) {
   const context = await requireInternal('/finance/tax');
   const clock = await agencyClock();
-  if (!can(context.role, 'invoice.read')) redirect('/finance');
+  if (!can(context.role, 'invoice.read')) return <PermissionDenied />;
 
-  const invoices = await listTaxInvoices();
+  const { page: pageParam, sort: sortKey, dir } = await searchParams;
+  const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
+  const currentQuery = sortKey ? `sort=${sortKey}&dir=${direction}` : '';
+  const [rawInvoices, savedViews] = await Promise.all([listTaxInvoices(), listSavedViews('/finance/tax')]);
+  const invoices = sortRows(rawInvoices, sortKey, direction, COMPARATORS);
+  const { page, pageCount, rows: pageRows } = paginate(invoices, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
 
   const byCurrency = new Map<string, { subtotal: number; tax: number; total: number; count: number }>();
   for (const i of invoices) {
@@ -62,16 +94,35 @@ export default async function TaxReportPage() {
         }
       />
 
+      <SavedViewsBar page="/finance/tax" currentQuery={currentQuery} views={savedViews} />
+
       {[...byCurrency.entries()].map(([currency, totals]) => (
         <StatGrid key={currency}>
-          <Stat label={`Subtotal (${currency})`} value={money(totals.subtotal, currency)} />
-          <Stat label={`Tax collected (${currency})`} value={money(totals.tax, currency)} />
-          <Stat label={`Total (${currency})`} value={money(totals.total, currency)} />
+          <Stat label={`Subtotal (${currency})`} value={money(totals.subtotal, currency)} icon={<IconInvoices size={16} />} />
+          <Stat label={`Tax collected (${currency})`} value={money(totals.tax, currency)} icon={<IconInvoices size={16} />} />
+          <Stat label={`Total (${currency})`} value={money(totals.total, currency)} icon={<IconInvoices size={16} />} />
         </StatGrid>
       ))}
 
       {invoices.length > 0 ? (
-        <DataTable rows={invoices} columns={columnsFor(clock)} getKey={(i) => i.id} href={(i) => `/invoices/${i.id}`} />
+        <>
+          <DataTable
+            rows={pageRows}
+            columns={columnsFor(clock)}
+            getKey={(i) => i.id}
+            href={(i) => `/invoices/${i.id}`}
+            sort={{
+              key: sortKey,
+              direction,
+              makeHref: (key, nextDirection) => `/finance/tax?sort=${key}&dir=${nextDirection}`,
+            }}
+          />
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            makeHref={(p) => `/finance/tax?${sortKey ? `sort=${sortKey}&dir=${direction}&` : ''}page=${p}`}
+          />
+        </>
       ) : (
         <EmptyState icon={<IconInvoices size={22} />} title="No issued invoices" description="Tax figures appear here once an invoice is issued." />
       )}

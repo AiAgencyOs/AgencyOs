@@ -1,23 +1,46 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { agencyClock } from '@/lib/admin/agency-clock';
+import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import {
+  getActiveProjectsSummary,
+  getMessagesSentThisMonth,
+  getRecentLeads,
+  getRevenueThisMonth,
+  getTotalLeadsCount,
+} from '@/lib/admin/dashboard';
 import { getOverview } from '@/lib/admin/overview';
 import { isAvailable, levelLabel, overallStatus, type Avail } from '@/lib/admin/overview-eval';
+import { getAgentUsage } from '@/lib/admin/usage';
 import { requireInternal } from '@/lib/auth/session';
 import { can, type Capability } from '@/lib/authz/permissions';
 import {
+  AutoRefresh,
   Badge,
   Callout,
   Card,
   CardHeader,
   cx,
+  DataTable,
   EmptyState,
+  humanize,
+  IconAgents,
   IconAlert,
+  IconApprovals,
   IconChevronRight,
+  IconInvoices,
+  IconOperations,
+  IconProjects,
+  IconRefresh,
+  IconSettings,
+  IconUsage,
+  IconUser,
   Stat,
+  StatGrid,
+  StatusBadge,
   TONE_DOT,
   TONE_TEXT,
+  type Column,
   type Tone,
 } from '@/ui';
 
@@ -47,6 +70,22 @@ const TONE: Record<string, Tone> = {
   bad: 'danger',
   muted: 'neutral',
 };
+
+/** "Good morning" / "Good afternoon" / "Good evening", by the hour in the agency's own zone — not the server's. */
+function greeting(clock: AgencyClock, now: Date): string {
+  const hour = Number(
+    new Intl.DateTimeFormat('en-US', { hour: 'numeric', hour12: false, timeZone: clock.timeZone }).format(now),
+  );
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+function money(minor: number, currency: string): string {
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(
+    minor / 100,
+  );
+}
 
 /** A value tile that honours the read: number when read, DATA UNAVAILABLE when not. */
 function num<T>(a: Avail<T>, pick: (v: T) => string): string {
@@ -89,6 +128,66 @@ export default async function OverviewPage() {
   const status = overallStatus({ backlog: o.backlog, cronAgeSeconds: o.cronAgeSeconds, failedDeliveries: o.failedDeliveries });
   const label = levelLabel(status.level);
 
+  const canSeeLeads = show('lead.read');
+  const canSeeProjects = show('project.read');
+  const canSeeRevenue = show('invoice.read');
+  const canSeeUsage = show('audit.read');
+
+  const [recentLeads, activeProjects, revenue, messagesSent, totalLeads, usage] = await Promise.all([
+    canSeeLeads ? getRecentLeads(5) : Promise.resolve([]),
+    canSeeProjects ? getActiveProjectsSummary(5) : Promise.resolve([]),
+    canSeeRevenue ? getRevenueThisMonth() : Promise.resolve([]),
+    canSeeLeads ? getMessagesSentThisMonth() : Promise.resolve(null),
+    canSeeLeads ? getTotalLeadsCount() : Promise.resolve(null),
+    canSeeUsage ? getAgentUsage() : Promise.resolve(null),
+  ]);
+
+  const leadColumns: Column<(typeof recentLeads)[number]>[] = [
+    { key: 'title', header: 'Lead', primary: true, cell: (l) => l.title },
+    {
+      key: 'phone',
+      header: 'Phone',
+      cellClassName: 'font-mono text-xs text-muted',
+      cell: (l) => l.contactPhone ?? '—',
+    },
+    { key: 'source', header: 'Source', desktopOnly: true, cellClassName: 'text-muted', cell: (l) => humanize(l.source) },
+    { key: 'status', header: 'Status', badge: true, cell: (l) => <StatusBadge status={l.status} /> },
+    {
+      key: 'assigned',
+      header: 'Assigned',
+      desktopOnly: true,
+      cellClassName: 'text-muted',
+      cell: (l) => l.assignedEmail ?? 'Unassigned',
+    },
+    {
+      key: 'activity',
+      header: 'Last activity',
+      align: 'right',
+      cellClassName: 'text-muted',
+      cell: (l) => clock.dateTime(l.lastActivityAt),
+    },
+  ];
+
+  const projectColumns: Column<(typeof activeProjects)[number]>[] = [
+    { key: 'name', header: 'Project', primary: true, cell: (p) => p.name },
+    { key: 'client', header: 'Client', desktopOnly: true, cellClassName: 'text-muted', cell: (p) => p.clientName ?? '—' },
+    { key: 'status', header: 'Status', badge: true, cell: (p) => <StatusBadge status={p.status} /> },
+    {
+      key: 'progress',
+      header: 'Milestones',
+      align: 'right',
+      cellClassName: 'tabular text-muted',
+      cell: (p) => (p.milestonesTotal > 0 ? `${p.milestonesMet}/${p.milestonesTotal}` : '—'),
+    },
+    {
+      key: 'due',
+      header: 'Due',
+      align: 'right',
+      cellClassName: 'text-muted',
+      cell: (p) => (p.endsOn ? clock.date(p.endsOn) : '—'),
+    },
+  ];
+
   const cronText =
     o.cronAgeSeconds === null
       ? { text: 'unknown', tone: 'muted' as const }
@@ -115,16 +214,22 @@ export default async function OverviewPage() {
     <div className="flex flex-col gap-5">
       <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Overview</h1>
+          <p className="text-[13px] text-muted">{clock.day(new Date())}</p>
+          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
+            {greeting(clock, new Date())}, {context.fullName?.split(' ')[0] ?? context.email.split('@')[0]}
+          </h1>
           <p className="mt-1.5 text-[13px] text-muted">
             Signed in as {context.email} · environment{' '}
             <span className="font-mono">{o.environment.nodeEnv}</span>
             {o.environment.looksLocal ? ' · local' : ''}
           </p>
         </div>
-        <Badge tone={TONE[label.tone] ?? 'neutral'} dot className="px-2.5 py-1 text-[13px]">
-          {label.text}
-        </Badge>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <Badge tone={TONE[label.tone] ?? 'neutral'} dot className="px-2.5 py-1 text-[13px]">
+            {label.text}
+          </Badge>
+          <AutoRefresh intervalMs={20000} />
+        </div>
       </header>
 
       {status.level !== 'operational' ? (
@@ -133,14 +238,103 @@ export default async function OverviewPage() {
         </Callout>
       ) : null}
 
+      {/* Business snapshot — leads, projects, revenue, agent activity. Each
+          figure is a fresh read for this request; none of it is cached or
+          estimated, so a quiet organization shows quiet numbers rather than
+          the reference deck's always-busy demo data. */}
+      {canSeeLeads || canSeeProjects || canSeeRevenue || canSeeUsage ? (
+        <StatGrid cols={5}>
+          {canSeeLeads ? (
+            <Stat
+              label="Total leads"
+              href="/leads"
+              value={String(totalLeads ?? 0)}
+              tone="brand"
+              icon={<IconUser size={16} />}
+            />
+          ) : null}
+          {canSeeProjects ? (
+            <Stat
+              label="Active projects"
+              href="/projects"
+              value={String(activeProjects.length)}
+              tone="info"
+              icon={<IconProjects size={16} />}
+            />
+          ) : null}
+          {canSeeRevenue ? (
+            <Stat
+              label="Revenue (this month)"
+              href="/finance"
+              value={revenue.length === 0 ? money(0, 'INR') : revenue.map((r) => money(r.paidMinor, r.currency)).join(' + ')}
+              tone="success"
+              icon={<IconInvoices size={16} />}
+            />
+          ) : null}
+          {canSeeUsage ? (
+            <Stat
+              label="AI agent runs"
+              href="/usage"
+              value={String(usage?.totals.runs ?? 0)}
+              tone="accent"
+              icon={<IconAgents size={16} />}
+            />
+          ) : null}
+          {canSeeLeads ? (
+            <Stat
+              label="Messages sent (this month)"
+              href="/communication"
+              value={String(messagesSent ?? 0)}
+              tone="warning"
+              icon={<IconUsage size={16} />}
+            />
+          ) : null}
+        </StatGrid>
+      ) : null}
+
+      {canSeeLeads || canSeeProjects ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {canSeeLeads ? (
+            <Card>
+              <CardHeader title="Recent leads" description="Most recently active first." />
+              <div className="px-4 pb-4 sm:px-5">
+                {recentLeads.length === 0 ? (
+                  <EmptyState icon={<IconUser size={22} />} title="No leads yet" />
+                ) : (
+                  <DataTable rows={recentLeads} columns={leadColumns} getKey={(l) => l.id} href={(l) => `/leads/${l.id}`} />
+                )}
+              </div>
+            </Card>
+          ) : null}
+          {canSeeProjects ? (
+            <Card>
+              <CardHeader title="Active projects" description="Planning through on hold, most recent first." />
+              <div className="px-4 pb-4 sm:px-5">
+                {activeProjects.length === 0 ? (
+                  <EmptyState icon={<IconProjects size={22} />} title="No active projects" />
+                ) : (
+                  <DataTable
+                    rows={activeProjects}
+                    columns={projectColumns}
+                    getKey={(p) => p.id}
+                    href={(p) => `/projects/${p.id}`}
+                  />
+                )}
+              </div>
+            </Card>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* Operational KPI tiles — real reads only, each linking to its detail page. */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+      <StatGrid cols={6}>
         {show('audit.read') ? (
           <Stat
             label="Dead jobs"
             href="/operations"
             value={<Value value={num(o.backlog, (b) => String(b.dead_jobs))} />}
             tone={isAvailable(o.backlog) && o.backlog.value.dead_jobs > 0 ? 'danger' : 'neutral'}
+            icon={<IconOperations size={16} />}
           />
         ) : null}
         {show('audit.read') ? (
@@ -149,6 +343,7 @@ export default async function OverviewPage() {
             href="/operations"
             value={<Value value={num(o.failedDeliveries, String)} />}
             tone={isAvailable(o.failedDeliveries) && o.failedDeliveries.value > 0 ? 'danger' : 'neutral'}
+            icon={<IconAlert size={16} />}
           />
         ) : null}
         <Stat
@@ -157,12 +352,14 @@ export default async function OverviewPage() {
           value={<Value value={num(o.approvals, (a) => String(a.pending))} />}
           caption={isAvailable(o.approvals) && o.approvals.value.overdue > 0 ? `${o.approvals.value.overdue} overdue` : undefined}
           tone={isAvailable(o.approvals) && o.approvals.value.overdue > 0 ? 'warning' : 'neutral'}
+          icon={<IconApprovals size={16} />}
         />
         {show('audit.read') ? (
           <Stat
             label="Agents runnable"
             href="/agents"
             value={<Value value={num(o.ai, (a) => `${a.agentsRunnable}/${a.agentsTotal}`)} />}
+            icon={<IconAgents size={16} />}
           />
         ) : null}
         {show('organization.settings') ? (
@@ -172,6 +369,7 @@ export default async function OverviewPage() {
             value={<Value value={num(o.reactivation, (r) => String(r.enrolled))} />}
             caption={isAvailable(o.reactivation) ? (o.reactivation.value.pilotEnabled ? 'pilot on' : 'pilot off') : undefined}
             tone={isAvailable(o.reactivation) && o.reactivation.value.pilotEnabled ? 'success' : 'neutral'}
+            icon={<IconRefresh size={16} />}
           />
         ) : null}
         {show('organization.settings') ? (
@@ -180,6 +378,7 @@ export default async function OverviewPage() {
             href="/settings"
             value={String(o.environment.productionProblems)}
             tone={o.environment.productionProblems > 0 ? 'warning' : 'success'}
+            icon={<IconSettings size={16} />}
           />
         ) : null}
         {show('invoice.read') ? (
@@ -188,6 +387,7 @@ export default async function OverviewPage() {
             href="/invoices/verify"
             value={<Value value={num(o.paymentsPendingVerification, String)} />}
             tone={isAvailable(o.paymentsPendingVerification) && o.paymentsPendingVerification.value > 0 ? 'warning' : 'neutral'}
+            icon={<IconInvoices size={16} />}
           />
         ) : null}
         {show('project.read') ? (
@@ -196,9 +396,10 @@ export default async function OverviewPage() {
             href="/projects"
             value={<Value value={num(o.projectsOnHold, String)} />}
             tone={isAvailable(o.projectsOnHold) && o.projectsOnHold.value > 0 ? 'warning' : 'neutral'}
+            icon={<IconProjects size={16} />}
           />
         ) : null}
-      </div>
+      </StatGrid>
 
       <div className="grid gap-4 xl:grid-cols-2">
         {/* Needs attention — the prioritised queue SCR-001 calls for: overdue

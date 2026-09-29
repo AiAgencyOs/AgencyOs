@@ -2,11 +2,11 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ProjectSubNav } from './project-subnav';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
-import { Badge, DataTable, StatusBadge, IconArrowUpRight } from '@/ui';
+import { Badge, DataTable, StatusBadge, StatusStepper, IconArrowUpRight, PermissionDenied } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 import {
   listDeliverables,
@@ -69,7 +69,7 @@ export default async function ProjectPage({
   const context = await requireInternal(`/projects/${projectId}`);
 
   const clock = await agencyClock();
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
@@ -240,6 +240,12 @@ export default async function ProjectPage({
           </Link>
         ) : null}
       </header>
+
+      <StatusStepper
+        status={status}
+        happyPath={['planning', 'onboarding', 'active', 'completed']}
+        offRamps={['on_hold', 'cancelled']}
+      />
 
       <ProjectSubNav projectId={projectId} />
 
@@ -416,7 +422,7 @@ export default async function ProjectPage({
           ) : !billing.complete ? (
             <p className="max-w-2xl text-[13px] text-muted">
               Still needed before an invoice can be raised:{' '}
-              <span className="text-fg">{billing.missing.join(', ')}</span>
+              <span className="text-foreground">{billing.missing.join(', ')}</span>
               {billing.invalid.length > 0
                 ? ` · not valid: ${billing.invalid.map((i) => `${i.field} (${i.reason})`).join(', ')}`
                 : ''}

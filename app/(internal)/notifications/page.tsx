@@ -9,7 +9,7 @@ import { listFailedDeliveries, listDeadJobs } from '@/lib/observability/queries'
 import { listPendingPaymentClaims } from '@/modules/finance/queries';
 import { listOpenDefects } from '@/modules/qa/queries';
 import { listMyTasks } from '@/modules/projects/queries';
-import { Card, EmptyState, IconCheck, PageHeader } from '@/ui';
+import { AutoRefresh, Card, EmptyState, IconCheck, PageHeader } from '@/ui';
 
 export const metadata: Metadata = { title: 'Notifications' };
 
@@ -120,6 +120,7 @@ export default async function NotificationsPage() {
             ? 'Nothing needs your attention right now.'
             : `${rows.length} item${rows.length === 1 ? '' : 's'} need attention${urgentCount > 0 ? `, ${urgentCount} urgent` : ''}.`
         }
+        actions={<AutoRefresh intervalMs={20000} />}
       />
 
       {rows.length > 0 ? (

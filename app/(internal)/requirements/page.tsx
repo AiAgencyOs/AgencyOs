@@ -1,12 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listProposedRequirements } from '@/modules/crm/queries';
-import { Badge, EmptyState, IconCheck, PageHeader } from '@/ui';
+import { Badge, EmptyState, IconCheck, PageHeader, PermissionDenied } from '@/ui';
 
 export const metadata: Metadata = { title: 'Requirements' };
 
@@ -24,7 +23,7 @@ function when(clock: AgencyClock, value: string): string {
  */
 export default async function RequirementsPage() {
   const context = await requireInternal('/requirements');
-  if (!can(context.role, 'lead.read')) redirect('/dashboard');
+  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
   const clock = await agencyClock();
 
   const proposed = await listProposedRequirements();

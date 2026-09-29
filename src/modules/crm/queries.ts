@@ -11,6 +11,7 @@ import type {
   LeadHeader,
   LeadListItem,
   LeadPipeline,
+  LeadTableRow,
   LeadTimelineEvent,
   PortfolioItemRow,
   RequirementVersion,
@@ -57,6 +58,51 @@ export async function listLeads(limit = 100): Promise<LeadListItem[]> {
     contact: row.contacts
       ? { fullName: row.contacts.full_name, company: row.contacts.company }
       : null,
+  }));
+}
+
+const TABLE_SELECT = 'id, title, status, source, assigned_to, updated_at, contacts(full_name, company, phone)';
+
+/**
+ * The full-table view of the pipeline — phone, assignee, last activity — for
+ * the screens that want a dense desktop list rather than the chat metaphor
+ * `listLeads` backs. `assigned_to` resolves against `core.users` with a
+ * second query rather than a PostgREST embed: the two tables are in
+ * different schemas and there is no FK PostgREST can follow across them.
+ */
+export async function listLeadsForTable(limit = 500): Promise<LeadTableRow[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('leads')
+    .select(TABLE_SELECT)
+    .is('deleted_at', null)
+    .order('updated_at', { ascending: false })
+    .limit(limit);
+
+  if (error) unreadable('listLeadsForTable', error);
+
+  const rows = data ?? [];
+  const userIds = [...new Set(rows.map((r) => r.assigned_to).filter((id): id is string => id !== null))];
+
+  const { data: users } =
+    userIds.length > 0
+      ? await supabase.schema('core').from('users').select('id, email').in('id', userIds)
+      : { data: [] as { id: string; email: string }[] };
+  const emailById = new Map((users ?? []).map((u) => [u.id, u.email]));
+
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    status: row.status,
+    source: row.source,
+    assigned_to: row.assigned_to,
+    updated_at: row.updated_at,
+    contact: row.contacts
+      ? { fullName: row.contacts.full_name, company: row.contacts.company, phone: row.contacts.phone }
+      : null,
+    assignedEmail: row.assigned_to ? (emailById.get(row.assigned_to) ?? null) : null,
   }));
 }
 

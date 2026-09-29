@@ -1,11 +1,10 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 
 import { getProductionReadiness } from '@/lib/admin/production-readiness';
 import { readinessSentence, type ReadinessStatus } from '@/lib/admin/production-readiness-eval';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { PageHeader } from '@/ui';
+import { PageHeader, PermissionDenied } from '@/ui';
 
 export const metadata: Metadata = { title: 'Production readiness' };
 
@@ -40,7 +39,7 @@ const BANNER = {
 
 export default async function ProductionReadinessPage() {
   const context = await requireInternal('/production-readiness');
-  if (!can(context.role, 'organization.settings')) redirect('/dashboard');
+  if (!can(context.role, 'organization.settings')) return <PermissionDenied />;
 
   const { checks, summary } = await getProductionReadiness();
   const sentence = readinessSentence(summary);

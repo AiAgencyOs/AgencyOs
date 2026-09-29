@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { getClient } from '@/lib/admin/clients';
@@ -14,6 +14,7 @@ import {
   DetailRow,
   EmptyState,
   humanize,
+  IconAlert,
   IconChevronRight,
   IconInbox,
   IconInvoices,
@@ -22,7 +23,10 @@ import {
   Stat,
   StatGrid,
   StatusBadge,
+  PermissionDenied,
 } from '@/ui';
+
+import { AddClientNoteForm } from './note-form';
 
 export const metadata: Metadata = { title: 'Client' };
 
@@ -53,10 +57,12 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
 
   const context = await requireInternal(`/clients/${clientId}`);
   const clock = await agencyClock();
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const client = await getClient(clientId);
   if (!client) notFound();
+
+  const canWriteNotes = can(context.role, 'project.write');
 
   return (
     <div className="flex flex-col gap-5">
@@ -72,13 +78,14 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
       />
 
       <StatGrid>
-        <Stat label="Active projects" value={String(client.projectsActive)} />
-        <Stat label="Total projects" value={String(client.projectsTotal)} />
-        <Stat label="Invoiced" value={money(client.invoicedMinor, client.currency)} />
+        <Stat label="Active projects" value={String(client.projectsActive)} icon={<IconProjects size={16} />} />
+        <Stat label="Total projects" value={String(client.projectsTotal)} icon={<IconProjects size={16} />} />
+        <Stat label="Invoiced" value={money(client.invoicedMinor, client.currency)} icon={<IconInvoices size={16} />} />
         <Stat
           label="Outstanding"
           value={money(client.outstandingMinor, client.currency)}
           tone={client.outstandingMinor > 0 ? 'warning' : 'success'}
+          icon={<IconAlert size={16} />}
         />
       </StatGrid>
 
@@ -209,6 +216,29 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
             title="No project group linked yet"
             description="A project's WhatsApp group, once linked, shows its messages here."
           />
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader title="Notes" description="Internal only — never shown to the client." />
+        {canWriteNotes ? (
+          <div className="px-4 pb-4 sm:px-5">
+            <AddClientNoteForm clientAccountId={client.id} />
+          </div>
+        ) : null}
+        {client.notes.length > 0 ? (
+          <ul className="divide-y divide-line">
+            {client.notes.map((n) => (
+              <li key={n.id} className="px-4 py-3 sm:px-5">
+                <p className="whitespace-pre-wrap text-[13px] text-foreground">{n.body}</p>
+                <p className="mt-1 text-xs text-muted">
+                  {n.createdByEmail ?? 'Unknown'} · {when(clock, n.createdAt)}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <EmptyState title="No notes yet" description="Internal notes about this client will appear here." />
         )}
       </Card>
 

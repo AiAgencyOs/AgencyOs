@@ -36,7 +36,7 @@ function Submit() {
     <button
       type="submit"
       disabled={pending}
-      className="self-start rounded-md border border-line-strong px-3 py-1.5 text-[13px] font-medium hover:bg-surface-strong disabled:opacity-60"
+      className="self-start rounded-md border border-line-strong px-3 py-1.5 text-[13px] font-medium hover:bg-surface-hover disabled:opacity-60"
     >
       {pending ? 'Recording…' : 'Record the request'}
     </button>

@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject } from '@/modules/projects/queries';
-import { Callout, PageHeader } from '@/ui';
+import { Callout, PageHeader, PermissionDenied } from '@/ui';
 
 import { ProjectVisibilityForm } from '../settings-panel';
 import { ProjectSubNav } from '../project-subnav';
@@ -23,7 +23,7 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/settings`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();

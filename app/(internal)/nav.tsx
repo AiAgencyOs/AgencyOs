@@ -123,7 +123,7 @@ export function SidebarNav({ groups }: { groups: NavGroup[] }) {
       {groups.map((group) => (
         <div key={group.title ?? 'top'} className="flex flex-col gap-0.5">
           {group.title ? (
-            <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+            <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-sidebar-muted">
               {group.title}
             </div>
           ) : null}
@@ -135,21 +135,12 @@ export function SidebarNav({ groups }: { groups: NavGroup[] }) {
                 href={item.href}
                 aria-current={current ? 'page' : undefined}
                 className={cx(
-                  'group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors',
+                  'flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors',
                   current
-                    ? 'bg-brand-soft text-brand'
-                    : 'text-muted hover:bg-surface-hover hover:text-foreground',
+                    ? 'bg-sidebar-active-bg text-sidebar-active-fg'
+                    : 'text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-fg',
                 )}
               >
-                {/* The lit rail marker. `aria-current` above is what actually
-                    announces the state; this is the visual half of the pair. */}
-                <span
-                  aria-hidden
-                  className={cx(
-                    'absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-accent transition-opacity',
-                    current ? 'opacity-100' : 'opacity-0',
-                  )}
-                />
                 <NavIcon href={item.href} size={17} className="shrink-0" />
                 <span className="truncate">{item.label}</span>
               </Link>
@@ -234,17 +225,17 @@ export function MobileNav({
             role="dialog"
             aria-modal="true"
             aria-label="Navigation"
-            className="animate-sheet absolute inset-y-0 left-0 flex w-[82vw] max-w-xs flex-col bg-surface shadow-lg"
+            className="animate-sheet absolute inset-y-0 left-0 flex w-[82vw] max-w-xs flex-col bg-sidebar-bg shadow-lg"
           >
-            <div className="pt-safe flex items-center justify-between border-b border-line px-4 py-3">
+            <div className="pt-safe flex items-center justify-between border-b border-sidebar-border px-4 py-3">
               <span className="flex items-center gap-2">
-                <Wordmark />
+                <Wordmark dark />
               </span>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="Close navigation"
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-hover"
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-sidebar-muted hover:bg-sidebar-hover"
               >
                 <IconClose size={20} />
               </button>
@@ -255,7 +246,7 @@ export function MobileNav({
                 {groups.map((group) => (
                   <div key={group.title ?? 'top'} className="flex flex-col gap-0.5">
                     {group.title ? (
-                      <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-faint">
+                      <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-sidebar-muted">
                         {group.title}
                       </div>
                     ) : null}
@@ -269,8 +260,8 @@ export function MobileNav({
                           className={cx(
                             'flex min-h-11 items-center gap-3 rounded-lg px-3 text-[15px] font-medium transition-colors',
                             current
-                              ? 'bg-brand-soft text-brand'
-                              : 'text-foreground/85 active:bg-surface-hover',
+                              ? 'bg-sidebar-active-bg text-sidebar-active-fg'
+                              : 'text-sidebar-fg/85 active:bg-sidebar-hover',
                           )}
                         >
                           <NavIcon href={item.href} size={19} className="shrink-0" />
@@ -283,9 +274,9 @@ export function MobileNav({
               </nav>
             </div>
 
-            <div className="pb-safe border-t border-line px-4 py-3">
-              <p className="truncate text-[13px] font-medium text-foreground">{identity.email}</p>
-              <p className="mb-3 text-xs text-muted">{humanize(identity.role)}</p>
+            <div className="pb-safe border-t border-sidebar-border px-4 py-3">
+              <p className="truncate text-[13px] font-medium text-sidebar-fg">{identity.email}</p>
+              <p className="mb-3 text-xs text-sidebar-muted">{humanize(identity.role)}</p>
               {signOut}
             </div>
           </div>
@@ -368,13 +359,20 @@ function MoreTab() {
 
 /* ── Shared bits ──────────────────────────────────────────────────────────── */
 
-export function Wordmark({ className }: { className?: string }) {
+export function Wordmark({ className, dark }: { className?: string; dark?: boolean }) {
   return (
     <span className={cx('flex items-center gap-2', className)}>
       <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-[13px] font-bold text-accent-fg">
         A
       </span>
-      <span className="text-[15px] font-semibold tracking-tight text-foreground">AgencyOS</span>
+      <span
+        className={cx(
+          'text-[15px] font-semibold tracking-tight',
+          dark ? 'text-sidebar-fg' : 'text-foreground',
+        )}
+      >
+        AgencyOS
+      </span>
     </span>
   );
 }

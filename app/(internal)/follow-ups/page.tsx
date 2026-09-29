@@ -1,22 +1,29 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { situationFor } from '@/modules/crm/follow-up-situations';
 import { listFollowUpSequences } from '@/modules/crm/queries';
+import { SavedViewsBar } from '../saved-views-bar';
 import {
   Badge,
   DataTable,
+  DEFAULT_PAGE_SIZE,
   EmptyState,
   FilterBar,
   FilterChips,
   humanize,
   IconClock,
+  paginate,
+  Pagination,
   PageHeader,
   statusTone,
   type Column,
+  PermissionDenied,
+  sortRows,
+  type SortDirection,
 } from '@/ui';
 
 export const metadata: Metadata = { title: 'Follow-ups' };
@@ -53,6 +60,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     align: 'right',
     cellClassName: 'tabular',
     cell: (r) => r.attempts_sent,
+    sortKey: 'attempts',
   },
   {
     key: 'next_due',
@@ -60,6 +68,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     align: 'right',
     cellClassName: 'text-muted',
     cell: (r) => (r.next_due_at ? clock.dateTime(r.next_due_at) : '—'),
+    sortKey: 'next_due',
   },
   {
     key: 'last_sent',
@@ -67,6 +76,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     align: 'right',
     cellClassName: 'text-muted',
     cell: (r) => (r.last_sent_at ? clock.dateTime(r.last_sent_at) : '—'),
+    sortKey: 'last_sent',
   },
   {
     key: 'stop_reason',
@@ -75,6 +85,12 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     cell: (r) => r.stop_reason ?? '—',
   },
 ];
+
+const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
+  attempts: (a, b) => a.attempts_sent - b.attempts_sent,
+  next_due: (a, b) => (a.next_due_at ?? '').localeCompare(b.next_due_at ?? ''),
+  last_sent: (a, b) => (a.last_sent_at ?? '').localeCompare(b.last_sent_at ?? ''),
+};
 
 /**
  * Every follow-up rhythm running against a lead, proposal, approval or
@@ -89,14 +105,23 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
 export default async function FollowUpsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; page?: string; sort?: string; dir?: string }>;
 }) {
   const context = await requireInternal('/follow-ups');
   const clock = await agencyClock();
-  if (!can(context.role, 'lead.read')) redirect('/dashboard');
+  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
 
-  const { status } = await searchParams;
-  const sequences = await listFollowUpSequences({ status });
+  const { status, page: pageParam, sort: sortKey, dir } = await searchParams;
+  const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
+  const currentQuery = [status ? `status=${status}` : '', sortKey ? `sort=${sortKey}&dir=${direction}` : '']
+    .filter(Boolean)
+    .join('&');
+  const [rawSequences, savedViews] = await Promise.all([
+    listFollowUpSequences({ status }),
+    listSavedViews('/follow-ups'),
+  ]);
+  const sequences = sortRows(rawSequences, sortKey, direction, COMPARATORS);
+  const { page, pageCount, rows: pageRows } = paginate(sequences, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
 
   return (
     <div className="flex flex-col gap-5">
@@ -123,8 +148,29 @@ export default async function FollowUpsPage({
         />
       </FilterBar>
 
+      <SavedViewsBar page="/follow-ups" currentQuery={currentQuery} views={savedViews} />
+
       {sequences.length > 0 ? (
-        <DataTable rows={sequences} columns={columnsFor(clock)} getKey={(r) => r.id} />
+        <>
+          <DataTable
+            rows={pageRows}
+            columns={columnsFor(clock)}
+            getKey={(r) => r.id}
+            sort={{
+              key: sortKey,
+              direction,
+              makeHref: (key, nextDirection) =>
+                `/follow-ups?${status ? `status=${status}&` : ''}sort=${key}&dir=${nextDirection}`,
+            }}
+          />
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            makeHref={(p) =>
+              `/follow-ups?${status ? `status=${status}&` : ''}${sortKey ? `sort=${sortKey}&dir=${direction}&` : ''}page=${p}`
+            }
+          />
+        </>
       ) : (
         <EmptyState
           icon={<IconClock size={22} />}

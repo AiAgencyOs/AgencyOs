@@ -256,8 +256,12 @@ describe('D. the announcement is built from the row, not from the event', () => 
 
 describe('E. and an operator can see it without reading a log', () => {
   test('the operations page counts it separately from a late approval', () => {
-    assert.match(PAGE, /\['Approvals late', backlog\.overdue_approvals\]/);
-    assert.match(PAGE, /\['Nobody told', backlog\.unannounced_approvals\]/);
+    // Each entry may carry a trailing icon component (e.g. `, IconClock`) —
+    // the KPI-tile icon chip added alongside the reference design's visual
+    // language — so this only pins the two stats to being separate array
+    // entries, not the tuple's exact arity.
+    assert.match(PAGE, /\['Approvals late', backlog\.overdue_approvals(?:, \w+)?\]/);
+    assert.match(PAGE, /\['Nobody told', backlog\.unannounced_approvals(?:, \w+)?\]/);
   });
 
   test('the grid was widened rather than losing a column', () => {

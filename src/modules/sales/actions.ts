@@ -63,6 +63,10 @@ export async function setOpportunityStageAction(
 
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidateLead(formData);
+  // The Sales Pipeline board (SCR-005) reads the same open opportunities by
+  // stage — added when that board grew a drag-and-drop write path onto this
+  // same action, so it needs revalidating too.
+  revalidatePath('/sales-funnel');
   return { status: 'success', message: `Deal moved to ${result.data.stage}.` };
 }
 

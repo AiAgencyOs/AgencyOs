@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { listMyTasks, type MyTaskRow } from '@/modules/projects/queries';
-import { Badge, EmptyState, IconCheck, PageHeader, Stat, StatGrid } from '@/ui';
+import { Badge, EmptyState, IconAlert, IconCheck, IconClock, PageHeader, Stat, StatGrid } from '@/ui';
 
 import { MyTaskStatusSelect } from './task-row';
 
@@ -51,10 +51,24 @@ export default async function MyTasksPage() {
 
       {tasks.length > 0 ? (
         <StatGrid>
-          <Stat label="Assigned to me" value={String(tasks.length)} />
-          <Stat label="Overdue" value={String(overdue.length)} tone={overdue.length > 0 ? 'danger' : 'success'} />
-          <Stat label="Blocked" value={String(blocked.length)} tone={blocked.length > 0 ? 'warning' : 'neutral'} />
-          <Stat label="Waiting for review" value={String(inReview.length)} />
+          <Stat label="Assigned to me" value={String(tasks.length)} icon={<IconCheck size={16} />} />
+          <Stat
+            label="Overdue"
+            value={String(overdue.length)}
+            tone={overdue.length > 0 ? 'danger' : 'success'}
+            icon={<IconAlert size={16} />}
+          />
+          <Stat
+            label="Blocked"
+            value={String(blocked.length)}
+            tone={blocked.length > 0 ? 'warning' : 'neutral'}
+            icon={<IconAlert size={16} />}
+          />
+          <Stat
+            label="Waiting for review"
+            value={String(inReview.length)}
+            icon={<IconClock size={16} />}
+          />
         </StatGrid>
       ) : null}
 

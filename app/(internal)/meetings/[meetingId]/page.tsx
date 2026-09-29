@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { agencyClock, clockFor, getAgencyTimeZone } from '@/lib/admin/agency-clock';
 import { googleCalendarConfig } from '@/lib/scheduling/google';
@@ -29,7 +29,7 @@ import {
   listRequirementVersions,
 } from '@/modules/crm/queries';
 import { isSettledMeeting, requirementPayloadSchema, type MeetingStatus } from '@/modules/crm/schema';
-import { Badge, Callout, Card, CardBody, CardHeader, IconArrowLeft, StatusBadge, cx, humanize } from '@/ui';
+import { Badge, Callout, Card, CardBody, CardHeader, IconArrowLeft, StatusBadge, cx, humanize, PermissionDenied } from '@/ui';
 
 import { MeetingControls } from './controls';
 
@@ -67,7 +67,7 @@ const Row = ({ label, children }: { label: string; children: React.ReactNode }) 
 export default async function MeetingPage({ params }: { params: Promise<{ meetingId: string }> }) {
   const { meetingId } = await params;
   const context = await requireInternal(`/meetings/${meetingId}`);
-  if (!can(context.role, 'lead.read')) redirect('/dashboard');
+  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
 
   const m = await getMeeting(meetingId);
   if (!m) notFound();

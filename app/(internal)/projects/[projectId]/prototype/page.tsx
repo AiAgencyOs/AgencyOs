@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject, listDeliverables } from '@/modules/projects/queries';
-import { Badge, Card, EmptyState, humanize, IconProjects, PageHeader, statusTone } from '@/ui';
+import { Badge, Card, EmptyState, humanize, IconProjects, PageHeader, statusTone, PermissionDenied } from '@/ui';
 
 import { AddPrototypeForm, SubmitDeliverableForm } from '../deliverables-panel';
 import { ProjectSubNav } from '../project-subnav';
@@ -26,7 +26,7 @@ export default async function PrototypePage({ params }: { params: Promise<{ proj
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/prototype`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();

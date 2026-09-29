@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { agencyClock, clockFor, getAgencyTimeZone, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
@@ -55,8 +55,10 @@ import {
   IconLock,
   IconSparkle,
   StatusBadge,
+  StatusStepper,
   SystemNote,
   humanize,
+  PermissionDenied,
 } from '@/ui';
 
 import { ExtractionForm, MessageForm, SendToClientForm } from './message-form';
@@ -148,7 +150,7 @@ export default async function LeadConversationPage({
   const { leadId } = await params;
 
   const context = await requireInternal(`/leads/${leadId}`);
-  if (!can(context.role, 'lead.read')) redirect('/dashboard');
+  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
 
   const lead = await getLeadHeader(leadId);
   if (!lead) notFound();
@@ -527,7 +529,7 @@ export default async function LeadConversationPage({
                         href={`/api/quotations/${p.id}/pdf`}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-[11px] text-muted underline underline-offset-2 hover:text-ink"
+                        className="text-[11px] text-muted underline underline-offset-2 hover:text-foreground"
                       >
                         PDF
                       </a>
@@ -859,6 +861,12 @@ export default async function LeadConversationPage({
         <span className="text-faint">/</span>
         <span className="truncate font-medium text-foreground">{lead.title}</span>
       </div>
+
+      <StatusStepper
+        status={leadStatus}
+        happyPath={['new', 'qualifying', 'qualified', 'converted']}
+        offRamps={['nurture', 'disqualified']}
+      />
 
       <LeadWorkspace chat={chat} details={details} detailsCount={awaitingDecision} />
     </div>
