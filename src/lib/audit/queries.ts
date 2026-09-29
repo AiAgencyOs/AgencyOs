@@ -36,6 +36,8 @@ export type AuditFilter = {
   /** Case-insensitive prefix on the action, e.g. "organization." or "consent." */
   actionPrefix?: string;
   subjectType?: string;
+  /** Entries sharing one correlation id — the audit half of an event chain (SCR-066). */
+  correlationId?: string;
   limit?: number;
 };
 
@@ -52,6 +54,7 @@ export async function readAuditLog(filter: AuditFilter = {}): Promise<AuditEntry
     .limit(Math.min(filter.limit ?? 100, MAX_LIMIT));
 
   if (filter.subjectId) query = query.eq('subject_id', filter.subjectId);
+  if (filter.correlationId) query = query.eq('correlation_id', filter.correlationId);
 
   if (filter.actionPrefix && filter.actionPrefix.trim()) {
     // PostgREST `like` with a trailing wildcard; the input is a filter facet,

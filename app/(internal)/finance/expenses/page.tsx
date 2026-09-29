@@ -5,10 +5,12 @@ import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listExpenses, listInvoices } from '@/modules/finance/queries';
+import { readAiCostByProject } from '@/modules/finance/ai-cost-queries';
 import { listProjects } from '@/modules/projects/queries';
-import { Card, CardHeader, DataTable, EmptyState, IconInvoices, PageHeader, StatGrid, Stat, type Column } from '@/ui';
+import { Card, CardHeader, DataTable, EmptyState, IconInvoices, PageHeader, StatGrid, Stat, buttonClass, type Column } from '@/ui';
 
 import { RecordExpenseForm } from './expense-form';
+import { TrendChart } from './trend-chart';
 
 export const metadata: Metadata = { title: 'Expenses' };
 
@@ -62,7 +64,12 @@ export default async function ExpensesPage() {
   const clock = await agencyClock();
   if (!can(context.role, 'invoice.read')) redirect('/finance');
 
-  const [expenses, projects, invoices] = await Promise.all([listExpenses(), listProjects(500), listInvoices(500)]);
+  const [expenses, projects, invoices, aiCosts] = await Promise.all([
+    listExpenses(),
+    listProjects(500),
+    listInvoices(500),
+    readAiCostByProject(),
+  ]);
   const canRecord = can(context.role, 'invoice.issue');
 
   const projectNameById = new Map(projects.map((p) => [p.id, p.name]));
@@ -85,7 +92,35 @@ export default async function ExpensesPage() {
     paidByProject.set(i.project_id, (paidByProject.get(i.project_id) ?? 0) + i.paid_minor);
   }
 
-  const projectIdsWithActivity = new Set([...expensesByProject.keys(), ...invoicedByProject.keys()]);
+  // AI / tooling cost — what the runtime recorded against each project
+  // (`ai.agent_runs.cost_minor`, attributed by project). Shown beside the
+  // recorded expenses, not added to them: an `ai` expense somebody typed in
+  // and a run the runtime priced may be the same rupee twice, and only a
+  // person can say which.
+  const aiByProject = new Map(aiCosts.map((c) => [c.projectId, c]));
+
+  // Monthly trend of recorded expenses, most recent twelve months with any
+  // activity, in the currency most rows carry — a chart summing currencies
+  // would be a number that is not an amount of anything.
+  const currencyCounts = new Map<string, number>();
+  for (const e of expenses) currencyCounts.set(e.currency, (currencyCounts.get(e.currency) ?? 0) + 1);
+  const trendCurrency = [...currencyCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  const byMonth = new Map<string, number>();
+  for (const e of expenses) {
+    if (e.currency !== trendCurrency) continue;
+    const month = e.incurredOn.slice(0, 7);
+    byMonth.set(month, (byMonth.get(month) ?? 0) + e.amountMinor);
+  }
+  const trend = [...byMonth.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .slice(-12)
+    .map(([month, value]) => ({
+      key: month,
+      label: new Date(`${month}-01T00:00:00Z`).toLocaleString('en-IN', { month: 'short', year: '2-digit', timeZone: 'UTC' }),
+      value,
+    }));
+
+  const projectIdsWithActivity = new Set([...expensesByProject.keys(), ...invoicedByProject.keys(), ...aiByProject.keys()]);
   const byProject = projects
     .filter((p) => projectIdsWithActivity.has(p.id))
     .map((p) => ({
@@ -95,6 +130,8 @@ export default async function ExpensesPage() {
       invoicedMinor: invoicedByProject.get(p.id) ?? 0,
       paidMinor: paidByProject.get(p.id) ?? 0,
       expensesMinor: expensesByProject.get(p.id) ?? 0,
+      aiCostMinor: aiByProject.get(p.id)?.costMinor ?? 0,
+      aiRuns: aiByProject.get(p.id)?.runs ?? 0,
     }));
 
   return (
@@ -106,6 +143,11 @@ export default async function ExpensesPage() {
             ? 'No expenses recorded yet.'
             : `${expenses.length} expense${expenses.length === 1 ? '' : 's'} recorded.`
         }
+        actions={
+          <a href="/api/finance/expenses/export" className={buttonClass('secondary', 'sm')}>
+            Download CSV
+          </a>
+        }
       />
 
       {byCurrency.size > 0 ? (
@@ -116,11 +158,24 @@ export default async function ExpensesPage() {
         </StatGrid>
       ) : null}
 
+      {trend.length > 0 && trendCurrency ? (
+        <Card>
+          <CardHeader title="Monthly trend" description={`Recorded expenses per month, ${trendCurrency} only.`} />
+          <div className="px-4 py-4 sm:px-5">
+            <TrendChart
+              points={trend}
+              format={(v) => money(v, trendCurrency)}
+              caption={`Expenses incurred per month (${trendCurrency}), last ${trend.length} month${trend.length === 1 ? '' : 's'} with activity.`}
+            />
+          </div>
+        </Card>
+      ) : null}
+
       {byProject.length > 0 ? (
         <Card>
           <CardHeader
             title="By project"
-            description="Invoiced, paid and recorded expenses, side by side. Not a margin — see this page's own note for why."
+            description="Invoiced, paid, recorded expenses and what the AI runtime recorded, side by side. Not a margin — see this page's own note for why."
           />
           <table className="w-full text-[13px]">
             <thead>
@@ -128,7 +183,8 @@ export default async function ExpensesPage() {
                 <th className="px-4 py-2 font-normal sm:px-5">Project</th>
                 <th className="px-4 py-2 text-right font-normal">Invoiced</th>
                 <th className="px-4 py-2 text-right font-normal">Paid</th>
-                <th className="px-4 py-2 text-right font-normal sm:pr-5">Expenses</th>
+                <th className="px-4 py-2 text-right font-normal">Expenses</th>
+                <th className="px-4 py-2 text-right font-normal sm:pr-5">AI / tooling (recorded runs)</th>
               </tr>
             </thead>
             <tbody>
@@ -137,7 +193,10 @@ export default async function ExpensesPage() {
                   <td className="px-4 py-2 font-medium sm:px-5">{p.name}</td>
                   <td className="px-4 py-2 text-right tabular">{money(p.invoicedMinor, p.currency)}</td>
                   <td className="px-4 py-2 text-right tabular">{money(p.paidMinor, p.currency)}</td>
-                  <td className="px-4 py-2 text-right tabular sm:pr-5">{money(p.expensesMinor, p.currency)}</td>
+                  <td className="px-4 py-2 text-right tabular">{money(p.expensesMinor, p.currency)}</td>
+                  <td className="px-4 py-2 text-right tabular text-muted sm:pr-5">
+                    {p.aiRuns > 0 ? `${money(p.aiCostMinor, 'INR')} · ${p.aiRuns} run${p.aiRuns === 1 ? '' : 's'}` : '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -2,19 +2,91 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import { aiStatus } from '@/lib/admin/agent-status';
+import { aiStatus, listHandoffs, type AgentRow } from '@/lib/admin/agent-status';
+import { readRunMetrics } from '@/lib/admin/agent-metrics';
 import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
 import { providerCredentialStatus } from '@/lib/ai/vault';
 import { createClient } from '@/lib/db/server';
 
 import { SetProviderCredentialForm, VerifyAiProviderForm } from '../settings/forms';
 import { formatCostMinor, whyNotRun, wouldRun } from '@/lib/admin/agent-eval';
-import { agencyClock } from '@/lib/admin/agency-clock';
+import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { Badge, Callout, Card, IconAlert, IconCheck, PageHeader, Stat } from '@/ui';
+import {
+  Badge,
+  Callout,
+  Card,
+  CardHeader,
+  DataTable,
+  IconAlert,
+  IconCheck,
+  PageHeader,
+  Stat,
+  StatGrid,
+  StatusBadge,
+  buttonClass,
+  type Column,
+} from '@/ui';
 
 export const metadata: Metadata = { title: 'Agents' };
+
+function seconds(value: number | null): string {
+  if (value === null) return '—';
+  if (value < 60) return `${Math.round(value)}s`;
+  return `${Math.floor(value / 60)}m ${Math.round(value % 60)}s`;
+}
+
+const registryColumns = (clock: AgencyClock, providerConfigured: boolean): Column<AgentRow>[] => [
+  {
+    key: 'agent',
+    header: 'Agent',
+    primary: true,
+    cell: (a) => (
+      <>
+        <Link href={`/agents/${a.key}`} className="block font-medium underline-offset-2 hover:underline">
+          {a.displayName}
+        </Link>
+        <code className="block text-xs text-muted">{a.key}</code>
+      </>
+    ),
+  },
+  {
+    key: 'state',
+    header: 'State',
+    badge: true,
+    cell: (a) => {
+      const blocked = whyNotRun(a, providerConfigured);
+      return (
+        <Badge tone={blocked ? 'neutral' : 'success'} dot>
+          {blocked ? `would not run — ${blocked}` : 'would run'}
+        </Badge>
+      );
+    },
+  },
+  { key: 'autonomy', header: 'Autonomy', cell: (a) => a.autonomyLevel },
+  { key: 'model', header: 'Model', cellClassName: 'text-muted', desktopOnly: true, cell: (a) => a.defaultModel ?? '—' },
+  { key: 'effort', header: 'Effort', cellClassName: 'text-muted', desktopOnly: true, cell: (a) => a.defaultEffort ?? '—' },
+  { key: 'steps', header: 'Max steps', align: 'right', cellClassName: 'tabular', cell: (a) => a.maxSteps ?? '—' },
+  {
+    key: 'cost',
+    header: 'Max cost / run',
+    align: 'right',
+    cellClassName: 'tabular',
+    cell: (a) => {
+      const cost = formatCostMinor(a.maxCostMinor);
+      return cost ? `₹${cost}` : '—';
+    },
+  },
+  {
+    key: 'validated',
+    header: 'Validated',
+    align: 'right',
+    cellClassName: 'text-muted',
+    desktopOnly: true,
+    cell: (a) => (a.lastValidatedAt ? `${clock.date(a.lastValidatedAt)}${a.definitionVersion ? ` · ${a.definitionVersion}` : ''}` : 'never'),
+  },
+];
 
 /**
  * The AI agent registry and provider posture — read-only.
@@ -27,15 +99,25 @@ export const metadata: Metadata = { title: 'Agents' };
  * model, ceilings, last validation — and the single provider boolean, never a
  * key. Gated on `audit.read` (owner + ops_admin), the operational-visibility
  * capability, the same one /operations uses.
+ *
+ * No "validate configuration" button: the only writer of `last_validated_at`
+ * is `stampAgentDefinitions`, a service-role tick in the cron route with no
+ * RLS-governed door; a browser control onto it would add a service-role
+ * write outside ARCHITECTURE.md §7.3's list. The tick runs on its own and
+ * the column shows when it last agreed.
  */
 export default async function AgentsPage() {
   const context = await requireInternal('/agents');
   const clock = await agencyClock();
   if (!can(context.role, 'audit.read')) redirect('/dashboard');
 
-  const { providerConfigured, providers, agents } = await aiStatus();
+  const [{ providerConfigured, providers, agents }, metrics, handoffs, settings] = await Promise.all([
+    aiStatus(),
+    readRunMetrics(),
+    listHandoffs(6),
+    readOperationalSettings(),
+  ]);
   // G-236: the recorded verification, beside the control that writes it.
-  const settings = await readOperationalSettings();
   const providerVerifiedAt = settingInstant(settings, 'ai_provider_verified_at');
   const providerVerifiedModel = settingText(settings, 'ai_provider_verified_model');
   const enabledCount = agents.filter((a) => a.enabled).length;
@@ -52,13 +134,19 @@ export default async function AgentsPage() {
         title="Agents"
         description="The AI agent registry and provider status, read-only. Enabling an agent or changing its limits is an owner decision made in the database (ADM-82), not from here — this shows what is enforced."
         actions={
-          <span className="flex items-center gap-3">
+          <span className="flex flex-wrap items-center gap-3">
             <Link href="/agents/automations" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
               Automations
             </Link>
+            <Link href="/usage" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
+              Usage &amp; costs
+            </Link>
+            <a href="/api/usage/export" className={buttonClass('secondary', 'sm')}>
+              Export usage CSV
+            </a>
             {isAdmin ? (
               <Link href="/agents/routing" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
-                Model routing
+                Model routing &amp; providers
               </Link>
             ) : null}
           </span>
@@ -103,55 +191,95 @@ export default async function AgentsPage() {
         </Card>
       ) : null}
 
-      <div className="grid grid-cols-3 gap-3">
-        <Stat label="Agents" value={agents.length} />
-        <Stat label="Enabled" value={enabledCount} />
+      <StatGrid>
+        <Stat label="Agents" value={agents.length} caption={`${enabledCount} enabled`} />
         <Stat label="Would run now" value={runnable} tone={runnable > 0 ? 'success' : 'neutral'} />
+        <Stat
+          label="Average task time"
+          value={seconds(metrics.averageSeconds)}
+          caption={
+            metrics.timedRuns > 0
+              ? `median ${seconds(metrics.medianSeconds)} · ${metrics.timedRuns} settled runs${metrics.failedRuns > 0 ? ` · ${metrics.failedRuns} failed` : ''}`
+              : 'no settled run has both timestamps yet'
+          }
+        />
+        <Stat
+          label="Models used"
+          value={metrics.byModel.length}
+          caption={metrics.byModel[0] ? `${metrics.byModel[0].model} carries ${Math.round(metrics.byModel[0].share * 100)}% of spend` : 'nothing in the ledger yet'}
+        />
+      </StatGrid>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card>
+          <CardHeader title="Model usage" description="Runs and cost per model, from the ledger the runtime writes as runs settle." />
+          {metrics.byModel.length > 0 ? (
+            <ul className="divide-y divide-line">
+              {metrics.byModel.map((m) => (
+                <li key={m.model} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[13px] sm:px-5">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <code className="truncate text-xs">{m.model}</code>
+                    <span className="text-muted tabular">{m.runs} run{m.runs === 1 ? '' : 's'}</span>
+                  </span>
+                  <span className="flex items-center gap-3 tabular">
+                    <span>₹{formatCostMinor(m.costMinor) ?? '0.00'}</span>
+                    <span className="w-10 text-right text-muted">{Math.round(m.share * 100)}%</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No run has settled into the ledger yet.</p>
+          )}
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Automation"
+            description="The latest agent-to-agent handoffs."
+            actions={
+              <Link href="/agents/automations" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
+                All handoffs
+              </Link>
+            }
+          />
+          {handoffs.length > 0 ? (
+            <ul className="divide-y divide-line">
+              {handoffs.map((h) => (
+                <li key={h.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[13px] sm:px-5">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Link href={`/agents/${h.fromAgent}`} className="underline-offset-2 hover:underline">
+                      {h.fromAgent}
+                    </Link>
+                    <span className="text-muted">→</span>
+                    <Link href={`/agents/${h.toAgent}`} className="underline-offset-2 hover:underline">
+                      {h.toAgent}
+                    </Link>
+                    <StatusBadge status={h.status} />
+                  </span>
+                  <span className="text-xs text-muted">{clock.dateTime(h.createdAt)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No handoff has been recorded yet.</p>
+          )}
+        </Card>
       </div>
 
-      <ul className="flex flex-col gap-3">
-        {agents.map((a) => {
-          const blocked = whyNotRun(a, providerConfigured);
-          const cost = formatCostMinor(a.maxCostMinor);
-          return (
-            <li key={a.key}>
-              <Card className="flex flex-col gap-2.5 p-4 text-sm sm:p-5">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="flex min-w-0 items-baseline gap-2">
-                  <Link href={`/agents/${a.key}`} className="font-semibold hover:underline underline-offset-2">
-                    {a.displayName}
-                  </Link>
-                  <code className="text-xs text-muted">{a.key}</code>
-                </div>
-                <Badge tone={blocked ? 'neutral' : 'success'} dot>
-                  {blocked ? `would not run — ${blocked}` : 'would run'}
-                </Badge>
-              </div>
-              <p className="text-[13px] leading-relaxed text-muted">{a.description}</p>
-              <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted">
-                <span>autonomy <span className="text-foreground">{a.autonomyLevel}</span></span>
-                <span>model <span className="text-foreground">{a.defaultModel ?? '—'}</span></span>
-                <span>effort <span className="text-foreground">{a.defaultEffort ?? '—'}</span></span>
-                <span>max steps <span className="text-foreground">{a.maxSteps ?? '—'}</span></span>
-                <span>max cost <span className="text-foreground">{cost ? `₹${cost}` : '—'}</span></span>
-                <span>
-                  validated{' '}
-                  <span className="text-foreground">
-                    {a.lastValidatedAt ? clock.date(a.lastValidatedAt) : 'never'}
-                    {a.definitionVersion ? ` · ${a.definitionVersion}` : ''}
-                  </span>
-                </span>
-              </div>
-              {!a.enabled && a.disabledReason ? (
-                <p className="text-xs text-muted">
-                  <span className="uppercase tracking-wide">disabled:</span> {a.disabledReason}
-                </p>
-              ) : null}
-              </Card>
-            </li>
-          );
-        })}
-      </ul>
+      <DataTable rows={agents} columns={registryColumns(clock, providerConfigured)} getKey={(a) => a.key} />
+
+      {agents.some((a) => !a.enabled && a.disabledReason) ? (
+        <ul className="flex flex-col gap-1 text-xs text-muted">
+          {agents
+            .filter((a) => !a.enabled && a.disabledReason)
+            .map((a) => (
+              <li key={a.key}>
+                <code>{a.key}</code> disabled: {a.disabledReason}
+              </li>
+            ))}
+        </ul>
+      ) : null}
     </div>
   );
 }

@@ -28,6 +28,7 @@ import {
   listMeetingJobs,
   listRequirementVersions,
 } from '@/modules/crm/queries';
+import { isAnalysisNote, parseAnalysisSections } from '@/modules/crm/analysis-sections';
 import { isSettledMeeting, requirementPayloadSchema, type MeetingStatus } from '@/modules/crm/schema';
 import { Badge, Callout, Card, CardBody, CardHeader, IconArrowLeft, StatusBadge, cx, humanize } from '@/ui';
 
@@ -99,6 +100,11 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
   const completion = completionState(m, now);
   const reminder = reminderState(reminderJob, m);
   const analysis = analysisState(analysisJob, m, evidence.length);
+  // SCR-060: what the analysis note says was decided, what comes next and
+  // what is still open — read back from the newest `summary` note the
+  // handler filed (analysis-sections.ts), never inferred here.
+  const analysisNote = evidence.find((e) => e.kind === 'summary' && isAnalysisNote(e.body));
+  const extracted = analysisNote?.body ? parseAnalysisSections(analysisNote.body) : null;
 
   const at = (iso: string | null | undefined) => (iso ? `${local.dateTime(iso)} ${zones.primary}` : '—');
 
@@ -234,6 +240,58 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
           </CardBody>
         </Card>
       </div>
+
+      {extracted ? (
+        <Card>
+          <CardHeader
+            title="Extracted from the analysis"
+            description="Decisions, next actions and open questions as the analysis note proposed them — inference, not confirmed until a person says so."
+          />
+          <CardBody>
+            <div className="grid gap-4 lg:grid-cols-3">
+              <div className="flex flex-col gap-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted">Decisions</p>
+                {extracted.decisions.length === 0 ? (
+                  <p className="text-[13px] text-muted">None recorded.</p>
+                ) : (
+                  <ul className="flex flex-col gap-1 text-[13px]">
+                    {extracted.decisions.map((d, i) => (
+                      <li key={i} className="flex gap-2">
+                        <Badge tone={d.who === 'agency' ? 'brand' : 'info'}>{d.who}</Badge>
+                        <span>{d.text}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted">Actions</p>
+                {extracted.actions.length === 0 ? (
+                  <p className="text-[13px] text-muted">None recorded.</p>
+                ) : (
+                  <ul className="flex list-disc flex-col gap-1 pl-4 text-[13px]">
+                    {extracted.actions.map((a, i) => (
+                      <li key={i}>{a}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted">Open questions</p>
+                {extracted.openQuestions.length === 0 ? (
+                  <p className="text-[13px] text-muted">None recorded.</p>
+                ) : (
+                  <ul className="flex list-disc flex-col gap-1 pl-4 text-[13px]">
+                    {extracted.openQuestions.map((q, i) => (
+                      <li key={i}>{q}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader
