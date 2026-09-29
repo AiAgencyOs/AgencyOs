@@ -199,6 +199,9 @@ export const TEMPLATE_SITUATIONS = [
   // Owner decision 2026-09-29: a past-due invoice reminder outside the
   // 24-hour window goes as the template registered here (20260930100000).
   'invoice_reminder',
+  // Owner decision 2026-09-30: the template a campaign carries (SCR-059,
+  // broadcast reopened as a governed campaign; 20260930140000).
+  'campaign',
 ] as const;
 
 export type TemplateSituation = (typeof TEMPLATE_SITUATIONS)[number];

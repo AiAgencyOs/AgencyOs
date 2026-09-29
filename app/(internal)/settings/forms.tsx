@@ -639,6 +639,7 @@ const TEMPLATE_SITUATION_LABELS: Readonly<Record<string, string>> = {
   internal_approval: 'Internal approval reminder',
   missed_meeting: 'Missed a booked meeting',
   invoice_reminder: 'Past-due invoice reminder',
+  campaign: 'Campaign (governed broadcast)',
 };
 
 export function WhatsAppTemplatesForm({
