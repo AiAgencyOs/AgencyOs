@@ -326,3 +326,38 @@ export const IconSparkle = (p: IconProps) => (
     <path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" />
   </Svg>
 );
+
+/* ── Added for the fifteen-module rail (screen architecture §2) ──────────── */
+
+export const IconPalette = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.2 0-1.1.9-2 2-2h1.8A4.2 4.2 0 0 0 21 10.3C21 6.3 17 3 12 3z" />
+    <circle cx="7.5" cy="11.5" r="1" />
+    <circle cx="10.5" cy="7.5" r="1" />
+    <circle cx="15" cy="7.5" r="1" />
+  </Svg>
+);
+
+export const IconCode = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M8 8l-4 4 4 4" />
+    <path d="M16 8l4 4-4 4" />
+    <path d="M14 4l-4 16" />
+  </Svg>
+);
+
+export const IconBell = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6 9a6 6 0 1 1 12 0v4l1.5 3h-15L6 13z" />
+    <path d="M10 19a2 2 0 0 0 4 0" />
+  </Svg>
+);
+
+export const IconWifi = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M2.5 9a15 15 0 0 1 19 0" />
+    <path d="M5.5 12.5a10.5 10.5 0 0 1 13 0" />
+    <path d="M8.5 16a6 6 0 0 1 7 0" />
+    <circle cx="12" cy="19.5" r="0.8" fill="currentColor" />
+  </Svg>
+);

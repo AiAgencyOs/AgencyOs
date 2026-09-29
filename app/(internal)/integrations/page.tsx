@@ -4,7 +4,8 @@ import { getIntegrations } from '@/lib/admin/integrations';
 import type { Lifecycle } from '@/lib/admin/integrations-eval';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { AutoRefresh, PageHeader, PermissionDenied } from '@/ui';
+import { LiveRefresh } from '@/lib/realtime';
+import { PageHeader, PermissionDenied } from '@/ui';
 
 export const metadata: Metadata = { title: 'Integrations' };
 
@@ -43,7 +44,7 @@ export default async function IntegrationsPage() {
         configured at most until a person verifies them.
           </>
         }
-        actions={<AutoRefresh intervalMs={30000} />}
+        actions={<LiveRefresh topics={['jobs']} />}
       />
 
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">

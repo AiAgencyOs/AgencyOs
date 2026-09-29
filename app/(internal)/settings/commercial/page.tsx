@@ -7,6 +7,7 @@ import {
   ApprovedOfferForm,
   NegotiationLimitsForm,
   PaymentTermsForm,
+  QuotationValidityForm,
   PricingModelForm,
   ThirdPartyChargesForm,
 } from '../forms';
@@ -112,6 +113,14 @@ export default async function SettingsCommercialPage() {
           calendar.
         </p>
         <PaymentTermsForm structure={paymentTerms} />
+
+        <h3 className="mt-6 text-sm font-medium">How long a quotation stands</h3>
+        <p className="text-xs text-muted">
+          {setting('quotation_validity_days')
+            ? `Set — every new quotation says it is valid for ${setting('quotation_validity_days')} days from its date.`
+            : 'Not set — quotations say 15 days, the figure most of the agency’s own past quotations used. Whole days, 1 to 90.'}
+        </p>
+        <QuotationValidityForm current={setting('quotation_validity_days')} />
 
         <h3 className="mt-6 text-sm font-medium">Third-party charges</h3>
         <p className="text-xs text-muted">

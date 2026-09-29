@@ -367,7 +367,13 @@ export type OrganizationSettingKey =
   | 'ai_provider_verified_at'
   | 'ai_provider_verified_model'
   | 'calendar_verified_at'
-  | 'calendar_verified_calendar';
+  | 'calendar_verified_calendar'
+  // Configurability audit B-1/B-2 — two constants that became the owner's:
+  // how long a quotation stands, and the agency-local hours inside which
+  // follow-ups go out. Unset means the code's old default, exactly as before.
+  | 'quotation_validity_days'
+  | 'outreach_window_start_hour'
+  | 'outreach_window_end_hour';
 
 const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   whatsapp_phone_number_id: 'a numeric WhatsApp phone_number_id (digits only)',
@@ -393,6 +399,9 @@ const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   ai_provider_verified_model: 'the model that answered, up to 80 characters',
   calendar_verified_at: 'an ISO-8601 instant — written by Verify calendar, not by hand',
   calendar_verified_calendar: 'the calendar that answered, e.g. google:meetings@agency, up to 80 characters',
+  quotation_validity_days: 'a whole number of days between 1 and 90',
+  outreach_window_start_hour: 'an hour on the 24-hour clock, 0 to 22',
+  outreach_window_end_hour: 'an hour on the 24-hour clock, 1 to 23, after the start',
 };
 
 /**

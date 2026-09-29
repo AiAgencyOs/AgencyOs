@@ -20,6 +20,8 @@ import {
   setNegotiationLimitsAction,
   setOrganizationNameAction,
   setOutreachLimitsAction,
+  setOutreachWindowAction,
+  setQuotationValidityAction,
   setPaymentTermsAction,
   setPricingModelAction,
   setProjectGroupIdentifierAction,
@@ -1222,6 +1224,65 @@ export function DefaultDesignReviewerForm({
         changing this does not move a gate a person decided. Projects with nobody assigned will be
         given them now, and the count is reported.
       </p>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** How many days a quotation stands — configurability audit B-1. */
+export function QuotationValidityForm({ current }: { current: string | null }) {
+  const [state, action, pending] = useActionState(setQuotationValidityAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <label className="flex flex-col gap-1">
+        <span className="text-xs font-medium">Valid for (days)</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          name="validity_days"
+          defaultValue={current ?? ''}
+          placeholder="15"
+          className={`${inputClass} w-24 tabular`}
+        />
+      </label>
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Saving…' : 'Save validity'}
+      </button>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** The agency-local hours inside which follow-ups are sent — configurability audit B-2. */
+export function OutreachWindowForm({ start, end }: { start: string | null; end: string | null }) {
+  const [state, action, pending] = useActionState(setOutreachWindowAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <label className="flex flex-col gap-1">
+        <span className="text-xs font-medium">From (hour, 0–22)</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          name="window_start_hour"
+          defaultValue={start ?? ''}
+          placeholder="10"
+          className={`${inputClass} w-24 tabular`}
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-xs font-medium">Until (hour, 1–23)</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          name="window_end_hour"
+          defaultValue={end ?? ''}
+          placeholder="19"
+          className={`${inputClass} w-24 tabular`}
+        />
+      </label>
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Saving…' : 'Save window'}
+      </button>
       <Message status={state.status} message={state.message} />
     </form>
   );

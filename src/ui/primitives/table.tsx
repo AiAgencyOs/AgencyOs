@@ -47,6 +47,9 @@ export type Column<T> = {
   sortKey?: string;
 };
 
+/** Above this many rows a table scrolls inside its own box with a sticky header. */
+export const STICKY_FROM_ROWS = 12;
+
 export function DataTable<T>({
   rows,
   columns,
@@ -54,6 +57,7 @@ export function DataTable<T>({
   href,
   sort,
   className,
+  stickyHeader,
 }: {
   rows: readonly T[];
   columns: ReadonlyArray<Column<T>>;
@@ -63,21 +67,30 @@ export function DataTable<T>({
   /** Turns every column with a `sortKey` into a clickable header — omit for an unsorted table. */
   sort?: SortState;
   className?: string;
+  /**
+   * Keep the column headers in view while a long list scrolls. Defaults to
+   * on for any table longer than `STICKY_FROM_ROWS`; pass `false` for a
+   * table that must never gain its own scroll box (one inside a drawer).
+   */
+  stickyHeader?: boolean;
 }) {
   const primary = columns.find((c) => c.primary) ?? columns[0];
   const badges = columns.filter((c) => c.badge);
   const rest = columns.filter((c) => c !== primary && !c.badge && !c.desktopOnly);
+  const sticky = stickyHeader ?? rows.length > STICKY_FROM_ROWS;
 
   return (
     <div className={cx('min-w-0', className)}>
       {/* ── Desktop: a real table ─────────────────────────────────────── */}
-      {/* A `sticky` header row was tried here (per the shared-component
-          spec's "sticky column headers on long lists" rule) but reverted:
-          `position: sticky` on a `<tr>` breaks the table's own row-stacking
-          in practice — the first body row rendered overlapping the header
-          instead of below it. Not worth the breakage for a nice-to-have;
-          a real sticky header would need a non-table layout (CSS grid) to
-          do safely, which is a bigger change than this primitive's scope. */}
+      {/* Sticky headers (the shared-component rule, "sticky column headers
+          on long lists") are done the way a browser supports: `position:
+          sticky` on each `<th>` — never on the `<tr>`, which is what broke
+          row-stacking in the first attempt — inside a wrapper that is the
+          table's own scroll container. A wrapper with `overflow-x: auto`
+          already IS a scroll container for both axes, so sticking to the
+          viewport was never available; giving a long table a bounded height
+          makes the wrapper the thing that scrolls, and the header sticks to
+          its top edge as it should. Short tables keep the old layout. */}
       {/* `lg:block`, not `md:block`: the app shell's sidebar also becomes
           visible at `md` (768px, e.g. a portrait iPad), so a table switching
           to its desktop form at that exact same breakpoint had no room left
@@ -85,7 +98,12 @@ export function DataTable<T>({
           every table in the app at that one width. Found by live-testing at
           768px, not by inspection. `lg` (1024px) gives the table a width
           worth switching for. */}
-      <div className="hidden overflow-x-auto rounded-xl border border-line bg-surface shadow-xs lg:block">
+      <div
+        className={cx(
+          'hidden overflow-x-auto rounded-xl border border-line bg-surface shadow-xs lg:block',
+          sticky && 'max-h-[calc(100vh-11rem)] overflow-y-auto',
+        )}
+      >
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b border-line bg-surface-sunken">
@@ -98,9 +116,11 @@ export function DataTable<T>({
                     key={c.key}
                     scope="col"
                     style={c.width ? { width: c.width } : undefined}
+                    aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}
                     className={cx(
                       'px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted whitespace-nowrap',
                       c.align === 'right' ? 'text-right' : 'text-left',
+                      sticky && 'sticky top-0 z-10 bg-surface-sunken shadow-[inset_0_-1px_0_var(--line)]',
                     )}
                   >
                     {sort && c.sortKey !== undefined ? (
@@ -126,7 +146,7 @@ export function DataTable<T>({
                   </th>
                 );
               })}
-              {href ? <th className="w-10" /> : null}
+              {href ? <th className={cx('w-10', sticky && 'sticky top-0 z-10 bg-surface-sunken')} /> : null}
             </tr>
           </thead>
           <tbody>

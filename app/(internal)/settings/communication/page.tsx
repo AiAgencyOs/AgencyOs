@@ -9,6 +9,7 @@ import {
   InternalGroupForm,
   InternalRecipientForm,
   OutreachLimitsForm,
+  OutreachWindowForm,
   PilotToggleForm,
   ReactivationCapForm,
   SendWhatsAppTestForm,
@@ -120,6 +121,14 @@ export default async function SettingsCommunicationPage() {
           person would choose rather than what a campaign would like.
         </p>
         <OutreachLimitsForm limits={outreachLimits} />
+
+        <h2 className="text-[13px] font-semibold tracking-tight">When AgencyOS may send</h2>
+        <p className="text-xs text-muted">
+          {setting('outreach_window_start_hour') && setting('outreach_window_end_hour')
+            ? `Set — follow-ups go out between ${setting('outreach_window_start_hour')}:00 and ${setting('outreach_window_end_hour')}:00 in the agency’s timezone, on business days.`
+            : 'Not set — follow-ups go out between 10:00 and 19:00 in the agency’s timezone, on business days. A follow-up that falls due outside these hours waits for the next opening.'}
+        </p>
+        <OutreachWindowForm start={setting('outreach_window_start_hour')} end={setting('outreach_window_end_hour')} />
 
         <h2 className="text-[13px] font-semibold tracking-tight">How quickly the agent answers</h2>
         <p className="text-xs text-muted">

@@ -273,7 +273,7 @@ describe('E. the plumbing — one document, every door, pinned in CODE', () => {
     // (which counts surfaces). Pinned WITH it, so a door that silently stops
     // passing it fails here rather than in front of a client.
     const call =
-      /quotationSectionsFor\(proposal\.total_minor, proposal\.tax_minor, proposal\.document \?\? null, renderItems\)/g;
+      /quotationSectionsFor\(proposal\.total_minor, proposal\.tax_minor, proposal\.document \?\? null, renderItems, \{\s*validityDays:[^}]*\}\)/g;
     assert.equal((handlers.match(call) ?? []).length, 1, 'the announce/dispatch renderer must assemble once');
     assert.equal((service.match(call) ?? []).length, 2, 'the owner download and the manual send must both assemble');
     // The selects behind them — the review mutation-proved these were unpinned:

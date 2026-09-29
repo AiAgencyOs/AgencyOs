@@ -14,8 +14,8 @@ import { isAvailable, levelLabel, overallStatus, type Avail } from '@/lib/admin/
 import { getAgentUsage } from '@/lib/admin/usage';
 import { requireInternal } from '@/lib/auth/session';
 import { can, type Capability } from '@/lib/authz/permissions';
+import { LiveRefresh } from '@/lib/realtime';
 import {
-  AutoRefresh,
   Badge,
   Callout,
   Card,
@@ -228,7 +228,7 @@ export default async function OverviewPage() {
           <Badge tone={TONE[label.tone] ?? 'neutral'} dot className="px-2.5 py-1 text-[13px]">
             {label.text}
           </Badge>
-          <AutoRefresh intervalMs={20000} />
+          <LiveRefresh topics={['approvals', 'finance', 'jobs', 'leads', 'projects', 'agents']} />
         </div>
       </header>
 

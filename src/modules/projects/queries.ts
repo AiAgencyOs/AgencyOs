@@ -5,7 +5,7 @@ import { unreadable } from '@/lib/result';
 
 import { resolveProjectContext } from './service';
 
-import type { PaymentPlanMilestone, ProjectDetail, ProjectListItem, DeliverableRow, CompletionSummary, OnboardingItem, UiCoverageFlag } from './types';
+import type { PaymentPlanMilestone, ProjectDetail, ProjectListItem, DeliverableRow, CompletionSummary, OnboardingItem, UiCoverageFlag, DesignPortfolioRow, DevelopmentPortfolioRow } from './types';
 
 /**
  * Reads for the projects module. Pure and RLS-scoped, so the same query is
@@ -2554,5 +2554,108 @@ export async function listPhaseFourEscalations(): Promise<PhaseFourEscalation[]>
     state: r.state,
     blockedReason: r.blocked_reason,
     updatedAt: r.updated_at,
+  }));
+}
+
+/* ── Portfolio-level Design & Development (screen architecture modules 6 and 7) ── */
+
+/**
+ * Every live project's design standing, in three reads — projects, their
+ * Phase 3 rows, their design/prototype deliverables — grouped in memory. Not
+ * one read per project: the index exists so an owner does not open forty
+ * project pages, and it must not cost forty pages' worth of queries to draw.
+ */
+export async function readDesignPortfolio(): Promise<DesignPortfolioRow[]> {
+  const supabase = await createClient();
+  const [projects, phaseThree, deliverables] = await Promise.all([
+    listProjects(200),
+    supabase
+      .schema('projects')
+      .from('phase_three')
+      .select('project_id, state, reviewer_user_id, client_revision_count, client_revision_limit, updated_at'),
+    supabase
+      .schema('projects')
+      .from('deliverables')
+      .select('project_id, kind, status')
+      .in('kind', ['design', 'prototype']),
+  ]);
+  if (phaseThree.error) unreadable('readDesignPortfolio.phase_three', phaseThree.error);
+  if (deliverables.error) unreadable('readDesignPortfolio.deliverables', deliverables.error);
+
+  const phase = new Map((phaseThree.data ?? []).map((p) => [p.project_id, p]));
+  const tally = new Map<string, DesignPortfolioRow['designs'] & { p: DesignPortfolioRow['prototypes'] }>();
+  for (const d of deliverables.data ?? []) {
+    const t = tally.get(d.project_id) ?? { total: 0, inReview: 0, approved: 0, p: { total: 0, inReview: 0, approved: 0 } };
+    const bucket = d.kind === 'prototype' ? t.p : t;
+    bucket.total += 1;
+    if (d.status === 'in_review') bucket.inReview += 1;
+    if (d.status === 'approved') bucket.approved += 1;
+    tally.set(d.project_id, t);
+  }
+
+  return projects.map((p) => {
+    const ph = phase.get(p.id);
+    const t = tally.get(p.id);
+    return {
+      ...p,
+      phaseThreeState: ph?.state ?? null,
+      reviewerAssigned: Boolean(ph?.reviewer_user_id),
+      clientRevisionsUsed: ph?.client_revision_count ?? 0,
+      clientRevisionLimit: ph?.client_revision_limit ?? null,
+      designs: { total: t?.total ?? 0, inReview: t?.inReview ?? 0, approved: t?.approved ?? 0 },
+      prototypes: t?.p ?? { total: 0, inReview: 0, approved: 0 },
+      designUpdatedAt: ph?.updated_at ?? null,
+    };
+  });
+}
+
+/** Every live project's development standing — modules, tasks, builds — in four reads, grouped in memory. */
+export async function readDevelopmentPortfolio(): Promise<DevelopmentPortfolioRow[]> {
+  const supabase = await createClient();
+  const [projects, modules, tasks, builds] = await Promise.all([
+    listProjects(200),
+    supabase.schema('projects').from('modules').select('project_id, status'),
+    supabase.schema('projects').from('tasks').select('project_id, status'),
+    supabase
+      .schema('projects')
+      .from('deliverables')
+      .select('project_id, status, version, created_at')
+      .eq('kind', 'build')
+      .order('created_at', { ascending: false }),
+  ]);
+  if (modules.error) unreadable('readDevelopmentPortfolio.modules', modules.error);
+  if (tasks.error) unreadable('readDevelopmentPortfolio.tasks', tasks.error);
+  if (builds.error) unreadable('readDevelopmentPortfolio.builds', builds.error);
+
+  const mod = new Map<string, { total: number; done: number }>();
+  for (const m of modules.data ?? []) {
+    const t = mod.get(m.project_id) ?? { total: 0, done: 0 };
+    t.total += 1;
+    if (m.status === 'approved') t.done += 1;
+    mod.set(m.project_id, t);
+  }
+  const task = new Map<string, DevelopmentPortfolioRow['tasks']>();
+  for (const r of tasks.data ?? []) {
+    const t = task.get(r.project_id) ?? { total: 0, todo: 0, inProgress: 0, blocked: 0, inReview: 0, done: 0 };
+    t.total += 1;
+    if (r.status === 'todo') t.todo += 1;
+    else if (r.status === 'in_progress') t.inProgress += 1;
+    else if (r.status === 'blocked') t.blocked += 1;
+    else if (r.status === 'in_review') t.inReview += 1;
+    else if (r.status === 'done') t.done += 1;
+    task.set(r.project_id, t);
+  }
+  const build = new Map<string, DevelopmentPortfolioRow['builds']>();
+  for (const b of builds.data ?? []) {
+    const t = build.get(b.project_id) ?? { total: 0, latestStatus: b.status, latestVersion: b.version };
+    t.total += 1;
+    build.set(b.project_id, t);
+  }
+
+  return projects.map((p) => ({
+    ...p,
+    modules: mod.get(p.id) ?? { total: 0, done: 0 },
+    tasks: task.get(p.id) ?? { total: 0, todo: 0, inProgress: 0, blocked: 0, inReview: 0, done: 0 },
+    builds: build.get(p.id) ?? { total: 0, latestStatus: null, latestVersion: null },
   }));
 }

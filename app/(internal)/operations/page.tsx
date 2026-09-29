@@ -5,11 +5,12 @@ import { aiStatus } from '@/lib/admin/agent-status';
 import { wouldRun } from '@/lib/admin/agent-eval';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
-import { AutoRefresh, Badge, Callout, IconAlert, IconClock, PageHeader, Stat, StaleDataWarning, type Tone, PermissionDenied } from '@/ui';
+import { Badge, Callout, IconAlert, IconClock, PageHeader, Stat, StaleDataWarning, type Tone, PermissionDenied } from '@/ui';
 import type { IconProps } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 import { describeBacklog, severityOf } from '@/lib/observability/backlog';
 import { viewFailedDelivery } from '@/lib/observability/delivery';
+import { LiveRefresh } from '@/lib/realtime';
 import { listPendingGroupSetups } from '@/modules/projects/queries';
 import {
   listDeadJobs,
@@ -103,7 +104,7 @@ export default async function OperationsPage() {
               ? 'Work has been lost and nothing will retry it.'
               : 'Work is late but still moving.'
         }
-        actions={<AutoRefresh intervalMs={15000} />}
+        actions={<LiveRefresh topics={['jobs', 'conversations', 'followUps']} />}
         meta={
           <Badge tone={tone} dot>
             {severity === 'clear' ? 'Clear' : severity === 'failing' ? 'Failing' : 'Degraded'}

@@ -3,7 +3,8 @@ import Link from 'next/link';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
-import { AutoRefresh, Badge, Card, EmptyState, IconApprovals, PageHeader } from '@/ui';
+import { LiveRefresh } from '@/lib/realtime';
+import { Badge, Card, EmptyState, IconApprovals, PageHeader } from '@/ui';
 import { listApprovalPolicies, listPendingApprovals } from '@/modules/approvals/queries';
 import { isOverdue, type ApprovalState } from '@/modules/approvals/schema';
 import type { ApprovalPolicyRow } from '@/modules/approvals/types';
@@ -77,7 +78,7 @@ export default async function ApprovalsPage() {
             ? 'Nothing is waiting on a decision.'
             : `${pending.length} waiting${late > 0 ? ` · ${late} past its deadline` : ''}.`
         }
-        actions={<AutoRefresh intervalMs={20000} />}
+        actions={<LiveRefresh topics={['approvals']} />}
         meta={
           pending.length > 0 ? (
             <>

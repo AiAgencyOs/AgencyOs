@@ -18,7 +18,6 @@ export * from './primitives/pagination';
 export * from './primitives/chart';
 export * from './primitives/calendar';
 export * from './primitives/kanban';
-export * from './primitives/auto-refresh';
 export * from './primitives/empty-state';
 export * from './primitives/permission-denied';
 export * from './primitives/staleness';

@@ -4,8 +4,9 @@ import Link from 'next/link';
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { LiveRefresh } from '@/lib/realtime';
 import { listOpenDefects, readOrgTestCoverage, readSuiteCoverage, type OpenDefect } from '@/modules/qa/queries';
-import { AutoRefresh, Badge, Card, EmptyState, IconAlert, IconCheck, IconClock, PageHeader, Stat, StatGrid, type Tone, PermissionDenied } from '@/ui';
+import { Badge, Card, EmptyState, IconAlert, IconCheck, IconClock, PageHeader, Stat, StatGrid, type Tone, PermissionDenied } from '@/ui';
 
 export const metadata: Metadata = { title: 'QA' };
 
@@ -66,7 +67,7 @@ export default async function QaDashboardPage() {
             ? 'No open defects across any project.'
             : `${defects.length} open defect${defects.length === 1 ? '' : 's'} across every project, most severe first.`
         }
-        actions={<AutoRefresh intervalMs={30000} />}
+        actions={<LiveRefresh topics={['qa', 'deliverables']} />}
       />
 
       <StatGrid>

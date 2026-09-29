@@ -115,3 +115,28 @@ export type UiCoverageFlag = {
   subject_id: string;
   subject: string;
 };
+
+/**
+ * One project's row on the org-wide Design & Prototype index (SCR-032 at
+ * portfolio level): where Phase 3 stands, how many revisions the client has
+ * used, and how many design/prototype deliverables sit at each status.
+ */
+export type DesignPortfolioRow = ProjectListItem & {
+  phaseThreeState: string | null;
+  reviewerAssigned: boolean;
+  clientRevisionsUsed: number;
+  clientRevisionLimit: number | null;
+  designs: { total: number; inReview: number; approved: number };
+  prototypes: { total: number; inReview: number; approved: number };
+  designUpdatedAt: string | null;
+};
+
+/**
+ * One project's row on the org-wide Development index (SCR-039 at
+ * portfolio level): module and task counts by state, plus the latest build.
+ */
+export type DevelopmentPortfolioRow = ProjectListItem & {
+  modules: { total: number; done: number };
+  tasks: { total: number; todo: number; inProgress: number; blocked: number; inReview: number; done: number };
+  builds: { total: number; latestStatus: string | null; latestVersion: number | null };
+};
