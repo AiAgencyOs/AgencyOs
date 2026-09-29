@@ -25,6 +25,7 @@ import {
   KanbanBoard,
   labelClass,
   selectClass,
+  StatusBadge,
   textareaClass,
   type KanbanColumn,
   type KanbanItem,
@@ -32,6 +33,7 @@ import {
 
 export type BoardTask = KanbanItem & {
   title: string;
+  description: string | null;
   priority: string;
   assigneeId: string | null;
   assigneeName: string | null;
@@ -90,6 +92,7 @@ export function ProjectBoard({
   const [priority, setPriority] = useState('');
   const [moduleFilter, setModuleFilter] = useState('');
   const [adding, setAdding] = useState<string | null>(null);
+  const [openTask, setOpenTask] = useState<BoardTask | null>(null);
 
   async function handleMove(taskId: string, toStatus: string) {
     setError(null);
@@ -206,13 +209,25 @@ export function ProjectBoard({
             </button>
           ) : null
         }
-        renderCard={(task) => <TaskCard task={task} projectId={projectId} />}
+        renderCard={(task) => <TaskCard task={task} onOpen={() => setOpenTask(task)} />}
       />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(18rem,1fr)]">
         <RecentCompletions tasks={tasks} />
         <TaskSummary tasks={tasks} columns={columns} />
       </div>
+
+      <TaskDrawer
+        task={openTask}
+        projectId={projectId}
+        columns={columns}
+        canWrite={canWrite}
+        onClose={() => setOpenTask(null)}
+        onMoved={(taskId, toStatus) => {
+          setOpenTask(null);
+          void handleMove(taskId, toStatus);
+        }}
+      />
 
       {canWrite ? (
         <AddTaskDrawer
@@ -231,20 +246,21 @@ export function ProjectBoard({
   );
 }
 
-function TaskCard({ task, projectId }: { task: BoardTask; projectId: string }) {
+function TaskCard({ task, onOpen }: { task: BoardTask; onOpen: () => void }) {
   const p = PRIORITY[task.priority] ?? { label: task.priority.toUpperCase(), tone: 'neutral' as const };
   return (
     <div className="rounded-lg border border-line bg-surface p-3 shadow-xs transition-shadow hover:shadow-sm">
       <div className="flex items-start justify-between gap-2">
         <p className="text-[13px] font-medium leading-snug text-foreground">{task.title}</p>
-        <Link
-          href={`/projects/${projectId}/development`}
-          aria-label={`Open ${task.title} on the Development page`}
+        <button
+          type="button"
+          aria-label={`Open ${task.title}`}
+          onClick={onOpen}
           className="-mr-1 -mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-faint hover:bg-surface-hover hover:text-foreground"
           onPointerDown={(e) => e.stopPropagation()}
         >
           <IconMore size={14} />
-        </Link>
+        </button>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {task.moduleName ? <Badge tone="info">{task.moduleName}</Badge> : null}
@@ -268,6 +284,94 @@ function TaskCard({ task, projectId }: { task: BoardTask; projectId: string }) {
         ) : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * The task detail — the reference's task screen, reduced to what
+ * `projects.tasks` actually holds: title, description, module, priority,
+ * assignee, due date, status. No comments, subtasks, time log or
+ * attachments are drawn, because no such tables exist; the drawer says so
+ * rather than showing empty sections that imply a feature.
+ */
+function TaskDrawer({
+  task,
+  projectId,
+  columns,
+  canWrite,
+  onClose,
+  onMoved,
+}: {
+  task: BoardTask | null;
+  projectId: string;
+  columns: KanbanColumn[];
+  canWrite: boolean;
+  onClose: () => void;
+  onMoved: (taskId: string, toStatus: string) => void;
+}) {
+  const p = task ? (PRIORITY[task.priority] ?? { label: task.priority.toUpperCase(), tone: 'neutral' as const }) : null;
+  return (
+    <Drawer open={task !== null} onClose={onClose} title={task?.title ?? 'Task'} description={task?.moduleName ? `Module · ${task.moduleName}` : undefined}>
+      {task && p ? (
+        <div className="flex flex-col gap-4 text-[13px]">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-line p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Status</p>
+              {canWrite ? (
+                <select
+                  aria-label="Task status"
+                  value={task.columnId}
+                  onChange={(e) => onMoved(task.id, e.target.value)}
+                  className={cx(selectClass, 'mt-1')}
+                >
+                  {columns.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="mt-1"><StatusBadge status={task.columnId} /></p>
+              )}
+            </div>
+            <div className="rounded-lg border border-line p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Priority</p>
+              <p className="mt-1.5"><Badge tone={p.tone}>{p.label}</Badge></p>
+            </div>
+            <div className="rounded-lg border border-line p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Assignee</p>
+              <p className="mt-1.5 flex items-center gap-2">
+                {task.assigneeName ? <><Avatar name={task.assigneeName} size="sm" /> {task.assigneeName}</> : <span className="text-muted">Unassigned</span>}
+              </p>
+            </div>
+            <div className="rounded-lg border border-line p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Due date</p>
+              <p className={cx('mt-1.5 flex items-center gap-1.5', task.overdue ? 'font-medium text-danger' : '')}>
+                <IconCalendar size={13} />
+                {task.dueLabel ?? <span className="text-muted">Not set</span>}
+              </p>
+            </div>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Description</p>
+            {task.description ? <p className="mt-1 whitespace-pre-wrap leading-relaxed">{task.description}</p> : <p className="mt-1 text-muted">No description recorded.</p>}
+          </div>
+          {task.completedLabel ? (
+            <p className="flex items-center gap-1.5 text-success">
+              <IconCheck size={13} />
+              Completed {task.completedLabel}
+            </p>
+          ) : null}
+          <p className="text-xs text-muted">
+            Comments, subtasks, time logs and attachments are not part of a task in this data model. Edit the title, module or assignee on the{' '}
+            <Link href={`/projects/${projectId}/development`} className="font-medium text-brand hover:underline">
+              Development page
+            </Link>
+            .
+          </p>
+        </div>
+      ) : null}
+    </Drawer>
   );
 }
 

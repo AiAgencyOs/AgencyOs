@@ -76,6 +76,7 @@ colour — so re-theming is a `globals.css` edit.
 | **`PipelineStrip`** | Chevron funnel of count-over-label stages, each linking to its list. | — |
 | **`StatusList`** | "System Status" rows: icon, name, state word in tone. | Word + colour, never colour alone. |
 | **`Timeline`** | Horizontal milestone dots (done / current / upcoming). | — |
+| **`Gantt`** | Milestone windows as bars on one date axis with month ticks and a Today line. | Scales the caller's dates only; invents no duration. |
 | `KanbanBoard` (extended) | Tinted column header with icon, count pill, `renderColumnAction` and `renderColumnFooter`. | Still owns dragging and layout only. |
 | `DataTable` (`dense`) | Tighter rows and 13px type for a table inside a dashboard card. | — |
 | `LiveRefresh` (`src/lib/realtime`) | The live-data control, replacing the deleted `AutoRefresh`. | Lives in `lib/realtime` because it needs the Supabase client; `src/ui` stays presentation-only. |

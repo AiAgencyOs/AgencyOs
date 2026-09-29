@@ -56,6 +56,7 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
     id: t.id,
     columnId: t.status,
     title: t.title,
+    description: t.description,
     priority: t.priority,
     assigneeId: t.assigneeId,
     assigneeName: t.assigneeId ? (nameByUser.get(t.assigneeId) ?? null) : null,

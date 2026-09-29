@@ -63,8 +63,10 @@ export default async function QaDashboardPage() {
   const blockers = countBy(defects, 'blocker');
   const majors = countBy(defects, 'major');
   const runs = coverage.runsLast30Days;
-  const passRate = runs > 0 ? Math.round((coverage.passedLast30Days / runs) * 100) : null;
-  const other = Math.max(0, runs - coverage.passedLast30Days - coverage.failedLast30Days);
+  // A run records several item results, so passed + failed is the outcome
+  // count, not the run count; the rate is over outcomes.
+  const outcomes = coverage.passedLast30Days + coverage.failedLast30Days;
+  const passRate = outcomes > 0 ? Math.round((coverage.passedLast30Days / outcomes) * 100) : null;
 
   const columns: Column<OpenDefect>[] = [
     {
@@ -104,7 +106,7 @@ export default async function QaDashboardPage() {
 
       <StatGrid cols={5}>
         <Stat label="Runs (30 days)" value={String(runs)} caption={`${coverage.projectsWithPlan}/${coverage.totalProjects} projects have a test plan`} tone="brand" icon={<IconList size={16} />} />
-        <Stat label="Passed" value={String(coverage.passedLast30Days)} caption={passRate === null ? 'No runs recorded' : `${passRate}% pass rate`} tone="success" icon={<IconCheck size={16} />} />
+        <Stat label="Passed" value={String(coverage.passedLast30Days)} caption={passRate === null ? 'No results recorded' : `${passRate}% of ${outcomes} result${outcomes === 1 ? '' : 's'}`} tone="success" icon={<IconCheck size={16} />} />
         <Stat label="Failed" value={String(coverage.failedLast30Days)} caption="Last 30 days" tone={coverage.failedLast30Days > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} />
         <Stat label="Open blockers" value={String(blockers)} caption={`${majors} major`} tone={blockers > 0 ? 'danger' : majors > 0 ? 'warning' : 'success'} icon={<IconAlert size={16} />} />
         <Stat label="Open defects" value={String(defects.length)} caption="Not yet verified" tone={defects.length > 0 ? 'warning' : 'success'} icon={<IconClock size={16} />} />
@@ -152,19 +154,18 @@ export default async function QaDashboardPage() {
 
         <div className="flex min-w-0 flex-col gap-4">
           <Card>
-            <CardHeader title="QA progress" description="Run outcomes in the last 30 days." />
+            <CardHeader title="QA progress" description={`Item results across ${runs} run${runs === 1 ? '' : 's'} in the last 30 days.`} />
             <div className="p-4 sm:p-5">
-              {runs === 0 ? (
-                <p className="text-[13px] text-muted">No test runs recorded in the last 30 days.</p>
+              {outcomes === 0 ? (
+                <p className="text-[13px] text-muted">No test results recorded in the last 30 days.</p>
               ) : (
                 <DonutChart
                   data={[
                     { label: 'Passed', value: coverage.passedLast30Days },
                     { label: 'Failed', value: coverage.failedLast30Days },
-                    ...(other > 0 ? [{ label: 'Other', value: other }] : []),
                   ]}
-                  colors={['var(--success)', 'var(--danger)', 'var(--faint)']}
-                  totalLabel="Runs"
+                  colors={['var(--success)', 'var(--danger)']}
+                  totalLabel="Results"
                   height={150}
                 />
               )}

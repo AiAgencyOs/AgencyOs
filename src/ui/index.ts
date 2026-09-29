@@ -37,4 +37,5 @@ export * from './primitives/activity-feed';
 export * from './primitives/pipeline-strip';
 export * from './primitives/status-list';
 export * from './primitives/timeline';
+export * from './primitives/gantt';
 export * from './patterns/whatsapp';

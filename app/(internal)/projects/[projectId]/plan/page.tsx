@@ -4,8 +4,12 @@ import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { getProject, readPlanBoard } from '@/modules/projects/queries';
-import { Badge, PageHeader, type Tone, PermissionDenied } from '@/ui';
+import { agencyClock } from '@/lib/admin/agency-clock';
+import { readClientName } from '@/lib/admin/clients';
+import { getProject, listPaymentPlan, readPlanBoard } from '@/modules/projects/queries';
+import { Badge, Card, CardHeader, cx, Gantt, IconCalendar, IconCheck, IconClock, IconFlag, PermissionDenied, Stat, StatGrid, StatusBadge, ViewAll, type GanttRow, type Tone } from '@/ui';
+
+import { WorkspaceHeader } from '../workspace-header';
 
 import { ProjectSubNav } from '../project-subnav';
 
@@ -62,7 +66,52 @@ export default async function ProjectPlanPage({
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const board = await readPlanBoard(projectId);
+  const [board, milestones, clock, clientName] = await Promise.all([
+    readPlanBoard(projectId),
+    listPaymentPlan(projectId),
+    agencyClock(),
+    project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
+  ]);
+
+  /**
+   * The milestone timeline — the reference's Gantt. `projects.milestones`
+   * stores a due date and the day it was met, never a start, so each bar is
+   * the window from the previous milestone's due date (or the project's
+   * start, or its creation) to this one's due date: the planned window in
+   * which it had to happen. The bar says exactly that in its caption;
+   * nothing here estimates a duration. A milestone with no due date has no
+   * bar and is listed as undated.
+   */
+  const today = clock.dayKey(new Date());
+  let previousEnd = project.starts_on ?? project.created_at.slice(0, 10);
+  let currentSeen = false;
+  const gantt: GanttRow[] = [];
+  const undated: typeof milestones = [];
+  for (const m of milestones) {
+    if (!m.due_on) {
+      undated.push(m);
+      continue;
+    }
+    const start = previousEnd < m.due_on ? previousEnd : m.due_on;
+    const state: GanttRow['state'] = m.met_at ? 'done' : m.due_on < today ? 'late' : currentSeen ? 'upcoming' : 'current';
+    if (!m.met_at && state !== 'late') currentSeen = true;
+    gantt.push({
+      id: m.id,
+      label: m.name,
+      caption: `${clock.date(start)} – ${clock.date(m.due_on)}${m.met_at ? ` · met ${clock.date(m.met_at)}` : ''}`,
+      start,
+      end: m.due_on,
+      state,
+      progress: m.met_at ? 100 : undefined,
+    });
+    previousEnd = m.due_on;
+  }
+  const met = milestones.filter((m) => m.met_at).length;
+  const late = gantt.filter((g) => g.state === 'late').length;
+  const next = milestones.find((m) => !m.met_at) ?? null;
+  const finalDue = milestones.length > 0 ? (milestones[milestones.length - 1]?.due_on ?? null) : null;
+  const daysLeft = finalDue ? Math.ceil((Date.parse(`${finalDue}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000) : null;
+  const upcoming = milestones.filter((m) => !m.met_at && m.due_on).slice(0, 5);
   // Planning is project work, so it takes the same capability that changes a
   // project. The doors check it again — this only decides what to render.
   const mayPlan = can(context.role, 'project.write');
@@ -73,12 +122,41 @@ export default async function ProjectPlanPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        title="Operational plan"
-        description={`${project.name} — the blueprint Phase 2 hands to Phase 3.`}
-      />
+      <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={mayPlan} />
 
       <ProjectSubNav projectId={projectId} />
+
+      {milestones.length > 0 ? (
+        <StatGrid cols={5}>
+          <Stat label="Total milestones" value={String(milestones.length)} caption={undated.length > 0 ? `${undated.length} undated` : 'All dated'} tone="brand" icon={<IconFlag size={16} />} />
+          <Stat label="Completed" value={String(met)} caption={`${Math.round((met / milestones.length) * 100)}%`} tone="success" icon={<IconCheck size={16} />} />
+          <Stat label="In progress" value={String(gantt.filter((g) => g.state === 'current').length)} caption={next ? next.name : 'Nothing pending'} tone="info" icon={<IconClock size={16} />} />
+          <Stat label="Late" value={String(late)} caption={late > 0 ? 'Past due and not met' : 'Nothing overdue'} tone={late > 0 ? 'danger' : 'neutral'} icon={<IconClock size={16} />} />
+          <Stat label="Final delivery" value={finalDue ? clock.date(finalDue) : '—'} caption={daysLeft === null ? 'No final date' : daysLeft >= 0 ? `${daysLeft} days left` : `${-daysLeft} days overdue`} tone={daysLeft !== null && daysLeft < 0 ? 'danger' : 'accent'} icon={<IconCalendar size={16} />} />
+        </StatGrid>
+      ) : null}
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(18rem,1fr)]">
+        <div className="flex min-w-0 flex-col gap-4">
+          <Card>
+            <CardHeader
+              title="Project milestone timeline"
+              description="Each bar is the planned window that ends at the milestone's due date. Green is met, blue is the one in hand, red is past due."
+              actions={<ViewAll href={`/projects/${projectId}/calendar`} label="Calendar" />}
+            />
+            {gantt.length > 0 ? (
+              <Gantt rows={gantt} todayKey={today} />
+            ) : (
+              <p className="px-4 py-4 text-[13px] text-muted sm:px-5">No dated milestones yet — the payment plan on the project overview sets them.</p>
+            )}
+            {undated.length > 0 ? (
+              <p className="border-t border-line px-4 py-2 text-xs text-muted sm:px-5">
+                Undated: {undated.map((m) => m.name).join(', ')}
+              </p>
+            ) : null}
+          </Card>
+
+          <div className="flex flex-col gap-6 [&>section]:rounded-xl [&>section]:border [&>section]:border-line [&>section]:bg-surface [&>section]:p-4 [&>section]:shadow-xs sm:[&>section]:p-5">
 
       <p className="max-w-2xl text-[13px] text-muted">
         Operational, never technical. Tables, APIs, coding tasks and UI belong to the Phase 5
@@ -292,6 +370,73 @@ export default async function ProjectPlanPage({
           </section>
         </>
       )}
+          </div>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-4">
+          {next ? (
+            <Card>
+              <CardHeader title="Milestone details" description="The next one to meet." />
+              <div className="flex flex-col gap-2 px-4 pb-4 text-[13px] sm:px-5">
+                <p className="flex items-center gap-2 font-medium text-foreground">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-white"><IconFlag size={13} /></span>
+                  {next.name}
+                </p>
+                <dl className="grid grid-cols-[6rem_1fr] gap-y-1.5 text-muted">
+                  <dt>Due</dt>
+                  <dd className="text-foreground">{next.due_on ? clock.date(next.due_on) : 'Not dated'}</dd>
+                  <dt>Status</dt>
+                  <dd><StatusBadge status={next.status} dot={false} /></dd>
+                  <dt>Payment</dt>
+                  <dd className="text-foreground">{next.payment_percent === null ? 'None attached' : `${next.payment_percent}% of the plan`}</dd>
+                </dl>
+              </div>
+            </Card>
+          ) : null}
+
+          <Card>
+            <CardHeader title="Upcoming deadlines" />
+            {upcoming.length === 0 ? (
+              <p className="px-4 py-3 text-[13px] text-muted sm:px-5">Nothing dated ahead.</p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {upcoming.map((m) => {
+                  const d = m.due_on ? Math.ceil((Date.parse(`${m.due_on}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000) : null;
+                  return (
+                    <li key={m.id} className="flex items-center gap-3 px-4 py-2.5 text-[13px] sm:px-5">
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium text-foreground">{m.name}</span>
+                        <span className="block text-xs text-muted">{m.due_on ? clock.date(m.due_on) : ''}</span>
+                      </span>
+                      {d !== null ? (
+                        <span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium', d < 0 ? 'bg-danger-soft text-danger' : d <= 7 ? 'bg-warning-soft text-warning' : 'bg-info-soft text-info')}>
+                          {d < 0 ? `${-d} days overdue` : `${d} days left`}
+                        </span>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader title="Blueprint status" />
+            <div className="px-4 pb-4 text-[13px] sm:px-5">
+              {plan ? (
+                <p>
+                  Version {plan.version} · <Badge tone={PHASE_TONE[plan.status] ?? 'neutral'}>{plan.status}</Badge>
+                  <span className="mt-1 block text-xs text-muted">
+                    {board.deliverables.length} deliverable{board.deliverables.length === 1 ? '' : 's'} · {board.milestones.length} plan milestone{board.milestones.length === 1 ? '' : 's'} · {openQuestions.length} open question{openQuestions.length === 1 ? '' : 's'}
+                  </span>
+                </p>
+              ) : (
+                <p className="text-muted">No operational plan yet.</p>
+              )}
+            </div>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

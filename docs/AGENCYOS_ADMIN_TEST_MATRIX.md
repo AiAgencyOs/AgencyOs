@@ -184,6 +184,16 @@ Realtime server in this stack). Verified interactions, not just paint:
   rail stacks under the sections; KPI grids go two-up; the tab strip
   scrolls sideways.
 
+Second round, same day: Client management, My Tasks (with five tasks
+assigned to the owner in the scratch database), Project Calendar, Files,
+Team, Plan (Gantt), Requirements, Communication, QA & testing and Reports
+re-shot at 1440 with no console errors. Verified interactions: the Board
+task drawer opens from a card's menu and a status change through its
+select moved the card to In progress (`columnAfter: "In progress"`, no
+page errors); "+ Add client" opens the quick-create on the client form.
+A pass-rate bug found by the screenshot ("1000%") was fixed: QA results
+are per item, so the rate is over passed + failed, not over runs.
+
 Typecheck and ESLint clean on every changed file. The unit-test failure
 set is unchanged (the Node 22 `mock.module` class; `npm test` on this
 machine: 5772 pass, 53 fail before and after — `commit-the-whole-file-at-once`

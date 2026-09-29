@@ -382,14 +382,26 @@ at 1440 and 390 (`scripts/local-qa/`, screenshots in the test matrix §9):
 | 10 | Client 360 | header with facts, six KPIs incl. client health, projects and invoices tables with paid bars, notes + files, Client details rail, timeline |
 | 7 | Finance overview | five KPIs, income vs expenses trend, payment-status donut, top project revenue bars, recent invoices / payments, expense breakdown, upcoming payments, quick actions |
 | 8 | AI Workforce | six KPIs, agent activity trend, status donut, top agents by usage, registry table with model/status/runs, recent agent activity feed, quick actions |
+| 6 | Client management | five figures, status chips, avatar + contact rows, projects / value / outstanding, + Add client (quick-create on the client form) |
+| 9, 40 | My Tasks | five figures, a column per status with project · due · priority on each card and the status control on the card |
+| 16, 20 | Project calendar | month grid with legend, dated agenda with day tiles, Upcoming rail, Milestones on calendar, quick actions |
+| 18, 24 | Project files | folder tiles per category with counts, the file list, recent-activity rail and the link form |
+| 15 | Project team | member figures by role, roster table with role chips and progress, role-distribution donut |
+| 29, 41 | Requirements | queue figures, the versions table with source and waiting time, the decision path in the rail |
+| 33, 35, 36 | Communication | inbox figures, conversation list with last message and "waiting on you", failures and deferred sends beside it |
+| 37 | QA & testing | run/outcome figures, suite pass-rate bars, open-bugs table with severity and project, results donut |
+| 19 | Reports | figures, sales funnel, project-distribution donut, project health, defects by severity, invoiced vs received |
+| 1, 22, 27, 34 | Milestones / Gantt (Plan tab) | milestone figures, a Gantt whose bars are the planned windows between due dates (derived, labelled as such), milestone details and upcoming deadlines rail |
+| 26, 28 | Task detail | a drawer on the Board with status (a validated write), priority, assignee, due date and description — comments, subtasks, time logs and attachments are stated as absent from the data model, not drawn empty |
 | shell (all) | Global header + rail | scoped search field, dark "+ Create" (opens quick create), bell with count, help menu, user chip with avatar · name · role and menu, organisation tile in the rail foot, breadcrumb naming the open record |
 
-Still token-level only (layout not rebuilt): Gantt/milestone views (1, 22,
-27, 34), task detail (26, 28), calendar (16, 20), files (18, 24), reports
-(19), design gallery (11, 38), requirements (29, 41), inbox (33, 35, 36),
-QA (37), My Tasks (9, 40), quotation composer (12), team (15), clients
-list (6). The canvas moved to the reference's cool grey (`#f5f7fb`) with
-`#0f172a` ink.
+Still token-level only (layout not rebuilt): the design gallery (11, 38 —
+the design trail has no screen thumbnails to hang a gallery on) and the
+quotation composer (12 — quoting is the Lead 360's draft / line / pricing
+/ submit panels, one governed step each, not one form). Image 39 (project
+finance) is the Project 360's billing, payment plan and claims sections.
+The canvas moved to the reference's cool grey (`#f5f7fb`) with `#0f172a`
+ink.
 
 ## 5. Conflicts resolved on 2026-09-29
 
