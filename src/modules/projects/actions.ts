@@ -1112,6 +1112,7 @@ export async function createTaskAction(_prev: FormState, formData: FormData): Pr
   const moduleId = String(formData.get('moduleId') ?? '').trim();
   const featureId = String(formData.get('featureId') ?? '').trim();
   const description = String(formData.get('description') ?? '').trim();
+  const dueOn = String(formData.get('dueOn') ?? '').trim();
 
   const result = await createTask({
     projectId,
@@ -1119,10 +1120,13 @@ export async function createTaskAction(_prev: FormState, formData: FormData): Pr
     ...(moduleId ? { moduleId } : {}),
     ...(featureId ? { featureId } : {}),
     ...(description ? { description } : {}),
+    ...(dueOn ? { dueOn } : {}),
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath(`/projects/${projectId}/development`);
+  revalidatePath(`/projects/${projectId}/calendar`);
+  revalidatePath(`/projects/${projectId}/board`);
   return { status: 'success', message: 'Task added.' };
 }
 

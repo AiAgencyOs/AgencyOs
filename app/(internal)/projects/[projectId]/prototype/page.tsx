@@ -9,6 +9,7 @@ import { getProject, listDeliverables } from '@/modules/projects/queries';
 import { listTestRuns } from '@/modules/qa/queries';
 import { Badge, Card, DataTable, EmptyState, humanize, IconProjects, PageHeader, statusTone, PermissionDenied, Stat, StatGrid, IconCheck, IconClock, IconAlert } from '@/ui';
 
+import { ApprovalDecisionForm } from '../../../approvals/approval-decision-form';
 import { AddPrototypeForm, SubmitDeliverableForm } from '../deliverables-panel';
 import { ProjectSubNav } from '../project-subnav';
 
@@ -126,6 +127,26 @@ export default async function PrototypePage({ params }: { params: Promise<{ proj
               {canWrite && b.status === 'draft' ? (
                 <SubmitDeliverableForm deliverableId={b.id} projectId={projectId} />
               ) : null}
+              {(() => {
+                // SCR-037 — a pending approval is decided here rather than on
+                // /approvals. The same form; `approvals.decide_approval` holds
+                // the role check under its lock exactly as it does there.
+                const request = approvalFor.get(b.id);
+                if (!request || request.state !== 'pending') return null;
+                return (
+                  <div className="mt-2 rounded-md border border-line bg-surface-sunken px-3 py-2">
+                    <p className="text-[13px]">
+                      <span className="font-medium">Awaiting {request.audience} approval</span>
+                      <span className="text-muted">
+                        {' '}
+                        — {request.summary ?? 'no summary'} · requires {request.required_role.replace(/_/g, ' ')} · due{' '}
+                        {clock.dateTime(request.sla_due_at)}
+                      </span>
+                    </p>
+                    <ApprovalDecisionForm requestId={request.id} audience={request.audience} subjectType={request.subject_type} />
+                  </div>
+                );
+              })()}
             </Card>
           ))}
         </div>

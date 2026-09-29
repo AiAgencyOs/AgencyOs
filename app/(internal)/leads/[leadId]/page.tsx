@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { agencyClock, clockFor, getAgencyTimeZone, type AgencyClock } from '@/lib/admin/agency-clock';
+import { readRequirementSets } from '@/lib/admin/requirement-set';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import {
@@ -16,6 +17,7 @@ import {
   listMessages,
   listRequirementVersions,
 } from '@/modules/crm/queries';
+import { readConversationWindow, readProjectGroupForLead } from '@/modules/crm/window-queries';
 import {
   leadQualificationSchema,
   requirementPayloadSchema,
@@ -88,6 +90,7 @@ import {
 
 import { ExtractionForm, MessageForm, SendToClientForm } from './message-form';
 import { RequirementDecisionForm } from './requirement-decision-form';
+import { RequirementSetPanel } from './requirement-set-panel';
 import {
   AssignOwnerForm,
   ConvertForm,
@@ -188,6 +191,12 @@ export default async function LeadConversationPage({
 
   const conversation = await getLatestConversation(leadId);
   const messages = conversation ? await listMessages(conversation.id) : [];
+  // SCR-058: the window Meta will honour, asked of the same function the
+  // sender asks (`crm.window_state`), and the project group behind this lead
+  // when its deal became a project that has one.
+  const windowState = conversation ? await readConversationWindow(conversation.id) : null;
+  const projectGroup = await readProjectGroupForLead(leadId);
+  const groupMessages = projectGroup ? await listMessages(projectGroup.conversationId) : [];
   const versions = conversation ? await listRequirementVersions(conversation.id) : [];
   // SCR-009 — what each version was read from; SCR-007 — coverage and the
   // disqualification history. All three are reads of rows that already
@@ -195,6 +204,8 @@ export default async function LeadConversationPage({
   const sourceRefs = conversation ? await listRequirementSourceRefs(conversation.id) : new Map();
   const coverage = await readQualificationCoverage(leadId);
   const disqualifications = await listDisqualificationHistory(leadId);
+  // SCR-029 — what downstream cites each version, and how far it was carried.
+  const requirementSets = await readRequirementSets(versions.map((v) => v.id));
   const mayWrite = can(context.role, 'lead.write');
   const mayAssign = can(context.role, 'lead.assign');
   // The capability triple ADM-07 describes. Re-checked here for rendering only;
@@ -262,6 +273,31 @@ export default async function LeadConversationPage({
             {humanize(lead.status)} · via {humanize(lead.source)}
             {conversation ? ` · ${messages.length} message${messages.length === 1 ? '' : 's'}` : ''}
           </>
+        }
+        actions={
+          conversation ? (
+            <span className="flex flex-wrap items-center justify-end gap-1.5">
+              <Badge tone={conversation.agent_paused_at ? 'warning' : 'success'} dot>
+                {conversation.agent_paused_at ? 'with a person' : 'agent replying'}
+              </Badge>
+              {windowState ? (
+                <Badge
+                  tone={windowState === 'open' ? 'success' : windowState === 'group' ? 'neutral' : windowState === 'unreadable' ? 'danger' : 'warning'}
+                  dot
+                >
+                  {windowState === 'open'
+                    ? '24h window open'
+                    : windowState === 'closed'
+                      ? 'window closed — template only'
+                      : windowState === 'never'
+                        ? 'never wrote — template only'
+                        : windowState === 'group'
+                          ? 'group — no window'
+                          : 'window unreadable'}
+                </Badge>
+              ) : null}
+            </span>
+          ) : undefined
         }
         back={
           <Link
@@ -438,6 +474,48 @@ export default async function LeadConversationPage({
       />
     </div>
   );
+
+  /* ── The project group, in the same pane (SCR-058) ──────────────────── */
+
+  const groupPane = projectGroup ? (
+    <div className="flex max-h-[40dvh] min-h-[220px] flex-col overflow-hidden rounded-xl border border-line shadow-sm">
+      <ChatHeader
+        name={projectGroup.title ?? 'Project group'}
+        status={
+          <>
+            WhatsApp group · {groupMessages.length} message{groupMessages.length === 1 ? '' : 's'} ·{' '}
+            <Link href={`/projects/${projectGroup.projectId}`} className="underline underline-offset-2">
+              open project
+            </Link>
+          </>
+        }
+      />
+      <ChatCanvas>
+        {groupMessages.length === 0 ? (
+          <SystemNote>Nothing recorded in the group yet.</SystemNote>
+        ) : (
+          groupMessages.slice(-30).map((m) => {
+            const incoming = m.direction === 'inbound' || (m.direction === null && m.author_type === 'client');
+            return (
+              <ChatBubble
+                key={m.id}
+                outgoing={!incoming}
+                author={!incoming ? (AUTHOR_LABEL[m.author_type] ?? m.author_type) : undefined}
+                body={m.body}
+                time={clock.clock(new Date(m.occurred_at))}
+                delivery={m.delivery}
+                wire={m.wire}
+                media={m.mediaKind}
+                mediaCaption={m.caption}
+                mediaDescription={m.media_description}
+                tail
+              />
+            );
+          })
+        )}
+      </ChatCanvas>
+    </div>
+  ) : null;
 
   /* ── Pane two: what the business knows ──────────────────────────────── */
 
@@ -1033,6 +1111,10 @@ export default async function LeadConversationPage({
                               {parsed.data.openQuestions.length === 1 ? '' : 's'}
                             </p>
                           ) : null}
+                          {(() => {
+                            const set = requirementSets.get(v.id);
+                            return set ? <RequirementSetPanel payload={parsed.data} set={set} clock={clock} /> : null;
+                          })()}
                         </div>
                       ) : v.status === 'failed' ? (
                         <p className="mt-2 text-[13px] text-muted">
@@ -1151,7 +1233,21 @@ export default async function LeadConversationPage({
         </div>
       </EntityHeader>
 
-      <LeadWorkspace chat={chat} details={details} side={side} detailsCount={awaitingDecision} />
+      <LeadWorkspace
+        chat={
+          groupPane ? (
+            <div className="flex flex-col gap-4">
+              {chat}
+              {groupPane}
+            </div>
+          ) : (
+            chat
+          )
+        }
+        details={details}
+        side={side}
+        detailsCount={awaitingDecision}
+      />
     </div>
   );
 }

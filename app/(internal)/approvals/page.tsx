@@ -4,9 +4,9 @@ import Link from 'next/link';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { LiveRefresh } from '@/lib/realtime';
-import { Badge, Card, CardHeader, EmptyState, IconApprovals, IconCheck, IconClock, IconAlert, PageHeader, Stat, StatGrid, statusTone, humanize } from '@/ui';
+import { Badge, Card, CardHeader, EmptyState, FilterBar, FilterChips, IconApprovals, IconCheck, IconClock, IconAlert, PageHeader, Stat, StatGrid, statusTone, humanize } from '@/ui';
 import { listApprovalPolicies, listDecidedApprovals, listPendingApprovals } from '@/modules/approvals/queries';
-import { isOverdue, type ApprovalState } from '@/modules/approvals/schema';
+import { APPROVER_ROLES, isOverdue, type ApprovalState } from '@/modules/approvals/schema';
 import type { ApprovalPolicyRow } from '@/modules/approvals/types';
 
 import { ApprovalDecisionForm } from './approval-decision-form';
@@ -50,11 +50,29 @@ const SUBJECT_LABEL: Record<string, string> = {
  * The reads refuse rather than render empty (G-054): "nothing needs your
  * attention" is the single most expensive lie this application could tell.
  */
-export default async function ApprovalsPage() {
+export default async function ApprovalsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ type?: string; role?: string }>;
+}) {
   await requireInternal('/approvals');
   const clock = await agencyClock();
+  const { type: typeFilter, role: roleFilter } = await searchParams;
 
-  const [pending, policies, decided] = await Promise.all([listPendingApprovals(), listApprovalPolicies(), listDecidedApprovals(50)]);
+  const [allPending, policies, decided] = await Promise.all([listPendingApprovals(), listApprovalPolicies(), listDecidedApprovals(50)]);
+  // SCR-068: filters by subject type and required role, as chips that
+  // round-trip through the URL. The KPIs stay over the whole queue — a
+  // filtered "waiting" count would read as the queue being shorter than it is.
+  const pending = allPending.filter((r) => (!typeFilter || r.subject_type === typeFilter) && (!roleFilter || r.required_role === roleFilter));
+  const typesPresent = [...new Set(allPending.map((r) => r.subject_type))].sort();
+  const filterHref = (over: { type?: string; role?: string }) => {
+    const p = new URLSearchParams();
+    const merged = { type: typeFilter, role: roleFilter, ...over };
+    if (merged.type) p.set('type', merged.type);
+    if (merged.role) p.set('role', merged.role);
+    const s = p.toString();
+    return s ? `/approvals?${s}` : '/approvals';
+  };
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const decidedThisWeek = decided.filter((r) => (r.decided_at ?? r.created_at) >= weekAgo);
   const approvedCount = decided.filter((r) => r.state === 'approved').length;
@@ -65,7 +83,7 @@ export default async function ApprovalsPage() {
     .map((r) => (new Date(r.decided_at as string).getTime() - new Date(r.created_at).getTime()) / 36e5)
     .filter((h) => h >= 0);
   const medianHours = decisionHours.length > 0 ? [...decisionHours].sort((a, b) => a - b)[Math.floor(decisionHours.length / 2)] ?? null : null;
-  const late = pending.filter((request) =>
+  const late = allPending.filter((request) =>
     isOverdue({ state: request.state as ApprovalState, slaDueAt: request.sla_due_at }),
   ).length;
 
@@ -78,6 +96,14 @@ export default async function ApprovalsPage() {
     group.push(policy);
     policyGroups.set(policy.subject_type, group);
   }
+  // Where a request would escalate — read-only. ADM-08c: an unanswered
+  // request expires on the cron tick and is raised again with the owner; if
+  // the subject's own ladder has a higher rung, that rung is the policy the
+  // re-raise would route by. Nothing here escalates anything.
+  const escalationFor = (subjectType: string, amountMinor: number | null, requiredRole: string): ApprovalPolicyRow | null => {
+    const ladder = policyGroups.get(subjectType) ?? [];
+    return ladder.find((p) => p.min_amount_minor > (amountMinor ?? 0) && p.required_role !== requiredRole) ?? null;
+  };
 
   return (
     <div className="flex flex-col gap-5">
@@ -113,11 +139,32 @@ export default async function ApprovalsPage() {
         <Stat label="Median time to decide" value={medianHours === null ? '—' : medianHours < 1 ? `${Math.round(medianHours * 60)}m` : medianHours < 48 ? `${Math.round(medianHours)}h` : `${Math.round(medianHours / 24)}d`} caption="From request to decision" tone="accent" icon={<IconClock size={16} />} />
       </StatGrid>
 
+      {allPending.length > 0 ? (
+        <FilterBar>
+          <FilterChips
+            options={[
+              { key: 'all-types', label: 'Every type', href: filterHref({ type: undefined }), active: !typeFilter },
+              ...typesPresent.map((t) => ({ key: `t-${t}`, label: SUBJECT_LABEL[t] ?? t, href: filterHref({ type: t }), active: typeFilter === t })),
+            ]}
+          />
+          <FilterChips
+            options={[
+              { key: 'all-roles', label: 'Any role', href: filterHref({ role: undefined }), active: !roleFilter },
+              ...APPROVER_ROLES.map((r) => ({ key: `r-${r}`, label: `needs ${r.replace('_', ' ')}`, href: filterHref({ role: r }), active: roleFilter === r })),
+            ]}
+          />
+        </FilterBar>
+      ) : null}
+
       {pending.length === 0 ? (
         <EmptyState
           icon={<IconApprovals size={22} />}
-          title="Nothing is waiting on a decision"
-          description="When something needs a decision — a deliverable, an invoice, a refund — it appears here."
+          title={allPending.length > 0 ? 'Nothing matches these filters' : 'Nothing is waiting on a decision'}
+          description={
+            allPending.length > 0
+              ? `${allPending.length} request${allPending.length === 1 ? '' : 's'} waiting under other filters.`
+              : 'When something needs a decision — a deliverable, an invoice, a refund — it appears here.'
+          }
         />
       ) : (
         <ul className="flex flex-col gap-3">
@@ -186,6 +233,26 @@ export default async function ApprovalsPage() {
                         : request.requested_by_type}{' '}
                       · {clock.dateTime(request.created_at)}
                     </p>
+                    {(() => {
+                      const rung = escalationFor(request.subject_type, request.amount_minor, request.required_role);
+                      return (
+                        <p className="text-xs text-muted">
+                          If unanswered by its deadline it expires and is raised again with the owner
+                          {rung ? (
+                            <>
+                              {' '}
+                              — the rung above is{' '}
+                              <a href={`#policy-${rung.id}`} className="underline underline-offset-2">
+                                ≥ {MONEY.format(rung.min_amount_minor / 100)} → {rung.required_role.replace(/_/g, ' ')}
+                              </a>
+                            </>
+                          ) : (
+                            ' (no higher rung on this ladder)'
+                          )}
+                          .
+                        </p>
+                      );
+                    })()}
                   </div>
 
                   <Badge tone={overdue ? 'danger' : 'neutral'} dot={overdue}>
@@ -250,6 +317,23 @@ export default async function ApprovalsPage() {
                 <div className="mb-2 text-sm font-medium">
                   {SUBJECT_LABEL[subjectType] ?? subjectType}
                 </div>
+                {/* The ladder as a stepper: thresholds ascending left to right, the role each rung requires beneath it. */}
+                <ol className="mb-3 flex flex-wrap items-start gap-0 text-xs">
+                  {group.map((policy, index) => (
+                    <li key={`step-${policy.id}`} id={`policy-${policy.id}`} className="flex items-start">
+                      <span className="flex flex-col items-center gap-1">
+                        <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-semibold text-brand-fg tabular">
+                          {index + 1}
+                        </span>
+                        <span className="whitespace-nowrap font-medium tabular">
+                          {policy.min_amount_minor > 0 ? `≥ ${MONEY.format(policy.min_amount_minor / 100)}` : 'Any amount'}
+                        </span>
+                        <span className="whitespace-nowrap text-muted">{policy.required_role.replace(/_/g, ' ')}</span>
+                      </span>
+                      {index < group.length - 1 ? <span className="mx-2 mt-3 h-px w-8 bg-line-strong" aria-hidden /> : null}
+                    </li>
+                  ))}
+                </ol>
                 <ul className="flex flex-col gap-1.5">
                   {group.map((policy) => (
                     <li

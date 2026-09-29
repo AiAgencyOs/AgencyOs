@@ -5,11 +5,15 @@ import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listPendingPaymentClaims } from '@/modules/finance/queries';
+import { readProjectFilterFacets } from '@/modules/projects/project-filters-queries';
 import { listPhaseFourEscalations, listProjectsForTable } from '@/modules/projects/queries';
 import { PROJECT_STATUSES } from '@/modules/projects/schema';
 import { SavedViewsBar } from '../saved-views-bar';
+import Link from 'next/link';
+
 import {
   Avatar,
+  buttonClass,
   DataTable,
   DEFAULT_PAGE_SIZE,
   EmptyState,
@@ -19,6 +23,7 @@ import {
   IconAlert,
   IconInvoices,
   IconProjects,
+  labelClass,
   paginate,
   Pagination,
   PageHeader,
@@ -29,6 +34,7 @@ import {
   statusTone,
   type Column,
   PermissionDenied,
+  selectClass,
   sortRows,
   type SortDirection,
 } from '@/ui';
@@ -104,24 +110,32 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
   due: (a, b) => (a.endsOn ?? '9999').localeCompare(b.endsOn ?? '9999'),
 };
 
-/** Delivery pipeline. Same two-layer gate as the other internal pages. */
+/**
+ * Delivery pipeline. Same two-layer gate as the other internal pages.
+ *
+ * SCR-018: `?client=` and `?owner=` narrow the table by client account and
+ * delivery lead through a GET form, the same shape the status chips use, so
+ * a filtered list is a URL somebody can send.
+ */
 export default async function ProjectsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string }>;
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; client?: string; owner?: string }>;
 }) {
   const context = await requireInternal('/projects');
   const clock = await agencyClock();
   if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
-  const { page: pageParam, sort: sortKey, dir, status } = await searchParams;
+  const { page: pageParam, sort: sortKey, dir, status, client, owner } = await searchParams;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
-  const currentQuery = [status ? `status=${status}` : '', sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
-  const [allProjects, savedViews, escalations, pendingClaims] = await Promise.all([
+  const facetQuery = [client ? `client=${client}` : '', owner ? `owner=${owner}` : ''].filter(Boolean).join('&');
+  const currentQuery = [status ? `status=${status}` : '', facetQuery, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
+  const [allProjects, savedViews, escalations, pendingClaims, facets] = await Promise.all([
     listProjectsForTable(),
     listSavedViews('/projects'),
     listPhaseFourEscalations(),
     can(context.role, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
+    readProjectFilterFacets(),
   ]);
   const todayKey = new Date().toISOString().slice(0, 10);
   const late = allProjects.filter((p) => p.status !== 'completed' && p.status !== 'cancelled' && p.endsOn !== null && p.endsOn < todayKey);
@@ -137,8 +151,15 @@ export default async function ProjectsPage({
         : status
           ? allProjects.filter((p) => p.status === status)
           : allProjects;
-  const projects = sortRows(filtered, sortKey, direction, COMPARATORS);
-  const qs = (extra: string) => `/projects?${status ? `status=${status}&` : ''}${extra}`;
+  const faceted = filtered.filter((p) => {
+    const f = facets.byProject.get(p.id);
+    if (client && f?.clientAccountId !== client) return false;
+    if (owner && f?.deliveryLeadId !== owner) return false;
+    return true;
+  });
+  const projects = sortRows(faceted, sortKey, direction, COMPARATORS);
+  const qs = (extra: string) => `/projects?${status ? `status=${status}&` : ''}${facetQuery ? `${facetQuery}&` : ''}${extra}`;
+  const chipHref = (s: string | null) => `/projects?${[s ? `status=${s}` : '', facetQuery].filter(Boolean).join('&')}`;
   const { page, pageCount, rows: pageRows } = paginate(projects, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
 
   return (
@@ -169,16 +190,49 @@ export default async function ProjectsPage({
         <FilterBar>
           <FilterChips
             options={[
-              { key: 'all', label: 'All', href: '/projects', active: !status },
-              { key: 'at_risk', label: `At risk (${atRiskIds.size})`, href: '/projects?status=at_risk', active: status === 'at_risk' },
+              { key: 'all', label: 'All', href: chipHref(null), active: !status },
+              { key: 'at_risk', label: `At risk (${atRiskIds.size})`, href: chipHref('at_risk'), active: status === 'at_risk' },
               ...PROJECT_STATUSES.map((s) => ({
                 key: s,
                 label: `${humanize(s)} (${countByStatus.get(s) ?? 0})`,
-                href: `/projects?status=${s}`,
+                href: chipHref(s),
                 active: status === s,
               })),
             ]}
           />
+          <form action="/projects" method="GET" className="flex flex-wrap items-end gap-2">
+            {status ? <input type="hidden" name="status" value={status} /> : null}
+            <label className="flex flex-col gap-1">
+              <span className={labelClass}>Client</span>
+              <select name="client" defaultValue={client ?? ''} className={selectClass}>
+                <option value="">Any client</option>
+                {facets.clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className={labelClass}>Owner</span>
+              <select name="owner" defaultValue={owner ?? ''} className={selectClass}>
+                <option value="">Any owner</option>
+                {facets.owners.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="submit" className={buttonClass('secondary', 'sm')}>
+              Filter
+            </button>
+            {client || owner ? (
+              <Link href={status ? `/projects?status=${status}` : '/projects'} className={buttonClass('ghost', 'sm')}>
+                Clear
+              </Link>
+            ) : null}
+          </form>
         </FilterBar>
       ) : null}
 
@@ -206,8 +260,8 @@ export default async function ProjectsPage({
       ) : (
         <EmptyState
           icon={<IconProjects size={22} />}
-          title={status ? 'No matching projects' : 'No projects yet'}
-          description={status ? `No project is currently "${humanize(status)}".` : 'Projects created from won deals will appear here.'}
+          title={status || client || owner ? 'No matching projects' : 'No projects yet'}
+          description={client || owner ? 'No project matches the client or owner filter.' : status ? `No project is currently "${humanize(status)}".` : 'Projects created from won deals will appear here.'}
         />
       )}
     </div>

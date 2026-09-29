@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { formatCostMinor, whyNotRun, wouldRun } from '@/lib/admin/agent-eval';
-import { aiStatus, listRecentAgentRuns } from '@/lib/admin/agent-status';
+import { readRunMetrics } from '@/lib/admin/agent-metrics';
+import { aiStatus, listHandoffs, listRecentAgentRuns } from '@/lib/admin/agent-status';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
 import { getAgentUsage } from '@/lib/admin/usage';
@@ -45,6 +46,12 @@ import { SetProviderCredentialForm, VerifyAiProviderForm } from '../settings/for
 
 export const metadata: Metadata = { title: 'AI Workforce' };
 
+function seconds(value: number | null): string {
+  if (value === null) return '—';
+  if (value < 60) return `${Math.round(value)}s`;
+  return `${Math.floor(value / 60)}m ${Math.round(value % 60)}s`;
+}
+
 function compact(n: number): string {
   return new Intl.NumberFormat('en-IN', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
 }
@@ -67,11 +74,13 @@ export default async function AgentsPage() {
   const clock = await agencyClock();
   if (!can(context.role, 'audit.read')) return <PermissionDenied />;
 
-  const [{ providerConfigured, providers, agents }, settings, usage, recentRuns] = await Promise.all([
+  const [{ providerConfigured, providers, agents }, settings, usage, recentRuns, metrics, handoffs] = await Promise.all([
     aiStatus(),
     readOperationalSettings(),
     getAgentUsage(),
     listRecentAgentRuns(8),
+    readRunMetrics(),
+    listHandoffs(6),
   ]);
   const providerVerifiedAt = settingInstant(settings, 'ai_provider_verified_at');
   const providerVerifiedModel = settingText(settings, 'ai_provider_verified_model');
@@ -125,6 +134,9 @@ export default async function AgentsPage() {
         return <Badge tone={blocked ? (a.enabled ? 'warning' : 'neutral') : 'success'} dot>{blocked ? (a.enabled ? 'Blocked' : 'Disabled') : 'Active'}</Badge>;
       },
     },
+    { key: 'autonomy', header: 'Autonomy', desktopOnly: true, cellClassName: 'text-muted', cell: (a) => a.autonomyLevel },
+    { key: 'steps', header: 'Max steps', align: 'right', desktopOnly: true, cellClassName: 'tabular text-muted', cell: (a) => (a.maxSteps === null ? '—' : String(a.maxSteps)) },
+    { key: 'maxCost', header: 'Max cost', align: 'right', desktopOnly: true, cellClassName: 'tabular text-muted', cell: (a) => { const c = formatCostMinor(a.maxCostMinor); return c ? `₹${c}` : '—'; } },
     { key: 'runs', header: 'Runs', align: 'right', cellClassName: 'tabular', cell: (a) => String(usageByAgent.get(a.key)?.runs ?? 0) },
     { key: 'cost', header: 'Cost', align: 'right', desktopOnly: true, cellClassName: 'tabular text-muted', cell: (a) => { const c = formatCostMinor(usageByAgent.get(a.key)?.costMinor ?? 0); return c ? `₹${c}` : '—'; } },
   ];
@@ -140,6 +152,9 @@ export default async function AgentsPage() {
               <IconUsage size={14} />
               Agent logs
             </Link>
+            <a href="/api/usage/export" className={buttonClass('secondary', 'sm')}>
+              Export usage CSV
+            </a>
             {isAdmin ? (
               <Link href="/agents/routing" className={buttonClass('secondary', 'sm')}>
                 <IconSettings size={14} />
@@ -168,6 +183,74 @@ export default async function AgentsPage() {
         <Stat label="AI cost" value={`₹${formatCostMinor(usage.totals.costMinor) ?? '0'}`} caption="From the cost ledger" tone="warning" icon={<IconRupee size={16} />} href="/usage" />
         <Stat label="Recent failures" value={String(failedRecent)} caption={avgSteps === null ? 'No runs yet' : `avg ${avgSteps} steps · last ${recentRuns.length}`} tone={failedRecent > 0 ? 'danger' : 'neutral'} icon={<IconClock size={16} />} />
       </StatGrid>
+
+      {/*
+        SCR-061: how long a task takes and where the model spend goes, from
+        rows the runtime wrote (`agent_runs.started_at/finished_at`, the cost
+        ledger per model). Nothing estimated; "—" when nothing has settled.
+      */}
+      <StatGrid cols={4}>
+        <Stat
+          label="Average task time"
+          value={seconds(metrics.averageSeconds)}
+          caption={metrics.timedRuns > 0 ? `Median ${seconds(metrics.medianSeconds)} · ${metrics.timedRuns} settled runs` : 'No settled run has both timestamps yet'}
+          tone="info"
+          icon={<IconClock size={16} />}
+        />
+        <Stat
+          label="Models used"
+          value={String(metrics.byModel.length)}
+          caption={metrics.byModel[0] ? `${metrics.byModel[0].model} carries ${Math.round(metrics.byModel[0].share * 100)}% of spend` : 'Nothing in the ledger yet'}
+          tone="accent"
+          icon={<IconSparkle size={16} />}
+        />
+        <Stat label="Handoffs" value={String(handoffs.length)} caption="Most recent agent-to-agent handoffs" tone="brand" icon={<IconAgents size={16} />} href="/agents/automations" />
+        <Stat label="Failed (sample)" value={String(metrics.failedRuns)} caption={`Of the last ${metrics.timedRuns || 0} settled runs`} tone={metrics.failedRuns > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} />
+      </StatGrid>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card>
+          <CardHeader title="Model usage" description="Runs and cost per model, from the ledger the runtime writes as runs settle." />
+          {metrics.byModel.length > 0 ? (
+            <ul className="divide-y divide-line">
+              {metrics.byModel.map((m) => (
+                <li key={m.model} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[13px] sm:px-5">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <code className="truncate text-xs">{m.model}</code>
+                    <span className="tabular text-muted">{m.runs} run{m.runs === 1 ? '' : 's'}</span>
+                  </span>
+                  <span className="tabular flex items-center gap-3">
+                    <span>₹{formatCostMinor(m.costMinor) ?? '0.00'}</span>
+                    <span className="w-10 text-right text-muted">{Math.round(m.share * 100)}%</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No run has settled into the ledger yet.</p>
+          )}
+        </Card>
+        <Card>
+          <CardHeader title="Automation" description="The latest agent-to-agent handoffs." actions={<ViewAll href="/agents/automations" label="All handoffs" />} />
+          {handoffs.length > 0 ? (
+            <ul className="divide-y divide-line">
+              {handoffs.map((h) => (
+                <li key={h.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[13px] sm:px-5">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Link href={`/agents/${h.fromAgent}`} className="underline-offset-2 hover:underline">{h.fromAgent}</Link>
+                    <span className="text-muted">→</span>
+                    <Link href={`/agents/${h.toAgent}`} className="underline-offset-2 hover:underline">{h.toAgent}</Link>
+                    <StatusBadge status={h.status} />
+                  </span>
+                  <span className="text-xs text-muted">{clock.dateTime(h.createdAt)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No handoff has been recorded yet.</p>
+          )}
+        </Card>
+      </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)]">
         <Card>
@@ -242,7 +325,7 @@ export default async function AgentsPage() {
               </div>
             ) : null}
             {isAdmin ? (
-              <div className="flex flex-col gap-2.5 border-t border-line px-4 py-4 text-sm sm:px-5">
+              <div id="vault" className="flex flex-col gap-2.5 border-t border-line px-4 py-4 text-sm sm:px-5">
                 <span className="font-semibold">Provider key vault</span>
                 <p className="text-xs text-muted">
                   A key entered here is encrypted and stored (ADM-84 §9 overturned 2026-09-20); env-set keys still take precedence. Once stored, a key is never shown again — only whether it is present and when it was last set.

@@ -98,7 +98,7 @@ export type ClientDetail = ClientListItem & {
   meetings: ClientMeeting[];
   /** People at the client (`crm.contacts.client_account_id`). */
   contacts: ClientContact[];
-  projects: { id: string; name: string; status: string; budgetMinor: number | null; currency: string }[];
+  projects: { id: string; name: string; status: string; budgetMinor: number | null; currency: string; proposalId: string | null }[];
   /** SCR-016 — what each project was sold for and where its money and upkeep stand. */
   commercials: ClientProjectCommercials[];
   invoices: { id: string; number: string; status: string; totalMinor: number; paidMinor: number; currency: string }[];
@@ -454,6 +454,7 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
       status: p.status,
       budgetMinor: p.budget_minor,
       currency: p.currency,
+      proposalId: p.proposal_id,
     })),
     invoices: invoiceRows.map((i) => ({
       id: i.id,

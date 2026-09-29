@@ -13,6 +13,7 @@ import {
   Callout,
   cx,
   DonutChart,
+  filterChipClass,
   Drawer,
   FormMessage,
   IconAlert,
@@ -71,6 +72,16 @@ const PRIORITY: Record<string, { label: string; tone: 'danger' | 'warning' | 'in
  * enforcement. The filters are a view over the rows the page read; they
  * never fetch.
  */
+/** Open (not done) task counts keyed by `key`, most first; `null` keys are kept (unassigned / no module). */
+function countBy(tasks: readonly BoardTask[], key: (t: BoardTask) => string | null): [string | null, number][] {
+  const counts = new Map<string | null, number>();
+  for (const t of tasks) {
+    if (t.columnId === 'done') continue;
+    counts.set(key(t), (counts.get(key(t)) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+}
+
 export function ProjectBoard({
   projectId,
   columns,
@@ -193,6 +204,44 @@ export function ProjectBoard({
           </button>
         ) : null}
       </div>
+
+      {/* SCR-020: open-task counts per assignee and per module, on the board
+          itself. Each chip is also the filter for that person or module. */}
+      {tasks.some((t) => t.columnId !== 'done') ? (
+        <div className="flex flex-col gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-[13px] shadow-xs">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-[11px] font-semibold uppercase tracking-wider text-muted">Open by assignee</span>
+            {countBy(tasks, (t) => t.assigneeId).map(([id, n]) => (
+              <button
+                key={id ?? 'unassigned'}
+                type="button"
+                onClick={() => setAssignee(assignee === (id ?? 'unassigned') ? '' : (id ?? 'unassigned'))}
+                aria-pressed={assignee === (id ?? 'unassigned')}
+                className={filterChipClass(assignee === (id ?? 'unassigned'))}
+              >
+                {id ? (people.find((p) => p.userId === id)?.fullName ?? 'Unknown') : 'Unassigned'} · {n}
+              </button>
+            ))}
+          </div>
+          {modules.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 text-[11px] font-semibold uppercase tracking-wider text-muted">Open by module</span>
+              {countBy(tasks, (t) => t.moduleId).map(([id, n]) => (
+                <button
+                  key={id ?? 'none'}
+                  type="button"
+                  onClick={() => setModuleFilter(id && moduleFilter !== id ? id : '')}
+                  aria-pressed={id !== null && moduleFilter === id}
+                  className={filterChipClass(id !== null && moduleFilter === id)}
+                  disabled={id === null}
+                >
+                  {id ? (modules.find((m) => m.id === id)?.name ?? 'Unknown module') : 'No module'} · {n}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <KanbanBoard
         columns={columns}

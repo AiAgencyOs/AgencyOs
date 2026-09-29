@@ -2,12 +2,19 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { agencyClock } from '@/lib/admin/agency-clock';
+import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { readClientCommercialTimeline, type CommercialEvent } from '@/lib/admin/client-commercials';
+import { listClientMeetingNotes, readClientUnreadReplies } from '@/lib/admin/client-communication';
+import { readClientNextFollowUp } from '@/lib/admin/client-followups';
+import { listClientLeads, listClientOpportunities } from '@/lib/admin/client-leads';
 import { getClient } from '@/lib/admin/clients';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { listEligibleMilestones } from '@/modules/finance/eligible-milestones-queries';
 import {
   ActivityFeed,
+  Callout,
+  cx,
   Avatar,
   Badge,
   buttonClass,
@@ -25,6 +32,7 @@ import {
   IconFile,
   IconInbox,
   IconInvoices,
+  IconLeads,
   IconMessage,
   IconPlus,
   IconProjects,
@@ -37,10 +45,46 @@ import {
   ViewAll,
   type ActivityItem,
   type Column,
+  type Tone,
 } from '@/ui';
 
 import { TrailLabel } from '../../trail-label';
+import { GenerateClientInvoiceButton } from './client-forms';
+import { ClientCreateButtons } from './create-buttons';
 import { AddClientNoteForm } from './note-form';
+
+const TABS = ['overview', 'projects', 'quotations', 'invoices', 'communication', 'files', 'notes', 'activity'] as const;
+type Tab = (typeof TABS)[number];
+
+function tabOf(value: string | undefined): Tab {
+  return (TABS as readonly string[]).includes(value ?? '') ? (value as Tab) : 'overview';
+}
+
+const EVENT_TONE: Record<CommercialEvent['kind'], Tone> = { quotation: 'info', milestone: 'brand', invoice: 'warning', payment: 'success' };
+const EVENT_ICON: Record<CommercialEvent['kind'], React.ReactNode> = {
+  quotation: <IconLeads size={13} />,
+  milestone: <IconCheck size={13} />,
+  invoice: <IconInvoices size={13} />,
+  payment: <IconCheck size={13} />,
+};
+
+/** A milestone's `due_on` is a day, not an instant; everything else on the timeline is an instant. */
+function eventWhen(clock: AgencyClock, at: string | null): string {
+  if (!at) return 'undated';
+  return at.length === 10 ? clock.date(`${at}T00:00:00`) : clock.dateTime(at);
+}
+
+function commercialItems(events: CommercialEvent[], clock: AgencyClock): ActivityItem[] {
+  return events.map((e) => ({
+    id: e.id,
+    title: e.title,
+    detail: [e.detail, e.amountMinor !== null ? money(e.amountMinor, e.currency) : null, e.projectName].filter(Boolean).join(' · '),
+    when: eventWhen(clock, e.at),
+    tone: EVENT_TONE[e.kind],
+    icon: EVENT_ICON[e.kind],
+    ...(e.href ? { href: e.href } : {}),
+  }));
+}
 
 export const metadata: Metadata = { title: 'Client' };
 
@@ -60,8 +104,16 @@ function money(minor: number, currency: string): string {
  * `lead_id`) — deliberately not the client's pre-conversion lead history,
  * because a project group has no `lead_id` at all (`conversations_kind_shape`).
  */
-export default async function ClientDetailPage({ params }: { params: Promise<{ clientId: string }> }) {
+export default async function ClientDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ clientId: string }>;
+  searchParams: Promise<{ tab?: string }>;
+}) {
   const { clientId } = await params;
+  const { tab: rawTab } = await searchParams;
+  const tab = tabOf(rawTab);
 
   const context = await requireInternal(`/clients/${clientId}`);
   const clock = await agencyClock();
@@ -69,6 +121,28 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
 
   const client = await getClient(clientId);
   if (!client) notFound();
+
+  // SCR-015/016/017's additions, each from its own reader: the client's
+  // leads (for the follow-up and meeting notes), the next follow-up, unread
+  // replies, meeting notes, the commercial timeline and the milestone each
+  // project could be invoiced for next.
+  const leads = await listClientLeads(clientId);
+  const leadIds = leads.map((l) => l.id);
+  const projectIds = client.projects.map((p) => p.id);
+  const [nextFollowUp, unread, meetingNotes, commercialEvents, eligible, opportunities] = await Promise.all([
+    readClientNextFollowUp(clientId, leads),
+    readClientUnreadReplies({ projectIds, leadIds }),
+    listClientMeetingNotes(leadIds),
+    readClientCommercialTimeline({ clientAccountId: clientId, projects: client.projects }),
+    listEligibleMilestones(projectIds),
+    listClientOpportunities(clientId),
+  ]);
+  const mayInvoice = can(context.role, 'invoice.create');
+  const base = `/clients/${clientId}`;
+  const tabHref = (t: Tab) => (t === 'overview' ? base : `${base}?tab=${t}`);
+  const invoiceTarget = eligible.find((e) => e.eligible)?.projectId ?? null;
+  const commercialFeed = commercialItems(commercialEvents, clock);
+  const followUpOverdue = nextFollowUp !== null && nextFollowUp.at < new Date().toISOString();
 
   const canWriteNotes = can(context.role, 'project.write');
   const canSeeMoney = can(context.role, 'invoice.read');
@@ -142,15 +216,262 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
               All clients
             </Link>
             {canWriteNotes ? (
-              <a href="#notes" className={buttonClass('primary', 'sm')}>
+              <Link href={`${base}?tab=notes#notes`} className={buttonClass('secondary', 'sm')}>
                 <IconPlus size={14} />
                 Add note
-              </a>
+              </Link>
+            ) : null}
+            {can(context.role, 'project.write') ? (
+              <ClientCreateButtons
+                leadId={opportunities.open?.leadId ?? leads[0]?.id ?? null}
+                opportunityId={opportunities.open?.id ?? null}
+                invoiceHref={invoiceTarget ? `/projects/${invoiceTarget}#billing` : `${base}?tab=invoices`}
+              />
             ) : null}
           </>
         }
       />
 
+      <StatGrid>
+        <Stat
+          label="Next follow-up"
+          value={nextFollowUp ? clock.date(nextFollowUp.at) : '—'}
+          caption={
+            nextFollowUp
+              ? `${nextFollowUp.source === 'sequence' ? 'Automated sequence' : 'Set on the lead'} · ${nextFollowUp.leadTitle}`
+              : leads.length === 0
+                ? 'No lead to follow up'
+                : 'Nothing scheduled'
+          }
+          tone={followUpOverdue ? 'danger' : nextFollowUp ? 'info' : 'neutral'}
+          icon={<IconClock size={16} />}
+          href={nextFollowUp ? `/leads/${nextFollowUp.leadId}` : undefined}
+        />
+        <Stat
+          label="Unread client replies"
+          value={String(unread.total)}
+          caption={unread.total > 0 ? `${unread.threads.length} thread${unread.threads.length === 1 ? '' : 's'} waiting` : 'Every message answered'}
+          tone={unread.total > 0 ? 'warning' : 'success'}
+          icon={<IconMessage size={16} />}
+          href={tabHref('communication')}
+        />
+        <Stat
+          label="Next to invoice"
+          value={String(eligible.filter((e) => e.eligible).length)}
+          caption={eligible.length > 0 ? 'Milestones clear to bill' : 'No unpaid milestone ahead'}
+          tone={eligible.some((e) => e.eligible) ? 'brand' : 'neutral'}
+          icon={<IconInvoices size={16} />}
+          href={tabHref('invoices')}
+        />
+        <Stat
+          label="Meeting notes"
+          value={String(meetingNotes.length)}
+          caption={`${client.meetings.length} meeting${client.meetings.length === 1 ? '' : 's'} on this client's deals`}
+          tone="accent"
+          icon={<IconCalendar size={16} />}
+          href={tabHref('notes')}
+        />
+      </StatGrid>
+
+      <div role="tablist" aria-label="Client sections" className="rounded-xl border border-line bg-surface shadow-xs">
+        <ul className="scrollbar-none flex overflow-x-auto px-2">
+          {TABS.map((t) => (
+            <li key={t} className="shrink-0">
+              <Link
+                href={tabHref(t)}
+                role="tab"
+                aria-selected={t === tab}
+                className={cx(
+                  'relative flex h-11 items-center gap-2 px-3.5 text-[13px] font-medium transition-colors',
+                  t === tab ? 'text-brand' : 'text-muted hover:text-foreground',
+                )}
+              >
+                {humanize(t)}
+                {t === 'communication' && unread.total > 0 ? <Badge tone="warning">{unread.total}</Badge> : null}
+                {t === tab ? <span aria-hidden className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-brand" /> : null}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {tab === 'projects' ? (
+        <Card>
+          <CardHeader title="Client projects" description={`${client.projectsActive} active of ${client.projectsTotal}.`} actions={<ViewAll href="/projects" />} />
+          {client.projects.length > 0 ? (
+            <div className="px-4 pb-4 sm:px-5">
+              <DataTable dense rows={client.projects} columns={projectColumns} getKey={(p) => p.id} href={(p) => `/projects/${p.id}`} />
+            </div>
+          ) : (
+            <EmptyState icon={<IconProjects size={20} />} title="No projects yet" description="Winning a deal on one of this client's leads creates one." />
+          )}
+        </Card>
+      ) : null}
+
+      {tab === 'quotations' ? (
+        <Card>
+          <CardHeader title="Quotations" description="Every quotation raised on this client's deals, newest first." actions={<ViewAll href="/quotations" />} />
+          {client.quotations.length === 0 ? (
+            <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No quotation has been raised on this client's deals.</p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {client.quotations.map((qn) => (
+                <li key={qn.id}>
+                  <Link href={qn.leadId ? `/leads/${qn.leadId}#quotations` : '/quotations'} className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium text-foreground">
+                        {qn.title} <span className="font-mono text-[11px] text-muted">v{qn.version}</span>
+                      </span>
+                      <span className="block truncate text-xs text-muted">
+                        {qn.dealName} · {clock.date(qn.createdAt)}
+                        {qn.validUntil ? ` · valid until ${clock.date(qn.validUntil)}` : ''}
+                      </span>
+                    </span>
+                    <span className="tabular shrink-0 font-medium">{money(qn.totalMinor, qn.currency)}</span>
+                    <StatusBadge status={qn.status} dot={false} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      ) : null}
+
+      {tab === 'invoices' ? (
+        <>
+          <Card>
+            <CardHeader
+              title="Next milestone to invoice"
+              description="Per project: the first priced milestone not yet paid for, with everything before it paid — the same rule the project page applies."
+            />
+            {eligible.length > 0 ? (
+              <ul className="divide-y divide-line">
+                {eligible.map((e) => {
+                  const project = client.projects.find((p) => p.id === e.projectId);
+                  return (
+                    <li key={e.milestoneId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium text-foreground">{e.name}</span>
+                        <span className="block text-[13px] text-muted">
+                          {project?.name ?? 'Project'} · {humanize(e.status)}
+                          {e.paymentPercent !== null ? <> · {e.paymentPercent}%</> : null} · {money(e.amountMinor, e.currency)}
+                        </span>
+                        {e.reason ? <span className="block text-xs text-muted">{e.reason}</span> : null}
+                      </span>
+                      {e.eligible && mayInvoice ? (
+                        <GenerateClientInvoiceButton milestoneId={e.milestoneId} projectId={e.projectId} label="Generate invoice" />
+                      ) : e.eligible ? (
+                        <span className="text-xs text-muted">No permission to raise invoices.</span>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="px-4 py-3 text-[13px] text-muted sm:px-5">Nothing to bill next — every priced milestone is paid, or no project has a payment plan yet.</p>
+            )}
+          </Card>
+          {canSeeMoney ? (
+            <Card>
+              <CardHeader title="Invoices" description={`${money(client.outstandingMinor, client.currency)} outstanding.`} actions={<ViewAll href="/invoices" />} />
+              {client.invoices.length > 0 ? (
+                <div className="px-4 pb-4 sm:px-5">
+                  <DataTable dense rows={client.invoices} columns={invoiceColumns} getKey={(i) => i.id} href={(i) => `/invoices/${i.id}`} />
+                </div>
+              ) : (
+                <EmptyState icon={<IconInvoices size={20} />} title="No invoices yet" />
+              )}
+            </Card>
+          ) : (
+            <Callout tone="info">Invoice amounts are visible to roles with the invoice.read permission.</Callout>
+          )}
+        </>
+      ) : null}
+
+      {tab === 'communication' ? (
+        <>
+          <Card>
+            <CardHeader title="Unread client replies" description="Inbound messages after the last outbound one on each thread — replies nobody has answered." />
+            {unread.threads.length > 0 ? (
+              <ul className="divide-y divide-line">
+                {unread.threads.map((t) => (
+                  <li key={t.conversationId} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-foreground">{t.title ?? humanize(t.kind)}</span>
+                      <span className="block truncate text-[13px] text-muted">{clock.dateTime(t.latestAt)} · {t.latestBody ?? '(media message)'}</span>
+                    </span>
+                    <Badge tone="warning">{t.unread} unread</Badge>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="px-4 py-3 text-[13px] text-muted sm:px-5">Every client message has been answered.</p>
+            )}
+          </Card>
+          <Callout tone="info">
+            Sending a message from here is not built: outbound WhatsApp goes through each thread's own conversation view, where the 24-hour window and template rules are enforced.
+          </Callout>
+        </>
+      ) : null}
+
+      {tab === 'notes' ? (
+        <>
+          <Card>
+            <CardHeader title="Meeting notes and decisions" description="Typed notes and summaries recorded against meetings on this client's leads, newest first." />
+            {meetingNotes.length > 0 ? (
+              <ul className="divide-y divide-line">
+                {meetingNotes.map((n) => {
+                  const lead = leads.find((l) => l.id === n.leadId);
+                  return (
+                    <li key={n.id} className="flex flex-col gap-1 px-4 py-3 sm:px-5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge tone={n.kind === 'summary' ? 'brand' : 'neutral'}>{n.kind}</Badge>
+                        <Badge tone={n.visibility === 'client_visible' ? 'info' : 'neutral'}>{humanize(n.visibility)}</Badge>
+                        <span className="text-xs text-muted">
+                          {n.meetingAt ? `Meeting ${clock.dateTime(n.meetingAt)}` : 'Meeting undated'}
+                          {n.meetingMode ? ` · ${humanize(n.meetingMode)}` : ''} · {humanize(n.meetingStatus)}
+                          {n.meetingOutcome ? ` · ${humanize(n.meetingOutcome)}` : ''}
+                        </span>
+                      </div>
+                      {n.body ? <p className="whitespace-pre-wrap text-[13px] text-foreground">{n.body}</p> : <p className="text-[13px] text-muted">Stored as a reference{n.artifactRef ? ` (${n.artifactRef})` : ''}, no text.</p>}
+                      <span className="text-xs text-muted">
+                        Recorded {clock.dateTime(n.uploadedAt)}
+                        {lead ? (
+                          <>
+                            {' · '}
+                            <Link href={`/meetings/${n.meetingId}`} className="underline-offset-2 hover:underline">meeting</Link>
+                            {' · '}
+                            <Link href={`/leads/${lead.id}`} className="underline-offset-2 hover:underline">{lead.title}</Link>
+                          </>
+                        ) : null}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <EmptyState icon={<IconMessage size={20} />} title="No meeting notes" description="Notes and summaries added to a meeting on one of this client's leads appear here." />
+            )}
+          </Card>
+          <Callout tone="info">
+            Attaching a meeting summary to project memory is not offered here: <code>ai.memory_records</code> is written only by the sales handoff handlers, and there is no person-facing door for it.
+          </Callout>
+        </>
+      ) : null}
+
+      {tab === 'activity' ? (
+        <ActivityFeed
+          title="Commercial timeline"
+          items={commercialFeed}
+          emptyTitle="No commercial history yet"
+          emptyDescription="An accepted quotation, a payment milestone, an invoice or a payment will appear here as each happens."
+        />
+      ) : null}
+
+      {tab === 'overview' || tab === 'files' || tab === 'notes' || tab === 'communication' ? (
+      <>
+
+      {tab === 'overview' ? (
       <StatGrid cols={6}>
         <Stat label="Total projects" value={String(client.projectsTotal)} caption={`${client.projectsActive} active`} tone="brand" icon={<IconProjects size={16} />} />
         {canSeeMoney ? (
@@ -163,9 +484,12 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
         <Stat label="Client since" value={clock.date(client.createdAt)} caption={monthsSince === 0 ? 'This month' : `${monthsSince} month${monthsSince === 1 ? '' : 's'}`} tone="accent" icon={<IconCalendar size={16} />} />
         <Stat label="Client health" value={healthy ? 'Good' : 'Attention'} caption={overdue > 0 ? `${overdue} overdue invoice${overdue === 1 ? '' : 's'}` : client.status !== 'active' ? humanize(client.status) : 'No overdue invoices'} tone={healthy ? 'success' : 'danger'} icon={healthy ? <IconCheck size={16} /> : <IconAlert size={16} />} />
       </StatGrid>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(19rem,1fr)]">
         <div className="flex min-w-0 flex-col gap-4">
+          {tab === 'overview' ? (
+          <>
           <Card>
             <CardHeader title="Client projects" actions={<ViewAll href="/projects" />} />
             {client.projects.length > 0 ? (
@@ -284,7 +608,10 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
               )}
             </Card>
           </div>
+          </>
+          ) : null}
 
+          {tab === 'overview' || tab === 'notes' || tab === 'files' ? (
           <div className="grid gap-4 lg:grid-cols-2">
             <Card id="notes">
               <CardHeader title="Notes" description="Internal only — never shown to the client." />
@@ -338,7 +665,9 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
               )}
             </Card>
           </div>
+          ) : null}
 
+          {tab === 'overview' || tab === 'communication' ? (
           <Card>
             <CardHeader title="Communication" description="Each project's own WhatsApp group, most recent messages first." />
             {client.communication.length > 0 ? (
@@ -369,6 +698,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
               <EmptyState icon={<IconInbox size={20} />} title="No project group linked yet" description="A project's WhatsApp group, once linked, shows its messages here." />
             )}
           </Card>
+          ) : null}
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
@@ -407,9 +737,14 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
             )}
           </Card>
 
-          <ActivityFeed title="Client timeline" items={timeline} emptyTitle="Nothing recorded yet" compact />
+          <ActivityFeed title="Client timeline" items={timeline} emptyTitle="Nothing recorded yet" compact viewAllHref={tabHref('activity')} />
+          {commercialFeed.length > 0 && tab === 'overview' ? (
+            <ActivityFeed title="Commercials" items={commercialFeed.slice(0, 6)} viewAllHref={tabHref('activity')} compact />
+          ) : null}
         </div>
       </div>
+      </>
+      ) : null}
     </div>
   );
 }

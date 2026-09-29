@@ -11,7 +11,11 @@ import { can } from '@/lib/authz/permissions';
 import { describeBacklog, severityOf } from '@/lib/observability/backlog';
 import { viewFailedDelivery } from '@/lib/observability/delivery';
 import { LiveRefresh } from '@/lib/realtime';
+import { listRecentWorkflows } from '@/lib/admin/run-chain';
+import { listMeetingsAwaitingNotes } from '@/modules/crm/meeting-notes-queries';
 import { listPendingGroupSetups } from '@/modules/projects/queries';
+
+import { WorkflowList } from './workflow-list';
 import {
   listDeadJobs,
   listDeferredSends,
@@ -70,7 +74,7 @@ export default async function OperationsPage() {
   // one of the two lists changes.
   const canRequeue = can(context.role, 'job.requeue');
 
-  const [backlog, dead, cronAge, wedged, failedRows, deferred, ai, groupSetups, queued] = await Promise.all([
+  const [backlog, dead, cronAge, wedged, failedRows, deferred, ai, groupSetups, queued, awaitingNotes, workflows] = await Promise.all([
     readBacklog(),
     listDeadJobs(),
     readCronAgeSeconds(),
@@ -80,12 +84,25 @@ export default async function OperationsPage() {
     aiStatus(),
     listPendingGroupSetups(),
     listQueuedJobs(),
+    listMeetingsAwaitingNotes(),
+    listRecentWorkflows(20),
   ]);
 
   const severity = severityOf(backlog);
   const lines = describeBacklog(backlog);
 
   const failed = failedRows.map(viewFailedDelivery);
+
+  // SCR-060 — failures by code. Meta's errors open with a code or a short
+  // phrase before the first colon/parenthesis; grouping on that prefix turns
+  // fifty rows into the three reasons they actually are. The prefix is the
+  // provider's own words, cut, never a classification of ours.
+  const failedByCode = new Map<string, number>();
+  for (const f of failed) {
+    const code = f.reason.split(/[:(]/)[0]?.trim().slice(0, 48) || 'unstated';
+    failedByCode.set(code, (failedByCode.get(code) ?? 0) + 1);
+  }
+  const topCodes = [...failedByCode.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
 
   // Provider/agent health, compact: the /agents page has the detail. "Would
   // run" reuses the exact gate that page shows, so the two can never disagree.
@@ -157,6 +174,21 @@ export default async function OperationsPage() {
           />
         ))}
       </div>
+
+      {topCodes.length > 0 || awaitingNotes.length > 0 ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+          <Stat
+            label="Meetings awaiting notes"
+            value={awaitingNotes.length}
+            tone={awaitingNotes.length > 0 ? 'warning' : 'neutral'}
+            caption="completed, nothing attached — cannot be analysed"
+            href="/meetings?window=past"
+          />
+          {topCodes.map(([code, count]) => (
+            <Stat key={code} label={`Failed · ${code}`} value={count} tone="danger" caption="of the most recent deliveries refused" />
+          ))}
+        </div>
+      ) : null}
 
       {/*
         Provider and agent health, compact — the answer to "can the AI actually
@@ -352,6 +384,19 @@ export default async function OperationsPage() {
             ))}
           </ul>
         )}
+      </div>
+
+      {/*
+        SCR-066 — workflow runs by correlation id: the runs and the jobs one
+        piece of work produced, and a drawer that shows the whole event chain
+        (jobs, runs, audit rows) for one id. No "cancel a workflow": nothing
+        in observability or the orchestrator exposes a cancel door, so the one
+        human act stays the requeue above.
+      */}
+      <div className="flex flex-col gap-2">
+        <h2 className="text-[13px] font-semibold tracking-tight">Workflow runs <span className="text-muted">({workflows.length})</span></h2>
+        <p className="text-xs text-muted">Recent agent runs grouped by correlation id, with the jobs that share it. Inspect one to see its event chain.</p>
+        <WorkflowList workflows={workflows} />
       </div>
 
       {/*

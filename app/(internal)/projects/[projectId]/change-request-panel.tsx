@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState } from 'react';
 
 import {
@@ -9,6 +10,7 @@ import {
   submitChangeRequestAction,
 } from '@/modules/projects/actions';
 import { CHANGE_REQUEST_CLASSIFICATIONS } from '@/modules/projects/schema';
+import type { ChangeRequestContext } from '@/modules/projects/change-request-queries';
 import type { ChangeRequestRow } from '@/modules/projects/queries';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { Badge, FormMessage, buttonClass, inputClass, labelClass, selectClass, textareaClass, type Tone } from '@/ui';
@@ -52,6 +54,57 @@ const CLASSIFICATION_LABEL: Record<string, string> = {
 };
 
 const when = (iso: string) => new Date(iso).toISOString().slice(0, 16).replace('T', ' ');
+
+const money = (minor: number, currency: string) =>
+  new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(minor / 100);
+
+/**
+ * SCR-031 — the payment gate as the rows state it. A paid change is decided
+ * against a proposal (ADM-22); the proposal's status is the client's answer,
+ * and the project's invoice ledger is the money side. Neither is re-derived:
+ * an `accepted` proposal with no `paid` invoice is shown as exactly that.
+ */
+function PaymentGate({ cr, context }: { cr: ChangeRequestRow; context: ChangeRequestContext }) {
+  const proposal = cr.proposalId ? context.proposals[cr.proposalId] : undefined;
+  const isPaid = cr.classification === 'paid_change';
+  if (!isPaid && !proposal) return null;
+
+  return (
+    <div className="flex flex-col gap-1 rounded-md border border-line bg-surface-sunken px-3 py-2 text-[13px]">
+      <p className="font-medium">Payment gate</p>
+      {!proposal ? (
+        <p className="text-muted">
+          A paid change is approved against a quotation, and none is attached yet — the decision below asks for its id.
+        </p>
+      ) : (
+        <p className="flex flex-wrap items-center gap-2">
+          <span className="text-muted">Quotation</span>
+          <span>
+            {proposal.title} v{proposal.version}
+          </span>
+          <Badge tone={proposal.status === 'accepted' ? 'success' : proposal.status === 'rejected' ? 'danger' : 'info'}>
+            {proposal.status.replace(/_/g, ' ')}
+          </Badge>
+          <span className="text-muted">{money(proposal.totalMinor, proposal.currency)}</span>
+        </p>
+      )}
+      {!context.invoices.visible ? (
+        <p className="text-xs text-muted">Invoice status is not visible to your role.</p>
+      ) : context.invoices.byStatus.length === 0 ? (
+        <p className="text-xs text-muted">No invoice has been raised on this project.</p>
+      ) : (
+        <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
+          <span>Project invoices:</span>
+          {context.invoices.byStatus.map((s) => (
+            <Badge key={s.status} tone={s.status === 'paid' ? 'success' : s.status === 'overdue' ? 'danger' : 'neutral'}>
+              {s.count} {s.status.replace(/_/g, ' ')}
+            </Badge>
+          ))}
+        </p>
+      )}
+    </div>
+  );
+}
 
 export function SubmitChangeRequestForm({ projectId }: { projectId: string }) {
   const [state, action, pending] = useActionState(submitChangeRequestAction, IDLE_STATE);
@@ -179,6 +232,7 @@ export function ChangeRequestList({
   changeRequests,
   mayManage,
   mayDecide,
+  context,
 }: {
   projectId: string;
   changeRequests: ChangeRequestRow[];
@@ -186,6 +240,8 @@ export function ChangeRequestList({
   mayManage: boolean;
   /** owner only — approve or reject, matching the door's own core.is_owner() gate. */
   mayDecide: boolean;
+  /** SCR-031 — proposal, invoice ledger, resulting tasks and the quotation door. */
+  context?: ChangeRequestContext;
 }) {
   if (changeRequests.length === 0) {
     return <p className="text-[13px] text-muted">No change request has been raised for this project.</p>;
@@ -215,6 +271,36 @@ export function ChangeRequestList({
             <p className="text-xs text-muted">
               opened scope version <code className="text-foreground">{cr.resultingScopeVersionId}</code>
             </p>
+          ) : null}
+
+          {context ? <PaymentGate cr={cr} context={context} /> : null}
+
+          {context && (context.tasksByRequest[cr.id]?.length ?? 0) > 0 ? (
+            <div className="flex flex-col gap-1 text-[13px]">
+              <p className="text-xs font-medium text-muted">Tasks from the resulting baseline</p>
+              <ul className="flex flex-wrap gap-1">
+                {(context.tasksByRequest[cr.id] ?? []).map((t) => (
+                  <li key={t.id}>
+                    <Link
+                      href={`/projects/${projectId}/development/tasks/${t.id}`}
+                      className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-0.5 hover:bg-surface-hover"
+                    >
+                      <span>{t.title}</span>
+                      <Badge tone="neutral">{t.status.replace(/_/g, ' ')}</Badge>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {context && cr.classification === 'paid_change' && !cr.proposalId && context.quoteLeadId ? (
+            <Link
+              href={`/leads/${context.quoteLeadId}`}
+              className="self-start text-xs underline underline-offset-2 hover:text-fg"
+            >
+              Draft a quotation for this change on the lead →
+            </Link>
           ) : null}
 
           {/* Offered strictly from the stored status — the doors decide again. */}

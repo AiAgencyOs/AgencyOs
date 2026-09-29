@@ -1,8 +1,11 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
+import Link from 'next/link';
+
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { readClientName } from '@/lib/admin/clients';
+import { isDayKey, shiftDay } from '@/lib/admin/month-grid';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listExpenses, listProjectInvoices } from '@/modules/finance/queries';
@@ -13,26 +16,37 @@ import {
   listPaymentPlan,
   readProjectSpend,
 } from '@/modules/projects/queries';
+import { listReportTasks, weekStartOf, weeksBetween } from '@/modules/projects/report-queries';
 import { listDefects } from '@/modules/qa/queries';
 import { blocksDelivery, type DefectSeverity, type DefectStatus } from '@/modules/qa/schema';
 import {
   BarChart,
+  buttonClass,
   Card,
   CardHeader,
   DonutChart,
+  FilterBar,
   humanize,
   IconAlert,
   IconCheck,
   IconClock,
+  IconDownload,
   IconFlag,
   IconRupee,
   IconUsage,
+  inputClass,
+  labelClass,
   PermissionDenied,
   ProgressBar,
   Stat,
   StatGrid,
+  cx,
+  TrendChart,
   ViewAll,
 } from '@/ui';
+
+/** Default completion-trend window: the last twelve weeks, ending today. */
+const DEFAULT_WEEKS = 12;
 
 import { ProjectSubNav } from '../project-subnav';
 import { WorkspaceHeader } from '../workspace-header';
@@ -59,8 +73,15 @@ const SEVERITY_COLOR: Record<string, string> = {
  * extrapolated — the completion figures are milestones met and tasks done,
  * not a projection.
  */
-export default async function ProjectReportPage({ params }: { params: Promise<{ projectId: string }> }) {
+export default async function ProjectReportPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ projectId: string }>;
+  searchParams: Promise<{ from?: string; to?: string }>;
+}) {
   const { projectId } = await params;
+  const { from: rawFrom, to: rawTo } = await searchParams;
 
   const context = await requireInternal(`/projects/${projectId}/reports`);
   if (!can(context.role, 'project.read')) return <PermissionDenied />;
@@ -85,6 +106,24 @@ export default async function ProjectReportPage({ params }: { params: Promise<{ 
   const { tasks, modules } = breakdown;
   const tasksDone = tasks.filter((t) => t.status === 'done').length;
   const today = clock.dayKey(new Date());
+
+  // SCR-026: the completion trend — tasks completed per ISO week from
+  // `tasks.completed_at`, over `?from=&to=` (default: the last twelve
+  // weeks). `listReportTasks` also feeds the CSV route, so the file is the
+  // page. No stored series exists; every point is a count of real rows.
+  const to = isDayKey(rawTo) ? rawTo : today;
+  const from = isDayKey(rawFrom) && rawFrom <= to ? rawFrom : shiftDay(to, -(DEFAULT_WEEKS * 7 - 1));
+  const reportTasks = await listReportTasks(projectId, { from, to });
+  const completedInRange = reportTasks.filter((t) => t.completedAt !== null);
+  const weeks = weeksBetween(from, to);
+  const countByWeek = new Map<string, number>(weeks.map((w) => [w, 0]));
+  for (const t of completedInRange) {
+    const week = weekStartOf(clock.dayKey(t.completedAt as string));
+    if (countByWeek.has(week)) countByWeek.set(week, (countByWeek.get(week) ?? 0) + 1);
+  }
+  const trend = weeks.map((w) => ({ week: clock.date(`${w}T00:00:00`), completed: countByWeek.get(w) ?? 0 }));
+  const reportBase = `/projects/${projectId}/reports`;
+  const csvHref = `/api/projects/${projectId}/report?from=${from}&to=${to}`;
   const tasksOverdue = tasks.filter((t) => t.status !== 'done' && t.dueOn && t.dueOn < today).length;
   const milestonesMet = plan.filter((m) => m.met_at).length;
   const completion = plan.length > 0 ? Math.round((milestonesMet / plan.length) * 100) : tasks.length > 0 ? Math.round((tasksDone / tasks.length) * 100) : 0;
@@ -122,6 +161,31 @@ export default async function ProjectReportPage({ params }: { params: Promise<{ 
 
       <ProjectSubNav projectId={projectId} />
 
+      <FilterBar>
+        <form action={reportBase} method="GET" className="flex flex-wrap items-end gap-2">
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>From</span>
+            <input type="date" name="from" defaultValue={from} max={to} className={inputClass} />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>To</span>
+            <input type="date" name="to" defaultValue={to} className={inputClass} />
+          </label>
+          <button type="submit" className={buttonClass('secondary', 'sm')}>
+            Apply
+          </button>
+          {rawFrom || rawTo ? (
+            <Link href={reportBase} className={buttonClass('ghost', 'sm')}>
+              Last {DEFAULT_WEEKS} weeks
+            </Link>
+          ) : null}
+        </form>
+        <a href={csvHref} className={cx(buttonClass('secondary', 'sm'), 'sm:ml-auto')}>
+          <IconDownload size={14} />
+          Export CSV
+        </a>
+      </FilterBar>
+
       <StatGrid cols={5}>
         <Stat label="Completion" value={`${completion}%`} caption={plan.length > 0 ? `${milestonesMet} of ${plan.length} milestones met` : `${tasksDone} of ${tasks.length} tasks done`} tone="brand" icon={<IconFlag size={16} />} href={`/projects/${projectId}/plan`} />
         <Stat label="Tasks" value={`${tasksDone}/${tasks.length}`} caption={tasksOverdue > 0 ? `${tasksOverdue} overdue` : `${modules.length} modules`} tone={tasksOverdue > 0 ? 'warning' : 'info'} icon={<IconCheck size={16} />} href={`/projects/${projectId}/board`} />
@@ -133,6 +197,21 @@ export default async function ProjectReportPage({ params }: { params: Promise<{ 
         )}
         <Stat label="AI cost" value={aiCost > 0 ? money(aiCost, 'INR') : '—'} caption={aiRuns > 0 ? `${aiRuns} agent runs` : 'No runs attributed'} tone="accent" icon={<IconUsage size={16} />} href={`/projects/${projectId}/design`} />
       </StatGrid>
+
+      <Card>
+        <CardHeader
+          title="Completion trend"
+          description={`Tasks completed per week (Monday start), ${clock.date(`${from}T00:00:00`)} – ${clock.date(`${to}T00:00:00`)} · ${completedInRange.length} in range.`}
+          actions={<ViewAll href={`/projects/${projectId}/board`} label="Board" />}
+        />
+        {completedInRange.length === 0 ? (
+          <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No task was completed in this range.</p>
+        ) : (
+          <div className="px-4 pb-4 sm:px-5">
+            <TrendChart data={trend} series={[{ key: 'completed', label: 'Completed' }]} xKey="week" height={200} />
+          </div>
+        )}
+      </Card>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>

@@ -8,6 +8,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { SavedViewsBar } from '../saved-views-bar';
 import { CreateLeadButton } from '../leads/create-lead-button';
+import { ClientPreviewButton } from './preview-drawer';
 import {
   Avatar,
   Badge,
@@ -80,6 +81,14 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     ),
   },
   { key: 'created', header: 'Joined', align: 'right', cellClassName: 'text-muted whitespace-nowrap', cell: (c) => clock.date(c.createdAt), sortKey: 'created' },
+  {
+    // SCR-014: the preview drawer, fetched on open (preview-actions.ts).
+    key: 'preview',
+    header: '',
+    align: 'right',
+    desktopOnly: true,
+    cell: (c) => <ClientPreviewButton clientId={c.id} name={c.name} />,
+  },
 ];
 
 const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {

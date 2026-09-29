@@ -6,7 +6,12 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
 import { listDeferredSends, listFailedDeliveries } from '@/lib/observability/queries';
+import { listLeadAssignees } from '@/modules/crm/escalation-queries';
 import { listActiveConversations } from '@/modules/crm/queries';
+import { listWhatsAppTemplates } from '@/modules/crm/template-queries';
+import { listInternalRoster } from '@/modules/projects/queries';
+
+import { HandoffForm } from './handoff-form';
 import {
   Avatar,
   Badge,
@@ -26,10 +31,18 @@ import {
   QuickActions,
   Stat,
   StatGrid,
+  StatusBadge,
   ViewAll,
 } from '@/ui';
 
 export const metadata: Metadata = { title: 'Communication' };
+
+function waitingFor(since: string, now: number): string {
+  const minutes = Math.max(0, Math.floor((now - new Date(since).getTime()) / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 60 * 24) return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  return `${Math.floor(minutes / (60 * 24))}d ${Math.floor((minutes % (60 * 24)) / 60)}h`;
+}
 
 /**
  * Communication Center — SCR-057, laid out as the reference's inbox: figures,
@@ -47,13 +60,25 @@ export default async function CommunicationCenterPage() {
   if (!can(context.role, 'lead.read')) return <PermissionDenied />;
   const clock = await agencyClock();
 
-  const [conversations, failedDeliveries, deferred] = await Promise.all([
+  const mayAssign = can(context.role, 'lead.assign');
+  const [conversations, failedDeliveries, deferred, templates, roster] = await Promise.all([
     listActiveConversations(),
     listFailedDeliveries(20),
     listDeferredSends(20),
+    listWhatsAppTemplates(),
+    mayAssign ? listInternalRoster() : Promise.resolve([]),
   ]);
+  const assignees = await listLeadAssignees(conversations.map((c) => c.leadId));
+  const rosterOptions = roster.map((m) => ({ userId: m.userId, fullName: m.fullName || m.email }));
+  const now = Date.now();
 
   const paused = conversations.filter((c) => c.agentPausedAt);
+  // SCR-057: the escalation queue — longest wait first. No "retry" on a
+  // failed delivery: the failure is stamped on the message itself and
+  // carries no job id, so there is nothing to requeue; /operations holds
+  // the full history and a re-send is a decision made from the thread.
+  const waiting = [...paused].sort((a, b) => new Date(a.agentPausedAt!).getTime() - new Date(b.agentPausedAt!).getTime());
+  const approvedTemplates = templates.filter((t) => t.active && t.status === 'approved').length;
   const channels = new Map<string, number>();
   for (const c of conversations) channels.set(c.channel, (channels.get(c.channel) ?? 0) + 1);
   const sorted = [...paused, ...conversations.filter((c) => !c.agentPausedAt)];
@@ -83,6 +108,34 @@ export default async function CommunicationCenterPage() {
         <Stat label="Failed deliveries" value={String(failedDeliveries.length)} caption="Most recent 20" tone={failedDeliveries.length > 0 ? 'danger' : 'success'} icon={<IconAlert size={16} />} href="/operations" />
         <Stat label="Deferred sends" value={String(deferred.length)} caption="Waiting for the 24-hour window" tone={deferred.length > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/operations" />
       </StatGrid>
+
+      <Card id="escalations">
+        <CardHeader
+          title="Waiting on a person"
+          description="Threads the agent paused for a human, longest wait first. Assigning hands the lead — and so the thread — to somebody."
+        />
+        {waiting.length > 0 ? (
+          <ul className="divide-y divide-line">
+            {waiting.map((c) => (
+              <li key={c.id} className="flex flex-col gap-2 px-4 py-3 text-sm sm:px-5">
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="flex items-center gap-2">
+                      <Link href={`/leads/${c.leadId}`} className="font-medium underline-offset-2 hover:underline">{c.leadTitle}</Link>
+                      <Badge tone="warning" dot>waiting {waitingFor(c.agentPausedAt!, now)}</Badge>
+                    </span>
+                    <span className="text-xs text-muted">{c.agentPausedReason ?? 'No reason recorded.'}</span>
+                  </span>
+                  <span className="text-xs text-muted">since {clock.dateTime(c.agentPausedAt!)}</span>
+                </div>
+                {mayAssign ? <HandoffForm leadId={c.leadId} current={assignees.get(c.leadId) ?? null} roster={rosterOptions} /> : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <EmptyState icon={<IconInbox size={20} />} title="Nobody is waiting" description="A thread the agent hands to a person appears here until it is resumed." />
+        )}
+      </Card>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(19rem,1fr)]">
         <Card>
@@ -146,6 +199,32 @@ export default async function CommunicationCenterPage() {
                 ))}
               </ul>
             ) : null}
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Templates"
+              description={`${approvedTemplates} approved of ${templates.length} registered — what can be said outside the 24-hour window.`}
+              actions={can(context.role, 'organization.settings') ? <ViewAll href="/settings/communication" label="Manage" /> : null}
+            />
+            {templates.length > 0 ? (
+              <ul className="divide-y divide-line">
+                {templates.map((t) => (
+                  <li key={t.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2 text-[13px] sm:px-5">
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate font-medium">{humanize(t.situationKey)}</span>
+                      <code className="truncate text-[11px] text-muted">{t.templateName} · {t.languageCode}</code>
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <StatusBadge status={t.status} dot={false} />
+                      {!t.active ? <Badge tone="neutral">inactive</Badge> : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No template registered — nothing can be sent outside the window.</p>
+            )}
           </Card>
 
           <QuickActions

@@ -49,9 +49,12 @@ function Status({ state }: { state: { status: string; message?: string } }) {
 export function RaiseDefectForm({
   projectId,
   deliverables,
+  defaultDeliverableId,
 }: {
   projectId: string;
   deliverables: { id: string; kind: string; version: number; title: string }[];
+  /** SCR-046 — raised from a run row, the build is filled in. */
+  defaultDeliverableId?: string;
 }) {
   const [state, action, pending] = useActionState(raiseDefectAction, IDLE_STATE);
 
@@ -86,7 +89,7 @@ export function RaiseDefectForm({
             Blank means project-wide, and that is the schema's own wording: a
             defect with no version blocks EVERY submission rather than one.
           */}
-          <select id="defect-deliverable" name="deliverableId" defaultValue="" className={selectClass}>
+          <select id="defect-deliverable" name="deliverableId" defaultValue={defaultDeliverableId ?? ''} className={selectClass}>
             <option value="">the project as a whole</option>
             {deliverables.map((d) => (
               <option key={d.id} value={d.id}>

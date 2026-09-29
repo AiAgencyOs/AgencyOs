@@ -4,8 +4,10 @@ import { notFound } from 'next/navigation';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { readClientName } from '@/lib/admin/clients';
+import { isDayKey, shiftDay, weekOf, WEEKDAY_LABELS } from '@/lib/admin/month-grid';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { listProjectMeetings } from '@/modules/projects/calendar-queries';
 import { getProject, listDevelopmentBreakdown, listPaymentPlan } from '@/modules/projects/queries';
 import {
   Badge,
@@ -13,6 +15,9 @@ import {
   CardHeader,
   cx,
   EmptyState,
+  FilterBar,
+  FilterChips,
+  humanize,
   IconCalendar,
   IconCheck,
   IconClock,
@@ -30,9 +35,25 @@ import {
 import { ProjectSubNav } from '../project-subnav';
 import { WorkspaceHeader } from '../workspace-header';
 
+import { AddTaskOnDayForm } from './add-task-form';
+
 export const metadata: Metadata = { title: 'Calendar' };
 
-type CalendarEntry = { date: string; label: string; kind: 'task' | 'milestone'; status: string; overdue: boolean };
+const VIEWS = ['month', 'week', 'day', 'list'] as const;
+type View = (typeof VIEWS)[number];
+const KINDS = ['task', 'milestone', 'meeting'] as const;
+type Kind = (typeof KINDS)[number];
+
+type CalendarEntry = { date: string; label: string; kind: Kind; status: string; overdue: boolean; time: string | null; href: string };
+
+function viewOf(value: string | undefined): View {
+  return (VIEWS as readonly string[]).includes(value ?? '') ? (value as View) : 'month';
+}
+
+function kindsOf(value: string | undefined): Set<Kind> {
+  const picked = (value ?? '').split(',').filter((k): k is Kind => (KINDS as readonly string[]).includes(k));
+  return new Set(picked.length > 0 ? picked : KINDS);
+}
 
 /**
  * `YYYY-MM-DD` → "Weekday, D Month", with no timezone conversion at all.
@@ -65,7 +86,7 @@ export default async function ProjectCalendarPage({
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ month?: string }>;
+  searchParams: Promise<{ month?: string; view?: string; date?: string; types?: string }>;
 }) {
   const { projectId } = await params;
 
@@ -76,25 +97,54 @@ export default async function ProjectCalendarPage({
   if (!project) notFound();
 
   const clock = await agencyClock();
-  const [{ tasks }, milestones, clientName] = await Promise.all([
+  const [{ tasks, modules }, milestones, clientName, meetings] = await Promise.all([
     listDevelopmentBreakdown(projectId),
     listPaymentPlan(projectId),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
+    listProjectMeetings(projectId),
   ]);
 
+  // SCR-022: `?view=month|week|day|list`, `?date=` anchors week/day, and
+  // `?types=` toggles the kinds shown. Meetings are the ones booked on the
+  // opportunity this project was won from (`listProjectMeetings`) — the one
+  // trace the schema carries; nothing is inferred through the client.
+  const { month: requestedMonth, view: rawView, date: rawDate, types } = await searchParams;
   const today = clock.dayKey(new Date());
+  const view = viewOf(rawView);
+  const kinds = kindsOf(types);
+  const anchor = isDayKey(rawDate) ? rawDate : today;
+  const mayWrite = can(context.role, 'task.write');
+  const moduleOptions = modules.map((m) => ({ id: m.id, name: m.name }));
   const entries: CalendarEntry[] = [];
 
-  for (const t of tasks) {
-    if (!t.dueOn || t.status === 'done') continue;
-    entries.push({ date: t.dueOn, label: t.title, kind: 'task', status: t.status, overdue: t.dueOn < today });
+  if (kinds.has('task')) {
+    for (const t of tasks) {
+      if (!t.dueOn || t.status === 'done') continue;
+      entries.push({ date: t.dueOn, label: t.title, kind: 'task', status: t.status, overdue: t.dueOn < today, time: null, href: `/projects/${projectId}/board` });
+    }
   }
-  for (const m of milestones) {
-    if (!m.due_on || m.status === 'met') continue;
-    entries.push({ date: m.due_on, label: m.name, kind: 'milestone', status: m.status, overdue: m.due_on < today });
+  if (kinds.has('milestone')) {
+    for (const m of milestones) {
+      if (!m.due_on || m.status === 'met') continue;
+      entries.push({ date: m.due_on, label: m.name, kind: 'milestone', status: m.status, overdue: m.due_on < today, time: null, href: `/projects/${projectId}/plan` });
+    }
+  }
+  if (kinds.has('meeting')) {
+    for (const m of meetings) {
+      if (!m.startAt) continue;
+      entries.push({
+        date: clock.dayKey(m.startAt),
+        label: `${humanize(m.mode ?? 'meeting')}${m.outcome ? ` · ${humanize(m.outcome)}` : ''}`,
+        kind: 'meeting',
+        status: m.status,
+        overdue: false,
+        time: clock.clock(m.startAt),
+        href: `/meetings/${m.id}`,
+      });
+    }
   }
 
-  entries.sort((a, b) => a.date.localeCompare(b.date));
+  entries.sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? ''));
 
   const byDate = new Map<string, CalendarEntry[]>();
   for (const e of entries) {
@@ -103,15 +153,28 @@ export default async function ProjectCalendarPage({
     byDate.set(e.date, list);
   }
 
-  const { month: requestedMonth } = await searchParams;
-  const month = requestedMonth && /^\d{4}-\d{2}$/.test(requestedMonth) ? requestedMonth : today.slice(0, 7);
+  const month = requestedMonth && /^\d{4}-\d{2}$/.test(requestedMonth) ? requestedMonth : anchor.slice(0, 7);
+  const typesParam = kinds.size === KINDS.length ? '' : `&types=${[...kinds].join(',')}`;
+  const link = (v: View, date: string, k?: Set<Kind>) => {
+    const t = k ? (k.size === KINDS.length ? '' : `&types=${[...k].join(',')}`) : typesParam;
+    return `/projects/${projectId}/calendar?view=${v}&date=${date}${t}`;
+  };
+  const toggleKind = (k: Kind): Set<Kind> => {
+    const next = new Set(kinds);
+    if (next.has(k)) next.delete(k);
+    else next.add(k);
+    // Turning off the last one would show nothing; treat it as "all".
+    return next.size === 0 ? new Set(KINDS) : next;
+  };
+  const weekDays = weekOf(anchor);
+  const dayEntries = byDate.get(anchor) ?? [];
 
   const gridEntriesByDate: Record<string, GridEntry[]> = {};
   for (const [date, dayEntries] of byDate) {
     gridEntriesByDate[date] = dayEntries.map((e) => ({
-      label: e.label,
-      tone: e.overdue ? 'danger' : e.kind === 'milestone' ? 'brand' : 'info',
-      href: e.kind === 'milestone' ? `/projects/${projectId}/plan` : `/projects/${projectId}/board`,
+      label: e.time ? `${e.time} ${e.label}` : e.label,
+      tone: e.overdue ? 'danger' : e.kind === 'milestone' ? 'brand' : e.kind === 'meeting' ? 'accent' : 'info',
+      href: e.href,
     }));
   }
 
@@ -124,8 +187,103 @@ export default async function ProjectCalendarPage({
 
       <ProjectSubNav projectId={projectId} />
 
+      <FilterBar>
+        <FilterChips options={VIEWS.map((v) => ({ key: v, label: humanize(v), href: link(v, anchor), active: v === view }))} />
+        <div className="flex flex-wrap items-center gap-2">
+          {KINDS.map((k) => (
+            <Link
+              key={k}
+              href={link(view, anchor, toggleKind(k))}
+              aria-pressed={kinds.has(k)}
+              className={cx(
+                'rounded-full px-3 py-1.5 text-xs font-medium ring-1 ring-inset transition-colors',
+                kinds.has(k) ? 'bg-surface text-foreground ring-line-strong' : 'bg-surface-sunken text-faint ring-line line-through',
+              )}
+            >
+              {humanize(k)}s
+            </Link>
+          ))}
+        </div>
+      </FilterBar>
+
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(18rem,1fr)]">
         <div className="flex min-w-0 flex-col gap-4">
+          {view === 'week' ? (
+            <Card>
+              <CardHeader
+                title={`Week of ${formatDayKey(weekDays[0] ?? anchor, { day: 'numeric', month: 'long' })}`}
+                description="Seven days, Monday first. Add a task straight onto a day."
+                actions={
+                  <span className="flex items-center gap-1 text-[13px]">
+                    <Link href={link('week', shiftDay(anchor, -7))} className="rounded-md px-2 py-1 text-muted hover:bg-surface-hover">← Previous</Link>
+                    <Link href={link('week', today)} className="rounded-md px-2 py-1 text-muted hover:bg-surface-hover">This week</Link>
+                    <Link href={link('week', shiftDay(anchor, 7))} className="rounded-md px-2 py-1 text-muted hover:bg-surface-hover">Next →</Link>
+                  </span>
+                }
+              />
+              <div className="grid grid-cols-1 gap-2 p-3 sm:p-4 md:grid-cols-7">
+                {weekDays.map((key, i) => (
+                  <div key={key} className={cx('flex min-h-32 flex-col rounded-lg border border-line bg-surface p-2', key === today && 'ring-2 ring-brand/40')}>
+                    <div className="flex items-center justify-between">
+                      <Link href={link('day', key)} className={cx('text-xs font-semibold', key === today ? 'text-brand' : 'text-muted')}>
+                        {WEEKDAY_LABELS[i]} {key.slice(8)}
+                      </Link>
+                      {mayWrite ? <AddTaskOnDayForm projectId={projectId} dueOn={key} modules={moduleOptions} compact /> : null}
+                    </div>
+                    <ul className="mt-1.5 flex flex-col gap-1">
+                      {(byDate.get(key) ?? []).map((e) => (
+                        <li key={`${e.kind}-${e.label}-${key}`}>
+                          <Link href={e.href} className={cx('block w-full truncate rounded px-1.5 py-0.5 text-xs', e.overdue ? 'bg-danger-soft text-danger' : e.kind === 'milestone' ? 'bg-brand-soft text-brand' : e.kind === 'meeting' ? 'bg-accent-soft text-accent' : 'bg-info-soft text-info')}>
+                            {e.time ? <span className="mr-1 tabular opacity-80">{e.time}</span> : null}
+                            {e.label}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ) : null}
+
+          {view === 'day' ? (
+            <Card>
+              <CardHeader
+                title={`${formatDayKey(anchor)}${anchor === today ? ' — today' : anchor < today ? ' — past' : ''}`}
+                description="Everything due or booked on this day."
+                actions={
+                  <span className="flex items-center gap-1 text-[13px]">
+                    <Link href={link('day', shiftDay(anchor, -1))} className="rounded-md px-2 py-1 text-muted hover:bg-surface-hover">← Previous</Link>
+                    <Link href={link('day', today)} className="rounded-md px-2 py-1 text-muted hover:bg-surface-hover">Today</Link>
+                    <Link href={link('day', shiftDay(anchor, 1))} className="rounded-md px-2 py-1 text-muted hover:bg-surface-hover">Next →</Link>
+                  </span>
+                }
+              />
+              <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+                {dayEntries.length > 0 ? (
+                  <ul className="flex flex-col gap-1">
+                    {dayEntries.map((e) => (
+                      <li key={`${e.kind}-${e.label}`} className="flex flex-wrap items-center gap-2 text-[13px]">
+                        <Badge tone={e.kind === 'milestone' ? 'brand' : e.kind === 'meeting' ? 'accent' : 'info'}>{e.kind}</Badge>
+                        {e.time ? <span className="tabular text-xs text-muted">{e.time}</span> : null}
+                        <Link href={e.href} className="hover:text-brand">{e.label}</Link>
+                        <StatusBadge status={e.status} dot={false} />
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-[13px] text-muted">Nothing due or booked on this day.</p>
+                )}
+                {mayWrite ? (
+                  <div className="border-t border-line pt-3">
+                    <AddTaskOnDayForm projectId={projectId} dueOn={anchor} modules={moduleOptions} />
+                  </div>
+                ) : null}
+              </div>
+            </Card>
+          ) : null}
+
+          {view === 'month' ? (
           <Card>
             <CardHeader
               title="Project calendar"
@@ -139,11 +297,19 @@ export default async function ProjectCalendarPage({
               }
             />
             <div className="p-3 sm:p-4">
-              <MonthGrid month={month} entriesByDate={gridEntriesByDate} todayKey={today} monthHref={(m) => `/projects/${projectId}/calendar?month=${m}`} />
+              <MonthGrid month={month} entriesByDate={gridEntriesByDate} todayKey={today} monthHref={(m) => `/projects/${projectId}/calendar?month=${m}${typesParam}`} />
+              {mayWrite ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[13px] text-muted">
+                  <span>Create a task on a day:</span>
+                  <AddTaskOnDayForm projectId={projectId} dueOn={anchor} modules={moduleOptions} />
+                  <span className="text-xs">(pick the day in the week or day view for another date)</span>
+                </div>
+              ) : null}
             </div>
           </Card>
+          ) : null}
 
-          {byDate.size > 0 ? (
+          {(view === 'month' || view === 'list') && byDate.size > 0 ? (
             <Card>
               <CardHeader title="Agenda" description={`${entries.length} dated item${entries.length === 1 ? '' : 's'}${overdueCount > 0 ? ` · ${overdueCount} overdue` : ''}.`} />
               <ul className="divide-y divide-line">
@@ -154,15 +320,19 @@ export default async function ProjectCalendarPage({
                       <span className="tabular text-lg font-semibold leading-tight">{date.slice(8, 10)}</span>
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className={cx('text-[13px] font-medium', date < today ? 'text-danger' : 'text-foreground')}>
-                        {formatDayKey(date)}
-                        {date < today ? ' — overdue' : date === today ? ' — today' : ''}
-                      </p>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className={cx('text-[13px] font-medium', date < today ? 'text-danger' : 'text-foreground')}>
+                          <Link href={link('day', date)} className="hover:underline">{formatDayKey(date)}</Link>
+                          {date < today ? ' — overdue' : date === today ? ' — today' : ''}
+                        </p>
+                        {mayWrite ? <AddTaskOnDayForm projectId={projectId} dueOn={date} modules={moduleOptions} compact /> : null}
+                      </div>
                       <ul className="mt-1 flex flex-col gap-1">
                         {dayEntries.map((e) => (
                           <li key={`${e.kind}-${e.label}-${date}`} className="flex flex-wrap items-center gap-2 text-[13px]">
-                            <Badge tone={e.kind === 'milestone' ? 'brand' : 'info'}>{e.kind}</Badge>
-                            <Link href={e.kind === 'milestone' ? `/projects/${projectId}/plan` : `/projects/${projectId}/board`} className="hover:text-brand">
+                            <Badge tone={e.kind === 'milestone' ? 'brand' : e.kind === 'meeting' ? 'accent' : 'info'}>{e.kind}</Badge>
+                            {e.time ? <span className="tabular text-xs text-muted">{e.time}</span> : null}
+                            <Link href={e.href} className="hover:text-brand">
                               {e.label}
                             </Link>
                             <StatusBadge status={e.status} dot={false} />
@@ -174,9 +344,9 @@ export default async function ProjectCalendarPage({
                 ))}
               </ul>
             </Card>
-          ) : (
-            <EmptyState icon={<IconClock size={22} />} title="Nothing scheduled" description="Task due dates and milestone deadlines will appear here once they're set." />
-          )}
+          ) : (view === 'month' || view === 'list') ? (
+            <EmptyState icon={<IconClock size={22} />} title="Nothing scheduled" description="Task due dates, milestone deadlines and booked meetings will appear here once they're set." />
+          ) : null}
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
@@ -194,7 +364,7 @@ export default async function ProjectCalendarPage({
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13px] font-medium text-foreground">{e.label}</span>
-                      <span className="block text-xs text-muted">{e.kind === 'milestone' ? 'Milestone' : 'Task'} · {e.status.replace('_', ' ')}</span>
+                      <span className="block text-xs text-muted">{humanize(e.kind)} · {e.status.replace('_', ' ')}{e.time ? ` · ${e.time}` : ''}</span>
                     </span>
                   </li>
                 ))}

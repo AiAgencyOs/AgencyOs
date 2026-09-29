@@ -7,6 +7,7 @@ import { readClientName } from '@/lib/admin/clients';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject } from '@/modules/projects/queries';
+import { listScreenScopeItems } from '@/modules/projects/design-export-queries';
 import { getProjectScreen, splitList } from '@/modules/projects/screens-queries';
 import { Badge, Card, CardHeader, DetailPanel, humanize, PermissionDenied, StatusBadge } from '@/ui';
 
@@ -35,7 +36,11 @@ export default async function ProjectScreenPage({ params }: { params: Promise<{ 
   const screen = await getProjectScreen(projectId, screenId);
   if (!screen) notFound();
 
-  const [clock, clientName] = await Promise.all([agencyClock(), project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null)]);
+  const [clock, clientName, scopeItems] = await Promise.all([
+    agencyClock(),
+    project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
+    listScreenScopeItems(screen.id),
+  ]);
   const mayEdit = can(context.role, 'project.write');
 
   const text = (v: string | null) => (v && v.trim().length > 0 ? <span className="whitespace-pre-wrap">{v}</span> : <span className="text-muted">Not recorded</span>);
@@ -102,6 +107,12 @@ export default async function ProjectScreenPage({ params }: { params: Promise<{ 
 
           <ListCard title="Required sections" hint="The sections this screen must carry, as stored on the screen." items={sections} empty="No required section is recorded for this screen." />
           <ListCard title="Dependencies" hint="What this screen depends on — other screens, data or decisions — as stored." items={dependencies} empty="No dependency is recorded for this screen." />
+          <ListCard
+            title="Requirements it covers"
+            hint="The scope items this screen is mapped to (screen_scope_items). Written by the designer agent against the baseline; there is no door here to change the mapping, and none is drawn."
+            items={scopeItems.map((s) => `${s.title} (${s.inclusion}${s.scopeVersion !== null ? `, baseline v${s.scopeVersion}` : ''})`)}
+            empty="This screen is not mapped to any scope item — the coverage report on the Design overview flags it."
+          />
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">

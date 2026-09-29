@@ -6,14 +6,18 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { readClientName } from '@/lib/admin/clients';
+import { listEligibleMilestones } from '@/modules/finance/eligible-milestones-queries';
+import { listPlanVersions } from '@/modules/projects/plan-versions-queries';
 import { getProject, listMilestoneTaskCounts, listPaymentPlan, readPlanBoard } from '@/modules/projects/queries';
 import { Badge, Card, CardHeader, cx, Gantt, IconCalendar, IconCheck, IconClock, IconFlag, PermissionDenied, ProgressBar, Stat, StatGrid, StatusBadge, ViewAll, type GanttRow, type Tone } from '@/ui';
 
 import { MilestoneDueForm } from '../milestone-controls';
+import { MarkMilestoneMetForm, TriggerFinanceMilestoneForm } from './milestone-forms';
 
 import { WorkspaceHeader } from '../workspace-header';
 
 import { ProjectSubNav } from '../project-subnav';
+import { PlanBreakdownForm } from './plan-breakdown-form';
 
 import {
   ActivatePlanForm,
@@ -68,13 +72,20 @@ export default async function ProjectPlanPage({
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const [board, milestones, taskCounts, clock, clientName] = await Promise.all([
+  const [board, milestones, taskCounts, clock, clientName, eligible, versions] = await Promise.all([
     readPlanBoard(projectId),
     listPaymentPlan(projectId),
     listMilestoneTaskCounts(projectId),
     agencyClock(),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
+    listEligibleMilestones([projectId]),
+    listPlanVersions(projectId),
   ]);
+  // SCR-023: the two doors on a payment milestone, gated the way their
+  // services are. `nextToBill` is the same rule the project page applies.
+  const mayMarkMet = can(context.role, 'milestone.write');
+  const mayInvoice = can(context.role, 'invoice.create');
+  const nextToBill = eligible[0] ?? null;
 
   /**
    * The milestone timeline — the reference's Gantt. `projects.milestones`
@@ -124,6 +135,19 @@ export default async function ProjectPlanPage({
   const openQuestions = board.clarifications.filter(
     (c) => c.status !== 'resolved' && c.status !== 'routed_to_change_request',
   );
+  // The breakdown door goes through createModule / createFeature / createTask,
+  // which take milestone.write and task.write; offered only to a role that
+  // holds both, and the doors decide again.
+  const mayBreakDown = can(context.role, 'milestone.write') && can(context.role, 'task.write');
+  // SCR-040 — coverage of approved scope: how many of the plan's scope
+  // version's INCLUDED items at least one deliverable cites. The validator
+  // flags the reverse (a deliverable citing nothing); this is the other
+  // direction, which nothing measured.
+  const includedScope = board.scopeItems.filter((s) => s.inclusion === 'included');
+  const citedScope = new Set(board.deliverables.map((d) => d.scopeItemId).filter((id): id is string => id !== null));
+  const coveredScope = includedScope.filter((s) => citedScope.has(s.id)).length;
+  const coveragePercent = includedScope.length === 0 ? null : Math.round((coveredScope / includedScope.length) * 100);
+  const unlinkedDeliverables = board.deliverables.filter((d) => d.scopeItemId === null).length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -190,6 +214,26 @@ export default async function ProjectPlanPage({
                         </span>
                         {mayDate && !m.met_at ? <MilestoneDueForm projectId={projectId} milestoneId={m.id} dueOn={m.due_on} /> : null}
                       </div>
+                      {(mayMarkMet && (m.status === 'in_progress' || m.status === 'submitted')) || nextToBill?.milestoneId === m.id ? (
+                        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-2">
+                          {nextToBill?.milestoneId === m.id ? (
+                            <span className="mr-auto text-xs text-muted">
+                              <Badge tone="brand">next to bill</Badge>
+                              {nextToBill.reason ? <> {nextToBill.reason}</> : null}
+                            </span>
+                          ) : null}
+                          {mayMarkMet && (m.status === 'in_progress' || m.status === 'submitted') ? (
+                            <MarkMilestoneMetForm projectId={projectId} milestoneId={m.id} />
+                          ) : null}
+                          {nextToBill?.milestoneId === m.id && nextToBill.eligible ? (
+                            mayInvoice ? (
+                              <TriggerFinanceMilestoneForm projectId={projectId} milestoneId={m.id} />
+                            ) : (
+                              <span className="text-xs text-muted">No permission to raise invoices.</span>
+                            )
+                          ) : null}
+                        </div>
+                      ) : null}
                     </li>
                   );
                 })}
@@ -223,6 +267,27 @@ export default async function ProjectPlanPage({
         </section>
       ) : (
         <>
+          <StatGrid cols={4}>
+            <Stat
+              label="Approved scope covered"
+              value={coveragePercent === null ? '—' : `${coveragePercent}%`}
+              tone={coveragePercent === null ? 'neutral' : coveragePercent === 100 ? 'success' : 'warning'}
+              caption={
+                coveragePercent === null
+                  ? 'the plan names no scope version with included items'
+                  : `${coveredScope} of ${includedScope.length} included items have a deliverable`
+              }
+            />
+            <Stat
+              label="Deliverables"
+              value={String(board.deliverables.length)}
+              tone={unlinkedDeliverables > 0 ? 'warning' : 'neutral'}
+              caption={unlinkedDeliverables > 0 ? `${unlinkedDeliverables} not linked to scope` : 'every one cites approved scope'}
+            />
+            <Stat label="Plan versions" value={String(versions.length)} caption={`v${plan.version} is ${plan.status}`} />
+            <Stat label="Open questions" value={String(openQuestions.length)} tone={openQuestions.length > 0 ? 'warning' : 'success'} />
+          </StatGrid>
+
           <section className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-[13px] font-semibold tracking-tight">
@@ -283,6 +348,9 @@ export default async function ProjectPlanPage({
             )}
             {mayPlan && plan.status === 'draft' ? (
               <AddDeliverableForm projectId={projectId} planId={plan.id} scopeItems={board.scopeItems} />
+            ) : null}
+            {mayBreakDown && plan.status === 'active' && board.deliverables.length > 0 ? (
+              <PlanBreakdownForm projectId={projectId} planId={plan.id} deliverables={board.deliverables.length} />
             ) : null}
           </section>
 
@@ -409,6 +477,37 @@ export default async function ProjectPlanPage({
               <RaiseClarificationForm projectId={projectId} planId={plan.id} />
             ) : null}
           </section>
+
+          {versions.length > 1 ? (
+            <section className="flex flex-col gap-2">
+              <h2 className="text-[13px] font-semibold tracking-tight">
+                Plan versions <span className="text-muted">({versions.length})</span>
+              </h2>
+              <p className="max-w-2xl text-[13px] text-muted">
+                §4.8: a superseded plan is history, never rewritten. Each later version says why it exists.
+              </p>
+              <ul className="flex flex-col gap-1">
+                {versions.map((v) => (
+                  <li key={v.id} className="flex flex-col gap-1 rounded-md border border-line p-3 text-[13px]">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="flex items-center gap-2">
+                        <span className="font-medium">Version {v.version}</span>
+                        <Badge tone={PHASE_TONE[v.status] ?? 'neutral'}>{v.status}</Badge>
+                        <span className="text-muted">
+                          {v.deliverables} deliverable{v.deliverables === 1 ? '' : 's'}
+                          {v.scopeVersion !== null ? ` · scope v${v.scopeVersion}` : ' · no scope version'}
+                        </span>
+                      </span>
+                      <span className="text-xs text-muted">
+                        {v.activatedAt ? `activated ${clock.date(v.activatedAt)}` : `drafted ${clock.date(v.createdAt)}`}
+                      </span>
+                    </div>
+                    {v.changeReason ? <p className="text-muted">Why: {v.changeReason}</p> : null}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
         </>
       )}
           </div>
