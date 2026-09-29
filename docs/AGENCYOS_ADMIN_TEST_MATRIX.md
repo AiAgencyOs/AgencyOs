@@ -441,6 +441,41 @@ fail (baseline); typecheck and ESLint clean; `build:help --check` current;
 `check:record` agrees on every derived count (the two remaining items are
 CI-only: the Node 26 test summary and a full-depth clone).
 
+### 9i. Bucket F build (2026-09-30, the element-level remainder)
+
+Six streams (F-A … F-F, `AGENCYOS_ADMIN_BUCKET_F_PLAN.md`) merged in
+sequence, each on a rebased worktree; seven migrations
+(`20261001100000`–`150001`) applied and re-applied on the local database
+(idempotent), the `security` schema added to PostgREST's exposed list.
+Each merge was followed by typecheck, ESLint, the guard set and the full
+suite on Node 26 before the next stream landed. Conflicts (dashboard,
+quick-create, the project and plan pages, `types.ts`, the operations
+page) were resolved keeping both sides; the F-F role-union sweep was
+re-run over the tree after the merge so no `can(context.role, …)` or
+`context.role === 'owner'` survives (`tests/a-role-union-is-honoured.test.ts`),
+and the seven guard tests other streams had pinned to the primary-only
+form now pin the union form. Two product defects surfaced by the merge
+were fixed at the root: the kill-switch panel (a client component)
+imported the server-only reader through its labels — split into
+`kill-switch-types.ts`; and `qa.record_test_run` inserted a closed run
+with no end once 20261001140000 required one — `db:verify:gates` went red
+on its first insert, and `20261001150002` closes a run recorded whole at
+the moment it is recorded. The scope verifier now drives the paid-change
+gate end to end: refused `not_invoiced`, then `unpaid` after
+`create_change_request_invoice` + `issue_invoice`, still `unpaid` once the
+money is recorded but unverified, and v2 opens only after
+`verify_payment` — the invoice, payment and receipt are removed in its
+`finally`. Screens driven as owner and as a genuine member account
+(`member@local.test`): `/agents/routing` (model registry, provider vault,
+add-model form), `/agents`, `/usage`, `/usage/runs`, `/operations` (alerts
+acknowledged in-app, emergency controls), `/governance/overrides`,
+`/security/incidents`, `/settings` — owner sees the doors, the member sees
+the permission-denied card, 0 console errors (the favicon 404 is gone:
+`app/icon.svg`). `npm test` on Node 26: 7058 pass / 0 fail in 1476
+suites; typecheck and ESLint clean; `build:help --check` current;
+`check:record` agrees on every derived count (the shallow-clone item is
+CI-only).
+
 ## 10. Regression
 
 Unit: the failure set is byte-identical before and after (Node 22, 52
@@ -452,6 +487,6 @@ transitions need their own seeded fixtures and were not driven.
 
 ## 11. Open items, in priority order
 
-1. The element-level remainder in `AGENCYOS_ADMIN_PDF_ELEMENT_AUDIT.md` (199 partial, 69 missing), being built as bucket F per `AGENCYOS_ADMIN_BUCKET_F_PLAN.md`.
+1. The element-level remainder in `AGENCYOS_ADMIN_PDF_ELEMENT_AUDIT.md`: bucket F closed the streams' rows; the rows outside any stream brief (SCR-013 reactivation cohort, 029 requirement sections, 045 case import/linked task, 047 bug detail, 056 GST configuration on the tax page, 061 model/tool detail, 070 identifiers on the integration, search within domain) are bucket G, in flight.
 2. A screen-reader pass through the harness (axe is done: 10/10 screens clean).
-3. `roadmap.json`'s test counts are now CI's Node 26 figures (6686 / 1419 / 6686) and `check:record` is green in CI.
+3. `roadmap.json`'s test counts are CI's Node 26 figures (7058 / 1476 / 7058) and `check:record` is green in CI.

@@ -5,6 +5,11 @@ elements: 707 built, 199 partial, 69 missing, 4 declined; 14 shared rules
 partial or absent). Bucket F closes every PARTIAL and MISSING row and the
 shared-rule gaps, plus five owner decisions taken on 2026-09-30.
 
+> **Delivered 2026-09-30.** All six streams merged on `chore/pre-session-working-tree-snapshot`
+> (migrations `20261001100000`–`150002`), verified per §9i of
+> `AGENCYOS_ADMIN_TEST_MATRIX.md`. The rows no stream brief covered are
+> bucket G (see the test matrix §11).
+
 Owner decisions on record (2026-09-30):
 
 | # | Question | Decision |
