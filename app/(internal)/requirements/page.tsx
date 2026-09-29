@@ -5,6 +5,7 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listProposedRequirements } from '@/modules/crm/queries';
+import { readRequirementsDashboard } from '@/lib/admin/requirements-dashboard';
 import { readRequirementsOverview } from '@/modules/projects/queries';
 import {
   Avatar,
@@ -43,7 +44,8 @@ export default async function RequirementsPage() {
   if (!can(context.role, 'lead.read')) return <PermissionDenied />;
   const clock = await agencyClock();
 
-  const [proposed, overview] = await Promise.all([listProposedRequirements(), readRequirementsOverview()]);
+  const [proposed, overview, dashboard] = await Promise.all([listProposedRequirements(), readRequirementsOverview(), readRequirementsDashboard()]);
+  const openQuestionProjects = dashboard.projectsWithOpenQuestions.length;
   const now = Date.now();
   const ageDays = (iso: string) => Math.floor((now - new Date(iso).getTime()) / 86_400_000);
   const fromAgent = proposed.filter((r) => r.source === 'agent').length;
@@ -96,6 +98,87 @@ export default async function RequirementsPage() {
         <Stat label="Open clarifications" value={String(overview.openClarifications)} caption="Plan and UI questions not resolved" tone={overview.openClarifications > 0 ? 'info' : 'neutral'} icon={<IconSparkle size={16} />} />
         <Stat label="Projects with scope" value={String(overview.projects.filter((p) => p.scopeVersion !== null).length)} caption={`of ${overview.projects.length}`} tone="brand" icon={<IconUser size={16} />} href="/projects" />
       </StatGrid>
+
+      {/*
+        SCR-028's three cross-project counts. Each is a fact a per-project or
+        per-lead page already showed one at a time; the dashboard's job is the
+        "which ones?" — so every non-zero number opens onto a list beneath.
+      */}
+      <StatGrid>
+        <Stat
+          label="Awaiting client confirmation"
+          value={String(dashboard.awaitingClientConfirmation)}
+          caption="sent to the client, no answer recorded"
+          tone={dashboard.awaitingClientConfirmation > 0 ? 'info' : 'neutral'}
+          icon={<IconClock size={16} />}
+        />
+        <Stat
+          label="Projects with open questions"
+          value={String(openQuestionProjects)}
+          caption="a plan question or a PM Agent clarification unanswered"
+          tone={openQuestionProjects > 0 ? 'warning' : 'success'}
+          icon={<IconSparkle size={16} />}
+          href={openQuestionProjects > 0 ? '#open-questions' : undefined}
+        />
+        <Stat
+          label="Scope drift alerts"
+          value={String(dashboard.scopeDrift.length)}
+          caption="change requests raised against a frozen baseline, unsettled"
+          tone={dashboard.scopeDrift.length > 0 ? 'danger' : 'success'}
+          icon={<IconCheck size={16} />}
+          href={dashboard.scopeDrift.length > 0 ? '#scope-drift' : undefined}
+        />
+      </StatGrid>
+
+      {openQuestionProjects > 0 ? (
+        <Card id="open-questions">
+          <CardHeader
+            title="Projects with open questions"
+            description="A plan question nobody has settled, or a PM Agent clarification nobody has answered. The plan cannot activate, and the agent will not guess, until somebody does."
+          />
+          <ul className="divide-y divide-line">
+            {dashboard.projectsWithOpenQuestions.map((p) => (
+              <li key={p.projectId}>
+                <Link
+                  href={`/projects/${p.projectId}/plan`}
+                  className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-3 text-[13px] hover:bg-surface-hover sm:px-5"
+                >
+                  <span className="font-medium">{p.projectName}</span>
+                  <span className="flex items-center gap-2 text-xs text-muted">
+                    {p.planQuestions > 0 ? <Badge tone="warning">{p.planQuestions} on the plan</Badge> : null}
+                    {p.pmQuestions > 0 ? <Badge tone="info">{p.pmQuestions} from the PM agent</Badge> : null}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+
+      {dashboard.scopeDrift.length > 0 ? (
+        <Card id="scope-drift">
+          <CardHeader
+            title="Scope drift"
+            description="A change request raised against a frozen baseline and not yet settled. Until it is classified, decided and applied, what is being built and what was agreed are two different lists."
+          />
+          <ul className="divide-y divide-line">
+            {dashboard.scopeDrift.map((cr) => (
+              <li key={cr.changeRequestId}>
+                <Link href={`/projects/${cr.projectId}/scope`} className="flex flex-col gap-1 px-4 py-3 text-[13px] hover:bg-surface-hover sm:px-5">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{cr.projectName}</span>
+                    <Badge tone="neutral">baseline v{cr.scopeVersion}</Badge>
+                    <Badge tone="warning">{cr.status.replace(/_/g, ' ')}</Badge>
+                    {cr.classification ? <Badge tone="info">{cr.classification.replace(/_/g, ' ')}</Badge> : null}
+                    <span className="ml-auto text-xs text-muted">raised {clock.dateTime(cr.createdAt)}</span>
+                  </span>
+                  <span className="line-clamp-2 text-muted">“{cr.requested}”</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader title="Requirement sets by project" description="The scope version each project works to, and what is open against it." />

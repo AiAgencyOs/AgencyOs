@@ -4,9 +4,12 @@ import Link from 'next/link';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
+import { readBlockersAcrossProjects } from '@/modules/projects/blockers-queries';
 import { readDevelopmentPortfolio, readPlanCoverageByProject, type PlanCoverage } from '@/modules/projects/queries';
 import {
   Badge,
+  Card,
+  CardHeader,
   DataTable,
   EmptyState,
   IconCode,
@@ -15,6 +18,7 @@ import {
   Stat,
   StatGrid,
   StatusBadge,
+  buttonClass,
   type Column,
 } from '@/ui';
 
@@ -126,7 +130,7 @@ export default async function DevelopmentPortfolioPage() {
   const context = await requireInternal('/development');
   if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
-  const [portfolio, coverage] = await Promise.all([readDevelopmentPortfolio(), readPlanCoverageByProject()]);
+  const [portfolio, coverage, blockers] = await Promise.all([readDevelopmentPortfolio(), readPlanCoverageByProject(), readBlockersAcrossProjects()]);
   const rows: Row[] = portfolio.map((r) => ({ ...r, coverage: coverage.get(r.id) ?? { planStatus: null, planVersion: null, hasTestPlan: false } }));
   const inBuild = rows.filter((r) => r.tasks.total > 0 && r.tasks.done < r.tasks.total);
   const blocked = rows.reduce((n, r) => n + r.tasks.blocked, 0);
@@ -152,6 +156,61 @@ export default async function DevelopmentPortfolioPage() {
           <Stat label="Without a test plan" value={String(rows.filter((r) => !r.coverage.hasTestPlan).length)} tone={rows.some((r) => !r.coverage.hasTestPlan) ? 'warning' : 'success'} caption="QA handoff not drafted" />
         </StatGrid>
       ) : null}
+
+      {/*
+        SCR-039 — dependencies and blockers, named rather than counted. The
+        plan's dependency register and the tasks marked blocked, per project;
+        "escalate" goes to the plan's questions, "QA handoff" to the QA tab.
+      */}
+      <Card>
+        <CardHeader
+          title={`Dependencies and blockers (${blockers.length} project${blockers.length === 1 ? '' : 's'})`}
+          description="Unmet plan dependencies and blocked tasks. Escalate to the PM on the plan; start the QA handoff on the QA tab."
+        />
+        {blockers.length === 0 ? (
+          <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">Nothing is recorded as in the way on any project.</p>
+        ) : (
+          <ul className="divide-y divide-line">
+            {blockers.map((p) => (
+              <li key={p.projectId} className="flex flex-col gap-2 px-4 py-3 sm:px-5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Link href={`/projects/${p.projectId}/development`} className="text-[13px] font-medium hover:underline">
+                    {p.projectName}
+                  </Link>
+                  <span className="flex flex-wrap gap-2">
+                    <Link href={`/projects/${p.projectId}/plan`} className={buttonClass('secondary', 'sm')}>
+                      Escalate to the PM
+                    </Link>
+                    <Link href={`/projects/${p.projectId}/qa`} className={buttonClass('ghost', 'sm')}>
+                      Start QA handoff
+                    </Link>
+                  </span>
+                </div>
+                <ul className="flex flex-col gap-1 text-[13px]">
+                  {p.dependencies.map((d) => (
+                    <li key={d.id} className="flex flex-wrap items-center justify-between gap-2">
+                      <span>{d.description}</span>
+                      <span className="flex items-center gap-2 text-xs text-muted">
+                        {d.kind.replace(/_/g, ' ')} · {d.ownerRole}
+                        <Badge tone={d.status === 'blocked' ? 'danger' : 'warning'}>{d.status}</Badge>
+                      </span>
+                    </li>
+                  ))}
+                  {p.blockedTasks.map((t) => (
+                    <li key={t.id} className="flex flex-wrap items-center gap-2">
+                      <Badge tone="danger">task blocked</Badge>
+                      <Link href={`/projects/${p.projectId}/development/tasks/${t.id}`} className="hover:underline">
+                        {t.title}
+                      </Link>
+                      <span className="text-xs text-muted">{t.priority}</span>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
       {rows.length === 0 ? (
         <EmptyState

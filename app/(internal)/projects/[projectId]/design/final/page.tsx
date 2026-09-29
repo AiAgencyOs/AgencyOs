@@ -254,6 +254,41 @@ export default async function ProjectFinalSelectionPage({
                   {themeName(r.fromThemeOptionId)}
                   {r.toThemeOptionId ? ` → ${themeName(r.toThemeOptionId)}` : ' → not delivered yet'}
                 </p>
+                {/*
+                  SCR-036 — before and after, side by side. The two cards are
+                  the two theme options the revision names; a round not yet
+                  delivered has only a "before".
+                */}
+                <div className="grid max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">
+                  {[
+                    { label: 'Before', theme: trail.themes.find((t) => t.id === r.fromThemeOptionId) ?? null },
+                    { label: 'After', theme: r.toThemeOptionId ? (trail.themes.find((t) => t.id === r.toThemeOptionId) ?? null) : null },
+                  ].map(({ label, theme }) => (
+                    <div key={label} className="flex flex-col gap-1 rounded-md border border-line bg-surface p-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</span>
+                      {!theme ? (
+                        <span className="text-xs text-muted">{label === 'After' ? 'Not delivered yet.' : 'Not in this phase.'}</span>
+                      ) : (
+                        <>
+                          <span className="font-medium">
+                            {theme.name} <span className="text-xs text-muted">v{theme.version}</span>
+                          </span>
+                          {theme.previewAssetUrl ? (
+                            // A designer-provided preview URL; next/image cannot know its host.
+                            <img src={theme.previewAssetUrl} alt={`${theme.name} preview`} className="max-h-40 w-auto rounded border border-line" />
+                          ) : (
+                            <span className="text-xs text-muted">No preview recorded.</span>
+                          )}
+                          <span className="line-clamp-3 text-xs text-muted">{theme.directionSummary}</span>
+                          <span className="text-xs text-muted">
+                            {theme.figmaNodeId ? `Figma ${theme.figmaNodeName ?? theme.figmaNodeId}` : 'no Figma reference'} · admin{' '}
+                            {theme.adminStatus.replace(/_/g, ' ')} · client {theme.clientStatus.replace(/_/g, ' ')}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </li>
             ))}
           </ul>

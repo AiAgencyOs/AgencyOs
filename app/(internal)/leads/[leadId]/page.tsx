@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { agencyClock, clockFor, getAgencyTimeZone, type AgencyClock } from '@/lib/admin/agency-clock';
+import { readRequirementSets } from '@/lib/admin/requirement-set';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import {
@@ -80,6 +81,7 @@ import {
 
 import { ExtractionForm, MessageForm, SendToClientForm } from './message-form';
 import { RequirementDecisionForm } from './requirement-decision-form';
+import { RequirementSetPanel } from './requirement-set-panel';
 import {
   AssignOwnerForm,
   ConvertForm,
@@ -181,6 +183,8 @@ export default async function LeadConversationPage({
   const conversation = await getLatestConversation(leadId);
   const messages = conversation ? await listMessages(conversation.id) : [];
   const versions = conversation ? await listRequirementVersions(conversation.id) : [];
+  // SCR-029 — what downstream cites each version, and how far it was carried.
+  const requirementSets = await readRequirementSets(versions.map((v) => v.id));
   const mayWrite = can(context.role, 'lead.write');
   // The capability triple ADM-07 describes. Re-checked here for rendering only;
   // the service checks it again and RLS refuses the rows regardless.
@@ -914,6 +918,10 @@ export default async function LeadConversationPage({
                               {parsed.data.openQuestions.length === 1 ? '' : 's'}
                             </p>
                           ) : null}
+                          {(() => {
+                            const set = requirementSets.get(v.id);
+                            return set ? <RequirementSetPanel payload={parsed.data} set={set} clock={clock} /> : null;
+                          })()}
                         </div>
                       ) : v.status === 'failed' ? (
                         <p className="mt-2 text-[13px] text-muted">

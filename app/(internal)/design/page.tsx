@@ -5,9 +5,12 @@ import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
+import { readDesignReviewQueue, type DesignQueueRow } from '@/modules/projects/design-review-queries';
 import { readDesignPortfolio } from '@/modules/projects/queries';
 import {
   Badge,
+  Card,
+  CardHeader,
   DataTable,
   EmptyState,
   IconPalette,
@@ -17,11 +20,46 @@ import {
   StatGrid,
   StatusBadge,
   type Column,
+  type Tone,
 } from '@/ui';
 
 export const metadata: Metadata = { title: 'Design & Prototype' };
 
 type Row = Awaited<ReturnType<typeof readDesignPortfolio>>[number];
+
+const WAITING_LABEL: Record<DesignQueueRow['waitingOn'], string> = { internal: 'internal reviewer', admin: 'Admin', client: 'the client' };
+const WAITING_TONE: Record<DesignQueueRow['waitingOn'], Tone> = { internal: 'info', admin: 'warning', client: 'neutral' };
+
+/**
+ * SCR-036 — the review queue: every theme option sitting at a gate, across
+ * projects, from the three gate columns on `theme_options` read as stored.
+ * The row opens the project's Themes tab, where the doors are.
+ */
+const queueColumnsFor = (clock: AgencyClock): Column<DesignQueueRow>[] => [
+  {
+    key: 'name',
+    header: 'Option',
+    primary: true,
+    cell: (r) => (
+      <>
+        <span className="block font-medium text-foreground">
+          {r.name} <span className="text-xs font-normal text-muted">#{r.optionIndex} · v{r.version}</span>
+        </span>
+        <span className="block text-xs text-muted">{r.projectName}</span>
+      </>
+    ),
+  },
+  { key: 'waiting', header: 'Waiting on', badge: true, cell: (r) => <Badge tone={WAITING_TONE[r.waitingOn]}>{WAITING_LABEL[r.waitingOn]}</Badge> },
+  {
+    key: 'gates',
+    header: 'Gates',
+    desktopOnly: true,
+    cellClassName: 'text-xs text-muted',
+    cell: (r) => `internal ${r.internalReviewStatus.replace(/_/g, ' ')} · admin ${r.adminStatus.replace(/_/g, ' ')} · client ${r.clientStatus.replace(/_/g, ' ')}`,
+  },
+  { key: 'reviewer', header: 'Reviewer', desktopOnly: true, cell: (r) => (r.reviewerUserId ? <span className="text-muted">assigned</span> : <span className="text-warning">nobody assigned</span>) },
+  { key: 'since', header: 'Since', align: 'right', cellClassName: 'tabular text-muted', cell: (r) => clock.dateTime(r.updatedAt) },
+];
 
 const columnsFor = (clock: AgencyClock): Column<Row>[] => [
   {
@@ -102,7 +140,8 @@ export default async function DesignPortfolioPage() {
   const context = await requireInternal('/design');
   if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
-  const [rows, clock] = await Promise.all([readDesignPortfolio(), agencyClock()]);
+  const [rows, clock, queue] = await Promise.all([readDesignPortfolio(), agencyClock(), readDesignReviewQueue()]);
+  const queueColumns = queueColumnsFor(clock);
   const inDesign = rows.filter((r) => r.phaseThreeState && r.phaseThreeState !== 'completed');
   const awaitingReviewer = inDesign.filter((r) => !r.reviewerAssigned).length;
   const inReview = rows.reduce((n, r) => n + r.designs.inReview + r.prototypes.inReview, 0);
@@ -126,6 +165,26 @@ export default async function DesignPortfolioPage() {
           <Stat label="Client revision loops" value={String(revisionsOpen)} tone="neutral" caption="projects where the client asked for changes" />
         </StatGrid>
       ) : null}
+
+      <StatGrid>
+        <Stat label="Awaiting internal review" value={String(queue.awaitingInternal)} tone={queue.awaitingInternal > 0 ? 'info' : 'success'} caption="the assigned reviewer's gate" />
+        <Stat label="Awaiting Admin" value={String(queue.awaitingAdmin)} tone={queue.awaitingAdmin > 0 ? 'warning' : 'success'} caption="internal passed, Admin has not decided" />
+        <Stat label="Awaiting the client" value={String(queue.awaitingClient)} tone="neutral" caption="shared, no answer recorded" />
+      </StatGrid>
+
+      <Card>
+        <CardHeader
+          title={`Review queue (${queue.rows.length})`}
+          description="Every theme option sitting at a gate, longest first. Open the row to decide on the project's Themes tab."
+        />
+        {queue.rows.length === 0 ? (
+          <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No design option is waiting at any gate.</p>
+        ) : (
+          <div className="px-4 pb-4 sm:px-5">
+            <DataTable dense rows={queue.rows} columns={queueColumns} getKey={(r) => r.themeOptionId} href={(r) => `/projects/${r.projectId}/design/themes`} />
+          </div>
+        )}
+      </Card>
 
       {rows.length === 0 ? (
         <EmptyState

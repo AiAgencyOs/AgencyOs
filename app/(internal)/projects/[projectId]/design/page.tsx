@@ -158,6 +158,10 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
               <Link href={`/projects/${projectId}/plan`} className="text-[13px] underline hover:text-foreground">
                 the plan it was built from
               </Link>
+              {/* SCR-034 — the inventory as a sheet: every screen, every column, its scope mapping. */}
+              <a href={`/api/projects/${projectId}/design/screens/export`} className="text-[13px] underline hover:text-foreground">
+                export the inventory (CSV)
+              </a>
             </div>
           )}
         </Section>
@@ -361,22 +365,52 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
           </Card>
 
           <Card>
-            <CardHeader title="Reference imagery" description="Optional AI-drawn inspiration (Designer §9). Never the canonical design." />
+            <CardHeader
+              title="Reference imagery"
+              description="Optional AI-drawn inspiration (Designer §9). Never the canonical design."
+              actions={
+                <a href={`/api/projects/${projectId}/design/assets/export`} className="text-xs underline hover:text-foreground">
+                  Handoff package (JSON)
+                </a>
+              }
+            />
             {designAssets.length === 0 ? (
               <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No reference image has been generated for this project.</p>
             ) : (
-              <ul className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
-                {designAssets.map((asset) => (
-                  <li key={asset.id} className="flex flex-col gap-1.5 text-[13px]">
-                    <img src={`data:${asset.mediaType};base64,${asset.imageBase64}`} alt={asset.prompt} className="w-full rounded-lg border border-line" />
-                    <span className="flex items-center justify-between gap-2 text-xs text-muted">
-                      <Badge tone="neutral">{asset.kind.replace(/_/g, ' ')}</Badge>
-                      <span>{asset.model}</span>
-                    </span>
-                    <p className="text-xs text-muted">{asset.rightsNote}</p>
-                  </li>
-                ))}
-              </ul>
+              /*
+                SCR-038 — one folder per kind. `design_assets` carries no
+                approved/draft status and no link to a screen or a version
+                (there is no join table), so each folder shows the kind and
+                the rights note the row was generated under, and nothing
+                pretends to a state the table does not hold.
+              */
+              <div className="flex flex-col gap-2 px-4 pb-4 sm:px-5">
+                {[...new Set(designAssets.map((a) => a.kind))].map((kind) => {
+                  const folder = designAssets.filter((a) => a.kind === kind);
+                  return (
+                    <details key={kind} open className="rounded-md border border-line">
+                      <summary className="flex cursor-pointer flex-wrap items-center gap-2 px-3 py-2 text-[13px] font-medium">
+                        {kind.replace(/_/g, ' ')}
+                        <span className="text-xs font-normal text-muted">
+                          {folder.length} image{folder.length === 1 ? '' : 's'} · reference only
+                        </span>
+                      </summary>
+                      <ul className="flex flex-col gap-3 border-t border-line p-3">
+                        {folder.map((asset) => (
+                          <li key={asset.id} className="flex flex-col gap-1.5 text-[13px]">
+                            <img src={`data:${asset.mediaType};base64,${asset.imageBase64}`} alt={asset.prompt} className="w-full rounded-lg border border-line" />
+                            <span className="flex items-center justify-between gap-2 text-xs text-muted">
+                              <Badge tone="neutral">{asset.kind.replace(/_/g, ' ')}</Badge>
+                              <span>{asset.model}</span>
+                            </span>
+                            <p className="text-xs text-muted">{asset.rightsNote}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  );
+                })}
+              </div>
             )}
           </Card>
         </div>
