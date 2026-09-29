@@ -68,6 +68,10 @@ cross-origin requests for its own chunks and every page reports fourteen
   *Reconnecting*, then *Degraded*, and the polling safety net carries the
   screen. The push path is covered by `tests/realtime-*.test.ts` and by the
   publication check in `docs/AGENCYOS_ADMIN_TEST_MATRIX.md`.
-- The 82 `db:verify:*` scripts, which speak PostgREST *as the service role
-  with a JWT secret the verify target knows* — they need `.env.verify.local`
-  pointed at this gateway, which has not been tried.
+- Eight of the 80 `scripts/verify-*.mjs` need a FRESH database (they assert
+  "no memberships exist", create their own organizations, or start the model
+  and Graph stubs the app must be pointed at before it boots). Run them
+  before any browser QA, or on a second scratch database. The other 72 run
+  as-is: `.env.verify.local` → this gateway, same `SUPABASE_JWT_SECRET`,
+  the gateway's service JWT as `SUPABASE_SERVICE_ROLE_KEY`; the gateway
+  implements the GoTrue admin-users endpoints they create fixtures with.

@@ -83,6 +83,23 @@ const server = http.createServer(async (req, res) => {
       if (!id) return json(res, 400, { error: 'invalid_grant' });
       return json(res, 200, await sessionFor(id));
     }
+    // The GoTrue admin API the live verifiers use for fixture users. The
+    // service role is the only caller; the row is the same auth.users row a
+    // sign-in would create, so the mirror trigger and the hook see it.
+    if (url.pathname === '/auth/v1/admin/users' && req.method === 'POST') {
+      const p = await bearerUser(req); if (!p || p.role !== 'service_role') return json(res, 401, { message: 'service role required' });
+      const body = JSON.parse((await readBody(req)) || '{}');
+      const id = ensureUser(body.email ?? `${Date.now()}@local.invalid`);
+      return json(res, 200, { id, email: body.email, aud: 'authenticated', role: 'authenticated', app_metadata: {}, user_metadata: body.user_metadata ?? {}, created_at: new Date().toISOString() });
+    }
+    const adminUser = /^\/auth\/v1\/admin\/users\/([0-9a-f-]{36})$/.exec(url.pathname);
+    if (adminUser && req.method === 'DELETE') {
+      const p = await bearerUser(req); if (!p || p.role !== 'service_role') return json(res, 401, { message: 'service role required' });
+      psql(`delete from core.memberships where user_id=${q(adminUser[1])}`);
+      psql(`delete from core.client_users where user_id=${q(adminUser[1])}`);
+      psql(`delete from auth.users where id=${q(adminUser[1])}`);
+      return json(res, 200, {});
+    }
     if (url.pathname === '/auth/v1/logout') { res.writeHead(204); res.end(); return; }
     if (url.pathname.startsWith('/realtime/')) return json(res, 404, { message: 'no realtime server in the local QA stack' });
     return json(res, 404, { message: `unhandled ${req.method} ${url.pathname}` });

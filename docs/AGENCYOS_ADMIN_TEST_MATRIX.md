@@ -59,6 +59,35 @@ real pages. Everything below is from `qa-report.json` and `e2e.mjs` output.
 | Dashboard | **Recent-leads table clipped its columns at half width — found and fixed** (phone moved under the title, grid 1.35:1); KPI chips, health strip, needs-attention/today panels render from real reads |
 | Settings | **forms were bare full-width inputs — fixed** (each section is a card, content column bounded, h2 scale) |
 
+**The repository's own live verifiers, against this stack** (`.env.verify.local`
+pointed at the gateway, service-role JWT + the shared JWT secret): **71 of
+80 `scripts/verify-*.mjs` pass** — among them tenancy guards (15), authority
+guards (18), invoker-RLS, untenanted writes, security posture (6/6),
+fail-open guards (9/9), approvals (51 checks), quotations (89 checks),
+WhatsApp webhook (all, once the app carried the webhook secrets). One
+failure was a **real defect and is fixed** (below). The other eight
+(`first-owner`, `flow-01`, `requirement-proposal`, `media-reading`,
+`meeting-analysis`, `quotation-dispatch`, `quotation-scope`,
+`approval-announcements`) assume the fresh `db reset` database CI gives
+them plus the model/Graph stubs they start on 54399/54398; on this
+QA-mutated database they fail on fixture state ("5 memberships already
+exist — reset the database first", a re-created fixture org colliding with
+the seed's client account, a stray `approval.requested` event) and on the
+app process's key not matching the per-run stub. Their failures are about
+the fixture, not the product; they are green in CI on `main` and remain
+listed as the open item for a fresh-database run.
+
+**Defect found by `verify-milestone-invoicing` (real, fixed):**
+`finance.new_receipt_reference()` (20260928130000) was granted to
+`service_role` only, while `finance.verify_payment` — SECURITY INVOKER,
+granted to `authenticated`, the function behind PAYMENT VERIFIED — calls it.
+Every real admin's verification would have failed with *permission denied
+for function new_receipt_reference*; only the service-role path (which
+nothing in production uses to verify) passed. Fixed in
+`20260929120000_the_verifier_may_number_the_receipt.sql`; proven in SQL as
+`authenticated` (works with the grant, `permission denied` with it revoked);
+pinned by `tests/the-verifier-may-number-the-receipt.test.ts`.
+
 Not driven live: drag-and-drop on the board (pointer choreography), the
 Google/WhatsApp/AI integrations (no credentials — the screens correctly say
 "not configured"), PDF rendering.
@@ -120,7 +149,7 @@ transitions need their own seeded fixtures and were not driven.
 ## 11. Open items, in priority order
 
 1. Run §5 (push realtime, two sessions) on an environment with Docker.
-2. Point `.env.verify.local` at the local gateway and run the 82 `db:verify:*` scripts (CI does this; not tried here).
+2. Re-run the eight fixture-dependent verifiers on a fresh scratch database (`apply-migrations-locally.sh` without `KEEP`, then the stack) — 71/80 pass on the QA-mutated one.
 3. axe + screen-reader pass through the harness on the five highest-traffic screens.
 4. Tablet captures (768 / 1024) and a drag-and-drop run on the board.
 5. Confirm `roadmap.json`'s derived test counts against CI's Node 26 run.
