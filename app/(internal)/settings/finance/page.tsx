@@ -4,10 +4,12 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listPaymentAccounts } from '@/modules/finance/queries';
+import { readInvoiceReminderPolicy } from '@/modules/finance/reminder-queries';
 import { PAYMENT_ACCOUNT_FIELDS, PAYMENT_ACCOUNT_KIND_LABEL } from '@/modules/finance/schema';
 import { Badge, Callout, EmptyState, IconRupee, StatusBadge } from '@/ui';
 
 import { AddPaymentAccountForm, PaymentAccountStatusButton } from './payment-accounts-panel';
+import { InvoiceReminderPolicyForm } from './reminder-policy-form';
 
 export const metadata: Metadata = { title: 'Settings — Finance' };
 
@@ -25,6 +27,11 @@ export default async function SettingsFinancePage() {
   const clock = await agencyClock();
   const accounts = await listPaymentAccounts();
   const mayManage = can(context.role, 'invoice.issue');
+  // Owner decision 2026-09-29: automatic past-due reminders, two real columns
+  // on the organization. Reading is every internal role's; the switch is
+  // `organization.settings`, like the other switches on these screens.
+  const reminderPolicy = await readInvoiceReminderPolicy();
+  const maySetPolicy = can(context.role, 'organization.settings');
 
   const active = accounts.filter((a) => a.status === 'active');
   const inactive = accounts.filter((a) => a.status === 'inactive');
@@ -102,6 +109,34 @@ export default async function SettingsFinancePage() {
       ) : (
         <Callout tone="info">Only an owner or ops admin can add or deactivate receiving accounts.</Callout>
       )}
+
+      {/*
+        Past-due reminders — owner decision 2026-09-29 (AGENT_BRIEF_D
+        decision 1). The runner chases past-due invoices on WhatsApp by itself
+        once this is on: as text inside the 24-hour window, as the approved
+        "invoice_reminder" template outside it, never more than once per
+        interval. Audited both ways.
+      */}
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-[13px] font-semibold tracking-tight">Past-due reminders</h2>
+          <Badge tone={reminderPolicy.enabled ? 'success' : 'neutral'} dot>
+            {reminderPolicy.enabled ? `on · every ${reminderPolicy.intervalDays} day${reminderPolicy.intervalDays === 1 ? '' : 's'}` : 'off'}
+          </Badge>
+        </div>
+        <p className="text-xs text-muted">
+          When on, an issued invoice past its due date is chased on the client's WhatsApp thread (the
+          client's own thread, else the project group) once per interval, with no approval step. Inside the
+          24-hour window the reminder is plain text; outside it only the approved template registered as
+          "Past-due invoice reminder" under Settings › Communication is carried, and with none registered
+          nothing is sent and the invoice's Reminders section says so. Consent is checked on every send.
+        </p>
+        {maySetPolicy ? (
+          <InvoiceReminderPolicyForm enabled={reminderPolicy.enabled} intervalDays={reminderPolicy.intervalDays} />
+        ) : (
+          <Callout tone="info">Only an owner or ops admin can change the reminder policy.</Callout>
+        )}
+      </div>
     </div>
   );
 }

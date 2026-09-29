@@ -9,7 +9,11 @@ import { can } from '@/lib/authz/permissions';
 import { listPaymentAccounts, listPayments, listPendingPaymentClaims } from '@/modules/finance/queries';
 import { listPaymentSubmissions } from '@/modules/finance/overview-queries';
 import { listReconciliationItems, listReconciliations, readMatchProposal } from '@/modules/finance/reconciliation-queries';
+import { listBankStatementLines } from '@/modules/finance/bank-import-queries';
+import { BANK_LINE_STATUS_LABEL } from '@/modules/finance/bank-import-schema';
+import { proposeMatches, type MatchCandidate } from '@/modules/finance/bank-csv';
 
+import { ConfirmBankLineMatchForm, IgnoreBankLineForm, ImportBankStatementForm } from './bank-import-panel';
 import { ClaimsDrawerList } from './claims-drawer';
 import {
   AddReconciliationItemForm,
@@ -163,6 +167,40 @@ export default async function PaymentsPage({
   const paymentOptions = allPayments
     .filter((p) => p.status === 'captured')
     .map((p) => ({ id: p.id, label: `${money(p.amount_minor, p.currency)} · ${p.invoiceNumber} · ${p.provider_payment_id}` }));
+  // The bank CSV — owner decision 2026-09-29. Uploaded lines of the selected
+  // period, and a proposal per pending line against the recorded payments
+  // (what can be confirmed) and the pending claims (what a person can go and
+  // verify first). Proposed here, written only by the confirm door.
+  const bankLines = selectedRecon ? await listBankStatementLines(selectedRecon.id) : [];
+  const matchCandidates: MatchCandidate[] = [
+    ...allPayments
+      .filter((p) => p.status === 'captured')
+      .map((p): MatchCandidate => ({
+        kind: 'payment',
+        id: p.id,
+        amountMinor: p.amount_minor,
+        reference: p.provider_payment_id,
+        label: `${money(p.amount_minor, p.currency)} · ${p.invoiceNumber} · ${p.clientName}`,
+        invoiceNumber: p.invoiceNumber,
+      })),
+    ...claims
+      .filter((c) => c.status === 'pending_verification' || c.status === 'mismatch')
+      .map((c): MatchCandidate => ({
+        kind: 'claim',
+        id: c.id,
+        amountMinor: c.amountMinor,
+        reference: c.reference,
+        label: `${money(c.amountMinor, c.currency)} · ${c.invoiceNumber} · claim by ${c.payerName ?? c.clientName ?? 'client'}`,
+        invoiceNumber: c.invoiceNumber,
+      })),
+  ];
+  const bankProposals = new Map(
+    proposeMatches(
+      bankLines.filter((l) => l.status === 'pending').map((l) => ({ id: l.id, amountMinor: l.amountMinor, reference: l.reference, description: l.description })),
+      matchCandidates,
+    ).map((p) => [p.lineId, p]),
+  );
+  const pendingBankLines = bankLines.filter((l) => l.status === 'pending').length;
   // SCR-053's four KPIs count the claims table and say so: "submitted" is
   // what clients said, "verified" / "rejected" the answers, "pending" what
   // has none yet. The ledger rows below are money that moved.
@@ -353,8 +391,88 @@ export default async function PaymentsPage({
                   getKey={(i) => i.id}
                 />
               ) : (
-                <p className="text-[13px] text-muted">No statement lines entered yet. There is no bank import — paste each line from the statement.</p>
+                <p className="text-[13px] text-muted">No statement lines yet. Upload the bank CSV below, or paste a line by hand.</p>
               )}
+
+              {/*
+                The bank statement, uploaded — owner decision 2026-09-29. Each
+                line as the bank printed it, the match the page proposes, and
+                the two doors: confirm (writes the reconciliation item above)
+                or set aside with a reason.
+              */}
+              <div className="flex flex-col gap-3 rounded-lg border border-line bg-canvas p-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h3 className="text-[13px] font-semibold tracking-tight">
+                    Bank statement <span className="text-muted">({bankLines.length} line{bankLines.length === 1 ? '' : 's'}{pendingBankLines > 0 ? `, ${pendingBankLines} pending` : ''})</span>
+                  </h3>
+                  <span className="text-xs text-muted">Matches are proposed by amount and reference; nothing is written until you confirm.</span>
+                </div>
+                {bankLines.length > 0 ? (
+                  <DataTable
+                    rows={bankLines}
+                    dense
+                    columns={[
+                      { key: 'date', header: 'Date', primary: true, cell: (l) => clock.date(l.statementDate) },
+                      { key: 'desc', header: 'Description', cellClassName: 'font-mono text-xs', cell: (l) => l.description },
+                      { key: 'ref', header: 'Reference', cellClassName: 'font-mono text-xs text-muted', cell: (l) => l.reference ?? '—' },
+                      { key: 'amount', header: 'Amount', align: 'right', cellClassName: 'tabular font-medium', cell: (l) => money(l.amountMinor, 'INR') },
+                      {
+                        key: 'status',
+                        header: 'Status',
+                        badge: true,
+                        cell: (l) => (
+                          <Badge tone={l.status === 'confirmed' ? 'success' : l.status === 'ignored' ? 'neutral' : 'warning'}>
+                            {BANK_LINE_STATUS_LABEL[l.status] ?? l.status}
+                          </Badge>
+                        ),
+                      },
+                      {
+                        key: 'proposal',
+                        header: 'Proposed match',
+                        cell: (l) => {
+                          if (l.status === 'ignored') return <span className="text-muted">{l.ignoredReason}</span>;
+                          if (l.status === 'confirmed') return <span className="text-muted">written as a reconciliation line</span>;
+                          const p = bankProposals.get(l.id);
+                          if (!p || !p.candidate) {
+                            return (
+                              <span className="text-muted">
+                                {p?.reason === 'ambiguous' ? `${p.sameAmount.length} records have this amount — pick one` : 'no record with this amount or reference'}
+                              </span>
+                            );
+                          }
+                          return (
+                            <span>
+                              {p.candidate.label}
+                              <span className="text-muted"> · {p.candidate.kind === 'claim' ? 'a pending claim: verify it first, then match the payment' : p.reason === 'reference_and_amount' ? 'reference and amount agree' : p.reason === 'reference' ? 'reference agrees, amount differs' : 'only record with this amount'}</span>
+                            </span>
+                          );
+                        },
+                      },
+                      {
+                        key: 'work',
+                        header: 'Work it',
+                        cell: (l) =>
+                          l.status === 'pending' && selectedRecon.status === 'open' && mayReconcile ? (
+                            <div className="flex flex-col gap-2">
+                              <ConfirmBankLineMatchForm
+                                lineId={l.id}
+                                proposedPaymentId={bankProposals.get(l.id)?.candidate?.kind === 'payment' ? bankProposals.get(l.id)!.candidate!.id : null}
+                                payments={paymentOptions}
+                              />
+                              <IgnoreBankLineForm lineId={l.id} />
+                            </div>
+                          ) : (
+                            <span className="text-muted">—</span>
+                          ),
+                      },
+                    ]}
+                    getKey={(l) => l.id}
+                  />
+                ) : (
+                  <p className="text-[13px] text-muted">No statement uploaded for this period yet.</p>
+                )}
+                {selectedRecon.status === 'open' && mayReconcile ? <ImportBankStatementForm reconciliationId={selectedRecon.id} /> : null}
+              </div>
 
               {selectedRecon.status === 'open' && mayReconcile ? (
                 <>

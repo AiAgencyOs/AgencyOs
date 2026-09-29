@@ -1682,6 +1682,8 @@ export type Database = {
           currency: string
           default_design_reviewer_id: string | null
           id: string
+          invoice_reminder_interval_days: number
+          invoice_reminders_enabled: boolean
           name: string
           reactivation_pilot_enabled: boolean
           settings: Json
@@ -1698,6 +1700,8 @@ export type Database = {
           default_design_reviewer_id?: string | null
           id?: string
           name: string
+          invoice_reminder_interval_days?: number
+          invoice_reminders_enabled?: boolean
           reactivation_pilot_enabled?: boolean
           settings?: Json
           slug: string
@@ -1713,6 +1717,8 @@ export type Database = {
           default_design_reviewer_id?: string | null
           id?: string
           name?: string
+          invoice_reminder_interval_days?: number
+          invoice_reminders_enabled?: boolean
           reactivation_pilot_enabled?: boolean
           settings?: Json
           slug?: string
@@ -2134,6 +2140,12 @@ export type Database = {
       }
       set_reactivation_pilot: {
         Args: { p_enabled: boolean; p_organization_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      set_invoice_reminder_policy: {
+        Args: { p_enabled: boolean; p_interval_days: number; p_organization_id: string }
         Returns: {
           outcome: string
         }[]
@@ -4299,6 +4311,78 @@ export type Database = {
   }
   finance: {
     Tables: {
+      bank_statement_lines: {
+        Row: {
+          amount_minor: number
+          created_at: string
+          description: string
+          id: string
+          ignored_reason: string | null
+          import_batch: string
+          imported_by: string | null
+          item_id: string | null
+          line_no: number
+          organization_id: string
+          reconciliation_id: string
+          reference: string | null
+          source_filename: string | null
+          statement_date: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount_minor: number
+          created_at?: string
+          description: string
+          id?: string
+          ignored_reason?: string | null
+          import_batch: string
+          imported_by?: string | null
+          item_id?: string | null
+          line_no: number
+          organization_id: string
+          reconciliation_id: string
+          reference?: string | null
+          source_filename?: string | null
+          statement_date: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount_minor?: number
+          created_at?: string
+          description?: string
+          id?: string
+          ignored_reason?: string | null
+          import_batch?: string
+          imported_by?: string | null
+          item_id?: string | null
+          line_no?: number
+          organization_id?: string
+          reconciliation_id?: string
+          reference?: string | null
+          source_filename?: string | null
+          statement_date?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bank_statement_lines_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "reconciliation_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bank_statement_lines_reconciliation_id_fkey"
+            columns: ["reconciliation_id"]
+            isOneToOne: false
+            referencedRelation: "reconciliations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       expenses: {
         Row: {
           amount_minor: number
@@ -4456,7 +4540,9 @@ export type Database = {
       }
       invoice_sends: {
         Row: {
+          automatic: boolean
           channel: string
+          conversation_id: string | null
           created_at: string
           id: string
           invoice_id: string
@@ -4469,7 +4555,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          automatic?: boolean
           channel: string
+          conversation_id?: string | null
           created_at?: string
           id?: string
           invoice_id: string
@@ -4482,7 +4570,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          automatic?: boolean
           channel?: string
+          conversation_id?: string | null
           created_at?: string
           id?: string
           invoice_id?: string
@@ -4993,6 +5083,54 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      claim_invoice_reminder: {
+        Args: { p_conversation_id?: string; p_interval_days: number; p_invoice_id: string }
+        Returns: {
+          external_ref: string | null
+          outcome: string
+          send_id: string | null
+        }[]
+      }
+      confirm_bank_line_match: {
+        Args: { p_line_id: string; p_payment_id: string; p_reason?: string }
+        Returns: {
+          item_id: string | null
+          outcome: string
+        }[]
+      }
+      ignore_bank_line: {
+        Args: { p_line_id: string; p_reason: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      import_bank_statement_lines: {
+        Args: { p_lines: Json; p_reconciliation_id: string; p_source_filename?: string }
+        Returns: {
+          batch_id: string | null
+          imported: number
+          outcome: string
+        }[]
+      }
+      observe_invoice_reminder_candidates: {
+        Args: { p_limit?: number }
+        Returns: {
+          client_account_id: string
+          currency: string
+          due_at: string
+          interval_days: number
+          invoice_id: string
+          invoice_number: string
+          organization_id: string
+          paid_minor: number
+          project_id: string | null
+          total_minor: number
+        }[]
+      }
+      record_invoice_reminder_outcome: {
+        Args: { p_note: string; p_send_id: string }
+        Returns: boolean
+      }
       close_reconciliation: {
         Args: { p_reconciliation_id: string }
         Returns: {
@@ -5084,6 +5222,7 @@ export type Database = {
       record_invoice_send: {
         Args: {
           p_channel: string
+          p_conversation_id?: string
           p_invoice_id: string
           p_kind: string
           p_message_ref?: string

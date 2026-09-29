@@ -12,6 +12,7 @@ import { reapStalledJobs } from '@/lib/jobs/reaper';
 import { expireOverdueApprovals } from '@/lib/approvals/expire';
 import { lapseOverdueProposals } from '@/lib/sales/lapse';
 import { runFollowUps } from '@/modules/crm/follow-up-worker';
+import { runInvoiceReminders } from '@/modules/finance/reminder-worker';
 import { detectUpsellSignals } from '@/lib/sales/upsell';
 import { markOverdueInvoices } from '@/lib/finance/overdue';
 import { mayAgentRun } from '@/lib/ai/autonomy';
@@ -255,6 +256,18 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const followUps = await runFollowUps(admin);
 
   /**
+   * ── past-due invoices chased on WhatsApp (owner decision 2026-09-29) ──
+   *
+   * The same shape as the follow-ups, one schema over: observe, pick the
+   * thread, claim (the invoice_sends row), queue through
+   * `crm.send_outbound_message` and the `followup.queued` handler, so
+   * consent, the 24-hour window and the approved `invoice_reminder`
+   * template keep deciding. Off until an owner turns it on under Settings ›
+   * Finance; then one reminder per invoice per interval, never more.
+   */
+  const invoiceReminders = await runInvoiceReminders(admin);
+
+  /**
    * ── invoices whose date has passed (G-004) ────────────────────────────
    *
    * The transition INVOICE_TRANSITIONS has admitted since the first day and
@@ -307,6 +320,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
       overdue,
       stamps,
       unlocks: unlocks.results,
@@ -346,6 +360,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
       overdue,
       stamps,
       phaseTwo: phaseTwo.results,
@@ -382,6 +397,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
       overdue,
       stamps,
       phaseThree: phaseThree.results,
@@ -413,6 +429,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
       overdue,
       stamps,
       phaseFour: phaseFour.results,
@@ -444,6 +461,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
       overdue,
       stamps,
       task2Route: task2Route.results,
@@ -475,6 +493,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
       overdue,
       stamps,
       uiVersionQa: uiVersionQa.results,
@@ -505,6 +524,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
       overdue,
       stamps,
       uiVersionAdminReview: uiVersionAdminReview.results,
@@ -536,6 +556,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
       overdue,
       stamps,
       prototypeQa: prototypeQa.results,
@@ -569,6 +590,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
       overdue,
       stamps,
       m1Invoices: m1Invoices.results,
@@ -598,6 +620,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
       overdue,
       stamps,
       phaseFourCompletions: phaseFourCompletions.results,
@@ -628,6 +651,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
       overdue,
       stamps,
       m2Invoices: m2Invoices.results,
@@ -660,6 +684,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
       overdue,
       stamps,
       scopeChangeRequests: scopeChangeRequests.results,
@@ -978,6 +1003,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     reaped,
     dispatched,
     followUps,
+    invoiceReminders,
     unlocks: unlocks.results,
     announcements: announcements.results,
     escalations: escalations.results,

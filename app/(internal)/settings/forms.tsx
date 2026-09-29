@@ -638,6 +638,7 @@ const TEMPLATE_SITUATION_LABELS: Readonly<Record<string, string>> = {
   post_project: 'After a project finished',
   internal_approval: 'Internal approval reminder',
   missed_meeting: 'Missed a booked meeting',
+  invoice_reminder: 'Past-due invoice reminder',
 };
 
 export function WhatsAppTemplatesForm({

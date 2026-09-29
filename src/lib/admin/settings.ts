@@ -196,6 +196,9 @@ export const TEMPLATE_SITUATIONS = [
   // ADM-103. A no-show has by definition not just written to you, so the
   // second nudge at +26h is always outside the 24-hour window.
   'missed_meeting',
+  // Owner decision 2026-09-29: a past-due invoice reminder outside the
+  // 24-hour window goes as the template registered here (20260930100000).
+  'invoice_reminder',
 ] as const;
 
 export type TemplateSituation = (typeof TEMPLATE_SITUATIONS)[number];
