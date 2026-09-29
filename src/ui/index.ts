@@ -27,6 +27,7 @@ export * from './primitives/page-header';
 export * from './primitives/stat';
 export * from './primitives/drawer';
 export * from './primitives/filter-bar';
+export * from './primitives/domain-search';
 export * from './primitives/avatar';
 export * from './primitives/progress';
 export * from './primitives/entity-header';

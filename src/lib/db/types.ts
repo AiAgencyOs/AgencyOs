@@ -4547,6 +4547,123 @@ export type Database = {
           },
         ]
       }
+      requirement_links: {
+        Row: {
+          created_at: string
+          deliverable_id: string | null
+          id: string
+          linked_by: string | null
+          note: string | null
+          organization_id: string
+          quotation_id: string | null
+          requirement_version_id: string
+          target_id: string | null
+          target_type: string
+          task_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deliverable_id?: string | null
+          id?: string
+          linked_by?: string | null
+          note?: string | null
+          organization_id: string
+          quotation_id?: string | null
+          requirement_version_id: string
+          target_id?: string | null
+          target_type: string
+          task_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deliverable_id?: string | null
+          id?: string
+          linked_by?: string | null
+          note?: string | null
+          organization_id?: string
+          quotation_id?: string | null
+          requirement_version_id?: string
+          target_id?: string | null
+          target_type?: string
+          task_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "requirement_links_requirement_version_id_fkey"
+            columns: ["requirement_version_id"]
+            isOneToOne: false
+            referencedRelation: "requirement_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      requirement_question_sends: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          id: string
+          message_id: string
+          organization_id: string
+          question: string
+          question_index: number
+          requirement_version_id: string
+          sent_at: string
+          sent_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          id?: string
+          message_id: string
+          organization_id: string
+          question: string
+          question_index: number
+          requirement_version_id: string
+          sent_at?: string
+          sent_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          message_id?: string
+          organization_id?: string
+          question?: string
+          question_index?: number
+          requirement_version_id?: string
+          sent_at?: string
+          sent_by?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "requirement_question_sends_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "requirement_question_sends_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "conversation_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "requirement_question_sends_requirement_version_id_fkey"
+            columns: ["requirement_version_id"]
+            isOneToOne: false
+            referencedRelation: "requirement_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       requirement_versions: {
         Row: {
           confirmation_message_id: string | null
@@ -5299,6 +5416,13 @@ export type Database = {
           title: string
         }[]
       }
+      link_requirement: {
+        Args: { p_requirement_version_id: string; p_target_type: string; p_target_id: string; p_note?: string | null }
+        Returns: {
+          outcome: string
+          link_id: string | null
+        }[]
+      }
       revise_requirement_version: {
         Args: { p_source_version_id: string; p_payload: Json }
         Returns: {
@@ -5350,6 +5474,13 @@ export type Database = {
         Returns: {
           message_id: string
           outcome: string
+        }[]
+      }
+      send_requirement_question: {
+        Args: { p_version_id: string; p_question_index: number; p_question: string; p_body: string }
+        Returns: {
+          outcome: string
+          message_id: string | null
         }[]
       }
       set_announcement_status: {

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-import { definitionFor } from './registry';
-import { TOOL_NAMES } from './tools';
+import { AGENT_DEFINITIONS, definitionFor } from './registry';
+import { TOOL_NAMES, TOOLS, toolDefinition, type ToolActionClass } from './tools';
 
 /**
  * SCR-062/063 — this tenant's policy for a global agent: which tools it may
@@ -20,6 +20,38 @@ export const KNOWN_TOOL_KEYS: readonly string[] = TOOL_NAMES;
 /** The tools an agent's definition binds today — what `resolveTool` actually permits. */
 export function boundToolKeysFor(agentKey: string): readonly string[] {
   return definitionFor(agentKey)?.tools ?? [];
+}
+
+/**
+ * SCR-061 (bucket G-3) — what a tool is, from its registered definition, and
+ * which agents' definitions bind it. Pure: the registry and the tool list
+ * are static, so the tool detail page can say what the tool does without a
+ * read, and `null` for a name the registry has never heard of is the page's
+ * not-found.
+ */
+export type ToolDetailDefinition = {
+  name: string;
+  purpose: string;
+  actionClass: ToolActionClass;
+  clientFacing: boolean;
+  boundAgents: { key: string; displayName: string }[];
+};
+
+export function toolDetailFor(name: string): ToolDetailDefinition | null {
+  const tool = toolDefinition(name);
+  if (!tool) return null;
+  return {
+    name: tool.name,
+    purpose: tool.purpose,
+    actionClass: tool.actionClass,
+    clientFacing: tool.clientFacing,
+    boundAgents: AGENT_DEFINITIONS.filter((a) => a.tools.includes(tool.name)).map((a) => ({ key: a.key, displayName: a.displayName })),
+  };
+}
+
+/** Every registered tool with the count of agents bound to it — the dashboard's tools list. */
+export function listToolDefinitions(): ToolDetailDefinition[] {
+  return TOOLS.map((t) => toolDetailFor(t.name)).filter((t): t is ToolDetailDefinition => t !== null);
 }
 
 const agentKey = z.string().regex(/^[a-z][a-z0-9_]{2,48}$/, 'Not an agent key.');

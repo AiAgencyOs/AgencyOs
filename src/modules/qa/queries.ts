@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { ilikeAny } from '@/lib/db/search';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -48,10 +49,10 @@ export type OpenDefect = Defect & {
  * specifically what has not been looked at yet (Doc 14's rule that a
  * developer cannot close their own defect).
  */
-export async function listOpenDefects(limit = 300): Promise<OpenDefect[]> {
+export async function listOpenDefects(limit = 300, q?: string): Promise<OpenDefect[]> {
   const supabase = await createClient();
 
-  const { data: defects, error: defectsError } = await supabase
+  let query = supabase
     .schema('qa')
     .from('defects')
     .select(`${SELECT}, project_id`)
@@ -59,6 +60,9 @@ export async function listOpenDefects(limit = 300): Promise<OpenDefect[]> {
     .order('severity', { ascending: true })
     .order('created_at', { ascending: true })
     .limit(limit);
+  // Search within domain (bucket G-3): the defect's title, server-side.
+  if (q) query = query.or(ilikeAny(['title', 'environment'], q));
+  const { data: defects, error: defectsError } = await query;
   if (defectsError) unreadable('listOpenDefects.defects', defectsError);
 
   const rows = defects ?? [];

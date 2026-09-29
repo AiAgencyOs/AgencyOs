@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
+import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
 import { listCampaigns, listCampaignTemplates, readAudienceFacets, type CampaignListRow } from '@/modules/crm/campaign-queries';
 import { describeAudience } from '@/modules/crm/campaign-schema';
@@ -22,6 +23,9 @@ import {
   StatGrid,
   StatusBadge,
   type Column,
+  buttonClass,
+  DomainSearch,
+  SearchSummary,
 } from '@/ui';
 
 import { NewCampaignForm } from './new-campaign-form';
@@ -78,11 +82,14 @@ const columnsFor = (clock: AgencyClock): Column<CampaignListRow>[] => [
   { key: 'created', header: 'Created', align: 'right', cellClassName: 'text-muted', cell: (c) => clock.dateTime(c.createdAt) },
 ];
 
-export default async function CampaignsPage() {
+export default async function CampaignsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const context = await requireInternal('/communication/campaigns');
   if (!can(context, 'lead.write')) return <PermissionDenied />;
+  // Search within domain (bucket G-3): the campaign's name, filtered by the reader.
+  const { q: qRaw } = await searchParams;
+  const q = normaliseSearch(qRaw);
 
-  const [campaigns, templates, facets, clock, projects] = await Promise.all([listCampaigns(), listCampaignTemplates(), readAudienceFacets(), agencyClock(), listProjects(500)]);
+  const [campaigns, templates, facets, clock, projects] = await Promise.all([listCampaigns(200, q || undefined), listCampaignTemplates(), readAudienceFacets(), agencyClock(), listProjects(500)]);
 
   const count = (status: CampaignListRow['status']) => campaigns.filter((c) => c.status === status).length;
   const sentTotal = campaigns.reduce((n, c) => n + c.sent, 0);
@@ -115,10 +122,19 @@ export default async function CampaignsPage() {
       </Callout>
 
       <Card>
-        <CardHeader title="All campaigns" description={campaigns.length === 0 ? 'None planned yet.' : `${campaigns.length} planned.`} />
+        <CardHeader title="All campaigns" description={campaigns.length === 0 ? (q ? `Nothing matches ‘${q}’.` : 'None planned yet.') : `${campaigns.length} planned.`} />
+        {/* Search within domain (bucket G-3): the campaign's name, filtered by the reader. */}
+        <div className="flex flex-col gap-2 border-t border-line px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-5">
+          <DomainSearch action="/communication/campaigns" value={q} placeholder="Search campaign name…" label="Search campaigns" />
+          <SearchSummary q={q} count={campaigns.length} clearHref="/communication/campaigns" />
+        </div>
         {campaigns.length === 0 ? (
           <CardBody>
-            <EmptyState title="No campaigns yet" description="Plan one above: pick an approved template and an audience, save the draft, and ask a second owner or ops admin to approve it." />
+            <EmptyState
+              title={q ? 'No matching campaign' : 'No campaigns yet'}
+              description={q ? `No campaign is named like ‘${q}’.` : 'Plan one above: pick an approved template and an audience, save the draft, and ask a second owner or ops admin to approve it.'}
+              action={q ? <a href="/communication/campaigns" className={buttonClass('secondary', 'sm')}>Clear search</a> : <a href="#new-campaign" className={buttonClass('secondary', 'sm')}>Plan a campaign</a>}
+            />
           </CardBody>
         ) : (
           <DataTable rows={campaigns} columns={columnsFor(clock)} getKey={(c) => c.id} href={(c) => `/communication/campaigns/${c.id}`} dense />

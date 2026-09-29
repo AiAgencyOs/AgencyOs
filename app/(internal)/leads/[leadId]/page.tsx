@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { agencyClock, clockFor, getAgencyTimeZone, type AgencyClock } from '@/lib/admin/agency-clock';
+import { readRequirementLinks, readRequirementLinkTargets } from '@/lib/admin/requirement-links';
 import { readRequirementSets } from '@/lib/admin/requirement-set';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
@@ -22,6 +23,7 @@ import { listLeadServiceSuggestions, readLeadService } from '@/modules/crm/lead-
 import { readLeadScore } from '@/modules/crm/lead-score-queries';
 import { readLeadScoreOverride } from '@/modules/crm/lead-score-override-queries';
 import { listSequencesForLead } from '@/modules/crm/lead-sequence-queries';
+import { readRequirementQuestionSends } from '@/modules/crm/requirement-question-queries';
 import { situationFor } from '@/modules/crm/follow-up-situations';
 import { readRetryHistory } from '@/lib/observability/retry-queries';
 import {
@@ -250,6 +252,14 @@ export default async function LeadConversationPage({
   const timeline = await listLeadTimeline(leadId);
   const opportunity = await getOpportunityForLead(leadId);
   const proposals = opportunity ? await listProposalsForOpportunity(opportunity.id) : [];
+  // SCR-029 (bucket G-3) — per-question clarification sends, the links a
+  // person declared from each version, and what the "Link…" form may point at.
+  const versionIds = versions.map((v) => v.id);
+  const [questionSends, requirementLinks, linkTargets] = await Promise.all([
+    readRequirementQuestionSends(versionIds),
+    readRequirementLinks(versionIds),
+    versionIds.length > 0 ? readRequirementLinkTargets({ opportunityId: opportunity?.id ?? null, projectIds: projectGroup ? [projectGroup.projectId] : [] }) : Promise.resolve({ quotations: [], designs: [], tasks: [] }),
+  ]);
   const openObjections = await listOpenObjectionsForLead(leadId);
   const meetings = await listMeetingsForLead(leadId);
   // SCR-007 — the follow-up sequences running against this lead, its proposals and its meetings.
@@ -1299,7 +1309,21 @@ export default async function LeadConversationPage({
                           ) : null}
                           {(() => {
                             const set = requirementSets.get(v.id);
-                            return set ? <RequirementSetPanel payload={parsed.data} set={set} clock={clock} /> : null;
+                            return set ? (
+                              <RequirementSetPanel
+                                payload={parsed.data}
+                                set={set}
+                                clock={clock}
+                                version={v.version}
+                                versionId={v.id}
+                                leadId={leadId}
+                                status={v.status}
+                                mayWrite={mayWrite}
+                                questionSends={questionSends.get(v.id) ?? new Map()}
+                                links={requirementLinks.get(v.id) ?? []}
+                                targets={linkTargets}
+                              />
+                            ) : null;
                           })()}
                         </div>
                       ) : v.status === 'failed' ? (

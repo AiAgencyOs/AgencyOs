@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { formatCostMinor } from '@/lib/admin/agent-eval';
 import { agencyClock } from '@/lib/admin/agency-clock';
@@ -8,6 +9,7 @@ import { formatDurationMs } from '@/lib/admin/agent-runs-eval';
 import { providerOfModel } from '@/lib/ai/model-provider';
 import { summariseRuns } from '@/lib/admin/agent-runs-eval';
 import { requireInternal } from '@/lib/auth/session';
+import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
 import {
   Badge,
@@ -28,6 +30,9 @@ import {
   humanize,
   type Column,
   type FilterChipOption,
+  buttonClass,
+  DomainSearch,
+  SearchSummary,
 } from '@/ui';
 
 export const metadata: Metadata = { title: 'Agent runs' };
@@ -35,13 +40,13 @@ export const metadata: Metadata = { title: 'Agent runs' };
 const N = new Intl.NumberFormat('en-IN');
 const LIMIT = 100;
 
-type Filters = { agent?: string; status?: string; model?: string; project?: string; provider?: string };
+type Filters = { agent?: string; status?: string; model?: string; project?: string; provider?: string; q?: string };
 
 /** The list URL with one filter changed and the others kept — a chip never resets its neighbours. */
 function runsHref(current: Filters, patch: Partial<Filters>): string {
   const next = { ...current, ...patch };
   const params = new URLSearchParams();
-  for (const key of ['agent', 'status', 'model', 'project', 'provider'] as const) {
+  for (const key of ['agent', 'status', 'model', 'project', 'provider', 'q'] as const) {
     const value = next[key];
     if (value) params.set(key, value);
   }
@@ -89,11 +94,13 @@ export default async function AgentRunsPage({ searchParams }: { searchParams: Pr
     model: raw.model || undefined,
     project: raw.project && /^[0-9a-f-]{36}$/i.test(raw.project) ? raw.project : undefined,
     provider: raw.provider || undefined,
+    // Search within domain (bucket G-3): agent, trigger, model or error text, filtered by the reader.
+    q: normaliseSearch(raw.q) || undefined,
   };
-  const filtered = Boolean(filters.agent || filters.status || filters.model || filters.project || filters.provider);
+  const filtered = Boolean(filters.agent || filters.status || filters.model || filters.project || filters.provider || filters.q);
 
   const [fetched, facets, projectFacets] = await Promise.all([
-    listAgentRuns({ agentKey: filters.agent, status: filters.status, model: filters.model, projectId: filters.project, limit: LIMIT }),
+    listAgentRuns({ agentKey: filters.agent, status: filters.status, model: filters.model, projectId: filters.project, limit: LIMIT, q: filters.q }),
     listAgentRunFacets(),
     listRunProjectFacets(),
   ]);
@@ -165,8 +172,11 @@ export default async function AgentRunsPage({ searchParams }: { searchParams: Pr
         actions={<ViewAll href="/usage" label="Usage & costs" />}
       />
 
-      {facets.agents.length > 0 ? (
-        <FilterBar>
+      {facets.agents.length > 0 || filters.q ? (
+        <FilterBar clearHref="/usage/runs" filtered={filtered}>
+          {/* Search within domain (bucket G-3): agent, trigger, model or error text, filtered by the reader. */}
+          <DomainSearch action="/usage/runs" value={filters.q ?? ''} placeholder="Search agent, trigger, model or error…" label="Search agent runs" preserve={{ agent: filters.agent, status: filters.status, model: filters.model, project: filters.project, provider: filters.provider }} />
+          <SearchSummary q={filters.q ?? ''} count={runs.length} bounded={runs.length >= LIMIT} clearHref={runsHref(filters, { q: undefined })} />
           <FilterChips options={chips('agent', facets.agents, filters, 'All agents')} />
           <FilterChips options={chips('status', facets.statuses, filters, 'All statuses')} />
           {facets.models.length > 0 ? <FilterChips options={chips('model', facets.models, filters, 'All models')} /> : null}
@@ -204,6 +214,7 @@ export default async function AgentRunsPage({ searchParams }: { searchParams: Pr
               ? 'Clear a filter to widen the list.'
               : 'Agents run only when enabled and a provider is configured — each run appears here once it does.'
           }
+          action={filtered ? <Link href="/usage/runs" className={buttonClass('secondary', 'sm')}>Clear filters</Link> : <Link href="/agents" className={buttonClass('secondary', 'sm')}>Open the AI Workforce</Link>}
         />
       ) : (
         <DataTable dense rows={runs} columns={columns} getKey={(r) => r.id} href={(r) => `/usage/runs/${r.id}`} />

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
+import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
 import { situationFor } from '@/modules/crm/follow-up-situations';
 import { readFollowUpContexts, type FollowUpContext } from '@/modules/crm/follow-up-context-queries';
@@ -41,6 +42,8 @@ import {
   statusTone,
   type Column,
   type SortDirection,
+  DomainSearch,
+  SearchSummary,
 } from '@/ui';
 
 export const metadata: Metadata = { title: 'Follow-ups' };
@@ -176,20 +179,22 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
 export default async function FollowUpsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; page?: string; sort?: string; dir?: string; channel?: string; owner?: string; due?: string; cohort?: string }>;
+  searchParams: Promise<{ status?: string; page?: string; sort?: string; dir?: string; channel?: string; owner?: string; due?: string; cohort?: string; q?: string }>;
 }) {
   const context = await requireInternal('/follow-ups');
   const clock = await agencyClock();
   if (!can(context, 'lead.read')) return <PermissionDenied />;
 
-  const { status, page: pageParam, sort: sortKey, dir, channel: channelParam, owner: ownerParam, due: dueParam, cohort: cohortParam } = await searchParams;
+  const { status, page: pageParam, sort: sortKey, dir, channel: channelParam, owner: ownerParam, due: dueParam, cohort: cohortParam, q: qRaw } = await searchParams;
+  // Search within domain (bucket G-3): the lead's title or the situation, filtered by the reader.
+  const q = normaliseSearch(qRaw);
   const due = (DUE_FILTERS as readonly string[]).includes(dueParam ?? '') ? (dueParam as DueFilter) : undefined;
   // SCR-013 — the Reactivation cohort sub-screen: `cohort=` opens it on a chip.
   const cohortFilter = isReactivationCohortFilter(cohortParam) ? cohortParam : null;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
   const [allSequences, rawSequences, savedViews, roster, cohort] = await Promise.all([
-    listFollowUpSequencesDetailed({}),
-    listFollowUpSequencesDetailed({ status }),
+    listFollowUpSequencesDetailed({ q: q || undefined }),
+    listFollowUpSequencesDetailed({ status, q: q || undefined }),
     listSavedViews('/follow-ups'),
     listInternalRoster(),
     listReactivationCohort(),
@@ -208,14 +213,14 @@ export default async function FollowUpsPage({
   const ownerIds = [...new Set(allSequences.map((s) => s.ownerId).filter((id): id is string => id !== null))];
   const nameOf = (id: string | null) => (id ? (roster.find((m) => m.userId === id)?.fullName ?? id.slice(0, 8)) : null);
 
-  const keep = [status ? `status=${status}` : '', channel ? `channel=${channel}` : '', ownerParam === 'mine' ? 'owner=mine' : owner ? `owner=${owner}` : '', due ? `due=${due}` : ''].filter(Boolean);
+  const keep = [status ? `status=${status}` : '', channel ? `channel=${channel}` : '', ownerParam === 'mine' ? 'owner=mine' : owner ? `owner=${owner}` : '', due ? `due=${due}` : '', q ? `q=${encodeURIComponent(q)}` : ''].filter(Boolean);
   const currentQuery = [...keep, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
   const qs = (extra: string) => `/follow-ups?${[...keep, extra].filter(Boolean).join('&')}`;
   const chipHref = (over: { status?: string; channel?: string; owner?: string; due?: string }) => {
-    const next = { status: status ?? '', channel: channel ?? '', owner: ownerParam === 'mine' ? 'mine' : (owner ?? ''), due: due ?? '', ...over };
-    const q = new URLSearchParams();
-    for (const [k, v] of Object.entries(next)) if (v) q.set(k, v);
-    const s = q.toString();
+    const next = { status: status ?? '', channel: channel ?? '', owner: ownerParam === 'mine' ? 'mine' : (owner ?? ''), due: due ?? '', q, ...over };
+    const search = new URLSearchParams();
+    for (const [k, v] of Object.entries(next)) if (v) search.set(k, v);
+    const s = search.toString();
     return `/follow-ups${s ? `?${s}` : ''}`;
   };
 
@@ -236,7 +241,7 @@ export default async function FollowUpsPage({
   const sequences = sortRows(filteredRows, sortKey, direction, COMPARATORS);
   const { page, pageCount, rows: pageRows } = paginate(sequences, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
   const mapping = await listTemplateSituationMapping(allSequences);
-  const filtering = Boolean(status || channel || owner || due);
+  const filtering = Boolean(status || channel || owner || due || q);
 
   const viewOf = (r: Row): SequenceDetailView => {
     const situation = situationFor(r.situation_key);
@@ -302,7 +307,10 @@ export default async function FollowUpsPage({
         </StatGrid>
       ) : null}
 
-      <FilterBar>
+      <FilterBar clearHref="/follow-ups" filtered={filtering}>
+        {/* Search within domain (bucket G-3): the lead's title or the situation, filtered by the reader. */}
+        <DomainSearch action="/follow-ups" value={q} placeholder="Search lead or situation…" label="Search follow-ups" preserve={{ status, channel, owner: ownerParam, due }} />
+        <SearchSummary q={q} count={filteredRows.length} clearHref={`/follow-ups${keep.filter((k) => !k.startsWith('q=')).length > 0 ? `?${keep.filter((k) => !k.startsWith('q=')).join('&')}` : ''}`} />
         <FilterChips
           options={[
             { key: 'all', label: 'All', href: chipHref({ status: '' }), active: !status },

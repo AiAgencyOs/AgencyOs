@@ -292,6 +292,19 @@ export const requirementPayloadSchema = z.object({
   platforms: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
   integrations: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
   timelineBudgetNotes: z.string().trim().max(2_000).default(''),
+  /**
+   * SCR-029 (bucket G-3). The three sections the PDF's Requirement Set
+   * lists that the payload had folded away: every objective in full (the
+   * summary is a sentence, not the list), the business rules, and the
+   * non-functional requirements. `constraints` stays for every version
+   * written before these existed — the panel renders it under "Business
+   * rules" and says which version recorded it as constraints. All default
+   * empty so every historical payload still parses; the collector may fill
+   * them and never invents one when the transcript is silent.
+   */
+  objectives: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
+  businessRules: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
+  nonFunctionalRequirements: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
 });
 
 /**

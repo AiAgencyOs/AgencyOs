@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { ilikeAny } from '@/lib/db/search';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -41,13 +42,16 @@ function summarize(items: TemplateItems) {
 
 const EMPTY = templateItemsSchema.parse({});
 
-export async function listProjectTemplates(): Promise<ProjectTemplateSummary[]> {
+export async function listProjectTemplates(q?: string): Promise<ProjectTemplateSummary[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
+  let query = supabase
     .schema('projects')
     .from('project_templates')
     .select('id, name, description, source_project_id, template_items, created_by, created_at')
     .order('created_at', { ascending: false });
+  // Search within domain (bucket G-3): name or description, server-side.
+  if (q) query = query.or(ilikeAny(['name', 'description'], q));
+  const { data, error } = await query;
   if (error) unreadable('listProjectTemplates', error);
 
   const rows = data ?? [];

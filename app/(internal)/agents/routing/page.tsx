@@ -81,7 +81,18 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
   // one description each, a real table from `lg` up and a card list below,
   // so a phone gets a readable list rather than a sideways scroll.
   const modelColumns: Column<(typeof models)[number]>[] = [
-    { key: 'model', header: 'Model', primary: true, cellClassName: 'font-mono text-xs', cell: (m) => m.modelId },
+    // SCR-061 (bucket G-3): the id opens the model's detail page.
+    {
+      key: 'model',
+      header: 'Model',
+      primary: true,
+      cellClassName: 'font-mono text-xs',
+      cell: (m) => (
+        <Link href={`/agents/models/${encodeURIComponent(m.modelId)}`} className="underline-offset-2 hover:underline">
+          {m.modelId}
+        </Link>
+      ),
+    },
     { key: 'provider', header: 'Provider', cell: (m) => m.provider },
     { key: 'status', header: 'Status', badge: true, cell: (m) => <StatusBadge status={m.status} /> },
     { key: 'capabilities', header: 'Capabilities', cellClassName: 'text-muted', cell: (m) => m.capabilities.join(', ') || '—' },

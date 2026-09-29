@@ -252,6 +252,9 @@ const REQUIREMENT_PROMPT = [
   'niceToHaves are additions the client mentioned wanting but did not commit to as required scope.',
   'exclusions are things the client explicitly said are NOT included, not simply things never mentioned.',
   'designReferences are links or descriptions of examples the client pointed to.',
+  // SCR-029 (bucket G-3): the six optional sections. Each is filled only from
+  // what the transcript states; an empty array is the honest answer otherwise.
+  'objectives are the outcomes the client said they want from the project, each in full. userRoles are the kinds of people who will use it. platforms are where it must run. integrations are the systems it must talk to. businessRules are rules the client stated the product must follow. nonFunctionalRequirements are performance, security, availability or compliance needs the client stated. Leave any of these empty when the transcript does not say.',
 ].join(' ');
 
 const REQUIREMENT_EXTRACT: AgentWorkflow = {

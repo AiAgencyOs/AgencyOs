@@ -140,11 +140,11 @@ screen exists; at element level it does not hold.
 | 028 | Recent requirement changes | BUILT | `app/(internal)/requirements/page.tsx` — `readRecentRequirementChanges` (change requests raised/decided, baselines frozen, plan questions) |
 | 028 | Request clarification / Create change request from the dashboard | BUILT ×2 | `app/(internal)/requirements/requirements-doors.tsx` — the Plan/Scope pages' own doors with a project picker |
 | 028 | Export scope summary | BUILT | `app/api/requirements/scope-summary/route.ts` (org-wide CSV) and `app/api/projects/[projectId]/scope/export/route.ts` (per project) |
-| 029 | Objectives | PARTIAL | Summary only |
-| 029 | User roles / Platforms / Integrations | MISSING ×3 | Not in the requirement payload |
-| 029 | Business rules / Non-functional requirements | PARTIAL ×2 | Merged into "Constraints and rules" |
-| 029 | Request client clarification | PARTIAL | Whole-version send only |
-| 029 | Link to quotation/design/development task | PARTIAL | Read-only "Cited by" |
+| 029 | Objectives | BUILT | `app/(internal)/leads/[leadId]/requirement-set-panel.tsx` — every objective as a section with its count (`requirementPayloadSchema.objectives`; the revise form and the collector fill it) |
+| 029 | User roles / Platforms / Integrations | BUILT ×3 | `app/(internal)/leads/[leadId]/requirement-set-panel.tsx` — three sections from the payload (`userRoles`, `platforms`, `integrations`), each with its count, "none recorded in v<n>" when empty |
+| 029 | Business rules / Non-functional requirements | BUILT ×2 | `app/(internal)/leads/[leadId]/requirement-set-panel.tsx` — `businessRules` and `nonFunctionalRequirements` sections; an older version's `constraints` shown under Business rules with the note "recorded as constraints in v<n>" |
+| 029 | Request client clarification | BUILT | `app/(internal)/leads/[leadId]/requirement-question-form.tsx` per open question → `crm.send_requirement_question` (through `crm.send_outbound_message`; `crm.requirement_question_sends`; audited `requirement.question_sent`); the whole-version send stays |
+| 029 | Link to quotation/design/development task | BUILT | `app/(internal)/leads/[leadId]/requirement-link-form.tsx` → `crm.link_requirement` (`crm.requirement_links`, one row per version and target, audited `requirement.linked`); "Linked to" list beside the derived "Cited by" |
 | 030 | Approval evidence | BUILT | `app/(internal)/projects/[projectId]/scope/approval-form.tsx` → `projects.record_scope_approval_evidence` (approved_by/at, evidence url, note) |
 | 031 | Paid / in-progress counts | BUILT | `app/(internal)/projects/[projectId]/change-request-panel.tsx` — Paid / In progress / Awaiting payment tiles |
 | 031 | Payment gate | BUILT | `app/(internal)/projects/[projectId]/change-request-panel.tsx` — the request's OWN invoice (`change_requests.invoice_id`) |
@@ -222,7 +222,7 @@ screen exists; at element level it does not hold.
 | 059 | Template detail / Audience-project selection / Send preview / Schedule-send | BUILT ×4 | `app/(internal)/communication/templates/[templateId]/page.tsx`; `new-campaign-form.tsx` (project audience, send-from time); `campaigns/[campaignId]/page.tsx` (send preview via `src/modules/crm/campaign-preview-queries.ts`) |
 | 060 | Retry count / Requeue with reason | BUILT ×2 | `app/(internal)/communication/page.tsx` (Retries tile); `app/(internal)/operations/requeue-form.tsx` → `core.requeue_job_with_reason` |
 | 060 | Escalate to Admin | BUILT | `app/(internal)/operations/page.tsx` and `app/(internal)/communication/page.tsx` mount F-A's `EscalateControl` (`core.escalations`, subject_type `delivery`) |
-| 061 | Open model/tool detail | PARTIAL | Agent and run drill-down only |
+| 061 | Open model/tool detail | BUILT | `app/(internal)/agents/models/[modelId]/page.tsx` (registry row, added by/at, routes, period runs/tokens/cost/latency, last 20 runs) and `app/(internal)/agents/tools/[toolName]/page.tsx` (definition, bound agents, per-agent permissions, calls and failure rate, last 20 calls); linked from the dashboard's Model usage and Tools list, the routing registry and the agent page's tool list |
 
 ## AI Workforce, Operations, Governance, Integrations, Settings (062–071)
 
@@ -257,7 +257,7 @@ Shared implementation (12): sectioned navigation, dark rail + light workspace + 
 | Help/status in header | BUILT | `app/(internal)/system-status.tsx` in the layout, fed by the readiness evaluator (`system-status-actions.ts`) |
 | Breadcrumb | BUILT | `app/(internal)/nav.tsx` `HeaderTrail` — module › page › record (`TrailLabel`), shown from the tablet width |
 | Primary + overflow actions | BUILT | `src/ui/primitives/row-actions.tsx` (`RowActionsMenu`) |
-| Search within domain | PARTIAL | Only on leads, clients, quotations, invoices, search |
+| Search within domain | BUILT | `src/ui/primitives/domain-search.tsx` (`DomainSearch` GET form + `SearchSummary` "N results for 'q'"), escaping in `src/lib/db/search.ts`, server-side `or=ilike` in each reader — on projects, follow-ups, meetings, payments, expenses, approvals, notifications (composed items, filtered on the server), team, project templates, campaigns, agent runs, QA open bugs, audit trail; leads, clients, quotations, invoices and search keep their own boxes |
 | Loading skeleton | BUILT | `app/(internal)/profile/loading.tsx`, `search/loading.tsx`, `help/loading.tsx` |
 | Integration unavailable/degraded state | BUILT | `src/ui/primitives/integration-state.tsx`, used by `/integrations` and `/production-readiness` |
 | Stale-data warning | BUILT | `src/lib/realtime/live-refresh.tsx` renders `StaleDataWarning` on every `LiveRefresh` page once the channel is not live and the page has not re-read |

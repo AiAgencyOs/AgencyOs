@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { ilikeAny } from '@/lib/db/search';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -23,16 +24,19 @@ export type WhatsAppTemplateRow = {
   updatedAt: string;
 };
 
-export async function listWhatsAppTemplates(): Promise<WhatsAppTemplateRow[]> {
+export async function listWhatsAppTemplates(q?: string): Promise<WhatsAppTemplateRow[]> {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
+  let query = supabase
     .schema('crm')
     .from('whatsapp_templates')
     .select('id, situation_key, template_name, language_code, status, parameters, active, updated_at')
     .order('situation_key', { ascending: true })
     .order('language_code', { ascending: true })
     .limit(500);
+  // Search within domain (bucket G-3): the template's name or its situation, server-side.
+  if (q) query = query.or(ilikeAny(['template_name', 'situation_key'], q));
+  const { data, error } = await query;
 
   if (error) unreadable('listWhatsAppTemplates', error);
 

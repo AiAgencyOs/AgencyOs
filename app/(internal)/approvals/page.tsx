@@ -3,8 +3,9 @@ import Link from 'next/link';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
+import { normaliseSearch } from '@/lib/db/search';
 import { LiveRefresh } from '@/lib/realtime';
-import { buttonClass, Badge, Card, CardHeader, EmptyState, FilterBar, FilterChips, IconApprovals, IconCheck, IconClock, IconAlert, PageHeader, Stat, StatGrid, statusTone, humanize } from '@/ui';
+import { buttonClass, Badge, Card, CardHeader, DomainSearch, EmptyState, FilterBar, FilterChips, IconApprovals, IconCheck, IconClock, IconAlert, PageHeader, SearchSummary, Stat, StatGrid, statusTone, humanize } from '@/ui';
 import { listApprovalPolicies, listDecidedApprovals, listPendingApprovals } from '@/modules/approvals/queries';
 import { APPROVER_ROLES, isOverdue, type ApprovalState } from '@/modules/approvals/schema';
 import type { ApprovalPolicyRow } from '@/modules/approvals/types';
@@ -53,23 +54,26 @@ const SUBJECT_LABEL: Record<string, string> = {
 export default async function ApprovalsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; role?: string }>;
+  searchParams: Promise<{ type?: string; role?: string; q?: string }>;
 }) {
   await requireInternal('/approvals');
   const clock = await agencyClock();
-  const { type: typeFilter, role: roleFilter } = await searchParams;
+  const { type: typeFilter, role: roleFilter, q: qRaw } = await searchParams;
+  // Search within domain (bucket G-3): the request's summary or subject type, filtered by the reader.
+  const q = normaliseSearch(qRaw);
 
-  const [allPending, policies, decided] = await Promise.all([listPendingApprovals(), listApprovalPolicies(), listDecidedApprovals(50)]);
+  const [allPending, policies, decided] = await Promise.all([listPendingApprovals(100, q || undefined), listApprovalPolicies(), listDecidedApprovals(50, q || undefined)]);
   // SCR-068: filters by subject type and required role, as chips that
   // round-trip through the URL. The KPIs stay over the whole queue — a
   // filtered "waiting" count would read as the queue being shorter than it is.
   const pending = allPending.filter((r) => (!typeFilter || r.subject_type === typeFilter) && (!roleFilter || r.required_role === roleFilter));
   const typesPresent = [...new Set(allPending.map((r) => r.subject_type))].sort();
-  const filterHref = (over: { type?: string; role?: string }) => {
+  const filterHref = (over: { type?: string; role?: string; q?: string }) => {
     const p = new URLSearchParams();
-    const merged = { type: typeFilter, role: roleFilter, ...over };
+    const merged = { type: typeFilter, role: roleFilter, q, ...over };
     if (merged.type) p.set('type', merged.type);
     if (merged.role) p.set('role', merged.role);
+    if (merged.q) p.set('q', merged.q);
     const s = p.toString();
     return s ? `/approvals?${s}` : '/approvals';
   };
@@ -139,8 +143,11 @@ export default async function ApprovalsPage({
         <Stat label="Median time to decide" value={medianHours === null ? '—' : medianHours < 1 ? `${Math.round(medianHours * 60)}m` : medianHours < 48 ? `${Math.round(medianHours)}h` : `${Math.round(medianHours / 24)}d`} caption="From request to decision" tone="accent" icon={<IconClock size={16} />} />
       </StatGrid>
 
-      {allPending.length > 0 ? (
-        <FilterBar clearHref="/approvals" filtered={Boolean(typeFilter || roleFilter)}>
+      {allPending.length > 0 || q ? (
+        <FilterBar clearHref="/approvals" filtered={Boolean(typeFilter || roleFilter || q)}>
+          {/* Search within domain (bucket G-3): the request's summary or subject type, filtered by the reader. */}
+          <DomainSearch action="/approvals" value={q} placeholder="Search summary or subject…" label="Search approvals" preserve={{ type: typeFilter, role: roleFilter }} />
+          <SearchSummary q={q} count={pending.length} clearHref={filterHref({ q: '' })} />
           <FilterChips
             options={[
               { key: 'all-types', label: 'Every type', href: filterHref({ type: undefined }), active: !typeFilter },
@@ -159,13 +166,15 @@ export default async function ApprovalsPage({
       {pending.length === 0 ? (
         <EmptyState
           icon={<IconApprovals size={22} />}
-          title={allPending.length > 0 ? 'Nothing matches these filters' : 'Nothing is waiting on a decision'}
+          title={allPending.length > 0 ? 'Nothing matches these filters' : q ? `Nothing matches ‘${q}’` : 'Nothing is waiting on a decision'}
           description={
             allPending.length > 0
               ? `${allPending.length} request${allPending.length === 1 ? '' : 's'} waiting under other filters.`
-              : 'When something needs a decision — a deliverable, an invoice, a refund — it appears here.'
+              : q
+                ? 'No pending request has that text in its summary or subject type.'
+                : 'When something needs a decision — a deliverable, an invoice, a refund — it appears here.'
           }
-          action={allPending.length > 0 ? <Link href="/approvals" className={buttonClass('secondary', 'sm')}>Clear filters</Link> : <Link href="/dashboard" className={buttonClass('secondary', 'sm')}>Back to the Command Center</Link>}
+          action={allPending.length > 0 || q ? <Link href="/approvals" className={buttonClass('secondary', 'sm')}>Clear filters</Link> : <Link href="/dashboard" className={buttonClass('secondary', 'sm')}>Back to the Command Center</Link>}
         />
       ) : (
         <ul className="flex flex-col gap-3">

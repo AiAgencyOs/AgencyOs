@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
+import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
 import { listPaymentAccounts, listPayments, listPendingPaymentClaims } from '@/modules/finance/queries';
 import { listPaymentSubmissions } from '@/modules/finance/overview-queries';
@@ -46,6 +47,8 @@ import {
   PermissionDenied,
   sortRows,
   type SortDirection,
+  DomainSearch,
+  SearchSummary,
 } from '@/ui';
 
 export const metadata: Metadata = { title: 'Payments' };
@@ -128,20 +131,22 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
 export default async function PaymentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; page?: string; sort?: string; dir?: string; recon?: string }>;
+  searchParams: Promise<{ status?: string; page?: string; sort?: string; dir?: string; recon?: string; q?: string }>;
 }) {
   const context = await requireInternal('/finance/payments');
   const clock = await agencyClock();
   if (!can(context, 'invoice.read')) return <PermissionDenied />;
 
-  const { status, page: pageParam, sort: sortKey, dir, recon: reconParam } = await searchParams;
+  const { status, page: pageParam, sort: sortKey, dir, recon: reconParam, q: qRaw } = await searchParams;
+  // Search within domain (bucket G-3): provider reference, provider or invoice number, filtered by the reader.
+  const q = normaliseSearch(qRaw);
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
-  const currentQuery = [status ? `status=${status}` : '', sortKey ? `sort=${sortKey}&dir=${direction}` : '']
+  const currentQuery = [status ? `status=${status}` : '', q ? `q=${encodeURIComponent(q)}` : '', sortKey ? `sort=${sortKey}&dir=${direction}` : '']
     .filter(Boolean)
     .join('&');
   const mayReconcile = can(context, 'invoice.issue');
   const [allPayments, savedViews, pendingClaims, claims, reconciliations, accounts] = await Promise.all([
-    listPayments(),
+    listPayments(200, q || undefined),
     listSavedViews('/finance/payments'),
     mayReconcile ? listPendingPaymentClaims() : Promise.resolve([]),
     listPaymentSubmissions('all', 300),
@@ -328,14 +333,17 @@ export default async function PaymentsPage({
         </StatGrid>
       ) : null}
 
-      <FilterBar>
+      <FilterBar clearHref="/finance/payments" filtered={Boolean(status || q)}>
+        {/* Search within domain (bucket G-3): provider reference, provider or invoice number, filtered by the reader. */}
+        <DomainSearch action="/finance/payments" value={q} placeholder="Search reference or invoice…" label="Search payments" preserve={{ status, recon: reconParam }} />
+        <SearchSummary q={q} count={allPayments.length} clearHref={status ? `/finance/payments?status=${status}` : '/finance/payments'} />
         <FilterChips
           options={[
-            { key: 'all', label: 'All', href: '/finance/payments', active: !status },
+            { key: 'all', label: 'All', href: q ? `/finance/payments?q=${encodeURIComponent(q)}` : '/finance/payments', active: !status },
             ...STATUS_FILTERS.map((s) => ({
               key: s,
               label: humanize(s),
-              href: `/finance/payments?status=${s}`,
+              href: `/finance/payments?status=${s}${q ? `&q=${encodeURIComponent(q)}` : ''}`,
               active: status === s,
             })),
           ]}

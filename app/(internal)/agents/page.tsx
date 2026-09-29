@@ -9,7 +9,7 @@ import { readOperationalSettings, settingInstant, settingText } from '@/lib/admi
 import { getAgentUsage } from '@/lib/admin/usage';
 import { providerOfModel } from '@/lib/ai/model-provider';
 import { providerCredentialStatus } from '@/lib/ai/vault';
-import { boundToolKeysFor } from '@/modules/agents/permissions-schema';
+import { boundToolKeysFor, listToolDefinitions } from '@/modules/agents/permissions-schema';
 import { listLatestAgentValidations } from '@/modules/agents/validation-queries';
 import { requireInternal } from '@/lib/auth/session';
 import { can, hasRole } from '@/lib/authz/permissions';
@@ -253,7 +253,10 @@ export default async function AgentsPage() {
               {metrics.byModel.map((m) => (
                 <li key={m.model} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[13px] sm:px-5">
                   <span className="flex min-w-0 items-center gap-2">
-                    <code className="truncate text-xs">{m.model}</code>
+                    {/* SCR-061: each model opens its detail — registry row, routes, runs. */}
+                    <Link href={`/agents/models/${encodeURIComponent(m.model)}`} className="min-w-0 underline-offset-2 hover:underline">
+                      <code className="truncate text-xs">{m.model}</code>
+                    </Link>
                     <span className="tabular text-muted">{m.runs} run{m.runs === 1 ? '' : 's'}</span>
                   </span>
                   <span className="tabular flex items-center gap-3">
@@ -288,6 +291,30 @@ export default async function AgentsPage() {
           )}
         </Card>
       </div>
+
+      {/* SCR-061 (bucket G-3): the tools, each opening its detail — what it
+          does, who is bound to it, how often it was called and failed. */}
+      <Card>
+        <CardHeader title="Tools" description="Every tool an agent can be bound to, from the registry in code. Open one for its calls, failures and per-agent permissions." />
+        <ul className="divide-y divide-line">
+          {listToolDefinitions().map((t) => (
+            <li key={t.name} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-[13px] sm:px-5">
+              <span className="flex min-w-0 items-center gap-2">
+                <Link href={`/agents/tools/${encodeURIComponent(t.name)}`} className="min-w-0 underline-offset-2 hover:underline">
+                  <code className="truncate text-xs">{t.name}</code>
+                </Link>
+                <Badge tone={t.actionClass === 'L0' ? 'success' : t.actionClass === 'L1' ? 'info' : 'warning'}>{t.actionClass}</Badge>
+              </span>
+              <span className="flex min-w-0 items-center gap-3 text-muted">
+                <span className="hidden truncate sm:inline">{t.purpose}</span>
+                <span className="tabular shrink-0">
+                  {t.boundAgents.length} agent{t.boundAgents.length === 1 ? '' : 's'}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </Card>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)]">
         <Card>

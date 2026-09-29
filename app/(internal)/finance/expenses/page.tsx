@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
+import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
 import { listExpenses, listInvoices } from '@/modules/finance/queries';
 import { readAiCostByProject } from '@/modules/finance/ai-cost-queries';
@@ -28,6 +29,8 @@ import {
   type SortDirection,
   buttonClass,
   TrendChart,
+  DomainSearch,
+  SearchSummary,
 } from '@/ui';
 
 import { EditExpenseForm } from './expense-edit';
@@ -111,17 +114,19 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
 export default async function ExpensesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; sort?: string; dir?: string }>;
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string; q?: string }>;
 }) {
   const context = await requireInternal('/finance/expenses');
   const clock = await agencyClock();
   if (!can(context, 'invoice.read')) return <PermissionDenied />;
 
-  const { page: pageParam, sort: sortKey, dir } = await searchParams;
+  const { page: pageParam, sort: sortKey, dir, q: qRaw } = await searchParams;
+  // Search within domain (bucket G-3): vendor, description or category, filtered by the reader.
+  const q = normaliseSearch(qRaw);
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
-  const currentQuery = sortKey ? `sort=${sortKey}&dir=${direction}` : '';
+  const currentQuery = [q ? `q=${encodeURIComponent(q)}` : '', sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
   const [rawExpenses, projects, invoices, savedViews, aiCosts, budgetVariance] = await Promise.all([
-    listExpenses(),
+    listExpenses(500, q || undefined),
     listProjects(500),
     listInvoices(500),
     listSavedViews('/finance/expenses'),
@@ -343,6 +348,12 @@ export default async function ExpensesPage({
 
       {canRecord ? <RecordExpenseForm projects={projects.map((p) => ({ id: p.id, name: p.name }))} /> : null}
 
+      {/* Search within domain (bucket G-3): vendor, description or category, filtered by the reader. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <DomainSearch action="/finance/expenses" value={q} placeholder="Search vendor, description or category…" label="Search expenses" preserve={{ sort: sortKey, dir }} />
+        <SearchSummary q={q} count={expenses.length} clearHref={sortKey ? `/finance/expenses?sort=${sortKey}&dir=${direction}` : '/finance/expenses'} />
+      </div>
+
       {expenses.length > 0 ? (
         <>
           <DataTable
@@ -364,8 +375,9 @@ export default async function ExpensesPage({
       ) : (
         <EmptyState
           icon={<IconInvoices size={22} />}
-          title="No expenses yet"
-          description="Infrastructure, AI, tooling, vendor and contractor costs recorded here."
+          title={q ? 'No matching expenses' : 'No expenses yet'}
+          description={q ? `No expense matches ‘${q}’ on vendor, description or category.` : 'Infrastructure, AI, tooling, vendor and contractor costs recorded here.'}
+          action={q ? <a href="/finance/expenses" className={buttonClass('secondary', 'sm')}>Clear search</a> : canRecord ? <a href="#record-expense" className={buttonClass('secondary', 'sm')}>Record an expense</a> : <a href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</a>}
         />
       )}
     </div>

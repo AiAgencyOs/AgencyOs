@@ -4,8 +4,9 @@ import Link from 'next/link';
 import { auditActionPrefixes, auditFacets, changedKeys, readAuditLog } from '@/lib/audit/queries';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
+import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
-import { Badge, buttonClass, Card, cx, EmptyState, FilterBar, FilterChips, humanize, IconAudit, IconDownload, inputClass, PageHeader, PermissionDenied, selectClass } from '@/ui';
+import { Badge, buttonClass, Card, cx, DomainSearch, EmptyState, FilterBar, FilterChips, humanize, IconAudit, IconDownload, inputClass, PageHeader, PermissionDenied, SearchSummary, selectClass } from '@/ui';
 
 export const metadata: Metadata = { title: 'Audit log' };
 
@@ -29,19 +30,22 @@ function show(value: unknown): string {
 export default async function AuditPage({
   searchParams,
 }: {
-  searchParams: Promise<{ action?: string; subject?: string; actor?: string; from?: string; to?: string; correlation?: string }>;
+  searchParams: Promise<{ action?: string; subject?: string; actor?: string; from?: string; to?: string; correlation?: string; q?: string }>;
 }) {
   const context = await requireInternal('/audit');
   const clock = await agencyClock();
   if (!can(context, 'audit.read')) return <PermissionDenied />;
 
-  const { action, subject, actor, from, to, correlation } = await searchParams;
+  const { action, subject, actor, from, to, correlation, q: qRaw } = await searchParams;
+  // Search within domain (bucket G-3): the action or subject type text, filtered by the reader.
+  const q = normaliseSearch(qRaw);
   const isoDay = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
   const fromDay = isoDay(from);
   const toDay = isoDay(to);
 
   const [entries, prefixes, facets] = await Promise.all([
     readAuditLog({
+      q: q || undefined,
       actionPrefix: action,
       subjectType: subject,
       actorType: actor,
@@ -57,12 +61,12 @@ export default async function AuditPage({
 
   const qs = (over: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
-    const merged = { action, subject, actor, from: fromDay, to: toDay, correlation, ...over };
+    const merged = { action, subject, actor, from: fromDay, to: toDay, correlation, q, ...over };
     for (const [k, v] of Object.entries(merged)) if (v) p.set(k, v);
     const s = p.toString();
     return s ? `?${s}` : '';
   };
-  const anyFilter = Boolean(action || subject || actor || fromDay || toDay);
+  const anyFilter = Boolean(action || subject || actor || fromDay || toDay || q);
 
   return (
     <div className="flex flex-col gap-5">
@@ -76,7 +80,10 @@ export default async function AuditPage({
         }
       />
 
-      <FilterBar>
+      <FilterBar clearHref="/audit" filtered={anyFilter}>
+        {/* Search within domain (bucket G-3): the action or subject type text, filtered by the reader. */}
+        <DomainSearch action="/audit" value={q} placeholder="Search action or subject…" label="Search audit log" preserve={{ action, subject, actor, from: fromDay, to: toDay, correlation }} />
+        <SearchSummary q={q} count={entries.length} bounded={entries.length >= 100} clearHref={`/audit${qs({ q: undefined })}`} />
         {prefixes.length > 0 ? (
           <FilterChips
             options={[

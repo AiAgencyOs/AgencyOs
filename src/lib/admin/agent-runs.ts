@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { ilikeAny } from '@/lib/db/search';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -45,6 +46,8 @@ export type AgentRunFilters = {
   model?: string;
   projectId?: string;
   limit?: number;
+  /** Search within domain (bucket G-3): agent key, trigger, model or the error text. Server-side. */
+  q?: string;
 };
 
 const RUN_COLUMNS =
@@ -68,6 +71,8 @@ export async function listAgentRuns(filters: AgentRunFilters = {}): Promise<Agen
   if (filters.status) query = query.eq('status', filters.status);
   if (filters.model) query = query.eq('model', filters.model);
   if (filters.projectId) query = query.eq('project_id', filters.projectId);
+  // `subject_id` is a uuid, which ilike refuses; the text columns are the human-named ones.
+  if (filters.q) query = query.or(ilikeAny(['agent_key', 'trigger', 'model', 'error'], filters.q));
 
   const { data, error } = await query;
   if (error) unreadable('listAgentRuns', error);

@@ -5,6 +5,7 @@ import { agencyClock, clockFor, getAgencyTimeZone } from '@/lib/admin/agency-clo
 import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
 import { googleCalendarConfig } from '@/lib/scheduling/google';
 import { requireInternal } from '@/lib/auth/session';
+import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
 import {
   bookedOverlaps,
@@ -19,7 +20,7 @@ import {
 import { readMeetingProjects } from '@/modules/crm/meeting-project-queries';
 import { listJobsForMeetings, listMeetings } from '@/modules/crm/queries';
 import { MEETING_MODES, MEETING_STATUSES } from '@/modules/crm/schema';
-import { buttonClass, Badge, Callout, EmptyState, IconCalendar, IconClock, MonthGrid, PageHeader, Stat, StatGrid, StatusBadge, cx, humanize, statusTone, PermissionDenied, type CalendarEntry } from '@/ui';
+import { buttonClass, Badge, Callout, DomainSearch, EmptyState, IconCalendar, IconClock, MonthGrid, PageHeader, SearchSummary, Stat, StatGrid, StatusBadge, cx, humanize, statusTone, PermissionDenied, type CalendarEntry } from '@/ui';
 
 import { VerifyCalendarForm } from '../settings/forms';
 
@@ -46,7 +47,7 @@ const MONTH = /^(\d{4})-(\d{2})$/;
 export default async function MeetingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ window?: string; status?: string; mode?: string; owner?: string; view?: string; month?: string }>;
+  searchParams: Promise<{ window?: string; status?: string; mode?: string; owner?: string; view?: string; month?: string; q?: string }>;
 }) {
   const context = await requireInternal('/meetings');
   if (!can(context, 'lead.read')) return <PermissionDenied />;
@@ -82,8 +83,10 @@ export default async function MeetingsPage({
   // own; its lead's assignee is the nearest thing, and 'mine' is the reader.
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const owner = params.owner === 'mine' ? context.userId : UUID.test(params.owner ?? '') ? params.owner : undefined;
+  // Search within domain (bucket G-3): the purpose or the lead's title, filtered by the reader.
+  const q = normaliseSearch(params.q);
 
-  const rows = await listMeetings({ from: window.from, to: window.to, status, mode, owner, newestFirst: window.key === 'past', limit: LIMIT });
+  const rows = await listMeetings({ from: window.from, to: window.to, status, mode, owner, newestFirst: window.key === 'past', limit: LIMIT, q: q || undefined });
   const jobs = await listJobsForMeetings(rows.map((r) => r.id));
   // SCR-010 — the project each meeting is about, when it is about one.
   const projectLinks = await readMeetingProjects(rows.map((r) => r.id));
@@ -98,8 +101,8 @@ export default async function MeetingsPage({
   const conflicts = bookedOverlaps(rows);
   const groups = groupByDay(rows, (iso) => clock.dayKey(iso));
 
-  const href = (over: Partial<{ window: string; status: string; mode: string; owner: string; view: string; month: string }>) => {
-    const q = new URLSearchParams();
+  const href = (over: Partial<{ window: string; status: string; mode: string; owner: string; view: string; month: string; q: string }>) => {
+    const search = new URLSearchParams();
     const next = {
       window: calendar ? '' : window.key,
       status,
@@ -107,10 +110,11 @@ export default async function MeetingsPage({
       owner: params.owner === 'mine' ? 'mine' : owner,
       view: calendar ? 'calendar' : '',
       month: calendar && monthMatch ? monthKey : '',
+      q,
       ...over,
     };
-    for (const [k, v] of Object.entries(next)) if (v) q.set(k, v);
-    const s = q.toString();
+    for (const [k, v] of Object.entries(next)) if (v) search.set(k, v);
+    const s = search.toString();
     return `/meetings${s ? `?${s}` : ''}`;
   };
 
@@ -194,6 +198,9 @@ export default async function MeetingsPage({
             <span className="ml-1 font-mono text-[10.5px] text-faint">agency days · {agencyZone}</span>
           </div>
         ) : null}
+        {/* Search within domain (bucket G-3): purpose or the lead's title, filtered by the reader. */}
+        <DomainSearch action="/meetings" value={q} placeholder="Search lead or purpose…" label="Search meetings" preserve={{ window: calendar ? undefined : window.key, status, mode, owner: params.owner, view: calendar ? 'calendar' : undefined, month: calendar && monthMatch ? monthKey : undefined }} />
+        <SearchSummary q={q} count={rows.length} bounded={rows.length >= LIMIT} clearHref={href({ q: '' })} />
         <div className="flex items-center gap-1">
           <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-faint">Lead owner</span>
           <Link href={href({ owner: '' })} className={chip(!owner)}>Anyone</Link>
@@ -233,11 +240,11 @@ export default async function MeetingsPage({
           icon={<IconClock size={20} />}
           title={`No meetings in ${window.label}`}
           description={
-            status || mode || owner
+            status || mode || owner || q
               ? 'Nothing matches these filters in this window. That is a count of rows, not a guess.'
               : 'No meeting has been requested or booked for this window. Nothing is estimated here; a meeting appears when one is recorded.'
           }
-          action={status || mode || owner ? <Link href="/meetings" className={buttonClass('secondary', 'sm')}>Clear filters</Link> : <Link href="/leads" className={buttonClass('secondary', 'sm')}>Open leads</Link>}
+          action={status || mode || owner || q ? <Link href="/meetings" className={buttonClass('secondary', 'sm')}>Clear filters</Link> : <Link href="/leads" className={buttonClass('secondary', 'sm')}>Open leads</Link>}
         />
       ) : (
         <div className="flex flex-col gap-5">
