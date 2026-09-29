@@ -19,6 +19,7 @@ import {
 } from '@/modules/crm/queries';
 import { readConversationWindow, readProjectGroupForLead } from '@/modules/crm/window-queries';
 import { listLeadServiceSuggestions, readLeadService } from '@/modules/crm/lead-service-queries';
+import { readLeadScore } from '@/modules/crm/lead-score-queries';
 import { readRetryHistory } from '@/lib/observability/retry-queries';
 import {
   leadQualificationSchema,
@@ -95,6 +96,7 @@ import { RequirementDecisionForm } from './requirement-decision-form';
 import { RequirementSetPanel } from './requirement-set-panel';
 import { RequirementReviseForm } from './requirement-revise-form';
 import { LeadServiceForm } from './service-form';
+import { RescoreLeadForm } from './score-panel';
 import { RetryDeliveryForm } from '../../operations/retry-delivery-form';
 import {
   AssignOwnerForm,
@@ -195,6 +197,9 @@ export default async function LeadConversationPage({
   const roster = await listInternalRoster();
   // SCR-006 — the service the lead asked about, and the values already in use.
   const [service, serviceSuggestions] = await Promise.all([readLeadService(leadId), listLeadServiceSuggestions()]);
+  // ADM-88 — Decision: reversed by the owner on 2026-09-29: the score with
+  // the reasons and inputs it was computed from, or null when never scored.
+  const leadScore = await readLeadScore(leadId);
 
   const conversation = await getLatestConversation(leadId);
   const messages = conversation ? await listMessages(conversation.id) : [];
@@ -477,6 +482,42 @@ export default async function LeadConversationPage({
           ...(facts ? [{ label: 'Created on', value: clock.dateTime(facts.createdAt) }, { label: 'Last activity', value: clock.dateTime(facts.updatedAt) }] : []),
         ]}
       />
+      {/* ADM-88 — Decision: reversed by the owner on 2026-09-29. */}
+      <Card>
+        <CardHeader
+          title="Lead score"
+          description={leadScore ? `${leadScore.score}/100 · computed ${clock.dateTime(leadScore.scoredAt)} from the facts below.` : 'Not scored yet. A score is computed from recorded facts and stored with its reasons; nothing is typed.'}
+          actions={mayWrite ? <RescoreLeadForm leadId={leadId} scored={leadScore !== null} /> : undefined}
+        />
+        {leadScore ? (
+          <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+            <ul className="divide-y divide-line rounded-lg border border-line">
+              {leadScore.reasons.map((r) => (
+                <li key={r.code} className="flex items-start justify-between gap-3 px-3 py-1.5 text-[13px]">
+                  <span className="min-w-0">
+                    <span className="font-medium">{humanize(r.code)}</span>
+                    <span className="block text-xs text-muted">{r.detail}</span>
+                  </span>
+                  <span className={`shrink-0 tabular ${r.points < 0 ? 'text-danger' : r.points === 0 ? 'text-muted' : 'text-success'}`}>
+                    {r.points > 0 ? `+${r.points}` : r.points}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <details className="text-xs text-muted">
+              <summary className="cursor-pointer">Inputs the score was computed from</summary>
+              <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                {Object.entries(leadScore.inputs).map(([key, value]) => (
+                  <div key={key} className="contents">
+                    <dt className="font-mono">{key}</dt>
+                    <dd className="break-words">{value === null ? 'null' : typeof value === 'object' ? JSON.stringify(value) : String(value)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </details>
+          </div>
+        ) : null}
+      </Card>
       {facts && (facts.tags.length > 0 || mayWrite) ? (
         <Card>
           <CardHeader title="Tags" />

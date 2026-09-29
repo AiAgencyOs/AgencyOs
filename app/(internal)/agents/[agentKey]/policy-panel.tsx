@@ -10,8 +10,9 @@ import { Badge, FormMessage, buttonClass, selectClass } from '@/ui';
 /**
  * SCR-063 — tool permissions and project assignments for one agent, as
  * THIS tenant's policy record. Owner only: the doors refuse everyone else
- * and the page offers the controls to nobody else. The orchestrator does
- * not read these rows yet; the page says so beside them.
+ * and the page offers the controls to nobody else. Since decision 3 of
+ * 2026-09-29 the runner READS these rows: a tool with no record is refused
+ * at call time, so "no record" is shown as the refusal it is.
  */
 
 function ToolRow({
@@ -34,7 +35,7 @@ function ToolRow({
       <span className="flex flex-wrap items-center gap-2">
         <code className="text-xs">{toolKey}</code>
         {bound ? <Badge tone="info">bound by definition</Badge> : null}
-        {allowed === null ? <Badge tone="neutral">no record</Badge> : allowed ? <Badge tone="success">allowed</Badge> : <Badge tone="danger">denied</Badge>}
+        {allowed === null ? <Badge tone="warning">no record — refused when called</Badge> : allowed ? <Badge tone="success">allowed</Badge> : <Badge tone="danger">denied</Badge>}
         {recorded?.note ? <span className="text-xs text-muted">{recorded.note}</span> : null}
       </span>
       <form action={action} className="flex items-center gap-1">
@@ -80,7 +81,7 @@ export function ToolPermissionsList({
             <li key={k} className="flex flex-wrap items-center gap-2 px-4 py-2 text-[13px] sm:px-5">
               <code className="text-xs">{k}</code>
               {bound.has(k) ? <Badge tone="info">bound by definition</Badge> : null}
-              {!r ? <Badge tone="neutral">no record</Badge> : r.allowed ? <Badge tone="success">allowed</Badge> : <Badge tone="danger">denied</Badge>}
+              {!r ? <Badge tone="warning">no record — refused when called</Badge> : r.allowed ? <Badge tone="success">allowed</Badge> : <Badge tone="danger">denied</Badge>}
             </li>
           );
         })}

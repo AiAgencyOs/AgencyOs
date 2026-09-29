@@ -7,6 +7,7 @@ import { can } from '@/lib/authz/permissions';
 import { LEAD_STATUSES, NURTURE_REASONS } from '@/modules/crm/schema';
 import { listLeadsForTable, listLeadsNeedingAttention } from '@/modules/crm/queries';
 import { readLeadFacts } from '@/modules/crm/lead-list-queries';
+import { readLeadScores, type LeadScoreSummary } from '@/modules/crm/lead-score-queries';
 import { readLeadServices } from '@/modules/crm/lead-service-queries';
 import { listInternalRoster } from '@/modules/projects/queries';
 import {
@@ -40,6 +41,7 @@ import Link from 'next/link';
 import { SavedViewsBar } from '../saved-views-bar';
 import { LeadBulkTable, type BulkLeadRow } from './bulk-table';
 import { CreateLeadButton } from './create-lead-button';
+import { RescoreAllLeadsButton } from './rescore-all-button';
 
 export const metadata: Metadata = { title: 'Leads' };
 
@@ -76,7 +78,7 @@ function waitedFor(iso: string, now: Date): string {
 
 type Row = Awaited<ReturnType<typeof listLeadsForTable>>[number];
 
-const columnsFor = (clock: AgencyClock): Column<Row>[] => [
+const columnsFor = (clock: AgencyClock, scores: Map<string, LeadScoreSummary>): Column<Row>[] => [
   {
     key: 'title',
     header: 'Name',
@@ -112,6 +114,19 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     desktopOnly: true,
     cellClassName: 'text-muted',
     cell: (l) => l.assignedEmail ?? 'Unassigned',
+  },
+  // ADM-88 — Decision: reversed by the owner on 2026-09-29. The stored score,
+  // which never exists without its reasons; unscored is a dash, not a zero.
+  {
+    key: 'score',
+    header: 'Score',
+    align: 'right',
+    cellClassName: 'tabular',
+    cell: (l) => {
+      const s = scores.get(l.id);
+      return s ? <span title={s.reasons.map((r) => `${r.points >= 0 ? '+' : ''}${r.points} ${r.detail}`).join('\n')}>{s.score}</span> : <span className="text-muted">—</span>;
+    },
+    sortKey: 'score',
   },
   {
     key: 'activity',
@@ -208,6 +223,8 @@ export default async function LeadsPage({
   ]);
   const now = new Date();
   const facts = await readLeadFacts(allLeads.map((l) => l.id));
+  // ADM-88 (reversed 2026-09-29): the stored score per lead, with its reasons.
+  const scores = await readLeadScores(allLeads.map((l) => l.id));
   const services = await readLeadServices(allLeads.map((l) => l.id));
   const canWriteLeads = can(context.role, 'lead.write');
   const roster = canWriteLeads ? await listInternalRoster() : [];
@@ -237,6 +254,8 @@ export default async function LeadsPage({
   const comparators = {
     ...COMPARATORS,
     created: (a: Row, b: Row) => (facts.get(a.id)?.createdAt ?? '').localeCompare(facts.get(b.id)?.createdAt ?? ''),
+    // Unscored sorts below every score, whichever way the column is sorted.
+    score: (a: Row, b: Row) => (scores.get(a.id)?.score ?? -1) - (scores.get(b.id)?.score ?? -1),
   };
   const leads = sortRows(filtered, sortKey, direction, comparators);
   const { page, pageCount, rows: pageRows } = paginate(leads, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
@@ -258,6 +277,7 @@ export default async function LeadsPage({
                 Import leads
               </Link>
             ) : null}
+            {can(context.role, 'lead.write') ? <RescoreAllLeadsButton /> : null}
             {can(context.role, 'lead.write') ? <CreateLeadButton /> : null}
           </>
         }
@@ -391,6 +411,7 @@ export default async function LeadsPage({
                 created: facts.get(l.id) ? clock.date(facts.get(l.id)!.createdAt) : '—',
                 budget: facts.get(l.id)?.budgetMinor !== null && facts.get(l.id)?.budgetMinor !== undefined ? money(facts.get(l.id)!.budgetMinor as number) : null,
                 tags: facts.get(l.id)?.tags ?? [],
+                score: scores.get(l.id)?.score ?? null,
               }),
             )}
             roster={roster.map((m) => ({ userId: m.userId, fullName: m.fullName }))}
@@ -412,7 +433,7 @@ export default async function LeadsPage({
         <>
           <DataTable
             rows={pageRows}
-            columns={columnsFor(clock)}
+            columns={columnsFor(clock, scores)}
             getKey={(l) => l.id}
             href={(l) => `/leads/${l.id}`}
             sort={{

@@ -39,6 +39,60 @@ export type Database = {
           },
         ]
       }
+      agent_policy_refusals: {
+        Row: {
+          agent_key: string
+          created_at: string
+          id: string
+          kind: string
+          organization_id: string
+          project_id: string | null
+          reason: string
+          run_id: string | null
+          tool_key: string | null
+          updated_at: string
+        }
+        Insert: {
+          agent_key: string
+          created_at?: string
+          id?: string
+          kind: string
+          organization_id: string
+          project_id?: string | null
+          reason: string
+          run_id?: string | null
+          tool_key?: string | null
+          updated_at?: string
+        }
+        Update: {
+          agent_key?: string
+          created_at?: string
+          id?: string
+          kind?: string
+          organization_id?: string
+          project_id?: string | null
+          reason?: string
+          run_id?: string | null
+          tool_key?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_policy_refusals_agent_key_fkey"
+            columns: ["agent_key"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "agent_policy_refusals_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "agent_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_project_assignments: {
         Row: {
           active: boolean
@@ -837,8 +891,30 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      record_agent_policy_refusal: {
+        Args: {
+          p_agent_key: string
+          p_kind: string
+          p_organization_id: string
+          p_project_id?: string
+          p_reason: string
+          p_run_id?: string
+          p_tool_key?: string
+        }
+        Returns: string
+      }
       revoke_provider_credential: {
         Args: { p_provider: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      set_agent_caps: {
+        Args: {
+          p_agent_key: string
+          p_max_cost_minor: number
+          p_max_steps: number
+        }
         Returns: {
           outcome: string
         }[]
@@ -859,6 +935,16 @@ export type Database = {
           p_category: string
           p_note?: string
           p_preferred_models: string[]
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      set_agent_status: {
+        Args: {
+          p_agent_key: string
+          p_enabled: boolean
+          p_reason?: string
         }
         Returns: {
           outcome: string
@@ -3027,7 +3113,9 @@ export type Database = {
           qualified_at: string | null
           requirements: Json
           score: number | null
+          score_inputs: Json | null
           score_reasons: Json | null
+          scored_at: string | null
           service: string | null
           source: string
           source_ref: string | null
@@ -3059,7 +3147,9 @@ export type Database = {
           qualified_at?: string | null
           requirements?: Json
           score?: number | null
+          score_inputs?: Json | null
           score_reasons?: Json | null
+          scored_at?: string | null
           service?: string | null
           source?: string
           source_ref?: string | null
@@ -3091,7 +3181,9 @@ export type Database = {
           qualified_at?: string | null
           requirements?: Json
           score?: number | null
+          score_inputs?: Json | null
           score_reasons?: Json | null
+          scored_at?: string | null
           service?: string | null
           source?: string
           source_ref?: string | null
@@ -4200,6 +4292,17 @@ export type Database = {
           p_announcement_id: string
           p_organization_id: string
           p_status: string
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      set_lead_score: {
+        Args: {
+          p_inputs: Json
+          p_lead_id: string
+          p_reasons: Json
+          p_score: number
         }
         Returns: {
           outcome: string
