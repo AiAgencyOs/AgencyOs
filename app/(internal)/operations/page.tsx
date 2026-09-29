@@ -15,6 +15,7 @@ import { listRecentWorkflows } from '@/lib/admin/run-chain';
 import { listMeetingsAwaitingNotes } from '@/modules/crm/meeting-notes-queries';
 import { listPendingGroupSetups } from '@/modules/projects/queries';
 
+import { CancelJobForm } from './cancel-job-form';
 import { WorkflowList } from './workflow-list';
 import {
   listDeadJobs,
@@ -400,8 +401,9 @@ export default async function OperationsPage() {
       </div>
 
       {/*
-        SCR-066's job queue and outbox, as they stand. Read-only: the runner
-        owns both, and the one human act — requeueing a dead job — is above.
+        SCR-066's job queue and outbox, as they stand. The runner owns both;
+        the two human acts are requeueing a dead job (above) and cancelling a
+        queued one (core.cancel_job, on the row).
       */}
       <div className="grid gap-4 xl:grid-cols-2">
         <div className="flex flex-col gap-2">
@@ -420,6 +422,12 @@ export default async function OperationsPage() {
                   </span>
                   <span className="text-xs text-muted">runs {clock.dateTime(j.runAt)}</span>
                   {j.lastError ? <span className="w-full truncate text-xs text-danger">{j.lastError}</span> : null}
+                  {/* SCR-066: only a queued (or retry-pending) job can be stopped; core.cancel_job refuses the rest. */}
+                  {j.status === 'queued' || j.status === 'failed' || j.status === 'retry' ? (
+                    <span className="w-full">
+                      <CancelJobForm jobId={j.id} />
+                    </span>
+                  ) : null}
                 </li>
               ))}
             </ul>

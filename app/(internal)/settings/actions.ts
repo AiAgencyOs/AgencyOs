@@ -2,8 +2,8 @@
 
 import { PROBE_MODELS } from '@/lib/ai/providers';
 import { createGoogleCalendar } from '@/lib/scheduling/google';
-import { configuredProviders, resolveProvider } from '@/lib/ai/router';
-import { setProviderCredential, VAULT_PROVIDERS, type VaultProvider } from '@/lib/ai/vault';
+import { configuredProviders, resetProviderRegistry, resolveProvider } from '@/lib/ai/router';
+import { deleteProviderCredential, setProviderCredential, VAULT_PROVIDERS, type VaultProvider } from '@/lib/ai/vault';
 import { sendWhatsAppText } from '@/lib/whatsapp/send';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
@@ -645,9 +645,37 @@ export async function setProviderCredentialAction(_prev: FormState, formData: Fo
   const result = await setProviderCredential(supabase, provider as VaultProvider, key, context.userId);
   if (!result.ok) return { status: 'error', message: result.error.message };
 
+  // The resolver's registry is cached per process; a key that just landed
+  // must register without waiting for a redeploy (SCR-064).
+  resetProviderRegistry();
   revalidatePath('/agents');
+  revalidatePath('/agents/routing');
   revalidatePath('/production-readiness');
   return { status: 'success', message: `${provider} key stored — encrypted, never shown again here.` };
+}
+
+/**
+ * SCR-064 — revoke a vault-stored provider key. Owner only, narrower than
+ * storing one; `deleteProviderCredential` says why. The key is never read.
+ */
+export async function revokeProviderCredentialAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const context = await requireInternal();
+  if (context.role !== 'owner' || !can(context.role, 'organization.settings')) {
+    return { status: 'error', message: 'Only the owner may revoke a provider key.' };
+  }
+
+  const provider = String(formData.get('provider') ?? '');
+  if (!VAULT_PROVIDERS.includes(provider as VaultProvider)) return { status: 'error', message: `Unknown provider "${provider}".` };
+
+  const supabase = await createClient();
+  const result = await deleteProviderCredential(supabase, provider as VaultProvider, context.role);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  resetProviderRegistry();
+  revalidatePath('/agents');
+  revalidatePath('/agents/routing');
+  revalidatePath('/production-readiness');
+  return { status: 'success', message: `${provider} key revoked. Agents routed to it will not run until another key is stored or set in the environment.` };
 }
 
 /**

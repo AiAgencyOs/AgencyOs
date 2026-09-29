@@ -64,6 +64,22 @@ export async function configuredProviders(): Promise<readonly string[]> {
   return (await providers()).map((p) => p.id);
 }
 
+/**
+ * Forgets the cached registry so the next call rebuilds it from the
+ * environment and the vault as they are NOW.
+ *
+ * SCR-064: a key stored or revoked through Settings changes which providers
+ * exist, and a registry cached for the life of the process would keep
+ * reporting — and routing to — a vendor whose key is gone. Called by the two
+ * vault actions after their write lands; a process that never touches the
+ * vault never pays for a rebuild. Covers the image generators too, since the
+ * OpenRouter key serves both.
+ */
+export function resetProviderRegistry(): void {
+  registry = null;
+  imageGenerators = null;
+}
+
 export async function resolveProvider(model: string): Promise<Result<AiProvider>> {
   const registered = await providers();
   const provider = registered.find((p) => p.supports(model));

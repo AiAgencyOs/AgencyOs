@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { formatCostMinor, whyNotRun } from '@/lib/admin/agent-eval';
 import { listAgentProjectAssignments, listAgentToolPermissions } from '@/modules/agents/permissions-queries';
 import { KNOWN_TOOL_KEYS, boundToolKeysFor } from '@/modules/agents/permissions-schema';
+import { latestAgentValidation } from '@/modules/agents/validation-queries';
 import { listProjects } from '@/modules/projects/queries';
 import { listAgentFailures, listAgentPromptVersions } from '@/lib/admin/agent-metrics';
 import { getAgent, listAgentRuns } from '@/lib/admin/agent-status';
@@ -16,6 +17,7 @@ import { can } from '@/lib/authz/permissions';
 import { Badge, Callout, Card, CardHeader, DetailList, DetailRow, EmptyState, IconAgents, PageHeader, StatusBadge, PermissionDenied } from '@/ui';
 
 import { ProjectAssignments, ToolPermissionsList } from './policy-panel';
+import { ValidateAgentForm } from './validate-form';
 
 export const metadata: Metadata = { title: 'Agent' };
 
@@ -49,7 +51,12 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ ag
   if (!agent) notFound();
   // SCR-063: the failures on their own, the prompt versions the runs
   // actually carried, and the guardrails as the registry states them.
-  const [failures, promptVersions] = await Promise.all([listAgentFailures(agentKey), listAgentPromptVersions(agentKey)]);
+  const [failures, promptVersions, validation] = await Promise.all([
+    listAgentFailures(agentKey),
+    listAgentPromptVersions(agentKey),
+    // SCR-062: the last time a person validated this agent (ai.agent_validations).
+    latestAgentValidation(agentKey),
+  ]);
   // SCR-063 — this tenant's policy record for the agent (20260929170000).
   // Owner only to write: the doors refuse everyone else, so nobody else is
   // offered the controls.
@@ -89,6 +96,40 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ ag
           <DetailRow label="Configuration version" value={agent.definitionVersion ? <code className="text-xs">{agent.definitionVersion}</code> : 'never stamped'} />
           <DetailRow label="Last validated" value={agent.lastValidatedAt ? when(clock, agent.lastValidatedAt) : 'never'} />
         </DetailList>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Configuration validation"
+          description="The same checks the cron stamp and verify-agent-definitions run — definition, revision, model, ceilings, tools, handoff and verifier mirrors — recorded for this organisation. Nothing on the registry row is changed."
+          actions={can(context.role, 'audit.read') ? <ValidateAgentForm agentKey={agent.key} /> : undefined}
+        />
+        {validation ? (
+          <div className="flex flex-col gap-2 px-4 pb-4 sm:px-5">
+            <p className="flex flex-wrap items-center gap-2 text-[13px]">
+              <Badge tone={validation.outcome === 'ok' ? 'success' : 'danger'} dot>
+                {validation.outcome === 'ok' ? 'ok' : 'problems'}
+              </Badge>
+              <span className="text-muted">
+                last validated by a person {when(clock, validation.validatedAt)}
+                {validation.validatedByName ? ` by ${validation.validatedByName}` : ''} · registry <code className="text-xs">{validation.registryRevision}</code>
+              </span>
+            </p>
+            <ul className="divide-y divide-line rounded-lg border border-line">
+              {validation.findings.map((f) => (
+                <li key={f.check} className="flex flex-wrap items-start justify-between gap-2 px-3 py-2 text-[13px]">
+                  <span className="flex items-center gap-2">
+                    <Badge tone={f.ok ? 'success' : 'danger'}>{f.ok ? 'ok' : 'problem'}</Badge>
+                    <span className="font-medium">{f.check.replace('_', ' ')}</span>
+                  </span>
+                  <span className={`min-w-0 flex-1 text-right text-xs ${f.ok ? 'text-muted' : 'text-danger'}`}>{f.detail}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No person has validated this agent yet. The stamp above is the cron tick&apos;s.</p>
+        )}
       </Card>
 
       <Card>

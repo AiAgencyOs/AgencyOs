@@ -3,6 +3,7 @@ import 'server-only';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
+import { ROUTING_CATEGORIES, type RoutingCategory } from '@/lib/ai/model-choice';
 import { err, ok, type Result } from '@/lib/result';
 import { unreadable } from '@/lib/result';
 
@@ -20,16 +21,9 @@ import { unreadable } from '@/lib/result';
  * than a picker against a registry that has nothing in it yet.
  */
 
-export const ROUTING_CATEGORIES = [
-  'engineering',
-  'coordination',
-  'client_facing',
-  'extraction',
-  'design',
-  'money',
-  'certification',
-] as const;
-export type RoutingCategory = (typeof ROUTING_CATEGORIES)[number];
+// One list, shared with the runner's routing rule (SCR-064) so the grid, the
+// policy form and `routedModelFor` cannot disagree about what a category is.
+export { ROUTING_CATEGORIES, type RoutingCategory } from '@/lib/ai/model-choice';
 
 export const OPTIMISE_FOR = ['quality', 'cost', 'latency'] as const;
 export type OptimiseFor = (typeof OPTIMISE_FOR)[number];
