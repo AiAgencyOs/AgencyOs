@@ -4,13 +4,18 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 
 import { formatCostMinor, whyNotRun } from '@/lib/admin/agent-eval';
+import { listAgentProjectAssignments, listAgentToolPermissions } from '@/modules/agents/permissions-queries';
+import { KNOWN_TOOL_KEYS, boundToolKeysFor } from '@/modules/agents/permissions-schema';
+import { listProjects } from '@/modules/projects/queries';
 import { listAgentFailures, listAgentPromptVersions } from '@/lib/admin/agent-metrics';
 import { getAgent, listAgentRuns } from '@/lib/admin/agent-status';
 import { hasConfiguredProvider } from '@/lib/ai/router';
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { Badge, Card, CardHeader, DetailList, DetailRow, EmptyState, IconAgents, PageHeader, StatusBadge, PermissionDenied } from '@/ui';
+import { Badge, Callout, Card, CardHeader, DetailList, DetailRow, EmptyState, IconAgents, PageHeader, StatusBadge, PermissionDenied } from '@/ui';
+
+import { ProjectAssignments, ToolPermissionsList } from './policy-panel';
 
 export const metadata: Metadata = { title: 'Agent' };
 
@@ -45,6 +50,16 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ ag
   // SCR-063: the failures on their own, the prompt versions the runs
   // actually carried, and the guardrails as the registry states them.
   const [failures, promptVersions] = await Promise.all([listAgentFailures(agentKey), listAgentPromptVersions(agentKey)]);
+  // SCR-063 — this tenant's policy record for the agent (20260929170000).
+  // Owner only to write: the doors refuse everyone else, so nobody else is
+  // offered the controls.
+  const mayEditPolicy = context.role === 'owner' && can(context.role, 'organization.settings');
+  const [toolPermissions, assignments, projects] = await Promise.all([
+    listAgentToolPermissions(agentKey),
+    listAgentProjectAssignments(agentKey),
+    mayEditPolicy ? listProjects(200) : Promise.resolve([]),
+  ]);
+  const boundTools = boundToolKeysFor(agentKey);
 
   const blocked = whyNotRun(agent, providerConfigured);
 
@@ -84,9 +99,36 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ ag
             Autonomy <span className="text-foreground">{agent.autonomyLevel}</span> · at most{' '}
             <span className="text-foreground">{agent.maxSteps ?? '—'}</span> steps and{' '}
             <span className="text-foreground">{agent.maxCostMinor !== null ? money(agent.maxCostMinor) : '—'}</span> per run. Tool permissions and project
-            assignments have no record yet and are not shown.
+            assignments are this organisation's policy record, below.
           </p>
         </div>
+      </Card>
+
+      <Callout tone="info" title="A policy record, not yet enforcement">
+        The tool permissions and project assignments below are rows this organisation owns (ai.agent_tool_permissions, ai.agent_project_assignments).
+        The orchestrator does not read them yet: what an agent may call today is still decided by its definition (&quot;bound by definition&quot;) and its
+        autonomy level. Recording a denial here says what the owner wants; it does not stop a call.
+      </Callout>
+
+      <Card>
+        <CardHeader
+          title="Tool permissions"
+          description={mayEditPolicy ? 'Allow or deny each tool for this agent, in this organisation. Owner only.' : 'What the owner has recorded for this agent. Only the owner may change it.'}
+        />
+        <ToolPermissionsList agentKey={agent.key} tools={KNOWN_TOOL_KEYS} boundTools={boundTools} recorded={toolPermissions} editable={mayEditPolicy} />
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Project assignments"
+          description={mayEditPolicy ? 'Which projects this agent is assigned to. Withdrawn rather than deleted, so a past assignment stays visible. Owner only.' : 'Which projects this agent is assigned to. Only the owner may change it.'}
+        />
+        <ProjectAssignments
+          agentKey={agent.key}
+          assignments={assignments}
+          projects={projects.map((p) => ({ id: p.id, name: p.name, code: p.code ?? '' }))}
+          editable={mayEditPolicy}
+        />
       </Card>
 
       <Card>

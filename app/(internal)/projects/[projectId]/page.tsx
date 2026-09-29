@@ -66,6 +66,7 @@ import {
 } from '@/modules/projects/queries';
 import { listTestRuns } from '@/modules/qa/queries';
 import { readHandoverPackage } from '@/modules/qa/release-queries';
+import { listAssignedAgents } from '@/modules/agents/permissions-queries';
 import {
   listFreeMaintenance,
   listPaymentClaims,
@@ -263,12 +264,14 @@ export default async function ProjectPage({
     readHandoverPackage(projectId),
   ]);
   const latestRun = testRuns[0] ?? null;
-  const [{ tasks }, team, files, roster, clientName] = await Promise.all([
+  const [{ tasks }, team, files, roster, clientName, assignedAgents] = await Promise.all([
     listDevelopmentBreakdown(projectId),
     listProjectTeam(projectId),
     listProjectFiles(projectId),
     listInternalRoster(),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
+    // SCR-063 — the agents the owner assigned here (a policy record, not yet read by the runner).
+    listAssignedAgents(projectId),
   ]);
   const nameByUser = new Map(team.map((m) => [m.userId, m.fullName]));
   const todayKey = new Date().toISOString().slice(0, 10);
@@ -1153,6 +1156,22 @@ export default async function ProjectPage({
                     <span className="block truncate text-xs text-muted">{humanize(m.role)}</span>
                   </span>
                   <Badge tone="info">{m.tasksDone}/{m.tasksTotal} tasks</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card>
+          <CardHeader title={`Assigned agents (${assignedAgents.length})`} description="The owner's record on each agent's page; the runner does not read it yet." />
+          {assignedAgents.length === 0 ? (
+            <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No agent assigned.</p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {assignedAgents.map((a) => (
+                <li key={a.agentKey} className="flex items-center justify-between gap-3 px-4 py-2.5 text-[13px] sm:px-5">
+                  <Link href={`/agents/${a.agentKey}`} className="min-w-0 truncate font-medium text-foreground hover:underline">{a.displayName}</Link>
+                  <Badge tone={a.enabled ? 'success' : 'neutral'}>{a.enabled ? 'enabled' : 'disabled'}</Badge>
                 </li>
               ))}
             </ul>

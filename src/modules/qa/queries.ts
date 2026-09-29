@@ -195,6 +195,9 @@ export type TestPlanItemRow = {
   category: string;
   reason: string;
   criticalPath: boolean;
+  preconditions: string | null;
+  steps: string | null;
+  expectedResult: string | null;
 };
 
 export type TestPlanRow = {
@@ -204,6 +207,9 @@ export type TestPlanRow = {
   draftedByAgent: string | null;
   draftedBy: string | null;
   createdAt: string;
+  /** 'draft' | 'approved' — qa.approve_test_plan (20260929170000). */
+  status: string;
+  approvedAt: string | null;
   items: TestPlanItemRow[];
 };
 
@@ -220,7 +226,7 @@ export async function readTestPlan(projectId: string): Promise<TestPlanRow | nul
   const { data: planRow, error: planError } = await supabase
     .schema('qa')
     .from('test_plans')
-    .select('id, scope_version_id, drafted_by_agent, drafted_by, created_at')
+    .select('id, scope_version_id, drafted_by_agent, drafted_by, created_at, status, approved_at')
     .eq('project_id', projectId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -241,7 +247,7 @@ export async function readTestPlan(projectId: string): Promise<TestPlanRow | nul
   const { data: itemRows, error: itemsError } = await supabase
     .schema('qa')
     .from('test_plan_items')
-    .select('id, scope_item_id, category, reason, critical_path')
+    .select('id, scope_item_id, category, reason, critical_path, preconditions, steps, expected_result')
     .eq('plan_id', planRow.id)
     .order('created_at', { ascending: true });
 
@@ -264,6 +270,8 @@ export async function readTestPlan(projectId: string): Promise<TestPlanRow | nul
     draftedByAgent: planRow.drafted_by_agent,
     draftedBy: planRow.drafted_by,
     createdAt: planRow.created_at,
+    status: planRow.status,
+    approvedAt: planRow.approved_at,
     items: (itemRows ?? []).map((i) => ({
       id: i.id,
       scopeItemId: i.scope_item_id,
@@ -271,6 +279,9 @@ export async function readTestPlan(projectId: string): Promise<TestPlanRow | nul
       category: i.category,
       reason: i.reason,
       criticalPath: i.critical_path,
+      preconditions: i.preconditions,
+      steps: i.steps,
+      expectedResult: i.expected_result,
     })),
   };
 }
@@ -285,6 +296,10 @@ export type TestRunRow = {
   skipped: number;
   evidenceUrl: string | null;
   executedAt: string;
+  device: string | null;
+  browser: string | null;
+  os: string | null;
+  perfNotes: string | null;
 };
 
 /**
@@ -299,7 +314,7 @@ export async function listTestRuns(projectId: string, limit = 100): Promise<Test
   const { data, error: runsError } = await supabase
     .schema('qa')
     .from('test_runs')
-    .select('id, deliverable_id, suite, total, passed, failed, skipped, evidence_url, executed_at')
+    .select('id, deliverable_id, suite, total, passed, failed, skipped, evidence_url, executed_at, device, browser, os, perf_notes')
     .eq('project_id', projectId)
     .order('executed_at', { ascending: false })
     .limit(limit);
@@ -316,5 +331,9 @@ export async function listTestRuns(projectId: string, limit = 100): Promise<Test
     skipped: r.skipped,
     evidenceUrl: r.evidence_url,
     executedAt: r.executed_at,
+    device: r.device,
+    browser: r.browser,
+    os: r.os,
+    perfNotes: r.perf_notes,
   }));
 }

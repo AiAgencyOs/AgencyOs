@@ -106,6 +106,9 @@ export async function addTestPlanItemAction(_prev: FormState, formData: FormData
     category: String(formData.get('category') ?? '') as never,
     reason: String(formData.get('reason') ?? ''),
     criticalPath: formData.get('criticalPath') === 'on',
+    preconditions: String(formData.get('preconditions') ?? '').trim() || undefined,
+    steps: String(formData.get('steps') ?? '').trim() || undefined,
+    expectedResult: String(formData.get('expectedResult') ?? '').trim() || undefined,
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };
@@ -133,6 +136,10 @@ export async function recordTestRunAction(_prev: FormState, formData: FormData):
     failed: num('failed'),
     skipped: num('skipped'),
     ...(evidenceUrl ? { evidenceUrl } : {}),
+    device: String(formData.get('device') ?? '').trim() || undefined,
+    browser: String(formData.get('browser') ?? '').trim() || undefined,
+    os: String(formData.get('os') ?? '').trim() || undefined,
+    perfNotes: String(formData.get('perfNotes') ?? '').trim() || undefined,
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };

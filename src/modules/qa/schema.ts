@@ -163,6 +163,11 @@ export const addTestPlanItemSchema = z.object({
   category: z.enum(TEST_CATEGORIES),
   reason: z.string().trim().min(1, 'Say why this category applies to this item').max(600),
   criticalPath: z.boolean().default(false),
+  // SCR-045 — the case itself, as a tester follows it. Optional: an agent
+  // names the category and the reason; a person fills these in.
+  preconditions: z.string().trim().max(2000).optional(),
+  steps: z.string().trim().max(4000).optional(),
+  expectedResult: z.string().trim().max(2000).optional(),
 });
 
 export const removeTestPlanItemSchema = z.object({ itemId: z.uuid() });
@@ -192,6 +197,13 @@ export const recordTestRunSchema = z
     failed: z.number().int().min(0),
     skipped: z.number().int().min(0).default(0),
     evidenceUrl: z.url().optional(),
+    // SCR-048 — where the run ran (the cells of the compatibility matrix)
+    // and, for a performance suite, what it measured. Free text: Doc 14 §16
+    // forbids inventing thresholds, so there is no number to validate.
+    device: z.string().trim().max(120).optional(),
+    browser: z.string().trim().max(120).optional(),
+    os: z.string().trim().max(120).optional(),
+    perfNotes: z.string().trim().max(4000).optional(),
   })
   .refine((v) => v.passed + v.failed + v.skipped === v.total, {
     message: 'Passed + failed + skipped must equal the total.',
