@@ -70,7 +70,7 @@ a record that only its editor changes.
 | SCR-020 | Project Board | `/projects/[projectId]/board` | `task.write` to drag | `projects.tasks` (Kanban, validated transitions; audited since 20260929130000) | — | COMPLETE |
 | SCR-021 | My Tasks | `/my-tasks` | internal | `listMyTasks` | — | COMPLETE |
 | SCR-022 | Project Calendar | `/projects/[projectId]/calendar` | `project.read` | tasks + milestones + meetings by date (`MonthGrid`) | — | COMPLETE |
-| SCR-023 | Project Milestones / Gantt | `/projects/[projectId]/calendar` + `/plan` | `project.read` | `projects.milestones`, plan milestones | — | PARTIAL — no Gantt bar: schema holds a single `due_on` per item, no start date (traceability row 23) |
+| SCR-023 | Project Milestones / Gantt | `/projects/[projectId]/plan` (Gantt) + `/calendar` | `project.read` | `listPaymentPlan` (`projects.milestones`), plan milestones | — | COMPLETE — bars are the planned windows between due dates (derived, labelled as such); the schema holds no start date, and the page says so |
 | SCR-024 | Project Files | `/projects/[projectId]/files` | `project.write` to add | `projects.project_files` (link-based) | — | COMPLETE |
 | SCR-025 | Project Team | `/projects/[projectId]/team` | `project.read` | `listProjectTeam`, team defaults | — | COMPLETE |
 | SCR-026 | Project Reports | `/reports` + Overview | `project.read` | org-wide reports; per-project figures on Overview | — | GROUPED |
@@ -91,7 +91,7 @@ a record that only its editor changes.
 |---|---|---|---|---|---|---|
 | SCR-032 | Design Dashboard | `/design` (portfolio) → `/projects/[projectId]/design` | `project.read` | `readDesignPortfolio` (3 reads, grouped); per-project `readDesignTrail` | deliverables, projects | COMPLETE (portfolio index added 2026-09-29) |
 | SCR-033 | UI Theme Finalization | `/projects/[projectId]/design/themes` | `project.read` | theme options, color options, token sets | — | COMPLETE |
-| SCR-034 | Screen Inventory | `/projects/[projectId]/design` › baseline | `project.read` | `projects.screen_baselines` | — | GROUPED |
+| SCR-034 | Screen Inventory | `/projects/[projectId]/design` › gallery | `project.read` | `projects.screen_baselines`, `readSampleScreens` (`representative_screens`) | — | COMPLETE — gallery of representative screens with stored previews; Figma stays canonical |
 | SCR-035 | Screen Detail / Coverage Matrix | `/projects/[projectId]/ui-versions/[uiVersionId]` | `project.read` | UI version detail, coverage | — | COMPLETE |
 | SCR-036 | Design Review & Approval | `/projects/[projectId]/design/final` | `project.read` | client decisions, revision history, lock | — | COMPLETE |
 | SCR-037 | Prototype Builds & Review | `/projects/[projectId]/prototype`, `/prototype/preview/[uiVersionId]` | `project.read` | prototype artifacts, QA scan, client review | — | COMPLETE |
@@ -127,7 +127,7 @@ a record that only its editor changes.
 | SCR-052 | Invoice Detail / Create | `/invoices/[invoiceId]` | `invoice.issue` to act | invoice, items, payments, receipts, PDF | — | COMPLETE |
 | SCR-053 | Payments | `/finance/payments` | `invoice.read` | `listPayments` | — | COMPLETE |
 | SCR-054 | Payment Verification | `/invoices/verify` | `invoice.issue` | `listPendingPaymentClaims` (human-only gate) | — | COMPLETE |
-| SCR-055 | Expenses & Profitability | `/finance/expenses` | `invoice.read` | `listExpenses` by project | — | PARTIAL — margin formula deliberately unbuilt (accounting decision) |
+| SCR-055 | Expenses & Profitability | `/finance` (net profit, margin, expense breakdown) + `/finance/expenses` | `invoice.read` | `listExpenses`, `listPayments`, `listInvoices` | — | COMPLETE — net = payments received − expenses recorded, margin over received; stated on the tile, not an accounting P&L |
 | SCR-056 | GST, Tax & Financial Reports | `/finance/tax` | `invoice.read` | invoice register, tax totals | — | PARTIAL — no GST return generation (needs GST-portal integration) |
 
 ### Communication
@@ -179,9 +179,9 @@ a record that only its editor changes.
 
 | Status | Count | Screens |
 |---|---|---|
-| COMPLETE | 52 | — |
-| GROUPED | 14 | 002, 004, 008, 009, 012, 016, 026, 029, 034, 038, 048, 058, 067 + 003's bell |
-| PARTIAL | 5 | 023 (Gantt needs a start date), 042 (link-based repo), 055 (margin formula), 056 (GST return), and 003's bell counts as COMPLETE |
+| COMPLETE | 56 | — |
+| GROUPED | 12 | 002, 004, 008, 009, 016, 026, 029, 038, 048, 058, 067 + 003's bell |
+| PARTIAL | 2 | 042 (link-based repo — no VCS integration), 056 (GST return — register only, no filing) |
 | DECLINED (sub-features) | 3 | 027 templates, 059 broadcast, 008 numeric score |
 | MISSING | 0 | — |
 
