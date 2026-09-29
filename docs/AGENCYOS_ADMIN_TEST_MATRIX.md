@@ -163,6 +163,32 @@ panels — correspond. Two drifts found and fixed this round (dashboard table,
 settings forms). Charts render only where data exists (usage trend was
 empty on the seed).
 
+### 9a. Same-to-same pass (2026-09-29, later the same day)
+
+Rebuilt to the reference's layout and re-shot on the live stack (owner,
+1440×900, and 390×844 full-page) — Command Center, Project 360, Project
+Board, Projects list, Leads list, Lead 360, Client 360, Finance overview,
+AI Workforce, and the shell header on every page. Zero console errors
+beyond the missing favicon 404 and the expected realtime noise (no
+Realtime server in this stack). Verified interactions, not just paint:
+
+- Board "+ Add task" (column header "+" → drawer → `createTaskAction`):
+  a task titled `Board-created task <ts>` appeared on the board after the
+  refresh (`created: 1`, no page errors).
+- Header "+ Create" opens the quick-create dialog on the lead form; the
+  user chip menu opens with Escape/outside-click dismissal; the help menu
+  lists only capability-gated destinations.
+- Breadcrumb names the open record on Project 360, Board, Lead 360 and
+  Client 360 ("Projects › All projects › Northwind loyalty app").
+- Phone: the three-pane Lead 360 folds into two tabs; the Project 360
+  rail stacks under the sections; KPI grids go two-up; the tab strip
+  scrolls sideways.
+
+Typecheck and ESLint clean on every changed file. The unit-test failure
+set is unchanged (the Node 22 `mock.module` class; `npm test` on this
+machine: 5772 pass, 53 fail before and after — `commit-the-whole-file-at-once`
+is in that class: it mocks `@/lib/db/server`).
+
 ## 10. Regression
 
 Unit: the failure set is byte-identical before and after (Node 22, 52

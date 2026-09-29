@@ -33,7 +33,7 @@ a record that only its editor changes.
 
 | ID | Screen | Route | Guard | Reads | Live | Status |
 |---|---|---|---|---|---|---|
-| SCR-001 | Command Center | `/dashboard` | `project.read` | `getOverview`, `getRecentLeads`, `getActiveProjectsSummary`, `getRevenueThisMonth`, `getAgentUsage` | approvals, finance, jobs, leads, projects, agents | COMPLETE |
+| SCR-001 | Command Center | `/dashboard` | `project.read` | `getOverview`, `getRecentLeads`, `getActiveProjectsSummary`, `getRevenueThisMonth`, `getAgentUsage`, `getSalesFunnel`, `getProjectCountsByStatus`, `listActionItems` | approvals, finance, jobs, leads, projects, agents | COMPLETE |
 | SCR-002 | Global Search | ⌘K palette (every page) | rail-filtered | `globalSearch` (lead/client/project/invoice, RLS-scoped) | — | GROUPED (in shell) |
 | SCR-003 | Notifications & Action Center | `/notifications` + header bell | internal | `listActionItems` (6 sources) | approvals, finance, jobs, qa, tasks, conversations | COMPLETE |
 | SCR-004 | Quick Create / Command Palette | ⌘K palette → New lead / New client | `lead.write` / `project.write` | `createLeadAction`, `createClientAccountAction` | — | GROUPED (in shell) |
@@ -43,8 +43,8 @@ a record that only its editor changes.
 | ID | Screen | Route | Guard | Reads | Live | Status |
 |---|---|---|---|---|---|---|
 | SCR-005 | Sales Overview & Pipeline | `/sales-funnel` | `lead.read` | `salesFunnel`, `listOpportunities` (Kanban, 3 open stages) | — | COMPLETE |
-| SCR-006 | Leads List | `/leads` | `lead.read` | `listLeadsForTable`, `listLeadsNeedingAttention`, saved views | — | COMPLETE |
-| SCR-007 | Lead 360 | `/leads/[leadId]` | `lead.read` | lead, conversation, requirements, quotations, meetings, follow-ups, timeline | — | COMPLETE |
+| SCR-006 | Leads List | `/leads` | `lead.read` | `listLeadsForTable` (avatar + company cells), `listLeadsNeedingAttention`, saved views | — | COMPLETE |
+| SCR-007 | Lead 360 | `/leads/[leadId]` | `lead.read` | lead + `getLeadFacts`, conversation, requirements, quotations, meetings, follow-ups, timeline (three panes: information · chat · deal) | — | COMPLETE |
 | SCR-008 | Qualification & Scoring | `/leads/[leadId]` › Sales panel | `lead.read` | `crm.qualification_coverage` | — | GROUPED (ADM-88: no numeric score by decision) |
 | SCR-009 | Requirements Discovery | `/leads/[leadId]` › requirement decision | `lead.read` | `crm.requirement_versions` | — | GROUPED |
 | SCR-010 | Meetings | `/meetings`, `/meetings/[meetingId]` | `lead.read` | meetings, evidence, calendar verification | — | COMPLETE |
@@ -65,7 +65,7 @@ a record that only its editor changes.
 
 | ID | Screen | Route | Guard | Reads | Live | Status |
 |---|---|---|---|---|---|---|
-| SCR-018 | All Projects | `/projects` | `project.read` | `listProjects`, saved views | — | COMPLETE |
+| SCR-018 | All Projects | `/projects` | `project.read` | `listProjectsForTable` (client, milestone progress, stage filter), saved views | — | COMPLETE |
 | SCR-019 | Project Overview (Project 360) | `/projects/[projectId]` | `project.read` | project, plan, billing ladder, phases 2–4, QA, approvals, deliverables | — | COMPLETE |
 | SCR-020 | Project Board | `/projects/[projectId]/board` | `task.write` to drag | `projects.tasks` (Kanban, validated transitions; audited since 20260929130000) | — | COMPLETE |
 | SCR-021 | My Tasks | `/my-tasks` | internal | `listMyTasks` | — | COMPLETE |
@@ -122,7 +122,7 @@ a record that only its editor changes.
 
 | ID | Screen | Route | Guard | Reads | Live | Status |
 |---|---|---|---|---|---|---|
-| SCR-050 | Finance Overview | `/finance` | `invoice.read` | invoiced/received/outstanding, receipts | — | COMPLETE |
+| SCR-050 | Finance Overview | `/finance` | `invoice.read` | `listInvoices`, `listPayments`, `listExpenses`, pending claims (income vs expenses, payment status, top revenue, upcoming) | — | COMPLETE |
 | SCR-051 | Invoices | `/invoices` | `invoice.read` | `listInvoices`, saved views | — | COMPLETE |
 | SCR-052 | Invoice Detail / Create | `/invoices/[invoiceId]` | `invoice.issue` to act | invoice, items, payments, receipts, PDF | — | COMPLETE |
 | SCR-053 | Payments | `/finance/payments` | `invoice.read` | `listPayments` | — | COMPLETE |

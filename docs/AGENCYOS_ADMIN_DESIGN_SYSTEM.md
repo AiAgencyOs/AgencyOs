@@ -13,6 +13,10 @@ Components consume only semantic classes (`bg-surface`, `text-muted`,
 `border-line`, `bg-brand-soft`) — never a raw hex or a raw Tailwind palette
 colour — so re-theming is a `globals.css` edit.
 
+- **Canvas:** the reference's cool light grey (`--background: #f5f7fb`,
+  `--surface-sunken: #f8fafc`) with slate ink (`--foreground: #0f172a`,
+  `--muted: #475569`, `--faint: #5b6b7d` — 5.2:1 on white). Dark theme
+  unchanged.
 - **Brand:** indigo (`--brand: #4F46E5`, `--accent: #6366F1`), from the
   reference screenshots. Light and dark variants defined.
 - **Sidebar:** an isolated `--sidebar-*` namespace, defined only in `:root`
@@ -37,10 +41,15 @@ colour — so re-theming is a `globals.css` edit.
 - **Current item** is the longest matching href at a segment boundary, so
   `/finance` and `/finance/payments` can both be in the rail with only one
   lit (`currentItem`, tested).
-- **Global header:** ⌘K search / quick create, breadcrumb trail (module ›
-  page › Detail), the notifications bell with a live count (`ActionBell`),
-  signed-in person and role in the rail's foot. The layout makes no database
-  read; the bell counts after paint.
+- **Global header** (`shell-controls.tsx`): the scoped search field with ⌘K,
+  a dark **+ Create** button (raises `agencyos:open-create`; the palette
+  opens on the first create the role may perform), the bell with a live
+  count (`ActionBell`), a **?** help menu, and the signed-in person as an
+  avatar · name · role chip whose menu holds Team & profile, Settings and
+  the same sign-out form. The rail's foot is the organisation tile (name
+  from `readOrganizationName`, the layout's one row read). The breadcrumb
+  reads module › page › *record name*: a detail page renders
+  `<TrailLabel name>` and the crumb echoes it (`agencyos:trail-label`).
 - **Skip link** to `#main` for keyboard users; `main` is focusable.
 - **Phone:** slide-over drawer (portalled, focus-managed, Escape) and a
   bottom tab bar with the four most-used destinations.
@@ -57,6 +66,18 @@ colour — so re-theming is a `globals.css` edit.
 | `BarChart`, `DonutChart`, `TrendChart` | Recharts wrappers on the app's own CSS variables. | `currency` is a string prop, not a callback (server → client boundary). |
 | `Skeleton*`, `SkeletonPage`, **`SkeletonDetail`** | Loading shapes. `SkeletonDetail` (new) is the 360-page shape: entity header, tab strip, two-column body. | Every route under `app/(internal)` — top-level *and* nested (`[leadId]`, `[projectId]`, `[clientId]`, `[invoiceId]`, `[requestId]`, `[meetingId]`, `[agentKey]`, `[batchId]`, `[opportunityId]`, `/design`, `/development`, the finance/agents/security sub-routes) — now has a `loading.tsx`. |
 | `Pagination`, `paginate`, `sortRows`, `DecisionTimeline`, `StatusStepper` | List mechanics and history views. | — |
+| **`Avatar`, `AvatarStack`** | Initials in a tint chosen from the name — stable per person across screens. `square` for a project/organisation. | No photos exist in the data model. |
+| **`ProgressBar`** | Bar + printed percentage (`role="progressbar"`). | The number is always printed; the bar alone is colour-only. |
+| **`EntityHeader`, `HeaderFigure`** | The 360 header: tile, name + status chip, subtitle, icon fact row, actions, boxed figure ("53% Overall progress", "Next follow-up"). | Reads nothing; the page passes facts from its own readers. |
+| **`TabStrip`** | Icon-led underline tabs; current tab from the URL. | `ProjectSubNav` renders it for the fifteen project tabs. |
+| **`DetailPanel` / `DetailFields`** | Right-rail key/value card with an Edit action. | — |
+| **`QuickActions`** | Two-column action grid; a link for a page, a `node` for a governed write (the page's own server-action form). | Never fakes a result. |
+| **`ActivityFeed`, `ViewAll`** | Icon chip · sentence · time; the brand "View all →" header link. | Items are timestamped facts the page read. |
+| **`PipelineStrip`** | Chevron funnel of count-over-label stages, each linking to its list. | — |
+| **`StatusList`** | "System Status" rows: icon, name, state word in tone. | Word + colour, never colour alone. |
+| **`Timeline`** | Horizontal milestone dots (done / current / upcoming). | — |
+| `KanbanBoard` (extended) | Tinted column header with icon, count pill, `renderColumnAction` and `renderColumnFooter`. | Still owns dragging and layout only. |
+| `DataTable` (`dense`) | Tighter rows and 13px type for a table inside a dashboard card. | — |
 | `LiveRefresh` (`src/lib/realtime`) | The live-data control, replacing the deleted `AutoRefresh`. | Lives in `lib/realtime` because it needs the Supabase client; `src/ui` stays presentation-only. |
 
 ## Icons (`src/ui/icons.tsx`)

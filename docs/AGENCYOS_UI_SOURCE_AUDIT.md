@@ -366,6 +366,31 @@ tiles with pastel icon chips and delta badges; underline tabs; light tables
 with pill status chips (green/amber/red/blue/purple); right-hand detail
 rails with Quick Actions; ₹ and `DD Mon YYYY`.
 
+### 4a. Same-to-same parity status (2026-09-29, second pass)
+
+Built to the reference's own layout — not just its tokens — on the same
+authoritative readers each page already had, and checked in a real browser
+at 1440 and 390 (`scripts/local-qa/`, screenshots in the test matrix §9):
+
+| Reference image(s) | Screen | What now matches |
+|---|---|---|
+| 45 | Command Center | greeting + date, five KPI tiles with icon chips and captions, chevron pipeline strip, Recent leads (avatar, phone, source, status), Active projects with progress bars, Tasks & Approvals rail with count, System Status list, Usage & Cost |
+| 4, 14, 17, 30, 44 | Project 360 | logo tile + name + status chip, subtitle, icon fact row (client, code, start, due, budget), Board / Edit project actions, "% Overall progress" figure, icon underline tab strip, six KPIs, milestone timeline, Recent tasks table with assignee avatars and priority chips, Project details / Team / Recent files / Recent activity rail |
+| 2, 5, 21, 25, 31, 32 | Project Board | filter toolbar (search, assignee, module, priority), tinted column headers with count and "+", cards with module + priority chips, assignee avatar and calendar due date, "+ Add task" per column (drawer → `createTaskAction`), Recent activity + Task summary donut |
+| 13, 43 | Leads list | avatar + company name cells, six linked KPI tiles, Import / Add lead actions |
+| 42 | Lead 360 | avatar header with phone · source · added, next-follow-up figure, stage stepper, three panes — Lead information + Tags + Recent activity, the WhatsApp conversation, Quick actions over the deal panels |
+| 10 | Client 360 | header with facts, six KPIs incl. client health, projects and invoices tables with paid bars, notes + files, Client details rail, timeline |
+| 7 | Finance overview | five KPIs, income vs expenses trend, payment-status donut, top project revenue bars, recent invoices / payments, expense breakdown, upcoming payments, quick actions |
+| 8 | AI Workforce | six KPIs, agent activity trend, status donut, top agents by usage, registry table with model/status/runs, recent agent activity feed, quick actions |
+| shell (all) | Global header + rail | scoped search field, dark "+ Create" (opens quick create), bell with count, help menu, user chip with avatar · name · role and menu, organisation tile in the rail foot, breadcrumb naming the open record |
+
+Still token-level only (layout not rebuilt): Gantt/milestone views (1, 22,
+27, 34), task detail (26, 28), calendar (16, 20), files (18, 24), reports
+(19), design gallery (11, 38), requirements (29, 41), inbox (33, 35, 36),
+QA (37), My Tasks (9, 40), quotation composer (12), team (15), clients
+list (6). The canvas moved to the reference's cool grey (`#f5f7fb`) with
+`#0f172a` ink.
+
 ## 5. Conflicts resolved on 2026-09-29
 
 6. **Nav IA.** The screenshots' sidebar (Command Center; Sales & CRM;
