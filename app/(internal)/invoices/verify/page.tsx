@@ -38,7 +38,6 @@ function Proof({ url }: { url: string | null }) {
         Open proof
       </a>
       {IMAGE_EXT.test(url) ? (
-        // eslint-disable-next-line @next/next/no-img-element -- an external proof URL of unknown dimensions; next/image needs a configured host
         <img src={url} alt="Payment proof" className="max-h-56 w-fit max-w-full rounded-lg border border-line object-contain" />
       ) : null}
     </span>

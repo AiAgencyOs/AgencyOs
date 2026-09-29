@@ -106,7 +106,6 @@ export function ClaimsDrawerList({ claims }: { claims: ClaimView[] }) {
             </DetailList>
 
             {open.proofUrl && IMAGE_EXT.test(open.proofUrl) ? (
-              // eslint-disable-next-line @next/next/no-img-element -- an external proof URL of unknown dimensions; next/image needs a configured host
               <img src={open.proofUrl} alt="Payment proof" className="max-h-72 w-full rounded-lg border border-line object-contain" />
             ) : null}
 

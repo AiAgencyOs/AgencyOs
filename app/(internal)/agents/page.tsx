@@ -325,7 +325,7 @@ export default async function AgentsPage() {
               </div>
             ) : null}
             {isAdmin ? (
-              <div className="flex flex-col gap-2.5 border-t border-line px-4 py-4 text-sm sm:px-5">
+              <div id="vault" className="flex flex-col gap-2.5 border-t border-line px-4 py-4 text-sm sm:px-5">
                 <span className="font-semibold">Provider key vault</span>
                 <p className="text-xs text-muted">
                   A key entered here is encrypted and stored (ADM-84 §9 overturned 2026-09-20); env-set keys still take precedence. Once stored, a key is never shown again — only whether it is present and when it was last set.
