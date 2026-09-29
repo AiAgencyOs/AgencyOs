@@ -164,7 +164,7 @@ export async function acknowledgeEscalation(input: AcknowledgeEscalationInput): 
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid request.');
   const context = await requireInternal();
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
-  if (!can(context.role, 'audit.read')) return err('FORBIDDEN', 'Only the owner or the ops admin may answer an escalation.');
+  if (!can(context, 'audit.read')) return err('FORBIDDEN', 'Only the owner or the ops admin may answer an escalation.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('core').rpc('acknowledge_escalation', {

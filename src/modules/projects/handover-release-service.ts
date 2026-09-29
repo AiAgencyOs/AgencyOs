@@ -35,7 +35,7 @@ export async function setHandoverRollbackPlan(input: SetRollbackPlanInput): Prom
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid rollback plan.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to set the rollback plan.');
   }
 
@@ -59,7 +59,7 @@ export async function setHandoverSmokeItem(input: SetSmokeItemInput): Promise<Re
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid smoke check.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to edit the smoke checklist.');
   }
 

@@ -18,7 +18,7 @@ export async function archiveProject(input: ArchiveProjectInput): Promise<Result
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid project.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to archive a project.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to archive a project.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('archive_project', {

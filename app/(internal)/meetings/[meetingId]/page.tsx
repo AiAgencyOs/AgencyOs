@@ -72,7 +72,7 @@ const Row = ({ label, children }: { label: string; children: React.ReactNode }) 
 export default async function MeetingPage({ params }: { params: Promise<{ meetingId: string }> }) {
   const { meetingId } = await params;
   const context = await requireInternal(`/meetings/${meetingId}`);
-  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
+  if (!can(context, 'lead.read')) return <PermissionDenied />;
 
   const m = await getMeeting(meetingId);
   if (!m) notFound();
@@ -87,10 +87,10 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
     listProjectsForLead(m.lead_id),
     listMeetingMemoryAttachments(m.id),
   ]);
-  const mayReadAudit = can(context.role, 'audit.read');
+  const mayReadAudit = can(context, 'audit.read');
   const audit = mayReadAudit ? await readAuditLog({ subjectId: m.id, limit: 20 }) : [];
   // SCR-010 — the project this meeting is about, and what it may be linked to.
-  const [projectLinks, projectOptions] = await Promise.all([readMeetingProjects([m.id]), can(context.role, 'lead.write') ? listProjectOptionsForMeeting() : Promise.resolve([])]);
+  const [projectLinks, projectOptions] = await Promise.all([readMeetingProjects([m.id]), can(context, 'lead.write') ? listProjectOptionsForMeeting() : Promise.resolve([])]);
   const projectLink = projectLinks.get(m.id) ?? null;
   const leadProjects = memoryProjects.map((p) => ({ id: p.id, name: p.name }));
 
@@ -106,7 +106,7 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
   const superseder = await findMeetingSuperseder(m.id);
   const controls = meetingControls(m.status as MeetingStatus, { calendarConfigured: calendar !== null });
   const offered = offeredSlots(m, agencyZone, (iso, zone) => clockFor(zone).dateTime(iso), (iso, zone) => clockFor(zone).clock(iso));
-  const mayWrite = can(context.role, 'lead.write');
+  const mayWrite = can(context, 'lead.write');
   const provider = providerState(m);
   const availability = availabilityState(m);
   const completion = completionState(m, now);

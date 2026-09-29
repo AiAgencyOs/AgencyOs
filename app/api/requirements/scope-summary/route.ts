@@ -22,7 +22,7 @@ function cell(value: string | number | null): string {
 export async function GET() {
   const context = await getAuthContext();
   if (!context) return NextResponse.json({ error: 'Sign in to export the scope summary.' }, { status: 401 });
-  if (!can(context.role, 'lead.read')) return NextResponse.json({ error: 'You do not have permission to read requirements.' }, { status: 403 });
+  if (!can(context, 'lead.read')) return NextResponse.json({ error: 'You do not have permission to read requirements.' }, { status: 403 });
 
   const overview = await readRequirementsOverview();
   const lines = [['project_id', 'project', 'scope_version', 'scope_status', 'open_change_requests', 'open_clarifications', 'per_project_export'].join(',')];

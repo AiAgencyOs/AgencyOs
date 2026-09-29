@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { redirect } from 'next/navigation';
+import { cache } from 'react';
 
 import { createClient } from '@/lib/db/server';
 
@@ -9,6 +10,7 @@ import {
   isClientRole,
   isInternalRole,
   isUnprovisioned,
+  ROLES,
   type AppClaims,
   type Role,
 } from './claims';
@@ -19,7 +21,16 @@ export type AuthContext = {
   fullName: string | null;
   avatarUrl: string | null;
   claims: AppClaims;
+  /** The PRIMARY role — what the JWT carries and what routing decisions key on. */
   role: Role | undefined;
+  /**
+   * Every role the session holds: the primary first, then the secondary roles
+   * an owner granted (`core.membership_roles`). Decision 2026-09-30 (F2):
+   * `can(context, …)` reads this union. Loaded by `requireInternal()`; a
+   * context from `getAuthContext()` / `requireUser()` carries the primary
+   * alone, because the client portal has no secondary roles to load.
+   */
+  roles: readonly Role[];
   organizationId: string | undefined;
   clientAccountId: string | undefined;
 };
@@ -58,10 +69,43 @@ export async function getAuthContext(): Promise<AuthContext | null> {
     avatarUrl: (user.user_metadata?.['avatar_url'] as string | undefined) ?? null,
     claims,
     role: claims.role,
+    roles: claims.role ? [claims.role] : [],
     organizationId: claims.organization_id,
     clientAccountId: claims.client_account_id,
   };
 }
+
+/**
+ * The secondary roles this person's active membership holds in this
+ * organisation — decision 2026-09-30 (F2). One read per request however
+ * many components and services call `requireInternal()`: `cache()` keys on
+ * the arguments, so the layout, the page and the door share the answer.
+ *
+ * Degrades to none: a read that fails (the table not yet deployed, a
+ * transient error) is logged and the session keeps its primary role — nobody
+ * gets LESS than their primary grants — rather than the whole internal app
+ * refusing to render. RLS bounds the read to the caller's own organisation;
+ * the `user_id` filter narrows it to their own membership.
+ */
+const loadSecondaryRoles = cache(async (userId: string, organizationId: string | undefined): Promise<Role[]> => {
+  if (!organizationId) return [];
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('core')
+    .from('membership_roles')
+    .select('role, memberships!inner(user_id, status)')
+    .eq('organization_id', organizationId)
+    .eq('memberships.user_id', userId)
+    .eq('memberships.status', 'active');
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'warn', scope: 'loadSecondaryRoles', detail: error.message }));
+    return [];
+  }
+  return (data ?? [])
+    .map((r) => r.role)
+    .filter((r): r is Role => (ROLES as readonly string[]).includes(r));
+});
 
 /** Redirects to sign-in when there is no session. */
 export async function requireUser(returnTo?: string): Promise<AuthContext> {
@@ -85,7 +129,13 @@ export async function requireInternal(returnTo?: string): Promise<AuthContext> {
   if (isUnprovisioned(context.claims)) redirect('/no-access');
   if (!isInternalRole(context.role)) redirect('/portal');
 
-  return context;
+  // Decision 2026-09-30 (F2): the union of every role the person holds, so
+  // `can(context, …)` honours a secondary role wherever it is checked.
+  const secondary = await loadSecondaryRoles(context.userId, context.organizationId);
+  const roles: Role[] = context.role ? [context.role] : [];
+  for (const r of secondary) if (!roles.includes(r)) roles.push(r);
+
+  return { ...context, roles };
 }
 
 /** Gate for the client portal. */

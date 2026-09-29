@@ -25,7 +25,7 @@ export async function validateAgentConfiguration(input: ValidateAgentConfigurati
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid agent key.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'audit.read')) return err('FORBIDDEN', 'Only an owner or ops admin may validate an agent.');
+  if (!can(context, 'audit.read')) return err('FORBIDDEN', 'Only an owner or ops admin may validate an agent.');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();

@@ -27,7 +27,7 @@ export async function setClientTeam(input: SetClientTeamInput): Promise<Result<{
   if (!parsed.success) return err('VALIDATION', 'Invalid team.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to assign a client’s team.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to assign a client’s team.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('core').rpc('set_client_account_team', {

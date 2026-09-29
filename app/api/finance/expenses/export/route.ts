@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const context = await requireInternal('/finance/expenses');
-  if (!can(context.role, 'invoice.read')) {
+  if (!can(context, 'invoice.read')) {
     return NextResponse.json({ error: 'You do not have permission to read expenses.' }, { status: 403 });
   }
 

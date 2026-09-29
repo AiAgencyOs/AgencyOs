@@ -20,7 +20,7 @@ export async function createCalendarFeed(input: CreateCalendarFeedInput): Promis
   if (!parsed.success) return err('VALIDATION', 'Invalid project.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.read')) return err('FORBIDDEN', 'You do not have permission to read this project.');
+  if (!can(context, 'project.read')) return err('FORBIDDEN', 'You do not have permission to read this project.');
   if (!context.organizationId || !context.userId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
@@ -60,7 +60,7 @@ export async function revokeCalendarFeed(input: RevokeCalendarFeedInput): Promis
   if (!parsed.success) return err('VALIDATION', 'Invalid feed.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.read')) return err('FORBIDDEN', 'You do not have permission to read this project.');
+  if (!can(context, 'project.read')) return err('FORBIDDEN', 'You do not have permission to read this project.');
 
   const supabase = await createClient();
   const { data, error } = await supabase

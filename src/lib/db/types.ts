@@ -191,10 +191,13 @@ export type Database = {
           id: string
           input: Json | null
           input_tokens: number
+          latency_ms: number | null
           model: string | null
           organization_id: string
           output: Json | null
           output_tokens: number
+          phase: number | null
+          project_id: string | null
           prompt_hash: string | null
           prompt_key: string | null
           prompt_version: string | null
@@ -219,10 +222,13 @@ export type Database = {
           id?: string
           input?: Json | null
           input_tokens?: number
+          latency_ms?: number | null
           model?: string | null
           organization_id: string
           output?: Json | null
           output_tokens?: number
+          phase?: number | null
+          project_id?: string | null
           prompt_hash?: string | null
           prompt_key?: string | null
           prompt_version?: string | null
@@ -247,10 +253,13 @@ export type Database = {
           id?: string
           input?: Json | null
           input_tokens?: number
+          latency_ms?: number | null
           model?: string | null
           organization_id?: string
           output?: Json | null
           output_tokens?: number
+          phase?: number | null
+          project_id?: string | null
           prompt_hash?: string | null
           prompt_key?: string | null
           prompt_version?: string | null
@@ -449,6 +458,7 @@ export type Database = {
       }
       agents: {
         Row: {
+          allowed_work_classes: string[]
           autonomy_level: string
           created_at: string
           default_effort: string
@@ -465,6 +475,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          allowed_work_classes?: string[]
           autonomy_level?: string
           created_at?: string
           default_effort?: string
@@ -481,6 +492,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          allowed_work_classes?: string[]
           autonomy_level?: string
           created_at?: string
           default_effort?: string
@@ -547,6 +559,33 @@ export type Database = {
             referencedColumns: ["key"]
           },
         ]
+      }
+      fallback_chains: {
+        Row: {
+          created_at: string
+          model_ids: string[]
+          organization_id: string
+          updated_at: string
+          updated_by: string | null
+          work_class: string
+        }
+        Insert: {
+          created_at?: string
+          model_ids?: string[]
+          organization_id: string
+          updated_at?: string
+          updated_by?: string | null
+          work_class: string
+        }
+        Update: {
+          created_at?: string
+          model_ids?: string[]
+          organization_id?: string
+          updated_at?: string
+          updated_by?: string | null
+          work_class?: string
+        }
+        Relationships: []
       }
       handoffs: {
         Row: {
@@ -758,6 +797,33 @@ export type Database = {
         }
         Relationships: []
       }
+      provider_budgets: {
+        Row: {
+          created_at: string
+          monthly_cap_minor: number
+          organization_id: string
+          provider: string
+          set_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          monthly_cap_minor: number
+          organization_id: string
+          provider: string
+          set_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          monthly_cap_minor?: number
+          organization_id?: string
+          provider?: string
+          set_by?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       provider_credentials: {
         Row: {
           auth_tag: string
@@ -828,7 +894,16 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      provider_budget_status: {
+        Row: {
+          monthly_cap_minor: number | null
+          organization_id: string | null
+          provider: string | null
+          spent_minor: number | null
+          updated_at: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       attach_meeting_summary_to_memory: {
@@ -935,6 +1010,72 @@ export type Database = {
           p_category: string
           p_note?: string
           p_preferred_models: string[]
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      add_model: {
+        Args: {
+          p_capabilities?: string[]
+          p_context_tokens?: number
+          p_input_cost_minor_per_mtok?: number
+          p_model_id: string
+          p_output_cost_minor_per_mtok?: number
+          p_provider: string
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      provider_spend_this_month: {
+        Args: {
+          p_organization_id: string
+          p_provider: string
+        }
+        Returns: number
+      }
+      replay_run: {
+        Args: {
+          p_reason: string
+          p_run_id: string
+        }
+        Returns: {
+          outcome: string
+          job_id: string | null
+        }[]
+      }
+      retire_model: {
+        Args: {
+          p_model_id: string
+          p_reason: string
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      set_agent_work_classes: {
+        Args: {
+          p_agent_key: string
+          p_work_classes: string[]
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      set_fallback_chain: {
+        Args: {
+          p_model_ids: string[]
+          p_work_class: string
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      set_provider_budget: {
+        Args: {
+          p_monthly_cap_minor: number | null
+          p_provider: string
         }
         Returns: {
           outcome: string
@@ -1295,6 +1436,57 @@ export type Database = {
           key?: string
           last_sent_at?: string
           signature?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      alerts: {
+        Row: {
+          acknowledge_reason: string | null
+          acknowledged_at: string | null
+          acknowledged_by: string | null
+          created_at: string
+          fingerprint: string
+          first_seen_at: string
+          id: string
+          last_seen_at: string
+          occurrences: number
+          organization_id: string
+          severity: string
+          source: string
+          summary: string
+          updated_at: string
+        }
+        Insert: {
+          acknowledge_reason?: string | null
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          created_at?: string
+          fingerprint: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          occurrences?: number
+          organization_id: string
+          severity: string
+          source: string
+          summary: string
+          updated_at?: string
+        }
+        Update: {
+          acknowledge_reason?: string | null
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          created_at?: string
+          fingerprint?: string
+          first_seen_at?: string
+          id?: string
+          last_seen_at?: string
+          occurrences?: number
+          organization_id?: string
+          severity?: string
+          source?: string
+          summary?: string
           updated_at?: string
         }
         Relationships: []
@@ -1696,27 +1888,11 @@ export type Database = {
           },
         ]
       }
-      event_types: {
-        Row: {
-          canonical: string | null
-          description: string
-          type: string
-        }
-        Insert: {
-          canonical?: string | null
-          description: string
-          type: string
-        }
-        Update: {
-          canonical?: string | null
-          description?: string
-          type?: string
-        }
-        Relationships: []
-      }
       jobs: {
         Row: {
           attempts: number
+          cancel_reason: string | null
+          cancel_requested_at: string | null
           correlation_id: string | null
           created_at: string
           dedupe_key: string | null
@@ -1735,6 +1911,8 @@ export type Database = {
         }
         Insert: {
           attempts?: number
+          cancel_reason?: string | null
+          cancel_requested_at?: string | null
           correlation_id?: string | null
           created_at?: string
           dedupe_key?: string | null
@@ -1753,6 +1931,8 @@ export type Database = {
         }
         Update: {
           attempts?: number
+          cancel_reason?: string | null
+          cancel_requested_at?: string | null
           correlation_id?: string | null
           created_at?: string
           dedupe_key?: string | null
@@ -1778,6 +1958,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      kill_switches: {
+        Row: {
+          active: boolean
+          created_at: string
+          organization_id: string
+          reason: string | null
+          set_at: string | null
+          set_by: string | null
+          switch: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          organization_id: string
+          reason?: string | null
+          set_at?: string | null
+          set_by?: string | null
+          switch: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          organization_id?: string
+          reason?: string | null
+          set_at?: string | null
+          set_by?: string | null
+          switch?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       member_cost_rates: {
         Row: {
@@ -1878,6 +2091,41 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      membership_roles: {
+        Row: {
+          created_at: string
+          granted_by: string | null
+          id: string
+          membership_id: string
+          organization_id: string
+          role: string
+        }
+        Insert: {
+          created_at?: string
+          granted_by?: string | null
+          id?: string
+          membership_id: string
+          organization_id: string
+          role: string
+        }
+        Update: {
+          created_at?: string
+          granted_by?: string | null
+          id?: string
+          membership_id?: string
+          organization_id?: string
+          role?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "membership_roles_membership_id_fkey"
+            columns: ["membership_id"]
+            isOneToOne: false
+            referencedRelation: "memberships"
             referencedColumns: ["id"]
           },
         ]
@@ -2176,6 +2424,45 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      overrides: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          expires_at: string | null
+          id: string
+          kind: string
+          organization_id: string
+          reason: string
+          subject_id: string | null
+          subject_type: string
+          updated_at: string
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          kind: string
+          organization_id: string
+          reason: string
+          subject_id?: string | null
+          subject_type: string
+          updated_at?: string
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          kind?: string
+          organization_id?: string
+          reason?: string
+          subject_id?: string | null
+          subject_type?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       saved_searches: {
         Row: {
@@ -2724,6 +3011,78 @@ export type Database = {
           p_pan?: string | null
         }
         Returns: { outcome: string }[]
+      }
+      acknowledge_alert: {
+        Args: {
+          p_alert_id: string
+          p_reason: string
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      cancel_running_job: {
+        Args: {
+          p_job_id: string
+          p_reason: string
+        }
+        Returns: {
+          outcome: string
+          job_status: string | null
+        }[]
+      }
+      holds_role: {
+        Args: {
+          p_role: string
+        }
+        Returns: boolean
+      }
+      org_paused: {
+        Args: {
+          p_organization_id: string
+          p_switch: string
+        }
+        Returns: boolean
+      }
+      raise_alert: {
+        Args: {
+          p_fingerprint: string
+          p_organization_id: string
+          p_severity: string
+          p_source: string
+          p_summary: string
+        }
+        Returns: string
+      }
+      record_manual_override: {
+        Args: {
+          p_expires_at?: string
+          p_kind: string
+          p_reason: string
+          p_subject_id?: string
+          p_subject_type: string
+        }
+        Returns: {
+          outcome: string
+          id: string | null
+        }[]
+      }
+      set_kill_switch: {
+        Args: {
+          p_active: boolean
+          p_reason: string
+          p_switch: string
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      settle_cancelled_job: {
+        Args: {
+          p_job_id: string
+          p_run_id?: string
+        }
+        Returns: undefined
       }
       update_own_profile: {
         Args: { p_avatar_url: string; p_full_name: string }
@@ -12147,6 +12506,145 @@ export type Database = {
       won_handoff_packet: {
         Args: { p_opportunity_id: string }
         Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
+  security: {
+    Tables: {
+      access_reviews: {
+        Row: {
+          created_at: string
+          decision: string
+          id: string
+          membership_id: string
+          note: string | null
+          organization_id: string
+          reviewed_at: string
+          reviewer_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          decision: string
+          id?: string
+          membership_id: string
+          note?: string | null
+          organization_id: string
+          reviewed_at?: string
+          reviewer_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          decision?: string
+          id?: string
+          membership_id?: string
+          note?: string | null
+          organization_id?: string
+          reviewed_at?: string
+          reviewer_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "access_reviews_membership_id_fkey"
+            columns: ["membership_id"]
+            isOneToOne: false
+            referencedRelation: "memberships"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      incidents: {
+        Row: {
+          created_at: string
+          evidence: Json
+          id: string
+          kind: string
+          opened_at: string
+          opened_by: string | null
+          organization_id: string
+          resolution: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          severity: string
+          summary: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          evidence?: Json
+          id?: string
+          kind: string
+          opened_at?: string
+          opened_by?: string | null
+          organization_id: string
+          resolution?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity: string
+          summary: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          evidence?: Json
+          id?: string
+          kind?: string
+          opened_at?: string
+          opened_by?: string | null
+          organization_id?: string
+          resolution?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity?: string
+          summary?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      open_incident: {
+        Args: {
+          p_evidence?: Json
+          p_kind: string
+          p_severity: string
+          p_summary: string
+        }
+        Returns: {
+          outcome: string
+          id: string | null
+        }[]
+      }
+      record_access_review: {
+        Args: {
+          p_decision: string
+          p_membership_id: string
+          p_note?: string
+        }
+        Returns: {
+          outcome: string
+          id: string | null
+        }[]
+      }
+      resolve_incident: {
+        Args: {
+          p_incident_id: string
+          p_resolution: string
+        }
+        Returns: {
+          outcome: string
+        }[]
       }
     }
     Enums: {

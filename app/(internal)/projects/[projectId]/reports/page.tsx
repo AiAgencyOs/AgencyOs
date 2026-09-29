@@ -91,12 +91,12 @@ export default async function ProjectReportPage({
   const { from: rawFrom, to: rawTo } = await searchParams;
 
   const context = await requireInternal(`/projects/${projectId}/reports`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const mayReadMoney = can(context.role, 'invoice.read');
+  const mayReadMoney = can(context, 'invoice.read');
   const [plan, breakdown, defects, invoices, expenses, spend, roster, clock, clientName, time, margin] = await Promise.all([
     listPaymentPlan(projectId),
     listDevelopmentBreakdown(projectId),
@@ -196,7 +196,7 @@ export default async function ProjectReportPage({
 
   return (
     <div className="flex flex-col gap-5">
-      <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={can(context.role, 'project.write')} />
+      <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={can(context, 'project.write')} />
 
       <ProjectSubNav projectId={projectId} />
 

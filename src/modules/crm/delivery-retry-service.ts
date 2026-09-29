@@ -34,7 +34,7 @@ export async function retryFailedDelivery(input: RetryFailedDeliveryInput): Prom
   if (!parsed.success) return err('VALIDATION', 'That is not a message id.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to message clients.');
   }
 

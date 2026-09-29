@@ -25,7 +25,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/qa`);
-  if (!can(context.role, 'project.read')) {
+  if (!can(context, 'project.read')) {
     return NextResponse.json({ error: 'You do not have permission to read this project.' }, { status: 403 });
   }
 

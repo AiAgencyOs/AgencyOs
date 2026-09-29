@@ -5,7 +5,7 @@ import type { AiSpendComparison } from './ai-spend';
 import { z } from 'zod';
 
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
+import { can, hasRole } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, unreadable, type Result } from '@/lib/result';
 
@@ -100,7 +100,7 @@ export async function createOpportunity(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to open opportunities.');
   }
 
@@ -214,7 +214,7 @@ export async function setOpportunityStage(
   if (!parsed.success) return err('VALIDATION', 'Invalid stage change.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to move deals.');
   }
 
@@ -401,7 +401,7 @@ export async function requestPaymentException(
   if (!parsed.success) return err('VALIDATION', 'A reason is required.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to request a payment exception.');
   }
 
@@ -470,7 +470,7 @@ export async function convertToProject(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write') || !can(context.role, 'project.write')) {
+  if (!can(context, 'lead.write') || !can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to convert deals into projects.');
   }
 
@@ -681,7 +681,7 @@ export async function createClientAccount(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to add a client.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -802,7 +802,7 @@ export async function draftProposal(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'proposal.draft')) {
+  if (!can(context, 'proposal.draft')) {
     return err('FORBIDDEN', 'You do not have permission to draft quotations.');
   }
 
@@ -868,7 +868,7 @@ export async function addProposalItem(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'proposal.draft')) {
+  if (!can(context, 'proposal.draft')) {
     return err('FORBIDDEN', 'You do not have permission to edit quotations.');
   }
 
@@ -934,7 +934,7 @@ export async function setProposalPricing(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'proposal.draft')) {
+  if (!can(context, 'proposal.draft')) {
     return err('FORBIDDEN', 'You do not have permission to price quotations.');
   }
 
@@ -1009,7 +1009,7 @@ export async function submitProposal(
   if (!parsed.success) return err('VALIDATION', 'Invalid submission.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'proposal.draft')) {
+  if (!can(context, 'proposal.draft')) {
     return err('FORBIDDEN', 'You do not have permission to submit quotations.');
   }
 
@@ -1235,7 +1235,7 @@ export async function quotationPdfForProposal(
   if (!idCheck.success) return err('VALIDATION', 'Not a quotation id.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.read')) {
+  if (!can(context, 'lead.read')) {
     return err('FORBIDDEN', 'You do not have permission to read quotations.');
   }
 
@@ -1331,7 +1331,7 @@ export async function sendProposal(
   if (!parsed.success) return err('VALIDATION', 'Invalid send request.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'proposal.send')) {
+  if (!can(context, 'proposal.send')) {
     return err('FORBIDDEN', 'You do not have permission to send quotations.');
   }
 
@@ -1659,7 +1659,7 @@ export async function recordProposalResponse(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'proposal.send')) {
+  if (!can(context, 'proposal.send')) {
     return err('FORBIDDEN', 'You do not have permission to record quotation responses.');
   }
 
@@ -1747,7 +1747,7 @@ export async function setOpportunityTerms(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to change deal terms.');
   }
 
@@ -1815,7 +1815,7 @@ export async function setApprovedOffer(input: {
   validUntil: string | null;
 }): Promise<Result<{ offerId: string }>> {
   const context = await requireInternal();
-  if (context.role !== 'owner') {
+  if (!hasRole(context, 'owner')) {
     return err('FORBIDDEN', 'Only the owner can authorise an offer the agent may apply.');
   }
   // The same refusal crm/service.ts makes: a session with no organization
@@ -1854,7 +1854,7 @@ export async function setApprovedOffer(input: {
 /** Withdraws the standing offer. The agent applies nothing from here on. */
 export async function clearApprovedOffer(): Promise<Result<{ cleared: boolean }>> {
   const context = await requireInternal();
-  if (context.role !== 'owner') {
+  if (!hasRole(context, 'owner')) {
     return err('FORBIDDEN', 'Only the owner can withdraw an offer.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -1890,7 +1890,7 @@ export async function readAiSpendComparison(
   windowDays = 30,
 ): Promise<Result<AiSpendComparison>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to read the agency’s costs.');
   }
 
@@ -1998,7 +1998,7 @@ export async function setPaymentStructure(input: {
   maxAmountMinor: number | null;
 }): Promise<Result<{ structureId: string }>> {
   const context = await requireInternal();
-  if (context.role !== 'owner') {
+  if (!hasRole(context, 'owner')) {
     return err('FORBIDDEN', 'Only the owner can set the agency’s payment terms.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -2039,7 +2039,7 @@ export async function setPaymentStructure(input: {
 /** Withdrawing one. Deactivated, never deleted — it is part of the record. */
 export async function clearPaymentStructure(name: string): Promise<Result<{ cleared: boolean }>> {
   const context = await requireInternal();
-  if (context.role !== 'owner') {
+  if (!hasRole(context, 'owner')) {
     return err('FORBIDDEN', 'Only the owner can change the agency’s payment terms.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -2121,7 +2121,7 @@ export async function draftPlanSet(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'proposal.draft')) {
+  if (!can(context, 'proposal.draft')) {
     return err('FORBIDDEN', 'You do not have permission to draft quotations.');
   }
 
@@ -2196,7 +2196,7 @@ export async function submitPlanSet(
   if (!parsed.success) return err('VALIDATION', 'Invalid submission.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'proposal.draft')) {
+  if (!can(context, 'proposal.draft')) {
     return err('FORBIDDEN', 'You do not have permission to submit quotations.');
   }
 
@@ -2282,7 +2282,7 @@ export async function sendPlanSet(
   if (!parsed.success) return err('VALIDATION', 'Invalid send request.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'proposal.send')) {
+  if (!can(context, 'proposal.send')) {
     return err('FORBIDDEN', 'You do not have permission to send quotations.');
   }
 
@@ -2343,7 +2343,7 @@ export async function recordPlanSetChoice(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'proposal.send')) {
+  if (!can(context, 'proposal.send')) {
     return err('FORBIDDEN', 'You do not have permission to record quotation responses.');
   }
 
@@ -2412,7 +2412,7 @@ export async function recordPlanSetResponse(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'proposal.send')) {
+  if (!can(context, 'proposal.send')) {
     return err('FORBIDDEN', 'You do not have permission to record quotation responses.');
   }
 

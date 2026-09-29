@@ -196,7 +196,7 @@ export default async function LeadConversationPage({
   const { leadId } = await params;
 
   const context = await requireInternal(`/leads/${leadId}`);
-  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
+  if (!can(context, 'lead.read')) return <PermissionDenied />;
 
   const lead = await getLeadHeader(leadId);
   if (!lead) notFound();
@@ -229,8 +229,8 @@ export default async function LeadConversationPage({
   const disqualifications = await listDisqualificationHistory(leadId);
   // SCR-029 — what downstream cites each version, and how far it was carried.
   const requirementSets = await readRequirementSets(versions.map((v) => v.id));
-  const mayWrite = can(context.role, 'lead.write');
-  const mayAssign = can(context.role, 'lead.assign');
+  const mayWrite = can(context, 'lead.write');
+  const mayAssign = can(context, 'lead.assign');
   // Owner decision 2026-09-29 — the composer's template picker: only the
   // templates Meta approved and an Admin left active; the door checks again.
   const approvedTemplates = mayWrite && conversation
@@ -238,12 +238,12 @@ export default async function LeadConversationPage({
     : [];
   // The capability triple ADM-07 describes. Re-checked here for rendering only;
   // the service checks it again and RLS refuses the rows regardless.
-  const mayDraft = can(context.role, 'proposal.draft');
-  const maySend = can(context.role, 'proposal.send');
+  const mayDraft = can(context, 'proposal.draft');
+  const maySend = can(context, 'proposal.send');
   // Reactivation cohort is owner-operated at the app layer — the same gate the
   // Settings pilot toggle uses; the database independently admits owner or
   // ops_admin. Only read the state when the control will render.
-  const mayManageReactivation = can(context.role, 'organization.settings');
+  const mayManageReactivation = can(context, 'organization.settings');
   const reactivation = mayManageReactivation ? await getLeadReactivation(leadId) : null;
 
   const pipeline = await getLeadPipeline(leadId);

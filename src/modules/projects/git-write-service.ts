@@ -90,7 +90,7 @@ export async function createTaskBranch(input: CreateTaskBranchInput): Promise<Re
   if (!parsed.success) return err('VALIDATION', 'Invalid task.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) return err('FORBIDDEN', 'You do not have permission to create a task branch.');
+  if (!can(context, 'task.write')) return err('FORBIDDEN', 'You do not have permission to create a task branch.');
 
   const supabase = await createClient();
   const { data: task, error: taskError } = await supabase
@@ -129,7 +129,7 @@ export async function submitReview(input: SubmitReviewInput): Promise<Result<{ s
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid review.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to submit a review.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to submit a review.');
 
   const link = await linkedRepository(parsed.data.projectId);
   if (!link) return err('CONFLICT', 'This project has no linked GitHub repository.');
@@ -154,7 +154,7 @@ export async function mergePullRequest(input: MergePullRequestInput): Promise<Re
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid pull request.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to merge a pull request.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to merge a pull request.');
 
   const link = await linkedRepository(parsed.data.projectId);
   if (!link) return err('CONFLICT', 'This project has no linked GitHub repository.');
@@ -179,7 +179,7 @@ export async function linkCommit(input: LinkCommitInput): Promise<Result<{ linkI
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid commit.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) return err('FORBIDDEN', 'You do not have permission to link a commit.');
+  if (!can(context, 'task.write')) return err('FORBIDDEN', 'You do not have permission to link a commit.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('link_commit', {
@@ -221,7 +221,7 @@ export async function triggerBuild(input: TriggerBuildInput): Promise<Result<{ d
   if (!parsed.success) return err('VALIDATION', 'Invalid project.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to trigger a build.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to trigger a build.');
 
   const link = await linkedRepository(parsed.data.projectId);
   if (!link) return err('CONFLICT', 'This project has no linked GitHub repository. Link one on the Repository tab first.');
@@ -250,7 +250,7 @@ export async function setRepositoryWorkflow(input: SetRepositoryWorkflowInput): 
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid workflow file.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to change the repository link.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to change the repository link.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('set_repository_workflow', {

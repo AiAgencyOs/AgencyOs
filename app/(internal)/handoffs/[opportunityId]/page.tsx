@@ -24,7 +24,7 @@ export const metadata: Metadata = { title: 'Handoff packet' };
 export default async function HandoffPage({ params }: { params: Promise<{ opportunityId: string }> }) {
   const { opportunityId } = await params;
   const context = await requireInternal(`/handoffs/${opportunityId}`);
-  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
+  if (!can(context, 'lead.read')) return <PermissionDenied />;
 
   const packet = await readWonHandoffPacket(opportunityId);
   if (!packet) {

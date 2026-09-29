@@ -18,7 +18,7 @@ export async function recordScopeApproval(input: RecordScopeApprovalInput): Prom
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid approval.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'milestone.write')) return err('FORBIDDEN', 'You do not have permission to record scope approval.');
+  if (!can(context, 'milestone.write')) return err('FORBIDDEN', 'You do not have permission to record scope approval.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('record_scope_approval_evidence', {

@@ -21,7 +21,7 @@ export const metadata: Metadata = { title: 'Template' };
 export default async function TemplateDetailPage({ params }: { params: Promise<{ templateId: string }> }) {
   const { templateId } = await params;
   const context = await requireInternal(`/communication/templates/${templateId}`);
-  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
+  if (!can(context, 'lead.read')) return <PermissionDenied />;
   if (!/^[0-9a-f-]{36}$/i.test(templateId)) notFound();
 
   const [template, clock] = await Promise.all([getTemplateDetail(templateId), agencyClock()]);
@@ -47,7 +47,7 @@ export default async function TemplateDetailPage({ params }: { params: Promise<{
           </span>
         }
         description={`${humanize(template.situationKey)} · ${template.languageCode}. Meta's status is "${template.status}"; the switch is the Admin's. A send needs both.`}
-        actions={can(context.role, 'organization.settings') ? <Link href="/settings/communication" className="text-[13px] font-medium text-brand hover:underline">Manage on Settings</Link> : null}
+        actions={can(context, 'organization.settings') ? <Link href="/settings/communication" className="text-[13px] font-medium text-brand hover:underline">Manage on Settings</Link> : null}
       />
 
       <StatGrid cols={5}>

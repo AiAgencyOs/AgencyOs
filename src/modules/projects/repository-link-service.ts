@@ -29,7 +29,7 @@ export async function linkRepository(input: LinkRepositoryInput): Promise<Result
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid repository.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to link a repository.');
   }
 
@@ -67,7 +67,7 @@ export async function unlinkRepository(input: UnlinkRepositoryInput): Promise<Re
   if (!parsed.success) return err('VALIDATION', 'Invalid project.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to unlink a repository.');
   }
 

@@ -33,7 +33,7 @@ export async function openTestRun(input: OpenTestRunInput): Promise<Result<{ run
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid run.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) return err('FORBIDDEN', 'You do not have permission to open a test run.');
+  if (!can(context, 'task.write')) return err('FORBIDDEN', 'You do not have permission to open a test run.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('qa').rpc('open_test_run', {
@@ -69,7 +69,7 @@ export async function closeTestRun(input: CloseTestRunInput): Promise<Result<{ c
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid counts.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) return err('FORBIDDEN', 'You do not have permission to close a test run.');
+  if (!can(context, 'task.write')) return err('FORBIDDEN', 'You do not have permission to close a test run.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('qa').rpc('close_test_run', {
@@ -107,7 +107,7 @@ export async function rerunTestRun(input: RerunTestRunInput): Promise<Result<{ r
   if (!parsed.success) return err('VALIDATION', 'That is not a run id.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) return err('FORBIDDEN', 'You do not have permission to rerun a suite.');
+  if (!can(context, 'task.write')) return err('FORBIDDEN', 'You do not have permission to rerun a suite.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('qa').rpc('rerun_test_run', { p_run_id: parsed.data.runId });

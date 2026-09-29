@@ -49,7 +49,7 @@ export async function createProjectFromTemplateAction(input: CreateProjectFromTe
 
 export async function listProjectTemplateOptionsAction(): Promise<Result<ProjectTemplateSummary[]>> {
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to create projects.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to create projects.');
   try {
     return ok(await listProjectTemplates());
   } catch (e) {

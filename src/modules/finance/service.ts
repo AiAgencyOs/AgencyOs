@@ -139,7 +139,7 @@ export async function generateInvoiceFromMilestone(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.create')) {
+  if (!can(context, 'invoice.create')) {
     return err('FORBIDDEN', 'You do not have permission to raise invoices.');
   }
 
@@ -781,7 +781,7 @@ export async function issueInvoice(
   if (!parsed.success) return err('VALIDATION', 'Invalid issue request.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to issue invoices.');
   }
 
@@ -938,7 +938,7 @@ export async function recordManualPayment(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to record payments.');
   }
 
@@ -1144,7 +1144,7 @@ export async function voidInvoice(
   if (!parsed.success) return err('VALIDATION', 'A voided invoice needs a reason.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to void invoices.');
   }
 
@@ -1501,7 +1501,7 @@ export async function requestRefund(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'refund.issue')) {
+  if (!can(context, 'refund.issue')) {
     return err('FORBIDDEN', 'Only an owner may ask for a refund.');
   }
 
@@ -1574,7 +1574,7 @@ export async function recordRefund(input: RecordRefundInput): Promise<Result<{ n
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'refund.issue')) {
+  if (!can(context, 'refund.issue')) {
     return err('FORBIDDEN', 'Only an owner may record a refund.');
   }
 
@@ -1682,7 +1682,7 @@ export async function verifyPayment(input: VerifyPaymentInput): Promise<Result<V
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to confirm payments.');
   }
 
@@ -1801,7 +1801,7 @@ export async function recordPaymentSubmission(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to record a payment claim.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -1876,7 +1876,7 @@ export async function verifyPaymentSubmission(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to verify a payment claim.');
   }
 
@@ -1941,7 +1941,7 @@ export async function confirmBillingMode(
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid billing mode.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.create')) {
+  if (!can(context, 'invoice.create')) {
     return err('FORBIDDEN', 'You do not have permission to set a billing mode.');
   }
 
@@ -1995,7 +1995,7 @@ export async function recordBillingDetails(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.create')) {
+  if (!can(context, 'invoice.create')) {
     return err('FORBIDDEN', 'You do not have permission to record billing details.');
   }
 
@@ -2152,7 +2152,7 @@ export async function issueFreeMaintenanceInvoice(
   planId: string,
 ): Promise<Result<{ invoiceId: string; number: string; issued: boolean }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.create')) {
+  if (!can(context, 'invoice.create')) {
     return err('FORBIDDEN', 'You do not have permission to raise invoices.');
   }
 
@@ -2232,7 +2232,7 @@ export async function recordExpense(input: RecordExpenseInput): Promise<Result<{
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to record an expense.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -2280,7 +2280,7 @@ export async function createPaymentAccount(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to manage receiving accounts.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -2331,7 +2331,7 @@ export async function setPaymentAccountStatus(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to manage receiving accounts.');
   }
 
@@ -2364,7 +2364,7 @@ export async function updateExpense(input: UpdateExpenseInput): Promise<Result<{
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to edit an expense.');
   }
 

@@ -51,12 +51,12 @@ const SEVERITY_COLOR: Record<string, string> = {
  */
 export default async function ReportsPage() {
   const context = await requireInternal('/reports');
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const [funnel, projects, invoices, defects] = await Promise.all([
     getSalesFunnel(),
     listProjectsForTable(500),
-    can(context.role, 'invoice.read') ? listInvoices(500) : Promise.resolve([]),
+    can(context, 'invoice.read') ? listInvoices(500) : Promise.resolve([]),
     listOpenDefects(),
   ]);
 
@@ -168,7 +168,7 @@ export default async function ReportsPage() {
                 </div>
               ))
             ) : (
-              <p className="px-3 py-6 text-[13px] text-muted">{can(context.role, 'invoice.read') ? 'No invoices yet.' : 'Your role cannot read invoices.'}</p>
+              <p className="px-3 py-6 text-[13px] text-muted">{can(context, 'invoice.read') ? 'No invoices yet.' : 'Your role cannot read invoices.'}</p>
             )}
           </div>
         </Card>

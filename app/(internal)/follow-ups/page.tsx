@@ -176,7 +176,7 @@ export default async function FollowUpsPage({
 }) {
   const context = await requireInternal('/follow-ups');
   const clock = await agencyClock();
-  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
+  if (!can(context, 'lead.read')) return <PermissionDenied />;
 
   const { status, page: pageParam, sort: sortKey, dir, channel: channelParam, owner: ownerParam, due: dueParam } = await searchParams;
   const due = (DUE_FILTERS as readonly string[]).includes(dueParam ?? '') ? (dueParam as DueFilter) : undefined;

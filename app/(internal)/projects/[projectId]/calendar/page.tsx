@@ -97,7 +97,7 @@ export default async function ProjectCalendarPage({
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/calendar`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
@@ -114,9 +114,9 @@ export default async function ProjectCalendarPage({
     // SCR-022 — "Sync supported calendars": the caller's own ICS feed, if one exists.
     readMyCalendarFeed(projectId),
   ]);
-  const mayProposeMeeting = can(context.role, 'lead.write');
+  const mayProposeMeeting = can(context, 'lead.write');
   // SCR-022 — "create a milestone on this day": an unpriced one, through milestone.write.
-  const mayAddMilestone = can(context.role, 'milestone.write');
+  const mayAddMilestone = can(context, 'milestone.write');
   const leadOptions = clientLeads.map((l) => ({ id: l.id, title: l.title }));
 
   // SCR-022: `?view=month|week|day|list`, `?date=` anchors week/day, and
@@ -128,7 +128,7 @@ export default async function ProjectCalendarPage({
   const view = viewOf(rawView);
   const kinds = kindsOf(types);
   const anchor = isDayKey(rawDate) ? rawDate : today;
-  const mayWrite = can(context.role, 'task.write');
+  const mayWrite = can(context, 'task.write');
   const moduleOptions = modules.map((m) => ({ id: m.id, name: m.name }));
   const entries: CalendarEntry[] = [];
 
@@ -199,7 +199,7 @@ export default async function ProjectCalendarPage({
 
   return (
     <div className="flex flex-col gap-5">
-      <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={can(context.role, 'project.write')} />
+      <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={can(context, 'project.write')} />
 
       <ProjectSubNav projectId={projectId} />
 
@@ -442,8 +442,8 @@ export default async function ProjectCalendarPage({
 
           <QuickActions
             actions={[
-              ...(can(context.role, 'task.write') ? [{ label: 'Add task', icon: <IconPlus size={13} />, href: `/projects/${projectId}/board` }] : []),
-              ...(can(context.role, 'milestone.write') ? [{ label: 'Plan milestones', icon: <IconFlag size={13} />, href: `/projects/${projectId}/plan` }] : []),
+              ...(can(context, 'task.write') ? [{ label: 'Add task', icon: <IconPlus size={13} />, href: `/projects/${projectId}/board` }] : []),
+              ...(can(context, 'milestone.write') ? [{ label: 'Plan milestones', icon: <IconFlag size={13} />, href: `/projects/${projectId}/plan` }] : []),
               { label: 'Board', icon: <IconGrid size={13} />, href: `/projects/${projectId}/board` },
               { label: 'Meetings', icon: <IconCalendar size={13} />, href: '/meetings' },
             ]}

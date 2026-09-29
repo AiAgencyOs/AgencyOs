@@ -19,7 +19,7 @@ function cell(v: string | number | null | undefined): string {
 
 export async function GET(request: Request) {
   const context = await requireInternal('/sales-funnel');
-  if (!can(context.role, 'lead.read')) {
+  if (!can(context, 'lead.read')) {
     return NextResponse.json({ error: 'You do not have permission to read deals.' }, { status: 403 });
   }
 

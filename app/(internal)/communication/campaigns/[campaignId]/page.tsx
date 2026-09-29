@@ -5,7 +5,7 @@ import { notFound } from 'next/navigation';
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { readAuditLog } from '@/lib/audit/queries';
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
+import { can, hasRole } from '@/lib/authz/permissions';
 import { readCampaignSendPreview } from '@/modules/crm/campaign-preview-queries';
 import { getCampaign, listCampaignRecipients, readAudienceCandidates, type CampaignRecipientRow } from '@/modules/crm/campaign-queries';
 import { describeAudience, expandAudience } from '@/modules/crm/campaign-schema';
@@ -82,7 +82,7 @@ const recipientColumns = (clock: AgencyClock): Column<CampaignRecipientRow>[] =>
 export default async function CampaignPage({ params }: { params: Promise<{ campaignId: string }> }) {
   const { campaignId } = await params;
   const context = await requireInternal(`/communication/campaigns/${campaignId}`);
-  if (!can(context.role, 'lead.write')) return <PermissionDenied />;
+  if (!can(context, 'lead.write')) return <PermissionDenied />;
 
   const campaign = await getCampaign(campaignId);
   if (!campaign) notFound();
@@ -103,7 +103,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ campa
   const decided = campaign.sent + campaign.refused + campaign.failed;
   const pending = Math.max(0, campaign.recipients - decided);
   const mayApprove = campaign.status === 'draft' && campaign.createdBy !== context.userId;
-  const mayCancel = campaign.status !== 'done' && campaign.status !== 'cancelled' && (campaign.createdBy === context.userId || context.role === 'owner');
+  const mayCancel = campaign.status !== 'done' && campaign.status !== 'cancelled' && (campaign.createdBy === context.userId || hasRole(context, 'owner'));
 
   return (
     <div className="flex flex-col gap-5">

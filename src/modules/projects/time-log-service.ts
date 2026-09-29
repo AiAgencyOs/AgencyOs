@@ -40,7 +40,7 @@ export async function addTimeLog(input: AddTimeLogInput): Promise<Result<{ timeL
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid time entry.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) return refused('log time');
+  if (!can(context, 'task.write')) return refused('log time');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
@@ -72,7 +72,7 @@ export async function updateTimeLog(input: UpdateTimeLogInput): Promise<Result<{
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid time entry.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) return refused('edit a time entry');
+  if (!can(context, 'task.write')) return refused('edit a time entry');
 
   const supabase = await createClient();
   const { data: row, error: readError } = await supabase
@@ -107,7 +107,7 @@ export async function deleteTimeLog(input: DeleteTimeLogInput): Promise<Result<{
   if (!parsed.success) return err('VALIDATION', 'Invalid time entry.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) return refused('delete a time entry');
+  if (!can(context, 'task.write')) return refused('delete a time entry');
 
   const supabase = await createClient();
   const { data: row, error: readError } = await supabase
@@ -121,7 +121,7 @@ export async function deleteTimeLog(input: DeleteTimeLogInput): Promise<Result<{
     return err('INTERNAL', 'Could not read the time entry.');
   }
   if (!row) return err('NOT_FOUND', 'Time entry not found.');
-  if (row.person_id !== context.userId && !can(context.role, 'project.write')) {
+  if (row.person_id !== context.userId && !can(context, 'project.write')) {
     return err('FORBIDDEN', 'Only the person who logged an entry, or a project lead, can delete it.');
   }
 

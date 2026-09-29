@@ -17,7 +17,7 @@ export async function setDeploymentDependency(input: SetDeploymentDependencyInpu
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid dependency.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to edit deployment dependencies.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to edit deployment dependencies.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('set_deployment_dependency', {

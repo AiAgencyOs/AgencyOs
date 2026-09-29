@@ -31,7 +31,7 @@ async function planningActor(): Promise<Result<true>> {
   // The same capability that governs the project itself. A plan is a statement
   // about how this project runs, so the people who may run it may plan it —
   // no new capability was invented for a new table.
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to change this project’s plan.');
   }
   return ok(true);

@@ -213,12 +213,12 @@ describe('F. the surface is wired and refreshes what it changed', () => {
   });
 
   test('the service is behind a capability check', () => {
-    assert.match(SERVICE, /async function designActor\(\)[\s\S]{0,300}?if \(!can\(context\.role, 'project\.write'\)\)/);
+    assert.match(SERVICE, /async function designActor\(\)[\s\S]{0,300}?if \(!can\(context, 'project\.write'\)\)/);
     assert.equal((SERVICE.match(/const gate = await designActor\(\);/g) ?? []).length, 11);
   });
 
   test('and the page does not offer a form to somebody who cannot submit it', () => {
-    assert.match(PAGE, /const mayDecide = can\(context\.role, 'project\.write'\);/);
+    assert.match(PAGE, /const mayDecide = can\(context, 'project\.write'\);/);
   });
 
   test('the doors are reached by name, not by string building', () => {

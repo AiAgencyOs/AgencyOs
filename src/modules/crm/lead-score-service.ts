@@ -112,7 +112,7 @@ export async function rescoreLead(input: RescoreLeadInput): Promise<Result<{ sco
   if (!parsed.success) return err('VALIDATION', 'Not a lead.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) return err('FORBIDDEN', 'You do not have permission to score leads.');
+  if (!can(context, 'lead.write')) return err('FORBIDDEN', 'You do not have permission to score leads.');
 
   const supabase = await createClient();
   const { data: lead, error } = await supabase
@@ -139,7 +139,7 @@ export async function rescoreLead(input: RescoreLeadInput): Promise<Result<{ sco
  */
 export async function rescoreAllLeads(): Promise<Result<{ scored: number; refused: number; considered: number }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) return err('FORBIDDEN', 'You do not have permission to score leads.');
+  if (!can(context, 'lead.write')) return err('FORBIDDEN', 'You do not have permission to score leads.');
 
   const supabase = await createClient();
   const { data: leads, error } = await supabase

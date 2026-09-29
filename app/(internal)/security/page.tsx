@@ -8,6 +8,7 @@ import { countAuditEntries } from '@/lib/audit/count-queries';
 import { readAuditLog } from '@/lib/audit/queries';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { countOpenIncidents } from '@/modules/identity/incidents-queries';
 import { listInternalRosterWithRoles } from '@/modules/projects/queries';
 import { Badge, Callout, Card, CardHeader, cx, IconAlert, IconCheck, PageHeader, Stat, StatGrid, TONE_DOT, PermissionDenied } from '@/ui';
 
@@ -28,19 +29,21 @@ export const metadata: Metadata = { title: 'Security' };
  */
 export default async function SecurityPage() {
   const context = await requireInternal('/security');
-  if (!can(context.role, 'audit.read')) return <PermissionDenied />;
+  if (!can(context, 'audit.read')) return <PermissionDenied />;
 
   const clock = await agencyClock();
   // SCR-069: users / roles / audit-count KPIs and the recent privileged
   // changes, each from a read that already exists (the roster, the audit
   // trail under its `membership.` actions, the trail's own count). The
   // roster read is admin-scoped by RLS; a non-admin sees the posture alone.
-  const isAdmin = can(context.role, 'organization.settings');
-  const [posture, roster, auditCount, privileged] = await Promise.all([
+  const isAdmin = can(context, 'organization.settings');
+  const [posture, roster, auditCount, privileged, openIncidents] = await Promise.all([
     getSecurityPosture(),
     isAdmin ? listInternalRosterWithRoles() : Promise.resolve([]),
     countAuditEntries(),
     readAuditLog({ actionPrefix: 'membership', limit: 20 }),
+    // SCR-069: incidents a person opened and has not resolved.
+    countOpenIncidents(),
   ]);
   const checks = securityChecks(posture);
   const clean = isClean(posture);
@@ -68,6 +71,7 @@ export default async function SecurityPage() {
         <Stat label="Roles held" value={isAdmin ? String(rolesHeld.size) : '—'} caption={isAdmin ? [...rolesHeld].map((r) => r.replace('_', ' ')).join(' · ') || 'None' : 'Admin only'} tone="info" href="/security/users" />
         <Stat label="Audit entries" value={String(auditCount)} caption="Appended, never edited" tone="neutral" href="/audit" />
         <Stat label="Invariants" value={`${checks.length - failing}/${checks.length}`} caption={clean ? 'All hold' : `${failing} regressed`} tone={clean ? 'success' : 'danger'} />
+        <Stat label="Open incidents" value={String(openIncidents)} caption="Security incidents awaiting resolution" tone={openIncidents > 0 ? 'danger' : 'success'} href="/security/incidents" />
       </StatGrid>
 
       <Callout
@@ -135,8 +139,12 @@ export default async function SecurityPage() {
                   {e.after && typeof e.after.role === 'string' ? <Badge tone="info">{String(e.after.role).replace('_', ' ')}</Badge> : null}
                   {e.after && typeof e.after.status === 'string' ? <Badge tone={e.after.status === 'active' ? 'success' : 'warning'}>{String(e.after.status)}</Badge> : null}
                 </span>
-                <span className="text-xs text-muted">
+                <span className="flex flex-wrap items-center gap-2 text-xs text-muted">
                   by {e.actorType ?? 'unknown'} {e.actorId ? e.actorId.slice(0, 8) : ''} · {clock.dateTime(e.createdAt)}
+                  {/* SCR-069: investigate a security event — open an incident with this entry as evidence. */}
+                  <Link href={`/security/incidents?audit=${e.id}&evidence=${encodeURIComponent(`Audit #${e.id}: ${e.action} on ${e.subjectType ?? 'unknown'} ${e.subjectId ?? ''}`)}`} className="font-medium text-brand underline-offset-2 hover:underline">
+                    Investigate
+                  </Link>
                 </span>
               </li>
             ))}

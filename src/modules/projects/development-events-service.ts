@@ -31,7 +31,7 @@ export async function escalateBlocker(input: EscalateBlockerInput): Promise<Resu
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid escalation.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) return err('FORBIDDEN', 'You do not have permission to escalate a blocker.');
+  if (!can(context, 'task.write')) return err('FORBIDDEN', 'You do not have permission to escalate a blocker.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('escalate_blocker', { p_task_id: parsed.data.taskId, p_reason: parsed.data.reason });
@@ -63,7 +63,7 @@ export async function acknowledgeEscalation(input: AcknowledgeEscalationInput): 
   if (!parsed.success) return err('VALIDATION', 'Invalid escalation.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to acknowledge an escalation.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to acknowledge an escalation.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('acknowledge_escalation', { p_event_id: parsed.data.eventId });
@@ -91,7 +91,7 @@ export async function startQaHandoff(input: StartQaHandoffInput): Promise<Result
   if (!parsed.success) return err('VALIDATION', 'Invalid project.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to start a QA handoff.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to start a QA handoff.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('start_qa_handoff', { p_project_id: parsed.data.projectId });

@@ -18,7 +18,7 @@ export async function setScreenStates(input: SetScreenStatesInput): Promise<Resu
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid screen states.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to edit a screen.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to edit a screen.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('set_screen_states', {

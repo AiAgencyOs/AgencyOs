@@ -39,7 +39,7 @@ export default async function ProjectActivityPage({ params }: { params: Promise<
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/activity`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();

@@ -5,7 +5,7 @@ import { notFound } from 'next/navigation';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { readClientName } from '@/lib/admin/clients';
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
+import { can, hasRole } from '@/lib/authz/permissions';
 import { listApprovalsForSubject } from '@/modules/approvals/queries';
 import { readPaymentLadder } from '@/modules/finance/queries';
 import { readHandoverRelease } from '@/modules/projects/handover-release-queries';
@@ -92,14 +92,14 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/release`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
 
   const clock = await agencyClock();
-  const mayReadInvoices = can(context.role, 'invoice.read');
-  const maySignOff = can(context.role, 'project.sign_off');
+  const mayReadInvoices = can(context, 'invoice.read');
+  const maySignOff = can(context, 'project.sign_off');
 
   const [clientName, ladder, summary, quality, defects, deliverables, plan, runs, handover, readiness, readyAt, release, hold] =
     await Promise.all([
@@ -119,7 +119,7 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
       // SCR-044 — a standing release hold, which the sign-off door refuses on.
       readReleaseHold(projectId),
     ]);
-  const mayWrite = can(context.role, 'project.write');
+  const mayWrite = can(context, 'project.write');
   // Decision F1 (2026-09-30) and SCR-049 (bucket F): the payment gate as the
   // door reads it, the owner's overrides, deployment dependencies, and the
   // security and performance summaries beside the QA one.
@@ -338,7 +338,7 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
 
   return (
     <div className="flex flex-col gap-5">
-      <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={can(context.role, 'project.write')} />
+      <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={can(context, 'project.write')} />
 
       <ProjectSubNav projectId={projectId} />
 
@@ -465,7 +465,7 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
             <Card>
               <CardHeader title="Payment gate" description="The door refuses payment_unverified. The owner may override it with a reason; the override is kept and audited." />
               <CardBody>
-                {context.role === 'owner' ? <OverrideReleasePaymentForm projectId={projectId} /> : <p className="text-[13px] text-muted">Only the owner may override the payment gate.</p>}
+                {hasRole(context, 'owner') ? <OverrideReleasePaymentForm projectId={projectId} /> : <p className="text-[13px] text-muted">Only the owner may override the payment gate.</p>}
               </CardBody>
             </Card>
           ) : overrides.length > 0 ? (

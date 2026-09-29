@@ -25,7 +25,7 @@ export async function approveTestPlan(input: ApproveTestPlanInput): Promise<Resu
   if (!parsed.success) return err('VALIDATION', 'Invalid test plan.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.sign_off')) {
+  if (!can(context, 'project.sign_off')) {
     return err('FORBIDDEN', 'Approving a test plan needs project.sign_off (owner or ops admin).');
   }
 
@@ -67,7 +67,7 @@ export async function recordTestCaseResults(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) {
+  if (!can(context, 'task.write')) {
     return err('FORBIDDEN', 'You do not have permission to record test evidence.');
   }
 

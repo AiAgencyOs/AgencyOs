@@ -31,7 +31,7 @@ export async function reviseRequirementVersion(input: ReviseRequirementVersionIn
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to revise requirements.');
   }
 

@@ -20,7 +20,7 @@ export async function setPlanLayers(input: SetPlanLayersInput): Promise<Result<{
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid layers.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'milestone.write')) return err('FORBIDDEN', 'You do not have permission to change the plan breakdown.');
+  if (!can(context, 'milestone.write')) return err('FORBIDDEN', 'You do not have permission to change the plan breakdown.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('set_plan_layers', {

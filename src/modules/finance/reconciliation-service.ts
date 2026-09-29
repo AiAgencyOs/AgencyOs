@@ -33,8 +33,8 @@ import {
  * verifies payments and that `reconciliations_write` admits.
  */
 
-function gate(context: { role: Parameters<typeof can>[0] }, what: string): Result<null> {
-  if (!can(context.role, 'invoice.issue')) return err('FORBIDDEN', `You do not have permission to ${what}.`);
+function gate(context: Parameters<typeof can>[0], what: string): Result<null> {
+  if (!can(context, 'invoice.issue')) return err('FORBIDDEN', `You do not have permission to ${what}.`);
   return ok(null);
 }
 

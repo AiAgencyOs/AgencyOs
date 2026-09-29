@@ -168,7 +168,7 @@ export async function setProjectStatus(
   if (!parsed.success) return err('VALIDATION', 'Invalid project status.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to change project status.');
   }
 
@@ -254,7 +254,7 @@ export async function setProjectVisibility(
   if (!parsed.success) return err('VALIDATION', 'Invalid project visibility.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to change project visibility.');
   }
 
@@ -299,7 +299,7 @@ export async function configurePaymentPlan(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'milestone.write')) {
+  if (!can(context, 'milestone.write')) {
     return err('FORBIDDEN', 'You do not have permission to configure payment plans.');
   }
 
@@ -698,7 +698,7 @@ export async function addDeliverable(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to add deliverables.');
   }
 
@@ -749,7 +749,7 @@ export async function addProjectFile(input: AddProjectFileInput): Promise<Result
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to add a file.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -785,7 +785,7 @@ export async function removeProjectFile(input: RemoveProjectFileInput): Promise<
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to remove a file.');
   }
 
@@ -810,7 +810,7 @@ export async function addRepository(input: AddRepositoryInput): Promise<Result<{
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to add a repository.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -847,7 +847,7 @@ export async function removeRepository(input: RemoveRepositoryInput): Promise<Re
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to remove a repository.');
   }
 
@@ -872,7 +872,7 @@ export async function addEnvironment(input: AddEnvironmentInput): Promise<Result
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to add an environment.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -908,7 +908,7 @@ export async function removeEnvironment(input: RemoveEnvironmentInput): Promise<
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to remove an environment.');
   }
 
@@ -933,7 +933,7 @@ export async function addDependency(input: AddDependencyInput): Promise<Result<{
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to add a dependency.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -969,7 +969,7 @@ export async function removeDependency(input: RemoveDependencyInput): Promise<Re
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to remove a dependency.');
   }
 
@@ -1008,7 +1008,7 @@ export async function submitDeliverable(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to submit deliverables.');
   }
 
@@ -1075,7 +1075,7 @@ export async function seedOnboarding(
   projectId: string,
 ): Promise<Result<{ items: number; alreadySeeded: boolean }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to set up projects.');
   }
 
@@ -1112,7 +1112,7 @@ export async function setOnboardingItem(input: {
   note?: string;
 }): Promise<Result<{ status: string; done: number; total: number }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to update onboarding.');
   }
 
@@ -1180,7 +1180,7 @@ export async function syncDeliverableDecision(deliverableId: string): Promise<Re
  */
 async function uiVersionActor(): Promise<Result<true>> {
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to change this project’s UI review.');
   }
   return ok(true);
@@ -1375,7 +1375,7 @@ export async function startProject(input: StartProjectInput): Promise<Result<Pro
   const context = await requireInternal();
 
   const capability = parsed.data.overrideReason ? 'organization.settings' : 'project.write';
-  if (!can(context.role, capability)) {
+  if (!can(context, capability)) {
     return err(
       'FORBIDDEN',
       parsed.data.overrideReason
@@ -1501,7 +1501,7 @@ export async function reviseGroupSetup(input: ReviseGroupSetupInput): Promise<Re
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid revision.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to change a group setup.');
   }
 
@@ -1533,7 +1533,7 @@ export async function confirmGroupCreated(input: ConfirmGroupCreatedInput): Prom
   if (!parsed.success) return err('VALIDATION', 'Invalid confirmation.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to confirm a group.');
   }
 
@@ -1562,7 +1562,7 @@ export async function mapGroup(input: MapGroupInput): Promise<Result<{ state: 'm
   if (!parsed.success) return err('VALIDATION', 'Invalid mapping.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to map a group.');
   }
 
@@ -1599,7 +1599,7 @@ export async function verifyGroup(input: VerifyGroupInput): Promise<Result<{ sta
   if (!parsed.success) return err('VALIDATION', 'Invalid verification.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to verify a group.');
   }
 
@@ -1638,7 +1638,7 @@ export async function addTeamDefault(input: {
   position?: number;
 }): Promise<Result<{ memberId: string; added: boolean }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change the team roster.');
   }
   if (input.displayName.trim().length === 0) {
@@ -1675,7 +1675,7 @@ export async function setTeamDefaultActive(input: {
   active: boolean;
 }): Promise<Result<{ changed: boolean }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change the team roster.');
   }
 
@@ -1699,7 +1699,7 @@ export async function setTeamDefaultActive(input: {
 
 export async function removeTeamDefault(memberId: string): Promise<Result<{ removed: true }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change the team roster.');
   }
 
@@ -1739,7 +1739,7 @@ export async function createModule(input: CreateModuleInput): Promise<Result<{ m
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'milestone.write')) {
+  if (!can(context, 'milestone.write')) {
     return err('FORBIDDEN', 'You do not have permission to add a module.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -1773,7 +1773,7 @@ export async function createFeature(input: CreateFeatureInput): Promise<Result<{
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'milestone.write')) {
+  if (!can(context, 'milestone.write')) {
     return err('FORBIDDEN', 'You do not have permission to add a feature.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -1808,7 +1808,7 @@ export async function createTask(input: CreateTaskInput): Promise<Result<{ taskI
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) {
+  if (!can(context, 'task.write')) {
     return err('FORBIDDEN', 'You do not have permission to add a task.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -1858,7 +1858,7 @@ export async function setModuleStatus(input: SetModuleStatusInput): Promise<Resu
   if (!parsed.success) return err('VALIDATION', 'Not a status this system recognises.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'milestone.write')) {
+  if (!can(context, 'milestone.write')) {
     return err('FORBIDDEN', 'You do not have permission to change a module’s status.');
   }
 
@@ -1881,7 +1881,7 @@ export async function setFeatureStatus(input: SetFeatureStatusInput): Promise<Re
   if (!parsed.success) return err('VALIDATION', 'Not a status this system recognises.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'milestone.write')) {
+  if (!can(context, 'milestone.write')) {
     return err('FORBIDDEN', 'You do not have permission to change a feature’s status.');
   }
 
@@ -1904,7 +1904,7 @@ export async function setTaskStatus(input: SetTaskStatusInput): Promise<Result<{
   if (!parsed.success) return err('VALIDATION', 'Not a status this system recognises.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) {
+  if (!can(context, 'task.write')) {
     return err('FORBIDDEN', 'You do not have permission to change a task’s status.');
   }
 
@@ -1950,7 +1950,7 @@ export async function openScopeVersion(input: OpenScopeVersionInput): Promise<Re
   if (!parsed.success) return err('VALIDATION', 'Invalid project.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'milestone.write')) {
+  if (!can(context, 'milestone.write')) {
     return err('FORBIDDEN', 'You do not have permission to open a scope baseline.');
   }
 
@@ -1988,7 +1988,7 @@ export async function addScopeItem(input: AddScopeItemInput): Promise<Result<{ s
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'milestone.write')) {
+  if (!can(context, 'milestone.write')) {
     return err('FORBIDDEN', 'You do not have permission to edit a scope baseline.');
   }
 
@@ -2030,7 +2030,7 @@ export async function removeScopeItem(input: RemoveScopeItemInput): Promise<Resu
   if (!parsed.success) return err('VALIDATION', 'Invalid scope item.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'milestone.write')) {
+  if (!can(context, 'milestone.write')) {
     return err('FORBIDDEN', 'You do not have permission to edit a scope baseline.');
   }
 
@@ -2063,7 +2063,7 @@ export async function freezeScopeVersion(input: FreezeScopeVersionInput): Promis
   if (!parsed.success) return err('VALIDATION', 'Invalid scope baseline.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'milestone.write')) {
+  if (!can(context, 'milestone.write')) {
     return err('FORBIDDEN', 'You do not have permission to freeze a scope baseline.');
   }
 
@@ -2107,7 +2107,7 @@ export async function updateTask(input: UpdateTaskInput): Promise<Result<{ taskI
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) {
+  if (!can(context, 'task.write')) {
     return err('FORBIDDEN', 'You do not have permission to edit tasks.');
   }
 
@@ -2163,7 +2163,7 @@ export async function updateProject(input: UpdateProjectInput): Promise<Result<{
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to edit this project.');
   }
 
@@ -2198,7 +2198,7 @@ export async function updateProjectFile(input: UpdateProjectFileInput): Promise<
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to edit a file.');
   }
 
@@ -2233,7 +2233,7 @@ export async function setMilestoneDueOn(input: SetMilestoneDueOnInput): Promise<
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'milestone.write')) {
+  if (!can(context, 'milestone.write')) {
     return err('FORBIDDEN', 'You do not have permission to change milestone dates.');
   }
 
@@ -2278,7 +2278,7 @@ export async function setDeliveryLead(input: SetDeliveryLeadInput): Promise<Resu
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to change the delivery lead.');
   }
 

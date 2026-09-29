@@ -77,7 +77,7 @@ const first = <T extends Row>(data: unknown): T | undefined => (Array.isArray(da
 
 async function gate(verb: string): Promise<Result<{ userId: string }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', `You do not have permission to ${verb}.`);
+  if (!can(context, 'project.write')) return err('FORBIDDEN', `You do not have permission to ${verb}.`);
   return ok({ userId: context.userId });
 }
 

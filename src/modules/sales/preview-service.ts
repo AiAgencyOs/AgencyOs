@@ -42,7 +42,7 @@ export async function quotationPdfPreview(input: QuotationPreviewInput): Promise
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Add a title and at least one line to preview.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'proposal.draft')) return err('FORBIDDEN', 'You do not have permission to draft quotations.');
+  if (!can(context, 'proposal.draft')) return err('FORBIDDEN', 'You do not have permission to draft quotations.');
 
   const supabase = await createClient();
   const { data: opportunity, error } = await supabase.schema('sales').from('opportunities').select('id').eq('id', parsed.data.opportunityId).maybeSingle();

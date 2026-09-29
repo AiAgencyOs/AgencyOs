@@ -79,12 +79,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default async function SalesFunnelPage({ searchParams }: { searchParams: Promise<{ days?: string; source?: string; owner?: string }> }) {
   const context = await requireInternal('/sales-funnel');
-  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
+  if (!can(context, 'lead.read')) return <PermissionDenied />;
 
   const { days: daysParam, source: sourceParam, owner: ownerParam } = await searchParams;
   const days = (WINDOWS as readonly number[]).includes(Number(daysParam)) ? Number(daysParam) : 90;
 
-  const canWritePipeline = can(context.role, 'lead.write');
+  const canWritePipeline = can(context, 'lead.write');
   const { counts, steps, biggestDrop, outOfOrder, lostReasons } = await getSalesFunnel(days);
   const reflex = await getPricingReflex(days);
   const leadSources = await getLeadSourceBreakdown(days);

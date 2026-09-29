@@ -19,7 +19,7 @@ export async function overrideReleasePayment(input: OverrideReleasePaymentInput)
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid override.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) return err('FORBIDDEN', 'Only the owner may override the payment gate.');
+  if (!can(context, 'organization.settings')) return err('FORBIDDEN', 'Only the owner may override the payment gate.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('override_release_payment', {

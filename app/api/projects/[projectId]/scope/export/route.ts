@@ -26,7 +26,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
   const { projectId } = await params;
   const context = await getAuthContext();
   if (!context) return NextResponse.json({ error: 'Sign in to export the scope.' }, { status: 401 });
-  if (!can(context.role, 'project.read')) return NextResponse.json({ error: 'You do not have permission to read this project.' }, { status: 403 });
+  if (!can(context, 'project.read')) return NextResponse.json({ error: 'You do not have permission to read this project.' }, { status: 403 });
 
   const project = await getProject(projectId);
   if (!project) return NextResponse.json({ error: 'Project not found.' }, { status: 404 });

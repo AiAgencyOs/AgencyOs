@@ -3,7 +3,16 @@ import { requireInternal } from '@/lib/auth/session';
 import { createClient } from '@/lib/db/server';
 import { readCronAgeSeconds } from '@/lib/observability/queries';
 
-import { OrganizationNameForm, QuotationContactForm, TimezoneForm } from './forms';
+import Link from 'next/link';
+
+import { agencyClock } from '@/lib/admin/agency-clock';
+import { readSettingHistory } from '@/lib/admin/settings-history';
+import { readSettingImpact } from '@/lib/admin/settings-impact';
+import { buttonClass } from '@/ui';
+
+import { QuotationContactForm } from './forms';
+import { OrganizationNameFormWithPreview, TimezoneFormWithPreview } from './high-risk-forms';
+import { SettingHistory, type SettingHistoryEntry } from './setting-history';
 
 /**
  * Configuration, from the owner's chair — without the SQL or the .env file.
@@ -45,7 +54,12 @@ export default async function SettingsGeneralPage() {
   await requireInternal('/settings');
 
   const status = configStatus();
-  const cronAge = await readCronAgeSeconds();
+  const clock = await agencyClock();
+  // SCR-071: what a high-risk change touches, and each setting's recorded history.
+  const [cronAge, impact, history] = await Promise.all([readCronAgeSeconds(), readSettingImpact(), readSettingHistory()]);
+  const show = (v: unknown) => (v === null || v === undefined ? '' : typeof v === 'string' ? v : JSON.stringify(v));
+  const historyOf = (key: string): SettingHistoryEntry[] =>
+    (history.get(key) ?? []).map((h) => ({ auditId: h.auditId, before: show(h.before), after: show(h.after), actor: `${h.actorType ?? 'unknown'} ${h.actorId ? h.actorId.slice(0, 8) : ''}`.trim(), atLabel: clock.dateTime(h.at) }));
 
   // The agency timezone is a business fact, not a secret, so it is shown. Null
   // by design until an owner sets it (G-137) — and until then nothing sends.
@@ -80,6 +94,20 @@ export default async function SettingsGeneralPage() {
         {ready
           ? 'Every production-required value is present and safe.'
           : `${problems.length} configuration ${problems.length === 1 ? 'value is' : 'values are'} missing or unsafe for production (see below). NODE_ENV=${status.nodeEnv}.`}
+      </div>
+
+      {/* SCR-071: where the sensitive things live — one click, not a search. */}
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
+        <h2 className="text-[13px] font-semibold tracking-tight">Security, integrations and the key vault</h2>
+        <p className="text-xs text-muted">The three places a setting with teeth lives. Secrets are never shown; the vault says only whether a key is present and when it was set.</p>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/security" className={buttonClass('secondary', 'sm')}>Security</Link>
+          <Link href="/security/users" className={buttonClass('secondary', 'sm')}>Users &amp; roles</Link>
+          <Link href="/security/incidents" className={buttonClass('secondary', 'sm')}>Incidents</Link>
+          <Link href="/integrations" className={buttonClass('secondary', 'sm')}>Integrations</Link>
+          <Link href="/agents#vault" className={buttonClass('secondary', 'sm')}>Provider key vault</Link>
+          <Link href="/governance/overrides" className={buttonClass('secondary', 'sm')}>Overrides &amp; emergency controls</Link>
+        </div>
       </div>
 
       {AREAS.map((area) => {
@@ -132,12 +160,15 @@ export default async function SettingsGeneralPage() {
         Owner only, audited, and the database refuses any other write.
       */}
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
-        <h2 className="text-[13px] font-semibold tracking-tight">Agency name</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-[13px] font-semibold tracking-tight">Agency name</h2>
+          <SettingHistory label="Agency name" entries={historyOf('name')} />
+        </div>
         <p className="text-xs text-muted">
           The letterhead on every quotation PDF a client keeps, and the sender of every
           announcement. This is the agency&rsquo;s signature — renaming is owner-only and audited.
         </p>
-        <OrganizationNameForm current={organizationName} />
+        <OrganizationNameFormWithPreview current={organizationName} impact={impact.name} />
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
@@ -152,13 +183,16 @@ export default async function SettingsGeneralPage() {
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
-        <h2 className="text-[13px] font-semibold tracking-tight">Agency timezone</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-[13px] font-semibold tracking-tight">Agency timezone</h2>
+          <SettingHistory label="Agency timezone" entries={historyOf('timezone')} />
+        </div>
         <p className="text-xs text-muted">
           {timezone
-            ? 'Follow-ups schedule in this zone. Changing it re-schedules future sends.'
+            ? 'Follow-ups schedule in this zone. Changing it re-schedules future sends — preview what it touches before confirming.'
             : 'Not set — follow-up sending is paused until an IANA timezone is chosen (G-137). Nothing sends before that.'}
         </p>
-        <TimezoneForm current={timezone} />
+        <TimezoneFormWithPreview current={timezone} impact={impact.timezone} />
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">

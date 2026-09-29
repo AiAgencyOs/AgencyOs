@@ -41,13 +41,13 @@ export default async function RepositoryPage({ params }: { params: Promise<{ pro
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/repository`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const editable = can(context.role, 'project.write');
-  const mayWriteTask = can(context.role, 'task.write');
+  const editable = can(context, 'project.write');
+  const mayWriteTask = can(context, 'task.write');
   const [repositories, link, tasks, gitActions] = await Promise.all([listRepositories(projectId), getRepositoryLink(projectId), listTaskOptions(projectId), listGitActions(projectId)]);
 
   return (

@@ -29,7 +29,7 @@ export async function recordEnvironmentCheck(input: RecordEnvironmentCheckInput)
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid check.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to record a readiness check.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to record a readiness check.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('record_environment_check', {
@@ -65,7 +65,7 @@ export async function promoteBuild(input: PromoteBuildInput): Promise<Result<{ p
   if (!parsed.success) return err('VALIDATION', 'Invalid environment or build.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to promote a build.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to promote a build.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('promote_build', {

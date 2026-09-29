@@ -45,7 +45,7 @@ export const metadata: Metadata = { title: 'Requirements' };
  */
 export default async function RequirementsPage() {
   const context = await requireInternal('/requirements');
-  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
+  if (!can(context, 'lead.read')) return <PermissionDenied />;
   const clock = await agencyClock();
 
   const [proposed, overview, dashboard, recent, projectPlans] = await Promise.all([
@@ -57,7 +57,7 @@ export default async function RequirementsPage() {
     readRecentRequirementChanges(),
     listRequirementsProjectPlans(),
   ]);
-  const mayRaise = can(context.role, 'milestone.write');
+  const mayRaise = can(context, 'milestone.write');
   const openQuestionProjects = dashboard.projectsWithOpenQuestions.length;
   const now = Date.now();
   const ageDays = (iso: string) => Math.floor((now - new Date(iso).getTime()) / 86_400_000);

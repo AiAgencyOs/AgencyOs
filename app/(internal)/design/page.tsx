@@ -138,7 +138,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
  */
 export default async function DesignPortfolioPage() {
   const context = await requireInternal('/design');
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const [rows, clock, queue] = await Promise.all([readDesignPortfolio(), agencyClock(), readDesignReviewQueue()]);
   const queueColumns = queueColumnsFor(clock);

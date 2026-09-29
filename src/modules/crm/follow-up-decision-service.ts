@@ -18,7 +18,7 @@ export async function decideFollowUpSequence(input: DecideFollowUpSequenceInput)
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid decision.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) return err('FORBIDDEN', 'You do not have permission to decide follow-ups.');
+  if (!can(context, 'lead.write')) return err('FORBIDDEN', 'You do not have permission to decide follow-ups.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('crm').rpc('decide_follow_up_sequence', {

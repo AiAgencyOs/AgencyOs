@@ -140,7 +140,7 @@ const COLUMNS: Column<Row>[] = [
  */
 export default async function DevelopmentPortfolioPage() {
   const context = await requireInternal('/development');
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const [portfolio, coverage, blockers, openTechnical, escalations, recentCommits, recentActions, clock] = await Promise.all([
     readDevelopmentPortfolio(),
@@ -152,8 +152,8 @@ export default async function DevelopmentPortfolioPage() {
     listRecentGitActions(10),
     agencyClock(),
   ]);
-  const mayManage = can(context.role, 'project.write');
-  const mayWriteTask = can(context.role, 'task.write');
+  const mayManage = can(context, 'project.write');
+  const mayWriteTask = can(context, 'task.write');
   const escalatedTaskIds = new Set(escalations.map((e) => e.taskId));
   // Tasks still todo or in progress: the count the handoff gate refuses on.
   const notReadyOf = (projectId: string) => {

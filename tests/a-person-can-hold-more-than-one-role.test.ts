@@ -193,12 +193,12 @@ describe('E. the limit is stated, not left to be discovered', () => {
 describe('F. the write path is owner-gated at the application layer too (defense in depth)', () => {
   test('grantSecondaryRole checks organization.settings before calling the door', () => {
     const fn = region(SETTINGS, 'export async function grantSecondaryRole');
-    assert.match(fn, /can\(context\.role, 'organization\.settings'\)/);
+    assert.match(fn, /can\(context, 'organization\.settings'\)/);
   });
 
   test('revokeSecondaryRole checks organization.settings before calling the door', () => {
     const fn = region(SETTINGS, 'export async function revokeSecondaryRole');
-    assert.match(fn, /can\(context\.role, 'organization\.settings'\)/);
+    assert.match(fn, /can\(context, 'organization\.settings'\)/);
   });
 
   test('both server actions revalidate the settings page', () => {

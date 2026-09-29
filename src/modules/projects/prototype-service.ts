@@ -28,7 +28,7 @@ export async function setPrototypePlatform(input: SetPrototypePlatformInput): Pr
   if (!parsed.success) return err('VALIDATION', 'That is not a platform this system knows.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to change a prototype.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to change a prototype.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('set_prototype_platform', {
@@ -62,7 +62,7 @@ export async function submitPrototypeToQa(input: SubmitPrototypeToQaInput): Prom
   if (!parsed.success) return err('VALIDATION', 'Invalid prototype.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to submit a prototype to QA.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to submit a prototype to QA.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('submit_prototype_to_qa', { p_artifact_id: parsed.data.artifactId });

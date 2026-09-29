@@ -80,7 +80,7 @@ export default async function InvoicePage({
   const context = await requireInternal(`/invoices/${invoiceId}`);
 
   const clock = await agencyClock();
-  if (!can(context.role, 'invoice.read')) return <PermissionDenied />;
+  if (!can(context, 'invoice.read')) return <PermissionDenied />;
 
   const invoice = await getInvoice(invoiceId);
   if (!invoice) notFound();
@@ -102,7 +102,7 @@ export default async function InvoicePage({
   // and past-due reminders go automatically. The threads it can go on, whether
   // this deployment can send at all, the reminders with their delivery state,
   // and the policy that drives them.
-  const mayIssueInvoice = can(context.role, 'invoice.issue');
+  const mayIssueInvoice = can(context, 'invoice.issue');
   const [threads, whatsappReady, reminders, reminderPolicy] = await Promise.all([
     mayIssueInvoice ? listInvoiceThreads(invoice) : Promise.resolve([]),
     mayIssueInvoice ? readWhatsAppReadiness() : Promise.resolve({ ok: false as const, reason: 'not permitted' }),
@@ -126,10 +126,10 @@ export default async function InvoicePage({
   const status = invoice.status as InvoiceStatus;
   const outstanding = invoice.total_minor - invoice.paid_minor;
 
-  const mayIssue = can(context.role, 'invoice.issue');
+  const mayIssue = can(context, 'invoice.issue');
   // Owner-only, and has been since the capability matrix was written. This is
   // its first caller.
-  const mayRefund = can(context.role, 'refund.issue');
+  const mayRefund = can(context, 'refund.issue');
   const [refunds, netReceived] = await Promise.all([
     listRefunds(invoice.id),
     readNetReceived(invoice.id),

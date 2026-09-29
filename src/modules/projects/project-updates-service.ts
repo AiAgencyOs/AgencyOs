@@ -36,7 +36,7 @@ export async function sendProjectUpdate(input: SendProjectUpdateInput): Promise<
   const context = await requireInternal();
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
   const needed = parsed.data.sentTo === 'client' ? 'lead.write' : 'project.write';
-  if (!can(context.role, needed)) {
+  if (!can(context, needed)) {
     return err('FORBIDDEN', parsed.data.sentTo === 'client' ? 'You do not have permission to message clients.' : 'You do not have permission to post a project update.');
   }
 

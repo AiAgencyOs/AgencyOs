@@ -70,7 +70,7 @@ function countBy(defects: OpenDefect[], severity: string): number {
 export default async function QaDashboardPage() {
   const context = await requireInternal('/qa');
   const clock = await agencyClock();
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const [defects, coverage, suiteCoverage, matrix, retest, compat, perfNotes, holds] = await Promise.all([
     listOpenDefects(),
@@ -85,8 +85,8 @@ export default async function QaDashboardPage() {
   ]);
   // SCR-044 (bucket F): recent runs, the bug trend, the release candidate per
   // project, org-wide evidence, schedules, and the roster the retest form needs.
-  const mayWrite = can(context.role, 'project.write');
-  const maySignOff = can(context.role, 'project.sign_off');
+  const mayWrite = can(context, 'project.write');
+  const maySignOff = can(context, 'project.sign_off');
   const [recentRuns, trend, candidates, evidence, schedules, roster, projects] = await Promise.all([
     listRecentRuns(25),
     readBugTrend(12),

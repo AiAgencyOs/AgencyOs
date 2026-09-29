@@ -44,7 +44,7 @@ export default async function TaskDetailPage({
   const { projectId, taskId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/development/tasks/${taskId}`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context, 'project.read')) redirect('/dashboard');
 
   const project = await getProject(projectId);
   if (!project) notFound();
@@ -58,8 +58,8 @@ export default async function TaskDetailPage({
   const openDefects = defects.filter((d) => d.status === 'open').map((d) => ({ id: d.id, title: d.title, severity: d.severity }));
   const testEvidence = taskEvidence.filter((e) => e.kind === 'test');
   const { task, module, feature, scopeItems, evidence, plan, dependencies } = detail;
-  const mayPlan = can(context.role, 'project.write');
-  const mayWriteTask = can(context.role, 'task.write');
+  const mayPlan = can(context, 'project.write');
+  const mayWriteTask = can(context, 'task.write');
 
   return (
     <div className="flex flex-col gap-5">

@@ -531,7 +531,7 @@ export async function addClientNote(input: AddClientNoteInput): Promise<Result<{
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to add notes.');
   }
 

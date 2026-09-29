@@ -20,7 +20,7 @@ export async function setProposalTerms(input: SetProposalTermsInput): Promise<Re
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid terms.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'proposal.draft')) return err('FORBIDDEN', 'You do not have permission to draft quotations.');
+  if (!can(context, 'proposal.draft')) return err('FORBIDDEN', 'You do not have permission to draft quotations.');
 
   const supabase = await createClient();
   const { data: proposal, error } = await supabase.schema('sales').from('proposals').select('id, status, document').eq('id', parsed.data.proposalId).maybeSingle();

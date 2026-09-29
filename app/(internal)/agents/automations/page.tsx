@@ -24,7 +24,7 @@ function when(clock: AgencyClock, value: string): string {
 export default async function AutomationsPage() {
   const context = await requireInternal('/agents/automations');
   const clock = await agencyClock();
-  if (!can(context.role, 'audit.read')) return <PermissionDenied />;
+  if (!can(context, 'audit.read')) return <PermissionDenied />;
 
   const handoffs = await listHandoffs();
 

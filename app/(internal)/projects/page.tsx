@@ -174,7 +174,7 @@ export default async function ProjectsPage({
 }) {
   const context = await requireInternal('/projects');
   const clock = await agencyClock();
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const { page: pageParam, sort: sortKey, dir, status, client, owner, phase: rawPhase, health: rawHealth, archived } = await searchParams;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
@@ -189,7 +189,7 @@ export default async function ProjectsPage({
     listProjectsForTable(),
     listSavedViews('/projects'),
     listPhaseFourEscalations(),
-    can(context.role, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
+    can(context, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
     readProjectFilterFacets(),
     readProjectLifecycles(),
   ]);
@@ -245,7 +245,7 @@ export default async function ProjectsPage({
   const qs = (extra: string) => `/projects?${status ? `status=${status}&` : ''}${facetQuery ? `${facetQuery}&` : ''}${extra}`;
   const chipHref = (s: string | null) => `/projects?${[s ? `status=${s}` : '', facetQuery].filter(Boolean).join('&')}`;
   const { page, pageCount, rows: pageRows } = paginate(projects, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
-  const mayArchive = can(context.role, 'project.write');
+  const mayArchive = can(context, 'project.write');
 
   return (
     <div className="flex flex-col gap-5">
@@ -266,7 +266,7 @@ export default async function ProjectsPage({
           <Stat label="Blocked" value={String(blocked.length)} caption="Blocked work or an unmet dependency" tone={blocked.length > 0 ? 'danger' : 'success'} icon={<IconAlert size={16} />} href="/projects?health=blocked" />
           <Stat label="At risk" value={String(atRiskIds.size)} caption={`${escalations.length} escalated · ${late.length} past due`} tone={atRiskIds.size > 0 ? 'warning' : 'success'} icon={<IconAlert size={16} />} href="/projects?status=at_risk" />
           <Stat label="Completed" value={String(countByStatus.get('completed') ?? 0)} caption={archivedCount > 0 ? `${archivedCount} archived` : undefined} tone={statusTone('completed')} href="/projects?status=completed" />
-          {can(context.role, 'invoice.issue') ? (
+          {can(context, 'invoice.issue') ? (
             <Stat label="Payment to verify" value={String(paymentBlockedIds.size)} caption={`${pendingClaims.length} claim${pendingClaims.length === 1 ? '' : 's'} waiting`} tone={paymentBlockedIds.size > 0 ? 'warning' : 'neutral'} icon={<IconInvoices size={16} />} href="/projects?status=payment_blocked" />
           ) : (
             <Stat label="On hold" value={String(countByStatus.get('on_hold') ?? 0)} tone={statusTone('on_hold')} href="/projects?status=on_hold" />

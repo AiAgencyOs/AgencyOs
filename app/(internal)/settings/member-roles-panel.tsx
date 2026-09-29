@@ -20,25 +20,19 @@ import { CostRateCell } from './cost-rate-cell';
  * capabilities become the union of every role they hold
  * (`src/lib/authz/permissions.ts`'s `effectiveCapabilitiesFor`).
  *
- * **Said plainly, because it is easy to assume otherwise**: a secondary role
- * granted here is designed to widen what a person may DO in server actions
- * and admin pages that explicitly check the union (`effectiveCapabilitiesFor`/
- * `canEffective`) — it does not widen what rows they can read or write
- * through Row Level Security, which still reads only the primary role from
- * their session token. Two different things, and this panel is the place
- * that says so rather than leaving it to be discovered.
+ * **Decision 2026-09-30 (F2): secondary roles are honoured by every
+ * permission check.** `requireInternal()` loads them into `context.roles`
+ * and every `can(context, capability)` in the app reads the union, so a
+ * grant made here changes what its holder may do the moment it lands. In the
+ * database, `core.is_owner()`, `core.is_admin()` and `core.can_write()`
+ * consult the same grants (`core.holds_role`), so the owner-gated doors admit
+ * a secondary owner too.
  *
- * **A second thing worth saying plainly, confirmed 2026-09-26**: no server
- * action or admin page in this codebase calls `effectiveCapabilitiesFor` or
- * `canEffective` today — every `can(role, capability)` check in the app
- * still reads only the primary role, exactly as it did before this table
- * existed. A grant made here is recorded, shown on the roster, and revocable,
- * but it does not yet change what its holder can actually do anywhere. This
- * is not a bypass in the other direction either — nobody gets LESS than
- * their primary role grants — but an owner reading only the paragraph above
- * would reasonably expect an effect that does not exist yet. Deciding which
- * checks should honor the union first is a real scope call (every page? a
- * named few?) that this comment does not make for them.
+ * **Said plainly, because it is easy to assume otherwise**: what a grant
+ * does not do is widen the ROWS a person can read or write through the
+ * policies that spell `core.current_user_role() in (...)` — those still read
+ * the primary role from the session token. Nobody gets LESS than their
+ * primary role grants; a secondary role only adds.
  */
 
 function GrantForm({ membershipId, alreadyHeld }: { membershipId: string; alreadyHeld: readonly string[] }) {
@@ -154,11 +148,10 @@ export function MemberRolesPanel({ members, costRates, costRateAccess, today }: 
         hold. Owner only.
       </p>
       <p className="text-xs text-muted">
-        A secondary role is designed to widen what a person may do in the pages and actions that
-        check for it — but nothing in this product checks for it yet, so a grant here is recorded
-        and shown without changing what its holder can actually do. Either way, it does not widen
-        which database rows they can read or write — that is still governed by the primary role
-        alone.
+        Since 2026-09-30 every permission check honours a secondary role: the pages and actions its
+        holder may use widen the moment the grant lands, and the owner-only doors in the database
+        admit a secondary owner. It does not widen which database rows they can read or write
+        under the row policies that read the primary role alone.
       </p>
       {costRateAccess && costRateAccess !== 'none' ? (
         <p className="text-xs text-muted">

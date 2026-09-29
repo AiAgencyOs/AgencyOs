@@ -44,7 +44,7 @@ export default async function ProjectScreenPage({ params }: { params: Promise<{ 
   const { projectId, screenId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/design/screens/${screenId}`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
@@ -63,7 +63,7 @@ export default async function ProjectScreenPage({ params }: { params: Promise<{ 
     readTestPlan(projectId),
     listProjectScreens(projectId),
   ]);
-  const mayEdit = can(context.role, 'project.write');
+  const mayEdit = can(context, 'project.write');
   const superseded = screen.status === 'superseded';
   // Only the mapping follows the baseline: it changes what the list covers.
   // Design state, Figma link and QA hand-off happen after the list is agreed.

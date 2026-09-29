@@ -21,7 +21,7 @@ export const metadata: Metadata = { title: 'Templates' };
 export default async function SettingsTemplatesPage() {
   const context = await requireInternal('/settings/templates');
   const [templates, clock] = await Promise.all([listProjectTemplates(), agencyClock()]);
-  const mayDelete = can(context.role, 'organization.settings');
+  const mayDelete = can(context, 'organization.settings');
 
   return (
     <div className="flex flex-col gap-5">

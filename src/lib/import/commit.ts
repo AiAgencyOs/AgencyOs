@@ -36,7 +36,7 @@ export async function commitImportRecord(
   if (!parsed.success) return err('VALIDATION', 'That is not a valid import record id.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to commit an import.');
   }
 
@@ -114,7 +114,7 @@ export async function commitImportBatch(batchId: string, limit = 100): Promise<R
   if (!parsed.success) return err('VALIDATION', 'That is not a valid import batch id.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to commit an import.');
   }
 

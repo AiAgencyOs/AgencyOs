@@ -17,7 +17,7 @@ export async function addProjectLink(input: AddProjectLinkInput): Promise<Result
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid link.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to add a project link.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to add a project link.');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
@@ -46,7 +46,7 @@ export async function removeProjectLink(input: RemoveProjectLinkInput): Promise<
   if (!parsed.success) return err('VALIDATION', 'Invalid link.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to remove a project link.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to remove a project link.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').from('project_links').delete().eq('id', parsed.data.linkId).select('id').maybeSingle();

@@ -21,7 +21,7 @@ export async function linkMeetingToProject(input: LinkMeetingProjectInput): Prom
   if (!parsed.success) return err('VALIDATION', 'Invalid meeting or project.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) return err('FORBIDDEN', 'You do not have permission to edit meetings.');
+  if (!can(context, 'lead.write')) return err('FORBIDDEN', 'You do not have permission to edit meetings.');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();

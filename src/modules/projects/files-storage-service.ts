@@ -52,7 +52,7 @@ export async function uploadProjectFile(
   if (file.size > MAX_UPLOAD_BYTES) return err('VALIDATION', `That file is ${Math.round(file.size / 1024 / 1024)} MB; the limit is ${MAX_UPLOAD_BYTES / 1024 / 1024} MB.`);
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return refused('upload a file');
+  if (!can(context, 'project.write')) return refused('upload a file');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
@@ -143,7 +143,7 @@ export async function trashProjectFile(input: TrashProjectFileInput): Promise<Re
   if (!parsed.success) return err('VALIDATION', 'Invalid file.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return refused('move a file to the trash');
+  if (!can(context, 'project.write')) return refused('move a file to the trash');
 
   const supabase = await createClient();
   const now = new Date().toISOString();
@@ -186,7 +186,7 @@ export async function restoreProjectFile(input: RestoreProjectFileInput): Promis
   if (!parsed.success) return err('VALIDATION', 'Invalid file.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return refused('restore a file');
+  if (!can(context, 'project.write')) return refused('restore a file');
 
   const supabase = await createClient();
   const { data: row, error: readError } = await supabase
@@ -250,7 +250,7 @@ export async function createFileShareLink(input: CreateFileShareInput): Promise<
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid share.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return refused('share a file');
+  if (!can(context, 'project.write')) return refused('share a file');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
@@ -299,7 +299,7 @@ export async function revokeFileShareLink(input: RevokeFileShareInput): Promise<
   if (!parsed.success) return err('VALIDATION', 'Invalid share.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return refused('revoke a share link');
+  if (!can(context, 'project.write')) return refused('revoke a share link');
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -325,7 +325,7 @@ export async function revokeFileShareLink(input: RevokeFileShareInput): Promise<
 export async function signedDownloadUrl(fileId: string): Promise<Result<{ url: string; title: string }>> {
   if (!/^[0-9a-f-]{36}$/i.test(fileId)) return err('VALIDATION', 'Invalid file.');
   const context = await requireInternal();
-  if (!can(context.role, 'project.read')) return refused('read project files');
+  if (!can(context, 'project.read')) return refused('read project files');
 
   const supabase = await createClient();
   const { data: file, error } = await supabase

@@ -38,7 +38,7 @@ export async function addProjectMember(input: AddProjectMemberInput): Promise<Re
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid member.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to change a project’s team.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to change a project’s team.');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
@@ -66,7 +66,7 @@ export async function setProjectMemberRole(input: SetProjectMemberRoleInput): Pr
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid role.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to change a project’s team.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to change a project’s team.');
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -89,7 +89,7 @@ export async function removeProjectMember(input: RemoveProjectMemberInput): Prom
   if (!parsed.success) return err('VALIDATION', 'Invalid member.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to change a project’s team.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to change a project’s team.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').from('project_members').delete().eq('id', parsed.data.memberId).select('id').maybeSingle();

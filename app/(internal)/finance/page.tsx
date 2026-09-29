@@ -80,7 +80,7 @@ export default async function FinanceOverviewPage({
 }) {
   const context = await requireInternal('/finance');
   const clock = await agencyClock();
-  if (!can(context.role, 'invoice.read')) return <PermissionDenied />;
+  if (!can(context, 'invoice.read')) return <PermissionDenied />;
 
   // The three filters round-trip through the URL as a GET form, the way every
   // list screen here does, and the invoice reader applies them at the
@@ -90,12 +90,12 @@ export default async function FinanceOverviewPage({
   const { days: daysParam, client: clientId, project: projectId } = await searchParams;
   const days = daysParam && /^\d+$/.test(daysParam) ? Number(daysParam) : undefined;
   const filtered = Boolean(days || clientId || projectId);
-  const canIssue = can(context.role, 'invoice.issue');
+  const canIssue = can(context, 'invoice.issue');
 
   // SCR-050: creating an invoice from here, through the same door the
   // Invoices page uses — a milestone the payment plan says may be billed and
   // nothing has invoiced yet.
-  const canCreate = can(context.role, 'invoice.create');
+  const canCreate = can(context, 'invoice.create');
   const [billableMilestones, everyInvoice] = await Promise.all([
     canCreate ? listBillableMilestones() : Promise.resolve([]),
     canCreate ? listInvoices(2000) : Promise.resolve([]),
@@ -111,7 +111,7 @@ export default async function FinanceOverviewPage({
     listPayments(500),
     listExpenses(500),
     canIssue ? listPendingPaymentClaims() : Promise.resolve([]),
-    can(context.role, 'project.read') ? listProjects(200) : Promise.resolve([]),
+    can(context, 'project.read') ? listProjects(200) : Promise.resolve([]),
     listBillingClients(),
   ]);
   const invoiceIds = new Set(invoices.map((i) => i.id));

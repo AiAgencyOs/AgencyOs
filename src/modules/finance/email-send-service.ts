@@ -31,7 +31,7 @@ export async function sendInvoiceByEmail(
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid email send.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) return err('FORBIDDEN', 'You do not have permission to send invoices.');
+  if (!can(context, 'invoice.issue')) return err('FORBIDDEN', 'You do not have permission to send invoices.');
 
   const transport = emailTransportState();
   if (!transport.configured) return err('CONFLICT', `Email is not configured on this deployment. ${transport.reason}`);

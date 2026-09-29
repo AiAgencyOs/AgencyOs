@@ -31,7 +31,7 @@ export type LeadPreviewState = { status: 'ok'; preview: LeadPreview } | { status
 
 export async function readLeadPreviewAction(leadId: string): Promise<LeadPreviewState> {
   const context = await requireInternal('/leads');
-  if (!can(context.role, 'lead.read')) return { status: 'error', message: 'You do not have permission to view leads.' };
+  if (!can(context, 'lead.read')) return { status: 'error', message: 'You do not have permission to view leads.' };
 
   try {
     const [lead, facts, pipeline, opportunity, score, override, conversation] = await Promise.all([

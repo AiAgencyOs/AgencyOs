@@ -204,7 +204,7 @@ export default async function QuotationsPage({
 }) {
   const context = await requireInternal('/quotations');
   const clock = await agencyClock();
-  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
+  if (!can(context, 'lead.read')) return <PermissionDenied />;
 
   const { status, page: pageParam, sort: sortKey, dir, q, expiring, expired, client: clientParam, project: projectParam, service: serviceParam } = await searchParams;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
@@ -254,7 +254,7 @@ export default async function QuotationsPage({
 
   // Client names for the filter chips and the row's second line; read only
   // when the role may see clients, and only the accounts with a quotation.
-  const clients = can(context.role, 'project.read') ? await listClients() : [];
+  const clients = can(context, 'project.read') ? await listClients() : [];
   const clientName = (id: string | null) => (id ? (clients.find((c) => c.id === id)?.name ?? null) : null);
   const clientIds = [...new Set(all.map((p) => p.clientAccountId).filter((id): id is string => id !== null))];
 
@@ -290,7 +290,7 @@ export default async function QuotationsPage({
             : `${quotations.length} quotation${quotations.length === 1 ? '' : 's'}.`
         }
         actions={
-          can(context.role, 'proposal.draft') ? (
+          can(context, 'proposal.draft') ? (
             <Link href="/quotations/new" className={buttonClass('primary', 'sm')}>
               <IconPlus size={14} />
               Create quotation

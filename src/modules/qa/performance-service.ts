@@ -31,7 +31,7 @@ export async function setPerformanceBudget(input: SetPerformanceBudgetInput): Pr
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid budget.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to set performance budgets.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to set performance budgets.');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
@@ -88,7 +88,7 @@ export async function recordMetricResult(input: RecordMetricResultInput): Promis
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid metric.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) return err('FORBIDDEN', 'You do not have permission to record metrics.');
+  if (!can(context, 'task.write')) return err('FORBIDDEN', 'You do not have permission to record metrics.');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
@@ -126,7 +126,7 @@ export async function openStabilityIncident(input: OpenIncidentInput): Promise<R
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid incident.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to open incidents.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to open incidents.');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
@@ -163,7 +163,7 @@ export async function resolveStabilityIncident(input: ResolveIncidentInput): Pro
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid resolution.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to resolve incidents.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to resolve incidents.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('qa').rpc('resolve_stability_incident', {

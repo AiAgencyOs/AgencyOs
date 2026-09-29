@@ -27,7 +27,7 @@ export async function invoicePdfForInvoice(
   if (!idCheck.success) return err('VALIDATION', 'Not an invoice id.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.read')) {
+  if (!can(context, 'invoice.read')) {
     return err('FORBIDDEN', 'You do not have permission to read invoices.');
   }
 

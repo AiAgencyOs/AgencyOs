@@ -53,7 +53,7 @@ function first(data: unknown): Row | undefined {
 
 async function authorise(): Promise<Result<true>> {
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'Your role cannot conclude a meeting; the owner or an ops admin can.');
   }
   return ok(true);

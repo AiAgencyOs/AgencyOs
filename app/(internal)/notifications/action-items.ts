@@ -55,7 +55,7 @@ export const ACTION_CATEGORY_LABEL: Record<string, string> = {
  * person sees before opening the inbox is the number of rows inside it.
  */
 export async function listActionItems(context: AuthContext, clock: AgencyClock): Promise<ActionItem[]> {
-  const show = (cap: Parameters<typeof can>[1]) => can(context.role, cap);
+  const show = (cap: Parameters<typeof can>[1]) => can(context, cap);
 
   // SCR-027: phase changes on projects this person watches, from the last
   // 30 days — keyed on the change's own timestamp, so the bucket B state

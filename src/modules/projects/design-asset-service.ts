@@ -44,7 +44,7 @@ export async function uploadDesignAsset(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to upload a design asset.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to upload a design asset.');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
@@ -105,7 +105,7 @@ export async function markDesignAssetApproved(input: MarkDesignAssetApprovedInpu
   if (!parsed.success) return err('VALIDATION', 'Invalid asset.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to approve a design asset.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to approve a design asset.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('mark_design_asset_approved', { p_asset_id: parsed.data.assetId });

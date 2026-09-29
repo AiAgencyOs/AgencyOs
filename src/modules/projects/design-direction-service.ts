@@ -29,7 +29,7 @@ export async function recordThemeDirection(input: RecordThemeDirectionInput): Pr
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid direction.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to record a theme direction.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to record a theme direction.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('record_theme_direction', {
@@ -67,7 +67,7 @@ export async function recordColorVariant(input: RecordColorVariantInput): Promis
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid variant.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to record a colour variant.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to record a colour variant.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('record_color_variant', {

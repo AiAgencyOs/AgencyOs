@@ -37,7 +37,7 @@ export async function setOrganizationName(name: string): Promise<Result<{ name: 
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'Only an owner may rename the agency.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
@@ -72,7 +72,7 @@ export async function setAgencyTimezone(timezone: string): Promise<Result<{ time
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change organization settings.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
@@ -110,7 +110,7 @@ type PilotRow = { outcome: 'enabled' | 'disabled' | 'forbidden' | 'not_found' };
 
 export async function setReactivationPilot(enabled: boolean): Promise<Result<{ enabled: boolean }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change organization settings.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
@@ -150,7 +150,7 @@ type WakeRow = { outcome: 'enabled' | 'disabled' | 'forbidden' | 'not_found' };
  */
 export async function setWakeRunnerOnInbound(enabled: boolean): Promise<Result<{ enabled: boolean }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change organization settings.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
@@ -224,7 +224,7 @@ export async function setWhatsAppTemplateStatus(input: {
   status: TemplateStatus;
 }): Promise<Result<{ situationKey: string }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change template status.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
@@ -257,7 +257,7 @@ export async function setWhatsAppTemplate(input: {
   parameters?: readonly string[];
 }): Promise<Result<{ situationKey: string }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to register WhatsApp templates.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
@@ -307,7 +307,7 @@ export async function clearWhatsAppTemplate(
   languageCode?: string,
 ): Promise<Result<{ situationKey: string }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change WhatsApp templates.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
@@ -449,7 +449,7 @@ export async function setOrganizationSetting(
   value: string,
 ): Promise<Result<{ key: OrganizationSettingKey; cleared: boolean }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change organization settings.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
@@ -532,7 +532,7 @@ export async function readOutreachLimits(): Promise<Result<OutreachLimits>> {
 
 export async function setOutreachLimits(input: OutreachLimits): Promise<Result<OutreachLimits>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change outreach limits.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
@@ -574,7 +574,7 @@ export async function setDefaultDesignReviewer(
   userId: string | null,
 ): Promise<Result<{ cleared: boolean; seeded: number }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change organization settings.');
   }
 
@@ -630,7 +630,7 @@ export async function grantSecondaryRole(
   role: string,
 ): Promise<Result<{ granted: boolean }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'Only an owner may grant an additional role.');
   }
 
@@ -669,7 +669,7 @@ export async function revokeSecondaryRole(
   role: string,
 ): Promise<Result<{ revoked: boolean }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'Only an owner may revoke an additional role.');
   }
 
@@ -710,7 +710,7 @@ export async function setMembershipStatus(
   status: 'active' | 'suspended',
 ): Promise<Result<{ updated: boolean }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'Only an owner may change a membership’s status.');
   }
 

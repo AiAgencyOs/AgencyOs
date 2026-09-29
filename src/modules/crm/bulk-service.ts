@@ -44,7 +44,7 @@ export async function bulkLeadAction(input: BulkLeadActionInput): Promise<Result
   // Re-checked here as well as in every door: a bulk request with nothing it
   // may do should be one refusal, not a hundred identical ones.
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to edit leads.');
   }
 

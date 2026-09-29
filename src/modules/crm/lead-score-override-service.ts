@@ -19,7 +19,7 @@ export async function overrideLeadScore(input: OverrideLeadScoreInput): Promise<
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid override.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.assign')) return err('FORBIDDEN', 'Only the owner or an ops admin may override a lead score.');
+  if (!can(context, 'lead.assign')) return err('FORBIDDEN', 'Only the owner or an ops admin may override a lead score.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('crm').rpc('override_lead_score', {

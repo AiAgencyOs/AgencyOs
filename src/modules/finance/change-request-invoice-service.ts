@@ -30,7 +30,7 @@ export async function invoiceChangeRequest(input: InvoiceChangeRequestInput): Pr
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid request.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.create')) return err('FORBIDDEN', 'You do not have permission to raise invoices.');
+  if (!can(context, 'invoice.create')) return err('FORBIDDEN', 'You do not have permission to raise invoices.');
 
   const supabase = await createClient();
 

@@ -31,7 +31,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
 
   const context = await getAuthContext();
   if (!context) return NextResponse.json({ error: 'Sign in to export a report.' }, { status: 401 });
-  if (!can(context.role, 'project.read')) {
+  if (!can(context, 'project.read')) {
     return NextResponse.json({ error: 'You do not have permission to read this project.' }, { status: 403 });
   }
 
@@ -80,7 +80,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
   // time costed at each person's day-of-log rate (decision E2 of
   // 2026-09-30), with uncosted hours carried as their own row rather than
   // silently priced at zero.
-  if (can(context.role, 'invoice.read')) {
+  if (can(context, 'invoice.read')) {
     const margin = await readProjectMargin(projectId);
     lines.push('');
     lines.push(['metric', 'value_minor', 'basis'].join(','));

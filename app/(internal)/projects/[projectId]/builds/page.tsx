@@ -46,13 +46,13 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/builds`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
 
   const clock = await agencyClock();
-  const canWrite = can(context.role, 'project.write');
+  const canWrite = can(context, 'project.write');
   const [deliverables, environments, dependencies, board, readiness, gates, link, gitActions] = await Promise.all([
     listDeliverables(projectId),
     listEnvironments(projectId),

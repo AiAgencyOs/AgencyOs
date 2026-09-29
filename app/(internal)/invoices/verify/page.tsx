@@ -63,7 +63,7 @@ function Proof({ url }: { url: string | null }) {
 export default async function PaymentVerificationPage() {
   const context = await requireInternal('/invoices/verify');
   const clock = await agencyClock();
-  if (!can(context.role, 'invoice.issue')) return <PermissionDenied />;
+  if (!can(context, 'invoice.issue')) return <PermissionDenied />;
 
   const [claims, settled] = await Promise.all([listPendingPaymentClaims(), listPaymentSubmissions('settled', 100)]);
 

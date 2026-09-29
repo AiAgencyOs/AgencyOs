@@ -83,7 +83,7 @@ export async function searchRecords(filter: SearchPageFilter): Promise<SearchPag
 
   const searches: Promise<SearchPageResult[]>[] = [];
 
-  if (wants('Lead') && ownerOk('Lead') && can(context.role, 'lead.read')) {
+  if (wants('Lead') && ownerOk('Lead') && can(context, 'lead.read')) {
     searches.push(
       (async () => {
         let query = supabase
@@ -111,7 +111,7 @@ export async function searchRecords(filter: SearchPageFilter): Promise<SearchPag
     );
   }
 
-  if (wants('Client') && ownerOk('Client') && can(context.role, 'project.read')) {
+  if (wants('Client') && ownerOk('Client') && can(context, 'project.read')) {
     searches.push(
       (async () => {
         let query = supabase
@@ -138,7 +138,7 @@ export async function searchRecords(filter: SearchPageFilter): Promise<SearchPag
     );
   }
 
-  if (wants('Project') && ownerOk('Project') && can(context.role, 'project.read')) {
+  if (wants('Project') && ownerOk('Project') && can(context, 'project.read')) {
     searches.push(
       (async () => {
         let query = supabase
@@ -166,7 +166,7 @@ export async function searchRecords(filter: SearchPageFilter): Promise<SearchPag
     );
   }
 
-  if (wants('Invoice') && ownerOk('Invoice') && can(context.role, 'invoice.read')) {
+  if (wants('Invoice') && ownerOk('Invoice') && can(context, 'invoice.read')) {
     searches.push(
       (async () => {
         let query = supabase
@@ -194,7 +194,7 @@ export async function searchRecords(filter: SearchPageFilter): Promise<SearchPag
 
   // SCR-002 (bucket F): quotations, meetings and tasks join the four — the
   // same three the palette matches, under the same capabilities.
-  if (wants('Quotation') && ownerOk('Quotation') && can(context.role, 'lead.read')) {
+  if (wants('Quotation') && ownerOk('Quotation') && can(context, 'lead.read')) {
     searches.push(
       (async () => {
         let query = supabase
@@ -231,7 +231,7 @@ export async function searchRecords(filter: SearchPageFilter): Promise<SearchPag
     );
   }
 
-  if (wants('Meeting') && ownerOk('Meeting') && can(context.role, 'lead.read')) {
+  if (wants('Meeting') && ownerOk('Meeting') && can(context, 'lead.read')) {
     searches.push(
       (async () => {
         let query = supabase
@@ -257,7 +257,7 @@ export async function searchRecords(filter: SearchPageFilter): Promise<SearchPag
     );
   }
 
-  if (wants('Task') && ownerOk('Task') && can(context.role, 'project.read')) {
+  if (wants('Task') && ownerOk('Task') && can(context, 'project.read')) {
     searches.push(
       (async () => {
         let query = supabase

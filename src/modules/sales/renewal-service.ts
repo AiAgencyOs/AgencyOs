@@ -18,7 +18,7 @@ export async function openRenewal(input: OpenRenewalInput): Promise<Result<{ opp
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid renewal.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) return err('FORBIDDEN', 'You do not have permission to open deals.');
+  if (!can(context, 'lead.write')) return err('FORBIDDEN', 'You do not have permission to open deals.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('sales').rpc('open_renewal', {

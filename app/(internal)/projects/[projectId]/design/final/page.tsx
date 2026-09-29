@@ -39,14 +39,14 @@ export default async function ProjectFinalSelectionPage({
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/design/final`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
 
   const trail = await readDesignTrail(projectId);
   const { phase } = trail;
-  const mayDecide = can(context.role, 'project.write');
+  const mayDecide = can(context, 'project.write');
 
   if (!phase) {
     return (

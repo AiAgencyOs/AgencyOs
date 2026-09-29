@@ -26,7 +26,7 @@ export async function updateClientAccount(input: UpdateClientAccountInput): Prom
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid client details.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to edit clients.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to edit clients.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('core').rpc('update_client_account', {

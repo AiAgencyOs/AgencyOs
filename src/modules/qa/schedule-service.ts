@@ -20,7 +20,7 @@ export async function setSuiteSchedule(input: SetSuiteScheduleInput): Promise<Re
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid schedule.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to schedule suites.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to schedule suites.');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();

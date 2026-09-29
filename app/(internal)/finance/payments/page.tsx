@@ -132,14 +132,14 @@ export default async function PaymentsPage({
 }) {
   const context = await requireInternal('/finance/payments');
   const clock = await agencyClock();
-  if (!can(context.role, 'invoice.read')) return <PermissionDenied />;
+  if (!can(context, 'invoice.read')) return <PermissionDenied />;
 
   const { status, page: pageParam, sort: sortKey, dir, recon: reconParam } = await searchParams;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
   const currentQuery = [status ? `status=${status}` : '', sortKey ? `sort=${sortKey}&dir=${direction}` : '']
     .filter(Boolean)
     .join('&');
-  const mayReconcile = can(context.role, 'invoice.issue');
+  const mayReconcile = can(context, 'invoice.issue');
   const [allPayments, savedViews, pendingClaims, claims, reconciliations, accounts] = await Promise.all([
     listPayments(),
     listSavedViews('/finance/payments'),

@@ -28,7 +28,7 @@ function log(scope: string, detail: string | undefined) {
 
 async function gate(verb: string) {
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) return err('FORBIDDEN', `You do not have permission to ${verb}.`) as Result<never>;
+  if (!can(context, 'task.write')) return err('FORBIDDEN', `You do not have permission to ${verb}.`) as Result<never>;
   return null;
 }
 

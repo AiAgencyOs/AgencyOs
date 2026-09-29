@@ -371,6 +371,6 @@ describe('E. the capability', () => {
     // set adds vocabulary without adding control.
     const service = read('../src/modules/finance/service.ts');
     const body = region(service, 'export async function verifyPayment');
-    assert.match(body.slice(0, 800), /can\(context\.role, 'invoice\.issue'\)/);
+    assert.match(body.slice(0, 800), /can\(context, 'invoice\.issue'\)/);
   });
 });

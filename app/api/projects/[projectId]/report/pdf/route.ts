@@ -33,12 +33,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
   const { projectId } = await params;
   const context = await getAuthContext();
   if (!context) return NextResponse.json({ error: 'Sign in to export a report.' }, { status: 401 });
-  if (!can(context.role, 'project.read')) return NextResponse.json({ error: 'You do not have permission to read this project.' }, { status: 403 });
+  if (!can(context, 'project.read')) return NextResponse.json({ error: 'You do not have permission to read this project.' }, { status: 403 });
 
   const project = await getProject(projectId);
   if (!project) return NextResponse.json({ error: 'Project not found.' }, { status: 404 });
 
-  const mayReadMoney = can(context.role, 'invoice.read');
+  const mayReadMoney = can(context, 'invoice.read');
   const clock = await agencyClock();
   const url = new URL(request.url);
   const rawFrom = url.searchParams.get('from') ?? undefined;

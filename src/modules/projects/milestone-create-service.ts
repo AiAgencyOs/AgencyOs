@@ -17,7 +17,7 @@ export async function addUnpricedMilestone(input: AddUnpricedMilestoneInput): Pr
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid milestone.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'milestone.write')) return err('FORBIDDEN', 'You do not have permission to add milestones.');
+  if (!can(context, 'milestone.write')) return err('FORBIDDEN', 'You do not have permission to add milestones.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('add_unpriced_milestone', {

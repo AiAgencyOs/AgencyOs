@@ -135,7 +135,7 @@ export default async function SettingsCommunicationPage() {
           sent</span> — WhatsApp broadcast is declined on record (traceability row 59).
         </p>
         <AnnouncementsPanel
-          canWrite={can(context.role, 'organization.settings')}
+          canWrite={can(context, 'organization.settings')}
           announcements={announcements.map((a) => ({
             id: a.id,
             title: a.title,

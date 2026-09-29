@@ -19,7 +19,7 @@ export async function setLeadService(input: SetLeadServiceInput): Promise<Result
   if (!parsed.success) return err('VALIDATION', 'A service is at most 80 characters.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to edit leads.');
   }
 

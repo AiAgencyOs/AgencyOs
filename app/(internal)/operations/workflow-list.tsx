@@ -7,6 +7,7 @@ import type { Workflow } from '@/lib/admin/run-chain';
 import { Badge, Drawer, StatusBadge, buttonClass } from '@/ui';
 
 import { CancelJobForm } from './cancel-job-form';
+import { CancelRunningJobForm } from './cancel-running-form';
 
 /**
  * Workflow runs by correlation id, with an "inspect event chain" drawer —
@@ -81,6 +82,7 @@ export function WorkflowList({ workflows }: { workflows: Workflow[] }) {
                       </span>
                       {j.lastError ? <span className="break-words text-xs text-danger">{j.lastError}</span> : null}
                       {j.status === 'queued' || j.status === 'failed' ? <CancelJobForm jobId={j.id} compact /> : null}
+                      {j.status === 'running' ? <CancelRunningJobForm jobId={j.id} compact /> : null}
                     </li>
                   ))}
                 </ul>
@@ -112,7 +114,7 @@ export function WorkflowList({ workflows }: { workflows: Workflow[] }) {
               </p>
             ) : null}
             <p className="text-xs text-muted">
-              Cancelling stops a job that has not started; a running one settles on its own first. Each cancellation is audited with its reason.
+              Cancelling stops a job that has not started; a running one is asked to stop and settles as cancelled at its next step. Each is audited with its reason.
             </p>
           </div>
         ) : null}

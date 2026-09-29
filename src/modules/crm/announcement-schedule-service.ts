@@ -17,7 +17,7 @@ export async function scheduleAnnouncement(input: ScheduleAnnouncementInput): Pr
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid schedule.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) return err('FORBIDDEN', 'You do not have permission to schedule announcements.');
+  if (!can(context, 'organization.settings')) return err('FORBIDDEN', 'You do not have permission to schedule announcements.');
 
   let scheduledFor: string | null = null;
   if (parsed.data.scheduledFor) {

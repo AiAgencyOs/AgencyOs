@@ -4,8 +4,12 @@ import Link from 'next/link';
 import { MemberRolesPanel } from '../../settings/member-roles-panel';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { agencyClock } from '@/lib/admin/agency-clock';
+import { readLatestAccessReviews } from '@/modules/identity/access-reviews-queries';
 import { listInternalRosterWithRoles } from '@/modules/projects/queries';
-import { PageHeader, PermissionDenied } from '@/ui';
+import { Card, CardHeader, PageHeader, PermissionDenied } from '@/ui';
+
+import { AccessReviewPanel } from './access-review-panel';
 
 export const metadata: Metadata = { title: 'Users & roles' };
 
@@ -25,9 +29,23 @@ export const metadata: Metadata = { title: 'Users & roles' };
  */
 export default async function UsersAndRolesPage() {
   const context = await requireInternal('/security/users');
-  if (!can(context.role, 'organization.settings')) return <PermissionDenied />;
+  if (!can(context, 'organization.settings')) return <PermissionDenied />;
 
-  const roster = await listInternalRosterWithRoles();
+  const clock = await agencyClock();
+  const [roster, reviews] = await Promise.all([listInternalRosterWithRoles(), readLatestAccessReviews()]);
+  const reviewable = roster.map((m) => {
+    const r = reviews.get(m.membershipId);
+    return {
+      membershipId: m.membershipId,
+      fullName: m.fullName,
+      email: m.email,
+      role: m.role,
+      secondaryRoles: m.secondaryRoles,
+      status: m.status,
+      lastReview: r ? { ...r, reviewedAtLabel: clock.dateTime(r.reviewedAt) } : null,
+    };
+  });
+  const neverReviewed = reviewable.filter((m) => m.lastReview === null).length;
 
   return (
     <div className="flex flex-col gap-5">
@@ -37,6 +55,15 @@ export default async function UsersAndRolesPage() {
       />
 
       <MemberRolesPanel members={roster} />
+
+      {/* SCR-069: review access — confirm it stands, or ask for it to go. */}
+      <Card>
+        <CardHeader
+          title="Access review"
+          description={`Each membership's last review and what was decided${neverReviewed > 0 ? ` — ${neverReviewed} never reviewed` : ''}. A revocation request records the judgement; suspend the membership above to act on it. Every review is audited.`}
+        />
+        <AccessReviewPanel members={reviewable} />
+      </Card>
 
       <p className="text-xs leading-relaxed text-muted">
         Inviting a new person still needs a Supabase Auth invite (email delivery, account

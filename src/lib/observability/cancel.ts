@@ -40,7 +40,7 @@ export async function cancelJob(jobId: string, reason: string): Promise<Result<C
   if (trimmed.length > 500) return err('VALIDATION', 'Keep the reason under 500 characters.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'job.requeue')) {
+  if (!can(context, 'job.requeue')) {
     return err('FORBIDDEN', 'You do not have permission to cancel jobs.');
   }
 

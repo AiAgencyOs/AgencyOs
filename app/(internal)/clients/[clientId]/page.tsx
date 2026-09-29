@@ -132,7 +132,7 @@ export default async function ClientDetailPage({
 
   const context = await requireInternal(`/clients/${clientId}`);
   const clock = await agencyClock();
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const client = await getClient(clientId);
   if (!client) notFound();
@@ -146,7 +146,7 @@ export default async function ClientDetailPage({
   const projectIds = client.projects.map((p) => p.id);
   // SCR-017 — the lead threads a message can be sent on from here, and who
   // may: the same `lead.write` the lead composer and the memory door gate on.
-  const mayMessage = can(context.role, 'lead.write');
+  const mayMessage = can(context, 'lead.write');
   const leadThreads = mayMessage ? await listClientLeadThreads(leadIds) : [];
   const threadOptions = leadThreads.map((t) => {
     const lead = leads.find((l) => l.id === t.leadId);
@@ -161,8 +161,8 @@ export default async function ClientDetailPage({
     listEligibleMilestones(projectIds),
     listClientOpportunities(clientId),
   ]);
-  const mayInvoice = can(context.role, 'invoice.create');
-  const mayEditClient = can(context.role, 'project.write');
+  const mayInvoice = can(context, 'invoice.create');
+  const mayEditClient = can(context, 'project.write');
   // SCR-014 (owner select) and SCR-017 (announcements addressed to clients).
   const [roster, clientAnnouncements] = await Promise.all([
     mayEditClient ? listInternalRoster() : Promise.resolve([]),
@@ -193,8 +193,8 @@ export default async function ClientDetailPage({
   const commercialFeed = commercialItems(commercialEvents, clock);
   const followUpOverdue = nextFollowUp !== null && nextFollowUp.at < new Date().toISOString();
 
-  const canWriteNotes = can(context.role, 'project.write');
-  const canSeeMoney = can(context.role, 'invoice.read');
+  const canWriteNotes = can(context, 'project.write');
+  const canSeeMoney = can(context, 'invoice.read');
   const collection = client.invoicedMinor > 0 ? Math.round((client.paidMinor / client.invoicedMinor) * 100) : null;
   const overdue = client.invoices.filter((i) => i.status === 'overdue').length;
   const pending = client.invoices.filter((i) => i.status === 'issued' || i.status === 'overdue' || i.status === 'partially_paid').length;
@@ -270,7 +270,7 @@ export default async function ClientDetailPage({
                 Add note
               </Link>
             ) : null}
-            {can(context.role, 'project.write') ? (
+            {can(context, 'project.write') ? (
               <ClientCreateButtons
                 clientAccountId={client.id}
                 opportunityId={opportunities.open?.id ?? null}

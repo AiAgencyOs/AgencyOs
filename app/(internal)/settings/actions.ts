@@ -6,7 +6,7 @@ import { configuredProviders, resetProviderRegistry, resolveProvider } from '@/l
 import { deleteProviderCredential, setProviderCredential, VAULT_PROVIDERS, type VaultProvider } from '@/lib/ai/vault';
 import { sendWhatsAppText } from '@/lib/whatsapp/send';
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
+import { can, hasRole } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 
 import { revalidatePath } from 'next/cache';
@@ -551,7 +551,7 @@ export async function verifyWhatsAppAction(_prev: FormState, _formData: FormData
  */
 export async function sendWhatsAppTestAction(_prev: FormState, _formData: FormData): Promise<FormState> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may send the test message.' };
+  if (!can(context, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may send the test message.' };
   const settings = await readOperationalSettings();
   const phoneNumberId = settingText(settings, 'whatsapp_phone_number_id');
   const recipient = settingText(settings, 'whatsapp_test_recipient');
@@ -586,7 +586,7 @@ export async function sendWhatsAppTestAction(_prev: FormState, _formData: FormDa
  */
 export async function verifyAiProviderAction(_prev: FormState, _formData: FormData): Promise<FormState> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify the provider.' };
+  if (!can(context, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify the provider.' };
   const registered = await configuredProviders();
   if (registered.length === 0) return { status: 'error', message: 'No AI provider is configured; there is nothing to verify.' };
 
@@ -635,7 +635,7 @@ export async function verifyAiProviderAction(_prev: FormState, _formData: FormDa
  */
 export async function setProviderCredentialAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may set a provider key.' };
+  if (!can(context, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may set a provider key.' };
 
   const provider = String(formData.get('provider') ?? '');
   if (!VAULT_PROVIDERS.includes(provider as VaultProvider)) return { status: 'error', message: `Unknown provider "${provider}".` };
@@ -660,7 +660,7 @@ export async function setProviderCredentialAction(_prev: FormState, formData: Fo
  */
 export async function revokeProviderCredentialAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const context = await requireInternal();
-  if (context.role !== 'owner' || !can(context.role, 'organization.settings')) {
+  if (!hasRole(context, 'owner') || !can(context, 'organization.settings')) {
     return { status: 'error', message: 'Only the owner may revoke a provider key.' };
   }
 
@@ -668,7 +668,7 @@ export async function revokeProviderCredentialAction(_prev: FormState, formData:
   if (!VAULT_PROVIDERS.includes(provider as VaultProvider)) return { status: 'error', message: `Unknown provider "${provider}".` };
 
   const supabase = await createClient();
-  const result = await deleteProviderCredential(supabase, provider as VaultProvider, context.role);
+  const result = await deleteProviderCredential(supabase, provider as VaultProvider, context);
   if (!result.ok) return { status: 'error', message: result.error.message };
 
   resetProviderRegistry();
@@ -686,7 +686,7 @@ export async function revokeProviderCredentialAction(_prev: FormState, formData:
  */
 export async function verifyCalendarAction(_prev: FormState, _formData: FormData): Promise<FormState> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify the calendar.' };
+  if (!can(context, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify the calendar.' };
   const calendar = createGoogleCalendar();
   if (!calendar) return { status: 'error', message: 'No calendar is configured: place GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_KEY and GOOGLE_CALENDAR_ID in the deployment environment (ADM-102).' };
   const from = new Date();

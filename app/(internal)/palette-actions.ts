@@ -69,7 +69,7 @@ export type OpportunityOption = { opportunityId: string; leadId: string | null; 
 export async function listOpenOpportunityOptionsAction(): Promise<Result<OpportunityOption[]>> {
   const context = await getAuthContext();
   if (!context || !isInternalRole(context.role)) return err('UNAUTHORIZED', 'Sign in again.');
-  if (!can(context.role, 'proposal.draft')) return err('FORBIDDEN', 'You do not have permission to draft quotations.');
+  if (!can(context, 'proposal.draft')) return err('FORBIDDEN', 'You do not have permission to draft quotations.');
   try {
     const rows = await listPipelineOpportunities(200);
     return ok(
@@ -87,7 +87,7 @@ export type LeadOption = { id: string; title: string; status: string };
 export async function listLeadOptionsAction(): Promise<Result<LeadOption[]>> {
   const context = await getAuthContext();
   if (!context || !isInternalRole(context.role)) return err('UNAUTHORIZED', 'Sign in again.');
-  if (!can(context.role, 'lead.read')) return err('FORBIDDEN', 'You do not have permission to read leads.');
+  if (!can(context, 'lead.read')) return err('FORBIDDEN', 'You do not have permission to read leads.');
   try {
     const rows = await listLeadsForTable(300);
     return ok(rows.map((l) => ({ id: l.id, title: l.title, status: l.status })));

@@ -28,7 +28,7 @@ const TABS = [
  */
 export default async function SettingsLayout({ children }: { children: React.ReactNode }) {
   const context = await requireInternal('/settings');
-  if (!can(context.role, 'organization.settings')) return <PermissionDenied />;
+  if (!can(context, 'organization.settings')) return <PermissionDenied />;
 
   return (
     <div className="flex flex-col gap-5">

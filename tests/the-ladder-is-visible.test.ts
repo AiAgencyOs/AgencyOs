@@ -168,7 +168,7 @@ describe('D. what verified costs is said where the number is read', () => {
 
 describe('E. the surface itself', () => {
   test('the money figure is behind invoice.read, like every other one here', () => {
-    assert.match(PAGE, /can\(context\.role, 'invoice\.read'\) \? await readPaymentLadder\(projectId\) : null/);
+    assert.match(PAGE, /can\(context, 'invoice\.read'\) \? await readPaymentLadder\(projectId\) : null/);
   });
 
   test('the gate finally reaches a page — through queries.ts, per §3.2', () => {

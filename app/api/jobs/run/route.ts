@@ -2,8 +2,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { authorizeCronRequest } from '@/lib/cron-auth';
 import { createAdminClient } from '@/lib/db/admin';
-import { failJob, logJobParked, parkRefusedJob, type Admin, type JobRow } from './agent-run';
+import { failJob, logJobParked, parkBudgetRefusedJob, parkRefusedJob, requeuePausedJob, settleCancelledJob, type Admin, type JobRow } from './agent-run';
 import { AgentPolicyRefusal } from '@/lib/ai/agent-policy';
+import { AgentBudgetRefusal, AgentsPaused, JobCancelled } from '@/lib/ai/run-gates';
 import { AGENT_JOB_KINDS, workflowFor } from './workflows';
 import { serverEnv } from '@/lib/env';
 import { newCorrelationId } from '@/lib/errors';
@@ -1104,7 +1105,7 @@ async function runOneAgentJob(
   const { data: agent } = await admin
     .schema('ai')
     .from('agents')
-    .select('key, enabled, default_model, default_effort, autonomy_level')
+    .select('key, enabled, default_model, default_effort, autonomy_level, allowed_work_classes')
     .eq('key', workflow.agentKey)
     .maybeSingle();
 
@@ -1127,6 +1128,14 @@ async function runOneAgentJob(
     return { jobId: job.id, agent: workflow.agentKey, status: 'failed', reason: 'agent autonomy' };
   }
 
+  // SCR-063: the owner's list of work classes for this agent, beside the
+  // autonomy gate. Empty is every class; a non-empty list is exhaustive.
+  const allowed = agent.allowed_work_classes ?? [];
+  if (allowed.length > 0 && !allowed.includes(workflow.workClass)) {
+    await failJob(admin, job, `agent "${workflow.agentKey}" is not allowed ${workflow.workClass} work (allowed: ${allowed.join(', ')})`);
+    return { jobId: job.id, agent: workflow.agentKey, status: 'failed', reason: 'agent work class' };
+  }
+
   // ── and then the work, which is the only part that differs ──────────────
   //
   // Decision 3 (2026-09-29): a workflow that opens a run on a project the
@@ -1137,6 +1146,19 @@ async function runOneAgentJob(
     const outcome = await workflow.run({ admin, job, agent, correlationId, workClass: workflow.workClass });
     return { jobId: job.id, agent: workflow.agentKey, ...outcome };
   } catch (error) {
+    // Stream F-F: the three between-step gates, each settled its own way.
+    if (error instanceof JobCancelled) {
+      await settleCancelledJob(admin, error);
+      return { jobId: job.id, agent: workflow.agentKey, status: 'cancelled', reason: 'cancelled while running', detail: error.reason, runId: error.runId };
+    }
+    if (error instanceof AgentsPaused) {
+      await requeuePausedJob(admin, job, error);
+      return { jobId: job.id, agent: workflow.agentKey, status: 'requeued', reason: 'agents paused', detail: error.message, runId: error.runId };
+    }
+    if (error instanceof AgentBudgetRefusal) {
+      await parkBudgetRefusedJob(admin, job, error);
+      return { jobId: job.id, agent: workflow.agentKey, status: 'failed', reason: 'provider budget', detail: error.message, runId: error.runId };
+    }
     if (!(error instanceof AgentPolicyRefusal)) throw error;
     await parkRefusedJob(admin, job, error);
     return { jobId: job.id, agent: workflow.agentKey, status: 'failed', reason: 'agent policy', detail: error.message, runId: error.runId };

@@ -114,7 +114,7 @@ export default async function MyTasksPage({
   // Decision 4 of 2026-09-29: the hours logged per task, for the drawer's
   // Time section. Who is looking decides which entries they may delete.
   const time = await readTaskTimeFor(tasks.map((t) => t.id));
-  const timeUser: TimeUser = { currentUserId: context.userId, canDeleteAny: can(context.role, 'project.write'), today };
+  const timeUser: TimeUser = { currentUserId: context.userId, canDeleteAny: can(context, 'project.write'), today };
   const overdue = tasks.filter((t) => t.dueOn !== null && dueLabel(clock, t.dueOn).overdue);
   // SCR-021's three asks beside the reference's own figures: due today,
   // blocked, and waiting for review — the agency's today, not the server's.

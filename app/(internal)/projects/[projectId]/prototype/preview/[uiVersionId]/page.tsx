@@ -36,7 +36,7 @@ export default async function PrototypePreviewPage({
   const { projectId, uiVersionId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/prototype/preview/${uiVersionId}`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();

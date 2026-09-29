@@ -34,17 +34,21 @@ export type AgentRunListRow = {
   stepCount: number;
   error: string | null;
   createdAt: string;
+  /** SCR-065: the project the run was attributed to (trigger-derived), and its wall-clock once settled. */
+  projectId: string | null;
+  latencyMs: number | null;
 };
 
 export type AgentRunFilters = {
   agentKey?: string;
   status?: string;
   model?: string;
+  projectId?: string;
   limit?: number;
 };
 
 const RUN_COLUMNS =
-  'id, agent_key, trigger, subject_type, subject_id, status, model, input_tokens, output_tokens, cost_minor, step_count, error, created_at';
+  'id, agent_key, trigger, subject_type, subject_id, status, model, input_tokens, output_tokens, cost_minor, step_count, error, created_at, project_id, latency_ms';
 
 const DEFAULT_LIMIT = 100;
 /** How far back the filter rail looks for distinct agents / statuses / models. */
@@ -63,6 +67,7 @@ export async function listAgentRuns(filters: AgentRunFilters = {}): Promise<Agen
   if (filters.agentKey) query = query.eq('agent_key', filters.agentKey);
   if (filters.status) query = query.eq('status', filters.status);
   if (filters.model) query = query.eq('model', filters.model);
+  if (filters.projectId) query = query.eq('project_id', filters.projectId);
 
   const { data, error } = await query;
   if (error) unreadable('listAgentRuns', error);
@@ -81,6 +86,8 @@ export async function listAgentRuns(filters: AgentRunFilters = {}): Promise<Agen
     stepCount: r.step_count,
     error: r.error,
     createdAt: r.created_at,
+    projectId: r.project_id,
+    latencyMs: r.latency_ms,
   }));
 }
 
@@ -137,8 +144,10 @@ export type AgentStepRow = {
   costMinor: number;
   latencyMs: number | null;
   error: string | null;
-  /** The recorded request, as stored — free JSON, surfaced only for a tool name. */
+  /** The recorded request, as stored — free JSON: a tool name and its arguments for a tool call, the call shape for a model call. */
   request: unknown;
+  /** The recorded response, as stored — a tool's result, or the model's answer (SCR-065). */
+  response: unknown;
   createdAt: string;
 };
 
@@ -166,7 +175,7 @@ export async function getAgentRunWithSteps(runId: string): Promise<AgentRunWithS
   const { data: steps, error: stepsError } = await supabase
     .schema('ai')
     .from('agent_steps')
-    .select('id, seq, kind, tokens_in, tokens_out, cost_minor, latency_ms, error, request, created_at')
+    .select('id, seq, kind, tokens_in, tokens_out, cost_minor, latency_ms, error, request, response, created_at')
     .eq('run_id', runId)
     .order('seq', { ascending: true });
   if (stepsError) unreadable('getAgentRunWithSteps.steps', stepsError);
@@ -186,6 +195,8 @@ export async function getAgentRunWithSteps(runId: string): Promise<AgentRunWithS
       stepCount: run.step_count,
       error: run.error,
       createdAt: run.created_at,
+      projectId: run.project_id,
+      latencyMs: run.latency_ms,
       correlationId: run.correlation_id,
       workClass: run.work_class,
       promptKey: run.prompt_key,
@@ -206,6 +217,7 @@ export async function getAgentRunWithSteps(runId: string): Promise<AgentRunWithS
       latencyMs: s.latency_ms,
       error: s.error,
       request: s.request,
+      response: s.response,
       createdAt: s.created_at,
     })),
   };

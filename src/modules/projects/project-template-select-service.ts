@@ -20,7 +20,7 @@ export async function setProjectTemplate(input: SetProjectTemplateInput): Promis
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid template.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to change project settings.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to change project settings.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('set_project_template', {
