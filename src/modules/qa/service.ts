@@ -145,7 +145,8 @@ export async function settleDefect(input: SettleDefectInput): Promise<Result<{ s
 
 /** The row `projects.mark_production_ready` returns. */
 type ProductionReadyRow = {
-  outcome: 'ready' | 'already_ready' | 'not_found' | 'not_ready';
+  /** `held` (SCR-044, 20260929190000): a release hold stands; `unmet` carries its reason. */
+  outcome: 'ready' | 'already_ready' | 'not_found' | 'not_ready' | 'held';
   unmet: string[] | null;
 };
 
@@ -222,6 +223,10 @@ export async function markProductionReady(projectId: string): Promise<Result<{ r
       const reasons = (row.unmet ?? []).map((key) => NOT_READY[key] ?? key);
       return err('CONFLICT', `This project is not production ready: ${reasons.join(', ')}.`);
     }
+
+    // SCR-044: a person's hold, quoted in their words. Lifted on the Release tab.
+    case 'held':
+      return err('CONFLICT', `A release hold is on this project: "${(row.unmet ?? []).join(' ')}". Lift it on the Release tab before signing off.`);
 
     default:
       console.error(
@@ -462,6 +467,20 @@ export async function triageDefect(input: TriageDefectInput): Promise<Result<{ d
     if (!member) return err('VALIDATION', 'That person is not a member of this organisation.');
   }
 
+  // SCR-047: the linked task must be one of this project's — the FK alone
+  // would accept any task in the organization.
+  if (parsed.data.taskId) {
+    const { data: task, error: taskError } = await supabase
+      .schema('projects')
+      .from('tasks')
+      .select('id')
+      .eq('id', parsed.data.taskId)
+      .eq('project_id', parsed.data.projectId)
+      .maybeSingle();
+    if (taskError) return err('INTERNAL', 'Could not check the task.');
+    if (!task) return err('VALIDATION', 'That task is not on this project.');
+  }
+
   const note = severityChanged ? `Severity ${defect.severity} → ${parsed.data.severity}: ${parsed.data.reason}` : null;
   const { error } = await supabase
     .schema('qa')
@@ -469,6 +488,7 @@ export async function triageDefect(input: TriageDefectInput): Promise<Result<{ d
     .update({
       assignee_id: parsed.data.assigneeId,
       severity: parsed.data.severity,
+      ...(parsed.data.taskId !== undefined ? { task_id: parsed.data.taskId } : {}),
       ...(note ? { resolution: defect.resolution ? `${defect.resolution}\n${note}` : note } : {}),
     })
     .eq('id', defect.id);

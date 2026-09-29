@@ -5,6 +5,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
 import { readBlockersAcrossProjects } from '@/modules/projects/blockers-queries';
+import { listOpenTechnicalDependencies } from '@/modules/projects/dependency-status-queries';
 import { readDevelopmentPortfolio, readPlanCoverageByProject, type PlanCoverage } from '@/modules/projects/queries';
 import {
   Badge,
@@ -130,7 +131,16 @@ export default async function DevelopmentPortfolioPage() {
   const context = await requireInternal('/development');
   if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
-  const [portfolio, coverage, blockers] = await Promise.all([readDevelopmentPortfolio(), readPlanCoverageByProject(), readBlockersAcrossProjects()]);
+  const [portfolio, coverage, blockers, openTechnical] = await Promise.all([readDevelopmentPortfolio(), readPlanCoverageByProject(), readBlockersAcrossProjects(), listOpenTechnicalDependencies()]);
+  // SCR-043: the technical register's open rows, grouped per project beside
+  // the plan's own register — a person closes them on the Builds tab.
+  const technicalByProject = new Map<string, { projectName: string; items: typeof openTechnical }>();
+  for (const d of openTechnical) {
+    const entry = technicalByProject.get(d.projectId) ?? { projectName: d.projectName, items: [] };
+    entry.items.push(d);
+    technicalByProject.set(d.projectId, entry);
+  }
+  const technicalOnlyProjects = [...technicalByProject.entries()].filter(([projectId]) => !blockers.some((b) => b.projectId === projectId));
   const rows: Row[] = portfolio.map((r) => ({ ...r, coverage: coverage.get(r.id) ?? { planStatus: null, planVersion: null, hasTestPlan: false } }));
   const inBuild = rows.filter((r) => r.tasks.total > 0 && r.tasks.done < r.tasks.total);
   const blocked = rows.reduce((n, r) => n + r.tasks.blocked, 0);
@@ -164,10 +174,10 @@ export default async function DevelopmentPortfolioPage() {
       */}
       <Card>
         <CardHeader
-          title={`Dependencies and blockers (${blockers.length} project${blockers.length === 1 ? '' : 's'})`}
-          description="Unmet plan dependencies and blocked tasks. Escalate to the PM on the plan; start the QA handoff on the QA tab."
+          title={`Dependencies and blockers (${blockers.length + technicalOnlyProjects.length} project${blockers.length + technicalOnlyProjects.length === 1 ? '' : 's'})`}
+          description="Unmet plan dependencies, open technical dependencies and blocked tasks. Escalate to the PM on the plan; mark a technical dependency supplied on the Builds tab; start the QA handoff on the QA tab."
         />
-        {blockers.length === 0 ? (
+        {blockers.length === 0 && technicalOnlyProjects.length === 0 ? (
           <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">Nothing is recorded as in the way on any project.</p>
         ) : (
           <ul className="divide-y divide-line">
@@ -196,6 +206,16 @@ export default async function DevelopmentPortfolioPage() {
                       </span>
                     </li>
                   ))}
+                  {(technicalByProject.get(p.projectId)?.items ?? []).map((d) => (
+                    <li key={d.id} className="flex flex-wrap items-center justify-between gap-2">
+                      <span>{d.name}{d.version ? <span className="text-muted"> {d.version}</span> : null}</span>
+                      <span className="flex items-center gap-2 text-xs text-muted">
+                        technical dependency
+                        <Badge tone="warning">open</Badge>
+                        <Link href={`/projects/${p.projectId}/builds`} className="underline underline-offset-2">mark supplied</Link>
+                      </span>
+                    </li>
+                  ))}
                   {p.blockedTasks.map((t) => (
                     <li key={t.id} className="flex flex-wrap items-center gap-2">
                       <Badge tone="danger">task blocked</Badge>
@@ -203,6 +223,29 @@ export default async function DevelopmentPortfolioPage() {
                         {t.title}
                       </Link>
                       <span className="text-xs text-muted">{t.priority}</span>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+            {technicalOnlyProjects.map(([projectId, entry]) => (
+              <li key={projectId} className="flex flex-col gap-2 px-4 py-3 sm:px-5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Link href={`/projects/${projectId}/development`} className="text-[13px] font-medium hover:underline">
+                    {entry.projectName}
+                  </Link>
+                  <Link href={`/projects/${projectId}/builds`} className={buttonClass('secondary', 'sm')}>
+                    Builds tab
+                  </Link>
+                </div>
+                <ul className="flex flex-col gap-1 text-[13px]">
+                  {entry.items.map((d) => (
+                    <li key={d.id} className="flex flex-wrap items-center justify-between gap-2">
+                      <span>{d.name}{d.version ? <span className="text-muted"> {d.version}</span> : null}</span>
+                      <span className="flex items-center gap-2 text-xs text-muted">
+                        technical dependency
+                        <Badge tone="warning">open</Badge>
+                      </span>
                     </li>
                   ))}
                 </ul>

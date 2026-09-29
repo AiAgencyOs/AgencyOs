@@ -1748,6 +1748,10 @@ export type ProjectDependency = {
   reference: string | null;
   notes: string | null;
   createdAt: string;
+  /** SCR-043: open until marked supplied or waived (20260929190000). */
+  status: 'open' | 'supplied' | 'waived';
+  suppliedAt: string | null;
+  note: string | null;
 };
 
 /** Every dependency recorded on a project, newest first — SCR-043. */
@@ -1757,18 +1761,22 @@ export async function listDependencies(projectId: string): Promise<ProjectDepend
   const { data, error } = await supabase
     .schema('projects')
     .from('dependencies')
-    .select('id, name, version, reference, notes, created_at')
+    .select('id, name, version, reference, notes, created_at, status, supplied_at, note')
     .eq('project_id', projectId)
     .order('created_at', { ascending: false });
   if (error) unreadable('listDependencies', error);
 
-  return (data ?? []).map((d) => ({
+  type Row = { id: string; name: string; version: string | null; reference: string | null; notes: string | null; created_at: string; status: string; supplied_at: string | null; note: string | null };
+  return ((data ?? []) as Row[]).map((d) => ({
     id: d.id,
     name: d.name,
     version: d.version,
     reference: d.reference,
     notes: d.notes,
     createdAt: d.created_at,
+    status: d.status === 'supplied' || d.status === 'waived' ? d.status : 'open',
+    suppliedAt: d.supplied_at,
+    note: d.note,
   }));
 }
 

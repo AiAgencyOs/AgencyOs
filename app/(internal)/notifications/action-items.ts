@@ -8,6 +8,8 @@ import { listFailedDeliveries, listDeadJobs } from '@/lib/observability/queries'
 import { listPendingPaymentClaims } from '@/modules/finance/queries';
 import { listOpenDefects } from '@/modules/qa/queries';
 import { listMyTasks } from '@/modules/projects/queries';
+import { listWatchedPhaseChanges } from '@/modules/projects/project-defaults-queries';
+import { WATCH_PHASE_LABEL } from '@/modules/projects/project-defaults-schema';
 
 export type ActionItem = { key: string; title: string; detail: string; href: string; urgent: boolean };
 
@@ -23,6 +25,7 @@ export const ACTION_CATEGORY_LABEL: Record<string, string> = {
   job: 'Jobs',
   delivery: 'Deliveries',
   task: 'Tasks',
+  phase: 'Phase changes',
 };
 
 /**
@@ -37,13 +40,18 @@ export const ACTION_CATEGORY_LABEL: Record<string, string> = {
 export async function listActionItems(context: AuthContext, clock: AgencyClock): Promise<ActionItem[]> {
   const show = (cap: Parameters<typeof can>[1]) => can(context.role, cap);
 
-  const [approvals, failedDeliveries, deadJobs, paymentClaims, defects, myTasks] = await Promise.all([
+  // SCR-027: phase changes on projects this person watches, from the last
+  // 30 days — keyed on the change's own timestamp, so the bucket B state
+  // (read / snoozed / resolved) sticks to one change and a new one is new.
+  const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const [approvals, failedDeliveries, deadJobs, paymentClaims, defects, myTasks, phaseChanges] = await Promise.all([
     listPendingApprovals(),
     show('audit.read') ? listFailedDeliveries() : Promise.resolve([]),
     show('job.requeue') || show('audit.read') ? listDeadJobs() : Promise.resolve([]),
     show('invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
     show('project.read') ? listOpenDefects() : Promise.resolve([]),
     listMyTasks(context.userId),
+    show('project.read') ? listWatchedPhaseChanges(context.userId, since) : Promise.resolve([]),
   ]);
 
   const now = Date.now();
@@ -115,6 +123,16 @@ export async function listActionItems(context: AuthContext, clock: AgencyClock):
       detail: `${t.projectName} · overdue — ${clock.date(t.dueOn!)}`,
       href: '/my-tasks',
       urgent: true,
+    });
+  }
+
+  for (const c of phaseChanges) {
+    rows.push({
+      key: `phase-${c.projectId}-${c.phase}-${c.changedAt}`,
+      title: `${c.projectName} — ${WATCH_PHASE_LABEL[c.phase]}: ${c.state.replace(/_/g, ' ')}`,
+      detail: `changed ${when(c.changedAt)} · you watch this project`,
+      href: `/projects/${c.projectId}`,
+      urgent: false,
     });
   }
 

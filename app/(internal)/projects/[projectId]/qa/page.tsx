@@ -5,7 +5,7 @@ import { notFound } from 'next/navigation';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { agencyClock } from '@/lib/admin/agency-clock';
-import { getProject, listDeliverables, listInternalRoster, readScopeBaseline } from '@/modules/projects/queries';
+import { getProject, listDeliverables, listInternalRoster, readScopeBaseline, listDevelopmentBreakdown } from '@/modules/projects/queries';
 import { listTestPlanVersions, listTestRunDetails, readDefectHistory } from '@/modules/qa/dashboard-queries';
 import { listTestCaseResults } from '@/modules/qa/case-results-queries';
 import { listDefects, listTestRuns, readTestPlan } from '@/modules/qa/queries';
@@ -31,7 +31,7 @@ export default async function TestPlanPage({ params }: { params: Promise<{ proje
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const [{ active }, plan, deliverables, runs, runDetails, planVersions, defects, roster, clock, caseResults] = await Promise.all([
+  const [{ active }, plan, deliverables, runs, runDetails, planVersions, defects, roster, clock, caseResults, { tasks }] = await Promise.all([
     readScopeBaseline(projectId),
     readTestPlan(projectId),
     listDeliverables(projectId),
@@ -42,6 +42,8 @@ export default async function TestPlanPage({ params }: { params: Promise<{ proje
     listInternalRoster(),
     agencyClock(),
     listTestCaseResults(projectId),
+    // SCR-047 — the tasks a defect can be linked to.
+    listDevelopmentBreakdown(projectId),
   ]);
   // SCR-047 — the fix / retest trail, one read for every defect on the project.
   const history = await readDefectHistory(defects.map((d) => d.id));
@@ -89,6 +91,7 @@ export default async function TestPlanPage({ params }: { params: Promise<{ proje
         planItems={plan?.items ?? []}
         planVersions={planVersions}
         defects={defects}
+        tasks={tasks.map((t) => ({ id: t.id, title: t.title, status: t.status }))}
         history={history}
         roster={roster.map((m) => ({ userId: m.userId, fullName: m.fullName }))}
         builds={deliverables.map((d) => ({ id: d.id, kind: d.kind, version: d.version, title: d.title }))}

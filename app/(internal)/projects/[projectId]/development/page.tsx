@@ -41,6 +41,8 @@ export default async function DevelopmentPage({ params }: { params: Promise<{ pr
   // written off), tasks and features somebody marked blocked, and the
   // unsettled plan questions an "escalate to PM" lands beside.
   const unmetDependencies = board.dependencies.filter((d) => ['pending', 'requested', 'blocked'].includes(d.status));
+  // SCR-043: the technical register's open rows — closed from the Builds tab.
+  const openTechnical = recordedDependencies.filter((d) => d.status === 'open');
   const blockedTasks = tasks.filter((t) => t.status === 'blocked');
   const blockedFeatures = features.filter((f) => f.status === 'blocked');
   const openQuestions = board.clarifications.filter((c) => c.status !== 'resolved' && c.status !== 'routed_to_change_request');
@@ -91,7 +93,7 @@ export default async function DevelopmentPage({ params }: { params: Promise<{ pr
           }
         />
         <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
-          {unmetDependencies.length === 0 && blockedTasks.length === 0 && blockedFeatures.length === 0 ? (
+          {unmetDependencies.length === 0 && openTechnical.length === 0 && blockedTasks.length === 0 && blockedFeatures.length === 0 ? (
             <p className="text-[13px] text-muted">Nothing is recorded as in the way.</p>
           ) : null}
           {unmetDependencies.length > 0 ? (
@@ -102,6 +104,20 @@ export default async function DevelopmentPage({ params }: { params: Promise<{ pr
                   <span className="flex items-center gap-2 text-muted">
                     {d.kind.replace(/_/g, ' ')} · by {d.neededByPhase.replace('_', ' ')} · {d.ownerRole}
                     <Badge tone={d.status === 'blocked' ? 'danger' : 'warning'}>{d.status}</Badge>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {openTechnical.length > 0 ? (
+            <ul className="flex flex-col gap-1">
+              {openTechnical.map((d) => (
+                <li key={d.id} className="flex flex-wrap items-baseline justify-between gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
+                  <span className="font-medium">{d.name}{d.version ? <span className="text-muted"> {d.version}</span> : null}</span>
+                  <span className="flex items-center gap-2 text-muted">
+                    technical dependency
+                    <Badge tone="warning">open</Badge>
+                    <Link href={`/projects/${projectId}/builds`} className="text-xs underline underline-offset-2">mark supplied</Link>
                   </span>
                 </li>
               ))}

@@ -56,6 +56,9 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
   const latestBuild = builds[0] ?? null;
   const environmentKinds = [...new Set(environments.map((e) => e.kind))];
   const blockingDependencies = board.dependencies.filter((d) => ['pending', 'requested', 'blocked'].includes(d.status));
+  // SCR-043: the technical register has its own status now — open until
+  // marked supplied or waived on its row below.
+  const openTechnical = dependencies.filter((d) => d.status === 'open');
 
   return (
     <div className="flex flex-col gap-5">
@@ -86,7 +89,12 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
           tone={blockingDependencies.some((d) => d.status === 'blocked') ? 'danger' : blockingDependencies.length > 0 ? 'warning' : 'success'}
           href={`/projects/${projectId}/plan`}
         />
-        <Stat label="Technical dependencies" value={String(dependencies.length)} caption="recorded below" />
+        <Stat
+          label="Technical dependencies"
+          value={String(dependencies.length)}
+          caption={dependencies.length === 0 ? 'recorded below' : `${openTechnical.length} open · ${dependencies.length - openTechnical.length} supplied or waived`}
+          tone={openTechnical.length > 0 ? 'warning' : dependencies.length > 0 ? 'success' : 'neutral'}
+        />
       </StatGrid>
 
       {blockingDependencies.length > 0 ? (
@@ -104,7 +112,7 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
             ))}
           </ul>
           <p className="mt-2 text-xs text-muted">
-            Marking one received is a change to the plan's register, which the database accepts only on a draft plan — open the next plan version on the Plan tab.
+            These are the plan's register. Marking one received is a change to the plan, which the database accepts only on a draft plan — open the next plan version on the Plan tab. The technical dependencies below are the other register, and can be marked supplied here.
           </p>
         </Card>
       ) : null}
@@ -186,7 +194,7 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
       {dependencies.length > 0 ? (
         <div className="flex flex-col gap-2">
           {dependencies.map((d) => (
-            <DependencyCard key={d.id} dependency={d} projectId={projectId} editable={canWrite} />
+            <DependencyCard key={d.id} dependency={{ ...d, suppliedAtLabel: d.suppliedAt ? clock.date(d.suppliedAt) : undefined }} projectId={projectId} editable={canWrite} />
           ))}
         </div>
       ) : (

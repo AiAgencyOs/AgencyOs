@@ -9,6 +9,7 @@ import { can } from '@/lib/authz/permissions';
 import { listApprovalsForSubject } from '@/modules/approvals/queries';
 import { readPaymentLadder } from '@/modules/finance/queries';
 import { readHandoverRelease } from '@/modules/projects/handover-release-queries';
+import { readReleaseHold } from '@/modules/projects/release-hold-queries';
 import { getProject, listDeliverables, readCompletionSummary } from '@/modules/projects/queries';
 import { listDefects, listTestRuns, readProjectQuality, readTestPlan } from '@/modules/qa/queries';
 import { readHandoverPackage, readProductionReadiness, readProductionReadyAt } from '@/modules/qa/release-queries';
@@ -37,6 +38,7 @@ import { ProjectSubNav } from '../project-subnav';
 import { ProductionReadyForm } from '../qa-panel';
 import { WorkspaceHeader } from '../workspace-header';
 import { RollbackPlanForm, SmokeChecklist } from './release-panel';
+import { HoldReleaseForm, LiftReleaseHoldForm } from './release-hold-panel';
 
 export const metadata: Metadata = { title: 'Release gate' };
 
@@ -94,7 +96,7 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
   const mayReadInvoices = can(context.role, 'invoice.read');
   const maySignOff = can(context.role, 'project.sign_off');
 
-  const [clientName, ladder, summary, quality, defects, deliverables, plan, runs, handover, readiness, readyAt, release] =
+  const [clientName, ladder, summary, quality, defects, deliverables, plan, runs, handover, readiness, readyAt, release, hold] =
     await Promise.all([
       project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
       // Same rule the Overview applies: the ladder is a finance read.
@@ -109,6 +111,8 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
       readProductionReadiness(projectId),
       readProductionReadyAt(projectId),
       readHandoverRelease(projectId),
+      // SCR-044 — a standing release hold, which the sign-off door refuses on.
+      readReleaseHold(projectId),
     ]);
   const mayWrite = can(context.role, 'project.write');
 
@@ -154,6 +158,20 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
               mark: 'fail',
               fact: `${ladder.verifiedPercent ?? 0}% verified; ${ladder.gate.shortfallPercent}% is still to be verified (${ladder.verifiedMilestones} of ${plural(ladder.milestones, 'priced milestone')}).`,
             }),
+  };
+
+  // SCR-044 — the one line a person decides. A HARD gate: mark_production_ready
+  // answers `held` while it stands, before it measures the other three.
+  const holdItem: GateItem = {
+    key: 'hold',
+    label: 'No release hold',
+    hardGate: true,
+    href: `${base}/release#release-hold`,
+    hrefLabel: 'Release hold',
+    mark: hold ? 'fail' : 'pass',
+    fact: hold
+      ? `Held ${clock.dateTime(hold.heldAt)}${hold.heldByName ? ` by ${hold.heldByName}` : ''}: "${hold.reason}"`
+      : 'No hold stands. The owner or an ops admin may hold the release for a reason the gate does not measure.',
   };
 
   const blockersItem: GateItem = {
@@ -285,7 +303,7 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
         : { mark: 'fail', fact: 'No rollback plan has been written on the handover. A report, not a gate.' }),
   };
 
-  const items: GateItem[] = [blockersItem, majorsItem, buildItem, testsItem, planItem, paymentItem, handoverItem, rollbackItem, smokeItem];
+  const items: GateItem[] = [holdItem, blockersItem, majorsItem, buildItem, testsItem, planItem, paymentItem, handoverItem, rollbackItem, smokeItem];
   const counts = items.reduce(
     (acc, i) => ({ ...acc, [i.mark]: acc[i.mark] + 1 }),
     { pass: 0, fail: 0, unknown: 0 } as Record<GateMark, number>,
@@ -294,6 +312,7 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
   // ── the decision, in the door's own words ─────────────────────────────
   // The same three answers `mark_production_ready` reads before it writes.
   const unmet: string[] = [
+    ...(hold ? [`a release hold is on: "${hold.reason}"`] : []),
     ...(readiness.noOpenBlockers ? [] : ['there are open blocker defects']),
     ...(readiness.noOpenMajors ? [] : ['there are open major defects']),
     ...(readiness.buildApproved ? [] : ['the client has not approved a build']),
@@ -416,10 +435,35 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
                       : `Refused because ${unmet.join(', and ')}.`}
                   </p>
                   <p className="text-xs text-muted">
-                    Payment, test runs and the handover are not part of the door — a project can be production ready and unpaid. There is no override.
+                    Payment, test runs and the handover are not part of the door — a project can be production ready and unpaid. There is no override past ADM-19&apos;s three conditions; a release hold is the one thing a person adds to them.
                   </p>
                   {maySignOff ? <ProductionReadyForm projectId={projectId} /> : <p className="text-xs text-muted">Signing off needs project.sign_off (owner or ops admin).</p>}
                 </>
+              )}
+            </CardBody>
+          </Card>
+
+          <Card>
+            <div id="release-hold">
+              <CardHeader
+                title="Release hold"
+                description="A reason the gate does not measure — a client freeze, a legal hold. While it stands the sign-off door answers held, quoting it. Owner or ops admin; audited."
+              />
+            </div>
+            <CardBody>
+              {maySignOff ? (
+                hold ? (
+                  <LiftReleaseHoldForm projectId={projectId} reason={hold.reason} heldLabel={`Held ${clock.dateTime(hold.heldAt)}${hold.heldByName ? ` by ${hold.heldByName}` : ''}`} />
+                ) : (
+                  <HoldReleaseForm projectId={projectId} />
+                )
+              ) : hold ? (
+                <p className="text-[13px]">
+                  <Badge tone="danger">held</Badge> <span className="text-muted">{clock.dateTime(hold.heldAt)}{hold.heldByName ? ` · ${hold.heldByName}` : ''}</span>
+                  <span className="mt-1 block whitespace-pre-wrap">{hold.reason}</span>
+                </p>
+              ) : (
+                <p className="text-[13px] text-muted">No hold stands. Holding a release needs project.sign_off (owner or ops admin).</p>
               )}
             </CardBody>
           </Card>

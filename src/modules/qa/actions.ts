@@ -155,10 +155,13 @@ export async function triageDefectAction(_prev: FormState, formData: FormData): 
     assigneeId: String(formData.get('assigneeId') ?? '').trim() || null,
     severity: String(formData.get('severity') ?? '') as 'blocker' | 'major' | 'minor' | 'trivial',
     reason: String(formData.get('reason') ?? '').trim() || undefined,
+    // SCR-047: the form always carries the field; blank means "no task".
+    ...(formData.has('taskId') ? { taskId: String(formData.get('taskId') ?? '').trim() || null } : {}),
   });
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath(`/projects/${projectId}`);
   revalidatePath(`/projects/${projectId}/qa`);
+  revalidatePath(`/projects/${projectId}/development`);
   revalidatePath('/qa');
   return { status: 'success', message: 'Defect triaged.' };
 }

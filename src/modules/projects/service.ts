@@ -1814,6 +1814,21 @@ export async function createTask(input: CreateTaskInput): Promise<Result<{ taskI
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
+  // SCR-027: a task created with nobody named goes to the project's default
+  // assignee, when one is set (projects.default_assignee_id, 20260929190000).
+  const { data: defaults, error: defaultsError } = await supabase
+    .schema('projects')
+    .from('projects')
+    .select('default_assignee_id')
+    .eq('id', parsed.data.projectId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (defaultsError) {
+    console.error(JSON.stringify({ level: 'error', scope: 'createTask.defaults', detail: defaultsError.message }));
+    return err('INTERNAL', 'Could not read the project.');
+  }
+  if (!defaults) return err('NOT_FOUND', 'Project not found.');
+
   const { data, error } = await supabase
     .schema('projects')
     .from('tasks')
@@ -1825,6 +1840,7 @@ export async function createTask(input: CreateTaskInput): Promise<Result<{ taskI
       title: parsed.data.title,
       description: parsed.data.description ?? null,
       due_on: parsed.data.dueOn ?? null,
+      assignee_id: defaults.default_assignee_id,
     })
     .select('id')
     .single();

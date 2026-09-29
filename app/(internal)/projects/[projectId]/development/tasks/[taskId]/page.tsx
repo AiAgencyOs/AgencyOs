@@ -8,6 +8,7 @@ import { can } from '@/lib/authz/permissions';
 import { getProject } from '@/modules/projects/queries';
 import { readTaskCollab } from '@/modules/projects/task-collab-queries';
 import { readTaskDetail } from '@/modules/projects/task-queries';
+import { listDefectsForTask } from '@/modules/qa/defect-task-queries';
 import { Badge, Card, CardHeader, DetailList, DetailRow, humanize, PageHeader, statusTone } from '@/ui';
 
 import { ProjectSubNav } from '../../../project-subnav';
@@ -42,7 +43,8 @@ export default async function TaskDetailPage({
   if (!detail) notFound();
 
   const clock = await agencyClock();
-  const collab = await readTaskCollab(taskId, clock);
+  // SCR-047 — the defects triaged against this task.
+  const [collab, defects] = await Promise.all([readTaskCollab(taskId, clock), listDefectsForTask(taskId)]);
   const { task, module, feature, scopeItems, evidence, plan, dependencies } = detail;
   const mayPlan = can(context.role, 'project.write');
   const mayWriteTask = can(context.role, 'task.write');
@@ -175,6 +177,33 @@ export default async function TaskDetailPage({
                     {d.kind.replace(/_/g, ' ')} · by {d.neededByPhase.replace('_', ' ')} · {d.ownerRole} ·{' '}
                     <Badge tone={d.status === 'blocked' ? 'danger' : 'warning'}>{d.status}</Badge>
                   </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title={`Defects (${defects.length})`}
+          description="Defects triaged against this task on the QA tab or the overview's register. An open blocker or major here blocks the project's delivery, not only this task."
+        />
+        <div className="px-4 pb-4 sm:px-5">
+          {defects.length === 0 ? (
+            <p className="text-[13px] text-muted">No defect is linked to this task.</p>
+          ) : (
+            <ul className="flex flex-col gap-1">
+              {defects.map((d) => (
+                <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <Badge tone={d.severity === 'blocker' ? 'danger' : d.severity === 'major' ? 'warning' : 'neutral'}>{d.severity}</Badge>
+                    <Badge tone={statusTone(d.status)}>{humanize(d.status)}</Badge>
+                    <Link href={`/projects/${projectId}/qa`} className="font-medium underline-offset-2 hover:underline">
+                      {d.title}
+                    </Link>
+                  </span>
+                  <span className="text-xs text-muted">raised {clock.date(d.createdAt)}</span>
                 </li>
               ))}
             </ul>

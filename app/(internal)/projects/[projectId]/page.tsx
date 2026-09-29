@@ -105,6 +105,8 @@ function money(minor: number, currency: string): string {
 
 import { AddDeliverableForm, SubmitDeliverableForm } from './deliverables-panel';
 import { DefectTriageForm, ProductionReadyForm, RaiseDefectForm, SettleDefectForm } from './qa-panel';
+import { WatchProjectButton } from './watch-button';
+import { readMyWatch } from '@/modules/projects/project-defaults-queries';
 import { RecordClaimForm, VerifyClaimForm } from './claims-panel';
 import { ProjectGroupPanel } from './group-panel';
 import { PhaseTwoPanel } from './phase-two-panel';
@@ -264,7 +266,7 @@ export default async function ProjectPage({
     readHandoverPackage(projectId),
   ]);
   const latestRun = testRuns[0] ?? null;
-  const [{ tasks }, team, files, roster, clientName, assignedAgents] = await Promise.all([
+  const [{ tasks }, team, files, roster, clientName, assignedAgents, myWatch] = await Promise.all([
     listDevelopmentBreakdown(projectId),
     listProjectTeam(projectId),
     listProjectFiles(projectId),
@@ -272,6 +274,8 @@ export default async function ProjectPage({
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
     // SCR-063 — the agents the owner assigned here (a policy record, not yet read by the runner).
     listAssignedAgents(projectId),
+    // SCR-027 — whether this person watches the project's phase changes.
+    readMyWatch(projectId, context.userId),
   ]);
   const nameByUser = new Map(team.map((m) => [m.userId, m.fullName]));
   const todayKey = new Date().toISOString().slice(0, 10);
@@ -377,6 +381,7 @@ export default async function ProjectPage({
               <IconGrid size={14} />
               Board
             </Link>
+            <WatchProjectButton projectId={projectId} watching={myWatch !== null} />
             {mayWriteProject ? (
               <Link href={`/projects/${projectId}/settings`} className={buttonClass('primary', 'sm')}>
                 <IconEdit size={14} />
@@ -1046,7 +1051,23 @@ export default async function ProjectPage({
                 {d.resolution ? <p className="mt-1 text-[13px]">{d.resolution}</p> : null}
 
                 {d.assignee_id ? <p className="mt-1 text-xs text-muted">Assigned to {roster.find((r) => r.userId === d.assignee_id)?.fullName ?? 'a member'}</p> : null}
-                {mayWriteProject ? <DefectTriageForm projectId={projectId} defect={d} roster={roster.map((r) => ({ userId: r.userId, fullName: r.fullName }))} /> : null}
+                {/* SCR-047: the task the defect is about, set at triage. */}
+                {d.task_id ? (
+                  <p className="mt-1 text-xs text-muted">
+                    Task:{' '}
+                    <Link href={`/projects/${projectId}/development/tasks/${d.task_id}`} className="underline underline-offset-2 hover:text-foreground">
+                      {tasks.find((t) => t.id === d.task_id)?.title ?? 'open task'}
+                    </Link>
+                  </p>
+                ) : null}
+                {mayWriteProject ? (
+                  <DefectTriageForm
+                    projectId={projectId}
+                    defect={d}
+                    roster={roster.map((r) => ({ userId: r.userId, fullName: r.fullName }))}
+                    tasks={tasks.map((t) => ({ id: t.id, title: t.title, status: t.status }))}
+                  />
+                ) : null}
                 {mayWriteProject ? <SettleDefectForm projectId={projectId} defect={d} /> : null}
               </li>
             ))}
