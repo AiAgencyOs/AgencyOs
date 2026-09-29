@@ -8,7 +8,11 @@ import { LiveRefresh } from '@/lib/realtime';
 import { listDeferredSends, listFailedDeliveries } from '@/lib/observability/queries';
 import { readRetryHistory } from '@/lib/observability/retry-queries';
 import { RetryDeliveryForm } from '../operations/retry-delivery-form';
+import { EscalateControl } from '../notifications/escalate-form';
+import { AnnouncementsPanel } from '../settings/communication/announcements-panel';
+import { readEscalationsByKey } from '@/lib/admin/escalations';
 import { listAnnouncements } from '@/modules/crm/announcements-queries';
+import { listUnansweredConversations } from '@/modules/crm/unread-queries';
 import { listLeadAssignees } from '@/modules/crm/escalation-queries';
 import { listActiveConversations } from '@/modules/crm/queries';
 import { listWhatsAppTemplates } from '@/modules/crm/template-queries';
@@ -59,20 +63,34 @@ function waitingFor(since: string, now: number): string {
  * visibility, not configuration. Opening a thread goes to the lead, where
  * the chat and its composer live.
  */
-export default async function CommunicationCenterPage() {
+export default async function CommunicationCenterPage({ searchParams }: { searchParams: Promise<{ unread?: string }> }) {
+  const { unread: unreadParam } = await searchParams;
+  // SCR-057 (bucket F): the Unread tile opens this list filtered to exactly its count.
+  const unreadOnly = unreadParam === '1';
   const context = await requireInternal('/communication');
   if (!can(context.role, 'lead.read')) return <PermissionDenied />;
   const clock = await agencyClock();
 
   const mayAssign = can(context.role, 'lead.assign');
-  const [conversations, failedDeliveries, deferred, templates, roster, announcements] = await Promise.all([
+  const canManage = can(context.role, 'organization.settings');
+  const [conversations, failedDeliveries, deferred, templates, roster, announcements, unanswered, draftAnnouncements] = await Promise.all([
     listActiveConversations(),
     listFailedDeliveries(20),
     listDeferredSends(20),
     listWhatsAppTemplates(),
     mayAssign ? listInternalRoster() : Promise.resolve([]),
     listAnnouncements({ status: 'published', limit: 8 }),
+    // SCR-057 (bucket F): the honest "unread" — threads whose newest message is the client's.
+    listUnansweredConversations(),
+    // SCR-057/059 (bucket F): drafts, including the scheduled ones, for the create/schedule panel and the due tile.
+    listAnnouncements({ status: 'draft', limit: 50 }),
   ]);
+  // SCR-060 (bucket F): retries are a count — total attempts across the failed deliveries shown.
+  const retryTotal = failedDeliveries.reduce((n, f) => n + (f.retryCount ?? 0), 0);
+  // SCR-060 (bucket F): F-A's escalations, keyed by the message id for the failed deliveries shown.
+  const escalationsByKey = await readEscalationsByKey();
+  const canAnswerEscalation = can(context.role, 'audit.read');
+  const dueAnnouncements = draftAnnouncements.filter((a) => a.scheduledFor !== null);
   const assignees = await listLeadAssignees(conversations.map((c) => c.leadId));
   const rosterOptions = roster.map((m) => ({ userId: m.userId, fullName: m.fullName || m.email }));
   const now = Date.now();
@@ -88,7 +106,8 @@ export default async function CommunicationCenterPage() {
   const approvedTemplates = templates.filter((t) => t.active && t.status === 'approved').length;
   const channels = new Map<string, number>();
   for (const c of conversations) channels.set(c.channel, (channels.get(c.channel) ?? 0) + 1);
-  const sorted = [...paused, ...conversations.filter((c) => !c.agentPausedAt)];
+  const unansweredIds = new Set(unanswered.map((u) => u.conversationId));
+  const sorted = [...paused, ...conversations.filter((c) => !c.agentPausedAt)].filter((c) => !unreadOnly || unansweredIds.has(c.id));
 
   return (
     <div className="flex flex-col gap-5">
@@ -108,12 +127,16 @@ export default async function CommunicationCenterPage() {
         }
       />
 
-      <StatGrid cols={5}>
+      <StatGrid cols={6}>
         <Stat label="Active conversations" value={String(conversations.length)} caption="Open client threads" tone="brand" icon={<IconMessage size={16} />} />
-        <Stat label="Waiting on a person" value={String(paused.length)} caption="Agent paused" tone={paused.length > 0 ? 'warning' : 'success'} icon={<IconUser size={16} />} />
-        <Stat label="Channels" value={String(channels.size)} caption={[...channels.entries()].map(([k, n]) => `${humanize(k)} ${n}`).join(' · ') || 'None yet'} tone="info" icon={<IconInbox size={16} />} />
+        {/* SCR-057 (bucket F): unread, honestly — no per-person receipt exists, so this counts threads whose newest message is the client's. */}
+        <Stat label="Unread" value={String(unanswered.length)} caption="Threads the client wrote to last" tone={unanswered.length > 0 ? 'warning' : 'success'} icon={<IconInbox size={16} />} href="/communication?unread=1#conversations" />
+        <Stat label="Waiting on a person" value={String(paused.length)} caption="Agent paused" tone={paused.length > 0 ? 'warning' : 'success'} icon={<IconUser size={16} />} href="#escalations" />
         <Stat label="Failed deliveries" value={String(failedDeliveries.length)} caption="Most recent 20" tone={failedDeliveries.length > 0 ? 'danger' : 'success'} icon={<IconAlert size={16} />} href="/operations" />
-        <Stat label="Deferred sends" value={String(deferred.length)} caption="Waiting for the 24-hour window" tone={deferred.length > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/operations" />
+        {/* SCR-060 (bucket F): retry count is a count — attempts across the failures shown. */}
+        <Stat label="Retries" value={String(retryTotal)} caption={`Across ${failedDeliveries.length} failed ${failedDeliveries.length === 1 ? 'delivery' : 'deliveries'}`} tone={retryTotal > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/operations" />
+        {/* SCR-057 (bucket F): announcements due — drafts with a scheduled moment. */}
+        <Stat label="Announcements due" value={String(dueAnnouncements.length)} caption={dueAnnouncements[0]?.scheduledFor ? `Next ${clock.dateTime(dueAnnouncements[0].scheduledFor)}` : 'None scheduled'} tone={dueAnnouncements.length > 0 ? 'info' : 'neutral'} icon={<IconSettings size={16} />} href="#announcements" />
       </StatGrid>
 
       <Card id="escalations">
@@ -145,8 +168,8 @@ export default async function CommunicationCenterPage() {
       </Card>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(19rem,1fr)]">
-        <Card>
-          <CardHeader title="Conversations" description="Threads waiting for a person come first." actions={<ViewAll href="/leads" label="All leads" />} />
+        <Card id="conversations">
+          <CardHeader title={unreadOnly ? `Unread conversations (${sorted.length})` : 'Conversations'} description={unreadOnly ? 'Threads whose newest message is the client\'s.' : 'Threads waiting for a person come first.'} actions={unreadOnly ? <ViewAll href="/communication" label="All conversations" /> : <ViewAll href="/leads" label="All leads" />} />
           {sorted.length > 0 ? (
             <ul className="divide-y divide-line">
               {sorted.map((c) => (
@@ -193,7 +216,22 @@ export default async function CommunicationCenterPage() {
                               return last ? `, last ${last.delivery ?? 'unrecorded'}${last.error ? ` — ${last.error}` : ''}` : '';
                             })()}`}
                       </span>
-                      {mayRetry && f.id ? <span className="mt-1 block"><RetryDeliveryForm messageId={f.id} /></span> : null}
+                      {mayRetry && f.id ? (
+                        <span className="mt-1 flex flex-wrap items-center gap-2">
+                          <RetryDeliveryForm messageId={f.id} />
+                          <EscalateControl
+                            subjectType="delivery"
+                            subjectKey={f.id}
+                            title={`Failed delivery: ${f.body.slice(0, 80)}`}
+                            canAnswer={canAnswerEscalation}
+                            compact
+                            escalation={(() => {
+                              const e = escalationsByKey.get(f.id as string);
+                              return e ? { id: e.id, toRole: e.toRole, reason: e.reason, state: e.state, fromUserName: e.fromUserName, acknowledgedByName: e.acknowledgedByName, createdAtLabel: clock.dateTime(e.createdAt) } : null;
+                            })()}
+                          />
+                        </span>
+                      ) : null}
                     </span>
                   </li>
                 ))}
@@ -229,7 +267,8 @@ export default async function CommunicationCenterPage() {
                 {templates.map((t) => (
                   <li key={t.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2 text-[13px] sm:px-5">
                     <span className="flex min-w-0 flex-col">
-                      <span className="truncate font-medium">{humanize(t.situationKey)}</span>
+                      {/* SCR-059 (bucket F): each row opens the template's detail page. */}
+                      <Link href={`/communication/templates/${t.id}`} className="truncate font-medium hover:underline">{humanize(t.situationKey)}</Link>
                       <code className="truncate text-[11px] text-muted">{t.templateName} · {t.languageCode}</code>
                     </span>
                     <span className="flex items-center gap-1.5">
@@ -244,9 +283,31 @@ export default async function CommunicationCenterPage() {
             )}
           </Card>
 
-          {/* SCR-057 — announcements, read-only here: recorded on Settings ›
-              Communication, never sent (WhatsApp broadcast is declined,
-              traceability row 59). */}
+          {/* SCR-057/059 (bucket F): create and schedule announcements HERE,
+              through the same panel and doors Settings › Communication uses.
+              Published records show below; nothing is sent. */}
+          <Card id="announcements">
+            <CardHeader
+              title="Create announcement"
+              description={dueAnnouncements.length > 0 ? `${dueAnnouncements.length} scheduled — the tick publishes each at its moment.` : 'Drafts and scheduled announcements. A record, not a send.'}
+              actions={canManage ? <ViewAll href="/settings/communication" label="Settings" /> : null}
+            />
+            <div className="px-4 pb-4 sm:px-5">
+              <AnnouncementsPanel
+                canWrite={canManage}
+                announcements={draftAnnouncements.map((a) => ({
+                  id: a.id,
+                  title: a.title,
+                  body: a.body,
+                  audience: a.audience,
+                  status: a.status,
+                  when: a.scheduledFor ? `scheduled ${clock.dateTime(a.scheduledFor)}` : `drafted ${clock.dateTime(a.createdAt)}`,
+                  scheduledFor: a.scheduledFor,
+                }))}
+              />
+            </div>
+          </Card>
+
           <Card>
             <CardHeader
               title="Announcements"

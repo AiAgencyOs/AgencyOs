@@ -9,6 +9,12 @@ import { listPerformanceNotes, readCompatibilityMatrix } from '@/modules/qa/comp
 import { listReleaseHolds } from '@/modules/projects/release-hold-queries';
 import { listRetestQueue, readCoverageMatrix } from '@/modules/qa/dashboard-queries';
 import { listOpenDefects, readOrgTestCoverage, readSuiteCoverage, type OpenDefect } from '@/modules/qa/queries';
+import { listInternalRoster, listProjects } from '@/modules/projects/queries';
+import { describeCron } from '@/modules/qa/cron';
+import { listSuiteSchedules } from '@/modules/qa/schedule-queries';
+import { listRecentRuns, listReleaseCandidates, readBugTrend, readOrgEvidenceSummary } from '@/modules/qa/summary-queries';
+
+import { AssignRetestForm, BlockReleaseFromDashboard } from './qa-forms';
 import {
   buttonClass,
   Avatar,
@@ -30,6 +36,7 @@ import {
   QuickActions,
   Stat,
   StatGrid,
+  TrendChart,
   ViewAll,
   type Column,
   type Tone,
@@ -76,6 +83,21 @@ export default async function QaDashboardPage() {
     // SCR-044 — a standing release hold shows as "held" in the readiness column.
     listReleaseHolds(),
   ]);
+  // SCR-044 (bucket F): recent runs, the bug trend, the release candidate per
+  // project, org-wide evidence, schedules, and the roster the retest form needs.
+  const mayWrite = can(context.role, 'project.write');
+  const maySignOff = can(context.role, 'project.sign_off');
+  const [recentRuns, trend, candidates, evidence, schedules, roster, projects] = await Promise.all([
+    listRecentRuns(25),
+    readBugTrend(12),
+    listReleaseCandidates(),
+    readOrgEvidenceSummary(),
+    listSuiteSchedules(),
+    mayWrite ? listInternalRoster() : Promise.resolve([]),
+    maySignOff ? listProjects(500) : Promise.resolve([]),
+  ]);
+  const candidateByProject = new Map(candidates.map((c) => [c.projectId, c]));
+  const trendRows = trend.map((p) => ({ week: p.week.slice(5), raised: p.raised, settled: p.settled }));
   const blockers = countBy(defects, 'blocker');
   const majors = countBy(defects, 'major');
   const runs = coverage.runsLast30Days;
@@ -156,6 +178,53 @@ export default async function QaDashboardPage() {
             </ul>
           </Card>
 
+          {/* SCR-044 (bucket F): recent runs, org-wide — open first, each linking to its run, its build and its project. */}
+          <Card>
+            <CardHeader title="Recent runs" description={`${evidence.openRuns} open across every project. A run is opened against a build, closed once with its counts, and rerun by pointing a new run at it.`} />
+            {recentRuns.length === 0 ? (
+              <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No test run recorded yet.</p>
+            ) : (
+              <div className="px-4 pb-4 sm:px-5">
+                <DataTable
+                  dense
+                  rows={recentRuns}
+                  columns={[
+                    {
+                      key: 'run',
+                      header: 'Run',
+                      primary: true,
+                      cell: (r) => (
+                        <span className="flex flex-wrap items-center gap-2">
+                          <Badge tone={r.status === 'open' ? 'warning' : r.failed > 0 || r.blocked > 0 ? 'danger' : 'success'}>{r.status}</Badge>
+                          <Link href={`/projects/${r.projectId}/qa#run-${r.id}`} className="font-medium hover:underline">{humanize(r.suite)}</Link>
+                          {r.rerunOf ? <span className="text-xs text-muted">rerun</span> : null}
+                        </span>
+                      ),
+                    },
+                    { key: 'project', header: 'Project', desktopOnly: true, cellClassName: 'text-muted', cell: (r) => <Link href={`/projects/${r.projectId}/qa`} className="hover:underline">{r.projectName}</Link> },
+                    { key: 'build', header: 'Build', cellClassName: 'text-muted', cell: (r) => <Link href={`/projects/${r.projectId}/builds`} className="font-mono text-xs hover:underline">{r.deliverableVersion !== null ? `v${r.deliverableVersion}` : 'build'}</Link> },
+                    { key: 'counts', header: 'Pass / fail / blocked', align: 'right', cellClassName: 'tabular', cell: (r) => (r.status === 'open' ? <span className="text-muted">in progress</span> : `${r.passed} / ${r.failed} / ${r.blocked}${r.skipped > 0 ? ` (+${r.skipped} skipped)` : ''}`) },
+                    { key: 'when', header: 'Started · ended', align: 'right', desktopOnly: true, cellClassName: 'text-muted whitespace-nowrap', cell: (r) => `${clock.dateTime(r.startedAt ?? r.executedAt)}${r.endedAt ? ` · ${clock.dateTime(r.endedAt)}` : ''}` },
+                  ]}
+                  getKey={(r) => r.id}
+                />
+              </div>
+            )}
+          </Card>
+
+          {/* SCR-044 (bucket F): bug trend — raised and settled per week, from qa.defects; the two lines are direct-labelled by the legend and read as counts. */}
+          <Card>
+            <CardHeader title="Bug trend" description="Defects raised and settled (verified or won't-fix) per week, last 12 weeks. Counts of rows, UTC weeks starting Monday." />
+            <div className="p-4 sm:p-5">
+              {trend.every((p) => p.raised === 0 && p.settled === 0) ? (
+                <p className="text-[13px] text-muted">No defect raised or settled in the last 12 weeks.</p>
+              ) : (
+                <TrendChart data={trendRows} xKey="week" series={[{ key: 'raised', label: 'Raised', color: 'var(--danger)' }, { key: 'settled', label: 'Settled', color: 'var(--success)' }]} height={200} />
+              )}
+              <p className="mt-2 text-xs text-muted">Open at the end of the last week: {trend[trend.length - 1]?.openAtEnd ?? 0}.</p>
+            </div>
+          </Card>
+
           <Card>
             <CardHeader title={`Open bugs (${defects.length})`} description="Open the project to settle a defect on its Quality section." actions={<ViewAll href="/projects" label="Projects" />} />
             {defects.length > 0 ? (
@@ -181,6 +250,7 @@ export default async function QaDashboardPage() {
                         <th key={c} className="py-2 pr-3 text-right">{humanize(c)}</th>
                       ))}
                       <th className="py-2 pr-3 text-right">Total</th>
+                      <th className="py-2 pr-3 text-right">RC</th>
                       <th className="py-2 pr-3 text-right">Retest</th>
                       <th className="py-2 pr-3 text-right">Blocking</th>
                       <th className="py-2 text-right">Ready</th>
@@ -197,6 +267,14 @@ export default async function QaDashboardPage() {
                           <td key={c} className="py-2 pr-3 text-right tabular text-muted">{r.counts[c] ?? 0}</td>
                         ))}
                         <td className="py-2 pr-3 text-right tabular font-medium">{r.total}</td>
+                        {/* SCR-044 (bucket F): the release candidate — the latest build — and a link to it. */}
+                        <td className="py-2 pr-3 text-right">
+                          {candidateByProject.get(r.projectId) ? (
+                            <Link href={`/projects/${r.projectId}/builds`} className="font-mono text-xs hover:underline" title={candidateByProject.get(r.projectId)!.title}>v{candidateByProject.get(r.projectId)!.version}</Link>
+                          ) : (
+                            <span className="text-xs text-muted">—</span>
+                          )}
+                        </td>
                         <td className={`py-2 pr-3 text-right tabular ${r.awaitingRetest > 0 ? 'text-warning' : 'text-muted'}`}>{r.awaitingRetest}</td>
                         <td className={`py-2 pr-3 text-right tabular ${r.openBlocking > 0 ? 'text-danger' : 'text-muted'}`}>{r.openBlocking}</td>
                         <td className="py-2 text-right">
@@ -295,6 +373,8 @@ export default async function QaDashboardPage() {
                       <span className="text-xs text-muted">{d.projectName}</span>
                     </span>
                     <span className="text-xs text-muted">{d.assignee_id ? 'assigned' : 'unassigned'} · raised {clock.date(d.created_at)}</span>
+                    {/* SCR-044 (bucket F): assign the retest from here — qa.assign_retest, the project page's own door. */}
+                    {mayWrite ? <span className="w-full"><AssignRetestForm projectId={d.projectId} defectId={d.id} roster={roster.map((m) => ({ userId: m.userId, fullName: m.fullName || m.email }))} currentAssigneeId={d.assignee_id} /></span> : null}
                   </li>
                 ))}
               </ul>
@@ -333,6 +413,60 @@ export default async function QaDashboardPage() {
               ))}
             </ul>
           </Card>
+
+          {/* SCR-044 (bucket F): the org-wide QA evidence summary — every figure a count of rows; the per-project CSV stays on each project's QA page. */}
+          <Card>
+            <CardHeader title="QA evidence summary" description="Org-wide, all time. The per-project evidence CSV is on each project's QA page." />
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 px-4 pb-4 text-[13px] sm:px-5">
+              <div><dt className="text-xs text-muted">Projects with runs or bugs</dt><dd className="tabular font-medium">{evidence.projects}</dd></div>
+              <div><dt className="text-xs text-muted">Runs</dt><dd className="tabular font-medium">{evidence.runs} <span className="text-xs font-normal text-muted">({evidence.openRuns} open)</span></dd></div>
+              <div><dt className="text-xs text-muted">Runs with evidence</dt><dd className="tabular font-medium">{evidence.runsWithEvidence}</dd></div>
+              <div><dt className="text-xs text-muted">Passed / failed / blocked</dt><dd className="tabular font-medium">{evidence.passed} / {evidence.failed} / {evidence.blocked}</dd></div>
+              <div><dt className="text-xs text-muted">Defects raised</dt><dd className="tabular font-medium">{evidence.defectsRaised}</dd></div>
+              <div><dt className="text-xs text-muted">Defects verified</dt><dd className="tabular font-medium">{evidence.defectsVerified}</dd></div>
+              <div><dt className="text-xs text-muted">Open stability incidents</dt><dd className={`tabular font-medium ${evidence.incidentsOpen > 0 ? 'text-danger' : ''}`}>{evidence.incidentsOpen}</dd></div>
+            </dl>
+            {evidence.byProject.length > 0 ? (
+              <ul className="divide-y divide-line border-t border-line">
+                {evidence.byProject.slice(0, 12).map((p) => (
+                  <li key={p.projectId} className="flex items-center justify-between gap-2 px-4 py-1.5 text-xs sm:px-5">
+                    <Link href={`/projects/${p.projectId}/qa`} className="truncate hover:underline">{p.projectName}</Link>
+                    <span className="shrink-0 tabular text-muted">{p.runs} runs · {p.failed} failed · {p.defectsOpen} open</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </Card>
+
+          {/* SCR-048 (bucket F): suite schedules the tick fires, across projects. */}
+          <Card>
+            <CardHeader title={`Scheduled suites (${schedules.length})`} description="Cron in the agency's zone. When due, the tick OPENS a run against the scheduled build — the panel has no test runner." />
+            {schedules.length === 0 ? (
+              <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No suite is scheduled. Schedule one on a project's QA page.</p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {schedules.map((s) => (
+                  <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-[13px] sm:px-5">
+                    <span className="flex items-center gap-2">
+                      <Badge tone={s.active ? 'brand' : 'neutral'}>{humanize(s.suite)}</Badge>
+                      <Link href={`/projects/${s.projectId}/qa`} className="text-xs text-muted hover:underline">{describeCron(s.cron)}</Link>
+                    </span>
+                    <span className="text-xs text-muted">{s.active && s.nextRunAt ? `next ${clock.dateTime(s.nextRunAt)}` : 'paused'}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          {/* SCR-044 (bucket F): block a release from the dashboard — the Release tab's own hold door, one implementation. */}
+          {maySignOff ? (
+            <Card>
+              <CardHeader title="Block a release" description="Puts a release hold on a project: production sign-off is refused, quoting your reason, until it is lifted on the project's Release tab. Audited." />
+              <div className="px-4 pb-4 sm:px-5">
+                <BlockReleaseFromDashboard projects={projects.map((p) => ({ id: p.id, name: p.name, held: holds.has(p.id) }))} />
+              </div>
+            </Card>
+          ) : null}
 
           <QuickActions
             actions={[

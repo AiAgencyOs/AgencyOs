@@ -6,6 +6,7 @@ import { can } from '@/lib/authz/permissions';
 import { listCampaigns, listCampaignTemplates, readAudienceFacets, type CampaignListRow } from '@/modules/crm/campaign-queries';
 import { describeAudience } from '@/modules/crm/campaign-schema';
 import { LEAD_STATUSES } from '@/modules/crm/schema';
+import { listProjects } from '@/modules/projects/queries';
 import {
   Callout,
   Card,
@@ -73,6 +74,7 @@ const columnsFor = (clock: AgencyClock): Column<CampaignListRow>[] => [
       ),
   },
   { key: 'by', header: 'Planned by', desktopOnly: true, cellClassName: 'text-muted', cell: (c) => c.createdByEmail ?? '—' },
+  { key: 'scheduled', header: 'Send from', desktopOnly: true, cellClassName: 'text-muted', cell: (c) => (c.scheduledFor ? clock.dateTime(c.scheduledFor) : 'On approval') },
   { key: 'created', header: 'Created', align: 'right', cellClassName: 'text-muted', cell: (c) => clock.dateTime(c.createdAt) },
 ];
 
@@ -80,7 +82,7 @@ export default async function CampaignsPage() {
   const context = await requireInternal('/communication/campaigns');
   if (!can(context.role, 'lead.write')) return <PermissionDenied />;
 
-  const [campaigns, templates, facets, clock] = await Promise.all([listCampaigns(), listCampaignTemplates(), readAudienceFacets(), agencyClock()]);
+  const [campaigns, templates, facets, clock, projects] = await Promise.all([listCampaigns(), listCampaignTemplates(), readAudienceFacets(), agencyClock(), listProjects(500)]);
 
   const count = (status: CampaignListRow['status']) => campaigns.filter((c) => c.status === status).length;
   const sentTotal = campaigns.reduce((n, c) => n + c.sent, 0);
@@ -104,7 +106,7 @@ export default async function CampaignsPage() {
       <Card>
         <CardHeader title="New campaign" description="Saved as a draft. Nothing is sent until a second owner or ops admin approves it." />
         <CardBody>
-          <NewCampaignForm templates={templates} statuses={LEAD_STATUSES} sources={facets.sources} owners={facets.owners} services={facets.services} />
+          <NewCampaignForm templates={templates} statuses={LEAD_STATUSES} sources={facets.sources} owners={facets.owners} services={facets.services} projects={projects.map((p) => ({ id: p.id, name: p.name }))} />
         </CardBody>
       </Card>
 

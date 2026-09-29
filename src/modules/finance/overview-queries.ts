@@ -21,7 +21,8 @@ export type InvoiceFilter = {
   projectId?: string;
 };
 
-export type FilteredInvoice = InvoiceListItem & { client_account_id: string };
+/** `tax_minor` joined bucket F's GST filter on the list (SCR-051). */
+export type FilteredInvoice = InvoiceListItem & { client_account_id: string; tax_minor: number };
 
 /** The invoice list with the overview's three filters applied at the database. */
 export async function listInvoicesFiltered(filter: InvoiceFilter = {}, limit = 500): Promise<FilteredInvoice[]> {
@@ -31,7 +32,7 @@ export async function listInvoicesFiltered(filter: InvoiceFilter = {}, limit = 5
     .schema('finance')
     .from('invoices')
     .select(
-      'id, number, status, currency, total_minor, paid_minor, due_at, issued_at, project_id, milestone_id, client_account_id',
+      'id, number, status, currency, total_minor, paid_minor, tax_minor, due_at, issued_at, project_id, milestone_id, client_account_id',
     )
     .order('created_at', { ascending: false })
     .limit(limit);

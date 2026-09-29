@@ -9,11 +9,13 @@ import { can } from '@/lib/authz/permissions';
 import { listInvoices, listPendingPaymentClaims } from '@/modules/finance/queries';
 import { listBillableMilestones, listBillingClients, listInvoicesFiltered } from '@/modules/finance/overview-queries';
 import { INVOICE_STATUSES, milestoneInvoiceability } from '@/modules/finance/schema';
+import { readInvoiceMilestones, readInvoiceSendHistory, type InvoiceMilestone } from '@/modules/finance/invoice-list-queries';
 import { readInvoiceSendSummaries, type InvoiceSendSummary } from '@/modules/finance/sends-queries';
 import { needsReminder } from '@/modules/finance/sends-schema';
 import { listProjects } from '@/modules/projects/queries';
 import { SavedViewsBar } from '../saved-views-bar';
 import { CreateFromMilestoneForm } from './create-from-milestone-form';
+import { ReminderHistoryButton, type ReminderHistoryEntry } from './reminder-history-drawer';
 import {
   Badge,
   Callout,
@@ -58,7 +60,13 @@ function money(minor: number, currency: string): string {
 
 type Row = Awaited<ReturnType<typeof listInvoices>>[number];
 
-const columnsFor = (clock: AgencyClock, sends: Map<string, InvoiceSendSummary>, now: Date): Column<Row>[] => [
+const columnsFor = (
+  clock: AgencyClock,
+  sends: Map<string, InvoiceSendSummary>,
+  now: Date,
+  milestones: Map<string, InvoiceMilestone>,
+  history: Map<string, ReminderHistoryEntry[]>,
+): Column<Row>[] => [
   {
     key: 'number',
     header: 'Number',
@@ -79,6 +87,17 @@ const columnsFor = (clock: AgencyClock, sends: Map<string, InvoiceSendSummary>, 
     ),
   },
   {
+    // SCR-051: the linked milestone, named as the plan names it.
+    key: 'milestone',
+    header: 'Milestone',
+    desktopOnly: true,
+    cellClassName: 'text-muted',
+    cell: (i) => {
+      const m = i.milestone_id ? milestones.get(i.milestone_id) : undefined;
+      return m ? `${m.position + 1}. ${m.name}` : i.milestone_id ? 'milestone' : '—';
+    },
+  },
+  {
     key: 'sent',
     header: 'Last sent',
     desktopOnly: true,
@@ -87,6 +106,13 @@ const columnsFor = (clock: AgencyClock, sends: Map<string, InvoiceSendSummary>, 
       const s = sends.get(i.id);
       return s?.lastAt ? `${s.lastKind === 'reminder' ? 'reminded' : 'sent'} ${clock.date(s.lastAt)}` : '—';
     },
+  },
+  {
+    // SCR-051: the reminder history, in a drawer, without leaving the list.
+    key: 'history',
+    header: 'Reminders',
+    desktopOnly: true,
+    cell: (i) => <ReminderHistoryButton invoiceId={i.id} number={i.number} entries={history.get(i.id) ?? []} />,
   },
   {
     key: 'pdf',
@@ -150,13 +176,16 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
 export default async function InvoicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; q?: string; client?: string; project?: string; issuedFrom?: string }>;
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; q?: string; client?: string; project?: string; gst?: string; milestone?: string; issuedFrom?: string }>;
 }) {
   const context = await requireInternal('/invoices');
   const clock = await agencyClock();
   if (!can(context.role, 'invoice.read')) return <PermissionDenied />;
 
-  const { page: pageParam, sort: sortKey, dir, status, q, client: clientId, project: projectId, issuedFrom: issuedFromParam } = await searchParams;
+  const { page: pageParam, sort: sortKey, dir, status, q, client: clientId, project: projectId, gst: gstParam, milestone: milestoneParam, issuedFrom: issuedFromParam } = await searchParams;
+  // SCR-051: GST filter (with / without tax) and milestone filter, from the URL like every other filter here.
+  const gst = gstParam === 'with' || gstParam === 'without' ? gstParam : undefined;
+  const milestoneFilter = milestoneParam && /^[0-9a-f-]{36}$/i.test(milestoneParam) ? milestoneParam : milestoneParam === 'none' ? 'none' : undefined;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
   // Bucket F: the Command Center's "Invoices issued in the last N days" tile
   // lands here with `?issuedFrom=YYYY-MM-DD`, so the list is exactly the
@@ -168,6 +197,8 @@ export default async function InvoicesPage({
     q ? `q=${encodeURIComponent(q)}` : '',
     clientId ? `client=${encodeURIComponent(clientId)}` : '',
     projectId ? `project=${encodeURIComponent(projectId)}` : '',
+    gst ? `gst=${gst}` : '',
+    milestoneFilter ? `milestone=${milestoneFilter}` : '',
   ].filter(Boolean);
   const currentQuery = [...keep, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
   const qs = (extra: string) => `/invoices?${[...keep, extra].filter(Boolean).join('&')}`;
@@ -175,7 +206,7 @@ export default async function InvoicesPage({
   // SCR-051: client and project filters are applied by the reader at the
   // database; the milestone picker needs every invoice (to know which
   // milestones are already billed) and every milestone, unfiltered.
-  const [allInvoices, pendingClaims, savedViews, clients, projects, milestones, everyInvoice, sendSummaries] = await Promise.all([
+  const [allInvoices, pendingClaims, savedViews, clients, projects, milestones, everyInvoice, sendSummaries, sendHistory] = await Promise.all([
     listInvoicesFiltered({ clientId, projectId }),
     can(context.role, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
     listSavedViews('/invoices'),
@@ -184,8 +215,14 @@ export default async function InvoicesPage({
     canCreate ? listBillableMilestones() : Promise.resolve([]),
     canCreate ? listInvoices(2000) : Promise.resolve([]),
     readInvoiceSendSummaries(),
+    readInvoiceSendHistory(),
   ]);
   const now = new Date();
+  const linkedMilestones = await readInvoiceMilestones(allInvoices.map((i) => i.milestone_id).filter((id): id is string => id !== null));
+  const historyViews = new Map<string, ReminderHistoryEntry[]>();
+  for (const [invoiceId, rows] of sendHistory) {
+    historyViews.set(invoiceId, rows.map((r) => ({ id: r.id, kind: r.kind, channel: r.channel, whenLabel: clock.dateTime(r.sentAt), note: r.note, messageRef: r.messageRef })));
+  }
   const reminderCount = allInvoices.filter((i) => needsReminder(i, sendSummaries.get(i.id)?.lastReminderAt ?? null, now)).length;
   const invoicedMilestones = new Set(everyInvoice.map((i) => i.milestone_id).filter((id): id is string => id !== null));
   const eligible = milestones
@@ -198,6 +235,8 @@ export default async function InvoicesPage({
     (i) =>
       (!status || (status === 'unpaid' ? unpaid(i) : i.status === status)) &&
       (!needle || i.number.toLowerCase().includes(needle)) &&
+      (!gst || (gst === 'with' ? i.tax_minor > 0 : i.tax_minor === 0)) &&
+      (!milestoneFilter || (milestoneFilter === 'none' ? i.milestone_id === null : i.milestone_id === milestoneFilter)) &&
       (!issuedFrom || (i.issued_at !== null && i.issued_at >= issuedFrom)),
   );
   const invoices = sortRows(rawInvoices, sortKey, direction, COMPARATORS);
@@ -222,12 +261,14 @@ export default async function InvoicesPage({
       />
 
       {allInvoices.length > 0 ? (
-        <StatGrid cols={5}>
-          <Stat label="Invoices" value={String(allInvoices.length)} caption={`${countBy('draft')} draft · ${countBy('pending_approval')} awaiting approval`} tone="brand" icon={<IconInvoices size={16} />} href="/invoices" />
+        <StatGrid cols={6}>
+          <Stat label="Invoices" value={String(allInvoices.length)} caption={`${countBy('pending_approval')} awaiting approval`} tone="brand" icon={<IconInvoices size={16} />} href="/invoices" />
+          {/* SCR-051: draft and issued are counts, each a tile, each opening the list filtered to exactly that number. */}
+          <Stat label="Draft" value={String(countBy('draft'))} caption="Not yet issued" tone={countBy('draft') > 0 ? 'warning' : 'neutral'} icon={<IconInvoices size={16} />} href="/invoices?status=draft" />
+          <Stat label="Issued" value={String(countBy('issued'))} caption="Awaiting payment" tone="info" icon={<IconClock size={16} />} href="/invoices?status=issued" />
           <Stat label="Paid" value={String(countBy('paid'))} caption={money(paidAmount, currency)} tone="success" icon={<IconCheck size={16} />} href="/invoices?status=paid" />
           <Stat label="Unpaid" value={String(allInvoices.filter(unpaid).length)} caption={`${money(outstanding, currency)} outstanding`} tone={outstanding > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/invoices?status=unpaid" />
-          <Stat label="Overdue" value={String(countBy('overdue'))} caption={money(overdueAmount, currency)} tone={countBy('overdue') > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} href="/invoices?status=overdue" />
-          <Stat label="Void" value={String(countBy('void'))} caption="Cancelled bills" tone="neutral" icon={<IconInvoices size={16} />} href="/invoices?status=void" />
+          <Stat label="Overdue" value={String(countBy('overdue'))} caption={`${money(overdueAmount, currency)}${countBy('void') > 0 ? ` · ${countBy('void')} void` : ''}`} tone={countBy('overdue') > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} href="/invoices?status=overdue" />
         </StatGrid>
       ) : null}
 
@@ -258,10 +299,26 @@ export default async function InvoicesPage({
               </option>
             ))}
           </select>
+          <select name="gst" defaultValue={gst ?? ''} aria-label="GST" className={cx(selectClass, 'w-36')}>
+            <option value="">GST and non-GST</option>
+            <option value="with">With GST</option>
+            <option value="without">Without GST</option>
+          </select>
+          <select name="milestone" defaultValue={milestoneFilter ?? ''} aria-label="Milestone" className={cx(selectClass, 'w-48')}>
+            <option value="">Every milestone</option>
+            <option value="none">No milestone</option>
+            {[...linkedMilestones.values()]
+              .sort((a, b) => a.projectId.localeCompare(b.projectId) || a.position - b.position)
+              .map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.position + 1}. {m.name}
+                </option>
+              ))}
+          </select>
           <button type="submit" className={buttonClass('secondary', 'sm')}>
             Apply
           </button>
-          {clientId || projectId ? (
+          {clientId || projectId || gst || milestoneFilter ? (
             <Link href="/invoices" className={buttonClass('ghost', 'sm')}>
               Clear
             </Link>
@@ -304,7 +361,7 @@ export default async function InvoicesPage({
         <>
           <DataTable
             rows={pageRows}
-            columns={columnsFor(clock, sendSummaries, now)}
+            columns={columnsFor(clock, sendSummaries, now, linkedMilestones, historyViews)}
             getKey={(i) => i.id}
             href={(i) => `/invoices/${i.id}`}
             // Bucket F: the shared per-row overflow menu.

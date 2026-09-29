@@ -6,6 +6,8 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listExpenses, listInvoices } from '@/modules/finance/queries';
 import { readAiCostByProject } from '@/modules/finance/ai-cost-queries';
+import { readBudgetVarianceByProject } from '@/modules/finance/budget-variance-queries';
+import { rollupByVendor } from '@/modules/finance/vendor-rollup';
 import { listProjects } from '@/modules/projects/queries';
 import { SavedViewsBar } from '../../saved-views-bar';
 import {
@@ -118,13 +120,18 @@ export default async function ExpensesPage({
   const { page: pageParam, sort: sortKey, dir } = await searchParams;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
   const currentQuery = sortKey ? `sort=${sortKey}&dir=${direction}` : '';
-  const [rawExpenses, projects, invoices, savedViews, aiCosts] = await Promise.all([
+  const [rawExpenses, projects, invoices, savedViews, aiCosts, budgetVariance] = await Promise.all([
     listExpenses(),
     listProjects(500),
     listInvoices(500),
     listSavedViews('/finance/expenses'),
     readAiCostByProject(),
+    // Budget vs actual — decision F5 of 2026-09-30 (reopened). One pure
+    // function (computeBudgetVariance) serves this table and the project report.
+    readBudgetVarianceByProject(),
   ]);
+  // SCR-055: vendor / tool rollup — one line per vendor per currency.
+  const vendors = rollupByVendor(rawExpenses);
   // AI / tooling cost — what the runtime recorded against each project
   // (`ai.agent_runs.cost_minor`, attributed by project). Shown beside the
   // recorded expenses, not added to them: an `ai` expense somebody typed in
@@ -254,6 +261,83 @@ export default async function ExpensesPage({
               ))}
             </tbody>
           </table>
+        </Card>
+      ) : null}
+
+      {budgetVariance.length > 0 ? (
+        <Card>
+          <CardHeader
+            title="Budget vs actual"
+            description="Decision F5 (2026-09-30): each project's budget against expenses + AI cost + time cost, the variance, and the average monthly burn over months with any cost. Time is costed at each person's day-of-log rate; uncosted hours are said, not zeroed."
+          />
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-line text-left text-xs text-muted">
+                  <th className="px-4 py-2 font-normal sm:px-5">Project</th>
+                  <th className="px-4 py-2 text-right font-normal">Budget</th>
+                  <th className="px-4 py-2 text-right font-normal">Actual</th>
+                  <th className="px-4 py-2 text-right font-normal">Variance</th>
+                  <th className="px-4 py-2 text-right font-normal">Consumed</th>
+                  <th className="px-4 py-2 text-right font-normal">Margin (cash-basis estimate)</th>
+                  <th className="px-4 py-2 text-right font-normal sm:pr-5">Monthly burn</th>
+                </tr>
+              </thead>
+              <tbody>
+                {budgetVariance.map((v) => (
+                  <tr key={v.projectId} className="border-b border-line">
+                    <td className="px-4 py-2 font-medium sm:px-5">
+                      <a href={`/projects/${v.projectId}/reports`} className="hover:underline">{v.name}</a>
+                      {v.uncostedHours > 0 ? <span className="ml-2 text-xs text-warning">{v.uncostedHours} h uncosted</span> : null}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular">{v.budgetMinor !== null ? money(v.budgetMinor, v.currency) : <span className="text-muted">no budget</span>}</td>
+                    <td className="px-4 py-2 text-right tabular">{money(v.actualMinor, v.currency)}</td>
+                    <td className={`px-4 py-2 text-right tabular ${v.standing === 'over' ? 'text-danger' : v.standing === 'under' ? 'text-success' : 'text-muted'}`}>
+                      {v.varianceMinor !== null ? `${v.varianceMinor < 0 ? '−' : ''}${money(Math.abs(v.varianceMinor), v.currency)} (${v.variancePercent}%)` : '—'}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular">{v.consumedPercent !== null ? `${v.consumedPercent}%` : '—'}</td>
+                    {/* SCR-055: paid − (expenses + AI cost + time cost), the same arithmetic as the project report's margin. */}
+                    <td className={`px-4 py-2 text-right tabular ${(paidByProject.get(v.projectId) ?? 0) - v.actualMinor < 0 ? 'text-danger' : ''}`}>
+                      {money((paidByProject.get(v.projectId) ?? 0) - v.actualMinor, v.currency)}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular text-muted sm:pr-5">
+                      {v.averageBurnMinor > 0 ? `${money(v.averageBurnMinor, v.currency)} / month${v.monthsLeftAtBurn !== null ? ` · ${v.monthsLeftAtBurn} left` : ''}` : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : null}
+
+      {vendors.length > 0 ? (
+        <Card>
+          <CardHeader title="By vendor / tool" description="Every vendor the expenses name, per currency, with the categories it was recorded under. A rollup of recorded rows, not a contract list." />
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-line text-left text-xs text-muted">
+                  <th className="px-4 py-2 font-normal sm:px-5">Vendor</th>
+                  <th className="px-4 py-2 font-normal">Categories</th>
+                  <th className="px-4 py-2 text-right font-normal">Expenses</th>
+                  <th className="px-4 py-2 text-right font-normal">Last incurred</th>
+                  <th className="px-4 py-2 text-right font-normal sm:pr-5">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vendors.map((v) => (
+                  <tr key={`${v.vendor}|${v.currency}`} className="border-b border-line">
+                    <td className="px-4 py-2 font-medium sm:px-5">{v.vendor}</td>
+                    <td className="px-4 py-2 text-muted">{v.categories.join(', ')}</td>
+                    <td className="px-4 py-2 text-right tabular text-muted">{v.count}</td>
+                    <td className="px-4 py-2 text-right text-muted">{clock.date(v.lastIncurredOn)}</td>
+                    <td className="px-4 py-2 text-right tabular font-medium sm:pr-5">{money(v.totalMinor, v.currency)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       ) : null}
 

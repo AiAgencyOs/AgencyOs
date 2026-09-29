@@ -145,6 +145,23 @@ export const serverSchema = z.object({
    * modelled so the name is one value the whole app reads, and so a stack
    * with no storage (the local one) can be told apart from a misspelt one.
    */
+  /**
+   * Invoice email — bucket F (SCR-051 "Send by email"). Two transports, both
+   * optional on the same contract as every provider key: RESEND_API_KEY
+   * sends through Resend's HTTP API; SMTP_HOST (+ port, user, password)
+   * sends through a plain SMTP session. EMAIL_FROM is the sender either way.
+   * With neither, the Send-by-email form says so and records nothing — a
+   * button that claims to have sent a bill is worse than none.
+   */
+  RESEND_API_KEY: z.string().min(8, 'RESEND_API_KEY looks too short').optional(),
+  SMTP_HOST: z.string().trim().min(1).optional(),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  /** `true` forces implicit TLS (port 465 style); otherwise STARTTLS is attempted when the server offers it. */
+  SMTP_SECURE: z.enum(['true', 'false']).optional(),
+  EMAIL_FROM: z.string().email('EMAIL_FROM must be an address').optional(),
+
   SUPABASE_FILES_BUCKET: z
     .string()
     .trim()

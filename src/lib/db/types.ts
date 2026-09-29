@@ -2304,6 +2304,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      requeue_job_with_reason: {
+        Args: { p_job_id: string; p_reason: string }
+        Returns: {
+          attempts: number
+          job_status: string
+          outcome: string
+        }[]
+      }
       acknowledge_escalation: {
         Args: {
           p_escalation_id: string
@@ -2663,6 +2671,7 @@ export type Database = {
     Tables: {
       announcements: {
         Row: {
+          scheduled_for: string | null
           archived_at: string | null
           audience: string
           body: string
@@ -2676,6 +2685,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          scheduled_for?: string | null
           archived_at?: string | null
           audience: string
           body: string
@@ -2689,6 +2699,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          scheduled_for?: string | null
           archived_at?: string | null
           audience?: string
           body?: string
@@ -2790,6 +2801,7 @@ export type Database = {
       }
       campaigns: {
         Row: {
+          scheduled_for: string | null
           approved_at: string | null
           approved_by: string | null
           audience: Json
@@ -2810,6 +2822,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          scheduled_for?: string | null
           approved_at?: string | null
           approved_by?: string | null
           audience?: Json
@@ -2830,6 +2843,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          scheduled_for?: string | null
           approved_at?: string | null
           approved_by?: string | null
           audience?: Json
@@ -4329,6 +4343,20 @@ export type Database = {
       }
     }
     Functions: {
+      publish_due_announcements: {
+        Args: { p_limit?: number }
+        Returns: {
+          announcement_id: string
+          organization_id: string
+          title: string
+        }[]
+      }
+      schedule_announcement: {
+        Args: { p_announcement_id: string; p_scheduled_for: string | null }
+        Returns: {
+          outcome: string
+        }[]
+      }
       add_lead_to_reactivation_pilot: {
         Args: { p_lead_id: string }
         Returns: {
@@ -4464,7 +4492,7 @@ export type Database = {
         Returns: string
       }
       create_campaign: {
-        Args: { p_audience: Json; p_name: string; p_template_id: string }
+        Args: { p_audience: Json; p_name: string; p_scheduled_for?: string | null; p_template_id: string }
         Returns: {
           outcome: string
           campaign_id: string | null
@@ -5157,6 +5185,45 @@ export type Database = {
           status?: string
           updated_at?: string
           version?: number
+        }
+        Relationships: []
+      }
+      gst_exports: {
+        Row: {
+          counts: Json
+          created_at: string
+          exported_by: string | null
+          id: string
+          kind: string
+          omitted: Json
+          organization_id: string
+          period_label: string
+          return_period: string
+          updated_at: string
+        }
+        Insert: {
+          counts?: Json
+          created_at?: string
+          exported_by?: string | null
+          id?: string
+          kind: string
+          omitted?: Json
+          organization_id: string
+          period_label: string
+          return_period: string
+          updated_at?: string
+        }
+        Update: {
+          counts?: Json
+          created_at?: string
+          exported_by?: string | null
+          id?: string
+          kind?: string
+          omitted?: Json
+          organization_id?: string
+          period_label?: string
+          return_period?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -6692,6 +6759,36 @@ export type Database = {
           },
         ]
       }
+      release_payment_overrides: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          overridden_by: string | null
+          project_id: string
+          reason: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          overridden_by?: string | null
+          project_id: string
+          reason: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          overridden_by?: string | null
+          project_id?: string
+          reason?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       repositories: {
         Row: {
           created_at: string
@@ -7731,6 +7828,7 @@ export type Database = {
       }
       handovers: {
         Row: {
+          deployment_dependencies: Json
           accepted_at: string | null
           approval_request_id: string | null
           created_at: string
@@ -7746,6 +7844,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          deployment_dependencies?: Json
           accepted_at?: string | null
           approval_request_id?: string | null
           created_at?: string
@@ -7761,6 +7860,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          deployment_dependencies?: Json
           accepted_at?: string | null
           approval_request_id?: string | null
           created_at?: string
@@ -8936,6 +9036,29 @@ export type Database = {
       }
     }
     Functions: {
+      final_payment_state: {
+        Args: { p_project_id: string }
+        Returns: {
+          invoice_id: string | null
+          invoice_number: string | null
+          milestone_id: string | null
+          milestone_name: string | null
+          state: string
+        }[]
+      }
+      override_release_payment: {
+        Args: { p_project_id: string; p_reason: string }
+        Returns: {
+          id: string | null
+          outcome: string
+        }[]
+      }
+      set_deployment_dependency: {
+        Args: { p_handover_id: string; p_label: string; p_remove?: boolean; p_status?: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       account_health_signals: {
       link_repository: {
         Args: {
@@ -9707,6 +9830,7 @@ export type Database = {
     Tables: {
       defects: {
         Row: {
+          run_id: string | null
           actual: string | null
           assignee_id: string | null
           created_at: string
@@ -9729,6 +9853,7 @@ export type Database = {
           verified_by: string | null
         }
         Insert: {
+          run_id?: string | null
           actual?: string | null
           assignee_id?: string | null
           created_at?: string
@@ -9751,6 +9876,7 @@ export type Database = {
           verified_by?: string | null
         }
         Update: {
+          run_id?: string | null
           actual?: string | null
           assignee_id?: string | null
           created_at?: string
@@ -9771,6 +9897,207 @@ export type Database = {
           updated_at?: string
           verified_at?: string | null
           verified_by?: string | null
+        }
+        Relationships: []
+      }
+      metric_results: {
+        Row: {
+          created_at: string
+          id: string
+          metric: string
+          organization_id: string
+          recorded_by: string | null
+          run_id: string
+          unit: string
+          updated_at: string
+          value: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          metric: string
+          organization_id: string
+          recorded_by?: string | null
+          run_id: string
+          unit: string
+          updated_at?: string
+          value: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          metric?: string
+          organization_id?: string
+          recorded_by?: string | null
+          run_id?: string
+          unit?: string
+          updated_at?: string
+          value?: number
+        }
+        Relationships: []
+      }
+      performance_budgets: {
+        Row: {
+          created_at: string
+          id: string
+          lower_is_better: boolean
+          metric: string
+          organization_id: string
+          project_id: string
+          set_by: string | null
+          target: number
+          unit: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lower_is_better?: boolean
+          metric: string
+          organization_id: string
+          project_id: string
+          set_by?: string | null
+          target: number
+          unit: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lower_is_better?: boolean
+          metric?: string
+          organization_id?: string
+          project_id?: string
+          set_by?: string | null
+          target?: number
+          unit?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      retest_assignments: {
+        Row: {
+          assigned_by: string | null
+          created_at: string
+          defect_id: string
+          id: string
+          note: string | null
+          organization_id: string
+          retester_id: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_by?: string | null
+          created_at?: string
+          defect_id: string
+          id?: string
+          note?: string | null
+          organization_id: string
+          retester_id: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_by?: string | null
+          created_at?: string
+          defect_id?: string
+          id?: string
+          note?: string | null
+          organization_id?: string
+          retester_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      stability_incidents: {
+        Row: {
+          created_at: string
+          id: string
+          opened_at: string
+          opened_by: string | null
+          organization_id: string
+          project_id: string
+          resolution: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          severity: string
+          summary: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          opened_at?: string
+          opened_by?: string | null
+          organization_id: string
+          project_id: string
+          resolution?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity: string
+          summary: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          opened_at?: string
+          opened_by?: string | null
+          organization_id?: string
+          project_id?: string
+          resolution?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity?: string
+          summary?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      suite_schedules: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          cron: string
+          deliverable_id: string
+          id: string
+          last_run_at: string | null
+          last_run_id: string | null
+          next_run_at: string | null
+          organization_id: string
+          project_id: string
+          suite: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          cron: string
+          deliverable_id: string
+          id?: string
+          last_run_at?: string | null
+          last_run_id?: string | null
+          next_run_at?: string | null
+          organization_id: string
+          project_id: string
+          suite: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          cron?: string
+          deliverable_id?: string
+          id?: string
+          last_run_at?: string | null
+          last_run_id?: string | null
+          next_run_at?: string | null
+          organization_id?: string
+          project_id?: string
+          suite?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -9922,6 +10249,11 @@ export type Database = {
       }
       test_runs: {
         Row: {
+          blocked: number
+          ended_at: string | null
+          rerun_of: string | null
+          started_at: string | null
+          status: string
           browser: string | null
           created_at: string
           deliverable_id: string
@@ -9942,6 +10274,11 @@ export type Database = {
           total: number
         }
         Insert: {
+          blocked?: number
+          ended_at?: string | null
+          rerun_of?: string | null
+          started_at?: string | null
+          status?: string
           browser?: string | null
           created_at?: string
           deliverable_id: string
@@ -9962,6 +10299,11 @@ export type Database = {
           total: number
         }
         Update: {
+          blocked?: number
+          ended_at?: string | null
+          rerun_of?: string | null
+          started_at?: string | null
+          status?: string
           browser?: string | null
           created_at?: string
           deliverable_id?: string
@@ -9988,6 +10330,46 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      assign_retest: {
+        Args: { p_defect_id: string; p_note?: string; p_retester_id: string }
+        Returns: {
+          id: string | null
+          outcome: string
+        }[]
+      }
+      close_test_run: {
+        Args: { p_blocked?: number; p_evidence_url?: string; p_failed: number; p_passed: number; p_perf_notes?: string; p_run_id: string; p_skipped?: number }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      fire_suite_schedule: {
+        Args: { p_next_run_at: string; p_schedule_id: string }
+        Returns: {
+          outcome: string
+          run_id: string | null
+        }[]
+      }
+      open_test_run: {
+        Args: { p_browser?: string; p_deliverable_id: string; p_device?: string; p_os?: string; p_rerun_of?: string; p_suite: string }
+        Returns: {
+          id: string | null
+          outcome: string
+        }[]
+      }
+      rerun_test_run: {
+        Args: { p_run_id: string }
+        Returns: {
+          id: string | null
+          outcome: string
+        }[]
+      }
+      resolve_stability_incident: {
+        Args: { p_incident_id: string; p_resolution: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       blocking_defects: {
         Args: { p_deliverable_id: string }
         Returns: {

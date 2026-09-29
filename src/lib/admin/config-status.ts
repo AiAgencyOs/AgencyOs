@@ -21,6 +21,7 @@ import { productionConfigProblems, serverSchema, type ConfigProblem } from '@/li
 export type ConfigArea =
   | 'Database'
   | 'Application'
+  | 'Email'
   | 'Scheduler'
   | 'WhatsApp'
   | 'AI provider'
@@ -82,6 +83,13 @@ const ITEMS: readonly Omit<ConfigItem, 'present'>[] = [
   { key: 'GOOGLE_OAUTH_BASE_URL', area: 'Calendar', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
   { key: 'GOOGLE_CALENDAR_BASE_URL', area: 'Calendar', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
   { key: 'ALERT_WEBHOOK_URL', area: 'Alerts', secret: true, requiredInProduction: false, note: 'Where operational alerts are POSTed. Unset ⇒ alerts log only, never delivered.' },
+  { key: 'RESEND_API_KEY', area: 'Email', secret: true, requiredInProduction: false, note: 'Sends invoices and reminders by email through Resend (SCR-051). Unset, and without SMTP_HOST ⇒ the invoice page says email is not configured; nothing is recorded as sent.' },
+  { key: 'SMTP_HOST', area: 'Email', secret: false, requiredInProduction: false, note: 'SMTP server for invoice email when Resend is not used. Unset, and without RESEND_API_KEY ⇒ email is not configured.' },
+  { key: 'SMTP_PORT', area: 'Email', secret: false, requiredInProduction: false, note: 'SMTP port. Unset ⇒ 587 (465 when SMTP_SECURE=true).' },
+  { key: 'SMTP_USER', area: 'Email', secret: false, requiredInProduction: false, note: 'SMTP login. Unset ⇒ no AUTH is attempted.' },
+  { key: 'SMTP_PASS', area: 'Email', secret: true, requiredInProduction: false, note: 'SMTP password, sent only after STARTTLS or over implicit TLS.' },
+  { key: 'SMTP_SECURE', area: 'Email', secret: false, requiredInProduction: false, note: '"true" for implicit TLS (port 465 style); otherwise STARTTLS when the server offers it.' },
+  { key: 'EMAIL_FROM', area: 'Email', secret: false, requiredInProduction: false, note: 'The sender address on every email. Unset ⇒ email is not configured, whichever transport is set.' },
   { key: 'SUPABASE_FILES_BUCKET', area: 'Files', secret: false, requiredInProduction: false, note: 'The Storage bucket project files are uploaded to. Unset ⇒ "project-files". The Files tab says when the bucket does not answer.' },
   { key: 'VAULT_ENCRYPTION_KEY', area: 'AI provider', secret: true, requiredInProduction: true, note: 'Encrypts a provider key an admin enters through Settings before it is stored (ADM-84 §9 overturned). Unset ⇒ the vault refuses every write rather than storing an unrecoverable row.' },
 ];

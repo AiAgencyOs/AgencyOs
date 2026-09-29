@@ -20,6 +20,7 @@ export type Defect = Pick<
   | 'created_at'
   | 'assignee_id'
   | 'task_id'
+  | 'run_id'
 >;
 
 /** The counts a readiness gate will need, once ADM-19 says what the gate is. */

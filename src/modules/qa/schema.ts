@@ -58,6 +58,8 @@ export const raiseDefectSchema = z.object({
   actual: z.string().trim().max(2000).optional(),
   environment: z.string().trim().max(500).optional(),
   evidenceUrl: z.url().optional(),
+  /** SCR-046 (bucket F): the test run that found it, when raised from a run row. */
+  runId: z.uuid().optional(),
 });
 
 export type RaiseDefectInput = z.infer<typeof raiseDefectSchema>;

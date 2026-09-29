@@ -6,6 +6,7 @@ import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { readAuditLog } from '@/lib/audit/queries';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { readCampaignSendPreview } from '@/modules/crm/campaign-preview-queries';
 import { getCampaign, listCampaignRecipients, readAudienceCandidates, type CampaignRecipientRow } from '@/modules/crm/campaign-queries';
 import { describeAudience, expandAudience } from '@/modules/crm/campaign-schema';
 import { describeRefusal } from '@/modules/crm/campaign-types';
@@ -86,7 +87,14 @@ export default async function CampaignPage({ params }: { params: Promise<{ campa
   const campaign = await getCampaign(campaignId);
   if (!campaign) notFound();
 
-  const [recipients, clock, trail] = await Promise.all([listCampaignRecipients(campaignId), agencyClock(), readAuditLog({ subjectId: campaignId, limit: 20 })]);
+  const [recipients, clock, trail, preview] = await Promise.all([
+    listCampaignRecipients(campaignId),
+    agencyClock(),
+    readAuditLog({ subjectId: campaignId, limit: 20 }),
+    // SCR-059 (bucket F): what the first recipients would be handed — the
+    // template and its variables filled from recorded facts.
+    readCampaignSendPreview({ id: campaign.id, status: campaign.status, templateId: campaign.templateId, audience: campaign.audience }),
+  ]);
 
   // For a draft, what approval WOULD write, from the same rows and the same
   // pure function — so the approver reads the number they are approving.
@@ -149,6 +157,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ campa
                 rows={[
                   { label: 'Template', value: campaign.templateName ? `${campaign.templateName} · ${campaign.languageCode ?? ''}` : '—' },
                   { label: 'Audience', value: describeAudience(campaign.audience) },
+                  { label: 'Send from', value: campaign.scheduledFor ? clock.dateTime(campaign.scheduledFor) : 'As soon as approved' },
                   { label: 'Planned by', value: campaign.createdByEmail ?? '—' },
                   { label: 'Created', value: clock.dateTime(campaign.createdAt) },
                   { label: 'Approved by', value: campaign.approvedByEmail ? `${campaign.approvedByEmail} · ${campaign.approvedAt ? clock.dateTime(campaign.approvedAt) : ''}` : 'Not yet' },
@@ -157,6 +166,33 @@ export default async function CampaignPage({ params }: { params: Promise<{ campa
                   ...(campaign.cancelledReason ? [{ label: 'Cancelled because', value: campaign.cancelledReason }] : []),
                 ]}
               />
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Send preview"
+              description={preview ? `${preview.templateName} · ${preview.languageCode} — the first ${preview.recipients.length} of ${preview.total}, each variable from recorded facts. A blank is what the worker refuses as a missing fact.` : 'The template could not be read.'}
+            />
+            <CardBody>
+              {preview && preview.recipients.length > 0 ? (
+                <ul className="flex flex-col gap-2 text-[13px]">
+                  {preview.recipients.map((r) => (
+                    <li key={r.leadId} className="rounded-lg border border-line bg-canvas px-3 py-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <Link href={`/leads/${r.leadId}`} className="font-medium underline-offset-2 hover:underline">{r.leadTitle}</Link>
+                        {!r.conversationId ? <span className="text-xs text-warning">no WhatsApp thread — will be refused</span> : null}
+                      </div>
+                      <p className="mt-1 font-mono text-xs">
+                        {preview.templateName}
+                        {r.values.length > 0 ? `(${r.values.map((v) => `${v.name}=${v.value === null ? '∅' : JSON.stringify(v.value)}`).join(', ')})` : '()'}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-[13px] text-muted">{preview ? 'Nobody matches the audience right now.' : ''}</p>
+              )}
             </CardBody>
           </Card>
 

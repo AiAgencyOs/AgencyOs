@@ -3,7 +3,7 @@
 import { useActionState, useRef } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
-import { buttonClass } from '@/ui';
+import { inputClass, buttonClass } from '@/ui';
 
 import { requeueJobsAction } from './actions';
 import { RequeueForm } from './requeue-form';
@@ -54,6 +54,8 @@ export function DeadLettersList({ jobs, canRequeue }: { jobs: DeadLetterJob[]; c
             />
             Select all
           </label>
+          {/* SCR-060 (bucket F): the reason travels with every selected requeue and lands in the audit log. */}
+          <input name="reason" required minLength={5} maxLength={600} placeholder="Why revive them?" aria-label="Reason" className={`${inputClass} h-8 w-56 text-xs`} />
           <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
             {pending ? 'Requeueing…' : 'Requeue selected'}
           </button>

@@ -23,12 +23,15 @@ export function NewCampaignForm({
   sources,
   owners,
   services,
+  projects = [],
 }: {
   templates: { id: string; label: string; situationKey: string; parameters: string[] }[];
   statuses: readonly string[];
   sources: string[];
   owners: { id: string; email: string }[];
   services: string[];
+  /** SCR-059 (bucket F): the project audience — leads behind one project. */
+  projects?: { id: string; name: string }[];
 }) {
   const [state, action, pending] = useActionState(createCampaignAction, IDLE_STATE);
   const [audience, setAudience] = useState<CampaignAudienceInput>({});
@@ -126,6 +129,14 @@ export function NewCampaignForm({
           <Field label="Created to" htmlFor="audience-to">
             <input id="audience-to" name="createdTo" type="date" value={audience.createdTo ?? ''} onChange={set('createdTo')} className={inputClass} />
           </Field>
+          <Field label="Project" htmlFor="audience-project" hint="Leads behind one project, through the opportunity it was won from.">
+            <select id="audience-project" name="projectId" value={audience.projectId ?? ''} onChange={set('projectId')} className={selectClass}>
+              <option value="">Any project</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </Field>
         </div>
 
         <p role="status" aria-live="polite" className="text-[13px]">
@@ -143,6 +154,10 @@ export function NewCampaignForm({
           )}
         </p>
       </fieldset>
+
+      <Field label="Send no earlier than" htmlFor="campaign-schedule" hint="Optional. Once approved, the tick sends nothing before this moment (the browser's local time).">
+        <input id="campaign-schedule" name="scheduledFor" type="datetime-local" className={inputClass} />
+      </Field>
 
       <div className="flex flex-wrap items-center gap-3">
         <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>

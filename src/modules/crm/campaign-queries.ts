@@ -24,6 +24,7 @@ export type CampaignListRow = {
   sent: number;
   refused: number;
   failed: number;
+  scheduledFor: string | null;
   createdBy: string | null;
   createdByEmail: string | null;
   approvedBy: string | null;
@@ -37,7 +38,7 @@ export type CampaignListRow = {
 };
 
 const CAMPAIGN_SELECT =
-  'id, name, status, template_id, audience, recipients_count, sent_count, refused_count, failed_count, created_by, approved_by, approved_at, started_at, finished_at, cancelled_reason, created_at, updated_at, whatsapp_templates(template_name, language_code)';
+  'id, name, status, template_id, audience, scheduled_for, recipients_count, sent_count, refused_count, failed_count, created_by, approved_by, approved_at, started_at, finished_at, cancelled_reason, created_at, updated_at, whatsapp_templates(template_name, language_code)';
 
 type CampaignRaw = {
   id: string;
@@ -45,6 +46,7 @@ type CampaignRaw = {
   status: string;
   template_id: string;
   audience: unknown;
+  scheduled_for: string | null;
   recipients_count: number;
   sent_count: number;
   refused_count: number;
@@ -88,6 +90,7 @@ async function withEmails(rows: CampaignRaw[]): Promise<CampaignListRow[]> {
       sent: r.sent_count,
       refused: r.refused_count,
       failed: r.failed_count,
+      scheduledFor: r.scheduled_for,
       createdBy: r.created_by,
       createdByEmail: r.created_by ? (emailById.get(r.created_by) ?? null) : null,
       approvedBy: r.approved_by,
@@ -201,6 +204,33 @@ export async function readAudienceCandidates(limit = 5000): Promise<AudienceCand
     if (c.lead_id && !threadByLead.has(c.lead_id)) threadByLead.set(c.lead_id, c.id);
   }
 
+  // SCR-059 (bucket F): the projects behind each lead, through the
+  // opportunity a project was won from — the "project audience" filter.
+  const { data: opportunities, error: oppError } = await supabase
+    .schema('sales')
+    .from('opportunities')
+    .select('id, lead_id')
+    .in('lead_id', rows.map((l) => l.id))
+    .limit(limit);
+  if (oppError) unreadable('readAudienceCandidates.opportunities', oppError);
+  const leadByOpportunity = new Map((opportunities ?? []).filter((o) => o.lead_id).map((o) => [o.id, o.lead_id as string]));
+  const projectsByLead = new Map<string, string[]>();
+  if (leadByOpportunity.size > 0) {
+    const { data: projects, error: projError } = await supabase
+      .schema('projects')
+      .from('projects')
+      .select('id, opportunity_id')
+      .in('opportunity_id', [...leadByOpportunity.keys()])
+      .is('deleted_at', null)
+      .limit(limit);
+    if (projError) unreadable('readAudienceCandidates.projects', projError);
+    for (const p of projects ?? []) {
+      const leadId = p.opportunity_id ? leadByOpportunity.get(p.opportunity_id) : undefined;
+      if (!leadId) continue;
+      projectsByLead.set(leadId, [...(projectsByLead.get(leadId) ?? []), p.id]);
+    }
+  }
+
   return rows.map((l) => ({
     leadId: l.id,
     status: l.status,
@@ -211,6 +241,7 @@ export async function readAudienceCandidates(limit = 5000): Promise<AudienceCand
     createdAt: l.created_at,
     updatedAt: l.updated_at,
     conversationId: threadByLead.get(l.id) ?? null,
+    projectIds: projectsByLead.get(l.id) ?? [],
   }));
 }
 

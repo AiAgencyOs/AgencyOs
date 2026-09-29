@@ -90,6 +90,13 @@ export function serverEnv(): ServerEnv {
     GOOGLE_CALENDAR_BASE_URL: process.env.GOOGLE_CALENDAR_BASE_URL,
     VAULT_ENCRYPTION_KEY: process.env.VAULT_ENCRYPTION_KEY,
     SUPABASE_FILES_BUCKET: process.env.SUPABASE_FILES_BUCKET,
+    RESEND_API_KEY: process.env.RESEND_API_KEY,
+    SMTP_HOST: process.env.SMTP_HOST,
+    SMTP_PORT: process.env.SMTP_PORT,
+    SMTP_USER: process.env.SMTP_USER,
+    SMTP_PASS: process.env.SMTP_PASS,
+    SMTP_SECURE: process.env.SMTP_SECURE,
+    EMAIL_FROM: process.env.EMAIL_FROM,
   });
 
   if (!parsed.success) {

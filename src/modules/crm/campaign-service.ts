@@ -64,11 +64,22 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Result
   const context = await requireInternal();
   if (!can(context.role, 'lead.write')) return err('FORBIDDEN', 'You do not have permission to plan campaigns.');
 
+  // SCR-059 (bucket F): a scheduled campaign waits for its hour; the worker's
+  // claim honours it in the database.
+  let scheduledFor: string | null = null;
+  if (parsed.data.scheduledFor) {
+    const at = new Date(parsed.data.scheduledFor);
+    if (Number.isNaN(at.getTime())) return err('VALIDATION', 'That schedule is not a date and time.');
+    if (at.getTime() <= Date.now()) return err('VALIDATION', 'A scheduled send is in the future.');
+    scheduledFor = at.toISOString();
+  }
+
   const supabase = await createClient();
   const { data, error } = await supabase.schema('crm').rpc('create_campaign', {
     p_name: parsed.data.name,
     p_template_id: parsed.data.templateId,
     p_audience: parsed.data.audience,
+    p_scheduled_for: scheduledFor,
   });
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'createCampaign', detail: error.message }));
@@ -84,6 +95,8 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Result
       return err('NOT_FOUND', 'That template is not registered here.');
     case 'template_not_approved':
       return err('CONFLICT', 'That template is not approved and active at Meta. Only a template Meta approved can carry a campaign.');
+    case 'in_the_past':
+      return err('VALIDATION', 'A scheduled send is in the future.');
     case 'no_actor':
       return err('UNAUTHORIZED', 'No signed-in person on this session.');
     default:

@@ -15,6 +15,8 @@ import { lapseOverdueProposals } from '@/lib/sales/lapse';
 import { runFollowUps } from '@/modules/crm/follow-up-worker';
 import { runInvoiceReminders } from '@/modules/finance/reminder-worker';
 import { runCampaigns } from '@/modules/crm/campaign-worker';
+import { publishDueAnnouncements } from '@/modules/crm/announcement-worker';
+import { runSuiteSchedules } from '@/modules/qa/schedule-worker';
 import { detectUpsellSignals } from '@/lib/sales/upsell';
 import { markOverdueInvoices } from '@/lib/finance/overdue';
 import { mayAgentRun } from '@/lib/ai/autonomy';
@@ -281,6 +283,24 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    * holds the rest for a later tick rather than refusing them.
    */
   const campaigns = await runCampaigns(admin);
+
+  /**
+   * ── scheduled announcements (SCR-059, bucket F) ────────────────────────
+   *
+   * A draft with a moment set becomes published at that moment. A record,
+   * not a send; audited as by the schedule.
+   */
+  const dueAnnouncements = await publishDueAnnouncements(admin);
+
+  /**
+   * ── suite schedules (SCR-048, bucket F) ────────────────────────────────
+   *
+   * A suite on a cron expression: when it is due, the tick OPENS a run
+   * against the scheduled build and advances the schedule. The panel has no
+   * test runner, so a fired schedule is a run somebody fills and closes —
+   * nothing here claims a suite passed.
+   */
+  const suiteSchedules = await runSuiteSchedules(admin);
 
   /**
    * ── invoices whose date has passed (G-004) ────────────────────────────
@@ -1032,6 +1052,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     followUps,
     invoiceReminders,
     campaigns,
+    dueAnnouncements,
+    suiteSchedules,
     unlocks: unlocks.results,
     announcements: announcements.results,
     escalations: escalations.results,
