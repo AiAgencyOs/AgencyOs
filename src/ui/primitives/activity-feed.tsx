@@ -13,6 +13,8 @@ export type ActivityItem = {
   icon?: React.ReactNode;
   tone?: Tone;
   href?: string;
+  /** A control under the row — a governed door the page rendered (bucket F: acknowledge / escalate on a feed item). */
+  action?: React.ReactNode;
 };
 
 /**
@@ -65,6 +67,7 @@ export function ActivityFeed({
                 ) : (
                   <div className="flex items-start gap-3 px-4 py-2.5 sm:px-5">{row}</div>
                 )}
+                {item.action ? <div className="px-4 pb-2.5 pl-14 sm:px-5 sm:pl-[3.75rem]">{item.action}</div> : null}
               </li>
             );
           })}

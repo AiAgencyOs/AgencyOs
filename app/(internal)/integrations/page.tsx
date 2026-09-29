@@ -8,7 +8,7 @@ import { readOperationalSettings, settingInstant, settingText } from '@/lib/admi
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
-import { PageHeader, PermissionDenied, buttonClass } from '@/ui';
+import { IntegrationState, PageHeader, PermissionDenied, buttonClass } from '@/ui';
 
 import { VerifyAiProviderForm, VerifyCalendarForm, VerifyWhatsAppButton } from '../settings/forms';
 import { IntegrationsList } from './integrations-list';
@@ -104,6 +104,19 @@ export default async function IntegrationsPage() {
           </div>
         ))}
       </div>
+
+      {/* The shared IntegrationState callout (bucket F) — one per provider
+          that is not verified, in the same words Readiness and every page
+          that reads a provider use. Verified and disabled rows need none. */}
+      {integrations.filter((i) => i.lifecycle !== 'VERIFIED' && i.lifecycle !== 'DISABLED').length > 0 ? (
+        <div className="flex flex-col gap-2">
+          {integrations
+            .filter((i) => i.lifecycle !== 'VERIFIED' && i.lifecycle !== 'DISABLED')
+            .map((i) => (
+              <IntegrationState key={i.id} name={i.name} lifecycle={i.lifecycle} detail={i.detail} href={i.href} actionLabel={i.lifecycle === 'NOT_CONFIGURED' ? 'Configure' : 'Verify or repair'} />
+            ))}
+        </div>
+      ) : null}
 
       <IntegrationsList integrations={integrations} verify={verify} identifiers={identifiers} vaultHref="/agents#vault" />
 

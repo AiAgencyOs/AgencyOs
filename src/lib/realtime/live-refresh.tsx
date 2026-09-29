@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { cx, IconRefresh, TONE_DOT, TONE_TEXT } from '@/ui';
+import { cx, IconRefresh, StaleDataWarning, TONE_DOT, TONE_TEXT } from '@/ui';
 
 import { describeStatus } from './connection';
 import type { Topic } from './topics';
@@ -11,6 +11,14 @@ import { useLive } from './use-live';
 
 /** Coalesce a burst of change events into one refresh. */
 const REFRESH_DEBOUNCE_MS = 400;
+
+/**
+ * The shared rule's stale-data warning, wired to every `LiveRefresh` page
+ * (bucket F): once the channel is not live and the page has not re-read
+ * for this long, the page says so in the same `StaleDataWarning` the
+ * scheduler uses, instead of a dot the reader has to notice.
+ */
+export const STALE_AFTER_SECONDS = 120;
 
 /**
  * The live-data control every operational screen carries.
@@ -66,9 +74,21 @@ export function LiveRefresh({
 
   const described = describeStatus(live.status);
   const secondsAgo = lastRefreshedAt ? Math.max(0, Math.round((Date.now() - lastRefreshedAt.getTime()) / 1000)) : null;
+  const stale = live.status !== 'live' && live.status !== 'connecting' && secondsAgo !== null && secondsAgo > STALE_AFTER_SECONDS;
 
   return (
     <span className={cx('flex items-center gap-2 text-[11px] text-muted', className)}>
+      {stale ? (
+        <span className="fixed bottom-24 left-4 right-4 z-40 md:bottom-4 md:left-auto md:w-96" role="alert">
+          <StaleDataWarning
+            label="This page may be stale"
+            ageSeconds={secondsAgo}
+            staleAfterSeconds={STALE_AFTER_SECONDS}
+            staleMessage={(age) => `the live channel is ${described.label.toLowerCase()} and the page last re-read ${age} — refresh to be sure.`}
+            freshMessage={(age) => `last re-read ${age}.`}
+          />
+        </span>
+      ) : null}
       <span
         role="status"
         aria-live="polite"

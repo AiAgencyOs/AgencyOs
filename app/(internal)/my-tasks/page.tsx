@@ -11,6 +11,7 @@ import { readTaskCollabFor, type TaskCollab } from '@/modules/projects/task-coll
 import { readTaskTimeFor, type TaskTime } from '@/modules/projects/time-log-queries';
 import { TASK_STATUSES } from '@/modules/projects/schema';
 import {
+  buttonClass,
   Avatar,
   Badge,
   cx,
@@ -229,6 +230,7 @@ export default async function MyTasksPage({
           icon={<IconCheck size={22} />}
           title="Nothing assigned to you"
           description="Tasks assigned to you on any project's Development tab will appear here."
+          action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>}
         />
       ) : null}
     </div>

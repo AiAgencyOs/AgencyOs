@@ -282,7 +282,7 @@ export function HeaderTrail({ groups }: { groups: NavGroup[] }) {
   if (!last) return null;
   const deeper = pathname !== last.href;
   return (
-    <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-1 text-[12.5px] text-muted lg:flex">
+    <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-1 text-[12.5px] text-muted md:flex">
       {trail.map((crumb, i) => (
         <span key={crumb.href + i} className="flex min-w-0 items-center gap-1">
           {i > 0 ? <IconChevronRight size={12} className="shrink-0 text-faint" /> : null}

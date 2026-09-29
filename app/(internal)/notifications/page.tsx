@@ -1,11 +1,15 @@
 import type { Metadata } from 'next';
 
+import Link from 'next/link';
+
 import { agencyClock } from '@/lib/admin/agency-clock';
+import { isSeverity, SEVERITIES, SEVERITY_LABEL } from '@/lib/admin/escalation-types';
 import { listNotificationHistory } from '@/lib/admin/notification-state';
 import { requireInternal } from '@/lib/auth/session';
+import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
 import { listInternalRoster } from '@/modules/projects/queries';
-import { Card, CardHeader, EmptyState, FilterBar, FilterChips, humanize, IconCheck, PageHeader } from '@/ui';
+import { buttonClass, Card, CardHeader, EmptyState, FilterBar, FilterChips, humanize, IconCheck, PageHeader } from '@/ui';
 
 import { ACTION_CATEGORY_LABEL, categoryOf } from './action-items';
 import { listAnnotatedActionItems } from './annotated-items';
@@ -43,7 +47,14 @@ export default async function NotificationsPage({
   const pool = show === 'parked' ? parked : show === 'all' ? all : attention;
   const urgentCount = attention.filter((r) => r.urgent).length;
   const categories = [...new Set(pool.map(categoryOf))];
-  const rows = pool.filter((r) => (!category || categoryOf(r) === category) && (!severity || (severity === 'urgent' ? r.urgent : !r.urgent)));
+  // SCR-003 (bucket F): the four severity chips the PDF names, over the
+  // severity the reader derived. The old urgent/normal pair maps onto them
+  // (urgent = critical) so a bookmarked ?severity=urgent still works.
+  const wantedSeverity = isSeverity(severity) ? severity : severity === 'urgent' ? 'critical' : null;
+  const rows = pool.filter(
+    (r) => (!category || categoryOf(r) === category) && (!severity || (wantedSeverity ? r.severity === wantedSeverity : severity === 'normal' && !r.urgent)),
+  );
+  const canAnswer = can(context.role, 'audit.read');
   const link = (over: Partial<{ category: string; severity: string; show: string }>) => {
     const next = { category: category ?? '', severity: severity ?? '', show: show ?? '', ...over };
     const q = Object.entries(next)
@@ -69,7 +80,7 @@ export default async function NotificationsPage({
       />
 
       {all.length > 0 ? (
-        <FilterBar>
+        <FilterBar clearHref="/notifications" filtered={Boolean(show || category || severity)}>
           <FilterChips
             options={[
               { key: 'attention', label: `Needs attention (${attention.length})`, href: link({ show: '', category: '' }), active: !show },
@@ -86,8 +97,12 @@ export default async function NotificationsPage({
           <FilterChips
             options={[
               { key: 'any', label: 'Any severity', href: link({ severity: '' }), active: !severity },
-              { key: 'urgent', label: `Urgent (${pool.filter((r) => r.urgent).length})`, href: link({ severity: 'urgent' }), active: severity === 'urgent' },
-              { key: 'normal', label: `Normal (${pool.filter((r) => !r.urgent).length})`, href: link({ severity: 'normal' }), active: severity === 'normal' },
+              ...SEVERITIES.map((sev) => ({
+                key: sev,
+                label: `${SEVERITY_LABEL[sev]} (${pool.filter((r) => r.severity === sev).length})`,
+                href: link({ severity: sev }),
+                active: wantedSeverity === sev,
+              })),
             ]}
           />
         </FilterBar>
@@ -97,12 +112,27 @@ export default async function NotificationsPage({
         <Card>
           <NotificationList
             roster={rosterOptions}
+            canAnswer={canAnswer}
             rows={rows.map((r) => ({
               key: r.key,
               title: r.title,
               detail: r.detail,
               href: r.href,
               urgent: r.urgent,
+              severity: r.severity,
+              category: categoryOf(r),
+              categoryLabel: ACTION_CATEGORY_LABEL[categoryOf(r)] ?? categoryOf(r),
+              escalation: r.escalation
+                ? {
+                    id: r.escalation.id,
+                    toRole: r.escalation.toRole,
+                    reason: r.escalation.reason,
+                    state: r.escalation.state,
+                    fromUserName: r.escalation.fromUserName,
+                    acknowledgedByName: r.escalation.acknowledgedByName,
+                    createdAtLabel: clock.dateTime(r.escalation.createdAt),
+                  }
+                : null,
               attention: r.attention,
               state: r.state
                 ? {
@@ -123,6 +153,17 @@ export default async function NotificationsPage({
           icon={<IconCheck size={22} />}
           title={all.length > 0 ? 'Nothing in this filter' : 'All clear'}
           description={all.length > 0 ? 'Widen the filters to see the rest.' : 'No pending approvals, failed deliveries, overdue tasks or open blockers.'}
+          action={
+            all.length > 0 ? (
+              <Link href="/notifications" className={buttonClass('secondary', 'sm')}>
+                Clear filters
+              </Link>
+            ) : (
+              <Link href="/dashboard" className={buttonClass('secondary', 'sm')}>
+                Back to the Command Center
+              </Link>
+            )
+          }
         />
       )}
 

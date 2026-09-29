@@ -116,6 +116,27 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
     );
   }
 
+  // SCR-002 (bucket F): meetings, matched by the lead they belong to —
+  // the same reading the meetings list makes of a meeting's name.
+  if (can(context.role, 'lead.read')) {
+    searches.push(
+      supabase
+        .schema('crm')
+        .from('meetings')
+        .select('id, purpose, status, leads!inner(title)')
+        .ilike('leads.title', like)
+        .limit(RESULTS_PER_ENTITY)
+        .then(({ data }) =>
+          (data ?? []).map((m) => ({
+            id: m.id,
+            label: `${(m.leads as unknown as { title: string } | null)?.title ?? m.purpose ?? 'Meeting'} · ${m.status.replace(/_/g, ' ')}`,
+            group: 'Meeting',
+            href: `/meetings/${m.id}`,
+          })),
+        ),
+    );
+  }
+
   if (can(context.role, 'audit.read')) {
     searches.push(
       supabase

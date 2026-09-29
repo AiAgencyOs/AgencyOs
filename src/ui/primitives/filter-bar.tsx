@@ -13,13 +13,30 @@ import { cx, inputClass } from '../tokens';
 export function FilterBar({
   children,
   className,
+  clearHref,
+  filtered,
 }: {
   children: React.ReactNode;
   className?: string;
+  /**
+   * The shared rule's "Clear all filters" (bucket F): the page's own URL with
+   * every filter dropped. Rendered as a link — the same GET round trip the
+   * chips make — and only while something is filtered, so an unfiltered
+   * list never shows a control that would do nothing.
+   */
+  clearHref?: string;
+  /** Whether any filter is active. Defaults to true when `clearHref` is given. */
+  filtered?: boolean;
 }) {
+  const showClear = clearHref !== undefined && (filtered ?? true);
   return (
     <div className={cx('flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center', className)}>
       {children}
+      {showClear ? (
+        <Link href={clearHref} className="shrink-0 text-xs font-medium text-muted underline-offset-2 hover:text-foreground hover:underline">
+          Clear all
+        </Link>
+      ) : null}
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { SavedViewsBar } from '../saved-views-bar';
 import { SequenceControls } from './sequence-controls';
 import { SequenceDetailButton, type SequenceDetailView } from './sequence-drawer';
 import {
+  buttonClass,
   Badge,
   Card,
   CardHeader,
@@ -300,6 +301,7 @@ export default async function FollowUpsPage({
               ? 'Nothing matches these filters. That is a count of rows, not a guess.'
               : 'A follow-up starts automatically when a tracked situation is observed — a quotation with no reply, a meeting that was missed, and so on.'
           }
+          action={filtering ? <Link href="/follow-ups" className={buttonClass('secondary', 'sm')}>Clear filters</Link> : <Link href="/leads" className={buttonClass('secondary', 'sm')}>Open leads</Link>}
         />
       )}
 

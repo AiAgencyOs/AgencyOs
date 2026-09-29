@@ -100,6 +100,7 @@ export default async function UsagePage() {
           icon={<IconUsage size={22} />}
           title="No agent usage recorded yet"
           description="Agents run only when enabled and a provider is configured — usage and cost appear here once they do."
+          action={<Link href="/agents" className={buttonClass('secondary', 'sm')}>Open agents</Link>}
         />
       ) : (
         <>

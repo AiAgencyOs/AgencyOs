@@ -18,7 +18,7 @@ import {
 } from '@/modules/crm/meetings-view';
 import { listJobsForMeetings, listMeetings } from '@/modules/crm/queries';
 import { MEETING_MODES, MEETING_STATUSES } from '@/modules/crm/schema';
-import { Badge, Callout, EmptyState, IconCalendar, IconClock, MonthGrid, PageHeader, Stat, StatGrid, StatusBadge, cx, humanize, statusTone, PermissionDenied, type CalendarEntry } from '@/ui';
+import { buttonClass, Badge, Callout, EmptyState, IconCalendar, IconClock, MonthGrid, PageHeader, Stat, StatGrid, StatusBadge, cx, humanize, statusTone, PermissionDenied, type CalendarEntry } from '@/ui';
 
 import { VerifyCalendarForm } from '../settings/forms';
 
@@ -234,6 +234,7 @@ export default async function MeetingsPage({
               ? 'Nothing matches these filters in this window. That is a count of rows, not a guess.'
               : 'No meeting has been requested or booked for this window. Nothing is estimated here; a meeting appears when one is recorded.'
           }
+          action={status || mode || owner ? <Link href="/meetings" className={buttonClass('secondary', 'sm')}>Clear filters</Link> : <Link href="/leads" className={buttonClass('secondary', 'sm')}>Open leads</Link>}
         />
       ) : (
         <div className="flex flex-col gap-5">

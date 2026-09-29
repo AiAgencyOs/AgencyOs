@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { isLate, projectHealth } from '@/lib/admin/project-health';
 import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
@@ -117,6 +118,9 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
   },
 ];
 
+/** Not yet finished and not abandoned — what `?status=open` lists. */
+const OPEN_STATUSES = new Set(['planning', 'onboarding', 'active', 'on_hold']);
+
 const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
   budget: (a, b) => (a.budget_minor ?? 0) - (b.budget_minor ?? 0),
   created: (a, b) => a.created_at.localeCompare(b.created_at),
@@ -150,9 +154,14 @@ export default async function ProjectsPage({
     can(context.role, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
     readProjectFilterFacets(),
   ]);
-  const todayKey = new Date().toISOString().slice(0, 10);
-  const late = allProjects.filter((p) => p.status !== 'completed' && p.status !== 'cancelled' && p.endsOn !== null && p.endsOn < todayKey);
-  const atRiskIds = new Set([...escalations.map((e) => e.projectId), ...late.map((p) => p.id)]);
+  // The one at-risk rule, shared with the Command Center's project health
+  // column (bucket F): escalated, or past its end date while still open.
+  const todayKey = clock.dayKey(new Date());
+  const escalatedIds = new Set(escalations.map((e) => e.projectId));
+  const late = allProjects.filter((p) => isLate({ status: p.status, endsOn: p.endsOn, todayKey }));
+  const atRiskIds = new Set(
+    allProjects.filter((p) => projectHealth({ status: p.status, endsOn: p.endsOn, escalated: escalatedIds.has(p.id), todayKey }) === 'at_risk').map((p) => p.id),
+  );
   const paymentBlockedIds = new Set(pendingClaims.map((c) => c.projectId));
   const countByStatus = new Map<string, number>();
   for (const p of allProjects) countByStatus.set(p.status, (countByStatus.get(p.status) ?? 0) + 1);
@@ -161,9 +170,13 @@ export default async function ProjectsPage({
       ? allProjects.filter((p) => atRiskIds.has(p.id))
       : status === 'payment_blocked'
         ? allProjects.filter((p) => paymentBlockedIds.has(p.id))
-        : status
-          ? allProjects.filter((p) => p.status === status)
-          : allProjects;
+        : status === 'open'
+          ? // Bucket F: the Command Center's "Active projects" tile — every
+            // project not yet finished or abandoned, the same set it counts.
+            allProjects.filter((p) => OPEN_STATUSES.has(p.status))
+          : status
+            ? allProjects.filter((p) => p.status === status)
+            : allProjects;
   const faceted = filtered.filter((p) => {
     const f = facets.byProject.get(p.id);
     if (client && f?.clientAccountId !== client) return false;
@@ -200,7 +213,7 @@ export default async function ProjectsPage({
       ) : null}
 
       {allProjects.length > 0 ? (
-        <FilterBar>
+        <FilterBar clearHref="/projects" filtered={Boolean(status || client || owner)}>
           <FilterChips
             options={[
               { key: 'all', label: 'All', href: chipHref(null), active: !status },
@@ -275,6 +288,7 @@ export default async function ProjectsPage({
           icon={<IconProjects size={22} />}
           title={status || client || owner ? 'No matching projects' : 'No projects yet'}
           description={client || owner ? 'No project matches the client or owner filter.' : status ? `No project is currently "${humanize(status)}".` : 'Projects created from won deals will appear here.'}
+          action={status || client || owner ? <Link href="/projects" className={buttonClass('secondary', 'sm')}>Clear filters</Link> : <Link href="/sales-funnel" className={buttonClass('secondary', 'sm')}>Open the sales funnel</Link>}
         />
       )}
     </div>

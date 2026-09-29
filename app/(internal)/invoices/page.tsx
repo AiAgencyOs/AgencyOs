@@ -150,16 +150,21 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
 export default async function InvoicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; q?: string; client?: string; project?: string }>;
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; q?: string; client?: string; project?: string; issuedFrom?: string }>;
 }) {
   const context = await requireInternal('/invoices');
   const clock = await agencyClock();
   if (!can(context.role, 'invoice.read')) return <PermissionDenied />;
 
-  const { page: pageParam, sort: sortKey, dir, status, q, client: clientId, project: projectId } = await searchParams;
+  const { page: pageParam, sort: sortKey, dir, status, q, client: clientId, project: projectId, issuedFrom: issuedFromParam } = await searchParams;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
+  // Bucket F: the Command Center's "Invoices issued in the last N days" tile
+  // lands here with `?issuedFrom=YYYY-MM-DD`, so the list is exactly the
+  // count the tile showed.
+  const issuedFrom = /^\d{4}-\d{2}-\d{2}$/.test(issuedFromParam ?? '') ? issuedFromParam : undefined;
   const keep = [
     status ? `status=${status}` : '',
+    issuedFrom ? `issuedFrom=${issuedFrom}` : '',
     q ? `q=${encodeURIComponent(q)}` : '',
     clientId ? `client=${encodeURIComponent(clientId)}` : '',
     projectId ? `project=${encodeURIComponent(projectId)}` : '',
@@ -190,7 +195,10 @@ export default async function InvoicesPage({
   const needle = (q ?? '').trim().toLowerCase();
   const unpaid = (i: Row) => i.status === 'issued' || i.status === 'partially_paid' || i.status === 'overdue';
   const rawInvoices = allInvoices.filter(
-    (i) => (!status || (status === 'unpaid' ? unpaid(i) : i.status === status)) && (!needle || i.number.toLowerCase().includes(needle)),
+    (i) =>
+      (!status || (status === 'unpaid' ? unpaid(i) : i.status === status)) &&
+      (!needle || i.number.toLowerCase().includes(needle)) &&
+      (!issuedFrom || (i.issued_at !== null && i.issued_at >= issuedFrom)),
   );
   const invoices = sortRows(rawInvoices, sortKey, direction, COMPARATORS);
   const countBy = (st: string) => allInvoices.filter((i) => i.status === st).length;
@@ -223,7 +231,7 @@ export default async function InvoicesPage({
         </StatGrid>
       ) : null}
 
-      <FilterBar>
+      <FilterBar clearHref="/invoices" filtered={Boolean(status || q || clientId || projectId || issuedFrom)}>
         <FilterChips
           options={[
             { key: 'all', label: `All (${allInvoices.length})`, href: q ? `/invoices?q=${encodeURIComponent(q)}` : '/invoices', active: !status },
@@ -299,6 +307,13 @@ export default async function InvoicesPage({
             columns={columnsFor(clock, sendSummaries, now)}
             getKey={(i) => i.id}
             href={(i) => `/invoices/${i.id}`}
+            // Bucket F: the shared per-row overflow menu.
+            rowActions={(i) => [
+              { key: 'open', label: 'Open invoice', href: `/invoices/${i.id}` },
+              { key: 'pdf', label: 'Open PDF', href: `/api/invoices/${i.id}/pdf` },
+              ...(i.project_id ? [{ key: 'project', label: 'Open project', href: `/projects/${i.project_id}` }] : []),
+              { key: 'client', label: 'Open client', href: `/clients/${i.client_account_id}` },
+            ]}
             sort={{
               key: sortKey,
               direction,
@@ -316,6 +331,7 @@ export default async function InvoicesPage({
           icon={<IconInvoices size={22} />}
           title="No invoices yet"
           description="Invoices raised against project milestones will appear here."
+          action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>}
         />
       )}
     </div>

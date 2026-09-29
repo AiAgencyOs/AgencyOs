@@ -4,6 +4,7 @@ import { getDisplayTimeZone } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { readOrganizationName } from '@/lib/admin/organization';
+import { listMyOrganizations, type MyOrganization } from '@/lib/admin/organization-switch';
 import { Avatar, humanize, IconMore } from '@/ui';
 
 import { SignOutButton } from '../(auth)/sign-out-button';
@@ -12,7 +13,9 @@ import { CommandPalette } from './command-palette';
 import { HelpLink } from './help-link';
 import { BottomTabs, CurrentSectionTitle, HeaderTrail, MobileNav, SidebarNav, Wordmark } from './nav';
 import { visibleModulesFor } from './nav-config';
+import { OrganizationSwitcher } from './organization-switcher';
 import { CreateButton, UserMenu } from './shell-controls';
+import { SystemStatusDot } from './system-status';
 
 /**
  * Gate for the internal application, and the control plane's shell.
@@ -37,7 +40,11 @@ import { CreateButton, UserMenu } from './shell-controls';
  * timezone — the person's own preference, else the organisation's —
  * resolved here once per request through `getDisplayTimeZone()`'s
  * request-scoped cache, so every `agencyClock()` on the page formats in the
- * same zone without a second read, and the user menu can say which. An item with no capability (Approvals) is always
+ * same zone without a second read, and the user menu can say which. Bucket F
+ * (SCR-001) adds one more: the person's own memberships, so the rail can
+ * offer the organisation selector to somebody who holds more than one and
+ * nothing to everybody else. The header's system-status dot and the bell
+ * fetch after paint. An item with no capability (Approvals) is always
  * shown: the queue admits exactly the internal roles its RLS policy admits,
  * and what a given approver may settle is decided per request under a lock
  * (ADM-08) — no static capability says that without being a worse copy.
@@ -51,7 +58,14 @@ import { CreateButton, UserMenu } from './shell-controls';
  */
 export default async function InternalLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const context = await requireInternal();
-  const [organizationName, timeZone] = await Promise.all([readOrganizationName(), getDisplayTimeZone()]);
+  const [organizationName, timeZone, memberships] = await Promise.all([
+    readOrganizationName(),
+    getDisplayTimeZone(),
+    listMyOrganizations().catch((): MyOrganization[] => []),
+  ]);
+  // SCR-001: the organisation selector exists only for a person who could
+  // choose; a single membership shows the plain chip, as before.
+  const canSwitchOrganization = memberships.length > 1;
 
   const visibleGroups = visibleModulesFor(context.role);
 
@@ -90,6 +104,11 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
         </div>
 
         <div className="shrink-0 border-t border-sidebar-border p-3">
+          {canSwitchOrganization ? (
+            <div className="mb-2">
+              <OrganizationSwitcher organizations={memberships} />
+            </div>
+          ) : null}
           <div className="flex items-center gap-2.5 rounded-lg border border-sidebar-border bg-sidebar-hover px-2 py-2">
             <Avatar name={organizationName ?? displayName} size="md" square tone="warning" className="bg-accent text-accent-fg" />
             <span className="min-w-0 flex-1">
@@ -118,8 +137,10 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
               <CurrentSectionTitle groups={visibleGroups} />
             </div>
 
-            {/* Where am I — module › page, from the same filtered table. */}
-            <div className="hidden min-w-0 flex-1 lg:block">
+            {/* Where am I — module › page › record, from the same filtered
+                table. Shown from the tablet width up (bucket F): a portrait
+                iPad has room for it once the phone title yields. */}
+            <div className="hidden min-w-0 flex-1 md:block">
               <HeaderTrail groups={visibleGroups} />
             </div>
 
@@ -134,6 +155,7 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
                 canCreateInvoice={can(context.role, 'invoice.create')}
               />
               <CreateButton enabled={can(context.role, 'lead.write') || can(context.role, 'project.write')} />
+              <SystemStatusDot canOpen={can(context.role, 'organization.settings')} />
               <ActionBell />
               <HelpLink />
               <UserMenu name={displayName} email={context.email} role={context.role ?? "member"} timeZone={timeZone} signOut={<SignOutButton full variant="secondary" />} />

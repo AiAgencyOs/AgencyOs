@@ -17,7 +17,7 @@ export const OPEN_CREATE_EVENT = 'agencyos:open-create';
  * things; every destination is a plain link and sign-out is the same
  * server-action form the rail already carries.
  */
-export type CreateMode = 'lead' | 'client';
+export type CreateMode = 'lead' | 'client' | 'project' | 'invoice' | 'task' | 'quotation' | 'meeting' | 'change_request';
 
 /** Raise the quick-create dialog, optionally straight onto one form. */
 export function openQuickCreate(mode?: CreateMode) {

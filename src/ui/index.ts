@@ -39,3 +39,5 @@ export * from './primitives/status-list';
 export * from './primitives/timeline';
 export * from './primitives/gantt';
 export * from './patterns/whatsapp';
+export * from './primitives/row-actions';
+export * from './primitives/integration-state';

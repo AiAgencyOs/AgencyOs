@@ -325,6 +325,7 @@ export default async function QuotationsPage({
               ? `No quotations are currently “${humanize(status)}”.`
               : 'A quotation is drafted from a lead once its opportunity is open.'
           }
+          action={status ? <Link href="/quotations" className={buttonClass('secondary', 'sm')}>Clear filters</Link> : <Link href="/leads" className={buttonClass('secondary', 'sm')}>Open leads</Link>}
         />
       )}
     </div>

@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { cx } from '../tokens';
 import { IconChevronDown, IconChevronRight, IconChevronUp } from '../icons';
+import { RowActionsMenu, type RowAction } from './row-actions';
 
 export type SortDirection = 'asc' | 'desc';
 export type SortState = {
@@ -59,12 +60,20 @@ export function DataTable<T>({
   className,
   stickyHeader,
   dense,
+  rowActions,
 }: {
   rows: readonly T[];
   columns: ReadonlyArray<Column<T>>;
   getKey: (row: T) => string;
   /** When given, the whole row (and the whole mobile card) becomes one link. */
   href?: (row: T) => string;
+  /**
+   * The shared rule's per-row overflow menu (bucket F): the row's secondary
+   * actions as links or pre-rendered controls, behind a "⋯" at the end of
+   * the row and in the corner of the mobile card. Return `[]` for a row
+   * with none.
+   */
+  rowActions?: (row: T) => readonly RowAction[];
   /** Turns every column with a `sortKey` into a clickable header — omit for an unsorted table. */
   sort?: SortState;
   className?: string;
@@ -150,6 +159,7 @@ export function DataTable<T>({
                   </th>
                 );
               })}
+              {rowActions ? <th className={cx('w-12', sticky && 'sticky top-0 z-10 bg-surface-sunken')}><span className="sr-only">Actions</span></th> : null}
               {href ? <th className={cx('w-10', sticky && 'sticky top-0 z-10 bg-surface-sunken')} /> : null}
             </tr>
           </thead>
@@ -186,6 +196,11 @@ export function DataTable<T>({
                       )}
                     </td>
                   ))}
+                  {rowActions ? (
+                    <td className={cx('text-right', dense ? 'px-2 py-1' : 'px-2 py-2')}>
+                      <RowActionsMenu actions={rowActions(row)} />
+                    </td>
+                  ) : null}
                   {href ? (
                     <td className="pr-3 text-right" aria-hidden>
                       <IconChevronRight
@@ -215,6 +230,7 @@ export function DataTable<T>({
                   {badges.map((c) => (
                     <span key={c.key}>{c.cell(row)}</span>
                   ))}
+                  {rowActions ? <RowActionsMenu actions={rowActions(row)} /> : null}
                   {to ? <IconChevronRight size={16} className="text-faint" /> : null}
                 </span>
               </div>
