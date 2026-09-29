@@ -194,6 +194,21 @@ page errors); "+ Add client" opens the quick-create on the client form.
 A pass-rate bug found by the screenshot ("1000%") was fixed: QA results
 are per item, so the rate is over passed + failed, not over runs.
 
+Third round: the quotation composer driven end to end in the browser —
+deal picked, two lines (₹20,000 + ₹50,000), 18% tax applied from the
+suggestion (₹12,600), submitted. Without an approval policy the composer
+reported the door's refusal verbatim ("No approval policy covers
+quotations") and linked to the draft it had already made; after setting
+a policy through Settings → Approvals in the same browser, v4 was
+drafted, priced and shown on the lead as *Pending approval* at ₹82,600.
+A real defect surfaced while checking the design gallery: the Design
+tab threw `column design_reviews.phase_three_id does not exist` for any
+project in Phase 3 (the seed project had never reached it). Fixed in
+`readDesignTrail`; all four Design routes now render against the
+phase-three verifier's fixture (`scripts/verify-phase-three.mjs`, 31
+checks green on this stack), and `tests/phase-three-in-the-admin-panel`
+passes 21/21.
+
 Typecheck and ESLint clean on every changed file. The unit-test failure
 set is unchanged (the Node 22 `mock.module` class; `npm test` on this
 machine: 5772 pass, 53 fail before and after — `commit-the-whole-file-at-once`

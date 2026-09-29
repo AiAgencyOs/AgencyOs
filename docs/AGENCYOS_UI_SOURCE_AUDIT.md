@@ -393,15 +393,14 @@ at 1440 and 390 (`scripts/local-qa/`, screenshots in the test matrix §9):
 | 19 | Reports | figures, sales funnel, project-distribution donut, project health, defects by severity, invoiced vs received |
 | 1, 22, 27, 34 | Milestones / Gantt (Plan tab) | milestone figures, a Gantt whose bars are the planned windows between due dates (derived, labelled as such), milestone details and upcoming deadlines rail |
 | 26, 28 | Task detail | a drawer on the Board with status (a validated write), priority, assignee, due date and description — comments, subtasks, time logs and attachments are stated as absent from the data model, not drawn empty |
+| 12 | Quotation composer (`/quotations/new`) | client information from the open deal, quotation details, services/items table with live summary, pricing, approval choice; one submit walks draft → lines → pricing → submit through the same governed doors, stopping at the first refusal and linking to the draft |
+| 11, 38 | Design dashboard (project Design tab) | six figures, the screen gallery (stored preview URL or a named placeholder), theme option cards with swatches and three statuses, project details with the reviewer picker, six-step design progress, reference imagery; coverage and spend below |
 | shell (all) | Global header + rail | scoped search field, dark "+ Create" (opens quick create), bell with count, help menu, user chip with avatar · name · role and menu, organisation tile in the rail foot, breadcrumb naming the open record |
 
-Still token-level only (layout not rebuilt): the design gallery (11, 38 —
-the design trail has no screen thumbnails to hang a gallery on) and the
-quotation composer (12 — quoting is the Lead 360's draft / line / pricing
-/ submit panels, one governed step each, not one form). Image 39 (project
-finance) is the Project 360's billing, payment plan and claims sections.
-The canvas moved to the reference's cool grey (`#f5f7fb`) with `#0f172a`
-ink.
+Every usable reference image now has a built counterpart. Image 39
+(project finance) is the Project 360's billing, payment plan and claims
+sections; image 23 stays excluded. The canvas moved to the reference's
+cool grey (`#f5f7fb`) with `#0f172a` ink.
 
 ## 5. Conflicts resolved on 2026-09-29
 

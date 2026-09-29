@@ -49,7 +49,7 @@ a record that only its editor changes.
 | SCR-009 | Requirements Discovery | `/leads/[leadId]` › requirement decision | `lead.read` | `crm.requirement_versions` | — | GROUPED |
 | SCR-010 | Meetings | `/meetings`, `/meetings/[meetingId]` | `lead.read` | meetings, evidence, calendar verification | — | COMPLETE |
 | SCR-011 | Quotations List | `/quotations` | `lead.read` | `listProposals`, saved views | — | COMPLETE |
-| SCR-012 | Create / Edit Quotation | `/leads/[leadId]` › quotation panel | `proposal.draft` | `sales.proposals` (per-deal by schema: `opportunity_id not null`) | — | GROUPED |
+| SCR-012 | Create / Edit Quotation | `/quotations/new` + Lead 360 panels | `proposal.draft` | `composeQuotationAction` → draftProposal, addProposalItem, setProposalPricing, submitProposal | — | COMPLETE |
 | SCR-013 | Follow-ups & Nurture | `/follow-ups` | `lead.read` | `listFollowUpSequences` | — | COMPLETE |
 
 ### Clients
