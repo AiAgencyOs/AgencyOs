@@ -226,10 +226,10 @@ export default async function QaDashboardPage() {
           </Card>
 
           <Card>
-            <CardHeader title={`Open bugs (${defects.length})`} description="Open the project to settle a defect on its Quality section." actions={<ViewAll href="/projects" label="Projects" />} />
+            <CardHeader title={`Open bugs (${defects.length})`} description="Open a bug for its page — reproduction, evidence, linked task and build, and its fix / retest history (SCR-047)." actions={<ViewAll href="/projects" label="Projects" />} />
             {defects.length > 0 ? (
               <div className="px-4 pb-4 sm:px-5">
-                <DataTable dense rows={defects} columns={columns} getKey={(d) => d.id} href={(d) => `/projects/${d.projectId}`} />
+                <DataTable dense rows={defects} columns={columns} getKey={(d) => d.id} href={(d) => `/projects/${d.projectId}/qa/bugs/${d.id}`} />
               </div>
             ) : (
               <EmptyState icon={<IconCheck size={22} />} title="No open defects" description="Every raised defect has been fixed, waived, or is not currently blocking anything." action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>} />
@@ -369,7 +369,7 @@ export default async function QaDashboardPage() {
                   <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-[13px] sm:px-5">
                     <span className="flex min-w-0 items-center gap-2">
                       <Badge tone={d.severity === 'blocker' ? 'danger' : d.severity === 'major' ? 'warning' : 'neutral'}>{d.severity}</Badge>
-                      <Link href={`/projects/${d.projectId}/qa`} className="truncate font-medium hover:underline">{d.title}</Link>
+                      <Link href={`/projects/${d.projectId}/qa/bugs/${d.id}`} className="truncate font-medium hover:underline">{d.title}</Link>
                       <span className="text-xs text-muted">{d.projectName}</span>
                     </span>
                     <span className="text-xs text-muted">{d.assignee_id ? 'assigned' : 'unassigned'} · raised {clock.date(d.created_at)}</span>
@@ -480,7 +480,7 @@ export default async function QaDashboardPage() {
             <Card>
               <CardHeader title="Most severe open" />
               <div className="px-4 pb-4 text-[13px] sm:px-5">
-                <Link href={`/projects/${defects[0].projectId}`} className="font-medium text-foreground hover:text-brand">
+                <Link href={`/projects/${defects[0].projectId}/qa/bugs/${defects[0].id}`} className="font-medium text-foreground hover:text-brand">
                   {defects[0].title}
                 </Link>
                 <p className="text-xs text-muted">{defects[0].projectName} · {humanize(defects[0].severity)} · raised {clock.date(defects[0].created_at)}</p>

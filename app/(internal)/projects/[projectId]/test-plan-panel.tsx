@@ -16,6 +16,7 @@ import { IDLE_STATE } from '@/modules/identity/types';
 import { Badge, FormMessage, buttonClass, inputClass, labelClass, selectClass } from '@/ui';
 
 import { ApproveTestPlanForm, CaseDetails, CaseFieldsInputs, RunEnvironmentInputs, RunResultsGrid, RunResultsList } from './qa/case-results-panel';
+import { ImportTestCasesForm, LinkedTask, LinkTaskForm } from './qa/test-case-import-panel';
 
 /**
  * SCR-045's Test Plan screen. `qa.draft_test_plan` / `.add_test_plan_item` /
@@ -117,6 +118,7 @@ export function TestPlanCard({
   scopeItems,
   editable,
   canApprove = false,
+  tasks,
 }: {
   projectId: string;
   plan: TestPlanRow;
@@ -124,6 +126,8 @@ export function TestPlanCard({
   editable: boolean;
   /** `project.sign_off` — the approve door refuses everyone else, so nobody else is offered it. */
   canApprove?: boolean;
+  /** SCR-045: the project's tasks, for the linked-task label and picker (`qa.link_test_case_task`). Omitted by callers that have not read them. */
+  tasks?: { id: string; title: string; status: string }[];
 }) {
   // An approved plan accepts no new item and loses none (qa.add_test_plan_item
   // / remove_test_plan_item refuse plan_approved); a control whose only
@@ -152,9 +156,14 @@ export function TestPlanCard({
                   {item.criticalPath ? <Badge tone="warning">critical path</Badge> : null}
                 </span>
                 <span className="text-muted">{item.reason}</span>
+                <LinkedTask projectId={projectId} task={tasks?.find((t) => t.id === item.taskId)} />
                 <CaseDetails item={item} />
               </span>
-              {mayEdit ? <RemoveItemButton projectId={projectId} itemId={item.id} /> : null}
+              <span className="flex flex-wrap items-center gap-2">
+                {/* Linking a task is allowed on an approved plan: who builds the case is not what is tested. */}
+                {editable && tasks ? <LinkTaskForm projectId={projectId} itemId={item.id} currentTaskId={item.taskId} tasks={tasks} /> : null}
+                {mayEdit ? <RemoveItemButton projectId={projectId} itemId={item.id} /> : null}
+              </span>
             </li>
           ))}
         </ul>
@@ -163,6 +172,7 @@ export function TestPlanCard({
       )}
 
       {mayEdit ? <AddItemForm projectId={projectId} planId={plan.id} scopeItems={scopeItems} /> : null}
+      {mayEdit ? <ImportTestCasesForm projectId={projectId} planId={plan.id} /> : null}
       {!approved && canApprove && plan.items.length > 0 ? <ApproveTestPlanForm projectId={projectId} planId={plan.id} /> : null}
     </div>
   );

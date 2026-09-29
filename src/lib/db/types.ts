@@ -11047,6 +11047,7 @@ export type Database = {
           run_id: string | null
           actual: string | null
           assignee_id: string | null
+          build_id: string | null
           created_at: string
           deliverable_id: string | null
           environment: string | null
@@ -11070,6 +11071,7 @@ export type Database = {
           run_id?: string | null
           actual?: string | null
           assignee_id?: string | null
+          build_id?: string | null
           created_at?: string
           deliverable_id?: string | null
           environment?: string | null
@@ -11093,6 +11095,7 @@ export type Database = {
           run_id?: string | null
           actual?: string | null
           assignee_id?: string | null
+          build_id?: string | null
           created_at?: string
           deliverable_id?: string | null
           environment?: string | null
@@ -11113,6 +11116,50 @@ export type Database = {
           verified_by?: string | null
         }
         Relationships: []
+      }
+      defect_evidence: {
+        Row: {
+          added_at: string
+          added_by: string | null
+          created_at: string
+          defect_id: string
+          id: string
+          kind: string
+          organization_id: string
+          updated_at: string
+          value: string
+        }
+        Insert: {
+          added_at?: string
+          added_by?: string | null
+          created_at?: string
+          defect_id: string
+          id?: string
+          kind: string
+          organization_id: string
+          updated_at?: string
+          value: string
+        }
+        Update: {
+          added_at?: string
+          added_by?: string | null
+          created_at?: string
+          defect_id?: string
+          id?: string
+          kind?: string
+          organization_id?: string
+          updated_at?: string
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "defect_evidence_defect_id_fkey"
+            columns: ["defect_id"]
+            isOneToOne: false
+            referencedRelation: "defects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       metric_results: {
         Row: {
@@ -11385,6 +11432,7 @@ export type Database = {
           reason: string
           scope_item_id: string
           steps: string | null
+          task_id: string | null
         }
         Insert: {
           category: string
@@ -11398,6 +11446,7 @@ export type Database = {
           reason: string
           scope_item_id: string
           steps?: string | null
+          task_id?: string | null
         }
         Update: {
           category?: string
@@ -11411,6 +11460,7 @@ export type Database = {
           reason?: string
           scope_item_id?: string
           steps?: string | null
+          task_id?: string | null
         }
         Relationships: [
           {
@@ -11612,6 +11662,34 @@ export type Database = {
         }
         Returns: {
           id: string
+          outcome: string
+        }[]
+      }
+      add_defect_evidence: {
+        Args: { p_defect_id: string; p_kind: string; p_value: string }
+        Returns: {
+          id: string | null
+          outcome: string
+        }[]
+      }
+      import_test_cases: {
+        Args: { p_cases: Json; p_plan_id: string }
+        Returns: {
+          detail: string | null
+          imported: number
+          outcome: string
+          row_number: number | null
+        }[]
+      }
+      link_defect_build: {
+        Args: { p_build_id?: string | null; p_defect_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      link_test_case_task: {
+        Args: { p_task_id?: string | null; p_test_case_id: string }
+        Returns: {
           outcome: string
         }[]
       }
