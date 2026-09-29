@@ -4,6 +4,7 @@ import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { LiveRefresh } from '@/lib/realtime';
 import { LEAD_STATUSES, NURTURE_REASONS } from '@/modules/crm/schema';
 import { listLeadsForTable, listLeadsNeedingAttention } from '@/modules/crm/queries';
 import { readLeadFacts } from '@/modules/crm/lead-list-queries';
@@ -271,6 +272,8 @@ export default async function LeadsPage({
         }
         actions={
           <>
+            {/* E4: the list is a live screen (test matrix §5 scenario 1 watches it from a second session). */}
+            <LiveRefresh topics={['leads']} />
             {can(context.role, 'organization.settings') ? (
               <Link href="/import" className={buttonClass('secondary', 'sm')}>
                 <IconImport size={14} />

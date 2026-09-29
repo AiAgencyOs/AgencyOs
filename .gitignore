@@ -145,3 +145,6 @@ Quotation pdfs/
 # Scratch: red-proof backups, fixtures and drive scripts. Never committed;
 # /tmp gets cleared and a git checkout would discard the fix under test.
 .scratch/
+
+# Screenshots and the JSON summary of the two-session realtime run (npm run e2e:realtime)
+tests/e2e/out/

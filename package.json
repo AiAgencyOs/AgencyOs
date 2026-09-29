@@ -81,6 +81,7 @@
     "db:verify:tenancyguards": "node scripts/verify-tenancy-guards.mjs",
     "db:verify:failopen": "node scripts/verify-fail-open-guards.mjs",
     "smoke": "node scripts/smoke.mjs",
+    "e2e:realtime": "node tests/e2e/realtime-two-sessions.spec.mjs",
     "audit:leads": "node scripts/lead-reactivation-audit.mjs",
     "import:whatsapp:dryrun": "npx tsx scripts/whatsapp-import-dryrun.ts",
     "import:whatsapp:stage": "npx tsx scripts/whatsapp-import-stage.ts",

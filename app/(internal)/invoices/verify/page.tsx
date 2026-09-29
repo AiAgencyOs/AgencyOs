@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { LiveRefresh } from '@/lib/realtime';
 import { listPendingPaymentClaims } from '@/modules/finance/queries';
 import { listPaymentSubmissions } from '@/modules/finance/overview-queries';
 import { Card, CardHeader, EmptyState, IconInvoices, PageHeader, PermissionDenied, Stat, StatGrid, StatusBadge } from '@/ui';
@@ -74,6 +75,7 @@ export default async function PaymentVerificationPage() {
 
   return (
     <div className="flex flex-col gap-5">
+      {/* E4: a claim arriving or answered in another session shows here without a reload (test matrix §5 scenario 3). */}
       <PageHeader
         title="Payment verification"
         description={
@@ -81,6 +83,7 @@ export default async function PaymentVerificationPage() {
             ? 'Nothing awaiting a decision.'
             : `${claims.length} claim${claims.length === 1 ? '' : 's'} awaiting a decision, oldest first.`
         }
+        actions={<LiveRefresh topics={['finance']} />}
       />
 
       <StatGrid>

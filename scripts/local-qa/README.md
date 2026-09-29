@@ -75,3 +75,37 @@ cross-origin requests for its own chunks and every page reports fourteen
   as-is: `.env.verify.local` → this gateway, same `SUPABASE_JWT_SECRET`,
   the gateway's service JWT as `SUPABASE_SERVICE_ROLE_KEY`; the gateway
   implements the GoTrue admin-users endpoints they create fixtures with.
+
+## The two-session realtime run (`npm run e2e:realtime`)
+
+`tests/e2e/realtime-two-sessions.spec.mjs` is the §5 procedure of
+`docs/AGENCYOS_ADMIN_TEST_MATRIX.md` as a script: two browser contexts (owner
+and ops_admin) signed in through `/auth/callback`, five scenarios, and a
+PostgREST read-back with the service-role key behind every screen assertion.
+CI runs it in `.github/workflows/realtime.yml`. Locally it needs Docker,
+because the push path needs a Realtime server, which this folder's gateway
+does not have (it answers `/realtime/*` with 404 on purpose).
+
+```bash
+# 1. a fresh Supabase stack (migrations + seed) and its env
+npm run verify:db:up                                  # supabase start && supabase db reset
+cp .env.verify.local.example .env.verify.local        # then paste `supabase status -o json` values in
+# 2. the app, built and started against it
+set -a && . ./.env.verify.local && set +a
+npm run build && npm run start &
+# 3. playwright-core (not a project dependency) and a Chromium
+npm i --no-save playwright-core                       # or PLAYWRIGHT_DIR=<dir whose node_modules has it>
+export CHROME=/usr/bin/google-chrome                  # unset → the installed Chrome channel
+# 4. the run
+REALTIME_CONTAINER=$(docker ps --format '{{.Names}}' | grep ^supabase_realtime_) \
+APP_URL=http://localhost:3000 npm run e2e:realtime
+```
+
+It prints one JSON line per scenario, writes `tests/e2e/out/summary.json`
+and screenshots beside it (gitignored), and exits non-zero on any failure.
+Without `REALTIME_CONTAINER` the fifth scenario (stop the Realtime container
+→ *Reconnecting*, *Degraded*; start it → *Live* and the list catches up) is
+reported as skipped and says why. Against this folder's gateway the sign-in
+falls back to its `login:<email>:<role>` token, so scenarios 1–4 can be run
+here too — but only the polling fallback is exercised, and the pill will not
+say *Live*, so they fail honestly on the first pill assertion.
