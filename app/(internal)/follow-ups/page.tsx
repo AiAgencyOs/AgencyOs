@@ -7,6 +7,7 @@ import { can } from '@/lib/authz/permissions';
 import { situationFor } from '@/modules/crm/follow-up-situations';
 import { listFollowUpSequences } from '@/modules/crm/queries';
 import { SavedViewsBar } from '../saved-views-bar';
+import { SequenceControls } from './sequence-controls';
 import {
   Badge,
   DataTable,
@@ -15,14 +16,19 @@ import {
   FilterBar,
   FilterChips,
   humanize,
+  IconAlert,
+  IconCheck,
   IconClock,
+  IconSend,
+  PageHeader,
   paginate,
   Pagination,
-  PageHeader,
-  statusTone,
-  type Column,
   PermissionDenied,
   sortRows,
+  Stat,
+  StatGrid,
+  statusTone,
+  type Column,
   type SortDirection,
 } from '@/ui';
 
@@ -84,6 +90,12 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     cellClassName: 'text-muted',
     cell: (r) => r.stop_reason ?? '—',
   },
+  {
+    key: 'controls',
+    header: '',
+    align: 'right',
+    cell: (r) => <SequenceControls sequenceId={r.id} status={r.status} />,
+  },
 ];
 
 const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
@@ -116,7 +128,8 @@ export default async function FollowUpsPage({
   const currentQuery = [status ? `status=${status}` : '', sortKey ? `sort=${sortKey}&dir=${direction}` : '']
     .filter(Boolean)
     .join('&');
-  const [rawSequences, savedViews] = await Promise.all([
+  const [allSequences, rawSequences, savedViews] = await Promise.all([
+    listFollowUpSequences({}),
     listFollowUpSequences({ status }),
     listSavedViews('/follow-ups'),
   ]);
@@ -130,9 +143,19 @@ export default async function FollowUpsPage({
         description={
           sequences.length === 0
             ? 'No follow-up sequences match this filter.'
-            : `${sequences.length} sequence${sequences.length === 1 ? '' : 's'}.`
+            : `${sequences.length} sequence${sequences.length === 1 ? '' : 's'}. Stopping one here is a person's decision, recorded as its stop reason.`
         }
       />
+
+      {allSequences.length > 0 ? (
+        <StatGrid cols={5}>
+          <Stat label="Sequences" value={String(allSequences.length)} tone="brand" icon={<IconClock size={16} />} href="/follow-ups" />
+          <Stat label="Active" value={String(allSequences.filter((r) => r.status === 'active').length)} caption={`${allSequences.filter((r) => r.status === 'active' && r.next_due_at && r.next_due_at <= new Date().toISOString()).length} due now`} tone="success" icon={<IconCheck size={16} />} href="/follow-ups?status=active" />
+          <Stat label="Escalated" value={String(allSequences.filter((r) => r.status === 'escalated').length)} caption="Waiting on a person" tone={allSequences.some((r) => r.status === 'escalated') ? 'warning' : 'neutral'} icon={<IconAlert size={16} />} href="/follow-ups?status=escalated" />
+          <Stat label="Stopped" value={String(allSequences.filter((r) => r.status === 'stopped').length)} tone="neutral" icon={<IconClock size={16} />} href="/follow-ups?status=stopped" />
+          <Stat label="Attempts sent" value={String(allSequences.reduce((n, r) => n + r.attempts_sent, 0))} caption="Across every sequence" tone="info" icon={<IconSend size={16} />} />
+        </StatGrid>
+      ) : null}
 
       <FilterBar>
         <FilterChips

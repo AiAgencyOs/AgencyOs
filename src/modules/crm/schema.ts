@@ -1720,3 +1720,11 @@ export const pauseAgentRepliesSchema = z.object({
 export type SetLeadOwnerInput = z.infer<typeof setLeadOwnerSchema>;
 export type SetLeadTagsInput = z.infer<typeof setLeadTagsSchema>;
 export type PauseAgentRepliesInput = z.infer<typeof pauseAgentRepliesSchema>;
+
+export const stopFollowUpSequenceSchema = z.object({
+  sequenceId: z.uuid(),
+  reason: z.string().trim().min(1).max(200),
+});
+export const resumeFollowUpSequenceSchema = z.object({ sequenceId: z.uuid() });
+export type StopFollowUpSequenceInput = z.infer<typeof stopFollowUpSequenceSchema>;
+export type ResumeFollowUpSequenceInput = z.infer<typeof resumeFollowUpSequenceSchema>;

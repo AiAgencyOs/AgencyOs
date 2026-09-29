@@ -25,6 +25,8 @@ import {
   setLeadOwner,
   setLeadTags,
   pauseAgentReplies,
+  stopFollowUpSequence,
+  resumeFollowUpSequence,
 } from './service';
 
 /**
@@ -407,4 +409,18 @@ export async function pauseAgentRepliesAction(_prev: FormState, formData: FormDa
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidateLead(formData);
   return { status: 'success', message: result.data.paused ? 'The agent is paused; a person answers from here.' : 'This conversation was already waiting on a person.' };
+}
+
+export async function stopFollowUpSequenceAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await stopFollowUpSequence({ sequenceId: String(formData.get('sequenceId') ?? ''), reason: String(formData.get('reason') ?? '') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/follow-ups');
+  return { status: 'success', message: result.data.stopped ? 'Sequence stopped.' : 'This sequence was not active.' };
+}
+
+export async function resumeFollowUpSequenceAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await resumeFollowUpSequence({ sequenceId: String(formData.get('sequenceId') ?? '') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/follow-ups');
+  return { status: 'success', message: result.data.resumed ? 'Sequence resumed; the next attempt is due now.' : 'This sequence was not stopped.' };
 }

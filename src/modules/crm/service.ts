@@ -54,6 +54,10 @@ import {
   type SetLeadOwnerInput,
   type SetLeadTagsInput,
   type PauseAgentRepliesInput,
+  stopFollowUpSequenceSchema,
+  resumeFollowUpSequenceSchema,
+  type StopFollowUpSequenceInput,
+  type ResumeFollowUpSequenceInput,
 } from './schema';
 
 /**
@@ -2059,4 +2063,56 @@ export async function pauseAgentReplies(input: PauseAgentRepliesInput): Promise<
 
   // Nothing matched: already paused (or not this organisation's thread).
   return ok({ paused: data !== null });
+}
+
+/**
+ * A person stops a follow-up rhythm — `crm.follow_up_sequences.status`
+ * active → stopped with the reason, the same row shape the worker writes
+ * when a stop condition fires (`status = 'active'` ⇔ `stop_reason is null`
+ * is the table's own rule). An escalated sequence is left to its escalation;
+ * nothing here clears `escalated_at`.
+ */
+export async function stopFollowUpSequence(input: StopFollowUpSequenceInput): Promise<Result<{ stopped: boolean }>> {
+  const parsed = stopFollowUpSequenceSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Say why the sequence should stop, in up to 200 characters.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'lead.write')) {
+    return err('FORBIDDEN', 'You do not have permission to stop follow-ups.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('follow_up_sequences')
+    .update({ status: 'stopped', stop_reason: `person: ${parsed.data.reason}` })
+    .eq('id', parsed.data.sequenceId)
+    .eq('status', 'active')
+    .select('id')
+    .maybeSingle();
+  if (error) return err('INTERNAL', 'The sequence could not be stopped.');
+  return ok({ stopped: data !== null });
+}
+
+/** Puts a stopped sequence back on its rhythm: stopped → active, reason cleared, next attempt due now. */
+export async function resumeFollowUpSequence(input: ResumeFollowUpSequenceInput): Promise<Result<{ resumed: boolean }>> {
+  const parsed = resumeFollowUpSequenceSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid sequence.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'lead.write')) {
+    return err('FORBIDDEN', 'You do not have permission to resume follow-ups.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('follow_up_sequences')
+    .update({ status: 'active', stop_reason: null, next_due_at: new Date().toISOString() })
+    .eq('id', parsed.data.sequenceId)
+    .eq('status', 'stopped')
+    .select('id')
+    .maybeSingle();
+  if (error) return err('INTERNAL', 'The sequence could not be resumed.');
+  return ok({ resumed: data !== null });
 }
