@@ -259,9 +259,10 @@ export async function upsertApprovalPolicy(input: UpsertPolicyInput): Promise<Re
     });
   }
 
-  const { role, organizationId } = await requireInternal();
+  const context = await requireInternal();
+  const { organizationId } = context;
   if (!organizationId) return err('FORBIDDEN', 'No organization on this session.');
-  if (!can(role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'Only an owner may change approval policy.');
   }
 

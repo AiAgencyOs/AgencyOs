@@ -48,7 +48,7 @@ export default async function MeetingsPage({
   searchParams: Promise<{ window?: string; status?: string; mode?: string; owner?: string; view?: string; month?: string }>;
 }) {
   const context = await requireInternal('/meetings');
-  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
+  if (!can(context, 'lead.read')) return <PermissionDenied />;
 
   const params = await searchParams;
   const now = new Date();
@@ -156,7 +156,7 @@ export default async function MeetingsPage({
           Availability is read from this calendar and nothing is invented (G-226). On a meeting&rsquo;s page,
           <em> Propose a time</em> offers what the calendar has free and <em>Book</em> re-checks it, creates the
           Google event with its Meet link and writes the row (G-243). The client is told by you.
-          {can(context.role, 'organization.settings') ? (
+          {can(context, 'organization.settings') ? (
             <div className="mt-2">
               <VerifyCalendarForm lastVerifiedAt={calendarVerifiedAt} calendar={calendarVerified} />
             </div>

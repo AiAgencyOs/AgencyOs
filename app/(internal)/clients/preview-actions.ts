@@ -40,7 +40,7 @@ const PENDING_INVOICE_STATUSES = new Set(['draft', 'pending_approval', 'issued',
 
 export async function readClientPreviewAction(clientId: string): Promise<ClientPreviewState> {
   const context = await requireInternal('/clients');
-  if (!can(context.role, 'project.read')) {
+  if (!can(context, 'project.read')) {
     return { status: 'error', message: 'You do not have permission to view clients.' };
   }
 

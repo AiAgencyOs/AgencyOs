@@ -25,7 +25,7 @@ export async function setOpportunityOwner(
   if (!parsed.success) return err('VALIDATION', 'Pick a person from the roster.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.assign')) {
+  if (!can(context, 'lead.assign')) {
     return err('FORBIDDEN', 'You do not have permission to assign deals.');
   }
 

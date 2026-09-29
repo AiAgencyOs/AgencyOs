@@ -31,7 +31,7 @@ export async function createProjectManually(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to create projects.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');

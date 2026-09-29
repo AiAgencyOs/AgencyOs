@@ -6,12 +6,14 @@ import { aiStatus } from '@/lib/admin/agent-status';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { listRoutingPolicies } from '@/lib/admin/model-routing';
 import { listModels, listVaultEntries } from '@/lib/admin/model-registry';
+import { listFallbackChains, listProviderBudgets } from '@/modules/agents/models-queries';
 import { ROUTING_CATEGORIES, categoryForAgent, effectiveModel } from '@/lib/ai/model-choice';
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
+import { can, hasRole } from '@/lib/authz/permissions';
 import { Badge, Card, CardHeader, DataTable, PageHeader, PermissionDenied, StatusBadge, type Column } from '@/ui';
 
 import { RevokeProviderCredentialForm } from '../../settings/revoke-provider-form';
+import { AddModelForm, FallbackChainsPanel, ProviderBudgetsPanel, RetireModelForm } from './model-registry-panel';
 import { RoutingOverrideForm } from './override-form';
 import { RoutingPolicyForm } from './routing-form';
 
@@ -25,10 +27,14 @@ const VAULT_PROVIDERS = ['anthropic', 'openai', 'gemini', 'xai', 'openrouter'] a
  * owner/ops_admin directly under RLS (core.is_admin()) — the only gap here
  * was the screen; unlike the qa/scope doors, no write path was missing.
  *
- * `ai.models` ships empty by design (ADM-84 deferred the second provider),
- * so preferred models are free text rather than a picker against a registry
- * with nothing in it — and the registry table below says "empty by design"
- * rather than showing rows nobody established.
+ * Decision 2026-09-30: ADM-84 reversed — the owner manages models in the
+ * panel. The registry below is the owner's to add to and retire from
+ * (`ai.add_model` / `ai.retire_model`, audited); a fallback chain per work
+ * class (`ai.fallback_chains`) is what the runner tries after the agent
+ * override and the category policy and before the agent's default; and a
+ * monthly cap per provider (`ai.provider_budgets`) is what the runner refuses
+ * past, recorded like a policy refusal. Policy preferences stay free text so
+ * a tenant that has registered nothing keeps routing exactly as before.
  *
  * The vault list shows provider, when and by whom — never a key; the reader
  * does not select the ciphertext columns. "Revoke" (SCR-064, 20260929210000)
@@ -45,19 +51,22 @@ const VAULT_PROVIDERS = ['anthropic', 'openai', 'gemini', 'xai', 'openrouter'] a
  */
 export default async function ModelRoutingPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const context = await requireInternal('/agents/routing');
-  if (!can(context.role, 'organization.settings')) return <PermissionDenied />;
+  if (!can(context, 'organization.settings')) return <PermissionDenied />;
   const clock = await agencyClock();
-  const isOwner = context.role === 'owner';
+  const isOwner = hasRole(context, 'owner');
   const params = await searchParams;
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? '';
 
-  const [policies, models, vault, ai, overrides] = await Promise.all([
+  const [policies, models, vault, ai, overrides, chains, budgets] = await Promise.all([
     listRoutingPolicies(),
     listModels(),
     listVaultEntries(),
     aiStatus(),
     listAgentRoutingOverrides(),
+    listFallbackChains(),
+    listProviderBudgets(),
   ]);
+  const availableModels = models.filter((m) => m.status === 'available').map((m) => m.modelId);
   const vaultByProvider = new Map(vault.map((v) => [v.provider, v]));
   const policyByCategory = new Map(policies.map((p) => [p.category, p]));
   const overrideByCell = new Map(overrides.map((o) => [`${o.agentKey}:${o.category}`, o]));
@@ -85,6 +94,8 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
       cell: (m) =>
         `${m.inputCostMinorPerMtok !== null ? (m.inputCostMinorPerMtok / 100).toFixed(2) : '—'} · ${m.outputCostMinorPerMtok !== null ? (m.outputCostMinorPerMtok / 100).toFixed(2) : '—'}`,
     },
+    // SCR-064 (ADM-84 reversed 2026-09-30): the owner retires a model with a reason.
+    ...(isOwner ? [{ key: 'retire', header: 'Retire', cell: (m: (typeof models)[number]) => (m.status === 'retired' ? <span className="text-xs text-muted">retired</span> : <RetireModelForm modelId={m.modelId} />) }] : []),
   ];
 
   const policyColumns: Column<(typeof policies)[number]>[] = [
@@ -202,22 +213,40 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
         </p>
       </Card>
 
+      {/* SCR-064 — Decision 2026-09-30: ADM-84 reversed, the owner manages models in the panel. */}
       <Card>
         <CardHeader
           title="Model registry"
-          description="ai.models — the models the resolver may name, with their declared capabilities and rates."
+          description="ai.models — the models the resolver may name, with their declared capabilities and rates. The owner adds and retires them here; every change is audited."
+          actions={<Badge tone={models.some((m) => m.status === 'available') ? 'success' : 'neutral'}>{availableModels.length} available</Badge>}
         />
         {models.length === 0 ? (
           <p className="px-4 py-4 text-[13px] text-muted sm:px-5">
-            Empty by design (ADM-84): no model row has been established for this organization, so routing falls back to
-            capability matching and the free-text preferences below.
+            No model is registered for this organisation yet. Routing falls back to the agent defaults and the free-text preferences below until the
+            owner adds one here (ADM-84 reversed 2026-09-30).
           </p>
         ) : (
           <div className="px-4 pb-4 sm:px-5">
-            {/* Bucket F: the shared DataTable — a card list on a phone rather than a sideways scroll. */}
             <DataTable dense rows={models} columns={modelColumns} getKey={(m) => `${m.provider}/${m.modelId}`} />
           </div>
         )}
+        {isOwner ? <AddModelForm /> : <p className="border-t border-line px-4 py-3 text-xs text-muted sm:px-5">Adding and retiring models is the owner&apos;s alone; shown read-only for your role.</p>}
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Fallback chain per work class"
+          description="What the runner tries, in order, for each class of work — after the agent's override and the category policy, before the agent's own default. Only registered, available models may be named."
+        />
+        <FallbackChainsPanel chains={chains} available={availableModels} editable={isOwner} />
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Provider budgets"
+          description="The most each provider may cost this organisation in a calendar month, against what it has cost so far — from the steps the runtime wrote. Past the cap the runner refuses the call, records the refusal like a policy refusal, and raises a critical alert."
+        />
+        <ProviderBudgetsPanel budgets={budgets} editable={isOwner} />
       </Card>
 
       <Card>

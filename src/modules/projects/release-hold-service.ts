@@ -34,7 +34,7 @@ export async function holdRelease(input: HoldReleaseInput): Promise<Result<{ hel
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid request.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.sign_off')) {
+  if (!can(context, 'project.sign_off')) {
     return err('FORBIDDEN', 'You do not have permission to hold a release.');
   }
 
@@ -58,7 +58,7 @@ export async function liftReleaseHold(input: LiftReleaseHoldInput): Promise<Resu
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid request.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.sign_off')) {
+  if (!can(context, 'project.sign_off')) {
     return err('FORBIDDEN', 'You do not have permission to lift a release hold.');
   }
 

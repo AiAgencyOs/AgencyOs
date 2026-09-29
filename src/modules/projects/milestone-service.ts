@@ -34,7 +34,7 @@ export async function markMilestoneMet(
   if (!parsed.success) return err('VALIDATION', 'Invalid milestone.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'milestone.write')) {
+  if (!can(context, 'milestone.write')) {
     return err('FORBIDDEN', 'You do not have permission to mark a milestone met.');
   }
 

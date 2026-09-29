@@ -60,7 +60,7 @@ export async function setClientTags(input: z.input<typeof setClientTagsSchema>):
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid tags.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to tag clients.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to tag clients.');
 
   const supabase = await createClient();
   const { client, failed } = await loadClient(supabase, parsed.data.clientAccountId);
@@ -89,7 +89,7 @@ export async function setClientOwner(input: z.input<typeof setClientOwnerSchema>
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid owner.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to set a client’s owner.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to set a client’s owner.');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();

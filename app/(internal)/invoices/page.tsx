@@ -154,7 +154,7 @@ export default async function InvoicesPage({
 }) {
   const context = await requireInternal('/invoices');
   const clock = await agencyClock();
-  if (!can(context.role, 'invoice.read')) return <PermissionDenied />;
+  if (!can(context, 'invoice.read')) return <PermissionDenied />;
 
   const { page: pageParam, sort: sortKey, dir, status, q, client: clientId, project: projectId, issuedFrom: issuedFromParam } = await searchParams;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
@@ -171,13 +171,13 @@ export default async function InvoicesPage({
   ].filter(Boolean);
   const currentQuery = [...keep, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
   const qs = (extra: string) => `/invoices?${[...keep, extra].filter(Boolean).join('&')}`;
-  const canCreate = can(context.role, 'invoice.create');
+  const canCreate = can(context, 'invoice.create');
   // SCR-051: client and project filters are applied by the reader at the
   // database; the milestone picker needs every invoice (to know which
   // milestones are already billed) and every milestone, unfiltered.
   const [allInvoices, pendingClaims, savedViews, clients, projects, milestones, everyInvoice, sendSummaries] = await Promise.all([
     listInvoicesFiltered({ clientId, projectId }),
-    can(context.role, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
+    can(context, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
     listSavedViews('/invoices'),
     listBillingClients(),
     listProjects(500),

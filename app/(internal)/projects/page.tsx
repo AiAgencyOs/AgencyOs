@@ -141,7 +141,7 @@ export default async function ProjectsPage({
 }) {
   const context = await requireInternal('/projects');
   const clock = await agencyClock();
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const { page: pageParam, sort: sortKey, dir, status, client, owner } = await searchParams;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
@@ -151,7 +151,7 @@ export default async function ProjectsPage({
     listProjectsForTable(),
     listSavedViews('/projects'),
     listPhaseFourEscalations(),
-    can(context.role, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
+    can(context, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
     readProjectFilterFacets(),
   ]);
   // The one at-risk rule, shared with the Command Center's project health
@@ -206,7 +206,7 @@ export default async function ProjectsPage({
             <Stat key={s} label={humanize(s)} value={String(countByStatus.get(s) ?? 0)} tone={statusTone(s)} href={`/projects?status=${s}`} />
           ))}
           <Stat label="At risk" value={String(atRiskIds.size)} caption={`${escalations.length} escalated · ${late.length} past due`} tone={atRiskIds.size > 0 ? 'danger' : 'success'} icon={<IconAlert size={16} />} href="/projects?status=at_risk" />
-          {can(context.role, 'invoice.issue') ? (
+          {can(context, 'invoice.issue') ? (
             <Stat label="Payment to verify" value={String(paymentBlockedIds.size)} caption={`${pendingClaims.length} claim${pendingClaims.length === 1 ? '' : 's'} waiting`} tone={paymentBlockedIds.size > 0 ? 'warning' : 'neutral'} icon={<IconInvoices size={16} />} href="/projects?status=payment_blocked" />
           ) : null}
         </StatGrid>

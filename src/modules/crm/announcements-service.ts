@@ -25,7 +25,7 @@ export async function createAnnouncement(input: CreateAnnouncementInput): Promis
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid announcement.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) return err('FORBIDDEN', 'You do not have permission to write announcements.');
+  if (!can(context, 'organization.settings')) return err('FORBIDDEN', 'You do not have permission to write announcements.');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
@@ -63,7 +63,7 @@ export async function setAnnouncementStatus(input: SetAnnouncementStatusInput): 
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid status.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) return err('FORBIDDEN', 'You do not have permission to publish announcements.');
+  if (!can(context, 'organization.settings')) return err('FORBIDDEN', 'You do not have permission to publish announcements.');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();

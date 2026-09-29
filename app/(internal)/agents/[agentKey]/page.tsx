@@ -11,15 +11,17 @@ import { latestAgentValidation } from '@/modules/agents/validation-queries';
 import { listProjects } from '@/modules/projects/queries';
 import { listAgentFailures, listAgentPromptVersions } from '@/lib/admin/agent-metrics';
 import { getAgent, listAgentRuns } from '@/lib/admin/agent-status';
+import { providerOfModel } from '@/lib/ai/model-provider';
 import { hasConfiguredProvider } from '@/lib/ai/router';
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
+import { can, hasRole } from '@/lib/authz/permissions';
 import { Badge, Callout, Card, CardHeader, DetailList, DetailRow, EmptyState, IconAgents, PageHeader, StatusBadge, PermissionDenied } from '@/ui';
 
 import { AgentCapsForm, AgentStatusForm } from './controls-form';
 import { ProjectAssignments, ToolPermissionsList } from './policy-panel';
 import { ValidateAgentForm } from './validate-form';
+import { AgentWorkClassesForm } from './work-classes-form';
 
 export const metadata: Metadata = { title: 'Agent' };
 
@@ -50,7 +52,7 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ ag
 
   const context = await requireInternal(`/agents/${agentKey}`);
   const clock = await agencyClock();
-  if (!can(context.role, 'audit.read')) return <PermissionDenied />;
+  if (!can(context, 'audit.read')) return <PermissionDenied />;
 
   const [agent, runs, providerConfigured] = await Promise.all([
     getAgent(agentKey),
@@ -69,7 +71,7 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ ag
   // SCR-063 — this tenant's policy record for the agent (20260929170000).
   // Owner only to write: the doors refuse everyone else, so nobody else is
   // offered the controls.
-  const mayEditPolicy = context.role === 'owner' && can(context.role, 'organization.settings');
+  const mayEditPolicy = hasRole(context, 'owner') && can(context, 'organization.settings');
   const [toolPermissions, assignments, projects, refusals] = await Promise.all([
     listAgentToolPermissions(agentKey),
     listAgentProjectAssignments(agentKey),
@@ -101,6 +103,8 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ ag
           {!agent.enabled && agent.disabledReason ? <DetailRow label="Disabled reason" value={agent.disabledReason} /> : null}
           <DetailRow label="Autonomy" value={agent.autonomyLevel} />
           <DetailRow label="Default model" value={agent.defaultModel ?? '—'} />
+          <DetailRow label="Current provider" value={providerOfModel(agent.defaultModel) ?? '—'} />
+          <DetailRow label="Allowed work classes" value={agent.allowedWorkClasses.length === 0 ? 'every class its autonomy admits' : agent.allowedWorkClasses.map((w) => w.replace('_', ' ')).join(', ')} />
           <DetailRow label="Default effort" value={agent.defaultEffort ?? '—'} />
           <DetailRow label="Max steps" value={agent.maxSteps ?? '—'} />
           <DetailRow label="Max cost per run" value={agent.maxCostMinor !== null ? money(agent.maxCostMinor) : '—'} />
@@ -112,6 +116,8 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ ag
           <div className="flex flex-col gap-4 border-t border-line px-4 py-4 sm:px-5">
             <AgentStatusForm agentKey={agent.key} enabled={agent.enabled} />
             <AgentCapsForm agentKey={agent.key} maxSteps={agent.maxSteps} maxCostMinor={agent.maxCostMinor} />
+            {/* SCR-063: which classes of work the agent may be handed; the runner refuses the rest. */}
+            <AgentWorkClassesForm agentKey={agent.key} allowed={agent.allowedWorkClasses} />
           </div>
         ) : (
           <p className="border-t border-line px-4 py-3 text-xs text-muted sm:px-5">
@@ -124,7 +130,7 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ ag
         <CardHeader
           title="Configuration validation"
           description="The same checks the cron stamp and verify-agent-definitions run — definition, revision, model, ceilings, tools, handoff and verifier mirrors — recorded for this organisation. Nothing on the registry row is changed."
-          actions={can(context.role, 'audit.read') ? <ValidateAgentForm agentKey={agent.key} /> : undefined}
+          actions={can(context, 'audit.read') ? <ValidateAgentForm agentKey={agent.key} /> : undefined}
         />
         {validation ? (
           <div className="flex flex-col gap-2 px-4 pb-4 sm:px-5">

@@ -60,7 +60,7 @@ describe('C. it is read-only, matching Master\'s own rule for this stop', () => 
 
 describe('D. it is reachable — gated the same way the Projects list is, and in the nav', () => {
   test('the page gates on project.read, the same capability /projects itself uses', () => {
-    assert.match(PAGE, /can\(context\.role, 'project\.read'\)/);
+    assert.match(PAGE, /can\(context, 'project\.read'\)/);
   });
 
   test('it is a real page under the internal route group, not orphaned', () => {

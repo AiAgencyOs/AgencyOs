@@ -44,7 +44,7 @@ const RELATIONSHIP_LABELS: Readonly<Record<string, string>> = {
 export default async function ImportBatchPage({ params }: { params: Promise<{ batchId: string }> }) {
   const { batchId } = await params;
   const context = await requireInternal(`/import/${batchId}`);
-  if (!can(context.role, 'organization.settings')) return <PermissionDenied />;
+  if (!can(context, 'organization.settings')) return <PermissionDenied />;
 
   const batch = await getImportBatch(batchId);
   if (!batch) notFound();

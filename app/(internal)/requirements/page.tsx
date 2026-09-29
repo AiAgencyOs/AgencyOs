@@ -42,7 +42,7 @@ export const metadata: Metadata = { title: 'Requirements' };
  */
 export default async function RequirementsPage() {
   const context = await requireInternal('/requirements');
-  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
+  if (!can(context, 'lead.read')) return <PermissionDenied />;
   const clock = await agencyClock();
 
   const [proposed, overview, dashboard] = await Promise.all([listProposedRequirements(), readRequirementsOverview(), readRequirementsDashboard()]);

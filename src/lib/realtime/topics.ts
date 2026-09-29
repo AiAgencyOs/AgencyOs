@@ -34,6 +34,8 @@ export const TOPICS = {
   qa: ['qa.defects', 'qa.test_runs', 'qa.test_plans'],
   audit: ['audit.audit_log'],
   team: ['core.memberships'],
+  // SCR-067/068: the incident banner hears an alert raised or acknowledged and a switch thrown.
+  alerts: ['core.alerts', 'core.kill_switches'],
 } as const;
 
 export type Topic = keyof typeof TOPICS;

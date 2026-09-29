@@ -8,7 +8,10 @@ import { requireInternal } from '@/lib/auth/session';
 import { Badge, Callout, IconAlert, IconClock, PageHeader, Stat, StaleDataWarning, type Tone, PermissionDenied } from '@/ui';
 import type { IconProps } from '@/ui';
 import { can } from '@/lib/authz/permissions';
+import { readEscalationsByKey } from '@/lib/admin/escalations';
+import { listAcknowledgedAlerts, listOpenAlerts } from '@/lib/observability/alerts';
 import { describeBacklog, severityOf } from '@/lib/observability/backlog';
+import { KILL_SWITCH_LABEL, listKillSwitches } from '@/lib/observability/kill-switches';
 import { viewFailedDelivery } from '@/lib/observability/delivery';
 import { readRetryHistory } from '@/lib/observability/retry-queries';
 import { RetryDeliveryForm } from './retry-delivery-form';
@@ -32,6 +35,7 @@ import {
   readWedgedFollowUps,
 } from '@/lib/observability/queries';
 
+import { AlertsPanel } from './alerts-panel';
 import { DeadLettersList } from './dead-letters-list';
 
 export const metadata: Metadata = { title: 'Operations' };
@@ -76,7 +80,7 @@ export default async function OperationsPage({
 }) {
   const context = await requireInternal('/operations');
   const clock = await agencyClock();
-  if (!can(context.role, 'audit.read')) return <PermissionDenied />;
+  if (!can(context, 'audit.read')) return <PermissionDenied />;
 
   // D17, reversed by the owner on 2026-09-29: the outbox rows may be listed
   // read-only. The filter and page live in the URL (GET form), like every
@@ -88,7 +92,13 @@ export default async function OperationsPage({
   // though both resolve to owner and ops_admin today. Drawing the button from
   // the capability rather than from "they got this far" keeps that true when
   // one of the two lists changes.
-  const canRequeue = can(context.role, 'job.requeue');
+  const canRequeue = can(context, 'job.requeue');
+
+  const [openAlerts, acknowledgedAlerts, switches, escalationsByKey] = await Promise.all([listOpenAlerts(100), listAcknowledgedAlerts(10), listKillSwitches(), readEscalationsByKey()]);
+  const engaged = switches.filter((s) => s.active);
+  const alertView = (a: (typeof openAlerts)[number]) => ({ ...a, firstSeenLabel: clock.dateTime(a.firstSeenAt), lastSeenLabel: clock.dateTime(a.lastSeenAt), acknowledgedLabel: a.acknowledgedAt ? clock.dateTime(a.acknowledgedAt) : null });
+  const criticalOpen = openAlerts.filter((a) => a.severity === 'critical').length;
+  const warningOpen = openAlerts.filter((a) => a.severity === 'warning').length;
 
   const [backlog, dead, cronAge, wedged, failedRows, deferred, ai, groupSetups, queued, awaitingNotes, workflows, outbox] = await Promise.all([
     readBacklog(),
@@ -111,7 +121,7 @@ export default async function OperationsPage({
   const failed = failedRows.map(viewFailedDelivery);
   // SCR-060 — how each failed message's retries went, newest attempt first.
   const retryHistory = await readRetryHistory(failed.map((f) => f.id).filter((id): id is string => id !== null));
-  const mayRetry = can(context.role, 'lead.write');
+  const mayRetry = can(context, 'lead.write');
 
   // SCR-060 — failures by code. Meta's errors open with a code or a short
   // phrase before the first colon/parenthesis; grouping on that prefix turns
@@ -143,13 +153,22 @@ export default async function OperationsPage({
               ? 'Work has been lost and nothing will retry it.'
               : 'Work is late but still moving.'
         }
-        actions={<LiveRefresh topics={['jobs', 'conversations', 'followUps']} />}
+        actions={<LiveRefresh topics={['jobs', 'conversations', 'followUps', 'alerts']} />}
         meta={
           <Badge tone={tone} dot>
             {severity === 'clear' ? 'Clear' : severity === 'failing' ? 'Failing' : 'Degraded'}
           </Badge>
         }
       />
+
+      {engaged.length > 0 ? (
+        <Callout tone="danger" icon={<IconAlert size={16} />} title="Emergency control engaged">
+          {engaged.map((s) => `${KILL_SWITCH_LABEL[s.switch]} — “${s.reason}”`).join(' · ')}{' '}
+          <Link href="/governance/overrides#emergency" className="underline-offset-2 hover:underline">
+            Release on Governance › Overrides &amp; controls
+          </Link>
+        </Callout>
+      ) : null}
 
       <StaleDataWarning
         label="Scheduler"
@@ -209,6 +228,23 @@ export default async function OperationsPage({
           ))}
         </div>
       ) : null}
+
+      {/* SCR-067: alerts a person acknowledges — raised by the runner, closed with a reason. */}
+      <div id="alerts" className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-[13px] font-semibold tracking-tight">Alerts</h2>
+          <span className="text-xs text-muted">
+            In-app, acknowledged here by a person; the webhook destination (ALERT_WEBHOOK_URL) is reported on{' '}
+            <Link href="/settings" className="underline-offset-2 hover:underline">Settings</Link>.
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <Stat label="Critical open" value={criticalOpen} tone={criticalOpen > 0 ? 'danger' : 'neutral'} caption="On the banner until acknowledged" icon={<IconAlert size={16} />} />
+          <Stat label="Warnings open" value={warningOpen} tone={warningOpen > 0 ? 'warning' : 'neutral'} caption="Awaiting a person" icon={<IconAlert size={16} />} />
+          <Stat label="Emergency controls" value={`${engaged.length}/${switches.length}`} tone={engaged.length > 0 ? 'danger' : 'success'} caption={engaged.length > 0 ? 'engaged' : 'all released'} href="/governance/overrides#emergency" icon={<IconAlert size={16} />} />
+        </div>
+        <AlertsPanel open={openAlerts.map(alertView)} acknowledged={acknowledgedAlerts.map(alertView)} canAcknowledge={canRequeue} />
+      </div>
 
       {/*
         Provider and agent health, compact — the answer to "can the AI actually
@@ -318,14 +354,19 @@ export default async function OperationsPage({
         ) : (
           <DeadLettersList
             canRequeue={canRequeue}
-            jobs={dead.map((job) => ({
-              id: job.id,
-              kind: job.kind,
-              attempts: job.attempts,
-              maxAttempts: job.max_attempts,
-              updatedAtDisplay: clock.dateTime(job.updated_at),
-              lastError: job.last_error,
-            }))}
+            canAnswerEscalation={can(context, 'audit.read')}
+            jobs={dead.map((job) => {
+              const e = escalationsByKey.get(`job-${job.id}`);
+              return {
+                id: job.id,
+                kind: job.kind,
+                attempts: job.attempts,
+                maxAttempts: job.max_attempts,
+                updatedAtDisplay: clock.dateTime(job.updated_at),
+                lastError: job.last_error,
+                escalation: e ? { id: e.id, toRole: e.toRole, reason: e.reason, state: e.state, fromUserName: e.fromUserName, acknowledgedByName: e.acknowledgedByName, createdAtLabel: clock.dateTime(e.createdAt) } : null,
+              };
+            })}
           />
         )}
       </div>

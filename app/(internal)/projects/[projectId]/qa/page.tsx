@@ -26,7 +26,7 @@ export default async function TestPlanPage({ params }: { params: Promise<{ proje
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/qa`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
@@ -47,10 +47,10 @@ export default async function TestPlanPage({ params }: { params: Promise<{ proje
   ]);
   // SCR-047 — the fix / retest trail, one read for every defect on the project.
   const history = await readDefectHistory(defects.map((d) => d.id));
-  const canWrite = can(context.role, 'project.write');
-  const canRecordRuns = can(context.role, 'task.write');
+  const canWrite = can(context, 'project.write');
+  const canRecordRuns = can(context, 'task.write');
   // SCR-045 — approving the plan is the QA sign-off's own role (owner, ops admin).
-  const canApprove = can(context.role, 'project.sign_off');
+  const canApprove = can(context, 'project.sign_off');
   const builds = deliverables.filter((d) => d.kind === 'build').map((d) => ({ id: d.id, title: d.title, version: d.version }));
 
   return (

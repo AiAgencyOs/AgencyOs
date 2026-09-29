@@ -219,7 +219,7 @@ export async function sendTemplateMessage(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to message clients.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');

@@ -44,7 +44,7 @@ export async function addTaskComment(input: AddTaskCommentInput): Promise<Result
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid comment.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) return refused('comment on a task');
+  if (!can(context, 'task.write')) return refused('comment on a task');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
@@ -72,7 +72,7 @@ export async function addChecklistItem(input: AddChecklistItemInput): Promise<Re
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid checklist item.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) return refused('edit a task’s checklist');
+  if (!can(context, 'task.write')) return refused('edit a task’s checklist');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
@@ -117,7 +117,7 @@ export async function setChecklistItemDone(input: SetChecklistItemDoneInput): Pr
   if (!parsed.success) return err('VALIDATION', 'Invalid checklist item.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) return refused('tick a checklist item');
+  if (!can(context, 'task.write')) return refused('tick a checklist item');
 
   const supabase = await createClient();
   const { error, count } = await supabase
@@ -144,7 +144,7 @@ export async function removeChecklistItem(input: RemoveChecklistItemInput): Prom
   if (!parsed.success) return err('VALIDATION', 'Invalid checklist item.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) return refused('edit a task’s checklist');
+  if (!can(context, 'task.write')) return refused('edit a task’s checklist');
 
   const supabase = await createClient();
   const { error } = await supabase.schema('projects').from('task_checklist_items').delete().eq('id', parsed.data.itemId);
@@ -160,7 +160,7 @@ export async function addTaskAttachment(input: AddTaskAttachmentInput): Promise<
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid attachment.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) return refused('attach a link to a task');
+  if (!can(context, 'task.write')) return refused('attach a link to a task');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
@@ -189,7 +189,7 @@ export async function removeTaskAttachment(input: RemoveTaskAttachmentInput): Pr
   if (!parsed.success) return err('VALIDATION', 'Invalid attachment.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) return refused('remove a task attachment');
+  if (!can(context, 'task.write')) return refused('remove a task attachment');
 
   const supabase = await createClient();
   const { error } = await supabase.schema('projects').from('task_attachments').delete().eq('id', parsed.data.attachmentId);

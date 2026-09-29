@@ -26,7 +26,7 @@ export async function setInvoiceReminderPolicy(
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid reminder policy.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change organization settings.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');

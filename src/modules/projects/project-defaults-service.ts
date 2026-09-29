@@ -30,7 +30,7 @@ export async function setProjectDefaultAssignee(input: SetDefaultAssigneeInput):
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid request.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to set a default assignee.');
   }
 
@@ -71,7 +71,7 @@ export async function watchProject(input: WatchProjectInput): Promise<Result<{ u
   const context = await requireInternal();
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
   const userId = parsed.data.userId ?? context.userId;
-  if (userId !== context.userId && !can(context.role, 'project.sign_off')) {
+  if (userId !== context.userId && !can(context, 'project.sign_off')) {
     return err('FORBIDDEN', 'Only the owner or an ops admin may add somebody else as a watcher.');
   }
 
@@ -114,7 +114,7 @@ export async function unwatchProject(input: UnwatchProjectInput): Promise<Result
 
   const context = await requireInternal();
   const userId = parsed.data.userId ?? context.userId;
-  if (userId !== context.userId && !can(context.role, 'project.sign_off')) {
+  if (userId !== context.userId && !can(context, 'project.sign_off')) {
     return err('FORBIDDEN', 'Only the owner or an ops admin may remove somebody else as a watcher.');
   }
 

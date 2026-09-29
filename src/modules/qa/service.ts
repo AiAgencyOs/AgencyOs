@@ -46,7 +46,7 @@ export async function raiseDefect(input: RaiseDefectInput): Promise<Result<{ def
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to raise defects.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -99,7 +99,7 @@ export async function settleDefect(input: SettleDefectInput): Promise<Result<{ s
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to change defects.');
   }
 
@@ -180,7 +180,7 @@ export async function markProductionReady(projectId: string): Promise<Result<{ r
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.sign_off')) {
+  if (!can(context, 'project.sign_off')) {
     return err('FORBIDDEN', 'You do not have permission to sign a project off.');
   }
 
@@ -251,7 +251,7 @@ export async function draftTestPlan(input: DraftTestPlanInput): Promise<Result<{
   if (!parsed.success) return err('VALIDATION', 'Invalid scope baseline.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to draft a test plan.');
   }
 
@@ -289,7 +289,7 @@ export async function addTestPlanItem(input: AddTestPlanItemInput): Promise<Resu
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to edit a test plan.');
   }
 
@@ -338,7 +338,7 @@ export async function removeTestPlanItem(input: RemoveTestPlanItemInput): Promis
   if (!parsed.success) return err('VALIDATION', 'Invalid test plan item.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to edit a test plan.');
   }
 
@@ -380,7 +380,7 @@ export async function recordTestRun(input: RecordTestRunInput): Promise<Result<{
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) {
+  if (!can(context, 'task.write')) {
     return err('FORBIDDEN', 'You do not have permission to record test evidence.');
   }
 
@@ -434,7 +434,7 @@ export async function triageDefect(input: TriageDefectInput): Promise<Result<{ d
   if (!parsed.success) return err('VALIDATION', 'Invalid triage.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to triage defects.');
   }
 

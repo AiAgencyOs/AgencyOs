@@ -25,9 +25,9 @@ export default async function SettingsTeamPage() {
   // `organization.settings` is the owner's alone (they set); `audit.read` is
   // owner and ops_admin, the pair member_cost_rates_select admits (they see);
   // everybody else does not get the column, and the read is not even made.
-  const costRateAccess: CostRateAccess = can(context.role, 'organization.settings')
+  const costRateAccess: CostRateAccess = can(context, 'organization.settings')
     ? 'set'
-    : can(context.role, 'audit.read')
+    : can(context, 'audit.read')
       ? 'view'
       : 'none';
   const [costRates, clock] = await Promise.all([

@@ -29,14 +29,14 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
 
   const context = await getAuthContext();
   if (!context) return NextResponse.json({ error: 'Sign in to export time logs.' }, { status: 401 });
-  if (!can(context.role, 'project.read')) {
+  if (!can(context, 'project.read')) {
     return NextResponse.json({ error: 'You do not have permission to read this project.' }, { status: 403 });
   }
 
   const project = await getProject(projectId);
   if (!project) return NextResponse.json({ error: 'Project not found.' }, { status: 404 });
 
-  const mayReadMoney = can(context.role, 'invoice.read');
+  const mayReadMoney = can(context, 'invoice.read');
   const time = await readProjectTime(projectId);
   const taskTitle = new Map(time.tasks.map((t) => [t.taskId, t.taskTitle]));
   const costCols = <T,>(cols: T[]): T[] => (mayReadMoney ? cols : []);

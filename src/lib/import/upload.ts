@@ -72,7 +72,7 @@ export type UploadResult = { batchId: string; total: number; autoImportable: num
 
 export async function stageUploadedExport(text: string, sourceLabel: string): Promise<Result<UploadResult>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to import leads.');
   }
   const org = context.organizationId;

@@ -42,7 +42,7 @@ export async function requeueJob(jobId: string): Promise<Result<Requeued>> {
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'job.requeue')) {
+  if (!can(context, 'job.requeue')) {
     return err('FORBIDDEN', 'You do not have permission to requeue jobs.');
   }
 

@@ -67,7 +67,7 @@ export default async function ProjectPlanPage({
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/plan`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
@@ -83,8 +83,8 @@ export default async function ProjectPlanPage({
   ]);
   // SCR-023: the two doors on a payment milestone, gated the way their
   // services are. `nextToBill` is the same rule the project page applies.
-  const mayMarkMet = can(context.role, 'milestone.write');
-  const mayInvoice = can(context.role, 'invoice.create');
+  const mayMarkMet = can(context, 'milestone.write');
+  const mayInvoice = can(context, 'invoice.create');
   const nextToBill = eligible[0] ?? null;
 
   /**
@@ -128,8 +128,8 @@ export default async function ProjectPlanPage({
   const upcoming = milestones.filter((m) => !m.met_at && m.due_on).slice(0, 5);
   // Planning is project work, so it takes the same capability that changes a
   // project. The doors check it again — this only decides what to render.
-  const mayPlan = can(context.role, 'project.write');
-  const mayDate = can(context.role, 'milestone.write');
+  const mayPlan = can(context, 'project.write');
+  const mayDate = can(context, 'milestone.write');
   const tasksFor = (id: string) => taskCounts.find((t) => t.milestoneId === id) ?? { milestoneId: id, total: 0, done: 0 };
   const { plan } = board;
   const openQuestions = board.clarifications.filter(
@@ -138,7 +138,7 @@ export default async function ProjectPlanPage({
   // The breakdown door goes through createModule / createFeature / createTask,
   // which take milestone.write and task.write; offered only to a role that
   // holds both, and the doors decide again.
-  const mayBreakDown = can(context.role, 'milestone.write') && can(context.role, 'task.write');
+  const mayBreakDown = can(context, 'milestone.write') && can(context, 'task.write');
   // SCR-040 — coverage of approved scope: how many of the plan's scope
   // version's INCLUDED items at least one deliverable cites. The validator
   // flags the reverse (a deliverable citing nothing); this is the other

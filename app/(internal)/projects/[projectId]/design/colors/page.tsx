@@ -33,7 +33,7 @@ export default async function ProjectColorsPage({
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/design/colors`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();

@@ -47,7 +47,7 @@ export async function previewCampaignAudience(
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'That audience filter could not be read.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) return err('FORBIDDEN', 'You do not have permission to plan campaigns.');
+  if (!can(context, 'lead.write')) return err('FORBIDDEN', 'You do not have permission to plan campaigns.');
 
   const candidates = await readAudience();
   if (!candidates.ok) return candidates;
@@ -62,7 +62,7 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Result
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'That campaign could not be validated.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) return err('FORBIDDEN', 'You do not have permission to plan campaigns.');
+  if (!can(context, 'lead.write')) return err('FORBIDDEN', 'You do not have permission to plan campaigns.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('crm').rpc('create_campaign', {
@@ -102,7 +102,7 @@ export async function approveCampaign(input: { campaignId: string }): Promise<Re
   if (!parsed.success) return err('VALIDATION', 'That campaign could not be identified.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) return err('FORBIDDEN', 'You do not have permission to approve campaigns.');
+  if (!can(context, 'lead.write')) return err('FORBIDDEN', 'You do not have permission to approve campaigns.');
 
   const supabase = await createClient();
   const { data: campaign, error: readError } = await supabase
@@ -165,7 +165,7 @@ export async function cancelCampaign(input: CancelCampaignInput): Promise<Result
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'That cancellation could not be validated.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) return err('FORBIDDEN', 'You do not have permission to withdraw campaigns.');
+  if (!can(context, 'lead.write')) return err('FORBIDDEN', 'You do not have permission to withdraw campaigns.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('crm').rpc('cancel_campaign', {

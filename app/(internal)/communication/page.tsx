@@ -61,10 +61,10 @@ function waitingFor(since: string, now: number): string {
  */
 export default async function CommunicationCenterPage() {
   const context = await requireInternal('/communication');
-  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
+  if (!can(context, 'lead.read')) return <PermissionDenied />;
   const clock = await agencyClock();
 
-  const mayAssign = can(context.role, 'lead.assign');
+  const mayAssign = can(context, 'lead.assign');
   const [conversations, failedDeliveries, deferred, templates, roster, announcements] = await Promise.all([
     listActiveConversations(),
     listFailedDeliveries(20),
@@ -82,7 +82,7 @@ export default async function CommunicationCenterPage() {
   // the same door, so the window and consent decide again — and each row
   // says how its retries went.
   const retryHistory = await readRetryHistory(failedDeliveries.map((f) => f.id).filter((id): id is string => Boolean(id)));
-  const mayRetry = can(context.role, 'lead.write');
+  const mayRetry = can(context, 'lead.write');
   // SCR-057: the escalation queue — longest wait first.
   const waiting = [...paused].sort((a, b) => new Date(a.agentPausedAt!).getTime() - new Date(b.agentPausedAt!).getTime());
   const approvedTemplates = templates.filter((t) => t.active && t.status === 'approved').length;
@@ -98,7 +98,7 @@ export default async function CommunicationCenterPage() {
         actions={
           <>
             <LiveRefresh topics={['conversations', 'jobs']} />
-            {can(context.role, 'organization.settings') ? (
+            {can(context, 'organization.settings') ? (
               <Link href="/settings/communication" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[13px] font-medium shadow-xs hover:bg-surface-hover">
                 <IconSettings size={14} />
                 Channels
@@ -222,7 +222,7 @@ export default async function CommunicationCenterPage() {
             <CardHeader
               title="Templates"
               description={`${approvedTemplates} approved of ${templates.length} registered — what can be said outside the 24-hour window.`}
-              actions={can(context.role, 'organization.settings') ? <ViewAll href="/settings/communication" label="Manage" /> : null}
+              actions={can(context, 'organization.settings') ? <ViewAll href="/settings/communication" label="Manage" /> : null}
             />
             {templates.length > 0 ? (
               <ul className="divide-y divide-line">
@@ -251,7 +251,7 @@ export default async function CommunicationCenterPage() {
             <CardHeader
               title="Announcements"
               description={announcements.length === 0 ? 'Nothing published.' : 'Published — a record, not a send.'}
-              actions={can(context.role, 'organization.settings') ? <ViewAll href="/settings/communication" label="Manage" /> : null}
+              actions={can(context, 'organization.settings') ? <ViewAll href="/settings/communication" label="Manage" /> : null}
             />
             {announcements.length > 0 ? (
               <ul className="divide-y divide-line">
@@ -274,7 +274,7 @@ export default async function CommunicationCenterPage() {
               { label: 'Leads', icon: <IconUser size={13} />, href: '/leads' },
               { label: 'Follow-ups', icon: <IconClock size={13} />, href: '/follow-ups' },
               { label: 'Operations', icon: <IconAlert size={13} />, href: '/operations' },
-              ...(can(context.role, 'organization.settings') ? [{ label: 'Templates & channels', icon: <IconSettings size={13} />, href: '/settings/communication' }] : []),
+              ...(can(context, 'organization.settings') ? [{ label: 'Templates & channels', icon: <IconSettings size={13} />, href: '/settings/communication' }] : []),
             ]}
           />
         </div>

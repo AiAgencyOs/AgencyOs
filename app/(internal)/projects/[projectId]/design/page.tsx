@@ -67,7 +67,7 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/design`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
@@ -76,7 +76,7 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
   const [trail, roster] = await Promise.all([readDesignTrail(projectId), listInternalRoster()]);
   const [clock, clientName] = await Promise.all([agencyClock(), project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null)]);
   const { phase } = trail;
-  const mayDecide = can(context.role, 'project.write');
+  const mayDecide = can(context, 'project.write');
 
   if (!phase) {
     return (

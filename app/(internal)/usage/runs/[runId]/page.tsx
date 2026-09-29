@@ -7,6 +7,8 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { getAgentRunWithSteps } from '@/lib/admin/agent-runs';
 import { listJobsByCorrelation, listRunsByCorrelation } from '@/lib/admin/run-chain';
 import { formatDurationMs, runDurationMs, stepToolName } from '@/lib/admin/agent-runs-eval';
+import { providerOfModel } from '@/lib/ai/model-provider';
+import { mayReplay } from '@/lib/ai/replay-rules';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import {
@@ -26,7 +28,21 @@ import {
   type DetailField,
 } from '@/ui';
 
+import { CancelRunningJobForm } from '../../../operations/cancel-running-form';
+import { ReplayRunForm } from './replay-form';
+
 export const metadata: Metadata = { title: 'Agent run' };
+
+/** A recorded JSON value, rendered as it was stored — bounded so a page never chokes on a payload. */
+function recorded(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  try {
+    const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+    return text.length > 4_000 ? `${text.slice(0, 4_000)}…` : text;
+  } catch {
+    return '(unrecordable)';
+  }
+}
 
 const N = new Intl.NumberFormat('en-IN');
 
@@ -43,7 +59,7 @@ export default async function AgentRunPage({ params }: { params: Promise<{ runId
 
   const context = await requireInternal(`/usage/runs/${runId}`);
   const clock = await agencyClock();
-  if (!can(context.role, 'audit.read')) return <PermissionDenied />;
+  if (!can(context, 'audit.read')) return <PermissionDenied />;
 
   const found = await getAgentRunWithSteps(runId);
   if (!found) notFound();
@@ -57,7 +73,11 @@ export default async function AgentRunPage({ params }: { params: Promise<{ runId
   const attempts = chainJobs.reduce((n, j) => n + j.attempts, 0);
 
   const cost = (minor: number) => `₹${formatCostMinor(minor) ?? '0.00'}`;
-  const duration = formatDurationMs(runDurationMs(run.startedAt, run.finishedAt));
+  const duration = formatDurationMs(run.latencyMs ?? runDurationMs(run.startedAt, run.finishedAt));
+  // SCR-065: replay only for read-only work; cancel only while the job runs.
+  const mayAct = can(context, 'job.requeue');
+  const jobId = run.trigger.startsWith('job:') ? run.trigger.slice(4) : null;
+  const runningJob = chainJobs.find((j) => j.id === jobId && j.status === 'running') ?? null;
   const stepsCost = steps.reduce((n, s) => n + s.costMinor, 0);
 
   const rows: DetailField[] = [
@@ -78,6 +98,8 @@ export default async function AgentRunPage({ params }: { params: Promise<{ runId
     },
     { label: 'Work class', value: run.workClass ? humanize(run.workClass) : '—' },
     { label: 'Model', value: run.model ? <code className="text-xs">{run.model}</code> : '—' },
+    { label: 'Provider', value: providerOfModel(run.model) ?? '—' },
+    { label: 'Project', value: run.projectId ? <Link href={`/projects/${run.projectId}`} className="text-brand hover:underline">{run.projectId.slice(0, 8)}</Link> : '—' },
     {
       label: 'Prompt',
       value: run.promptKey ? `${run.promptKey}${run.promptVersion ? ` @ ${run.promptVersion}` : ''}` : '—',
@@ -100,8 +122,19 @@ export default async function AgentRunPage({ params }: { params: Promise<{ runId
         title={`${run.agentKey} · ${humanize(run.trigger)}`}
         description={run.error ?? undefined}
         meta={<StatusBadge status={run.status} />}
-        actions={<ViewAll href="/usage/runs" label="All runs" />}
+        actions={
+          <span className="flex flex-wrap items-center gap-2">
+            {mayAct && mayReplay(run.workClass) ? <ReplayRunForm runId={run.id} /> : null}
+            {mayAct && runningJob ? <CancelRunningJobForm jobId={runningJob.id} compact /> : null}
+            <ViewAll href="/usage/runs" label="All runs" />
+          </span>
+        }
       />
+      {mayAct && !mayReplay(run.workClass) ? (
+        <p className="text-xs text-muted">
+          Replay is offered only for read-only work (work class <code>read</code>); this run is {run.workClass ? humanize(run.workClass) : 'of no recorded class'}, and running it again would act twice.
+        </p>
+      ) : null}
 
       <StatGrid>
         <Stat label="Steps" value={String(run.stepCount)} caption={steps.length === run.stepCount ? 'As recorded' : `${steps.length} step rows stored`} />
@@ -189,6 +222,14 @@ export default async function AgentRunPage({ params }: { params: Promise<{ runId
                         <Badge tone={s.error ? 'danger' : 'success'} dot>{s.error ? 'Failed' : 'OK'}</Badge>
                       </span>
                       {s.error ? <span className="break-words text-xs text-danger">{s.error}</span> : null}
+                      {/* SCR-065: a tool call's arguments and result, as recorded. */}
+                      {s.kind === 'tool_call' ? (
+                        <details className="text-xs">
+                          <summary className="cursor-pointer text-muted">Arguments &amp; result</summary>
+                          <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-sunken p-2 font-mono text-[11px]">{recorded((s.request as { input?: unknown } | null)?.input) || '(no arguments recorded)'}</pre>
+                          <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-sunken p-2 font-mono text-[11px]">{recorded((s.response as { result?: unknown } | null)?.result) || (s.error ? `(failed: ${s.error})` : '(no result recorded)')}</pre>
+                        </details>
+                      ) : null}
                     </div>
                     <div className="tabular flex shrink-0 flex-wrap items-center gap-3 text-xs text-muted">
                       <span>{N.format(s.tokensIn)} in / {N.format(s.tokensOut)} out</span>

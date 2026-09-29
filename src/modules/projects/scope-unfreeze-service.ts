@@ -5,11 +5,12 @@ import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
 import { unfreezeScopeVersionSchema, type UnfreezeScopeVersionInput } from './scope-unfreeze-schema';
+import { hasRole } from '@/lib/authz/permissions';
 
 /**
  * SCR-030 — moves an active baseline back to draft through
  * `projects.unfreeze_scope_version`, the only path the frozen-scope trigger
- * admits for it. Owner only, here (`context.role === 'owner'`, the same gate
+ * admits for it. Owner only, here (`hasRole(context, 'owner')`, the same gate
  * `decideChangeRequest` uses) and again inside the function
  * (`core.is_owner()`); a reason is required; a later version refuses it.
  * The function writes audit.audit_log with the reason.
@@ -19,7 +20,7 @@ export async function unfreezeScopeVersion(input: UnfreezeScopeVersionInput): Pr
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid request.');
 
   const context = await requireInternal();
-  if (context.role !== 'owner') {
+  if (!hasRole(context, 'owner')) {
     return err('FORBIDDEN', 'Only the owner may unfreeze a scope baseline.');
   }
 

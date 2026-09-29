@@ -68,11 +68,18 @@ export type RoutingInputs = {
     readonly adminOverrideModel: string | null;
     readonly preferredModels: readonly string[];
   } | null;
+  /**
+   * `ai.fallback_chains` for the run's WORK CLASS (decision 2026-09-30, ADM-84
+   * reversed): the owner's ordered fallbacks, consulted after the override
+   * and the policy and before the default. Absent when the caller has no
+   * work class in hand or the owner set none.
+   */
+  readonly fallbackChain?: readonly string[];
   /** `ai.agents.default_model` — always present, always last. */
   readonly agentDefault: string;
 };
 
-export type ModelSource = 'agent_override' | 'policy_override' | 'policy_preference' | 'agent_default';
+export type ModelSource = 'agent_override' | 'policy_override' | 'policy_preference' | 'fallback_chain' | 'agent_default';
 
 export type ModelCandidate = { readonly model: string; readonly source: ModelSource };
 
@@ -81,8 +88,10 @@ export type ModelCandidate = { readonly model: string; readonly source: ModelSou
  *
  * The caller takes the first one a registered provider serves. Duplicates
  * are dropped keeping the earliest position, so a model named both by the
- * override and by the policy is still credited to the override. The agent's
- * default is always the last entry, so the list is never empty.
+ * override and by the policy is still credited to the override. The work
+ * class's fallback chain comes after both and before the agent's default
+ * (decision 2026-09-30). The default is always the last entry, so the list
+ * is never empty.
  */
 export function orderModelCandidates(input: RoutingInputs): readonly ModelCandidate[] {
   const out: ModelCandidate[] = [];
@@ -97,6 +106,7 @@ export function orderModelCandidates(input: RoutingInputs): readonly ModelCandid
   for (const m of input.override?.preferredModels ?? []) push(m, 'agent_override');
   push(input.policy?.adminOverrideModel, 'policy_override');
   for (const m of input.policy?.preferredModels ?? []) push(m, 'policy_preference');
+  for (const m of input.fallbackChain ?? []) push(m, 'fallback_chain');
   push(input.agentDefault, 'agent_default');
 
   return out;

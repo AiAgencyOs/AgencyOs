@@ -7,6 +7,7 @@ import { err, ok, type Result } from '@/lib/result';
 import { checkGstin } from './gstin';
 import { isGstStateCode } from './gst-states';
 import { gstIdentitySchema, type GstIdentityInput } from './gst-identity-schema';
+import { hasRole } from '@/lib/authz/permissions';
 
 /**
  * Settings › Finance › GST identity — bucket E5. Owner only: a registration
@@ -24,7 +25,7 @@ export async function setGstIdentity(input: GstIdentityInput): Promise<Result<{ 
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid GST identity.');
 
   const context = await requireInternal();
-  if (context.role !== 'owner') {
+  if (!hasRole(context, 'owner')) {
     return err('FORBIDDEN', 'Only the owner can state the agency’s GST identity.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');

@@ -154,7 +154,7 @@ describe('F. what the surface narrows, said rather than smuggled', () => {
     // not a capability string.
     assert.match(SERVICE, /\*\*Doc 15 §11 names a client and Sales as well\*\*/);
     assert.match(SERVICE, /That\s*\n \* is a narrowing of the document, stated rather than smuggled/);
-    assert.match(recordSvc, /if \(!can\(context\.role, 'invoice\.issue'\)\)/);
+    assert.match(recordSvc, /if \(!can\(context, 'invoice\.issue'\)\)/);
   });
 
   test('and the panel is offered only to the role that may use it', () => {

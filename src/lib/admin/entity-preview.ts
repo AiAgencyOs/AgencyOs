@@ -34,7 +34,7 @@ const CAPABILITY: Record<PreviewGroup, Parameters<typeof can>[1]> = {
 export async function readEntityPreview(group: PreviewGroup, id: string): Promise<Result<EntityPreview>> {
   if (!/^[0-9a-f-]{36}$/.test(id)) return err('VALIDATION', 'Not a record id.');
   const context = await requireInternal();
-  if (!can(context.role, CAPABILITY[group])) return err('FORBIDDEN', 'You do not have permission to open this record.');
+  if (!can(context, CAPABILITY[group])) return err('FORBIDDEN', 'You do not have permission to open this record.');
   const supabase = await createClient();
   const clock = await agencyClock();
   const notFound = () => err<EntityPreview>('NOT_FOUND', 'That record could not be read — it may have been removed.');

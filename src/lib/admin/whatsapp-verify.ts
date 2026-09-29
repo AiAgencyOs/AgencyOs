@@ -28,7 +28,7 @@ const TIMEOUT_MS = 8_000;
 
 export async function verifyWhatsAppConfig(): Promise<Result<WhatsAppVerifyResult>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to verify configuration.');
   }
 

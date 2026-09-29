@@ -33,7 +33,7 @@ export default async function AuditPage({
 }) {
   const context = await requireInternal('/audit');
   const clock = await agencyClock();
-  if (!can(context.role, 'audit.read')) return <PermissionDenied />;
+  if (!can(context, 'audit.read')) return <PermissionDenied />;
 
   const { action, subject, actor, from, to, correlation } = await searchParams;
   const isoDay = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);

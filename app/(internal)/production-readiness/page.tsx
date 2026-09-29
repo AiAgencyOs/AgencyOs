@@ -39,7 +39,7 @@ const BANNER = {
 
 export default async function ProductionReadinessPage() {
   const context = await requireInternal('/production-readiness');
-  if (!can(context.role, 'organization.settings')) return <PermissionDenied />;
+  if (!can(context, 'organization.settings')) return <PermissionDenied />;
 
   const { checks, summary } = await getProductionReadiness();
   const sentence = readinessSentence(summary);

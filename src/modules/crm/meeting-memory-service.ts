@@ -27,7 +27,7 @@ export async function attachMeetingSummaryToMemory(input: AttachMeetingSummaryIn
   if (!parsed.success) return err('VALIDATION', 'That is not a valid meeting or project.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'Only the owner or an ops admin can attach a meeting to project memory.');
   }
 

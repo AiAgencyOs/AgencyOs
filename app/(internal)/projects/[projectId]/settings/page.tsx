@@ -28,13 +28,13 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/settings`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const canWrite = can(context.role, 'project.write');
-  const canAudit = can(context.role, 'audit.read');
+  const canWrite = can(context, 'project.write');
+  const canAudit = can(context, 'audit.read');
 
   // SCR-027: the activity-count KPI (the same three timestamped events the
   // Activity tab lists) and the audit rows whose subject IS this project.
@@ -52,7 +52,7 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
   const members = roster.map((m) => ({ userId: m.userId, fullName: m.fullName }));
   // SCR-027: adding or removing another person's watch is owner / ops_admin
   // (project.sign_off's two roles), which `project_watchers_write` mirrors.
-  const mayManageWatchers = can(context.role, 'project.sign_off');
+  const mayManageWatchers = can(context, 'project.sign_off');
   const tasksCompleted = tasks.filter((t) => t.completedAt !== null).length;
   const milestonesMet = milestones.filter((m) => m.met_at !== null).length;
   const changeRequestEvents = changeRequests.reduce((sum, cr) => sum + 1 + (cr.decidedAt ? 1 : 0), 0);

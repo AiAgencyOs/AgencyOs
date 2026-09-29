@@ -37,7 +37,7 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
 
   const searches: PromiseLike<SearchResult[]>[] = [];
 
-  if (can(context.role, 'lead.read')) {
+  if (can(context, 'lead.read')) {
     searches.push(
       supabase
         .schema('crm')
@@ -49,7 +49,7 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
     );
   }
 
-  if (can(context.role, 'project.read')) {
+  if (can(context, 'project.read')) {
     searches.push(
       supabase
         .schema('core')
@@ -72,7 +72,7 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
     );
   }
 
-  if (can(context.role, 'project.read')) {
+  if (can(context, 'project.read')) {
     searches.push(
       supabase
         .schema('projects')
@@ -104,7 +104,7 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
     );
   }
 
-  if (can(context.role, 'lead.read')) {
+  if (can(context, 'lead.read')) {
     searches.push(
       supabase
         .schema('sales')
@@ -118,7 +118,7 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
 
   // SCR-002 (bucket F): meetings, matched by the lead they belong to —
   // the same reading the meetings list makes of a meeting's name.
-  if (can(context.role, 'lead.read')) {
+  if (can(context, 'lead.read')) {
     searches.push(
       supabase
         .schema('crm')
@@ -137,7 +137,7 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
     );
   }
 
-  if (can(context.role, 'audit.read')) {
+  if (can(context, 'audit.read')) {
     searches.push(
       supabase
         .schema('ai')
@@ -149,7 +149,7 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
     );
   }
 
-  if (can(context.role, 'invoice.read')) {
+  if (can(context, 'invoice.read')) {
     searches.push(
       supabase
         .schema('finance')

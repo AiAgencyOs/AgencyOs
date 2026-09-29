@@ -17,7 +17,7 @@ import { resolveTaxPeriod } from '@/modules/finance/tax-report';
  */
 export async function exportGstr(kind: 'gstr1' | 'gstr3b', request: Request): Promise<Response> {
   const context = await requireInternal('/finance/tax');
-  if (!can(context.role, 'invoice.read')) {
+  if (!can(context, 'invoice.read')) {
     return NextResponse.json({ error: 'You do not have permission to read invoices.' }, { status: 403 });
   }
   if (!context.organizationId) {

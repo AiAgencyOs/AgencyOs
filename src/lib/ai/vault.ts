@@ -5,6 +5,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 import { createAdminClient } from '@/lib/db/admin';
 import type { createClient } from '@/lib/db/server';
 import { serverEnv } from '@/lib/env';
+import { hasRole, type RoleSubject } from '@/lib/authz/permissions';
 import { err, ok, type Result } from '@/lib/result';
 
 /**
@@ -97,10 +98,11 @@ export async function setProviderCredential(
 export async function deleteProviderCredential(
   supabase: RequestClient,
   provider: VaultProvider,
-  role: string,
+  subject: RoleSubject,
 ): Promise<Result<{ provider: VaultProvider }>> {
   if (!VAULT_PROVIDERS.includes(provider)) return err('VALIDATION', `Unknown provider "${provider}".`);
-  if (role !== 'owner') return err('FORBIDDEN', 'Only the owner may revoke a provider key.');
+  // Decision 2026-09-30 (F2): the union — a secondary owner is an owner here.
+  if (!hasRole(subject, 'owner')) return err('FORBIDDEN', 'Only the owner may revoke a provider key.');
 
   const { data, error } = await supabase.schema('ai').rpc('revoke_provider_credential', { p_provider: provider });
   if (error) {

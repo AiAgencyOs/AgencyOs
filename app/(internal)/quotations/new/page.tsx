@@ -27,10 +27,10 @@ export const metadata: Metadata = { title: 'Create quotation' };
  */
 export default async function NewQuotationPage({ searchParams }: { searchParams: Promise<{ opportunity?: string }> }) {
   const context = await requireInternal('/quotations/new');
-  if (!can(context.role, 'proposal.draft')) return <PermissionDenied />;
+  if (!can(context, 'proposal.draft')) return <PermissionDenied />;
   const { opportunity } = await searchParams;
 
-  const mayAssign = can(context.role, 'lead.assign');
+  const mayAssign = can(context, 'lead.assign');
   const [opportunities, leads, settings, charges, structures, roster] = await Promise.all([
     listPipelineOpportunities(200),
     listLeadsForTable(500),

@@ -2,7 +2,9 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { formatCostMinor } from '@/lib/admin/agent-eval';
+import { formatDurationMs } from '@/lib/admin/agent-runs-eval';
 import { getAgentUsage } from '@/lib/admin/usage';
+import { LATENCY_SAMPLE, readLatencyKpis } from '@/lib/admin/usage-latency';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import {
@@ -37,9 +39,10 @@ type Row = Awaited<ReturnType<typeof getAgentUsage>>['perAgent'][number];
 
 export default async function UsagePage() {
   const context = await requireInternal('/usage');
-  if (!can(context.role, 'audit.read')) return <PermissionDenied />;
+  if (!can(context, 'audit.read')) return <PermissionDenied />;
 
-  const { perAgent, totals, capped, dailyTrend } = await getAgentUsage();
+  const [{ perAgent, totals, capped, dailyTrend }, latency] = await Promise.all([getAgentUsage(), readLatencyKpis()]);
+  const ms = (v: number | null) => formatDurationMs(v) ?? '—';
   const cost = (minor: number) => `₹${formatCostMinor(minor) ?? '0.00'}`;
   const trendData = dailyTrend.map((d) => ({ day: d.day.slice(5), costRupees: d.costMinor / 100 }));
 
@@ -81,10 +84,15 @@ export default async function UsagePage() {
         title="Usage & costs"
         description="What the AI agents actually consumed — recorded per run and per step, never estimated. Cost is what the runtime wrote down; there is no rate card here."
         actions={
-          <Link href="/usage/runs" className={buttonClass('secondary', 'sm')}>
-            <IconUsage size={14} />
-            Agent runs
-          </Link>
+          <>
+            <a href="/api/usage/ledger" className={buttonClass('secondary', 'sm')}>
+              Export cost ledger (rows)
+            </a>
+            <Link href="/usage/runs" className={buttonClass('secondary', 'sm')}>
+              <IconUsage size={14} />
+              Agent runs
+            </Link>
+          </>
         }
       />
 
@@ -93,6 +101,14 @@ export default async function UsagePage() {
         <Stat label="Input tokens" value={N.format(totals.inputTokens)} icon={<IconUsage size={16} />} />
         <Stat label="Output tokens" value={N.format(totals.outputTokens)} icon={<IconUsage size={16} />} />
         <Stat label="Cost" value={cost(totals.costMinor)} tone="brand" icon={<IconInvoices size={16} />} />
+      </StatGrid>
+
+      {/* SCR-065: latency, from ai.agent_runs.latency_ms — stamped when a run settles, never derived on the page. */}
+      <StatGrid>
+        <Stat label="Average run latency" value={ms(latency.averageMs)} caption={latency.timedRuns > 0 ? `Over the last ${latency.timedRuns} settled runs` : `No settled run has a latency yet`} tone="info" icon={<IconUsage size={16} />} />
+        <Stat label="Median run latency" value={ms(latency.medianMs)} caption="Half the runs finish faster" icon={<IconUsage size={16} />} />
+        <Stat label="p95 run latency" value={ms(latency.p95Ms)} caption={latency.slowestMs !== null ? `Slowest ${ms(latency.slowestMs)}` : `Sample of up to ${LATENCY_SAMPLE}`} tone={latency.p95Ms !== null && latency.p95Ms > 120_000 ? 'warning' : 'neutral'} icon={<IconUsage size={16} />} />
+        <Stat label="Average model call" value={ms(latency.averageModelCallMs)} caption="Per model_call step of those runs" icon={<IconUsage size={16} />} />
       </StatGrid>
 
       {perAgent.length === 0 ? (

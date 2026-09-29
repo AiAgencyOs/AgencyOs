@@ -42,12 +42,12 @@ export default async function ProjectFilesPage({
   const { category, view } = await searchParams;
 
   const context = await requireInternal(`/projects/${projectId}/files`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const editable = can(context.role, 'project.write');
+  const editable = can(context, 'project.write');
   const [allFiles, trashed, storage, clock, clientName] = await Promise.all([
     listProjectFileTree(projectId),
     listTrashedFiles(projectId),
@@ -77,7 +77,7 @@ export default async function ProjectFilesPage({
         project={project}
         clock={clock}
         clientName={clientName}
-        canEdit={can(context.role, 'project.write')}
+        canEdit={can(context, 'project.write')}
         actions={
           editable ? (
             <a href="#add-file" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[13px] font-medium shadow-xs hover:bg-surface-hover md:h-8">

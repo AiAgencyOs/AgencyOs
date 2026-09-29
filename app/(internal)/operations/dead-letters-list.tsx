@@ -5,6 +5,7 @@ import { useActionState, useRef } from 'react';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { buttonClass } from '@/ui';
 
+import { EscalateControl, type EscalationView } from '../notifications/escalate-form';
 import { requeueJobsAction } from './actions';
 import { RequeueForm } from './requeue-form';
 
@@ -15,6 +16,8 @@ export type DeadLetterJob = {
   maxAttempts: number;
   updatedAtDisplay: string;
   lastError: string | null;
+  /** SCR-066: the escalation on this job, if a person raised one (F-A's core.escalations, key `job-<id>`). */
+  escalation?: EscalationView | null;
 };
 
 const BULK_FORM_ID = 'bulk-requeue-form';
@@ -28,7 +31,7 @@ const BULK_FORM_ID = 'bulk-requeue-form';
  * `<form>`s, and the two need to stay independent: selecting a row for the
  * batch should not disable its own one-click requeue.
  */
-export function DeadLettersList({ jobs, canRequeue }: { jobs: DeadLetterJob[]; canRequeue: boolean }) {
+export function DeadLettersList({ jobs, canRequeue, canAnswerEscalation = false }: { jobs: DeadLetterJob[]; canRequeue: boolean; canAnswerEscalation?: boolean }) {
   const [state, action, pending] = useActionState(requeueJobsAction, IDLE_STATE);
   const listRef = useRef<HTMLUListElement>(null);
 
@@ -88,7 +91,11 @@ export function DeadLettersList({ jobs, canRequeue }: { jobs: DeadLetterJob[]; c
             <p className="mt-1 break-words text-muted">
               {job.lastError ?? 'No error was recorded, which is itself worth investigating.'}
             </p>
-            {canRequeue ? <RequeueForm jobId={job.id} /> : null}
+            <div className="mt-1 flex flex-wrap items-center gap-3">
+              {canRequeue ? <RequeueForm jobId={job.id} /> : null}
+              {/* SCR-066: escalate an operational failure — F-A's shared control and door. */}
+              <EscalateControl subjectType="job" subjectKey={`job-${job.id}`} title={`Dead job ${job.kind}: ${(job.lastError ?? 'no error recorded').slice(0, 120)}`} escalation={job.escalation ?? null} canAnswer={canAnswerEscalation} compact />
+            </div>
           </li>
         ))}
       </ul>

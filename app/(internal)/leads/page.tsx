@@ -184,7 +184,7 @@ export default async function LeadsPage({
   }>;
 }) {
   const context = await requireInternal('/leads');
-  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
+  if (!can(context, 'lead.read')) return <PermissionDenied />;
 
   const { status, page: pageParam, sort: sortKey, dir, q, source, owner, budgetMin, budgetMax, createdFrom: createdFromParam, createdTo: createdToParam, service: serviceParam } = await searchParams;
   // SCR-006 — `?service=`: the lead's recorded service, matched whole and
@@ -227,7 +227,7 @@ export default async function LeadsPage({
   // ADM-88 (reversed 2026-09-29): the stored score per lead, with its reasons.
   const scores = await readLeadScores(allLeads.map((l) => l.id));
   const services = await readLeadServices(allLeads.map((l) => l.id));
-  const canWriteLeads = can(context.role, 'lead.write');
+  const canWriteLeads = can(context, 'lead.write');
   const roster = canWriteLeads ? await listInternalRoster() : [];
   const boundedByBudget = budgetMinMinor !== undefined || budgetMaxMinor !== undefined;
 
@@ -274,14 +274,14 @@ export default async function LeadsPage({
           <>
             {/* E4: the list is a live screen (test matrix §5 scenario 1 watches it from a second session). */}
             <LiveRefresh topics={['leads']} />
-            {can(context.role, 'organization.settings') ? (
+            {can(context, 'organization.settings') ? (
               <Link href="/import" className={buttonClass('secondary', 'sm')}>
                 <IconImport size={14} />
                 Import leads
               </Link>
             ) : null}
-            {can(context.role, 'lead.write') ? <RescoreAllLeadsButton /> : null}
-            {can(context.role, 'lead.write') ? <CreateLeadButton /> : null}
+            {can(context, 'lead.write') ? <RescoreAllLeadsButton /> : null}
+            {can(context, 'lead.write') ? <CreateLeadButton /> : null}
           </>
         }
       />

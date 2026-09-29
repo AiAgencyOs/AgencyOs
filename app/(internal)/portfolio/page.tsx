@@ -31,7 +31,7 @@ export const metadata: Metadata = { title: 'Portfolio' };
  */
 export default async function PortfolioPage() {
   const context = await requireInternal();
-  if (!can(context.role, 'portfolio.write')) return <PermissionDenied />;
+  if (!can(context, 'portfolio.write')) return <PermissionDenied />;
 
   const items = await listPortfolioItems();
   const active = items.filter((item) => item.is_active).length;

@@ -40,7 +40,7 @@ export async function createProjectManuallyAction(
 
 export async function listClientAccountOptionsAction(): Promise<Result<ClientAccountOption[]>> {
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to create projects.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to create projects.');
   try {
     return ok(await listClientAccountOptions());
   } catch (e) {
@@ -50,7 +50,7 @@ export async function listClientAccountOptionsAction(): Promise<Result<ClientAcc
 
 export async function listProjectOptionsAction(): Promise<Result<ProjectOption[]>> {
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.create')) return err('FORBIDDEN', 'You do not have permission to raise invoices.');
+  if (!can(context, 'invoice.create')) return err('FORBIDDEN', 'You do not have permission to raise invoices.');
   try {
     return ok(await listProjectOptions());
   } catch (e) {
@@ -60,7 +60,7 @@ export async function listProjectOptionsAction(): Promise<Result<ProjectOption[]
 
 export async function listMilestoneOptionsAction(projectId: string): Promise<Result<MilestoneOption[]>> {
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.create')) return err('FORBIDDEN', 'You do not have permission to raise invoices.');
+  if (!can(context, 'invoice.create')) return err('FORBIDDEN', 'You do not have permission to raise invoices.');
   if (!/^[0-9a-f-]{36}$/i.test(projectId)) return err('VALIDATION', 'Pick a project first.');
   try {
     return ok(await listMilestoneOptions(projectId));

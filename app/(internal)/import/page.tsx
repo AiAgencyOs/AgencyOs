@@ -27,7 +27,7 @@ export const metadata: Metadata = { title: 'Import' };
 export default async function ImportPage() {
   const context = await requireInternal('/import');
   const clock = await agencyClock();
-  if (!can(context.role, 'organization.settings')) return <PermissionDenied />;
+  if (!can(context, 'organization.settings')) return <PermissionDenied />;
 
   const batches = await listImportBatches();
 

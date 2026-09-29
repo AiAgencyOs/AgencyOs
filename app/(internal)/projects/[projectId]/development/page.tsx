@@ -23,7 +23,7 @@ export default async function DevelopmentPage({ params }: { params: Promise<{ pr
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/development`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
@@ -33,7 +33,7 @@ export default async function DevelopmentPage({ params }: { params: Promise<{ pr
     readPlanBoard(projectId),
     listDependencies(projectId),
   ]);
-  const canWrite = can(context.role, 'milestone.write') || can(context.role, 'task.write');
+  const canWrite = can(context, 'milestone.write') || can(context, 'task.write');
 
   const unassignedTasks = tasks.filter((t) => t.moduleId === null);
   // SCR-039 — what development is waiting on, from the registers that hold

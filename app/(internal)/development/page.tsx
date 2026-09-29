@@ -129,7 +129,7 @@ const COLUMNS: Column<Row>[] = [
  */
 export default async function DevelopmentPortfolioPage() {
   const context = await requireInternal('/development');
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const [portfolio, coverage, blockers, openTechnical] = await Promise.all([readDevelopmentPortfolio(), readPlanCoverageByProject(), readBlockersAcrossProjects(), listOpenTechnicalDependencies()]);
   // SCR-043: the technical register's open rows, grouped per project beside

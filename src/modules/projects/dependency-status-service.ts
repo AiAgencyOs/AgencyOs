@@ -18,7 +18,7 @@ export async function setDependencyStatus(input: SetDependencyStatusInput): Prom
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid request.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to change a dependency.');
   }
 

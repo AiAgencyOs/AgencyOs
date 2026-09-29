@@ -113,7 +113,7 @@ export default async function ExpensesPage({
 }) {
   const context = await requireInternal('/finance/expenses');
   const clock = await agencyClock();
-  if (!can(context.role, 'invoice.read')) return <PermissionDenied />;
+  if (!can(context, 'invoice.read')) return <PermissionDenied />;
 
   const { page: pageParam, sort: sortKey, dir } = await searchParams;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
@@ -132,7 +132,7 @@ export default async function ExpensesPage({
   // person can say which.
   const aiByProject = new Map(aiCosts.map((c) => [c.projectId, c]));
   const expenses = sortRows(rawExpenses, sortKey, direction, COMPARATORS);
-  const canRecord = can(context.role, 'invoice.issue');
+  const canRecord = can(context, 'invoice.issue');
   const { page, pageCount, rows: pageRows } = paginate(expenses, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
 
   const projectNameById = new Map(projects.map((p) => [p.id, p.name]));

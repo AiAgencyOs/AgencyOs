@@ -75,7 +75,7 @@ export async function setRoutingPolicy(input: {
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'Only an owner may change model routing.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');

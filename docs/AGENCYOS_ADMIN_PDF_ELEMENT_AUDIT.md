@@ -228,23 +228,23 @@ screen exists; at element level it does not hold.
 
 | SCR | Element | Status | What is missing |
 |---|---|---|---|
-| 062 | Disabled reason / Capability summary in the registry | PARTIAL ×2 | Badge only; description only |
-| 063 | Current provider | PARTIAL | Model shown, provider not |
-| 063 | Allowed work classes | MISSING | `work_class` exists, not rendered |
-| 064 | Model availability-registry / Fallback policy-chain / Tool permissions matrix / Model budget | PARTIAL ×6 | Registry empty by design (ADM-84) with no UI to add; preferred-models text only; per agent only |
-| 065 | Latency KPI / Project-provider filters / Tool calls / Replay / Cancel running / Export cost ledger | PARTIAL ×6 | Per run only; agent-status-model filters; name only; none; queued only; aggregate CSV |
-| 066 | Cancel workflow | PARTIAL | Single queued job only |
-| 066 | Escalate operational failure | MISSING | No control |
-| 067 | Last live checks / Alert destination / Incident banner | PARTIAL ×3 | No timestamps; env var only; page-local |
-| 067 | Acknowledge alert | MISSING | Bucket B item never built |
-| 068 | Override center / Emergency controls | MISSING ×2 | Not built |
-| 068 | Record exception/override with reason | PARTIAL | Domain-specific only |
-| 069 | Role assignment / Grant-revoke role | PARTIAL ×2 | Secondary roles only, not honoured by `can()` |
-| 069 | Incident/security exception history | MISSING | Bucket B item never built |
-| 069 | Review access / Investigate security event | PARTIAL ×2 | Roster only; audit trail only |
+| 062 | Disabled reason / Capability summary in the registry | BUILT | `app/(internal)/agents/page.tsx` (Disabled reason and Capabilities columns: bound tools · allowed work) |
+| 063 | Current provider | BUILT | `app/(internal)/agents/[agentKey]/page.tsx`, `src/lib/ai/model-provider.ts` |
+| 063 | Allowed work classes | BUILT | `app/(internal)/agents/[agentKey]/work-classes-form.tsx` (`ai.set_agent_work_classes`, honoured by `app/api/jobs/run/route.ts`) |
+| 064 | Model availability-registry / Fallback policy-chain / Tool permissions matrix / Model budget | BUILT | `app/(internal)/agents/routing/model-registry-panel.tsx` (add/retire, chain per work class, provider budget; ADM-84 reversed 2026-09-30) |
+| 065 | Latency KPI / Project-provider filters / Tool calls / Replay / Cancel running / Export cost ledger | BUILT | `app/(internal)/usage/page.tsx` (latency tiles, `/api/usage/ledger`), `app/(internal)/usage/runs/page.tsx` (project, provider), `app/(internal)/usage/runs/[runId]/page.tsx` (arguments/results, replay, stop) |
+| 066 | Cancel workflow | BUILT | `app/(internal)/operations/cancel-running-form.tsx` (`core.cancel_running_job`, honoured by the runner between steps) |
+| 066 | Escalate operational failure | BUILT | `app/(internal)/operations/dead-letters-list.tsx` (F-A's `EscalateControl`, subject `job`) |
+| 067 | Last live checks / Alert destination / Incident banner | BUILT | `app/(internal)/incident-banner.tsx` (cross-app), `app/(internal)/operations/alerts-panel.tsx` (first/last seen, in-app destination beside the webhook) |
+| 067 | Acknowledge alert | BUILT | `app/(internal)/operations/alerts-panel.tsx` (`core.acknowledge_alert`, audited) |
+| 068 | Override center / Emergency controls | BUILT | `app/(internal)/governance/overrides/page.tsx` (`core.overrides`, `core.kill_switches`) |
+| 068 | Record exception/override with reason | BUILT | `app/(internal)/governance/overrides/manual-override-form.tsx` (`core.record_manual_override`; domain overrides mirrored by trigger) |
+| 069 | Role assignment / Grant-revoke role | BUILT | `src/lib/authz/permissions.ts`, `src/lib/auth/session.ts` (`can(context, …)` reads the union; `core.holds_role` in the database) |
+| 069 | Incident/security exception history | BUILT | `app/(internal)/security/incidents/page.tsx` (`security.incidents`) |
+| 069 | Review access / Investigate security event | BUILT | `app/(internal)/security/users/access-review-panel.tsx` (`security.access_reviews`), `app/(internal)/security/page.tsx` (Investigate → incident with the entry as evidence) |
 | 070 | Update non-secret identifiers | PARTIAL | Edited on Settings › Communication |
-| 071 | Security/integrations shortcuts / Preview impact before saving high-risk settings | MISSING ×2 | No links; no preview |
-| 071 | Provider vault references / Current value-effective date-history | PARTIAL ×2 | Vault only on Agents; no per-setting history |
+| 071 | Security/integrations shortcuts / Preview impact before saving high-risk settings | BUILT | `app/(internal)/settings/page.tsx` (shortcuts card), `app/(internal)/settings/high-risk-forms.tsx` (preview step from `src/lib/admin/settings-impact.ts`) |
+| 071 | Provider vault references / Current value-effective date-history | BUILT | `app/(internal)/settings/page.tsx` (vault link), `app/(internal)/settings/setting-history.tsx` (per-setting history from `src/lib/admin/settings-history.ts`) |
 
 ## Shared rules (sections 1–4)
 

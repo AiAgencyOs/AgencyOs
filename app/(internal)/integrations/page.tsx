@@ -35,7 +35,7 @@ const STYLE: Record<Lifecycle, { dot: string; text: string }> = {
 
 export default async function IntegrationsPage() {
   const context = await requireInternal('/integrations');
-  if (!can(context.role, 'organization.settings')) return <PermissionDenied />;
+  if (!can(context, 'organization.settings')) return <PermissionDenied />;
 
   const [{ integrations, summary }, settings] = await Promise.all([getIntegrations(), readOperationalSettings()]);
   // SCR-067 / SCR-070: one verify control per integration that has an

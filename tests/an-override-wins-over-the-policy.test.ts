@@ -105,7 +105,9 @@ describe('B. the runner consults the override before it resolves a provider', ()
   const routing = read('../src/lib/ai/agent-routing.ts');
 
   test('both model-call sites route first, then resolve, and the request carries the routed model', () => {
-    const routed = agentRun.match(/routedModelFor\(ctx\.admin, ctx\.job\.organization_id, ctx\.agent\.key\)/g) ?? [];
+    // Bucket F (F-F): the call carries the work class too, so the owner's
+    // fallback chain for that class is consulted after the override and policy.
+    const routed = agentRun.match(/routedModelFor\(ctx\.admin, ctx\.job\.organization_id, ctx\.agent\.key(?:, ctx\.workClass)?\)/g) ?? [];
     assert.equal(routed.length, 2, 'callModel and callModelWithTools both route');
     const requests = agentRun.match(/model: routed \?\? ctx\.agent\.default_model/g) ?? [];
     assert.equal(requests.length, 2, 'both requests carry the routed model, or the default');
@@ -209,7 +211,7 @@ describe('D. the migration holds its shape', () => {
 
   test('the app-side cancel door names the capability and quotes the status back', () => {
     const door = read('../src/lib/observability/cancel.ts');
-    assert.match(door, /can\(context\.role, 'job\.requeue'\)/);
+    assert.match(door, /can\(context, 'job\.requeue'\)/);
     assert.match(door, /rpc\('cancel_job'/);
     assert.match(door, /case 'not_cancellable'/);
     assert.match(door, /case 'not_found'/);
@@ -219,7 +221,8 @@ describe('D. the migration holds its shape', () => {
     const vault = read('../src/lib/ai/vault.ts');
     const fn = vault.slice(vault.indexOf('export async function deleteProviderCredential'), vault.indexOf('export type ProviderCredentialStatus'));
     assert.match(fn, /rpc\('revoke_provider_credential'/);
-    assert.match(fn, /role !== 'owner'/);
+    // Decision 2026-09-30 (F2): the owner check reads the union — a secondary owner is an owner here.
+    assert.match(fn, /!hasRole\(subject, 'owner'\)/);
     assert.doesNotMatch(fn, /ciphertext|decrypt|rawKey/);
   });
 });

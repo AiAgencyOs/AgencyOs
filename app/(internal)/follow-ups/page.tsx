@@ -145,7 +145,7 @@ export default async function FollowUpsPage({
 }) {
   const context = await requireInternal('/follow-ups');
   const clock = await agencyClock();
-  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
+  if (!can(context, 'lead.read')) return <PermissionDenied />;
 
   const { status, page: pageParam, sort: sortKey, dir, channel: channelParam, owner: ownerParam } = await searchParams;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';

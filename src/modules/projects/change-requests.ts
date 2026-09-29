@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
+import { can, hasRole } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
@@ -32,7 +32,7 @@ function oneRow<T>(data: unknown): T | undefined {
 
 async function deliveryActor(): Promise<Result<true>> {
   const context = await requireInternal();
-  if (!can(context.role, 'milestone.write')) {
+  if (!can(context, 'milestone.write')) {
     return err('FORBIDDEN', 'You do not have permission to manage this project’s change requests.');
   }
   return ok(true);
@@ -40,7 +40,7 @@ async function deliveryActor(): Promise<Result<true>> {
 
 async function ownerActor(): Promise<Result<true>> {
   const context = await requireInternal();
-  if (context.role !== 'owner') {
+  if (!hasRole(context, 'owner')) {
     return err('FORBIDDEN', 'Only the owner may approve or reject a change request.');
   }
   return ok(true);

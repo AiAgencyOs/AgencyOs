@@ -60,7 +60,7 @@ export default async function ProjectTeamPage({ params }: { params: Promise<{ pr
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/team`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
@@ -73,10 +73,10 @@ export default async function ProjectTeamPage({ params }: { params: Promise<{ pr
     listTeamDefaults(),
     listTeamActivity(projectId),
   ]);
-  const mayEditDefaults = can(context.role, 'organization.settings');
+  const mayEditDefaults = can(context, 'organization.settings');
   const nameByUser = new Map(roster.map((m) => [m.userId, m.fullName]));
 
-  const canEdit = can(context.role, 'project.write');
+  const canEdit = can(context, 'project.write');
   const lead = project.delivery_lead_id ? (roster.find((m) => m.userId === project.delivery_lead_id) ?? null) : null;
   const byRole = new Map<string, number>();
   for (const m of team) byRole.set(m.role, (byRole.get(m.role) ?? 0) + 1);
@@ -130,7 +130,7 @@ export default async function ProjectTeamPage({ params }: { params: Promise<{ pr
 
   return (
     <div className="flex flex-col gap-5">
-      <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={can(context.role, 'project.write')} />
+      <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={can(context, 'project.write')} />
 
       <ProjectSubNav projectId={projectId} />
 

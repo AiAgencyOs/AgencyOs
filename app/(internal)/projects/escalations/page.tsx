@@ -43,7 +43,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
 export default async function EscalationsPage() {
   const context = await requireInternal('/projects/escalations');
   const clock = await agencyClock();
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const escalations = await listPhaseFourEscalations();
 

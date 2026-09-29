@@ -134,7 +134,7 @@ export default async function ClientsPage({
 }) {
   const context = await requireInternal('/clients');
   const clock = await agencyClock();
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const { page: pageParam, sort: sortKey, dir, status, q: qRaw, tag: tagRaw, owner: ownerRaw } = await searchParams;
   const q = (qRaw ?? '').trim();
@@ -183,13 +183,13 @@ export default async function ClientsPage({
               <IconDownload size={14} />
               Export CSV
             </a>
-            {can(context.role, 'organization.settings') ? (
+            {can(context, 'organization.settings') ? (
               <Link href="/import" className={buttonClass('secondary', 'sm')}>
                 <IconImport size={14} />
                 Import
               </Link>
             ) : null}
-            {can(context.role, 'project.write') ? <CreateLeadButton mode="client" label="Add client" /> : null}
+            {can(context, 'project.write') ? <CreateLeadButton mode="client" label="Add client" /> : null}
           </>
         }
       />

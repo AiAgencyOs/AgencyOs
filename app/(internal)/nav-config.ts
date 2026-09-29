@@ -1,5 +1,4 @@
-import { can, type Capability } from '@/lib/authz/permissions';
-import type { Role } from '@/lib/auth/claims';
+import { can, type Capability, type RoleSubject } from '@/lib/authz/permissions';
 
 /**
  * The Admin Panel's information architecture, as one table.
@@ -151,6 +150,8 @@ export const NAV_MODULES: readonly NavModule[] = [
       { href: '/approvals', label: 'Approvals', screens: ['SCR-068'] },
       { href: '/security', label: 'Security', capability: 'audit.read', screens: ['SCR-069'] },
       { href: '/security/users', label: 'Users & roles', capability: 'audit.read', screens: ['SCR-069'] },
+      { href: '/security/incidents', label: 'Incidents', capability: 'audit.read', screens: ['SCR-069'] },
+      { href: '/governance/overrides', label: 'Overrides & controls', capability: 'audit.read', screens: ['SCR-068'] },
       { href: '/audit', label: 'Audit log', capability: 'audit.read', screens: ['SCR-069'] },
     ],
   },
@@ -178,12 +179,12 @@ export type VisibleModule = { key: string; title: string | null; items: VisibleI
  * every module that ends up empty dropped. The capability check is the same
  * `can()` every page re-runs for itself — this only decides what to draw.
  */
-export function visibleModulesFor(role: Role | undefined): VisibleModule[] {
+export function visibleModulesFor(subject: RoleSubject): VisibleModule[] {
   return NAV_MODULES.map((m) => ({
     key: m.key,
     title: m.title,
     items: m.items
-      .filter((i) => i.capability === undefined || can(role, i.capability))
+      .filter((i) => i.capability === undefined || can(subject, i.capability))
       .map(({ href, label }) => ({ href, label })),
   })).filter((m) => m.items.length > 0);
 }

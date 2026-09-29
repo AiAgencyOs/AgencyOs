@@ -29,13 +29,13 @@ export default async function PrototypePage({ params }: { params: Promise<{ proj
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/prototype`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
 
   const clock = await agencyClock();
-  const canWrite = can(context.role, 'project.write');
+  const canWrite = can(context, 'project.write');
   const builds = (await listDeliverables(projectId)).filter((d) => d.kind === 'prototype');
   const [runs, approvals] = await Promise.all([
     listTestRuns(projectId),

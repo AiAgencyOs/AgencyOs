@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
+import { can, hasRole } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
@@ -13,14 +13,14 @@ import {
 } from './permissions-schema';
 
 /**
- * Owner only. `context.role === 'owner'` plus `organization.settings`: the
+ * Owner only. `hasRole(context, 'owner')` plus `organization.settings`: the
  * owner is the one role holding every capability, and ADM-82 puts agent
  * activation with the owner; a tool grant is the same kind of decision.
  * The database asks again through RLS (`core.is_owner()`, security invoker).
  */
 async function requireOwner(verb: string): Promise<Result<true>> {
   const context = await requireInternal();
-  if (context.role !== 'owner' || !can(context.role, 'organization.settings')) {
+  if (!hasRole(context, 'owner') || !can(context, 'organization.settings')) {
     return err('FORBIDDEN', `Only the owner may ${verb}.`);
   }
   return ok(true);

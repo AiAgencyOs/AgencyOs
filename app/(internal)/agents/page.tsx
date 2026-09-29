@@ -7,10 +7,12 @@ import { aiStatus, listHandoffs, listRecentAgentRuns } from '@/lib/admin/agent-s
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
 import { getAgentUsage } from '@/lib/admin/usage';
+import { providerOfModel } from '@/lib/ai/model-provider';
 import { providerCredentialStatus } from '@/lib/ai/vault';
+import { boundToolKeysFor } from '@/modules/agents/permissions-schema';
 import { listLatestAgentValidations } from '@/modules/agents/validation-queries';
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
+import { can, hasRole } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import {
   ActivityFeed,
@@ -74,7 +76,7 @@ function compact(n: number): string {
 export default async function AgentsPage() {
   const context = await requireInternal('/agents');
   const clock = await agencyClock();
-  if (!can(context.role, 'audit.read')) return <PermissionDenied />;
+  if (!can(context, 'audit.read')) return <PermissionDenied />;
 
   const [{ providerConfigured, providers, agents }, settings, usage, recentRuns, metrics, handoffs] = await Promise.all([
     aiStatus(),
@@ -91,7 +93,7 @@ export default async function AgentsPage() {
   const idle = enabledCount - runnable;
   const disabled = agents.length - enabledCount;
 
-  const isAdmin = can(context.role, 'organization.settings');
+  const isAdmin = can(context, 'organization.settings');
   const vaultStatus = isAdmin ? await providerCredentialStatus(await createClient()) : null;
   // SCR-062: the last time a person validated each agent (ai.agent_validations).
   const personValidations = await listLatestAgentValidations();
@@ -129,6 +131,8 @@ export default async function AgentsPage() {
     },
     { key: 'role', header: 'Role', desktopOnly: true, cellClassName: 'max-w-[18rem] truncate text-muted', cell: (a) => a.description ?? '—' },
     { key: 'model', header: 'Model', desktopOnly: true, cellClassName: 'font-mono text-xs text-muted', cell: (a) => a.defaultModel ?? '—' },
+    // SCR-063: the provider that serves the agent's model, by the adapters' own naming rule.
+    { key: 'provider', header: 'Provider', desktopOnly: true, cellClassName: 'text-muted', cell: (a) => providerOfModel(a.defaultModel) ?? '—' },
     {
       key: 'status',
       header: 'Status',
@@ -139,6 +143,19 @@ export default async function AgentsPage() {
       },
     },
     { key: 'autonomy', header: 'Autonomy', desktopOnly: true, cellClassName: 'text-muted', cell: (a) => a.autonomyLevel },
+    // SCR-062: the disabled reason as recorded, and what the agent can do — its bound tools and allowed work.
+    { key: 'reason', header: 'Disabled reason', desktopOnly: true, cellClassName: 'max-w-[14rem] truncate text-xs text-muted', cell: (a) => (!a.enabled ? (a.disabledReason ?? 'no reason recorded') : '—') },
+    {
+      key: 'capabilities',
+      header: 'Capabilities',
+      desktopOnly: true,
+      cellClassName: 'text-xs text-muted',
+      cell: (a) => {
+        const tools = boundToolKeysFor(a.key);
+        const work = a.allowedWorkClasses.length === 0 ? 'any work' : a.allowedWorkClasses.map((w) => w.replace('_', ' ')).join(', ');
+        return `${tools.length} tool${tools.length === 1 ? '' : 's'} · ${work}`;
+      },
+    },
     {
       key: 'validated',
       header: 'Validated by a person',
@@ -356,7 +373,7 @@ export default async function AgentsPage() {
                       <li key={row.provider} className="flex flex-wrap items-center gap-1">
                         <Badge tone={row.configured ? 'success' : 'neutral'}>{row.provider}</Badge>
                         <span className="text-muted">{row.configured ? `set ${row.updatedAt}` : 'not set'}</span>
-                        {row.configured && context.role === 'owner' ? <RevokeProviderCredentialForm provider={row.provider} /> : null}
+                        {row.configured && hasRole(context, 'owner') ? <RevokeProviderCredentialForm provider={row.provider} /> : null}
                       </li>
                     ))}
                   </ul>

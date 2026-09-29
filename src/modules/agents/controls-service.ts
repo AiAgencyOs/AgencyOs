@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
+import { can, hasRole } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
@@ -10,14 +10,14 @@ import { setAgentCapsSchema, setAgentStatusSchema, type SetAgentCapsInput, type 
 /**
  * ADM-82 — Decision: reversed by the owner on 2026-09-29.
  *
- * Owner only, twice: `context.role === 'owner'` plus `organization.settings`
+ * Owner only, twice: `hasRole(context, 'owner')` plus `organization.settings`
  * here, and `core.is_owner()` again inside the SECURITY DEFINER doors, which
  * is the guard that actually holds because `ai.agents` has no end-user write
  * policy (20260815380000) for RLS to decide with.
  */
 async function requireOwner(verb: string): Promise<Result<true>> {
   const context = await requireInternal();
-  if (context.role !== 'owner' || !can(context.role, 'organization.settings')) {
+  if (!hasRole(context, 'owner') || !can(context, 'organization.settings')) {
     return err('FORBIDDEN', `Only the owner may ${verb}.`);
   }
   return ok(true);

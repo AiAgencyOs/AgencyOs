@@ -59,7 +59,7 @@ export default async function ProjectScreensPage({
   const showSuperseded = superseded === '1';
 
   const context = await requireInternal(`/projects/${projectId}/design/screens`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
@@ -71,7 +71,7 @@ export default async function ProjectScreensPage({
     agencyClock(),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
   ]);
-  const mayEdit = can(context.role, 'project.write');
+  const mayEdit = can(context, 'project.write');
   // Add, merge and split change WHICH screens exist and follow the baseline;
   // the design state is drawing progress and stays writable after it.
   const editable = mayEdit && listState.open;

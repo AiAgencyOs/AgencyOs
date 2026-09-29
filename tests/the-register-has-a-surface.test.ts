@@ -87,7 +87,7 @@ describe('B. the defect controls offer only legal moves', () => {
   test('the sign-off is offered to the role ADM-19 named, not to delivery', () => {
     // A delivery lead declaring their own work production ready is the review
     // signing its own homework.
-    assert.match(PROJECT, /const maySignOff = can\(context\.role, 'project\.sign_off'\);/);
+    assert.match(PROJECT, /const maySignOff = can\(context, 'project\.sign_off'\);/);
     assert.match(PROJECT, /\{maySignOff \? <ProductionReadyForm projectId=\{projectId\} \/> : null\}/);
   });
 

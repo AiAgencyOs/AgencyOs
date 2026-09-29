@@ -124,7 +124,7 @@ export default async function ProjectPage({
   const context = await requireInternal(`/projects/${projectId}`);
 
   const clock = await agencyClock();
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
@@ -133,7 +133,7 @@ export default async function ProjectPage({
     listPaymentPlan(projectId),
     // RLS decides whether these come back at all, so a role without invoice
     // access simply sees an empty billing column rather than an error.
-    can(context.role, 'invoice.read') ? listProjectInvoices(projectId) : Promise.resolve([]),
+    can(context, 'invoice.read') ? listProjectInvoices(projectId) : Promise.resolve([]),
   ]);
 
   const status = project.status as ProjectStatus;
@@ -184,7 +184,7 @@ export default async function ProjectPage({
    * decisions were all built and nothing in the application touched any of
    * it, on either side.
    */
-  const claims = can(context.role, 'invoice.read') ? await listPaymentClaims(projectId) : [];
+  const claims = can(context, 'invoice.read') ? await listPaymentClaims(projectId) : [];
   const defects = await listDefects(projectId);
   const quality = await readProjectQuality(projectId);
   // G-188. The name the group must carry, composed from the rows rather than
@@ -204,10 +204,10 @@ export default async function ProjectPage({
    * project and a project whose client has paid nothing are different facts,
    * and the second one is a page somebody acts on.
    */
-  const progress = can(context.role, 'invoice.read') ? await readPaymentLadder(projectId) : null;
+  const progress = can(context, 'invoice.read') ? await readPaymentLadder(projectId) : null;
   // G-269, Finance §9 — maintenance that came with the project rather than
   // being sold. Empty for every project that has none, which is most of them.
-  const freeMaintenance = can(context.role, 'invoice.read')
+  const freeMaintenance = can(context, 'invoice.read')
     ? await listFreeMaintenance(projectId)
     : [];
   /**
@@ -218,14 +218,14 @@ export default async function ProjectPage({
    * not offer. Read here so the gate and the way through it are on the same
    * screen.
    */
-  const billing = can(context.role, 'invoice.read') ? await readProjectBilling(projectId) : null;
-  const mayWriteProject = can(context.role, 'project.write');
+  const billing = can(context, 'invoice.read') ? await readProjectBilling(projectId) : null;
+  const mayWriteProject = can(context, 'project.write');
   // ADM-19's own role set, deliberately NOT delivery_lead: a delivery lead
   // declaring their own work production ready is the review signing its own
   // homework.
-  const maySignOff = can(context.role, 'project.sign_off');
-  const mayWritePlan = can(context.role, 'milestone.write');
-  const mayInvoice = can(context.role, 'invoice.create');
+  const maySignOff = can(context, 'project.sign_off');
+  const mayWritePlan = can(context, 'milestone.write');
+  const mayInvoice = can(context, 'invoice.create');
 
   /**
    * A voided invoice is not a bill, so it does not occupy its milestone — the
@@ -491,7 +491,7 @@ export default async function ProjectPage({
           actions={
             <>
               <ViewAll href={`/projects/${projectId}/development`} />
-              {can(context.role, 'task.write') ? (
+              {can(context, 'task.write') ? (
                 <Link href={`/projects/${projectId}/development`} className={buttonClass('primary', 'sm')}>
                   <IconPlus size={14} />
                   Add task
@@ -646,7 +646,7 @@ export default async function ProjectPage({
             {status === 'onboarding' ? (
               <StartProjectForm
                 projectId={projectId}
-                canOverride={can(context.role, 'organization.settings')}
+                canOverride={can(context, 'organization.settings')}
               />
             ) : null}
           </>
@@ -1152,7 +1152,7 @@ export default async function ProjectPage({
             { label: 'Status', value: <StatusBadge status={project.status} /> },
             ...(project.status_reason ? [{ label: 'Status reason', value: <span className="whitespace-pre-wrap">{project.status_reason}</span> }] : []),
             { label: 'Budget', value: project.budget_minor === null ? 'Not set' : money(project.budget_minor, project.currency) },
-            ...(can(context.role, 'invoice.read')
+            ...(can(context, 'invoice.read')
               ? [
                   { label: 'Invoiced', value: money(summary.invoiced_minor, project.currency) },
                   { label: 'Amount received', value: `${money(summary.paid_minor, project.currency)}${summary.invoiced_minor > 0 ? ` (${pctOf(summary.paid_minor, summary.invoiced_minor)}%)` : ''}` },

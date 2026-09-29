@@ -6,6 +6,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, unreadable, type Result } from '@/lib/result';
+import { OUTBOUND_PAUSED, OUTBOUND_PAUSED_MESSAGE } from './kill-switch';
 
 import { markAsOutreach, planOutbound } from './outbound-window';
 
@@ -102,7 +103,7 @@ export async function startConversation(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to collect requirements.');
   }
 
@@ -188,7 +189,7 @@ export async function appendMessage(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to add messages.');
   }
 
@@ -303,7 +304,7 @@ export async function sendClientMessage(
   // Reused rather than invented: `lead.write` is already what it takes to add
   // to a transcript, and this is that plus delivery. A new capability mapping
   // to the same role set would add vocabulary without adding control.
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to message clients.');
   }
 
@@ -323,7 +324,7 @@ export async function sendClientMessage(
 
   const queued = (Array.isArray(data) ? data[0] : data) as
     | {
-        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent';
+        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent' | 'outbound_paused';
         message_id: string | null;
         seq: number | null;
         to_phone: string | null;
@@ -334,6 +335,7 @@ export async function sendClientMessage(
 
   if (!queued) return err('INTERNAL', 'Could not record the message.');
   if (queued.outcome === 'not_found') return err('NOT_FOUND', 'Conversation not found.');
+  if (queued.outcome === OUTBOUND_PAUSED) return err('FORBIDDEN', OUTBOUND_PAUSED_MESSAGE);
 
   // G-012, ADM-70 and ADM-81. The refusal is the database's, not this
   // function's — suppression lives in `crm.send_outbound_message` so a future
@@ -522,7 +524,7 @@ export async function sendClientDocument(
   // The same capability as a text message, for the same reason: this is
   // adding to a transcript plus delivery, and a document is not more
   // dangerous than the words beside it.
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to message clients.');
   }
 
@@ -544,7 +546,7 @@ export async function sendClientDocument(
 
   const queued = (Array.isArray(data) ? data[0] : data) as
     | {
-        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent' | 'bad_shape';
+        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent' | 'bad_shape' | 'outbound_paused';
         message_id: string | null;
         seq: number | null;
         to_phone: string | null;
@@ -556,6 +558,7 @@ export async function sendClientDocument(
 
   if (!queued) return err('INTERNAL', 'Could not record the document.');
   if (queued.outcome === 'not_found') return err('NOT_FOUND', 'Conversation not found.');
+  if (queued.outcome === OUTBOUND_PAUSED) return err('FORBIDDEN', OUTBOUND_PAUSED_MESSAGE);
   if (queued.outcome === 'bad_shape') {
     // Unreachable from this function, which controls both halves of the
     // shape — reaching it means the function and the database disagree about
@@ -687,7 +690,7 @@ export async function requestExtraction(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to run extraction.');
   }
 
@@ -801,7 +804,7 @@ export async function setThirdPartyCharge(input: {
   checkedOn?: string | null;
 }): Promise<Result<{ service: string }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to record third-party charges.');
   }
 
@@ -848,7 +851,7 @@ export async function setThirdPartyCharge(input: {
 /** Retiring one — G-207. Deactivated, never deleted. */
 export async function clearThirdPartyCharge(service: string): Promise<Result<{ service: string }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change third-party charges.');
   }
 
@@ -896,7 +899,7 @@ export async function sendRequirementForConfirmation(
   if (!idCheck.success) return err('VALIDATION', 'Not a requirement version id.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to send a requirement summary.');
   }
 
@@ -987,7 +990,7 @@ export async function decideRequirementVersion(
   decision: 'accepted' | 'rejected',
 ): Promise<Result<{ versionId: string; status: 'accepted' | 'rejected' }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to decide requirements.');
   }
 
@@ -1063,7 +1066,7 @@ export async function setLeadStatus(
   if (!parsed.success) return err('VALIDATION', 'Invalid status change.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to change lead status.');
   }
 
@@ -1191,7 +1194,7 @@ export async function mergeLeads(input: MergeLeadsInput): Promise<Result<{ outco
   if (!parsed.success) return err('VALIDATION', 'A reason is required.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to merge leads.');
   }
 
@@ -1238,7 +1241,7 @@ export async function addLeadNote(input: AddLeadNoteInput): Promise<Result<{ add
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to add notes.');
   }
 
@@ -1287,7 +1290,7 @@ export async function createLead(input: CreateLeadInput): Promise<Result<{ leadI
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to add a lead.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -1376,7 +1379,7 @@ export async function recordSalesActivity(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to record lead activity.');
   }
 
@@ -1418,7 +1421,7 @@ export async function setLeadQualification(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to qualify leads.');
   }
 
@@ -1452,7 +1455,7 @@ export async function setLeadFollowUp(
   if (!parsed.success) return err('VALIDATION', 'Invalid follow-up date.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to schedule follow-ups.');
   }
 
@@ -1717,7 +1720,7 @@ export async function linkWhatsAppGroup(
   // is the capability that already means "change what this agency is", and it
   // resolves to the owner alone.
   const capability = parsed.data.kind === 'internal_group' ? 'organization.settings' : 'lead.write';
-  if (!can(context.role, capability)) {
+  if (!can(context, capability)) {
     return err('FORBIDDEN', 'You do not have permission to link that group.');
   }
 
@@ -1799,7 +1802,7 @@ export async function linkInternalRecipient(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'Only an owner may change where announcements go.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -1864,7 +1867,7 @@ export async function addPortfolioItem(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'portfolio.write')) {
+  if (!can(context, 'portfolio.write')) {
     return err('FORBIDDEN', 'Only an admin maintains the portfolio list.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -1912,7 +1915,7 @@ export async function setPortfolioItemActive(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'portfolio.write')) {
+  if (!can(context, 'portfolio.write')) {
     return err('FORBIDDEN', 'Only an admin maintains the portfolio list.');
   }
 
@@ -1944,7 +1947,7 @@ export async function resumeAgentReplies(
   conversationId: string,
 ): Promise<Result<{ resumed: boolean }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to put the agent back on this conversation.');
   }
 
@@ -1974,7 +1977,7 @@ export async function setLeadOwner(input: SetLeadOwnerInput): Promise<Result<{ s
   if (!parsed.success) return err('VALIDATION', 'Invalid owner.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to assign leads.');
   }
 
@@ -2015,7 +2018,7 @@ export async function setLeadTags(input: SetLeadTagsInput): Promise<Result<{ tag
   if (!parsed.success) return err('VALIDATION', 'A tag is 1–40 characters; at most 20 tags.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to tag leads.');
   }
 
@@ -2046,7 +2049,7 @@ export async function pauseAgentReplies(input: PauseAgentRepliesInput): Promise<
   if (!parsed.success) return err('VALIDATION', 'Say why the agent should stop, in up to 200 characters.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to pause the agent on this conversation.');
   }
 
@@ -2077,7 +2080,7 @@ export async function stopFollowUpSequence(input: StopFollowUpSequenceInput): Pr
   if (!parsed.success) return err('VALIDATION', 'Say why the sequence should stop, in up to 200 characters.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to stop follow-ups.');
   }
 
@@ -2100,7 +2103,7 @@ export async function resumeFollowUpSequence(input: ResumeFollowUpSequenceInput)
   if (!parsed.success) return err('VALIDATION', 'Invalid sequence.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) {
+  if (!can(context, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to resume follow-ups.');
   }
 

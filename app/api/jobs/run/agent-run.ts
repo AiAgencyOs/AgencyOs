@@ -19,6 +19,7 @@ import { AgentPolicyRefusal, loadAgentPolicy, recordAgentPolicyRefusal } from '@
 import { routedModelFor } from '@/lib/ai/agent-routing';
 import { decideProjectAction, projectIdOf } from '@/lib/ai/policy-decision';
 import { resolveProvider } from '@/lib/ai/router';
+import { checkRunGates, raiseAlert, refuseIfOverBudget, type AgentBudgetRefusal, type AgentsPaused, type JobCancelled } from '@/lib/ai/run-gates';
 import type { AiMessage, AiToolSpec, AiUsage, StructuredResponse } from '@/lib/ai/types';
 import type { createAdminClient } from '@/lib/db/admin';
 import type { Json } from '@/lib/db/types';
@@ -45,6 +46,8 @@ export type AgentRow = {
   default_model: string;
   default_effort: string;
   autonomy_level: string;
+  /** ADM-61 classes the owner allows this agent (SCR-063). Empty = every class. */
+  allowed_work_classes: string[];
 };
 
 /** Everything a workflow is handed once the generic gates have passed. */
@@ -151,6 +154,57 @@ export async function parkRefusedJob(admin: Admin, job: JobRow, refusal: AgentPo
     .eq('id', job.id);
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'parkRefusedJob', jobId: job.id, detail: error.message }));
+  }
+}
+
+/**
+ * A job whose cancel flag the runner honoured between steps — SCR-065/066.
+ * `core.settle_cancelled_job` moves job and run to cancelled and audits it in
+ * one transaction; the runner only reports what it did.
+ */
+export async function settleCancelledJob(admin: Admin, cancelled: JobCancelled): Promise<void> {
+  const { error } = await admin.schema('core').rpc('settle_cancelled_job', {
+    p_job_id: cancelled.jobId,
+    ...(cancelled.runId ? { p_run_id: cancelled.runId } : {}),
+  });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'settleCancelledJob', jobId: cancelled.jobId, detail: error.message }));
+  }
+}
+
+/**
+ * The owner paused agents while this job ran — SCR-068. The job goes back to
+ * the queue (unclaimable until the switch is released; the attempt it spent
+ * stays spent), and the run closes as failed with the reason, because a
+ * transcript cannot be resumed from the middle.
+ */
+export async function requeuePausedJob(admin: Admin, job: JobRow, paused: AgentsPaused): Promise<void> {
+  await finishRun(admin, paused.runId, 'failed', paused.message);
+  const { error } = await admin
+    .schema('core')
+    .from('jobs')
+    .update({ status: 'queued', last_error: paused.message, locked_at: null, locked_by: null, run_at: new Date(Date.now() + 5 * 60_000).toISOString() })
+    .eq('id', job.id);
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'requeuePausedJob', jobId: job.id, detail: error.message }));
+  }
+}
+
+/**
+ * A provider over its monthly budget — SCR-064. Parked dead at once, like a
+ * policy refusal: a retry in a minute meets the same cap. The run closes as
+ * `budget_exceeded`, the status ai.agent_runs has carried for exactly this.
+ */
+export async function parkBudgetRefusedJob(admin: Admin, job: JobRow, refusal: AgentBudgetRefusal): Promise<void> {
+  logJobParked(job, job.kind, refusal.message);
+  await finishRun(admin, refusal.runId, 'budget_exceeded', refusal.message);
+  const { error } = await admin
+    .schema('core')
+    .from('jobs')
+    .update({ status: 'dead', last_error: `refused by provider budget: ${refusal.message}`, locked_at: null, locked_by: null })
+    .eq('id', job.id);
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'parkBudgetRefusedJob', jobId: job.id, detail: error.message }));
   }
 }
 
@@ -301,6 +355,14 @@ export async function failJob(admin: Admin, job: JobRow, reason: string): Promis
 
   if (settlement.status === 'dead') {
     logJobParked(job, job.kind, reason);
+    // SCR-067: work the queue gave up on is a situation a person acknowledges.
+    await raiseAlert(admin, {
+      organizationId: job.organization_id,
+      source: 'jobs',
+      severity: 'critical',
+      summary: `Job ${job.kind} died after ${job.attempts} attempt${job.attempts === 1 ? '' : 's'}: ${reason.slice(0, 300)}`,
+      fingerprint: `dead-job:${job.kind}`,
+    });
   }
 
   const { error } = await admin
@@ -354,13 +416,20 @@ export async function callModel(
     }
 > {
   // SCR-064: an owner's (agent, category) override, then the category policy,
-  // are asked before the row's default — null means nothing but the default.
-  const routed = await routedModelFor(ctx.admin, ctx.job.organization_id, ctx.agent.key);
+  // then the work class's fallback chain, are asked before the row's default
+  // — null means nothing but the default.
+  const routed = await routedModelFor(ctx.admin, ctx.job.organization_id, ctx.agent.key, ctx.workClass);
   const provider = routed ? await resolveProvider(routed) : await resolveProvider(ctx.agent.default_model);
 
   if (!provider.ok) {
     return { ok: false, kind: 'no_provider', detail: provider.error.message, stepCount: 0 };
   }
+
+  // Between steps, before the call: a cancel flag, the agents_paused switch,
+  // and the provider's monthly budget (SCR-065/068/064). Each throws; the
+  // tick catches exactly those classes and settles the job.
+  await checkRunGates(ctx.admin, { jobId: ctx.job.id, organizationId: ctx.job.organization_id, runId });
+  await refuseIfOverBudget(ctx.admin, { organizationId: ctx.job.organization_id, agentKey: ctx.agent.key, provider: provider.data.id, runId });
 
   const request = {
     model: routed ?? ctx.agent.default_model,
@@ -412,6 +481,7 @@ async function recordToolCall(
     runId: string | null;
     seq: number;
     toolName: string;
+    input: unknown;
     result: Result<string>;
     latencyMs: number;
   },
@@ -426,8 +496,12 @@ async function recordToolCall(
       run_id: args.runId,
       seq: args.seq,
       kind: 'tool_call',
-      request: { tool: args.toolName },
-      response: args.result.ok ? { result: args.result.data } : null,
+      // SCR-065: the arguments the model gave and the result the tool
+      // answered, bounded so a runaway payload cannot fill the trace. Ids,
+      // scopes and short text — what the run page needs to say what was
+      // asked, and what came back.
+      request: { tool: args.toolName, input: boundedJson(args.input) },
+      response: args.result.ok ? { result: args.result.data.slice(0, 4_000) } : null,
       tokens_in: 0,
       tokens_out: 0,
       cost_minor: 0,
@@ -445,6 +519,17 @@ async function recordToolCall(
 
 /** A tool loop cannot run forever on a model that keeps asking for more. */
 const MAX_TOOL_ROUNDS = 4;
+
+/** The recorded copy of a tool's arguments — at most 4 KB of JSON, never a throw. */
+function boundedJson(value: unknown): Json {
+  try {
+    const text = JSON.stringify(value ?? null);
+    if (text.length <= 4_000) return JSON.parse(text) as Json;
+    return { truncated: true, preview: text.slice(0, 4_000) };
+  } catch {
+    return { unrecordable: true };
+  }
+}
 
 function addUsage(a: AiUsage, b: AiUsage): AiUsage {
   return {
@@ -499,7 +584,7 @@ export async function callModelWithTools(
       stepCount: number;
     }
 > {
-  const routed = await routedModelFor(ctx.admin, ctx.job.organization_id, ctx.agent.key);
+  const routed = await routedModelFor(ctx.admin, ctx.job.organization_id, ctx.agent.key, ctx.workClass);
   const provider = routed ? await resolveProvider(routed) : await resolveProvider(ctx.agent.default_model);
   if (!provider.ok) {
     return { ok: false, kind: 'no_provider', detail: provider.error.message, stepCount: 0 };
@@ -522,6 +607,11 @@ export async function callModelWithTools(
   let usage: AiUsage = { inputTokens: 0, outputTokens: 0, costMinor: 0 };
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+    // Between steps, before each model turn: the cancel flag, the pause
+    // switch and the provider budget (SCR-065/068/064).
+    await checkRunGates(ctx.admin, { jobId: ctx.job.id, organizationId: ctx.job.organization_id, runId });
+    await refuseIfOverBudget(ctx.admin, { organizationId: ctx.job.organization_id, agentKey: ctx.agent.key, provider: provider.data.id, runId });
+
     const request = {
       model: routed ?? ctx.agent.default_model,
       system: spec.systemPrompt,
@@ -597,6 +687,7 @@ export async function callModelWithTools(
           runId,
           seq,
           toolName: call.name,
+          input: call.input,
           result,
           latencyMs: Date.now() - started2,
         });

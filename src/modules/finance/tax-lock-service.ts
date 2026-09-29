@@ -29,7 +29,7 @@ export async function lockTaxPeriod(input: LockTaxPeriodInput): Promise<Result<{
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid period.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to lock a reporting period.');
   }
 
@@ -69,7 +69,7 @@ export async function unlockTaxPeriod(input: UnlockTaxPeriodInput): Promise<Resu
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid unlock request.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to unlock a reporting period.');
   }
 

@@ -159,7 +159,7 @@ describe('D. the read refuses rather than answering "not confirmed"', () => {
   });
 
   test('it is behind invoice.read, and writing is behind invoice.create', () => {
-    assert.match(PAGE, /can\(context\.role, 'invoice\.read'\) \? await readProjectBilling\(projectId\) : null/);
+    assert.match(PAGE, /can\(context, 'invoice\.read'\) \? await readProjectBilling\(projectId\) : null/);
     assert.match(PAGE, /\{mayInvoice \?/);
     assert.match(SERVICE, /You do not have permission to set a billing mode\./);
   });

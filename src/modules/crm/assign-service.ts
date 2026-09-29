@@ -25,7 +25,7 @@ export async function assignLead(input: AssignLeadInput): Promise<Result<{ assig
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'lead.assign')) {
+  if (!can(context, 'lead.assign')) {
     return err('FORBIDDEN', 'You do not have permission to assign leads.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');

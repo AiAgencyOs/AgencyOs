@@ -132,8 +132,7 @@ function Value({ value }: { value: string }) {
 
 export default async function OverviewPage({ searchParams }: { searchParams: Promise<{ days?: string }> }) {
   const context = await requireInternal('/dashboard');
-  const role = context.role;
-  const show = (cap: Capability) => can(role, cap);
+  const show = (cap: Capability) => can(context, cap);
 
   // SCR-001's global date range. The funnel strip and the four "happened
   // over time" counts honour it (see dashboard-window.ts); "this month" and

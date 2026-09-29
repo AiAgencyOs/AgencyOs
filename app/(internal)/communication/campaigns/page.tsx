@@ -78,7 +78,7 @@ const columnsFor = (clock: AgencyClock): Column<CampaignListRow>[] => [
 
 export default async function CampaignsPage() {
   const context = await requireInternal('/communication/campaigns');
-  if (!can(context.role, 'lead.write')) return <PermissionDenied />;
+  if (!can(context, 'lead.write')) return <PermissionDenied />;
 
   const [campaigns, templates, facets, clock] = await Promise.all([listCampaigns(), listCampaignTemplates(), readAudienceFacets(), agencyClock()]);
 

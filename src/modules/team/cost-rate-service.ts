@@ -24,7 +24,7 @@ export async function setMemberCostRate(input: SetMemberCostRateInput): Promise<
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid cost rate.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'Only an owner may set a cost rate.');
   }
 

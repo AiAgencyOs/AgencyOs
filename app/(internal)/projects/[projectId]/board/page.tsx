@@ -37,7 +37,7 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/board`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
@@ -54,7 +54,7 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
   const collab = await readTaskCollabFor(tasks.map((t) => t.id), clock);
   const nameByUser = new Map(roster.map((r) => [r.userId, r.fullName]));
   const moduleById = new Map(modules.map((m) => [m.id, m.name]));
-  const canWrite = can(context.role, 'task.write');
+  const canWrite = can(context, 'task.write');
   const todayKey = new Date().toISOString().slice(0, 10);
 
   const boardTasks: BoardTask[] = tasks.map((t) => ({
@@ -80,7 +80,7 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
 
   return (
     <div className="flex flex-col gap-5">
-      <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={can(context.role, 'project.write')} />
+      <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={can(context, 'project.write')} />
 
       <ProjectSubNav projectId={projectId} />
 

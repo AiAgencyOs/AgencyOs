@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
+import { can, hasRole } from '@/lib/authz/permissions';
 import { readChangeRequestContext } from '@/modules/projects/change-request-queries';
 import { getProject, listScopeItemsForVersion, listScopeVersionHistory, readChangeRequests, readScopeBaseline, type ScopeItemRow } from '@/modules/projects/queries';
 import { readRevisionAllowance, readScopeDrift, readScopeQuoteLinks } from '@/modules/projects/scope-insight-queries';
@@ -33,7 +33,7 @@ export default async function ScopePage({ params, searchParams }: { params: Prom
   const { compare } = await searchParams;
 
   const context = await requireInternal(`/projects/${projectId}/scope`);
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
@@ -51,7 +51,7 @@ export default async function ScopePage({ params, searchParams }: { params: Prom
   // SCR-031 — the payment gate, linked tasks and the quotation door per
   // change request. Invoice status is read only for a role RLS lets read it;
   // otherwise the gate says so rather than showing "no invoice".
-  const crContext = await readChangeRequestContext(projectId, { includeInvoices: can(context.role, 'invoice.read') });
+  const crContext = await readChangeRequestContext(projectId, { includeInvoices: can(context, 'invoice.read') });
 
   // SCR-030's freeze checklist — the three things a person can fix before
   // the door refuses. Computed from reads this page already made.
@@ -98,11 +98,11 @@ export default async function ScopePage({ params, searchParams }: { params: Prom
       .filter(({ before, after }) => before.inclusion !== after.inclusion || (before.detail ?? '') !== (after.detail ?? '') || (before.acceptanceCriteria ?? '') !== (after.acceptanceCriteria ?? ''));
     return { added, removed, changed, unchanged: current.items.length - added.length - changed.length };
   })();
-  const canWrite = can(context.role, 'milestone.write');
+  const canWrite = can(context, 'milestone.write');
   // Matches the door's own core.is_owner() gate for decide_change_request —
   // see change-request-panel.tsx's header comment for why this stays
   // separate from canWrite.
-  const isOwner = context.role === 'owner';
+  const isOwner = hasRole(context, 'owner');
 
   const crOpen = changeRequests.filter((cr) => ['submitted', 'analysing', 'classified', 'pending_approval'].includes(cr.status));
   const crAwaitingOwner = changeRequests.filter((cr) => ['classified', 'pending_approval'].includes(cr.status));

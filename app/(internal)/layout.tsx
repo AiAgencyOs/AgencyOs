@@ -11,6 +11,7 @@ import { SignOutButton } from '../(auth)/sign-out-button';
 import { ActionBell } from './action-bell';
 import { CommandPalette } from './command-palette';
 import { HelpLink } from './help-link';
+import { IncidentBanner } from './incident-banner';
 import { BottomTabs, CurrentSectionTitle, HeaderTrail, MobileNav, SidebarNav, Wordmark } from './nav';
 import { visibleModulesFor } from './nav-config';
 import { OrganizationSwitcher } from './organization-switcher';
@@ -67,7 +68,7 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
   // choose; a single membership shows the plain chip, as before.
   const canSwitchOrganization = memberships.length > 1;
 
-  const visibleGroups = visibleModulesFor(context.role);
+  const visibleGroups = visibleModulesFor(context);
 
   // The command palette searches exactly what the sidebar shows — already
   // capability-filtered, so it can only ever jump to a page this role may open.
@@ -147,21 +148,23 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
             <div className="flex min-w-0 shrink-0 items-center justify-end gap-1.5 md:flex-1">
               <CommandPalette
                 commands={commands}
-                canCreateLead={can(context.role, 'lead.write')}
-                canCreateClient={can(context.role, 'project.write')}
-                canCreateQuotation={can(context.role, 'proposal.draft')}
-                canCreateTask={can(context.role, 'task.write')}
-                canCreateProject={can(context.role, 'project.write')}
-                canCreateInvoice={can(context.role, 'invoice.create')}
+                canCreateLead={can(context, 'lead.write')}
+                canCreateClient={can(context, 'project.write')}
+                canCreateQuotation={can(context, 'proposal.draft')}
+                canCreateTask={can(context, 'task.write')}
+                canCreateProject={can(context, 'project.write')}
+                canCreateInvoice={can(context, 'invoice.create')}
               />
-              <CreateButton enabled={can(context.role, 'lead.write') || can(context.role, 'project.write')} />
-              <SystemStatusDot canOpen={can(context.role, 'organization.settings')} />
+              <CreateButton enabled={can(context, 'lead.write') || can(context, 'project.write')} />
+              <SystemStatusDot canOpen={can(context, 'organization.settings')} />
               <ActionBell />
               <HelpLink />
               <UserMenu name={displayName} email={context.email} role={context.role ?? "member"} timeZone={timeZone} signOut={<SignOutButton full variant="secondary" />} />
             </div>
           </div>
         </header>
+        {/* SCR-067/068: unacknowledged critical alerts and engaged emergency controls, on every page. */}
+        <IncidentBanner />
 
         {/* Bottom padding clears the phone tab bar; a fixed bar over the last
             row of a table is the classic way to lose a delete button. */}

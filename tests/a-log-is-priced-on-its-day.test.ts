@@ -197,7 +197,7 @@ describe('the margin subtracts time cost and reports uncosted hours instead of z
 describe('a cost renders only where invoice.read holds', () => {
   it('the report gates every cost figure on mayReadMoney, and mayReadMoney is invoice.read', () => {
     const page = stripComments(read('app/(internal)/projects/[projectId]/reports/page.tsx'));
-    assert.match(page, /const mayReadMoney = can\(context\.role, 'invoice\.read'\)/);
+    assert.match(page, /const mayReadMoney = can\(context, 'invoice\.read'\)/);
     // Every line that prints a time cost (the reader's costMinor/uncostedHours,
     // the margin's timeCostMinor) is conditioned on mayReadMoney or reads from
     // `margin`, which exists only for a money reader. The AI-cost sum
@@ -219,7 +219,7 @@ describe('a cost renders only where invoice.read holds', () => {
 
   it('the time CSV writes cost columns only for invoice.read', () => {
     const route = stripComments(read('app/api/projects/[projectId]/report/time/route.ts'));
-    assert.match(route, /const mayReadMoney = can\(context\.role, 'invoice\.read'\)/);
+    assert.match(route, /const mayReadMoney = can\(context, 'invoice\.read'\)/);
     assert.match(route, /const costCols = <T,>\(cols: T\[\]\): T\[\] => \(mayReadMoney \? cols : \[\]\)/);
     // The two total lines sit inside one `if (mayReadMoney)` block; every other cost cell goes through costCols.
     assert.match(route, /if \(mayReadMoney\) \{\s*lines\.push\(\['total_cost_minor', time\.costMinor\][^\n]*\n\s*lines\.push\(\['uncosted_hours', time\.uncostedHours\]/);
@@ -237,15 +237,15 @@ describe('a cost renders only where invoice.read holds', () => {
 
   it('the Settings › Team cell is rendered only for a role the page admits, and the owner alone sets', () => {
     const page = stripComments(read('app/(internal)/settings/team/page.tsx'));
-    assert.match(page, /can\(context\.role, 'organization\.settings'\)\s*\?\s*'set'/);
-    assert.match(page, /can\(context\.role, 'audit\.read'\)\s*\?\s*'view'/);
+    assert.match(page, /can\(context, 'organization\.settings'\)\s*\?\s*'set'/);
+    assert.match(page, /can\(context, 'audit\.read'\)\s*\?\s*'view'/);
     assert.match(page, /costRateAccess === 'none' \? Promise\.resolve\(\{\}\) : listMemberCostRates\(\)/);
     const panel = stripComments(read('app/(internal)/settings/member-roles-panel.tsx'));
     assert.match(panel, /costRateAccess !== 'none' \? \(\s*<CostRateCell/);
     const cell = stripComments(read('app/(internal)/settings/cost-rate-cell.tsx'));
     assert.match(cell, /access === 'set' && editing \? <SetRateForm/);
     const service = stripComments(read('src/modules/team/cost-rate-service.ts'));
-    assert.match(service, /can\(context\.role, 'organization\.settings'\)/);
+    assert.match(service, /can\(context, 'organization\.settings'\)/);
     assert.match(service, /rpc\('set_member_cost_rate'/);
     assert.doesNotMatch(service, /\.from\('member_cost_rates'\)/, 'the service writes through the door, never the table');
   });

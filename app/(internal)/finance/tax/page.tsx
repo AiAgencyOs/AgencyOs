@@ -120,7 +120,7 @@ export default async function TaxReportPage({
 }) {
   const context = await requireInternal('/finance/tax');
   const clock = await agencyClock();
-  if (!can(context.role, 'invoice.read')) return <PermissionDenied />;
+  if (!can(context, 'invoice.read')) return <PermissionDenied />;
 
   const { page: pageParam, sort: sortKey, dir, period: periodParam, mode } = await searchParams;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
@@ -157,7 +157,7 @@ export default async function TaxReportPage({
   // instants become calendar days, the shape finance.tax_period_locks holds.
   const lockWindow = period.from && period.to ? { start: period.from.slice(0, 10), end: period.to.slice(0, 10) } : null;
   const lockState = lockWindow ? lockStateFor(locks, lockWindow.start, lockWindow.end) : null;
-  const mayLock = can(context.role, 'invoice.issue');
+  const mayLock = can(context, 'invoice.issue');
 
   const periodInvoices = invoicesInPeriod(allInvoices, period);
   const receipts = receiptsInPeriod(allReceipts, period);

@@ -49,7 +49,7 @@ export async function breakDownPlan(input: BreakDownPlanInput): Promise<Result<B
   const context = await requireInternal();
   // The three doors check again; this keeps a reader off a button all three
   // would refuse.
-  if (!can(context.role, 'milestone.write') || !can(context.role, 'task.write')) {
+  if (!can(context, 'milestone.write') || !can(context, 'task.write')) {
     return err('FORBIDDEN', 'You do not have permission to break this plan down.');
   }
 

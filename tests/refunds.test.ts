@@ -130,7 +130,7 @@ describe('E. the screen cannot get around the gate', () => {
   test('both service functions require refund.issue, which is owner-only', () => {
     // Both entry points, and nothing after them: `recordRefund` is the second.
     const refundSection = region(service, 'export async function requestRefund', 'The row `finance.verify_payment` returns');
-    const guards = refundSection.match(/can\(context\.role, 'refund\.issue'\)/g) ?? [];
+    const guards = refundSection.match(/can\(context, 'refund\.issue'\)/g) ?? [];
     assert.equal(guards.length, 2, 'each entry point checks the capability');
   });
 

@@ -30,6 +30,8 @@ export type AgentRow = {
   disabledReason: string | null;
   definitionVersion: string | null;
   lastValidatedAt: string | null;
+  /** ADM-61 classes the owner allows (SCR-063). Empty = every class. */
+  allowedWorkClasses: string[];
 };
 
 export type AiStatus = {
@@ -49,7 +51,7 @@ export async function aiStatus(): Promise<AiStatus> {
     .schema('ai')
     .from('agents')
     .select(
-      'key, display_name, description, enabled, autonomy_level, default_model, default_effort, max_steps, max_cost_minor, disabled_reason, definition_version, last_validated_at',
+      'key, display_name, description, enabled, autonomy_level, default_model, default_effort, max_steps, max_cost_minor, disabled_reason, definition_version, last_validated_at, allowed_work_classes',
     )
     .order('key');
 
@@ -72,6 +74,7 @@ export async function aiStatus(): Promise<AiStatus> {
     disabledReason: a.disabled_reason,
     definitionVersion: a.definition_version,
     lastValidatedAt: a.last_validated_at,
+    allowedWorkClasses: a.allowed_work_classes ?? [],
   }));
 
   return { providerConfigured, providers, agents };
@@ -139,7 +142,7 @@ export async function getAgent(agentKey: string): Promise<AgentRow | null> {
     .schema('ai')
     .from('agents')
     .select(
-      'key, display_name, description, enabled, autonomy_level, default_model, default_effort, max_steps, max_cost_minor, disabled_reason, definition_version, last_validated_at',
+      'key, display_name, description, enabled, autonomy_level, default_model, default_effort, max_steps, max_cost_minor, disabled_reason, definition_version, last_validated_at, allowed_work_classes',
     )
     .eq('key', agentKey)
     .maybeSingle();
@@ -160,6 +163,7 @@ export async function getAgent(agentKey: string): Promise<AgentRow | null> {
     disabledReason: data.disabled_reason,
     definitionVersion: data.definition_version,
     lastValidatedAt: data.last_validated_at,
+    allowedWorkClasses: data.allowed_work_classes ?? [],
   };
 }
 

@@ -15,7 +15,7 @@ function cell(v: string | number | null | undefined): string {
 
 export async function GET(request: Request) {
   const context = await requireInternal('/audit');
-  if (!can(context.role, 'audit.read')) {
+  if (!can(context, 'audit.read')) {
     return NextResponse.json({ error: 'You do not have permission to read the audit log.' }, { status: 403 });
   }
 

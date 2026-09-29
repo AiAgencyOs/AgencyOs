@@ -63,7 +63,7 @@ function countBy(defects: OpenDefect[], severity: string): number {
 export default async function QaDashboardPage() {
   const context = await requireInternal('/qa');
   const clock = await agencyClock();
-  if (!can(context.role, 'project.read')) return <PermissionDenied />;
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const [defects, coverage, suiteCoverage, matrix, retest, compat, perfNotes, holds] = await Promise.all([
     listOpenDefects(),

@@ -30,7 +30,7 @@ export async function recordInvoiceSend(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to record invoice sends.');
   }
 

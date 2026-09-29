@@ -2,7 +2,7 @@ import 'server-only';
 
 import { ROUTING_CATEGORIES, type RoutingCategory } from '@/lib/ai/model-choice';
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
+import { can, hasRole } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, unreadable, type Result } from '@/lib/result';
 
@@ -62,7 +62,7 @@ export async function setAgentRoutingOverride(input: {
   // Owner only: which model an agent spends the agency's money on is the
   // owner's decision (ADM-84), and the function and RLS both say so again.
   const context = await requireInternal();
-  if (context.role !== 'owner' || !can(context.role, 'organization.settings')) {
+  if (!hasRole(context, 'owner') || !can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'Only the owner may set a routing override.');
   }
 

@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
+import { can, hasRole } from '@/lib/authz/permissions';
 import { listPaymentAccounts } from '@/modules/finance/queries';
 import { readInvoiceReminderPolicy } from '@/modules/finance/reminder-queries';
 import { readGstIdentity } from '@/modules/finance/gstr-queries';
@@ -30,17 +30,17 @@ export default async function SettingsFinancePage() {
   const context = await requireInternal('/settings/finance');
   const clock = await agencyClock();
   const accounts = await listPaymentAccounts();
-  const mayManage = can(context.role, 'invoice.issue');
+  const mayManage = can(context, 'invoice.issue');
   // Owner decision 2026-09-29: automatic past-due reminders, two real columns
   // on the organization. Reading is every internal role's; the switch is
   // `organization.settings`, like the other switches on these screens.
   const reminderPolicy = await readInvoiceReminderPolicy();
-  const maySetPolicy = can(context.role, 'organization.settings');
+  const maySetPolicy = can(context, 'organization.settings');
   // E5: the agency's own GST identity. Read by every internal role; set by
   // the owner only — a registration number is legal identity, not a switch.
   const gstIdentity = await readGstIdentity();
   const gstIssues = gstIdentityIssues(gstIdentity);
-  const maySetIdentity = context.role === 'owner';
+  const maySetIdentity = hasRole(context, 'owner');
 
   const active = accounts.filter((a) => a.status === 'active');
   const inactive = accounts.filter((a) => a.status === 'inactive');

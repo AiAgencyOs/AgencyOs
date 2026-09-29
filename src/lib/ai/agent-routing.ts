@@ -32,37 +32,46 @@ export async function routedModelFor(
   admin: ReturnType<typeof createAdminClient>,
   organizationId: string,
   agentKey: string,
+  /** ADM-61 class of the work, so the owner's fallback chain for it is consulted (decision 2026-09-30). */
+  workClass?: string,
 ): Promise<string | null> {
   const category = categoryForAgent(agentKey);
-  if (!category) return null;
+  if (!category && !workClass) return null;
 
   try {
-    const [overrideRead, policyRead] = await Promise.all([
+    const [overrideRead, policyRead, chainRead] = await Promise.all([
       admin
         .schema('ai')
         .from('agent_routing_overrides')
         .select('preferred_models')
         .eq('organization_id', organizationId)
         .eq('agent_key', agentKey)
-        .eq('category', category)
+        .eq('category', category ?? '')
         .maybeSingle(),
       admin
         .schema('ai')
         .from('routing_policies')
         .select('preferred_models, admin_override_model')
         .eq('organization_id', organizationId)
-        .eq('category', category)
+        .eq('category', category ?? '')
         .maybeSingle(),
+      // The owner's fallback chain for this CLASS of work — after the override
+      // and the policy, before the default.
+      workClass
+        ? admin.schema('ai').from('fallback_chains').select('model_ids').eq('organization_id', organizationId).eq('work_class', workClass).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
     ]);
 
     if (overrideRead.error) throw new Error(overrideRead.error.message);
     if (policyRead.error) throw new Error(policyRead.error.message);
+    if (chainRead.error) throw new Error(chainRead.error.message);
 
     const candidates = orderModelCandidates({
       override: overrideRead.data ? { preferredModels: overrideRead.data.preferred_models } : null,
       policy: policyRead.data
         ? { adminOverrideModel: policyRead.data.admin_override_model, preferredModels: policyRead.data.preferred_models }
         : null,
+      fallbackChain: chainRead.data?.model_ids ?? [],
       // The default is the caller's own fallback; excluded here so a null
       // answer means "nothing routed" rather than "the default, again".
       agentDefault: '',

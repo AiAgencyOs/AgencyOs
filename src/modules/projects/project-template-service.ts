@@ -57,7 +57,7 @@ export async function createProjectTemplateFromProject(
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid template.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to save a template.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to save a template.');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
@@ -173,7 +173,7 @@ export async function createProjectFromTemplate(input: CreateProjectFromTemplate
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid project.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) return err('FORBIDDEN', 'You do not have permission to create projects.');
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to create projects.');
 
   const supabase = await createClient();
   const { data: template, error: templateError } = await supabase
@@ -268,7 +268,7 @@ export async function deleteProjectTemplate(input: DeleteProjectTemplateInput): 
   if (!parsed.success) return err('VALIDATION', 'Invalid template.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) return err('FORBIDDEN', 'You do not have permission to delete templates.');
+  if (!can(context, 'organization.settings')) return err('FORBIDDEN', 'You do not have permission to delete templates.');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').from('project_templates').delete().eq('id', parsed.data.templateId).select('id');

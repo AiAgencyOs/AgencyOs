@@ -54,7 +54,7 @@ export default async function NotificationsPage({
   const rows = pool.filter(
     (r) => (!category || categoryOf(r) === category) && (!severity || (wantedSeverity ? r.severity === wantedSeverity : severity === 'normal' && !r.urgent)),
   );
-  const canAnswer = can(context.role, 'audit.read');
+  const canAnswer = can(context, 'audit.read');
   const link = (over: Partial<{ category: string; severity: string; show: string }>) => {
     const next = { category: category ?? '', severity: severity ?? '', show: show ?? '', ...over };
     const q = Object.entries(next)
