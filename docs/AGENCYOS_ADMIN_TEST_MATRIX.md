@@ -290,6 +290,19 @@ writable — 20260815380000), and alert acknowledgement (`core.alert_state`
 is the alerter's dedupe record, not an inbox; acknowledging needs a
 product decision on what it silences).
 
+Final sweep after pass 8 (owner, 1440 and 390; finance, contractor,
+member and client_admin probes): 70 routes, 69 respond 200 — the one
+404 is the bare `/projects/[id]/ui-versions`, which has only a child
+route — including the new `/settings/finance`, `/projects/[id]/reports`,
+`/projects/[id]/release`, `/usage/runs`, the issued GST invoice and the
+tax report with a period and mode. Role denials match the capability
+matrix (finance sees invoices but not leads or settings; contractor sees
+projects but not agents; client_admin lands on the portal). Three
+hydration warnings appeared once in the warm sweep context (Project 360
+desktop, Leads and Settings › Commercial on the phone) and did not
+reproduce on a direct visit of any of the three; they are logged here as
+intermittent rather than closed.
+
 ## 10. Regression
 
 Unit: the failure set is byte-identical before and after (Node 22, 52
