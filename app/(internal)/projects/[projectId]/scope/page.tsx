@@ -4,11 +4,13 @@ import { notFound, redirect } from 'next/navigation';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { readChangeRequestContext } from '@/modules/projects/change-request-queries';
 import { getProject, listScopeVersionHistory, readChangeRequests, readScopeBaseline } from '@/modules/projects/queries';
-import { Badge, Card, EmptyState, humanize, IconProjects, PageHeader, statusTone } from '@/ui';
+import { readRevisionAllowance, readScopeDrift, readScopeQuoteLinks } from '@/modules/projects/scope-insight-queries';
+import { Badge, Card, EmptyState, humanize, IconProjects, PageHeader, Stat, StatGrid, statusTone } from '@/ui';
 
 import { ChangeRequestList, SubmitChangeRequestForm } from '../change-request-panel';
-import { OpenScopeVersionForm, ScopeVersionCard } from '../scope-panel';
+import { OpenScopeVersionForm, ScopeVersionCard, type FreezeCheck } from '../scope-panel';
 import { ProjectSubNav } from '../project-subnav';
 
 export const metadata: Metadata = { title: 'Scope' };
@@ -33,13 +35,47 @@ export default async function ScopePage({ params }: { params: Promise<{ projectI
   if (!project) notFound();
 
   const clock = await agencyClock();
-  const [{ active, draft }, changeRequests, history] = await Promise.all([
+  const [{ active, draft }, changeRequests, history, quoteLinks, drift, allowance] = await Promise.all([
     readScopeBaseline(projectId),
     readChangeRequests(projectId),
     listScopeVersionHistory(projectId),
+    readScopeQuoteLinks(projectId),
+    readScopeDrift(projectId),
+    readRevisionAllowance(projectId),
   ]);
   const supersededHistory = history.filter((v) => v.status === 'superseded');
   const canWrite = can(context.role, 'milestone.write');
+  // SCR-031 — the payment gate, linked tasks and the quotation door per
+  // change request. Invoice status is read only for a role RLS lets read it;
+  // otherwise the gate says so rather than showing "no invoice".
+  const crContext = await readChangeRequestContext(projectId, { includeInvoices: can(context.role, 'invoice.read') });
+
+  // SCR-030's freeze checklist — the three things a person can fix before
+  // the door refuses. Computed from reads this page already made.
+  const openOnDraft = draft
+    ? changeRequests.filter((cr) => cr.scopeVersionId === draft.id && !['rejected', 'closed', 'implemented'].includes(cr.status))
+    : [];
+  const freezeChecklist: FreezeCheck[] = draft
+    ? [
+        { label: 'At least one item is marked included', ok: draft.items.some((i) => i.inclusion === 'included') },
+        {
+          label: 'Every included item has acceptance criteria',
+          ok: draft.items.filter((i) => i.inclusion === 'included').every((i) => Boolean(i.acceptanceCriteria?.trim())),
+        },
+        {
+          label:
+            openOnDraft.length === 0
+              ? 'No change request is open against this draft'
+              : `${openOnDraft.length} change request${openOnDraft.length === 1 ? '' : 's'} still open against this draft`,
+          ok: openOnDraft.length === 0,
+        },
+      ]
+    : [];
+  const quoteFor = (scopeVersionId: string) => quoteLinks.find((q) => q.scopeVersionId === scopeVersionId)?.proposals ?? [];
+  const activeQuote = active ? (quoteFor(active.id)[0] ?? null) : null;
+  const allowanceValue = (a: { used: number; limit: number } | null) => (a ? `${a.used} / ${a.limit}` : '—');
+  const allowanceTone = (a: { used: number; limit: number } | null) =>
+    !a ? 'neutral' : a.used >= a.limit ? 'danger' : a.used + 1 >= a.limit ? 'warning' : 'success';
   // Matches the door's own core.is_owner() gate for decide_change_request —
   // see change-request-panel.tsx's header comment for why this stays
   // separate from canWrite.
@@ -54,7 +90,79 @@ export default async function ScopePage({ params }: { params: Promise<{ projectI
 
       <ProjectSubNav projectId={projectId} />
 
-      {draft ? <ScopeVersionCard projectId={projectId} scopeVersion={draft} editable={canWrite} /> : null}
+      {/*
+        SCR-030 — what the tab could not say about its own baseline. The
+        revision counts are read as stored (the database refuses the round
+        past the limit; this only shows how close the project is), and the
+        quotation is the one citing the same requirement version the baseline
+        descends from.
+      */}
+      <StatGrid>
+        <Stat
+          label="Linked quotation"
+          value={activeQuote ? `${activeQuote.title} v${activeQuote.version}` : active ? 'none cites this baseline' : '—'}
+          caption={
+            activeQuote
+              ? humanize(activeQuote.status)
+              : active
+                ? 'the baseline names no requirement version a quotation prices'
+                : 'no active baseline'
+          }
+          href={activeQuote ? `/quotations?status=${encodeURIComponent(activeQuote.status)}` : undefined}
+        />
+        <Stat
+          label="Design revision rounds"
+          value={allowanceValue(allowance.design)}
+          tone={allowanceTone(allowance.design)}
+          caption="client rounds used of the Phase 3 limit"
+        />
+        <Stat label="UI revision rounds" value={allowanceValue(allowance.ui)} tone={allowanceTone(allowance.ui)} caption="of the Phase 4 limit" />
+        <Stat
+          label="Prototype revision rounds"
+          value={allowanceValue(allowance.prototype)}
+          tone={allowanceTone(allowance.prototype)}
+          caption="of the Phase 4 limit"
+        />
+      </StatGrid>
+
+      {drift && (drift.appliedRequests.length > 0 || drift.added.length > 0 || drift.removed.length > 0) ? (
+        <Card className="flex flex-col gap-2 p-4 sm:p-5">
+          <h2 className="text-[13px] font-semibold tracking-tight">Drift from the frozen baseline</h2>
+          <p className="max-w-2xl text-[13px] text-muted">
+            What was agreed and what is about to replace it are two different lists until the next version freezes.
+          </p>
+          {drift.appliedRequests.length > 0 ? (
+            <ul className="flex flex-col gap-1 text-[13px]">
+              {drift.appliedRequests.map((r) => (
+                <li key={r.id} className="flex flex-wrap items-center gap-2">
+                  <Badge tone={r.status === 'implemented' ? 'success' : 'warning'}>{r.status}</Badge>
+                  <span className="line-clamp-1">“{r.requested}”</span>
+                  {r.resultingVersion !== null ? <span className="text-xs text-muted">→ v{r.resultingVersion}</span> : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {drift.draftOpenedBy ? (
+            <p className="text-xs text-muted">The open draft was opened by the change request “{drift.draftOpenedBy.requested}”.</p>
+          ) : null}
+          {drift.added.length > 0 ? (
+            <p className="text-[13px]">
+              <span className="text-muted">Added in the draft: </span>
+              {drift.added.join(', ')}
+            </p>
+          ) : null}
+          {drift.removed.length > 0 ? (
+            <p className="text-[13px]">
+              <span className="text-muted">Dropped from the baseline: </span>
+              {drift.removed.join(', ')}
+            </p>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {draft ? (
+        <ScopeVersionCard projectId={projectId} scopeVersion={draft} editable={canWrite} freezeChecklist={freezeChecklist} />
+      ) : null}
 
       {active ? (
         <ScopeVersionCard projectId={projectId} scopeVersion={active} editable={false} />
@@ -83,6 +191,7 @@ export default async function ScopePage({ params }: { params: Promise<{ projectI
           changeRequests={changeRequests}
           mayManage={canWrite}
           mayDecide={isOwner}
+          context={crContext}
         />
       </section>
 

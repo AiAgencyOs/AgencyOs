@@ -172,8 +172,19 @@ export default async function ProjectDesignPage({
             >
               the plan it was built from
             </Link>
+            {/* SCR-034 — the inventory as a sheet: every screen, every column, its scope mapping. */}
+            <a
+              href={`/api/projects/${projectId}/design/screens/export`}
+              className="text-[13px] underline hover:text-fg"
+            >
+              export the inventory (CSV)
+            </a>
           </div>
         )}
+        <p className="max-w-2xl text-xs text-muted">
+          Screens are written by the designer agent against the baseline and read here; there is no door to add,
+          merge or split one by hand, and none is drawn.
+        </p>
       </Section>
 
       {/*
@@ -223,25 +234,57 @@ export default async function ProjectDesignPage({
         {designAssets.length === 0 ? (
           <Nothing>No reference image has been generated for this project.</Nothing>
         ) : (
-          <ul className="flex flex-col gap-3">
-            {designAssets.map((asset) => (
-              <li key={asset.id} className="flex flex-col gap-2 rounded-md border border-line p-3 text-[13px]">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Badge tone="neutral">{asset.kind.replace(/_/g, ' ')}</Badge>
-                  <span className="text-xs text-muted">{asset.model} · {asset.createdAt}</span>
-                </div>
-                {/* A base64 data URL — next/image cannot optimise it, and shouldn't try. */}
-                <img
-                  src={`data:${asset.mediaType};base64,${asset.imageBase64}`}
-                  alt={asset.prompt}
-                  className="max-h-64 w-auto rounded-md border border-line"
-                />
-                <p className="text-xs text-muted">{asset.prompt}</p>
-                <p className="text-xs text-muted">{asset.rightsNote}</p>
-              </li>
-            ))}
-          </ul>
+          /*
+            SCR-038 — one folder per kind. `design_assets` carries no
+            approved/draft status and no link to a screen or a version (there
+            is no join table), so each folder shows the kind and the rights
+            note the row was generated under, and nothing pretends to a state
+            the table does not hold.
+          */
+          <div className="flex flex-col gap-3">
+            {[...new Set(designAssets.map((a) => a.kind))].map((kind) => {
+              const folder = designAssets.filter((a) => a.kind === kind);
+              return (
+                <details key={kind} open className="rounded-md border border-line">
+                  <summary className="flex cursor-pointer flex-wrap items-center gap-2 px-3 py-2 text-[13px] font-medium">
+                    {kind.replace(/_/g, ' ')}
+                    <span className="text-xs font-normal text-muted">
+                      {folder.length} image{folder.length === 1 ? '' : 's'} · reference only
+                    </span>
+                  </summary>
+                  <ul className="flex flex-col gap-3 border-t border-line p-3">
+                    {folder.map((asset) => (
+                      <li key={asset.id} className="flex flex-col gap-2 rounded-md border border-line p-3 text-[13px]">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <Badge tone="neutral">{asset.kind.replace(/_/g, ' ')}</Badge>
+                          <span className="text-xs text-muted">{asset.model} · {asset.createdAt}</span>
+                        </div>
+                        {/* A base64 data URL — next/image cannot optimise it, and shouldn't try. */}
+                        <img
+                          src={`data:${asset.mediaType};base64,${asset.imageBase64}`}
+                          alt={asset.prompt}
+                          className="max-h-64 w-auto rounded-md border border-line"
+                        />
+                        <p className="text-xs text-muted">{asset.prompt}</p>
+                        <p className="text-xs text-muted">{asset.rightsNote}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              );
+            })}
+          </div>
         )}
+        <p className="text-[13px]">
+          <a href={`/api/projects/${projectId}/design/assets/export`} className="underline hover:text-fg">
+            Export the handoff package (JSON)
+          </a>
+          <span className="text-muted">
+            {' '}
+            — every reference asset's record, each theme's Figma reference and preview, the locked handoff and every
+            artifact URL.
+          </span>
+        </p>
       </Section>
 
       {/*

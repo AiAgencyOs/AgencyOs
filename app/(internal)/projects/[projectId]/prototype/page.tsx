@@ -4,9 +4,11 @@ import { notFound, redirect } from 'next/navigation';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { getApproval } from '@/modules/approvals/queries';
 import { getProject, listDeliverables } from '@/modules/projects/queries';
 import { Badge, Card, EmptyState, humanize, IconProjects, PageHeader, statusTone } from '@/ui';
 
+import { ApprovalDecisionForm } from '../../../approvals/approval-decision-form';
 import { AddPrototypeForm, SubmitDeliverableForm } from '../deliverables-panel';
 import { ProjectSubNav } from '../project-subnav';
 
@@ -34,6 +36,19 @@ export default async function PrototypePage({ params }: { params: Promise<{ proj
   const clock = await agencyClock();
   const canWrite = can(context.role, 'project.write');
   const builds = (await listDeliverables(projectId)).filter((d) => d.kind === 'prototype');
+  // SCR-037 — a build's pending approval, decided here rather than on
+  // /approvals. The request is read by id; the same `ApprovalDecisionForm`
+  // the approvals page uses is drawn, and `approvals.decide_approval` holds
+  // the role check under its lock exactly as it does there.
+  const pendingApprovals = new Map(
+    (
+      await Promise.all(
+        builds
+          .filter((b) => b.approval_request_id !== null)
+          .map(async (b) => [b.id, await getApproval(b.approval_request_id as string)] as const),
+      )
+    ).filter(([, request]) => request?.state === 'pending'),
+  );
 
   return (
     <div className="flex flex-col gap-5">
@@ -70,6 +85,23 @@ export default async function PrototypePage({ params }: { params: Promise<{ proj
               {canWrite && b.status === 'draft' ? (
                 <SubmitDeliverableForm deliverableId={b.id} projectId={projectId} />
               ) : null}
+              {(() => {
+                const request = pendingApprovals.get(b.id);
+                if (!request) return null;
+                return (
+                  <div className="mt-2 rounded-md border border-line bg-surface-sunken px-3 py-2">
+                    <p className="text-[13px]">
+                      <span className="font-medium">Awaiting {request.audience} approval</span>
+                      <span className="text-muted">
+                        {' '}
+                        — {request.summary ?? 'no summary'} · requires {request.required_role.replace(/_/g, ' ')} · due{' '}
+                        {clock.dateTime(request.sla_due_at)}
+                      </span>
+                    </p>
+                    <ApprovalDecisionForm requestId={request.id} audience={request.audience} subjectType={request.subject_type} />
+                  </div>
+                );
+              })()}
             </Card>
           ))}
         </div>

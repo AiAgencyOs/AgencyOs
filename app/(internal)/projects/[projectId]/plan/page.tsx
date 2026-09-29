@@ -4,10 +4,13 @@ import { notFound, redirect } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { agencyClock } from '@/lib/admin/agency-clock';
+import { listPlanVersions } from '@/modules/projects/plan-versions-queries';
 import { getProject, readPlanBoard } from '@/modules/projects/queries';
-import { Badge, PageHeader, type Tone } from '@/ui';
+import { Badge, PageHeader, Stat, StatGrid, type Tone } from '@/ui';
 
 import { ProjectSubNav } from '../project-subnav';
+import { PlanBreakdownForm } from './plan-breakdown-form';
 
 import {
   ActivatePlanForm,
@@ -62,14 +65,27 @@ export default async function ProjectPlanPage({
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const board = await readPlanBoard(projectId);
+  const [board, versions, clock] = await Promise.all([readPlanBoard(projectId), listPlanVersions(projectId), agencyClock()]);
   // Planning is project work, so it takes the same capability that changes a
   // project. The doors check it again — this only decides what to render.
   const mayPlan = can(context.role, 'project.write');
+  // The breakdown door goes through createModule / createFeature / createTask,
+  // which take milestone.write and task.write; offered only to a role that
+  // holds both, and the doors decide again.
+  const mayBreakDown = can(context.role, 'milestone.write') && can(context.role, 'task.write');
   const { plan } = board;
   const openQuestions = board.clarifications.filter(
     (c) => c.status !== 'resolved' && c.status !== 'routed_to_change_request',
   );
+  // SCR-040 — coverage of approved scope: how many of the plan's scope
+  // version's INCLUDED items at least one deliverable cites. The validator
+  // flags the reverse (a deliverable citing nothing); this is the other
+  // direction, which nothing measured.
+  const includedScope = board.scopeItems.filter((s) => s.inclusion === 'included');
+  const citedScope = new Set(board.deliverables.map((d) => d.scopeItemId).filter((id): id is string => id !== null));
+  const coveredScope = includedScope.filter((s) => citedScope.has(s.id)).length;
+  const coveragePercent = includedScope.length === 0 ? null : Math.round((coveredScope / includedScope.length) * 100);
+  const unlinkedDeliverables = board.deliverables.filter((d) => d.scopeItemId === null).length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -88,6 +104,33 @@ export default async function ProjectPlanPage({
         </Link>
         .
       </p>
+
+      {plan ? (
+        <StatGrid>
+          <Stat
+            label="Approved scope covered"
+            value={coveragePercent === null ? '—' : `${coveragePercent}%`}
+            tone={coveragePercent === null ? 'neutral' : coveragePercent === 100 ? 'success' : 'warning'}
+            caption={
+              coveragePercent === null
+                ? 'the plan names no scope version with included items'
+                : `${coveredScope} of ${includedScope.length} included items have a deliverable`
+            }
+          />
+          <Stat
+            label="Deliverables"
+            value={String(board.deliverables.length)}
+            tone={unlinkedDeliverables > 0 ? 'warning' : 'neutral'}
+            caption={unlinkedDeliverables > 0 ? `${unlinkedDeliverables} not linked to scope` : 'every one cites approved scope'}
+          />
+          <Stat label="Plan versions" value={String(versions.length)} caption={`v${plan.version} is ${plan.status}`} />
+          <Stat
+            label="Open questions"
+            value={String(openQuestions.length)}
+            tone={openQuestions.length > 0 ? 'warning' : 'success'}
+          />
+        </StatGrid>
+      ) : null}
 
       {!plan ? (
         <section className="flex flex-col gap-3">
@@ -164,6 +207,9 @@ export default async function ProjectPlanPage({
             )}
             {mayPlan && plan.status === 'draft' ? (
               <AddDeliverableForm projectId={projectId} planId={plan.id} scopeItems={board.scopeItems} />
+            ) : null}
+            {mayBreakDown && plan.status === 'active' && board.deliverables.length > 0 ? (
+              <PlanBreakdownForm projectId={projectId} planId={plan.id} deliverables={board.deliverables.length} />
             ) : null}
           </section>
 
@@ -290,6 +336,37 @@ export default async function ProjectPlanPage({
               <RaiseClarificationForm projectId={projectId} planId={plan.id} />
             ) : null}
           </section>
+
+          {versions.length > 1 ? (
+            <section className="flex flex-col gap-2">
+              <h2 className="text-[13px] font-semibold tracking-tight">
+                Plan versions <span className="text-muted">({versions.length})</span>
+              </h2>
+              <p className="max-w-2xl text-[13px] text-muted">
+                §4.8: a superseded plan is history, never rewritten. Each later version says why it exists.
+              </p>
+              <ul className="flex flex-col gap-1">
+                {versions.map((v) => (
+                  <li key={v.id} className="flex flex-col gap-1 rounded-md border border-line p-3 text-[13px]">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="flex items-center gap-2">
+                        <span className="font-medium">Version {v.version}</span>
+                        <Badge tone={PHASE_TONE[v.status] ?? 'neutral'}>{v.status}</Badge>
+                        <span className="text-muted">
+                          {v.deliverables} deliverable{v.deliverables === 1 ? '' : 's'}
+                          {v.scopeVersion !== null ? ` · scope v${v.scopeVersion}` : ' · no scope version'}
+                        </span>
+                      </span>
+                      <span className="text-xs text-muted">
+                        {v.activatedAt ? `activated ${clock.date(v.activatedAt)}` : `drafted ${clock.date(v.createdAt)}`}
+                      </span>
+                    </div>
+                    {v.changeReason ? <p className="text-muted">Why: {v.changeReason}</p> : null}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
         </>
       )}
     </div>
