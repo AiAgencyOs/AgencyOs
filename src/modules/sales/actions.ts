@@ -427,3 +427,85 @@ export async function createClientAccountAction(
   if (result.ok) revalidatePath('/clients');
   return result;
 }
+
+/**
+ * The quotation composer (SCR-012) — one screen, the same governed steps.
+ *
+ * The reference draws quoting as a single form; the product's rule is that a
+ * quotation is drafted, itemised, priced and only then submitted, each a
+ * recorded step behind `proposal.draft`, with the owner's approval a separate
+ * decision. This action keeps every one of those doors: it calls the SAME
+ * service functions the Lead 360 panels call, in order, and stops at the
+ * first refusal, reporting how far it got so nothing is silently half-done.
+ * Nothing here computes a total — the pricing door does, from the rows.
+ */
+export type ComposeQuotationState = FormState & { proposalId?: string; leadId?: string };
+
+export async function composeQuotationAction(
+  _prev: ComposeQuotationState,
+  formData: FormData,
+): Promise<ComposeQuotationState> {
+  const leadId = String(formData.get('leadId') ?? '');
+  const descriptions = formData.getAll('lineDescription').map((v) => String(v).trim());
+  const quantities = formData.getAll('lineQuantity').map((v) => Number(String(v).trim() || '1'));
+  const unitPrices = formData.getAll('lineUnitPrice').map((v) => toMinor(v) ?? 0);
+  const lines = descriptions
+    .map((description, i) => ({ description, quantity: quantities[i] ?? 1, unitPriceMinor: unitPrices[i] ?? 0 }))
+    .filter((l) => l.description.length > 0);
+
+  if (lines.length === 0) return { status: 'error', message: 'Add at least one service or item.' };
+
+  const drafted = await draftProposal({
+    opportunityId: String(formData.get('opportunityId') ?? ''),
+    title: String(formData.get('title') ?? ''),
+    body: String(formData.get('body') ?? '') || undefined,
+    validUntil: String(formData.get('validUntil') ?? '') || undefined,
+  });
+  if (!drafted.ok) return { status: 'error', message: drafted.error.message };
+  const proposalId = drafted.data.proposalId;
+  const version = drafted.data.version;
+
+  for (const [i, line] of lines.entries()) {
+    const added = await addProposalItem({ proposalId, ...line });
+    if (!added.ok) {
+      revalidateLead(formData);
+      return {
+        status: 'error',
+        message: `Quotation v${version} was drafted, but line ${i + 1} (“${line.description}”) was refused: ${added.error.message}. The draft is on the lead; finish it there.`,
+        proposalId,
+        leadId,
+      };
+    }
+  }
+
+  const discountMinor = toMinor(formData.get('discount'));
+  const taxMinor = toMinor(formData.get('tax'));
+  const priced = await setProposalPricing({
+    proposalId,
+    ...(discountMinor === undefined ? {} : { discountMinor }),
+    ...(taxMinor === undefined ? {} : { taxMinor }),
+  });
+  if (!priced.ok) {
+    revalidateLead(formData);
+    return { status: 'error', message: `Quotation v${version} was drafted with its lines, but pricing was refused: ${priced.error.message}.`, proposalId, leadId };
+  }
+
+  const submit = String(formData.get('submit') ?? '') === 'on';
+  if (submit) {
+    const submitted = await submitProposal({ proposalId, summary: String(formData.get('summary') ?? '') || undefined });
+    if (!submitted.ok) {
+      revalidateLead(formData);
+      return { status: 'error', message: `Quotation v${version} is drafted and priced, but could not be sent for approval: ${submitted.error.message}.`, proposalId, leadId };
+    }
+    revalidatePath('/approvals');
+  }
+
+  revalidateLead(formData);
+  revalidatePath('/quotations');
+  return {
+    status: 'success',
+    message: submit ? `Quotation v${version} drafted, priced and sent to the owner for approval.` : `Quotation v${version} drafted and priced. Submit it for approval from the lead when it is ready.`,
+    proposalId,
+    leadId,
+  };
+}

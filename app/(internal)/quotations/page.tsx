@@ -5,10 +5,14 @@ import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listProposals } from '@/modules/sales/queries';
+import Link from 'next/link';
+
 import { SavedViewsBar } from '../saved-views-bar';
 import {
   Badge,
+  buttonClass,
   DataTable,
+  IconPlus,
   DEFAULT_PAGE_SIZE,
   EmptyState,
   FilterBar,
@@ -128,6 +132,14 @@ export default async function QuotationsPage({
           quotations.length === 0
             ? 'No quotations match this filter.'
             : `${quotations.length} quotation${quotations.length === 1 ? '' : 's'}.`
+        }
+        actions={
+          can(context.role, 'proposal.draft') ? (
+            <Link href="/quotations/new" className={buttonClass('primary', 'sm')}>
+              <IconPlus size={14} />
+              Create quotation
+            </Link>
+          ) : null
         }
       />
 
