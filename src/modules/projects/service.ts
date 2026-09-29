@@ -53,6 +53,12 @@ import {
   type FreezeScopeVersionInput,
   addProjectFileSchema,
   removeProjectFileSchema,
+  updateProjectFileSchema,
+  setMilestoneDueOnSchema,
+  setDeliveryLeadSchema,
+  type UpdateProjectFileInput,
+  type SetMilestoneDueOnInput,
+  type SetDeliveryLeadInput,
   type AddProjectFileInput,
   type RemoveProjectFileInput,
   addRepositorySchema,
@@ -2141,4 +2147,129 @@ export async function updateProject(input: UpdateProjectInput): Promise<Result<{
   if (!data) return err('NOT_FOUND', 'Project not found.');
 
   return ok({ projectId: data.id });
+}
+
+/* ── PDF gap pass 6 ─────────────────────────────────────────────────────── */
+
+/** SCR-024 — rename or refile a link. RLS (projects_write) is the gate; the URL never changes. */
+export async function updateProjectFile(input: UpdateProjectFileInput): Promise<Result<{ fileId: string }>> {
+  const parsed = updateProjectFileSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid file.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to edit a file.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('project_files')
+    .update({ title: parsed.data.title, category: parsed.data.category, description: parsed.data.description })
+    .eq('id', parsed.data.fileId)
+    .select('id')
+    .maybeSingle();
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'updateProjectFile', detail: error.message }));
+    return err('INTERNAL', 'Could not save the file.');
+  }
+  if (!data) return err('NOT_FOUND', 'That file is not visible to you.');
+
+  return ok({ fileId: data.id });
+}
+
+/**
+ * SCR-020 — set or clear a payment milestone's due date. milestone.write,
+ * the capability the plan itself takes; RLS (milestones_write,
+ * can_manage_delivery) decides again. A met milestone keeps its date: the
+ * date it was due is part of the record of whether it was late.
+ */
+export async function setMilestoneDueOn(input: SetMilestoneDueOnInput): Promise<Result<{ milestoneId: string; dueOn: string | null }>> {
+  const parsed = setMilestoneDueOnSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'That is not a date.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'milestone.write')) {
+    return err('FORBIDDEN', 'You do not have permission to change milestone dates.');
+  }
+
+  const supabase = await createClient();
+  const { data: current, error: readError } = await supabase
+    .schema('projects')
+    .from('milestones')
+    .select('id, met_at')
+    .eq('id', parsed.data.milestoneId)
+    .maybeSingle();
+  if (readError) return err('INTERNAL', 'Could not read the milestone.');
+  if (!current) return err('NOT_FOUND', 'Milestone not found.');
+  if (current.met_at) return err('CONFLICT', 'This milestone has been met; its due date is part of the record now.');
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('milestones')
+    .update({ due_on: parsed.data.dueOn })
+    .eq('id', parsed.data.milestoneId)
+    .select('id, due_on')
+    .maybeSingle();
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setMilestoneDueOn', detail: error.message }));
+    return err('INTERNAL', 'Could not save the due date.');
+  }
+  if (!data) return err('NOT_FOUND', 'Milestone not found.');
+
+  return ok({ milestoneId: data.id, dueOn: data.due_on });
+}
+
+/**
+ * SCR-025 — who leads delivery. `projects.delivery_lead_id` has existed since
+ * the lead/lead rename and had no admin control; the team page is where a
+ * person expects to set it. Must be an internal member: the roster is the
+ * only list of people who can be handed a project.
+ */
+export async function setDeliveryLead(input: SetDeliveryLeadInput): Promise<Result<{ projectId: string; deliveryLeadId: string | null }>> {
+  const parsed = setDeliveryLeadSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid request.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to change the delivery lead.');
+  }
+
+  const supabase = await createClient();
+  if (parsed.data.deliveryLeadId) {
+    const { data: member, error: memberError } = await supabase
+      .schema('core')
+      .from('memberships')
+      .select('user_id')
+      .eq('user_id', parsed.data.deliveryLeadId)
+      .eq('status', 'active')
+      .maybeSingle();
+    if (memberError) return err('INTERNAL', 'Could not check the roster.');
+    if (!member) return err('VALIDATION', 'The delivery lead must be an active member of the agency.');
+  }
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('projects')
+    .update({ delivery_lead_id: parsed.data.deliveryLeadId })
+    .eq('id', parsed.data.projectId)
+    .is('deleted_at', null)
+    .select('id, delivery_lead_id')
+    .maybeSingle();
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setDeliveryLead', detail: error.message }));
+    return err('INTERNAL', 'Could not save the delivery lead.');
+  }
+  if (!data) return err('NOT_FOUND', 'Project not found.');
+
+  return ok({ projectId: data.id, deliveryLeadId: data.delivery_lead_id });
 }

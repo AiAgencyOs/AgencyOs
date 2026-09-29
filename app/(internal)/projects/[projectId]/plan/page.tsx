@@ -6,8 +6,10 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { readClientName } from '@/lib/admin/clients';
-import { getProject, listPaymentPlan, readPlanBoard } from '@/modules/projects/queries';
-import { Badge, Card, CardHeader, cx, Gantt, IconCalendar, IconCheck, IconClock, IconFlag, PermissionDenied, Stat, StatGrid, StatusBadge, ViewAll, type GanttRow, type Tone } from '@/ui';
+import { getProject, listMilestoneTaskCounts, listPaymentPlan, readPlanBoard } from '@/modules/projects/queries';
+import { Badge, Card, CardHeader, cx, Gantt, IconCalendar, IconCheck, IconClock, IconFlag, PermissionDenied, ProgressBar, Stat, StatGrid, StatusBadge, ViewAll, type GanttRow, type Tone } from '@/ui';
+
+import { MilestoneDueForm } from '../milestone-controls';
 
 import { WorkspaceHeader } from '../workspace-header';
 
@@ -66,9 +68,10 @@ export default async function ProjectPlanPage({
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const [board, milestones, clock, clientName] = await Promise.all([
+  const [board, milestones, taskCounts, clock, clientName] = await Promise.all([
     readPlanBoard(projectId),
     listPaymentPlan(projectId),
+    listMilestoneTaskCounts(projectId),
     agencyClock(),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
   ]);
@@ -115,6 +118,8 @@ export default async function ProjectPlanPage({
   // Planning is project work, so it takes the same capability that changes a
   // project. The doors check it again — this only decides what to render.
   const mayPlan = can(context.role, 'project.write');
+  const mayDate = can(context.role, 'milestone.write');
+  const tasksFor = (id: string) => taskCounts.find((t) => t.milestoneId === id) ?? { milestoneId: id, total: 0, done: 0 };
   const { plan } = board;
   const openQuestions = board.clarifications.filter(
     (c) => c.status !== 'resolved' && c.status !== 'routed_to_change_request',
@@ -155,6 +160,42 @@ export default async function ProjectPlanPage({
               </p>
             ) : null}
           </Card>
+
+          {milestones.length > 0 ? (
+            <Card>
+              <CardHeader
+                title="Payment milestones"
+                description="Each milestone's due date, the work filed under it on the Board, and whether it has been met. Dates drive the timeline above and the calendar."
+              />
+              <ul className="divide-y divide-line">
+                {milestones.map((m) => {
+                  const t = tasksFor(m.id);
+                  const pct = t.total > 0 ? Math.round((t.done / t.total) * 100) : 0;
+                  return (
+                    <li key={m.id} className="flex flex-col gap-2 px-4 py-3 sm:px-5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[13px] font-medium">{m.position + 1}. {m.name}</span>
+                        <StatusBadge status={m.met_at ? 'completed' : m.due_on && m.due_on < today ? 'overdue' : m.status} />
+                        {m.payment_percent !== null ? <Badge mono>{Number(m.payment_percent)}%</Badge> : null}
+                        <span className="ml-auto text-xs text-muted">
+                          {m.met_at ? `met ${clock.date(m.met_at)}` : m.due_on ? `due ${clock.date(m.due_on)}` : 'no due date'}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="w-48">
+                          <ProgressBar value={pct} label={`${m.name} tasks done`} />
+                        </div>
+                        <span className="text-xs text-muted">
+                          {t.total === 0 ? 'No tasks filed under this milestone' : `${t.done}/${t.total} tasks done`}
+                        </span>
+                        {mayDate && !m.met_at ? <MilestoneDueForm projectId={projectId} milestoneId={m.id} dueOn={m.due_on} /> : null}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+          ) : null}
 
           <div className="flex flex-col gap-6 [&>section]:rounded-xl [&>section]:border [&>section]:border-line [&>section]:bg-surface [&>section]:p-4 [&>section]:shadow-xs sm:[&>section]:p-5">
 

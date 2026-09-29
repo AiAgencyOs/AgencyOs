@@ -5,7 +5,7 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject, listScopeVersionHistory, readChangeRequests, readScopeBaseline } from '@/modules/projects/queries';
-import { Badge, Card, EmptyState, humanize, IconProjects, PageHeader, statusTone, PermissionDenied } from '@/ui';
+import { Badge, Card, EmptyState, humanize, IconCheck, IconClock, IconFlag, IconProjects, PageHeader, Stat, StatGrid, statusTone, PermissionDenied } from '@/ui';
 
 import { ChangeRequestList, SubmitChangeRequestForm } from '../change-request-panel';
 import { OpenScopeVersionForm, ScopeVersionCard } from '../scope-panel';
@@ -45,6 +45,16 @@ export default async function ScopePage({ params }: { params: Promise<{ projectI
   // separate from canWrite.
   const isOwner = context.role === 'owner';
 
+  const crOpen = changeRequests.filter((cr) => ['submitted', 'analysing', 'classified', 'pending_approval'].includes(cr.status));
+  const crAwaitingOwner = changeRequests.filter((cr) => ['classified', 'pending_approval'].includes(cr.status));
+  const crApproved = changeRequests.filter((cr) => cr.status === 'approved');
+  const crApplied = changeRequests.filter((cr) => cr.status === 'applied');
+  const crRejected = changeRequests.filter((cr) => cr.status === 'rejected');
+  const crEffort = changeRequests.filter((cr) => cr.status !== 'rejected').reduce((n, cr) => n + (cr.effortHours ?? 0), 0);
+  const crDays = changeRequests.filter((cr) => cr.status !== 'rejected').reduce((n, cr) => n + (cr.timelineDays ?? 0), 0);
+  const scopeIn = active?.items.filter((i) => i.inclusion === 'included').length ?? 0;
+  const scopeOut = active?.items.filter((i) => i.inclusion === 'excluded').length ?? 0;
+
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
@@ -53,6 +63,14 @@ export default async function ScopePage({ params }: { params: Promise<{ projectI
       />
 
       <ProjectSubNav projectId={projectId} />
+
+      <StatGrid cols={5}>
+        <Stat label="Frozen baseline" value={active ? `v${active.version}` : '—'} caption={active ? `${scopeIn} in · ${scopeOut} out of scope` : draft ? 'Draft open, nothing frozen yet' : 'No baseline'} tone="brand" icon={<IconFlag size={16} />} />
+        <Stat label="Open change requests" value={String(crOpen.length)} caption={crAwaitingOwner.length > 0 ? `${crAwaitingOwner.length} awaiting an owner` : 'None waiting on a decision'} tone={crOpen.length > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} />
+        <Stat label="Approved, not applied" value={String(crApproved.length)} caption="Apply to open the next draft" tone={crApproved.length > 0 ? 'info' : 'neutral'} icon={<IconCheck size={16} />} />
+        <Stat label="Applied" value={String(crApplied.length)} caption={`${crRejected.length} rejected`} tone="success" icon={<IconCheck size={16} />} />
+        <Stat label="Captured impact" value={crEffort > 0 ? `${crEffort}h` : '—'} caption={crDays > 0 ? `+${crDays} day${crDays === 1 ? '' : 's'} to the timeline` : 'No estimates recorded'} tone="accent" icon={<IconClock size={16} />} />
+      </StatGrid>
 
       {draft ? <ScopeVersionCard projectId={projectId} scopeVersion={draft} editable={canWrite} /> : null}
 

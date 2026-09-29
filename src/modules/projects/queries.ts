@@ -18,7 +18,7 @@ const LIST_SELECT = 'id, name, code, status, currency, budget_minor, created_at'
 // `proposal_id` is on the detail because ADM-72 requires the accepted
 // quotation's presence — or absence — to be *visible*, not merely auditable.
 // It was written by conversion since G-017 and read by nothing until G-114.
-const DETAIL_SELECT = `${LIST_SELECT}, description, client_account_id, opportunity_id, proposal_id, starts_on, ends_on, visibility`;
+const DETAIL_SELECT = `${LIST_SELECT}, description, client_account_id, opportunity_id, proposal_id, starts_on, ends_on, visibility, delivery_lead_id`;
 
 export async function listProjects(limit = 100): Promise<ProjectListItem[]> {
   const supabase = await createClient();
@@ -2524,6 +2524,37 @@ export type PhaseFourEscalation = {
   blockedReason: string | null;
   updatedAt: string;
 };
+
+export type MilestoneTaskCount = { milestoneId: string; total: number; done: number };
+
+/**
+ * How much of the work under each payment milestone is done — SCR-020's
+ * "milestone tasks". `projects.tasks.milestone_id` has been a column since
+ * the first projects migration and nothing read it; a milestone's progress
+ * is the only honest number for "is this milestone near", so it is counted
+ * here rather than guessed from dates.
+ */
+export async function listMilestoneTaskCounts(projectId: string): Promise<MilestoneTaskCount[]> {
+  const supabase = await createClient();
+
+  const { data, error: tasksError } = await supabase
+    .schema('projects')
+    .from('tasks')
+    .select('milestone_id, status')
+    .eq('project_id', projectId)
+    .not('milestone_id', 'is', null);
+  if (tasksError) unreadable('listMilestoneTaskCounts', tasksError);
+
+  const counts = new Map<string, MilestoneTaskCount>();
+  for (const t of data ?? []) {
+    if (!t.milestone_id) continue;
+    const row = counts.get(t.milestone_id) ?? { milestoneId: t.milestone_id, total: 0, done: 0 };
+    row.total += 1;
+    if (t.status === 'done') row.done += 1;
+    counts.set(t.milestone_id, row);
+  }
+  return [...counts.values()];
+}
 
 /**
  * Master's own Admin Panel question "WHAT IS BLOCKED?", answered across the

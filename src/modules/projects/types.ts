@@ -19,6 +19,7 @@ export type ProjectDetail = ProjectListItem &
     | 'starts_on'
     | 'ends_on'
     | 'visibility'
+    | 'delivery_lead_id'
   >;
 
 /** A milestone as the payment plan renders it. */

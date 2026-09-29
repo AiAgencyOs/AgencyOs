@@ -76,6 +76,9 @@ import {
   removeDependency,
   updateTask,
   updateProject,
+  updateProjectFile,
+  setMilestoneDueOn,
+  setDeliveryLead,
   shareUiVersionWithClient,
   recordUiVersionClientDecision,
   lockUiVersion,
@@ -1505,4 +1508,50 @@ export async function updateProjectAction(_prev: FormState, formData: FormData):
   revalidatePath(`/projects/${projectId}/settings`);
   revalidatePath('/projects');
   return { status: 'success', message: 'Project saved.' };
+}
+
+/* ── PDF gap pass 6 ─────────────────────────────────────────────────────── */
+
+export async function updateProjectFileAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const description = String(formData.get('description') ?? '').trim();
+
+  const result = await updateProjectFile({
+    fileId: String(formData.get('fileId') ?? ''),
+    category: String(formData.get('category') ?? '') as never,
+    title: String(formData.get('title') ?? ''),
+    description: description || null,
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/files`);
+  return { status: 'success', message: 'File updated.' };
+}
+
+export async function setMilestoneDueOnAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const dueOn = String(formData.get('dueOn') ?? '').trim();
+
+  const result = await setMilestoneDueOn({
+    milestoneId: String(formData.get('milestoneId') ?? ''),
+    dueOn: dueOn || null,
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}/plan`);
+  revalidatePath(`/projects/${projectId}/calendar`);
+  return { status: 'success', message: result.data.dueOn ? `Due ${result.data.dueOn}.` : 'Due date cleared.' };
+}
+
+export async function setDeliveryLeadAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const deliveryLeadId = String(formData.get('deliveryLeadId') ?? '').trim();
+
+  const result = await setDeliveryLead({ projectId, deliveryLeadId: deliveryLeadId || null });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}/team`);
+  return { status: 'success', message: result.data.deliveryLeadId ? 'Delivery lead set.' : 'Delivery lead cleared.' };
 }

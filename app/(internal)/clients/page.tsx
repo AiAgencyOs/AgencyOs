@@ -12,6 +12,7 @@ import {
   Avatar,
   Badge,
   buttonClass,
+  cx,
   DataTable,
   DEFAULT_PAGE_SIZE,
   EmptyState,
@@ -19,7 +20,9 @@ import {
   FilterChips,
   IconCheck,
   IconClock,
+  IconDownload,
   IconImport,
+  inputClass,
   IconRupee,
   IconUser,
   IconUsers,
@@ -99,15 +102,17 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
 export default async function ClientsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string }>;
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; q?: string }>;
 }) {
   const context = await requireInternal('/clients');
   const clock = await agencyClock();
   if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
-  const { page: pageParam, sort: sortKey, dir, status } = await searchParams;
+  const { page: pageParam, sort: sortKey, dir, status, q: qRaw } = await searchParams;
+  const q = (qRaw ?? '').trim();
+  const needle = q.toLowerCase();
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
-  const currentQuery = [status ? `status=${status}` : '', sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
+  const currentQuery = [status ? `status=${status}` : '', q ? `q=${encodeURIComponent(q)}` : '', sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
   const [allClients, savedViews] = await Promise.all([listClients(), listSavedViews('/clients')]);
 
   const active = allClients.filter((c) => c.status === 'active');
@@ -118,11 +123,14 @@ export default async function ClientsPage({
   const sameCurrency = allClients.every((c) => c.currency === currency);
   const totalInvoiced = allClients.filter((c) => c.currency === currency).reduce((n, c) => n + c.invoicedMinor, 0);
 
-  const filtered =
+  const byStatus =
     status === 'active' ? active : status === 'archived' ? archived : status === 'owing' ? owing : status === 'working' ? withProjects : allClients;
+  const filtered = needle ? byStatus.filter((c) => c.name.toLowerCase().includes(needle) || (c.billingEmail ?? '').toLowerCase().includes(needle)) : byStatus;
   const clients = sortRows(filtered, sortKey, direction, COMPARATORS);
   const { page, pageCount, rows: pageRows } = paginate(clients, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
-  const qs = (extra: string) => `/clients?${status ? `status=${status}&` : ''}${extra}`;
+  const keep = [status ? `status=${status}` : '', q ? `q=${encodeURIComponent(q)}` : ''].filter(Boolean);
+  const qs = (extra: string) => `/clients?${keep.length ? `${keep.join('&')}&` : ''}${extra}`;
+  const chip = (s: string | null) => `/clients?${[s ? `status=${s}` : '', q ? `q=${encodeURIComponent(q)}` : ''].filter(Boolean).join('&')}`;
 
   return (
     <div className="flex flex-col gap-5">
@@ -131,6 +139,10 @@ export default async function ClientsPage({
         description="Manage your clients, track projects, communication and business growth."
         actions={
           <>
+            <a href={`/api/clients/export${q ? `?q=${encodeURIComponent(q)}` : ''}`} className={buttonClass('secondary', 'sm')}>
+              <IconDownload size={14} />
+              Export CSV
+            </a>
             {can(context.role, 'organization.settings') ? (
               <Link href="/import" className={buttonClass('secondary', 'sm')}>
                 <IconImport size={14} />
@@ -163,13 +175,19 @@ export default async function ClientsPage({
         <FilterBar>
           <FilterChips
             options={[
-              { key: 'all', label: `All clients (${allClients.length})`, href: '/clients', active: !status },
-              { key: 'active', label: `Active (${active.length})`, href: '/clients?status=active', active: status === 'active' },
-              { key: 'working', label: `Working (${withProjects.length})`, href: '/clients?status=working', active: status === 'working' },
-              { key: 'owing', label: `Owing (${owing.length})`, href: '/clients?status=owing', active: status === 'owing' },
-              { key: 'archived', label: `Archived (${archived.length})`, href: '/clients?status=archived', active: status === 'archived' },
+              { key: 'all', label: `All clients (${allClients.length})`, href: chip(null), active: !status },
+              { key: 'active', label: `Active (${active.length})`, href: chip('active'), active: status === 'active' },
+              { key: 'working', label: `Working (${withProjects.length})`, href: chip('working'), active: status === 'working' },
+              { key: 'owing', label: `Owing (${owing.length})`, href: chip('owing'), active: status === 'owing' },
+              { key: 'archived', label: `Archived (${archived.length})`, href: chip('archived'), active: status === 'archived' },
             ]}
           />
+          <form method="get" action="/clients" className="flex flex-wrap items-center gap-2">
+            {status ? <input type="hidden" name="status" value={status} /> : null}
+            <input name="q" defaultValue={q} placeholder="Search name or email…" aria-label="Search clients" className={cx(inputClass, 'w-56')} />
+            <button type="submit" className={buttonClass('secondary', 'sm')}>Search</button>
+            {q ? <Link href={chip(status ?? null)} className="text-xs text-muted hover:underline">Clear</Link> : null}
+          </form>
         </FilterBar>
       ) : null}
 
@@ -189,8 +207,8 @@ export default async function ClientsPage({
       ) : (
         <EmptyState
           icon={<IconUser size={22} />}
-          title={status ? 'No matching clients' : 'No clients yet'}
-          description={status ? 'No client is in this state.' : 'A client account is created automatically the first time a deal is won, or from + Add client.'}
+          title={status || q ? 'No matching clients' : 'No clients yet'}
+          description={q ? `No client matches “${q}”.` : status ? 'No client is in this state.' : 'A client account is created automatically the first time a deal is won, or from + Add client.'}
         />
       )}
     </div>

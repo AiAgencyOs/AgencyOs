@@ -375,6 +375,29 @@ export type AddProjectFileInput = z.infer<typeof addProjectFileSchema>;
 export const removeProjectFileSchema = z.object({ fileId: z.uuid() });
 export type RemoveProjectFileInput = z.infer<typeof removeProjectFileSchema>;
 
+/** SCR-024 — rename or refile a link. The URL is not editable: a different place is a different file. */
+export const updateProjectFileSchema = z.object({
+  fileId: z.uuid(),
+  category: z.enum(PROJECT_FILE_CATEGORIES),
+  title: z.string().trim().min(1, 'A file needs a title').max(200),
+  description: z.string().trim().max(1000).nullable(),
+});
+export type UpdateProjectFileInput = z.infer<typeof updateProjectFileSchema>;
+
+/** SCR-020 — a payment milestone's due date, set or cleared by a person. */
+export const setMilestoneDueOnSchema = z.object({
+  milestoneId: z.uuid(),
+  dueOn: z.iso.date().nullable(),
+});
+export type SetMilestoneDueOnInput = z.infer<typeof setMilestoneDueOnSchema>;
+
+/** SCR-025 — who leads delivery on a project. Null clears it. */
+export const setDeliveryLeadSchema = z.object({
+  projectId: z.uuid(),
+  deliveryLeadId: z.uuid().nullable(),
+});
+export type SetDeliveryLeadInput = z.infer<typeof setDeliveryLeadSchema>;
+
 /** SCR-042 — a repository is a link too. See the migration for why there's no live VCS integration. */
 export const REPOSITORY_PLATFORMS = ['github', 'gitlab', 'bitbucket', 'other'] as const;
 export type RepositoryPlatform = (typeof REPOSITORY_PLATFORMS)[number];

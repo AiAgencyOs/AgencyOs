@@ -5,7 +5,9 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { readClientName } from '@/lib/admin/clients';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { getProject, listProjectTeam } from '@/modules/projects/queries';
+import { getProject, listInternalRoster, listProjectTeam } from '@/modules/projects/queries';
+
+import { DeliveryLeadForm } from '../milestone-controls';
 import {
   Avatar,
   Badge,
@@ -51,12 +53,15 @@ export default async function ProjectTeamPage({ params }: { params: Promise<{ pr
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const [team, clock, clientName] = await Promise.all([
+  const [team, roster, clock, clientName] = await Promise.all([
     listProjectTeam(projectId),
+    listInternalRoster(),
     agencyClock(),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
   ]);
 
+  const canEdit = can(context.role, 'project.write');
+  const lead = project.delivery_lead_id ? (roster.find((m) => m.userId === project.delivery_lead_id) ?? null) : null;
   const byRole = new Map<string, number>();
   for (const m of team) byRole.set(m.role, (byRole.get(m.role) ?? 0) + 1);
   const roles = [...byRole.entries()].sort((a, b) => b[1] - a[1]);
@@ -117,6 +122,24 @@ export default async function ProjectTeamPage({ params }: { params: Promise<{ pr
           )}
         </Card>
 
+        <div className="flex flex-col gap-4">
+        <Card>
+          <CardHeader title="Delivery lead" description="Who answers for this project's delivery. Set from the agency roster; nothing else changes." />
+          <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+            {lead ? (
+              <div className="flex items-center gap-2.5">
+                <Avatar name={lead.fullName} size="md" />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium">{lead.fullName}</span>
+                  <span className="block truncate text-xs text-muted">{lead.email} · {humanize(lead.role)}</span>
+                </span>
+              </div>
+            ) : (
+              <p className="text-[13px] text-muted">{project.delivery_lead_id ? 'Assigned to someone no longer on the roster.' : 'Nobody has been named yet.'}</p>
+            )}
+            {canEdit ? <DeliveryLeadForm projectId={projectId} current={project.delivery_lead_id} roster={roster} /> : null}
+          </div>
+        </Card>
         <Card>
           <CardHeader title="Team role distribution" />
           <div className="p-4 sm:p-5">
@@ -127,6 +150,7 @@ export default async function ProjectTeamPage({ params }: { params: Promise<{ pr
             )}
           </div>
         </Card>
+        </div>
       </div>
     </div>
   );

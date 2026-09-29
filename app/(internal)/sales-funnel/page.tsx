@@ -10,7 +10,9 @@ import { requireInternal } from '@/lib/auth/session';
 import { isOpenOpportunity, LOST_CATEGORY_LABELS, OPPORTUNITY_STAGES, type OpportunityStage } from '@/modules/sales/schema';
 import { listOpportunities } from '@/modules/sales/queries';
 import { can } from '@/lib/authz/permissions';
-import { DonutChart, humanize, PageHeader, statusTone, type KanbanColumn, PermissionDenied } from '@/ui';
+import Link from 'next/link';
+
+import { buttonClass, DonutChart, humanize, IconCheck, IconDownload, IconRupee, IconTarget, IconTrendUp, IconUsers, PageHeader, Stat, StatGrid, statusTone, type KanbanColumn, PermissionDenied } from '@/ui';
 
 import { PipelineBoard, type PipelineCard } from './pipeline-board';
 
@@ -63,19 +65,33 @@ const hours = (h: number | null): string => {
   return `${Math.round(h / 24)}d`;
 };
 
-export default async function SalesFunnelPage() {
+const WINDOWS = [30, 90, 180, 365] as const;
+
+export default async function SalesFunnelPage({ searchParams }: { searchParams: Promise<{ days?: string }> }) {
   const context = await requireInternal('/sales-funnel');
   if (!can(context.role, 'lead.read')) return <PermissionDenied />;
 
-  const { counts, steps, biggestDrop, outOfOrder, lostReasons } = await getSalesFunnel();
-  const reflex = await getPricingReflex();
-  const leadSources = await getLeadSourceBreakdown();
+  const { days: daysParam } = await searchParams;
+  const days = (WINDOWS as readonly number[]).includes(Number(daysParam)) ? Number(daysParam) : 90;
+
+  const { counts, steps, biggestDrop, outOfOrder, lostReasons } = await getSalesFunnel(days);
+  const reflex = await getPricingReflex(days);
+  const leadSources = await getLeadSourceBreakdown(days);
   const widest = Math.max(...steps.map((s) => s.count), 1);
 
   const opportunities = await listOpportunities();
   const openStages = OPPORTUNITY_STAGES.filter(isOpenOpportunity);
   const open = opportunities.filter((o) => isOpenOpportunity(o.stage as OpportunityStage));
   const canWritePipeline = can(context.role, 'lead.write');
+
+  // SCR-004's KPI row — every figure a sum or count of rows, per stage.
+  const currency = open[0]?.currency ?? opportunities[0]?.currency ?? 'INR';
+  const valueByStage = new Map<string, number>();
+  for (const o of opportunities) if (o.currency === currency) valueByStage.set(o.stage, (valueByStage.get(o.stage) ?? 0) + o.value_minor);
+  const openValue = open.filter((o) => o.currency === currency).reduce((n, o) => n + o.value_minor, 0);
+  const decided = counts.won + counts.lost;
+  const winRate = decided > 0 ? Math.round((counts.won / decided) * 100) : null;
+  const wonValue = valueByStage.get('won') ?? 0;
 
   const pipelineColumns: KanbanColumn[] = openStages.map((stage) => ({
     id: stage,
@@ -99,8 +115,30 @@ export default async function SalesFunnelPage() {
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Sales funnel"
-        description="Leads created in the last 90 days, and how far each got. Every number is a row somebody wrote."
+        description={`Leads created in the last ${days} days, and how far each got. Every number is a row somebody wrote.`}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex gap-1 rounded-lg border border-line bg-surface p-0.5">
+              {WINDOWS.map((w) => (
+                <Link key={w} href={`/sales-funnel?days=${w}`} className={buttonClass(days === w ? 'primary' : 'ghost', 'sm')} aria-current={days === w ? 'page' : undefined}>
+                  {w}d
+                </Link>
+              ))}
+            </div>
+            <a href="/api/sales/pipeline/export" className={buttonClass('secondary', 'sm')}>
+              <IconDownload size={14} /> Export CSV
+            </a>
+          </div>
+        }
       />
+
+      <StatGrid cols={5}>
+        <Stat label="Leads in window" value={String(counts.leads)} caption={`${counts.qualified} qualified · ${counts.quoted} quoted`} tone="brand" icon={<IconUsers size={16} />} href="/leads" />
+        <Stat label="Open deals" value={String(open.length)} caption={openStages.map((st) => `${valueByStage.has(st) ? money(valueByStage.get(st) ?? 0, currency) : '₹0'} ${STAGE_LABEL[st].toLowerCase()}`).join(' · ')} tone="info" icon={<IconTarget size={16} />} />
+        <Stat label="Pipeline value" value={money(openValue, currency)} caption="Sum of open deal values" tone="accent" icon={<IconRupee size={16} />} />
+        <Stat label="Won" value={String(counts.won)} caption={wonValue > 0 ? `${money(wonValue, currency)} across all won deals` : `${counts.lost} lost`} tone="success" icon={<IconCheck size={16} />} />
+        <Stat label="Win rate" value={winRate === null ? '—' : `${winRate}%`} caption={decided > 0 ? `${counts.won} won of ${decided} decided` : 'Nothing decided in the window'} tone={winRate !== null && winRate >= 50 ? 'success' : 'neutral'} icon={<IconTrendUp size={16} />} />
+      </StatGrid>
 
       <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4">
         <p className="text-sm font-medium">Open pipeline</p>
@@ -122,7 +160,7 @@ export default async function SalesFunnelPage() {
         <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4">
           <p className="text-sm font-medium">Lead source breakdown</p>
           <p className="text-[12.5px] text-muted">
-            Leads created in the last 90 days, by how they reached us.
+            Leads created in the last {days} days, by how they reached us.
           </p>
           <div className="mt-2">
             <DonutChart
