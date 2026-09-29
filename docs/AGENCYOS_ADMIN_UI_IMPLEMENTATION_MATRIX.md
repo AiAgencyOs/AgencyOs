@@ -218,7 +218,30 @@ needed to confirm or rule it out.
 | MOCKED | 0 | Explicit anti-mock-data policy found and verified across admin code |
 | OUTDATED | 0 (not separately tracked) | Not distinguished from NEEDS_REDESIGN in this pass — see below |
 
-**Headline finding:** the functional/backend layer of the admin panel is
+### Update 2026-09-29 — what changed since this matrix was written
+
+The 2026-09-22 … 28 reskin and this pass together move the classification.
+The authoritative per-screen status now lives in
+`AGENCYOS_ADMIN_MASTER_SCREEN_INVENTORY.md` (52 COMPLETE, 14 GROUPED, 5
+PARTIAL, 0 MISSING); this section records only the deltas against the table
+above.
+
+| Area | Was | Now |
+|---|---|---|
+| Visual system | NEEDS_REDESIGN on all 71 | Reskinned (dark rail, indigo, KPI chips, Kanban, charts) on 2026-09-22 … 28; **sectioned into the PDF's fifteen modules with breadcrumb and live bell on 2026-09-29** |
+| Realtime | "no realtime infrastructure anywhere" | Supabase Realtime push on 8 screens + the bell; polling primitive deleted — `AGENCYOS_ADMIN_REALTIME_ARCHITECTURE.md` |
+| Loading states | 27 top-level `loading.tsx` | + 19 nested/sub-route skeletons, incl. a `SkeletonDetail` shape for every 360 page |
+| Sticky headers | attempted, reverted | working (bounded-height scroll box, sticky `<th>`) |
+| SCR-017 Notes | PARTIAL (no table) | COMPLETE — `core.client_notes` (20260928120000) |
+| SCR-032 / SCR-039 | per-project only | + org-level portfolio indexes `/design`, `/development` |
+| Typecheck | (not recorded) | was **failing** on the snapshot (untyped `saved_views`, `client_notes`); fixed |
+| Configurability | not audited | `AGENCYOS_ADMIN_CONFIGURABILITY_AUDIT.md`; B-1/B-2 implemented |
+
+Still PARTIAL, each for a stated non-UI reason: 023 (no start date to draw
+a Gantt bar), 042 (link-based repositories), 055 (margin formula is an
+accounting decision), 056 (GST return needs a portal integration).
+
+**Headline finding (2026-09-22):** the functional/backend layer of the admin panel is
 already extremely mature — a prior in-repo audit
 (`docs/admin-panel-screen-traceability.md`) independently verified 69/71
 screens EXISTS with 0 MISSING, and this task's own repo sweep reached the

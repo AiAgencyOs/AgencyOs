@@ -54,6 +54,15 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Keyboard users land on the rail's forty links first; this jumps them
+          past it. Visually hidden until focused, so it costs sighted readers
+          nothing. */}
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-brand focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-brand-fg"
+      >
+        Skip to content
+      </a>
       {/* ── Desktop rail ──────────────────────────────────────────────────
           Fixed rather than a flex sibling, so a long page scrolls under a
           stationary nav instead of dragging it out of view. */}
@@ -120,7 +129,7 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
 
         {/* Bottom padding clears the phone tab bar; a fixed bar over the last
             row of a table is the classic way to lose a delete button. */}
-        <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 pb-28 pt-5 sm:px-6 sm:pt-6 md:pb-10 lg:px-8">
+        <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[1400px] outline-none flex-1 px-4 pb-28 pt-5 sm:px-6 sm:pt-6 md:pb-10 lg:px-8">
           {children}
         </main>
       </div>

@@ -1,83 +1,111 @@
 # AgencyOS Admin Panel — Test Matrix
 
-What was actually run against this reskin, and what wasn't. Written after
-the fact from real tool output, not a plan — every "✓" below has a
-corresponding command or screenshot earlier in this work's history.
+What was actually run, with real results, and what was not. Two sessions
+are recorded: the reskin (2026-09-22 … 28) and this pass (2026-09-29).
+Every "✓" has a command and an output behind it.
 
-## Automated
+## 1. Definition of done for a screen
 
-| Check | Result | Scope |
+A screen is COMPLETE in `AGENCYOS_ADMIN_MASTER_SCREEN_INVENTORY.md` only when:
+route exists · correct capability guard · design source mapped · real
+backend data (no mock) · loading / empty / error / permission-denied states ·
+filters, search, pagination where needed · actions call backend commands ·
+canonical state displayed · live update where applicable · responsive
+(table → cards) · accessible landmarks and labels · no runtime error in the
+production build · tests where meaningful.
+
+## 2. Automated — this pass (2026-09-29)
+
+| Check | Result | Notes |
 |---|---|---|
-| `tsc --noEmit` | ✓ clean | Whole repo, run after every change in this session. |
-| `eslint .` | ✓ clean (4 pre-existing unrelated warnings in `tmp/demo-meeting.mjs`) | Whole repo. |
-| `npm test` (`node --test`) | ✓ 6,240 / 6,240 pass | Whole repo. One real regression was found and fixed mid-session (a source-scanning test's regex was too strict for the new icon-chip prop; the underlying guarantee it checks was unaffected). |
-| `node scripts/verify-tenancy-guards.mjs` | ✓ 15/15 checks pass | Live, against a real local Postgres. Found and fixed two pre-existing gaps unrelated to this reskin (`finance.receipts`, `projects.ui_version_client_decisions.conversation_id`) — see `20260928140000_a_receipt_and_a_decision_learn_their_tenant.sql`. |
+| `tsc --noEmit` | ✓ clean | The snapshot branch **failed** typecheck on arrival (7 errors: `core.saved_views` and `core.client_notes` missing from `src/lib/db/types.ts`). Fixed by adding both table types from their migrations. |
+| `eslint app src tests` | ✓ clean | Module boundaries (ARCHITECTURE.md §3.2) hold: `src/lib/realtime` imports nothing from `modules/`; the Action Center aggregator lives in `app/` for that reason. |
+| `npm test` (node:test, **Node 22.22**) | 5,750 / 5,802 pass, **52 fail — identical set to the baseline run on the untouched snapshot** | The 52 are all `mock.module` semantics (`does not provide an export named 'createClient'`, `sendWhatsAppText is not a function`) under Node 22; CI runs **Node 26** (`.github/workflows`, `node-version: 26`), where the prior session recorded 6,240/6,240. This container has Node 20 and 22 only. |
+| New tests | ✓ 40 / 40 | `admin-nav-config` (12: fifteen modules in the locked order, every href has a page, every capability real, no orphan top-level page, role visibility, longest-prefix current item, trail), `realtime-connection` (12: LIVE is earned, catch-up on rejoin, degrade after 3, poll rates, words not colour), `realtime-topics` (7: every topic table is published and created, heartbeat excluded, audit isolated, dedupe, stable channel name), `two-more-settings-the-owner-can-set` (9: defaults, ranges, half-set window falls back, clause text, worker passes the window, migration whitelist + validation from the latest body). |
+| Existing tests touched | ✓ | `what-is-blocked-across-every-project` now reads `nav-config.ts`; `the-quotation-grows-its-document`'s render-door pin widened to accept the `validityDays` option while still pinning `document` + `renderItems`. |
+| `next build` (placeholder public env) | ✓ exit 0 | All routes compile; internal routes are dynamic (cookies). |
+| `node scripts/scan-secrets.mjs` | ✓ | — |
+| `node scripts/check-record.mjs` | 4 pre-existing disagreements fixed (roadmap.json migrations/tables/test-file counts were stale on the snapshot); 2 remain **environmental**: the test summary is unreadable under Node 22's TAP reporter, and the clone is shallow (`fetch-depth: 0` is CI's job). | `tests`/`suites` in `roadmap.json` are derived (6,235 + 40 new, 1,351 + 12) and will be confirmed by CI's Node 26 run. |
 
-## Live browser verification (real Supabase, real signed-in sessions)
+## 3. Automated — prior session (2026-09-22 … 28), for the record
 
-Done as the Owner role (full capability set) unless noted:
+`tsc` ✓ · `eslint` ✓ · `npm test` 6,240/6,240 (Node 26) ·
+`verify-tenancy-guards.mjs` 15/15 against a live local Postgres (found and
+fixed two pre-existing tenancy gaps).
 
-- Dashboard: dark sidebar, indigo active-state, KPI icon chips, `AutoRefresh`
-  ("Updated Xs ago") all confirmed rendering correctly.
-- Mobile viewport (375px): stacked KPI cards, bottom tab bar, and the
-  dark-themed slide-over drawer all confirmed legible and functional.
-- Client 360: added a real note end-to-end — RLS accepted the write, the
-  server action revalidated, the UI re-rendered with the correct author
-  email and timestamp.
-- Project Board: dragged a real card with the mouse; the task's status
-  changed via `setTaskStatusAction` and the column counts updated correctly.
-- Sales Pipeline: dragged a real card through a legal stage transition
-  (`discovery` → `proposal`) via `setOpportunityStageAction`.
-- Project Calendar: month grid and agenda list confirmed to agree on the
-  same dates after a real bug (see below) was fixed.
-- Usage & costs: a seeded 7-day cost trend rendered correctly as a line
-  chart after a real crash (see below) was fixed.
-- Clients list: confirmed no data-row/header overlap after a real bug (see
-  below) was fixed.
-- Security boundary: a `client_admin` role test account was created and
-  confirmed to be redirected to `/portal` — both via the login page's own
-  redirect logic *and* via direct URL access to `/projects/.../board` and
-  `/clients/...` (routes this session added Kanban/notes to) — never
-  reaching the internal shell at all.
+## 4. Live browser verification
 
-## Bugs found only by live testing (none catchable by static analysis)
+**This pass: none.** The container has no Docker daemon (`supabase start`
+cannot run) and no Supabase project credentials, so no internal page can be
+rendered past the login redirect. Nothing below is claimed for this pass.
 
-1. **Sticky table header broke row layout** — `position: sticky` on a
-   `<thead>` row caused the first data row to render overlapping the header
-   in a real browser. Reverted; see the design system doc's "Known
-   limitations."
-2. **Calendar date off-by-one** — a pre-existing timezone round-trip bug (not
-   introduced this session) in the agenda list's date heading, exposed by
-   comparison against the new month grid showing the correct date for the
-   same row. Fixed with a timezone-safe formatter.
-3. **Chart crash on real data** — `TrendChart`/`BarChart`/`DonutChart`
-   accepted a `valueFormatter` callback prop; Next.js refuses to pass a
-   plain function from a Server Component to a `'use client'` component.
-   Fixed by replacing it with a serializable `currency` string prop.
+Prior session (real Supabase, real signed-in sessions, Owner unless noted):
+Dashboard rendered with dark rail and KPI chips · 375 px viewport: stacked
+KPIs, bottom tabs, drawer · Client 360 note added end-to-end · Project Board
+card dragged (`setTaskStatusAction`) · Sales Pipeline stage moved · Calendar
+grid vs agenda agree after an off-by-one fix · Usage chart rendered after a
+server→client callback crash was fixed · `client_admin` confirmed redirected
+to `/portal` on every internal URL tried.
 
-## Explicitly not done
+## 5. Realtime multi-session E2E (brief tests 1–13)
 
-- **Full role-matrix testing.** Only Owner (full capability set) and one
-  `client_admin` boundary check were exercised. The other seven internal
-  roles (`ops_admin`, `delivery_lead`, `member`, `contractor`, `finance`,
-  plus `client_member`) were not signed in and clicked through. Note: per
-  `src/lib/authz/permissions.ts` as it stands, every internal role holding
-  `project.read`/`lead.read` also holds the matching write capability, so
-  the Kanban boards' read-only/disabled path has no role to exercise it with
-  today regardless.
-- **Accessibility audit.** No screen-reader pass, no keyboard-only
-  navigation pass, no contrast-ratio check beyond what the existing design
-  system's own token choices already carry over from before this reskin.
-- **Systematic responsive testing.** Only the Dashboard was checked at a
-  375px viewport; the other ~70 screens were not spot-checked at
-  tablet/mobile widths.
-- **Multi-session E2E** (the "create in session A, see it update in session
-  B without refresh" style tests the original brief asked for). Not
-  attempted — this reskin explicitly chose polling over push-based realtime,
-  so the premise of an instant cross-session update doesn't hold anyway; a
-  polling-interval-bounded version of this test was not run either.
-- **Visual QA against the 42 reference screenshots**, screen by screen. This
-  session verified the *token/component system* matches the reference
-  language (dark sidebar, indigo accent, KPI chip pattern) on the handful of
-  screens actually opened live; it did not do a systematic side-by-side
-  comparison for the other ~65 screens.
+**Not run — environment.** Requires a live Postgres with the
+`supabase_realtime` publication and two browser sessions. Procedure, for the
+next environment that has Docker:
+
+```
+npm run verify:db:up            # local Supabase, all 309 migrations
+npm run dev
+# Session A: /leads  ·  Session B: create a lead via ⌘K → New lead
+# expect A's list and the dashboard KPI to update without refresh; pill says Live
+# Session A: /approvals · B: raise + decide an approval → A updates after the decision commits, never before
+# Session A: /invoices/verify · B: submit a payment claim → A shows it; verify in B → A shows PAID after the RPC returns
+# Session A: /operations · fail a job → A shows it; requeue → A clears it
+# Kill the realtime container → pill says Reconnecting, then Degraded; restart → Live and the list catches up
+```
+
+What IS verified without a database: the status machine's promises
+(`realtime-connection.test.ts`) and that every subscribed table is published
+(`realtime-topics.test.ts`).
+
+## 6. Permissions
+
+Static: `admin-nav-config.test.ts` proves the rail for `owner`, `finance`,
+`contractor` and an unknown role; every page re-checks `can()` and RLS is the
+final word (unchanged). Live role-matrix click-through: **not done** (no DB).
+
+## 7. Accessibility
+
+Code-level (see design system §Accessibility): landmarks, `aria-current`,
+`aria-expanded`, `aria-sort`, `aria-live` status, skip link, reduced motion,
+icon labels. **No screen-reader pass, no automated axe/contrast run** — the
+pages cannot be rendered here.
+
+## 8. Responsive
+
+Code-level: every list uses `DataTable` (cards under `lg`), the rail hides
+under `md`, the two new portfolio pages use the same primitives. **No
+viewport screenshot pass this session.**
+
+## 9. Visual QA against the 44 reference screenshots
+
+Screen-by-screen side-by-side: **not done this session** (cannot render).
+Token/shell-level correspondence (dark rail, indigo accent, KPI chips,
+sectioned modules, breadcrumb, bell with count, status chips) is by
+inspection of the code against `AGENCYOS_UI_SOURCE_AUDIT.md` §2's
+reference-to-screen map.
+
+## 10. Regression
+
+The full suite's failure set is byte-identical before and after this pass
+(diffed by test name), so no existing behaviour regressed at the unit level.
+Business flows (Lead-to-Close, onboarding, prototype, QA, finance, handover)
+were not driven live — same reason.
+
+## 11. Open items, in priority order
+
+1. Run §5 on an environment with Docker; record the two-session results here.
+2. Run the 82 `db:verify:*` scripts against a local Postgres (CI does; this container cannot).
+3. Screen-reader + axe pass on the five highest-traffic screens.
+4. Screenshot pass at 1440 / 1024 / 768 / 375 for the 71 screens.
+5. Confirm `roadmap.json`'s derived test counts against CI's Node 26 run.

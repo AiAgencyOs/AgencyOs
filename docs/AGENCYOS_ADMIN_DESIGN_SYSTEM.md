@@ -1,62 +1,97 @@
 # AgencyOS Admin Panel — Design System
 
-What actually exists in `src/ui/` and `app/globals.css` after the reskin, not
-an aspiration. Every claim here was verified against the running app.
+What actually exists in `src/ui/`, `app/globals.css` and the admin shell,
+not an aspiration. Every claim here is checked against the code; the
+reference for the visual language is `admin panel ui single truth/` (see
+`AGENCYOS_UI_SOURCE_AUDIT.md` §2 for what was taken from it).
 
 ## Tokens (`app/globals.css`)
 
-All color is CSS custom properties, mapped to Tailwind utilities via
-`@theme inline` (Tailwind v4, CSS-first — there is no `tailwind.config.ts`).
+All colour is CSS custom properties mapped to Tailwind utilities via
+`@theme inline` (Tailwind v4, CSS-first — no `tailwind.config.ts`).
 Components consume only semantic classes (`bg-surface`, `text-muted`,
 `border-line`, `bg-brand-soft`) — never a raw hex or a raw Tailwind palette
-color — so re-theming is entirely a `globals.css` edit, verified by the fact
-that the whole brand rebrand in this session touched only that file's
-`:root`/dark blocks plus the two files (`nav.tsx`, `layout.tsx`) that apply
-the sidebar's own token set.
+colour — so re-theming is a `globals.css` edit.
 
-- **Brand**: indigo (`--brand: #4F46E5`, `--accent: #6366F1`), replacing the
-  prior teal-navy brand, per the reference screenshots in
-  `admin panel ui single truth/`. Light and dark variants both defined.
-- **Sidebar**: an isolated `--sidebar-*` namespace (`--sidebar-bg`,
-  `-border`, `-fg`, `-muted`, `-hover`, `-active-bg`, `-active-fg`), defined
-  only in `:root` (no dark-mode override) so the desktop rail and the mobile
-  drawer stay permanently dark navy regardless of the canvas's light/dark
-  state — mirroring the existing `--wa-*` (WhatsApp) isolation pattern for
-  the same reason: a `sidebar-` token outside the rail is a bug you can grep
-  for.
-- **Semantic status tones**: `success`/`warning`/`danger`/`info` (green/
-  amber/red/blue), unchanged from before the reskin — they already matched
-  the reference screenshots' status-chip vocabulary.
+- **Brand:** indigo (`--brand: #4F46E5`, `--accent: #6366F1`), from the
+  reference screenshots. Light and dark variants defined.
+- **Sidebar:** an isolated `--sidebar-*` namespace, defined only in `:root`
+  (no dark override) so the rail stays dark navy regardless of the canvas
+  theme — the same isolation pattern as `--wa-*` (WhatsApp).
+- **Semantic tones:** `success` / `warning` / `danger` / `info`, mapped from
+  status words in `src/ui/tokens.ts` (`statusTone`), so two screens showing
+  the same status agree on its colour. Status is always word + colour, never
+  colour alone.
+- **Elevation:** four shadow steps plus the bubble shadow. **Motion:** every
+  animation and transition collapses under `prefers-reduced-motion`.
+- **Focus:** one `:focus-visible` ring everywhere, brand-coloured.
+
+## The shell (`app/(internal)/layout.tsx`, `nav.tsx`, `nav-config.ts`)
+
+- **Fifteen sectioned modules** in the rail, in the screen architecture's
+  order, each collapsible; the module containing the current page opens
+  itself; single-item modules and Command Center render flat. Contents are
+  decided on the server (`visibleModulesFor(role)`), so the rail, the phone
+  drawer, the bottom tabs, the ⌘K palette and the breadcrumb all read one
+  capability-filtered list.
+- **Current item** is the longest matching href at a segment boundary, so
+  `/finance` and `/finance/payments` can both be in the rail with only one
+  lit (`currentItem`, tested).
+- **Global header:** ⌘K search / quick create, breadcrumb trail (module ›
+  page › Detail), the notifications bell with a live count (`ActionBell`),
+  signed-in person and role in the rail's foot. The layout makes no database
+  read; the bell counts after paint.
+- **Skip link** to `#main` for keyboard users; `main` is focusable.
+- **Phone:** slide-over drawer (portalled, focus-managed, Escape) and a
+  bottom tab bar with the four most-used destinations.
 
 ## Shared primitives (`src/ui/primitives/`, exported from `src/ui/index.ts`)
 
-| Primitive | What it does | Added/changed this session |
+| Primitive | What it does | Notes |
 |---|---|---|
-| `Button`, `Card`, `Badge`/`StatusBadge`, `PageHeader`, `Drawer`, `FilterBar` | Pre-existing, unchanged. | — |
-| `DataTable` | Two renders from one column description: real `<table>` ≥`md`, stacked cards below. | Unchanged structurally; a `sticky` header was tried and **reverted** — see "Known limitations" below. |
-| `Stat`/`StatGrid` | KPI tiles. | Added an optional colored icon chip (pastel rounded-square, tone-matched) and an optional `trend` delta badge. Purely additive — existing call sites with no icon/trend are pixel-identical to before. |
-| `MonthGrid` (new) | A real month calendar grid — leading/trailing days grayed, today highlighted, entries as colored-dot links, "+N more" overflow. Navigation via `?month=YYYY-MM` links (GET-based, matching `FilterBar`'s convention — no client state). | New. Wired into Project Calendar (SCR-022) alongside the existing agenda list. |
-| `KanbanBoard` (new) | Drag-and-drop columns, built on `@dnd-kit/core`. Deliberately owns only layout/dragging — the caller supplies `renderCard` and an `onMove(itemId, toColumnId)` callback, so every board built on it stays routed through whatever validated backend action the caller already has. Optimistic column reassignment, reconciled by the next server-revalidated `items` prop. | New. Wired into Project Board (SCR-020, task status) and Sales Pipeline (SCR-005, opportunity stage — restricted to the three open stages; `won`/`lost` stay on the Lead 360 panel's guarded flow). |
-| `BarChart`, `DonutChart`, `TrendChart` (`src/ui/primitives/chart.tsx`, new file) | Recharts wrappers, colors drawn from the app's own CSS vars (never a separate chart palette). `BarChart` is the promoted, renamed `SimpleBarChart` that used to live in `app/(internal)/reports/`. `DonutChart` and `TrendChart` are new. | Formatting is a `currency?: string` prop, not a callback function — **required**, since these are `'use client'` components rendered from Server Component pages, and Next.js cannot pass a plain function across that boundary (this was a real, live-reproduced crash; see the test matrix). |
-| `AutoRefresh` (new) | Client-side `router.refresh()` on an interval (visibility-aware: refreshes immediately on tab-focus rather than waiting out a stale interval). Renders "Updated Xs ago" + a manual Refresh link — never claims "LIVE", since there is no push transport backing it. | New. Wired into Dashboard, Approvals, Operations, Notifications, QA, Integrations (15–30s intervals, tuned per screen's urgency). |
+| `Button`, `Card`, `Badge`/`StatusBadge`, `PageHeader`, `Drawer`, `FilterBar`/`FilterSearch`/`FilterChips`, `Field`, `EmptyState`, `PermissionDenied`, `StaleDataWarning`, `Callout` | The vocabulary every screen is built from. | `Drawer` is a native `<dialog>` (focus trap, inert background, Escape). |
+| `DataTable` | One column description → a real `<table>` ≥ `lg`, stacked cards below. Sortable headers carry `aria-sort`. | **Sticky header now works:** `position: sticky` on each `<th>` (never the `<tr>`) inside a wrapper that becomes the table's own scroll box (`max-h-[calc(100vh-11rem)] overflow-y-auto`) when a table is longer than `STICKY_FROM_ROWS` (12). Pass `stickyHeader={false}` for a table inside a drawer. |
+| `Stat` / `StatGrid` | KPI tiles with an optional pastel icon chip and trend badge — the reference KPI vocabulary. | Trend tone must be set when "up" is bad. |
+| `KanbanBoard` | Drag-and-drop columns on `@dnd-kit`; the caller supplies `renderCard` and `onMove` so every move is a validated backend action. | Used by Project Board and Sales Pipeline. |
+| `MonthGrid` | A real month calendar with `?month=` navigation. | Project Calendar. |
+| `BarChart`, `DonutChart`, `TrendChart` | Recharts wrappers on the app's own CSS variables. | `currency` is a string prop, not a callback (server → client boundary). |
+| `Skeleton*`, `SkeletonPage`, **`SkeletonDetail`** | Loading shapes. `SkeletonDetail` (new) is the 360-page shape: entity header, tab strip, two-column body. | Every route under `app/(internal)` — top-level *and* nested (`[leadId]`, `[projectId]`, `[clientId]`, `[invoiceId]`, `[requestId]`, `[meetingId]`, `[agentKey]`, `[batchId]`, `[opportunityId]`, `/design`, `/development`, the finance/agents/security sub-routes) — now has a `loading.tsx`. |
+| `Pagination`, `paginate`, `sortRows`, `DecisionTimeline`, `StatusStepper` | List mechanics and history views. | — |
+| `LiveRefresh` (`src/lib/realtime`) | The live-data control, replacing the deleted `AutoRefresh`. | Lives in `lib/realtime` because it needs the Supabase client; `src/ui` stays presentation-only. |
 
-## Known limitations (found by live testing, not by inspection)
+## Icons (`src/ui/icons.tsx`)
 
-- **No sticky table header.** The design source's shared-component rule
-  ("sticky column headers on long lists") was attempted via `position:
-  sticky` on the header `<tr>`. In a real browser this broke the table's own
-  row-stacking — the first body row rendered overlapping the header instead
-  of below it. Reverted. A real sticky header would need a non-table layout
-  (CSS grid) to do safely; that is a bigger change than this reskin's scope.
-- **Mobile drawer nav is dark-themed; no other client-facing surface is.**
-  The reskin's dark-sidebar treatment was applied to the internal admin
-  shell only (desktop rail + mobile drawer). The client portal (`app/
-  (client)/`) was not touched and was not in scope.
-- **`Stat`'s "disabled/read-only" Kanban path is currently unreachable by
-  any real role.** Every internal role holding `project.read`/`lead.read`
-  in `src/lib/authz/permissions.ts` also holds the matching write
-  capability (`task.write`/`lead.write`) — there is no role today that can
-  view a board but not drag on it. The defensive `canWrite`/`disabled` prop
-  on `KanbanBoard` is still correct (server-side `can()` checks are the real
-  enforcement regardless of what the UI shows), just not currently exercised
-  by the permission matrix as it stands.
+Inline SVG, `currentColor`, one `size` prop. Added for the sectioned rail:
+`IconPalette` (Design & Prototype), `IconCode` (Development), `IconBell`
+(notifications), `IconWifi` (reserved for connection state).
+
+## States every data screen has
+
+Loading (`loading.tsx`), empty (`EmptyState`, with the reason and the next
+action), error (`app/(internal)/error.tsx`, "the page is wrong rather than
+empty", with a digest for support), permission denied
+(`PermissionDenied`), stale (`StaleDataWarning`, on screens whose reads
+carry a known age), degraded transport (`LiveRefresh`'s status pill).
+`DATA UNAVAILABLE` is rendered as prose, never as a `0`.
+
+## Accessibility (verified in code, not yet by a screen-reader pass)
+
+- Landmarks: `nav[aria-label]` ×3 (Sections, Primary, Breadcrumb), `main#main`.
+- `aria-current="page"` on the current nav link; `aria-expanded`/`aria-controls`
+  on collapsible modules; `aria-sort` on sorted headers; `role="status"
+  aria-live="polite"` on the live pill; `aria-busy` on skeletons; icons
+  `aria-hidden` unless labelled; every icon-only button has `aria-label`.
+- Reduced motion honoured globally; focus ring on every focusable element.
+- Status conveyed by word + colour everywhere (`StatusBadge`).
+
+## Known limitations
+
+- **Sticky header is bounded-height, not viewport-sticky.** A long table
+  scrolls inside its own box under the page header. Viewport-sticky would
+  require the wrapper to stop being a scroll container, which would remove
+  the horizontal scroll a wide table needs. Bounded-height is the standard
+  enterprise pattern and what the reference screenshots' long lists do.
+- **Client portal** (`app/(client)/`) keeps the previous light theme; the
+  dark shell is the internal admin's only.
+- **No screen-reader or contrast-tool pass has been run** — see the test
+  matrix.

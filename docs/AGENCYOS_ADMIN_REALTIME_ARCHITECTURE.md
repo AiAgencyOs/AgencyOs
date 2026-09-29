@@ -1,71 +1,100 @@
 # AgencyOS Admin Panel — Realtime Architecture
 
-## What exists: polling, not push
+**Status (2026-09-29): push-based, built.** The previous version of this
+document recorded a deliberate choice of interval polling and listed what a
+push implementation would need. Every item on that list is now in the
+repository; this document describes what exists.
 
-There is no realtime transport anywhere in this codebase — no Supabase
-Realtime channel subscription, no WebSocket, no SSE. A targeted grep across
-every admin route, `src/modules/**`, and `src/lib/**` for `supabase.channel`,
-`realtime`, `websocket`, `EventSource` returned zero matches before this
-session, and nothing added one.
+## The chain
 
-**This was a deliberate choice, not an oversight.** When asked to choose
-between polling, real Supabase Realtime channels, or skipping realtime
-entirely for this pass, the explicit answer was polling — full push-based
-realtime is a real architectural addition (new subscription lifecycle,
-reconnect/catch-up handling, cache-invalidation design per entity) that was
-judged bigger than this reskin's scope.
+```
+committed row change
+  → Postgres logical replication (supabase_realtime publication)
+  → Supabase Realtime (websocket, postgres_changes, RLS-evaluated per subscriber)
+  → src/lib/realtime/use-live.ts  (a signal, payload discarded)
+  → 400 ms debounce → router.refresh()
+  → the page's own RSC server reads run again, under the user's JWT
+  → the screen shows the authoritative state
+```
 
-## What "polling" means here
+**Authority never moves.** The browser never renders anything from a
+realtime payload. A change is a reason to ask the database again through
+the same RLS-scoped readers that always drew the page. This is what lets
+the feature satisfy the brief's *no fake optimistic success* rule for free:
+a governed action (verify payment, approve, refund) still goes
+command → pending → backend → authoritative result; realtime only makes the
+*other* open screens learn the result at once.
 
-`src/ui/primitives/auto-refresh.tsx` — a client component that:
+## Pieces
 
-1. Calls `router.refresh()` on an interval while the tab is visible
-   (`document.visibilityState === 'visible'`), re-running the page's own
-   server-side reads.
-2. Refreshes immediately on returning to a hidden tab, rather than waiting
-   out whatever fraction of the interval elapsed while it was away.
-3. Renders an honest "Updated Xs ago" caption plus a manual "Refresh" link —
-   **never** a "LIVE" badge, since there is no push transport backing it and
-   claiming otherwise would be a fake-optimistic-status violation of the
-   same kind the finance/approval screens already guard against for actions.
+| File | Role |
+|---|---|
+| `supabase/migrations/20260929100000_the_panel_hears_the_database.sql` | Adds 39 tables to the `supabase_realtime` publication, idempotently (skips tables already published; no-op on a FOR ALL TABLES publication; refuses a table that does not exist). No policy is loosened: Realtime evaluates each subscriber against the table's SELECT policies with that subscriber's own JWT, so a tenant is told only about rows it could already read. |
+| `src/lib/realtime/topics.ts` | Screens name **topics** (`leads`, `approvals`, `finance`, `jobs`, …); this maps them to tables. `tests/realtime-topics.test.ts` asserts every table a topic names is one the migration publishes and one a migration created, so the two lists cannot drift. |
+| `src/lib/realtime/connection.ts` | The status machine, pure: `connecting → live`, drop → `reconnecting`, three consecutive failures → `degraded`, no transport → `polling`. Every re-subscribe after the first counts a **catch-up**. `tests/realtime-connection.test.ts`. |
+| `src/lib/realtime/use-live.ts` | The subscription (client). Loads the session, `realtime.setAuth(access_token)` so the socket joins as the user rather than `anon`, one channel per topic set with one `postgres_changes` listener per table, reducer-driven status. Fires `onChange` on every event, on every catch-up, on return to a hidden tab, and on the status-appropriate poll interval. |
+| `src/lib/realtime/live-refresh.tsx` | `LiveRefresh` — the control a page header carries. Replaces `AutoRefresh` (deleted). Shows `● Live / Reconnecting / Degraded / Polling` with the word beside the dot, "Updated Xs ago", and a manual Refresh. |
+| `app/(internal)/action-bell.tsx` | The header bell subscribes to the Action Center's topics and re-counts through a server action; the layout itself makes no database read. |
 
-## Where it's wired in, and why those screens
+## Where it is wired
 
-| Screen | Interval | Why |
-|---|---|---|
-| Dashboard (Command Center) | 20s | The one page an owner leaves open all day. |
-| Approvals | 20s | A decision inbox — staleness here is a person waiting longer than they need to. |
-| Operations | 15s | Job/queue health; the screen this session's own SCR-067 traceability entry says exists specifically to catch a stopped scheduler. |
-| Notifications | 20s | Same "action queue" shape as Approvals. |
-| QA | 30s | Defect queue; less time-sensitive than an approval or an incident. |
-| Integrations | 30s | Health-monitoring surface, not an action queue — a slower interval is appropriate. |
+| Screen | Topics |
+|---|---|
+| Command Center | approvals, finance, jobs, leads, projects, agents |
+| Notifications & the header bell | approvals, finance, jobs, qa, tasks, conversations |
+| Approvals | approvals |
+| Operations | jobs, conversations, followUps |
+| QA | qa, deliverables |
+| Integrations | jobs |
+| Design dashboard (portfolio) | deliverables, projects |
+| Development dashboard (portfolio) | tasks, deliverables, projects |
 
-Every other screen (Client 360, Project Board, Sales Pipeline, the finance
-pages, etc.) relies on `revalidatePath` after a write (the Kanban drag, the
-note-add, the stage-change) — each of *those* mutations correctly
-revalidates its own page's cache, so the acting user sees their own change
-immediately; only *other users'* concurrent changes to the same page would
-need polling to surface without a manual navigation, and that gap is
-accepted for this pass.
+Every other screen refreshes on its own writes (`revalidatePath` after each
+server action — the acting user sees their change immediately) and on
+navigation. Adding a screen is one line: `<LiveRefresh topics={[…]} />` in
+its `PageHeader` actions.
 
-## What a real push-based implementation would need, if built later
+## Reconnect, catch-up, and "no delay"
 
-1. **Transport choice**: Supabase Realtime (Postgres logical replication →
-   websocket) is the natural fit since the whole stack is already Supabase —
-   no new infrastructure, just a new client subscription per entity.
-2. **Per-entity subscription design**: which tables/rows a given screen
-   subscribes to (e.g. Project Board would subscribe to `projects.tasks`
-   filtered by `project_id`), and how that maps to targeted
-   cache-invalidation rather than a full-page refetch storm.
-3. **Reconnect/catch-up**: what happens to a screen that was open during a
-   dropped connection — the same "no stale UI after an important state
-   transition" requirement the original brief calls out, which polling's
-   focus-triggered immediate refresh already partially satisfies for free.
-4. **A visible connection-state indicator** (`LIVE` / `RECONNECTING` /
-   `DEGRADED`) — only meaningful once there is an actual channel whose state
-   it reflects; adding one on top of polling would be exactly the "fake
-   LIVE dot" the original brief explicitly prohibits.
+- **Reconnect** is the Supabase client's own backoff; the reducer reports
+  it. While reconnecting the screen polls every 20 s, degraded 30 s — never
+  slower than the polling it replaced.
+- **Catch-up:** a rejoin increments `catchUps`; the component refreshes when
+  it moves, because changes between the drop and the rejoin were not heard.
+  Returning to a hidden tab refreshes for the same reason.
+- **Safety net:** even while live, a 120 s poll guarantees a single lost
+  event cannot leave a screen stale for more than two minutes.
+- **No refetch storms:** a burst of row changes inside one transaction is
+  one `router.refresh()` (400 ms debounce); a refresh re-runs only the
+  current page's reads, not every cached page.
+- **Deliberately not subscribed:** `core.cron_heartbeat` (a write per
+  minute) and, for operational screens, `audit.audit_log` (a write per
+  action) — each would be a refresh per heartbeat, i.e. polling again. The
+  audit log is its own topic, used only by the audit screen.
 
-None of this was built. This document exists so the *next* pass that does
-build it starts from an accurate picture of what's here today, not from an
-assumption that some realtime plumbing already exists to extend.
+## Consistency
+
+Because the payload is discarded and the page refetches, none of the
+duplicate-row / out-of-order / regressed-status hazards of client-side
+patching can occur: the screen always shows exactly what the authoritative
+query returns at the time of the refetch. Versions, event IDs and dedupe
+are therefore unnecessary at the client — the database's own row is the
+version.
+
+## Honest indicator
+
+`Live` is shown only after the channel reported `SUBSCRIBED`. Before that
+the pill says `Connecting`; the word is always beside the dot so the state
+is readable without colour; `title` carries the sentence ("The live channel
+dropped; retrying. Data refreshes on reconnect.").
+
+## What was verified, and what was not
+
+- Verified: the status machine (unit tests), the topic ↔ publication
+  correspondence (unit test reading the migration), typecheck, lint,
+  production build.
+- **Not verified in this environment:** the migration applying to a live
+  Postgres and a two-session "create in A, see in B" run — the container
+  has no Docker daemon and no Supabase project. `npm run verify:db:up` then
+  opening two browsers is the procedure; the test matrix records this as
+  the open item.

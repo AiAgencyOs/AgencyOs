@@ -3,11 +3,20 @@
 Stage 1 discovery deliverable for the planned admin panel redesign. Read-only
 analysis of the design source folder; no application code was touched.
 
-**Source folder:** `/Users/bussenhancer/AgencyOS/admin panel ui single truth/`
+**Source folder:** `admin panel ui single truth/` (repository-relative; 46 files)
 
 **Files audited:**
-- 1 PDF — `AgencyOS_Enterprise_Admin_Panel_Complete_Screen_Architecture.pdf` (83 pages, read in full: pages 1-40 by the orchestrating session, pages 41-83 by this audit)
-- 43 JPEG screenshots — `WhatsApp Image 2026-09-21 at 12.24.5x/12.25.0x-14.jpeg` (all 43 reviewed individually)
+- 1 PDF — `AgencyOS_Enterprise_Admin_Panel_Complete_Screen_Architecture.pdf` (83 pages, 123,799 characters of extracted text, read in full — twice: by the 2026-09-22 session and again on 2026-09-29)
+- **45** JPEG screenshots — `WhatsApp Image 2026-09-21 at 12.24.56 … 12.25.14.jpeg`, each 1536×1024 (the first audit counted 43; a recount on 2026-09-29 of the committed folder finds 45, all reviewed — see §4 for the per-image map)
+- 0 other assets (no logo, icon or font files; the wordmark and "Run. Grow. Scale." tagline are taken from the screenshots)
+
+**Related sources outside the folder, also read in full on 2026-09-29:**
+`Phase 1 documents/AgencyOS_Phase1_Admin_Panel_Screen_by_Screen_Blueprint.pdf`
+(A01–A34, the OBSERVE + UNDERSTAND + AUTHORIZE + CONTROL + RECOVER + AUDIT
+framing; mapped onto the 71 SCR IDs in the master inventory §3) and
+`AgencyOS Documentation/AgencyOS_06_Admin_Panel_Admin_Control_Center_Specification.pdf`,
+`…07_Admin_Approval_Policy_Engine.pdf`, `…19_Security_Permissions_Audit_Data_Governance.pdf`
+(backend authority, permissions, audit — the C tier of the source hierarchy).
 
 ---
 
@@ -309,3 +318,73 @@ accent, generalizable to the full 71-screen IA.
    Enterprises, Sonu Shah) is placeholder/demo content**, not real AgencyOS
    production data — expected and fine for a design reference, but should
    not be mistaken for a data-model source.
+
+
+---
+
+## 4. Per-image map: reference screenshot → screen ID (2026-09-29 recount)
+
+Numbering is the folder's sorted order. `#23` is the one image the first
+audit excluded (the sample OTT app's own product admin — a client
+deliverable, not the AgencyOS admin) and it stays excluded.
+
+| # | Shows | SCR |
+|---|---|---|
+| 1 | Project › Milestones (Gantt + milestone detail rail) | 023 |
+| 2 | Project › Board (Kanban + timeline rail) | 020 |
+| 3 | Sales & CRM pipeline with KPI row, leads-by-source donut | 005 |
+| 4, 14, 17, 30, 44 | Project overview (KPI row, phase timeline, recent tasks, details rail) | 019 |
+| 5, 21, 25, 31, 32 | Project task board variants (incl. Blocked column, task rail) | 020 |
+| 6 | Client management list + client detail rail | 014 |
+| 7 | Finance overview (income vs expenses, payment status donut) | 050 |
+| 8 | AI Workforce dashboard (agent activity, status donut, model usage) | 061 |
+| 9, 40 | My Tasks / task list with filters | 021 |
+| 10 | Client 360 (tabs, KPI row, projects, quotations, invoices, notes, timeline) | 015 |
+| 11, 38 | Design dashboard (screen gallery, versions, prototype links) | 032 / 034 |
+| 12 | Create quotation (client, items, payment schedule, terms) | 012 |
+| 13, 43 | Leads list (KPI row, table, funnel, lead detail rail / filters rail) | 006 |
+| 15 | Project team (roster, role donut, invite) | 025 |
+| 16, 20 | Project calendar (month grid, upcoming, filters) | 022 |
+| 18, 24 | Project files (folders, list/grid, preview rail) | 024 |
+| 19 | Project reports (completion trend, distribution, health) | 026 |
+| 22, 27, 34 | Milestones / Gantt timeline views | 023 |
+| 23 | **excluded** — client product admin (Content, Users, Plans, Banners, Ads) | — |
+| 26, 28 | Task detail (description, acceptance criteria, subtasks, comments) | 041 |
+| 29, 41 | Requirements list + requirement detail rail | 029 |
+| 33, 35, 36 | Project communication / inbox / group chat | 057 / 058 / 017 |
+| 37 | QA & testing (test runs, device matrix, open bugs) | 044 / 046 |
+| 39 | Project finance (milestones, invoices, payment progress) | 016 / 050 |
+| 42 | Lead 360 (stage stepper, conversation, quick actions, tasks) | 007 |
+| 45 | Command Center (greeting, KPI row, pipeline, tasks & approvals, system status, usage) | 001 |
+
+**What the shell takes from them, verbatim:** dark navy rail (~#0F1115)
+with grouped, expandable modules and an indigo active pill; wordmark +
+"Run. Grow. Scale."; top bar with scoped search and ⌘K, "+ Create",
+bell with a red count, help, user chip; breadcrumbs under the bar; page
+header with title, one-line description and right-aligned actions; KPI
+tiles with pastel icon chips and delta badges; underline tabs; light tables
+with pill status chips (green/amber/red/blue/purple); right-hand detail
+rails with Quick Actions; ₹ and `DD Mon YYYY`.
+
+## 5. Conflicts resolved on 2026-09-29
+
+6. **Nav IA.** The screenshots' sidebar (Command Center; Sales & CRM;
+   Clients; Projects; Requirements; Design & Prototype; Development; QA &
+   Release; Finance; Communication; AI Workforce; Reports/Analytics &
+   Costs; Integrations; Security & Audit; Organization) and the PDF's §2
+   list differ in two places: the screenshots show *Reports* and
+   *Analytics & Costs* as modules, the PDF folds reports into Projects
+   (SCR-026) and costs into AI Workforce (SCR-065) and adds *Operations* and
+   *Governance & Security*. **The PDF wins** (it is the functional
+   authority); `/reports` sits under Projects and `/usage` under AI
+   Workforce. Recorded in `nav-config.ts`'s docblock.
+7. **Module screens with no org-level page.** Design & Prototype and
+   Development had only per-project tabs, so the rail had nothing to point
+   at. Two portfolio index pages (`/design`, `/development`) were added —
+   aggregations of existing tables, no new business rule — so the module
+   has a front door that is a real screen.
+8. **Notifications count.** The 2026-09-22 traceability declined a badge
+   to keep the layout free of database reads; §4 of the PDF locks
+   "Notifications with unread count". Both are now true: the bell counts
+   after paint through a server action and stays current over the live
+   channel; the layout still reads nothing.
