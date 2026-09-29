@@ -199,6 +199,8 @@ export function StoredFileRow({
   labels,
   appUrl,
   children,
+  extra,
+  internalShare,
 }: {
   file: ProjectFileHead;
   projectId: string;
@@ -208,6 +210,10 @@ export function StoredFileRow({
   appUrl: string;
   /** For a linked file: the rename/refile form the link door already has. */
   children?: React.ReactNode;
+  /** SCR-024: for a stored file — the preview button and the rename/move form, drawn by the page. */
+  extra?: React.ReactNode;
+  /** SCR-024: the internal share — who on the project can open this file through the internal download link. */
+  internalShare?: React.ReactNode;
 }) {
   const download = (id: string) => `/api/projects/${projectId}/files/${id}/download`;
   const liveShares = file.shares.filter((s) => s.live);
@@ -262,6 +268,7 @@ export function StoredFileRow({
           </span>
         </div>
         <div className="flex items-center gap-3">
+          {extra}
           <a href={download(file.latest.id)} className={buttonClass('ghost', 'sm')} title={reachable ? 'Download the latest version' : 'Storage is not reachable'}>
             <IconDownload size={14} />
             Download
@@ -269,6 +276,12 @@ export function StoredFileRow({
           {editable ? <TrashButton projectId={projectId} fileId={file.id} /> : null}
         </div>
       </div>
+      {editable && children ? (
+        <details>
+          <summary className="cursor-pointer text-xs text-muted hover:underline">Rename or move</summary>
+          <div className="pt-2">{children}</div>
+        </details>
+      ) : null}
 
       <details>
         <summary className="cursor-pointer text-xs text-muted hover:underline">
@@ -293,8 +306,9 @@ export function StoredFileRow({
           </ul>
           {editable ? <UploadFileForm projectId={projectId} reachable={reachable} parentFileId={file.id} compact /> : null}
 
+          {internalShare ? <div className="border-t border-line pt-3">{internalShare}</div> : null}
           <div className="border-t border-line pt-3">
-            <p className="mb-1 text-xs font-medium">Share links</p>
+            <p className="mb-1 text-xs font-medium">Public share links</p>
             {file.shares.length === 0 ? <p className="text-xs text-muted">None yet. A link opens the latest stored version until it expires or is revoked.</p> : null}
             <ul className="flex flex-col gap-1 text-xs">
               {file.shares.map((s) => {

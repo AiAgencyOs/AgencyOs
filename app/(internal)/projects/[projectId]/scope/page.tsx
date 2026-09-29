@@ -4,7 +4,11 @@ import { notFound } from 'next/navigation';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { readChangeRequestInvoices } from '@/modules/projects/change-request-invoice-queries';
 import { readChangeRequestContext } from '@/modules/projects/change-request-queries';
+import { readScopeApprovals } from '@/modules/projects/scope-approval-queries';
+
+import { ScopeApprovalPanel } from './approval-form';
 import { getProject, listScopeItemsForVersion, listScopeVersionHistory, readChangeRequests, readScopeBaseline, type ScopeItemRow } from '@/modules/projects/queries';
 import { readRevisionAllowance, readScopeDrift, readScopeQuoteLinks } from '@/modules/projects/scope-insight-queries';
 import Link from 'next/link';
@@ -52,6 +56,9 @@ export default async function ScopePage({ params, searchParams }: { params: Prom
   // change request. Invoice status is read only for a role RLS lets read it;
   // otherwise the gate says so rather than showing "no invoice".
   const crContext = await readChangeRequestContext(projectId, { includeInvoices: can(context.role, 'invoice.read') });
+  // SCR-030 approval evidence per version; SCR-031 each request's OWN invoice
+  // (20261001120000) and the client thread a quotation is sent on.
+  const [approvals, crInvoices] = await Promise.all([readScopeApprovals(projectId), readChangeRequestInvoices(projectId, { includeInvoices: can(context.role, 'invoice.read') })]);
 
   // SCR-030's freeze checklist — the three things a person can fix before
   // the door refuses. Computed from reads this page already made.
@@ -196,6 +203,15 @@ export default async function ScopePage({ params, searchParams }: { params: Prom
       {active ? (
         <>
           <ScopeVersionCard projectId={projectId} scopeVersion={active} editable={false} />
+          {/* SCR-030 "Approval evidence": who approved the frozen baseline and where the evidence lives. */}
+          <ScopeApprovalPanel
+            projectId={projectId}
+            scopeVersionId={active.id}
+            version={active.version}
+            approval={approvals[active.id] ?? null}
+            approvedLabel={approvals[active.id]?.approvedAt ? clock.dateTime(approvals[active.id]!.approvedAt as string) : null}
+            editable={canWrite}
+          />
           {/* SCR-030: the owner's unfreeze override, offered only when v{active}
               is the newest version — the door refuses `later_version_exists`
               otherwise, and a draft is by definition a later version. */}
@@ -229,6 +245,9 @@ export default async function ScopePage({ params, searchParams }: { params: Prom
           mayManage={canWrite}
           mayDecide={isOwner}
           context={crContext}
+          invoices={crInvoices}
+          mayInvoice={can(context.role, 'invoice.create')}
+          maySendQuotation={can(context.role, 'proposal.send')}
         />
       </section>
 

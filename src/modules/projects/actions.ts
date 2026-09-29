@@ -1530,6 +1530,8 @@ export async function updateProjectFileAction(_prev: FormState, formData: FormDa
     category: String(formData.get('category') ?? '') as never,
     title: String(formData.get('title') ?? ''),
     description: description || null,
+    // SCR-024 (20261001120000): rename/move — the folder inside the category.
+    folder: String(formData.get('folder') ?? '').trim(),
   });
   if (!result.ok) return { status: 'error', message: result.error.message };
 

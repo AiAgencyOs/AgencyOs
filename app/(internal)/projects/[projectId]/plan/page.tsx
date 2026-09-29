@@ -9,6 +9,7 @@ import { readClientName } from '@/lib/admin/clients';
 import { listEligibleMilestones } from '@/modules/finance/eligible-milestones-queries';
 import { listPlanLayers } from '@/modules/projects/plan-layers-queries';
 import { PLAN_LAYER_LABEL, PLAN_LAYERS } from '@/modules/projects/plan-layers-types';
+import { listTasksByMilestone } from '@/modules/projects/milestone-tasks-queries';
 import { listPlanVersions } from '@/modules/projects/plan-versions-queries';
 import { getProject, listDevelopmentBreakdown, listMilestoneTaskCounts, listPaymentPlan, readPlanBoard } from '@/modules/projects/queries';
 import { Badge, Card, CardHeader, cx, Gantt, IconCalendar, IconCheck, IconClock, IconFlag, PermissionDenied, ProgressBar, Stat, StatGrid, StatusBadge, ViewAll, type GanttRow, type Tone } from '@/ui';
@@ -73,10 +74,14 @@ const PHASE_TONE: Record<string, Tone> = {
 
 export default async function ProjectPlanPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ projectId: string }>;
+  searchParams: Promise<{ milestone?: string }>;
 }) {
   const { projectId } = await params;
+  // SCR-023: `?milestone=` picks the milestone the detail panel and its task list show.
+  const { milestone: pickedMilestoneId } = await searchParams;
 
   const context = await requireInternal(`/projects/${projectId}/plan`);
   if (!can(context.role, 'project.read')) return <PermissionDenied />;
@@ -84,7 +89,7 @@ export default async function ProjectPlanPage({
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const [board, milestones, taskCounts, clock, clientName, eligible, versions] = await Promise.all([
+  const [board, milestones, taskCounts, clock, clientName, eligible, versions, tasksByMilestone] = await Promise.all([
     readPlanBoard(projectId),
     listPaymentPlan(projectId),
     listMilestoneTaskCounts(projectId),
@@ -92,6 +97,8 @@ export default async function ProjectPlanPage({
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
     listEligibleMilestones([projectId]),
     listPlanVersions(projectId),
+    // SCR-023: the tasks filed under each milestone, for the picked milestone's list.
+    listTasksByMilestone(projectId),
   ]);
   const [layersByDeliverable, breakdown] = await Promise.all([listPlanLayers(board.deliverables.map((d) => d.id)), listDevelopmentBreakdown(projectId)]);
   // SCR-040 — execution order first, then the plan's own position.
@@ -179,10 +186,12 @@ export default async function ProjectPlanPage({
       <ProjectSubNav projectId={projectId} />
 
       {milestones.length > 0 ? (
-        <StatGrid cols={5}>
+        <StatGrid cols={6}>
           <Stat label="Total milestones" value={String(milestones.length)} caption={undated.length > 0 ? `${undated.length} undated` : 'All dated'} tone="brand" icon={<IconFlag size={16} />} />
           <Stat label="Completed" value={String(met)} caption={`${Math.round((met / milestones.length) * 100)}%`} tone="success" icon={<IconCheck size={16} />} />
           <Stat label="In progress" value={String(gantt.filter((g) => g.state === 'current').length)} caption={next ? next.name : 'Nothing pending'} tone="info" icon={<IconClock size={16} />} />
+          {/* SCR-023: pending — not met, not the one in hand, not late: everything still ahead. */}
+          <Stat label="Pending" value={String(milestones.filter((m) => !m.met_at).length - gantt.filter((g) => g.state === 'current').length - late)} caption="Not met, still ahead" tone="warning" icon={<IconFlag size={16} />} />
           <Stat label="Late" value={String(late)} caption={late > 0 ? 'Past due and not met' : 'Nothing overdue'} tone={late > 0 ? 'danger' : 'neutral'} icon={<IconClock size={16} />} />
           <Stat label="Final delivery" value={finalDue ? clock.date(finalDue) : '—'} caption={daysLeft === null ? 'No final date' : daysLeft >= 0 ? `${daysLeft} days left` : `${-daysLeft} days overdue`} tone={daysLeft !== null && daysLeft < 0 ? 'danger' : 'accent'} icon={<IconCalendar size={16} />} />
         </StatGrid>
@@ -224,8 +233,12 @@ export default async function ProjectPlanPage({
                         <span className="text-[13px] font-medium">{m.position + 1}. {m.name}</span>
                         <StatusBadge status={m.met_at ? 'completed' : m.due_on && m.due_on < today ? 'overdue' : m.status} />
                         {m.payment_percent !== null ? <Badge mono>{Number(m.payment_percent)}%</Badge> : null}
-                        <span className="ml-auto text-xs text-muted">
+                        <span className="ml-auto flex items-center gap-2 text-xs text-muted">
                           {m.met_at ? `met ${clock.date(m.met_at)}` : m.due_on ? `due ${clock.date(m.due_on)}` : 'no due date'}
+                          {/* SCR-023: the milestone picker — its detail panel and task list open on the right. */}
+                          <Link href={`/projects/${projectId}/plan?milestone=${m.id}`} className={pickedMilestoneId === m.id ? 'font-medium text-foreground' : 'text-brand hover:underline'}>
+                            {pickedMilestoneId === m.id ? 'Selected' : 'Detail'}
+                          </Link>
                         </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-3">
@@ -617,25 +630,49 @@ export default async function ProjectPlanPage({
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
-          {next ? (
-            <Card>
-              <CardHeader title="Milestone details" description="The next one to meet." />
-              <div className="flex flex-col gap-2 px-4 pb-4 text-[13px] sm:px-5">
-                <p className="flex items-center gap-2 font-medium text-foreground">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-white"><IconFlag size={13} /></span>
-                  {next.name}
-                </p>
-                <dl className="grid grid-cols-[6rem_1fr] gap-y-1.5 text-muted">
-                  <dt>Due</dt>
-                  <dd className="text-foreground">{next.due_on ? clock.date(next.due_on) : 'Not dated'}</dd>
-                  <dt>Status</dt>
-                  <dd><StatusBadge status={next.status} dot={false} /></dd>
-                  <dt>Payment</dt>
-                  <dd className="text-foreground">{next.payment_percent === null ? 'None attached' : `${next.payment_percent}% of the plan`}</dd>
-                </dl>
-              </div>
-            </Card>
-          ) : null}
+          {/* SCR-023: the milestone detail panel — the picked milestone (`?milestone=`), else the next one to meet — with its task list and a link to those tasks on the Board. */}
+          {(() => {
+            const picked = (pickedMilestoneId ? milestones.find((m) => m.id === pickedMilestoneId) : null) ?? next;
+            if (!picked) return null;
+            const list = tasksByMilestone[picked.id] ?? [];
+            const open = list.filter((t) => t.status !== 'done');
+            return (
+              <Card>
+                <CardHeader title="Milestone details" description={pickedMilestoneId === picked.id ? 'The milestone you picked.' : 'The next one to meet — pick another from the list.'} />
+                <div className="flex flex-col gap-2 px-4 pb-4 text-[13px] sm:px-5">
+                  <p className="flex items-center gap-2 font-medium text-foreground">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-white"><IconFlag size={13} /></span>
+                    {picked.name}
+                  </p>
+                  <dl className="grid grid-cols-[6rem_1fr] gap-y-1.5 text-muted">
+                    <dt>Due</dt>
+                    <dd className="text-foreground">{picked.due_on ? clock.date(picked.due_on) : 'Not dated'}</dd>
+                    <dt>Status</dt>
+                    <dd><StatusBadge status={picked.met_at ? 'completed' : picked.status} dot={false} /></dd>
+                    <dt>Payment</dt>
+                    <dd className="text-foreground">{picked.payment_percent === null ? 'None attached' : `${picked.payment_percent}% of the plan`}</dd>
+                    <dt>Tasks</dt>
+                    <dd className="text-foreground">{list.length === 0 ? 'None filed under it' : `${list.length - open.length}/${list.length} done`}</dd>
+                  </dl>
+                  {list.length > 0 ? (
+                    <ul className="flex flex-col gap-1 border-t border-line pt-2">
+                      {list.slice(0, 8).map((t) => (
+                        <li key={t.id} className="flex items-center justify-between gap-2">
+                          <Link href={`/projects/${projectId}/development/tasks/${t.id}`} className={cx('truncate underline-offset-2 hover:underline', t.status === 'done' ? 'text-muted line-through' : '')}>{t.title}</Link>
+                          <StatusBadge status={t.status} dot={false} />
+                        </li>
+                      ))}
+                      {list.length > 8 ? <li className="text-xs text-muted">and {list.length - 8} more on the Board.</li> : null}
+                    </ul>
+                  ) : null}
+                  {/* SCR-023 "Open tasks": the Board, filtered to this milestone. */}
+                  <Link href={`/projects/${projectId}/board?milestone=${picked.id}`} className="self-start text-xs text-brand underline-offset-2 hover:underline">
+                    Open {open.length > 0 ? `${open.length} open task${open.length === 1 ? '' : 's'}` : 'tasks'} on the Board →
+                  </Link>
+                </div>
+              </Card>
+            );
+          })()}
 
           <Card>
             <CardHeader title="Upcoming deadlines" />

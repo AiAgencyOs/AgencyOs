@@ -5855,6 +5855,25 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_change_request_invoice: {
+        Args: {
+          p_billing_profile_id?: string
+          p_change_request_id: string
+          p_currency: string
+          p_due_at?: string
+          p_lines: Json
+          p_notes?: string
+          p_number: string
+          p_subtotal_minor: number
+          p_tax_minor: number
+          p_total_minor: number
+        }
+        Returns: {
+          invoice_id: string | null
+          number: string | null
+          outcome: string
+        }[]
+      }
       claim_invoice_reminder: {
         Args: { p_conversation_id?: string; p_interval_days: number; p_invoice_id: string }
         Returns: {
@@ -6163,6 +6182,53 @@ export type Database = {
         }
         Relationships: []
       }
+      calendar_feed_tokens: {
+        Row: {
+          created_at: string
+          fetch_count: number
+          id: string
+          last_fetched_at: string | null
+          organization_id: string
+          project_id: string
+          revoked_at: string | null
+          token: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          fetch_count?: number
+          id?: string
+          last_fetched_at?: string | null
+          organization_id: string
+          project_id: string
+          revoked_at?: string | null
+          token: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          fetch_count?: number
+          id?: string
+          last_fetched_at?: string | null
+          organization_id?: string
+          project_id?: string
+          revoked_at?: string | null
+          token?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_feed_tokens_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       change_requests: {
         Row: {
           approval_request_id: string | null
@@ -6174,6 +6240,7 @@ export type Database = {
           evidence_message_id: string | null
           id: string
           impact_notes: string | null
+          invoice_id: string | null
           organization_id: string
           project_id: string
           proposal_id: string | null
@@ -6196,6 +6263,7 @@ export type Database = {
           evidence_message_id?: string | null
           id?: string
           impact_notes?: string | null
+          invoice_id?: string | null
           organization_id: string
           project_id: string
           proposal_id?: string | null
@@ -6218,6 +6286,7 @@ export type Database = {
           evidence_message_id?: string | null
           id?: string
           impact_notes?: string | null
+          invoice_id?: string | null
           organization_id?: string
           project_id?: string
           proposal_id?: string | null
@@ -6589,6 +6658,7 @@ export type Database = {
           deleted_at: string | null
           deleted_by: string | null
           description: string | null
+          folder: string
           id: string
           organization_id: string
           parent_file_id: string | null
@@ -6608,6 +6678,7 @@ export type Database = {
           deleted_at?: string | null
           deleted_by?: string | null
           description?: string | null
+          folder?: string
           id?: string
           organization_id: string
           parent_file_id?: string | null
@@ -6627,6 +6698,7 @@ export type Database = {
           deleted_at?: string | null
           deleted_by?: string | null
           description?: string | null
+          folder?: string
           id?: string
           organization_id?: string
           parent_file_id?: string | null
@@ -6754,6 +6826,138 @@ export type Database = {
           {
             foreignKeyName: "project_templates_source_project_id_fkey"
             columns: ["source_project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_links: {
+        Row: {
+          added_by: string | null
+          created_at: string
+          id: string
+          kind: string
+          label: string
+          organization_id: string
+          project_id: string
+          updated_at: string
+          url: string
+        }
+        Insert: {
+          added_by?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          label: string
+          organization_id: string
+          project_id: string
+          updated_at?: string
+          url: string
+        }
+        Update: {
+          added_by?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          label?: string
+          organization_id?: string
+          project_id?: string
+          updated_at?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_links_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_members: {
+        Row: {
+          added_by: string | null
+          created_at: string
+          id: string
+          organization_id: string
+          project_id: string
+          project_role: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          added_by?: string | null
+          created_at?: string
+          id?: string
+          organization_id: string
+          project_id: string
+          project_role?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          added_by?: string | null
+          created_at?: string
+          id?: string
+          organization_id?: string
+          project_id?: string
+          project_role?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_members_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_updates: {
+        Row: {
+          body: string
+          conversation_id: string | null
+          created_at: string
+          id: string
+          message_id: string | null
+          organization_id: string
+          project_id: string
+          sent_by: string | null
+          sent_to: string
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          conversation_id?: string | null
+          created_at?: string
+          id?: string
+          message_id?: string | null
+          organization_id: string
+          project_id: string
+          sent_by?: string | null
+          sent_to: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          conversation_id?: string | null
+          created_at?: string
+          id?: string
+          message_id?: string | null
+          organization_id?: string
+          project_id?: string
+          sent_by?: string | null
+          sent_to?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_updates_project_id_fkey"
+            columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
@@ -8332,6 +8536,8 @@ export type Database = {
       }
       projects: {
         Row: {
+          archived_at: string | null
+          archived_by: string | null
           budget_minor: number | null
           client_account_id: string
           code: string | null
@@ -8359,10 +8565,13 @@ export type Database = {
           status: string
           status_changed_at: string | null
           status_reason: string | null
+          template_id: string | null
           updated_at: string
           visibility: string
         }
         Insert: {
+          archived_at?: string | null
+          archived_by?: string | null
           budget_minor?: number | null
           client_account_id: string
           code?: string | null
@@ -8390,10 +8599,13 @@ export type Database = {
           status?: string
           status_changed_at?: string | null
           status_reason?: string | null
+          template_id?: string | null
           updated_at?: string
           visibility?: string
         }
         Update: {
+          archived_at?: string | null
+          archived_by?: string | null
           budget_minor?: number | null
           client_account_id?: string
           code?: string | null
@@ -8421,6 +8633,7 @@ export type Database = {
           status?: string
           status_changed_at?: string | null
           status_reason?: string | null
+          template_id?: string | null
           updated_at?: string
           visibility?: string
         }
@@ -8482,6 +8695,10 @@ export type Database = {
       }
       scope_versions: {
         Row: {
+          approval_evidence_url: string | null
+          approval_note: string | null
+          approved_at: string | null
+          approved_by: string | null
           change_request_id: string | null
           created_at: string
           created_by: string | null
@@ -8496,6 +8713,10 @@ export type Database = {
           version: number
         }
         Insert: {
+          approval_evidence_url?: string | null
+          approval_note?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
           change_request_id?: string | null
           created_at?: string
           created_by?: string | null
@@ -8510,6 +8731,10 @@ export type Database = {
           version: number
         }
         Update: {
+          approval_evidence_url?: string | null
+          approval_note?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
           change_request_id?: string | null
           created_at?: string
           created_by?: string | null
@@ -8758,6 +8983,7 @@ export type Database = {
           added_by: string | null
           created_at: string
           id: string
+          kind: string
           organization_id: string
           task_id: string
           title: string
@@ -8768,6 +8994,7 @@ export type Database = {
           added_by?: string | null
           created_at?: string
           id?: string
+          kind?: string
           organization_id: string
           task_id: string
           title: string
@@ -8778,6 +9005,7 @@ export type Database = {
           added_by?: string | null
           created_at?: string
           id?: string
+          kind?: string
           organization_id?: string
           task_id?: string
           title?: string
@@ -9508,6 +9736,57 @@ export type Database = {
       submit_task_evidence: {
         Args: { p_kind: string; p_note?: string; p_task_id: string; p_title: string; p_url?: string }
         Returns: { evidence_id: string; outcome: string }[]
+      }
+      add_unpriced_milestone: {
+        Args: {
+          p_due_on?: string
+          p_name: string
+          p_project_id: string
+        }
+        Returns: {
+          milestone_id: string | null
+          outcome: string
+        }[]
+      }
+      archive_project: {
+        Args: {
+          p_project_id: string
+          p_reason?: string
+        }
+        Returns: {
+          archived_at: string | null
+          outcome: string
+        }[]
+      }
+      record_scope_approval_evidence: {
+        Args: {
+          p_approved_by: string
+          p_evidence_url?: string
+          p_note?: string
+          p_scope_version_id: string
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      resolve_calendar_feed: {
+        Args: {
+          p_token: string
+        }
+        Returns: {
+          organization_id: string
+          project_id: string
+          project_name: string
+        }[]
+      }
+      set_project_template: {
+        Args: {
+          p_project_id: string
+          p_template_id?: string | null
+        }
+        Returns: {
+          outcome: string
+        }[]
       }
       account_health_signals: {
       link_repository: {

@@ -2206,7 +2206,7 @@ export async function updateProjectFile(input: UpdateProjectFileInput): Promise<
   const { data, error } = await supabase
     .schema('projects')
     .from('project_files')
-    .update({ title: parsed.data.title, category: parsed.data.category, description: parsed.data.description })
+    .update({ title: parsed.data.title, category: parsed.data.category, description: parsed.data.description, folder: parsed.data.folder })
     .eq('id', parsed.data.fileId)
     .select('id')
     .maybeSingle();

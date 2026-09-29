@@ -5,7 +5,9 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { readClientName } from '@/lib/admin/clients';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { getProject, listDevelopmentBreakdown, listInternalRoster } from '@/modules/projects/queries';
+import { listTasksByMilestone } from '@/modules/projects/milestone-tasks-queries';
+import { listAssigneeCandidates } from '@/modules/projects/project-members-queries';
+import { getProject, listDevelopmentBreakdown, listInternalRoster, listPaymentPlan } from '@/modules/projects/queries';
 import { readTaskCollabFor } from '@/modules/projects/task-collab-queries';
 import { IconAlert, IconCheck, IconClock, IconList, IconSearch, PermissionDenied, statusTone, type KanbanColumn } from '@/ui';
 
@@ -33,8 +35,9 @@ const COLUMNS: KanbanColumn[] = [
  * remains the same single writer for `projects.tasks` — just with a second
  * way to reach it.
  */
-export default async function ProjectBoardPage({ params }: { params: Promise<{ projectId: string }> }) {
+export default async function ProjectBoardPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ milestone?: string }> }) {
   const { projectId } = await params;
+  const { milestone: initialMilestone } = await searchParams;
 
   const context = await requireInternal(`/projects/${projectId}/board`);
   if (!can(context.role, 'project.read')) return <PermissionDenied />;
@@ -42,12 +45,21 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const [{ tasks, modules }, roster, clock, clientName] = await Promise.all([
+  // SCR-020: the assignee list reads from the project's members (20261001120000)
+  // and falls back to the organisation roster when the project has none; the
+  // phase filter is the payment milestone a task is filed under.
+  const [{ tasks, modules }, roster, clock, clientName, candidates, tasksByMilestone, milestones] = await Promise.all([
     listDevelopmentBreakdown(projectId),
     listInternalRoster(),
     agencyClock(),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
+    listAssigneeCandidates(projectId),
+    listTasksByMilestone(projectId),
+    listPaymentPlan(projectId),
   ]);
+  const milestoneByTask = new Map<string, string>();
+  for (const [milestoneId, list] of Object.entries(tasksByMilestone)) for (const t of list) milestoneByTask.set(t.id, milestoneId);
+  const milestoneName = new Map(milestones.map((m) => [m.id, m.name]));
   // SCR-020: the blocker, checklist, comments and attachments for every
   // card, read once for the whole board so each drawer opens from data the
   // page already holds.
@@ -72,6 +84,8 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
     dueLabel: t.dueOn ? clock.date(t.dueOn) : null,
     completedLabel: t.completedAt ? clock.dateTime(t.completedAt) : null,
     overdue: t.status !== 'done' && t.dueOn !== null && t.dueOn < todayKey,
+    milestoneId: milestoneByTask.get(t.id) ?? null,
+    milestoneName: milestoneByTask.has(t.id) ? (milestoneName.get(milestoneByTask.get(t.id) as string) ?? null) : null,
   }));
 
   const assignees = [...new Set(tasks.map((t) => t.assigneeId).filter((id): id is string => id !== null))]
@@ -90,7 +104,10 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
         tasks={boardTasks}
         modules={modules.map((m) => ({ id: m.id, name: m.name }))}
         people={assignees}
-        roster={roster.map((r) => ({ userId: r.userId, fullName: r.fullName })).sort((a, b) => a.fullName.localeCompare(b.fullName))}
+        roster={candidates.people}
+        rosterSource={candidates.source}
+        milestones={milestones.map((m) => ({ id: m.id, name: m.name }))}
+        initialMilestone={initialMilestone && milestoneName.has(initialMilestone) ? initialMilestone : ''}
         canWrite={canWrite}
         collab={collab}
       />

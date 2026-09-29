@@ -28,6 +28,8 @@ export type FileVersion = {
 export type ProjectFileHead = {
   id: string;
   category: string;
+  /** SCR-024: the folder inside the category ('' for the root), e.g. `mockups/mobile`. */
+  folder: string;
   title: string;
   description: string | null;
   uploadedByName: string | null;
@@ -68,6 +70,7 @@ export type FileShare = {
 type FileRow = {
   id: string;
   category: string;
+  folder: string;
   title: string;
   url: string | null;
   description: string | null;
@@ -83,7 +86,7 @@ type FileRow = {
 };
 
 const FILE_SELECT =
-  'id, category, title, url, description, uploaded_by, created_at, storage_path, size_bytes, content_type, version, parent_file_id, deleted_at, deleted_by';
+  'id, category, folder, title, url, description, uploaded_by, created_at, storage_path, size_bytes, content_type, version, parent_file_id, deleted_at, deleted_by';
 
 async function namesFor(userIds: readonly (string | null)[]): Promise<Map<string, string>> {
   const ids = [...new Set(userIds.filter((id): id is string => id !== null))];
@@ -167,6 +170,7 @@ export async function listProjectFileTree(projectId: string): Promise<ProjectFil
     return {
       id: h.id,
       category: h.category,
+      folder: h.folder ?? '',
       title: h.title,
       description: h.description,
       uploadedByName: h.uploaded_by ? (names.get(h.uploaded_by) ?? null) : null,

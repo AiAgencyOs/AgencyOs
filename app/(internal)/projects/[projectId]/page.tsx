@@ -28,7 +28,6 @@ import {
   IconGrid,
   IconInvoices,
   IconList,
-  IconPlus,
   IconUpload,
   IconUser,
   IconUsers,
@@ -107,6 +106,16 @@ import { AddDeliverableForm, SubmitDeliverableForm } from './deliverables-panel'
 import { DefectTriageForm, ProductionReadyForm, RaiseDefectForm, SettleDefectForm } from './qa-panel';
 import { WatchProjectButton } from './watch-button';
 import { SaveTemplateButton } from './save-template-button';
+import { getAgencyTimeZone } from '@/lib/admin/agency-clock';
+import { listClientLeads } from '@/lib/admin/client-leads';
+import { listProjectMeetings } from '@/modules/projects/calendar-queries';
+import { listProjectLinks } from '@/modules/projects/project-links-queries';
+import { listProjectUpdates } from '@/modules/projects/project-updates-queries';
+import { ProposeMeetingOnDayForm } from './calendar/propose-meeting-form';
+import { QuickTaskForm } from './create-in-place';
+import { AddProjectFileForm } from './files-panel';
+import { ProjectLinksPanel } from './links-panel';
+import { ProjectUpdatePanel } from './project-update-form';
 import { readMyWatch } from '@/modules/projects/project-defaults-queries';
 import { RecordClaimForm, VerifyClaimForm } from './claims-panel';
 import { ProjectGroupPanel } from './group-panel';
@@ -267,7 +276,16 @@ export default async function ProjectPage({
     readHandoverPackage(projectId),
   ]);
   const latestRun = testRuns[0] ?? null;
-  const [{ tasks }, team, files, roster, clientName, assignedAgents, myWatch] = await Promise.all([
+  // SCR-019 (20261001120000): links, updates sent, and upcoming events
+  // (milestones AND the meetings booked on the deal this project came from).
+  const [links, updates, meetings, clientLeads, agencyZone] = await Promise.all([
+    listProjectLinks(projectId),
+    listProjectUpdates(projectId, 5),
+    listProjectMeetings(projectId),
+    project.client_account_id ? listClientLeads(project.client_account_id) : Promise.resolve([]),
+    getAgencyTimeZone(),
+  ]);
+  const [{ tasks, modules }, team, files, roster, clientName, assignedAgents, myWatch] = await Promise.all([
     listDevelopmentBreakdown(projectId),
     listProjectTeam(projectId),
     listProjectFiles(projectId),
@@ -491,12 +509,8 @@ export default async function ProjectPage({
           actions={
             <>
               <ViewAll href={`/projects/${projectId}/development`} />
-              {can(context.role, 'task.write') ? (
-                <Link href={`/projects/${projectId}/development`} className={buttonClass('primary', 'sm')}>
-                  <IconPlus size={14} />
-                  Add task
-                </Link>
-              ) : null}
+              {/* SCR-019: create a task in place — the same createTaskAction the Development page uses. */}
+              {can(context.role, 'task.write') ? <QuickTaskForm projectId={projectId} modules={modules.map((m) => ({ id: m.id, name: m.name }))} /> : null}
             </>
           }
         />
@@ -1202,8 +1216,80 @@ export default async function ProjectPage({
           )}
         </Card>
 
+        {/* SCR-019 (20261001120000): project links — the repo, the design file, the staging site. */}
         <Card>
-          <CardHeader title="Recent files" actions={<ViewAll href={`/projects/${projectId}/files`} />} />
+          <CardHeader title={`Project links (${links.length})`} />
+          <ProjectLinksPanel projectId={projectId} links={links} editable={mayWriteProject} />
+        </Card>
+
+        {/* SCR-019: upcoming events — milestones AND the meetings booked on this project's deal, dated ahead. */}
+        <Card>
+          <CardHeader title="Upcoming events" actions={<ViewAll href={`/projects/${projectId}/calendar`} label="Calendar" />} />
+          {(() => {
+            const upcoming = [
+              ...plan.filter((m) => !m.met_at && m.due_on && m.due_on >= todayKey).map((m) => ({ key: `m-${m.id}`, date: m.due_on as string, time: null as string | null, label: m.name, kind: 'milestone', href: `/projects/${projectId}/plan?milestone=${m.id}` })),
+              ...meetings
+                .filter((m) => m.startAt && clock.dayKey(m.startAt) >= todayKey)
+                .map((m) => ({ key: `mt-${m.id}`, date: clock.dayKey(m.startAt as string), time: clock.clock(m.startAt as string), label: `${humanize(m.mode ?? 'meeting')} · ${humanize(m.status)}`, kind: 'meeting', href: `/meetings/${m.id}` })),
+            ]
+              .sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? ''))
+              .slice(0, 6);
+            return upcoming.length === 0 ? (
+              <p className="px-4 py-3 text-[13px] text-muted sm:px-5">Nothing dated ahead — no open milestone with a due date and no meeting booked.</p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {upcoming.map((e) => (
+                  <li key={e.key}>
+                    <Link href={e.href} className="flex items-center gap-3 px-4 py-2 text-[13px] hover:bg-surface-hover sm:px-5">
+                      <span className="flex h-9 w-9 shrink-0 flex-col items-center justify-center rounded-lg bg-brand-soft text-brand">
+                        <span className="text-[9px] font-semibold uppercase leading-none">{clock.date(`${e.date}T00:00:00`).split(' ')[1]}</span>
+                        <span className="tabular text-sm font-semibold leading-tight">{e.date.slice(8, 10)}</span>
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium text-foreground">{e.label}</span>
+                        <span className="block text-xs text-muted">{e.kind}{e.time ? ` · ${e.time}` : ''}</span>
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            );
+          })()}
+          {/* SCR-019: create a meeting in place — the calendar's own propose-a-meeting door, on today. */}
+          {can(context.role, 'lead.write') && clientLeads.length > 0 ? (
+            <div className="border-t border-line px-4 py-2 sm:px-5">
+              <ProposeMeetingOnDayForm projectId={projectId} date={todayKey} leads={clientLeads.map((l) => ({ id: l.id, title: l.title }))} agencyZone={agencyZone} />
+            </div>
+          ) : null}
+        </Card>
+
+        {/* SCR-019: send a project update — through the client thread chokepoint, or as an internal note. */}
+        <Card>
+          <CardHeader title="Project updates" />
+          <ProjectUpdatePanel
+            projectId={projectId}
+            updates={updates}
+            labels={Object.fromEntries(updates.map((u) => [u.id, clock.dateTime(u.createdAt)]))}
+            mayMessageClient={can(context.role, 'lead.write')}
+            mayPostInternal={mayWriteProject}
+            hasClientThread={group.linked !== null}
+          />
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Recent files"
+            actions={<ViewAll href={`/projects/${projectId}/files`} />}
+          />
+          {/* SCR-019: link a file in place — the Files tab's own door. */}
+          {mayWriteProject ? (
+            <details className="border-b border-line px-4 py-2 sm:px-5">
+              <summary className="cursor-pointer text-xs text-muted hover:underline">+ Link a file</summary>
+              <div className="pt-2 [&>section]:border-0 [&>section]:p-0 [&>section]:shadow-none">
+                <AddProjectFileForm projectId={projectId} />
+              </div>
+            </details>
+          ) : null}
           {files.length === 0 ? (
             <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No files yet.</p>
           ) : (

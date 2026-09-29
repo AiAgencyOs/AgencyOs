@@ -13,6 +13,7 @@ import {
   removeTaskAttachmentAction,
   setChecklistItemDoneAction,
 } from '@/modules/projects/task-collab-actions';
+import { TASK_EVIDENCE_KINDS } from '@/modules/projects/task-collab-schema';
 import type { TaskCollab } from '@/modules/projects/task-collab-types';
 import {
   Avatar,
@@ -344,7 +345,20 @@ function AttachmentsSection({ projectId, taskId, collab, canWrite, compact }: { 
       {canWrite ? (
         <form ref={form} action={action} className="flex flex-col gap-1.5">
           <TaskKeys projectId={projectId} taskId={taskId} />
-          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto]">
+          <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1.4fr)_auto]">
+            {/* SCR-020: typed evidence — screenshot, log, url, file. */}
+            <div className="flex flex-col gap-1">
+              <label className="sr-only" htmlFor={`attach-kind-${taskId}`}>
+                Evidence kind
+              </label>
+              <select id={`attach-kind-${taskId}`} name="kind" defaultValue="url" className={inputClass}>
+                {TASK_EVIDENCE_KINDS.map((k) => (
+                  <option key={k} value={k}>
+                    {k}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="flex flex-col gap-1">
               <label className="sr-only" htmlFor={`attach-title-${taskId}`}>
                 Title
@@ -382,6 +396,7 @@ function AttachmentRow({ projectId, taskId, attachment, canWrite }: { projectId:
           <span className="truncate">{attachment.title}</span>
           <IconArrowUpRight size={12} className="shrink-0" />
         </a>
+        <span className="shrink-0 rounded-full bg-surface-sunken px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted">{attachment.kind}</span>
         {canWrite ? (
           <form action={action} onSubmit={confirmRemove}>
             <TaskKeys projectId={projectId} taskId={taskId} />

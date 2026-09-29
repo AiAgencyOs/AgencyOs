@@ -7,6 +7,9 @@ import { can } from '@/lib/authz/permissions';
 import { listProposedRequirements } from '@/modules/crm/queries';
 import { readRequirementsDashboard } from '@/lib/admin/requirements-dashboard';
 import { readRequirementsOverview } from '@/modules/projects/queries';
+import { listRequirementsProjectPlans, readRecentRequirementChanges } from '@/modules/projects/requirements-recent-queries';
+
+import { RequirementsDoors } from './requirements-doors';
 import {
   buttonClass,
   Avatar,
@@ -45,7 +48,16 @@ export default async function RequirementsPage() {
   if (!can(context.role, 'lead.read')) return <PermissionDenied />;
   const clock = await agencyClock();
 
-  const [proposed, overview, dashboard] = await Promise.all([listProposedRequirements(), readRequirementsOverview(), readRequirementsDashboard()]);
+  const [proposed, overview, dashboard, recent, projectPlans] = await Promise.all([
+    listProposedRequirements(),
+    readRequirementsOverview(),
+    readRequirementsDashboard(),
+    // SCR-028: recent requirement changes across every project, and the live
+    // plan per project for the clarification / change-request doors.
+    readRecentRequirementChanges(),
+    listRequirementsProjectPlans(),
+  ]);
+  const mayRaise = can(context.role, 'milestone.write');
   const openQuestionProjects = dashboard.projectsWithOpenQuestions.length;
   const now = Date.now();
   const ageDays = (iso: string) => Math.floor((now - new Date(iso).getTime()) / 86_400_000);
@@ -130,6 +142,50 @@ export default async function RequirementsPage() {
           href={dashboard.scopeDrift.length > 0 ? '#scope-drift' : undefined}
         />
       </StatGrid>
+
+      {/* SCR-028: recent requirement changes across every project, with the
+          export and the two doors (the Plan/Scope pages' own) beside it. */}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(20rem,1fr)]">
+        <Card>
+          <CardHeader
+            title="Recent requirement changes"
+            description="Change requests raised or decided, baselines frozen and plan questions raised — newest first, across every project."
+            actions={
+              <a href="/api/requirements/scope-summary" className="inline-flex items-center gap-1 text-[13px] text-muted underline-offset-2 hover:underline">
+                Export scope summary (CSV)
+              </a>
+            }
+          />
+          {recent.length === 0 ? (
+            <EmptyState icon={<IconClock size={22} />} title="No requirement changes yet" description="A change request, a frozen baseline or a plan question will appear here as it happens." />
+          ) : (
+            <ul className="divide-y divide-line">
+              {recent.map((r) => (
+                <li key={r.id}>
+                  <Link href={r.href} className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-[13px] hover:bg-surface-hover sm:px-5">
+                    <Badge tone={r.kind === 'scope_frozen' ? 'success' : r.kind === 'requirement_decided' ? 'info' : r.kind === 'plan_question' ? 'warning' : 'neutral'}>
+                      {r.kind === 'scope_frozen' ? 'baseline' : r.kind === 'plan_question' ? 'question' : 'change request'}
+                    </Badge>
+                    <span className="font-medium">{r.projectName}</span>
+                    <span className="min-w-0 flex-1 truncate text-muted">{r.summary}</span>
+                    {r.status ? <Badge tone="neutral">{r.status.replace(/_/g, ' ')}</Badge> : null}
+                    <span className="text-xs text-muted">{clock.dateTime(r.at)}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+        <div className="flex min-w-0 flex-col gap-3">
+          {mayRaise ? (
+            <RequirementsDoors projects={projectPlans} />
+          ) : (
+            <Card>
+              <CardHeader title="Request clarification · Create change request" description="Raising a plan question or a change request takes the milestone.write permission (owner, ops admin, delivery lead)." />
+            </Card>
+          )}
+        </div>
+      </div>
 
       {openQuestionProjects > 0 ? (
         <Card id="open-questions">

@@ -8,7 +8,10 @@ import { can } from '@/lib/authz/permissions';
 import { ROLES, type Role } from '@/lib/auth/claims';
 import { capabilitiesFor, type Capability } from '@/lib/authz/permissions';
 import { getProject, listInternalRoster, listProjectTeam, listTeamDefaults } from '@/modules/projects/queries';
+import { listProjectMembers, readLastActive } from '@/modules/projects/project-members-queries';
 import { listTeamActivity } from '@/modules/projects/team-activity-queries';
+
+import { ProjectMembersPanel } from './members-panel';
 
 import { DeliveryLeadForm } from '../milestone-controls';
 import {
@@ -65,14 +68,23 @@ export default async function ProjectTeamPage({ params }: { params: Promise<{ pr
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const [team, roster, clock, clientName, defaults, activity] = await Promise.all([
+  const [team, roster, clock, clientName, defaults, activity, members] = await Promise.all([
     listProjectTeam(projectId),
     listInternalRoster(),
     agencyClock(),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
     listTeamDefaults(),
     listTeamActivity(projectId),
+    // SCR-025 (20261001120000): the project's own roster, with project roles.
+    listProjectMembers(projectId),
   ]);
+  // SCR-025 "Active now" — as the schema can honestly state it: last active,
+  // from the newest audit row each person wrote. Readable by audit.read roles.
+  const canReadAudit = can(context.role, 'audit.read');
+  const lastActive = await readLastActive([...new Set([...team.map((m) => m.userId), ...members.map((m) => m.userId)])], canReadAudit);
+  const lastActiveLabels: Record<string, string> = {};
+  if (lastActive.visible) for (const [userId, at] of Object.entries(lastActive.byUser)) lastActiveLabels[userId] = clock.dateTime(at);
+  const activeToday = lastActive.visible ? Object.values(lastActive.byUser).filter((at) => clock.dayKey(at) === clock.dayKey(new Date())).length : null;
   const mayEditDefaults = can(context.role, 'organization.settings');
   const nameByUser = new Map(roster.map((m) => [m.userId, m.fullName]));
 
@@ -108,6 +120,8 @@ export default async function ProjectTeamPage({ params }: { params: Promise<{ pr
       cell: (m) => <ProgressBar value={m.tasksTotal > 0 ? (m.tasksDone / m.tasksTotal) * 100 : 0} label={`${m.fullName} tasks done`} />,
     },
     { key: 'count', header: 'Assigned', align: 'right', cellClassName: 'tabular text-muted', cell: (m) => `${m.tasksDone}/${m.tasksTotal}` },
+    // SCR-025 "Active now": last active, from the audit log — never an invented "online".
+    { key: 'active', header: 'Last active', desktopOnly: true, cellClassName: 'text-muted whitespace-nowrap', cell: (m) => (lastActive.visible ? (lastActiveLabels[m.userId] ?? 'no recorded activity') : '—') },
     {
       // SCR-025: what the role lets this person do here, read from the
       // capability matrix rather than restated.
@@ -141,12 +155,23 @@ export default async function ProjectTeamPage({ params }: { params: Promise<{ pr
             <Stat key={role} label={humanize(role)} value={String(n)} caption={`${Math.round((n / team.length) * 100)}% of the team`} tone="info" icon={<IconUser size={16} />} />
           ))}
           <Stat label="Tasks done" value={`${tasksDone}/${tasksTotal}`} caption={tasksTotal > 0 ? `${Math.round((tasksDone / tasksTotal) * 100)}% complete` : undefined} tone="success" icon={<IconCheck size={16} />} />
+          {/* SCR-025 "Active now" — last active today, from the audit log; a role that cannot read it is told so. */}
+          <Stat label="Active today" value={activeToday === null ? '—' : String(activeToday)} caption={activeToday === null ? 'Audit log not visible to your role' : 'wrote an audit row today'} tone={activeToday ? 'success' : 'neutral'} icon={<IconUser size={16} />} />
         </StatGrid>
       ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(18rem,1fr)]">
+        <div className="flex min-w-0 flex-col gap-4">
+        {/* SCR-025 (20261001120000): the project's own roster — assign, set a project role, remove. */}
         <Card>
-          <CardHeader title="Team members" description="Everyone with a task assigned on this project. A person joins by being assigned work on the Board." />
+          <CardHeader
+            title={`Project members (${members.length})`}
+            description="Who is on this project and in what role. The Board offers these people first when assigning a task, and the organisation roster when the project has none."
+          />
+          <ProjectMembersPanel projectId={projectId} members={members} roster={roster} lastActive={lastActive} lastActiveLabels={lastActiveLabels} mayEdit={canEdit} />
+        </Card>
+        <Card>
+          <CardHeader title="Everyone with a task" description="Everyone with a task assigned on this project, whether or not they are on the roster above. A person joins by being assigned work on the Board." />
           {team.length > 0 ? (
             <div className="px-4 pb-4 sm:px-5">
               <DataTable dense rows={team} columns={columns} getKey={(m) => m.userId} />
@@ -155,6 +180,7 @@ export default async function ProjectTeamPage({ params }: { params: Promise<{ pr
             <EmptyState icon={<IconUser size={22} />} title="No one assigned yet" description="A person shows up here the first time a task on this project is assigned to them." />
           )}
         </Card>
+        </div>
 
         <div className="flex flex-col gap-4">
         <Card>

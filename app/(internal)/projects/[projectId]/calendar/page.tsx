@@ -8,6 +8,8 @@ import { readClientName } from '@/lib/admin/clients';
 import { isDayKey, shiftDay, weekOf, WEEKDAY_LABELS } from '@/lib/admin/month-grid';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { clientEnv } from '@/lib/env';
+import { readMyCalendarFeed } from '@/modules/projects/calendar-feed-queries';
 import { listProjectMeetings } from '@/modules/projects/calendar-queries';
 import { getProject, listDevelopmentBreakdown, listPaymentPlan } from '@/modules/projects/queries';
 import {
@@ -36,7 +38,9 @@ import {
 import { ProjectSubNav } from '../project-subnav';
 import { WorkspaceHeader } from '../workspace-header';
 
+import { AddMilestoneOnDayForm } from './add-milestone-form';
 import { AddTaskOnDayForm } from './add-task-form';
+import { CalendarFeedPanel } from './calendar-feed-panel';
 import { ProposeMeetingOnDayForm } from './propose-meeting-form';
 
 export const metadata: Metadata = { title: 'Calendar' };
@@ -99,7 +103,7 @@ export default async function ProjectCalendarPage({
   if (!project) notFound();
 
   const clock = await agencyClock();
-  const [{ tasks, modules }, milestones, clientName, meetings, clientLeads, agencyZone] = await Promise.all([
+  const [{ tasks, modules }, milestones, clientName, meetings, clientLeads, agencyZone, feed] = await Promise.all([
     listDevelopmentBreakdown(projectId),
     listPaymentPlan(projectId),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
@@ -107,8 +111,12 @@ export default async function ProjectCalendarPage({
     // SCR-022 — "Propose a meeting on this day" picks one of the client's leads.
     project.client_account_id ? listClientLeads(project.client_account_id) : Promise.resolve([]),
     getAgencyTimeZone(),
+    // SCR-022 — "Sync supported calendars": the caller's own ICS feed, if one exists.
+    readMyCalendarFeed(projectId),
   ]);
   const mayProposeMeeting = can(context.role, 'lead.write');
+  // SCR-022 — "create a milestone on this day": an unpriced one, through milestone.write.
+  const mayAddMilestone = can(context.role, 'milestone.write');
   const leadOptions = clientLeads.map((l) => ({ id: l.id, title: l.title }));
 
   // SCR-022: `?view=month|week|day|list`, `?date=` anchors week/day, and
@@ -237,6 +245,7 @@ export default async function ProjectCalendarPage({
                       </Link>
                       <span className="flex items-center gap-1.5">
                         {mayWrite ? <AddTaskOnDayForm projectId={projectId} dueOn={key} modules={moduleOptions} compact /> : null}
+                        {mayAddMilestone ? <AddMilestoneOnDayForm projectId={projectId} dueOn={key} compact /> : null}
                         {mayProposeMeeting ? <ProposeMeetingOnDayForm projectId={projectId} date={key} leads={leadOptions} agencyZone={agencyZone} compact /> : null}
                       </span>
                     </div>
@@ -284,9 +293,10 @@ export default async function ProjectCalendarPage({
                 ) : (
                   <p className="text-[13px] text-muted">Nothing due or booked on this day.</p>
                 )}
-                {mayWrite || mayProposeMeeting ? (
+                {mayWrite || mayProposeMeeting || mayAddMilestone ? (
                   <div className="flex flex-wrap items-start gap-2 border-t border-line pt-3">
                     {mayWrite ? <AddTaskOnDayForm projectId={projectId} dueOn={anchor} modules={moduleOptions} /> : null}
+                    {mayAddMilestone ? <AddMilestoneOnDayForm projectId={projectId} dueOn={anchor} /> : null}
                     {mayProposeMeeting ? <ProposeMeetingOnDayForm projectId={projectId} date={anchor} leads={leadOptions} agencyZone={agencyZone} /> : null}
                   </div>
                 ) : null}
@@ -313,6 +323,12 @@ export default async function ProjectCalendarPage({
                 <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[13px] text-muted">
                   <span>Create a task on a day:</span>
                   <AddTaskOnDayForm projectId={projectId} dueOn={anchor} modules={moduleOptions} />
+                  {mayAddMilestone ? (
+                    <>
+                      <span>· or a milestone:</span>
+                      <AddMilestoneOnDayForm projectId={projectId} dueOn={anchor} />
+                    </>
+                  ) : null}
                   {mayProposeMeeting ? (
                     <>
                       <span>· or propose a meeting:</span>
@@ -344,6 +360,7 @@ export default async function ProjectCalendarPage({
                         </p>
                         <span className="flex items-center gap-1.5">
                           {mayWrite ? <AddTaskOnDayForm projectId={projectId} dueOn={date} modules={moduleOptions} compact /> : null}
+                          {mayAddMilestone ? <AddMilestoneOnDayForm projectId={projectId} dueOn={date} compact /> : null}
                           {mayProposeMeeting ? <ProposeMeetingOnDayForm projectId={projectId} date={date} leads={leadOptions} agencyZone={agencyZone} compact /> : null}
                         </span>
                       </div>
@@ -414,6 +431,12 @@ export default async function ProjectCalendarPage({
                 ))}
               </ul>
             )}
+          </Card>
+
+          {/* SCR-022 "Sync supported calendars": a subscribable ICS feed — the honest sync without OAuth. */}
+          <Card>
+            <CardHeader title="Sync to your calendar" description="A private feed URL Google Calendar, Apple Calendar and Outlook can subscribe to." />
+            <CalendarFeedPanel projectId={projectId} feed={feed} appUrl={clientEnv.NEXT_PUBLIC_APP_URL} fetchedLabel={feed?.lastFetchedAt ? clock.dateTime(feed.lastFetchedAt) : null} />
           </Card>
 
           <QuickActions

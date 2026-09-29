@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useActionState } from 'react';
 
+import { invoiceChangeRequestAction } from '@/modules/finance/change-request-invoice-actions';
 import {
   applyChangeRequestAction,
   classifyChangeRequestAction,
@@ -10,10 +11,12 @@ import {
   submitChangeRequestAction,
 } from '@/modules/projects/actions';
 import { CHANGE_REQUEST_CLASSIFICATIONS } from '@/modules/projects/schema';
+import type { ChangeRequestInvoices } from '@/modules/projects/change-request-invoice-queries';
 import type { ChangeRequestContext } from '@/modules/projects/change-request-queries';
 import type { ChangeRequestRow } from '@/modules/projects/queries';
+import { sendProposalAction } from '@/modules/sales/actions';
 import { IDLE_STATE } from '@/modules/identity/types';
-import { Badge, FormMessage, buttonClass, inputClass, labelClass, selectClass, textareaClass, type Tone } from '@/ui';
+import { Badge, FormMessage, Stat, StatGrid, buttonClass, inputClass, labelClass, selectClass, textareaClass, type Tone } from '@/ui';
 
 /**
  * Doc 11 §16–§22 — the change-request lifecycle. `submit_change_request`,
@@ -30,6 +33,15 @@ import { Badge, FormMessage, buttonClass, inputClass, labelClass, selectClass, t
  * owner may approve or reject, because a delivery lead approving their own
  * team's change is the review signing its own homework. This page renders
  * that distinction rather than hiding it behind one shared "canWrite" flag.
+ *
+ * ── SCR-031, since 20261001120000 ──────────────────────────────────────
+ *
+ * A paid change has its OWN invoice (`change_requests.invoice_id`, raised
+ * by "Trigger finance" through the finance door), its quotation is sent
+ * from here through the quotation's own door (`sendProposalAction`, on the
+ * project's client thread), and "Apply" is gated on that invoice being
+ * paid — `apply_change_request` refuses `not_invoiced` / `unpaid`, and the
+ * button says so before it is pressed.
  */
 
 const STATUS_TONE: Record<string, Tone> = {
@@ -61,13 +73,15 @@ const money = (minor: number, currency: string) =>
 /**
  * SCR-031 — the payment gate as the rows state it. A paid change is decided
  * against a proposal (ADM-22); the proposal's status is the client's answer,
- * and the project's invoice ledger is the money side. Neither is re-derived:
- * an `accepted` proposal with no `paid` invoice is shown as exactly that.
+ * and the request's OWN invoice is the money side. Neither is re-derived:
+ * an `accepted` proposal with an unpaid invoice is shown as exactly that.
  */
-function PaymentGate({ cr, context }: { cr: ChangeRequestRow; context: ChangeRequestContext }) {
+function PaymentGate({ cr, context, invoices }: { cr: ChangeRequestRow; context: ChangeRequestContext; invoices?: ChangeRequestInvoices }) {
   const proposal = cr.proposalId ? context.proposals[cr.proposalId] : undefined;
   const isPaid = cr.classification === 'paid_change';
   if (!isPaid && !proposal) return null;
+  const invoiceId = invoices?.invoiceIdByRequest[cr.id] ?? null;
+  const invoice = invoices?.byRequest[cr.id] ?? null;
 
   return (
     <div className="flex flex-col gap-1 rounded-md border border-line bg-surface-sunken px-3 py-2 text-[13px]">
@@ -88,13 +102,24 @@ function PaymentGate({ cr, context }: { cr: ChangeRequestRow; context: ChangeReq
           <span className="text-muted">{money(proposal.totalMinor, proposal.currency)}</span>
         </p>
       )}
-      {!context.invoices.visible ? (
-        <p className="text-xs text-muted">Invoice status is not visible to your role.</p>
-      ) : context.invoices.byStatus.length === 0 ? (
-        <p className="text-xs text-muted">No invoice has been raised on this project.</p>
-      ) : (
+      {/* The request's OWN invoice — SCR-031 "Payment gate" is this bill, not the project's ledger. */}
+      {invoices && !invoices.visible ? (
+        <p className="text-xs text-muted">{invoiceId ? 'An invoice is raised for this change; its status is not visible to your role.' : 'No invoice raised for this change yet.'}</p>
+      ) : invoice ? (
+        <p className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-muted">This change’s invoice</span>
+          <Link href={`/invoices/${invoice.id}`} className="font-mono underline-offset-2 hover:underline">{invoice.number}</Link>
+          <Badge tone={invoice.status === 'paid' ? 'success' : invoice.status === 'overdue' ? 'danger' : invoice.status === 'void' ? 'neutral' : 'warning'}>{invoice.status.replace(/_/g, ' ')}</Badge>
+          <span className="text-muted">{money(invoice.paidMinor, invoice.currency)} of {money(invoice.totalMinor, invoice.currency)} paid</span>
+        </p>
+      ) : invoiceId ? (
+        <p className="text-xs text-muted">An invoice is linked to this change but is not visible to you.</p>
+      ) : isPaid ? (
+        <p className="text-xs text-muted">No invoice raised for this change yet — “Trigger finance” below raises one from the quotation.</p>
+      ) : null}
+      {!context.invoices.visible ? null : context.invoices.byStatus.length === 0 ? null : (
         <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
-          <span>Project invoices:</span>
+          <span>Project invoices overall:</span>
           {context.invoices.byStatus.map((s) => (
             <Badge key={s.status} tone={s.status === 'paid' ? 'success' : s.status === 'overdue' ? 'danger' : 'neutral'}>
               {s.count} {s.status.replace(/_/g, ' ')}
@@ -212,16 +237,55 @@ function DecideForm({ projectId, changeRequestId, classification }: { projectId:
   );
 }
 
-function ApplyButton({ projectId, changeRequestId }: { projectId: string; changeRequestId: string }) {
+/** SCR-031 "Implement after payment where required": the door refuses an unpaid paid change; the button says so first. */
+function ApplyButton({ projectId, changeRequestId, gate }: { projectId: string; changeRequestId: string; gate: { blocked: boolean; reason: string | null } }) {
   const [state, action, pending] = useActionState(applyChangeRequestAction, IDLE_STATE);
 
   return (
     <form action={action} className="flex flex-col gap-2 border-t border-line pt-2">
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="changeRequestId" value={changeRequestId} />
-      <button type="submit" disabled={pending} className={`${buttonClass('primary', 'sm')} self-start`}>
-        {pending ? 'Applying…' : 'Apply to the baseline'}
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="submit" disabled={pending || gate.blocked} className={buttonClass('primary', 'sm')} title={gate.reason ?? undefined}>
+          {pending ? 'Applying…' : 'Apply to the baseline'}
+        </button>
+        {gate.reason ? <span className="text-xs text-muted">{gate.reason}</span> : null}
+      </div>
+      <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** SCR-031 "Trigger finance": the request's own invoice, through the finance door. */
+function InvoiceChangeRequestForm({ projectId, changeRequestId }: { projectId: string; changeRequestId: string }) {
+  const [state, action, pending] = useActionState(invoiceChangeRequestAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2 border-t border-line pt-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="changeRequestId" value={changeRequestId} />
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Due in (days, optional)</span>
+        <input name="dueInDays" type="number" min={0} max={365} className={`${inputClass} w-28`} />
+      </label>
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Raising…' : 'Trigger finance — raise the invoice'}
       </button>
+      <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** SCR-031 "Send quotation": the quotation's own send door, on the project's client thread. */
+function SendQuotationForm({ proposalId, conversationId }: { proposalId: string; conversationId: string | null }) {
+  const [state, action, pending] = useActionState(sendProposalAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2 border-t border-line pt-2">
+      <input type="hidden" name="proposalId" value={proposalId} />
+      {conversationId ? <input type="hidden" name="conversationId" value={conversationId} /> : null}
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Sending…' : 'Send quotation to the client'}
+      </button>
+      <span className="text-xs text-muted">{conversationId ? 'On the project’s WhatsApp group; consent and the 24-hour window decide.' : 'On the quotation’s own thread (no project group is linked).'}</span>
       <FormMessage status={state.status} message={state.message} />
     </form>
   );
@@ -233,6 +297,9 @@ export function ChangeRequestList({
   mayManage,
   mayDecide,
   context,
+  invoices,
+  mayInvoice = false,
+  maySendQuotation = false,
 }: {
   projectId: string;
   changeRequests: ChangeRequestRow[];
@@ -242,20 +309,52 @@ export function ChangeRequestList({
   mayDecide: boolean;
   /** SCR-031 — proposal, invoice ledger, resulting tasks and the quotation door. */
   context?: ChangeRequestContext;
+  /** SCR-031 (20261001120000) — each request's own invoice and the client thread. */
+  invoices?: ChangeRequestInvoices;
+  /** invoice.create — "Trigger finance". */
+  mayInvoice?: boolean;
+  /** proposal.send — "Send quotation". */
+  maySendQuotation?: boolean;
 }) {
+  // SCR-031 counts: paid (own invoice paid), in progress (approved and being
+  // applied, or applied with tasks still open). Real tiles over real rows.
+  const paidCount = invoices ? changeRequests.filter((cr) => invoices.byRequest[cr.id]?.status === 'paid').length : null;
+  const inProgress = changeRequests.filter((cr) => cr.status === 'approved' || (cr.status === 'implemented' && (context?.tasksByRequest[cr.id] ?? []).some((t) => t.status !== 'done'))).length;
+  const awaitingPayment = invoices ? changeRequests.filter((cr) => cr.classification === 'paid_change' && cr.status === 'approved' && invoices.byRequest[cr.id]?.status !== 'paid').length : null;
+
   if (changeRequests.length === 0) {
     return <p className="text-[13px] text-muted">No change request has been raised for this project.</p>;
   }
 
   return (
+    <div className="flex flex-col gap-3">
+      <StatGrid>
+        <Stat label="Paid" value={paidCount === null ? '—' : String(paidCount)} caption={paidCount === null ? 'Invoice status not visible to your role' : 'own invoice paid'} tone="success" />
+        <Stat label="In progress" value={String(inProgress)} caption="approved, or applied with tasks open" tone={inProgress > 0 ? 'info' : 'neutral'} />
+        <Stat label="Awaiting payment" value={awaitingPayment === null ? '—' : String(awaitingPayment)} caption="approved paid changes not yet paid" tone={awaitingPayment ? 'warning' : 'neutral'} />
+      </StatGrid>
     <ul className="flex flex-col gap-3">
-      {changeRequests.map((cr) => (
+      {changeRequests.map((cr) => {
+        const own = invoices?.byRequest[cr.id] ?? null;
+        const hasInvoice = Boolean(invoices?.invoiceIdByRequest[cr.id]);
+        const applyGate =
+          cr.classification !== 'paid_change'
+            ? { blocked: false, reason: null }
+            : !hasInvoice
+              ? { blocked: true, reason: 'A paid change is applied after its invoice is paid — raise the invoice first.' }
+              : own && own.status !== 'paid'
+                ? { blocked: true, reason: `Invoice ${own.number} is ${own.status.replace(/_/g, ' ')} — apply once it is paid.` }
+                : own?.status === 'paid'
+                  ? { blocked: false, reason: `Invoice ${own.number} is paid.` }
+                  : { blocked: false, reason: 'Applied only if the invoice is paid; the door checks.' };
+        return (
         <li key={cr.id} className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={STATUS_TONE[cr.status] ?? 'neutral'}>{cr.status.replace(/_/g, ' ')}</Badge>
             {cr.classification ? (
               <Badge tone="info">{CLASSIFICATION_LABEL[cr.classification] ?? cr.classification}</Badge>
             ) : null}
+            {own?.status === 'paid' ? <Badge tone="success">paid</Badge> : null}
             <span className="text-xs text-muted">{cr.source} · {when(cr.createdAt)}</span>
           </div>
           <p className="max-w-2xl text-[13px]">“{cr.requested}”</p>
@@ -273,7 +372,7 @@ export function ChangeRequestList({
             </p>
           ) : null}
 
-          {context ? <PaymentGate cr={cr} context={context} /> : null}
+          {context ? <PaymentGate cr={cr} context={context} invoices={invoices} /> : null}
 
           {context && (context.tasksByRequest[cr.id]?.length ?? 0) > 0 ? (
             <div className="flex flex-col gap-1 text-[13px]">
@@ -303,6 +402,16 @@ export function ChangeRequestList({
             </Link>
           ) : null}
 
+          {/* SCR-031 "Send quotation": offered on a paid change whose quotation is approved and not yet sent; the door decides again. */}
+          {maySendQuotation && cr.classification === 'paid_change' && cr.proposalId && context?.proposals[cr.proposalId]?.status === 'approved' ? (
+            <SendQuotationForm proposalId={cr.proposalId} conversationId={invoices?.clientThreadId ?? null} />
+          ) : null}
+
+          {/* SCR-031 "Trigger finance": raise this change's own invoice from its quotation. */}
+          {mayInvoice && cr.classification === 'paid_change' && cr.proposalId && !hasInvoice && ['classified', 'pending_approval', 'approved'].includes(cr.status) ? (
+            <InvoiceChangeRequestForm projectId={projectId} changeRequestId={cr.id} />
+          ) : null}
+
           {/* Offered strictly from the stored status — the doors decide again. */}
           {mayManage && ['submitted', 'analysing', 'classified'].includes(cr.status) ? (
             <ClassifyForm projectId={projectId} changeRequestId={cr.id} />
@@ -311,10 +420,12 @@ export function ChangeRequestList({
             <DecideForm projectId={projectId} changeRequestId={cr.id} classification={cr.classification} />
           ) : null}
           {mayManage && cr.status === 'approved' ? (
-            <ApplyButton projectId={projectId} changeRequestId={cr.id} />
+            <ApplyButton projectId={projectId} changeRequestId={cr.id} gate={applyGate} />
           ) : null}
         </li>
-      ))}
+        );
+      })}
     </ul>
+    </div>
   );
 }
