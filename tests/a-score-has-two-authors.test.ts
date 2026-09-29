@@ -77,7 +77,7 @@ describe('B. one door, owner/ops_admin, with a reason, refusing an unscored lead
 
   test('the service goes through the door with lead.assign, and nothing writes the override columns directly', () => {
     const service = read('src/modules/crm/lead-score-override-service.ts');
-    assert.match(service, /can\(context\.role, 'lead\.assign'\)/);
+    assert.match(service, /can\(context, 'lead\.assign'\)/);
     assert.match(service, /rpc\('override_lead_score'/);
     for (const file of ['src/modules/crm/lead-score-override-service.ts', 'src/modules/crm/lead-score-override-actions.ts', 'src/modules/crm/lead-score-override-queries.ts']) {
       assert.doesNotMatch(read(file), /\.(update|insert|upsert)\(/, `${file} writes without the door`);

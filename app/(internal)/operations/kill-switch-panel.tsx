@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react';
 
-import { KILL_SWITCH_EFFECT, KILL_SWITCH_LABEL, type KillSwitchRow } from '@/lib/observability/kill-switches';
+import { KILL_SWITCH_EFFECT, KILL_SWITCH_LABEL, type KillSwitchRow } from '@/lib/observability/kill-switch-types';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { Badge, FormMessage, buttonClass, inputClass } from '@/ui';
 

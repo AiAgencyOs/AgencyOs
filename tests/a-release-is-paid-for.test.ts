@@ -98,7 +98,7 @@ describe('the application says the refusal in words and draws the override for t
   });
 
   test('the override service asks the owner capability before the database asks again', () => {
-    assert.match(OVERRIDE_SERVICE, /can\(context\.role, 'organization\.settings'\)/);
+    assert.match(OVERRIDE_SERVICE, /can\(context, 'organization\.settings'\)/);
     assert.match(OVERRIDE_SERVICE, /rpc\('override_release_payment'/);
     assert.match(OVERRIDE_SERVICE, /case 'nothing_to_override':/);
   });
@@ -107,6 +107,6 @@ describe('the application says the refusal in words and draws the override for t
     assert.match(RELEASE_PAGE, /readFinalPaymentState\(projectId\)/);
     assert.match(RELEASE_PAGE, /key: 'payment',[\s\S]*?hardGate: true/);
     assert.match(RELEASE_PAGE, /OverrideReleasePaymentForm/);
-    assert.match(RELEASE_PAGE, /context\.role === 'owner'/);
+    assert.match(RELEASE_PAGE, /hasRole\(context, 'owner'\)/);
   });
 });

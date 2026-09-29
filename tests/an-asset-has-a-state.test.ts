@@ -86,7 +86,7 @@ describe('B. the upload door is honest about storage', () => {
   });
 
   test('the door gates on project.write and the function on can_manage_delivery', () => {
-    assert.match(SERVICE, /if \(!can\(context\.role, 'project\.write'\)\) return err\('FORBIDDEN', 'You do not have permission to upload a design asset\.'\);/);
+    assert.match(SERVICE, /if \(!can\(context, 'project\.write'\)\) return err\('FORBIDDEN', 'You do not have permission to upload a design asset\.'\);/);
     assert.match(MIGRATION, /create or replace function projects\.record_uploaded_design_asset[\s\S]*?if not coalesce\(\(select core\.can_manage_delivery\(\)\), false\) then/);
   });
 

@@ -111,7 +111,7 @@ describe('A. the only file that writes to GitHub', () => {
       assert.ok(start > 0, `${door} exists`);
       const end = SERVICE.indexOf('\nexport async function', start + 1);
       const body = SERVICE.slice(start, end === -1 ? undefined : end);
-      assert.match(body, new RegExp(`can\\(context\\.role, '${cap}'\\)`), `${door} gates on ${cap}`);
+      assert.match(body, new RegExp(`can\\(context, '${cap}'\\)`), `${door} gates on ${cap}`);
       const callAt = body.indexOf(`await ${call}(`);
       const refuseAt = body.indexOf('return githubRefused(', callAt);
       const recordAt = body.indexOf('await recordGitAction({', callAt);

@@ -67,7 +67,7 @@ describe('B. the door checks the checksum, and it agrees with the TypeScript ref
 
   test('the TypeScript door goes through the function with project.write and never updates the columns itself', () => {
     const service = read('src/lib/admin/client-edit.ts');
-    assert.match(service, /can\(context\.role, 'project\.write'\)/);
+    assert.match(service, /can\(context, 'project\.write'\)/);
     assert.match(service, /rpc\('update_client_account'/);
     assert.doesNotMatch(service, /\.update\(\{/);
     const offenders: string[] = [];
