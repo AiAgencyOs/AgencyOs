@@ -69,9 +69,13 @@ export function RequirementReviseForm({
           <textarea id="rev-summary" name="summary" required maxLength={2000} defaultValue={payload.summary} rows={3} className={textareaClass} />
         </div>
 
-        <Lines id="rev-scopeItems" label="Scope items" hint="one per line, Title — detail" value={scopeItemsToLines(payload.scopeItems)} />
+        {/* SCR-029 (bucket G-3) — the nine PDF sections, one textarea each. */}
+        <Lines id="rev-objectives" label="Objectives" hint="one per line, every objective in full" value={payload.objectives.join('\n')} />
+        <Lines id="rev-scopeItems" label="Features (scope items)" hint="one per line, Title — detail" value={scopeItemsToLines(payload.scopeItems)} />
         <div className="grid gap-3 sm:grid-cols-2">
-          <Lines id="rev-constraints" label="Constraints and rules" hint="one per line" value={payload.constraints.join('\n')} />
+          <Lines id="rev-businessRules" label="Business rules" hint="one per line" value={payload.businessRules.join('\n')} />
+          <Lines id="rev-nonFunctionalRequirements" label="Non-functional requirements" hint="one per line, performance / security / availability…" value={payload.nonFunctionalRequirements.join('\n')} />
+          <Lines id="rev-constraints" label="Constraints (older versions)" hint={payload.constraints.length > 0 ? 'recorded before business rules existed; move them above or leave as history' : 'one per line'} value={payload.constraints.join('\n')} />
           <Lines id="rev-exclusions" label="Excluded" hint="one per line" value={payload.exclusions.join('\n')} />
           <Lines id="rev-assumptions" label="Assumptions" hint="one per line" value={payload.assumptions.join('\n')} />
           <Lines id="rev-niceToHaves" label="Nice to have" hint="one per line" value={payload.niceToHaves.join('\n')} />

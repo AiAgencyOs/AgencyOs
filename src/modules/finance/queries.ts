@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { ilikeAny } from '@/lib/db/search';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -154,10 +155,10 @@ export async function listInvoiceReceipts(invoiceId: string): Promise<InvoiceRec
  * same-schema and embeds; `client_accounts` lives in `core` and needs a
  * second query.
  */
-export async function listPayments(limit = 200): Promise<PaymentLedgerRow[]> {
+export async function listPayments(limit = 200, q?: string): Promise<PaymentLedgerRow[]> {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
+  let query = supabase
     .schema('finance')
     .from('payments')
     .select(
@@ -165,6 +166,9 @@ export async function listPayments(limit = 200): Promise<PaymentLedgerRow[]> {
     )
     .order('created_at', { ascending: false })
     .limit(limit);
+  // Search within domain (bucket G-3): the provider's reference, the provider, or the invoice number (inner embed).
+  if (q) query = query.or(ilikeAny(['provider_payment_id', 'provider', 'invoices.number'], q));
+  const { data, error } = await query;
   if (error) unreadable('listPayments', error);
 
   const rows = data ?? [];
@@ -542,15 +546,18 @@ export type ExpenseRow = {
  * so this reader adds no scoping of its own; it exists only to shape the
  * row for the screen.
  */
-export async function listExpenses(limit = 500): Promise<ExpenseRow[]> {
+export async function listExpenses(limit = 500, q?: string): Promise<ExpenseRow[]> {
   const supabase = await createClient();
 
-  const { data, error: expensesError } = await supabase
+  let query = supabase
     .schema('finance')
     .from('expenses')
     .select('id, project_id, category, vendor, description, currency, amount_minor, incurred_on, receipt_url, created_at')
     .order('incurred_on', { ascending: false })
     .limit(limit);
+  // Search within domain (bucket G-3): vendor, description or category, server-side.
+  if (q) query = query.or(ilikeAny(['vendor', 'description', 'category'], q));
+  const { data, error: expensesError } = await query;
 
   if (expensesError) unreadable('listExpenses', expensesError);
 

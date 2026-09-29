@@ -3,9 +3,10 @@ import Link from 'next/link';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
+import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
 import { listProjectTemplates } from '@/modules/projects/project-template-queries';
-import { Badge, Card, CardHeader, EmptyState, IconPortfolio } from '@/ui';
+import { Badge, buttonClass, Card, CardHeader, DomainSearch, EmptyState, IconPortfolio, SearchSummary } from '@/ui';
 
 import { DeleteTemplateButton } from './templates-panel';
 
@@ -18,9 +19,12 @@ export const metadata: Metadata = { title: 'Templates' };
  * ("Save as template") and used from Quick Create ("From template"); this
  * screen only lists and removes.
  */
-export default async function SettingsTemplatesPage() {
+export default async function SettingsTemplatesPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const context = await requireInternal('/settings/templates');
-  const [templates, clock] = await Promise.all([listProjectTemplates(), agencyClock()]);
+  // Search within domain (bucket G-3): name or description, filtered by the reader.
+  const { q: qRaw } = await searchParams;
+  const q = normaliseSearch(qRaw);
+  const [templates, clock] = await Promise.all([listProjectTemplates(q || undefined), agencyClock()]);
   const mayDelete = can(context, 'organization.settings');
 
   return (
@@ -30,8 +34,18 @@ export default async function SettingsTemplatesPage() {
           title="Project templates"
           description={`${templates.length} template${templates.length === 1 ? '' : 's'}. Save one from a project's header; start a project from one in Quick Create (⌘K → Create project → From template).`}
         />
+        {/* Search within domain (bucket G-3): name or description, filtered by the reader. */}
+        <div className="flex flex-col gap-2 border-t border-line px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-5">
+          <DomainSearch action="/settings/templates" value={q} placeholder="Search name or description…" label="Search templates" />
+          <SearchSummary q={q} count={templates.length} clearHref="/settings/templates" />
+        </div>
         {templates.length === 0 ? (
-          <EmptyState icon={<IconPortfolio size={22} />} title="No templates yet" description="Open a project and choose “Save as template” to snapshot its structure." />
+          <EmptyState
+            icon={<IconPortfolio size={22} />}
+            title={q ? 'No matching template' : 'No templates yet'}
+            description={q ? `No template matches ‘${q}’.` : 'Open a project and choose “Save as template” to snapshot its structure.'}
+            action={q ? <Link href="/settings/templates" className={buttonClass('secondary', 'sm')}>Clear search</Link> : <Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>}
+          />
         ) : (
           <ul className="divide-y divide-line">
             {templates.map((t) => (

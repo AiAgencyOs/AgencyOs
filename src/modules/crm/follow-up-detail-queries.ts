@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { ilikeAny, ilikeOperand } from '@/lib/db/search';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -46,8 +47,21 @@ export type FollowUpSequenceDetail = {
 export async function listFollowUpSequencesDetailed(filter?: {
   status?: string;
   limit?: number;
+  /** Search within domain (bucket G-3): the lead's title, or the situation key. Server-side. */
+  q?: string;
 }): Promise<FollowUpSequenceDetail[]> {
   const supabase = await createClient();
+
+  // A sequence carries no name of its own; the human-named column is the
+  // lead it runs against. Resolve the matching leads first, then filter the
+  // sequences to those subjects or a matching situation key — two reads,
+  // both server-side.
+  let matchingLeadIds: string[] = [];
+  if (filter?.q) {
+    const { data: leadMatches, error: leadMatchError } = await supabase.schema('crm').from('leads').select('id').or(ilikeAny(['title'], filter.q)).limit(500);
+    if (leadMatchError) unreadable('listFollowUpSequencesDetailed.search', leadMatchError);
+    matchingLeadIds = (leadMatches ?? []).map((l) => l.id);
+  }
 
   let query = supabase
     .schema('crm')
@@ -58,6 +72,10 @@ export async function listFollowUpSequencesDetailed(filter?: {
     .order('next_due_at', { ascending: true, nullsFirst: false })
     .limit(Math.min(filter?.limit ?? 100, 200));
   if (filter?.status) query = query.eq('status', filter.status);
+  if (filter?.q) {
+    const bySituation = `situation_key.ilike.${ilikeOperand(filter.q)}`;
+    query = query.or(matchingLeadIds.length > 0 ? `${bySituation},subject_id.in.(${matchingLeadIds.join(',')})` : bySituation);
+  }
 
   const { data, error } = await query;
   if (error) unreadable('listFollowUpSequencesDetailed', error);

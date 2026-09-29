@@ -4,6 +4,7 @@ import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { isLate, projectHealth } from '@/lib/admin/project-health';
 import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
+import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
 import { listPendingPaymentClaims } from '@/modules/finance/queries';
 import { HEALTH_FILTERS, LIFECYCLE_PHASE_LABEL, LIFECYCLE_PHASES, healthOf, type HealthFilter, type LifecyclePhase } from '@/modules/projects/project-archive-schema';
@@ -41,6 +42,8 @@ import {
   selectClass,
   sortRows,
   type SortDirection,
+  DomainSearch,
+  SearchSummary,
 } from '@/ui';
 
 import { ArchiveProjectButton } from './archive-button';
@@ -170,23 +173,27 @@ function isHealth(value: string | undefined): value is HealthFilter {
 export default async function ProjectsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; client?: string; owner?: string; phase?: string; health?: string; archived?: string }>;
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; client?: string; owner?: string; phase?: string; health?: string; archived?: string; q?: string }>;
 }) {
   const context = await requireInternal('/projects');
   const clock = await agencyClock();
   if (!can(context, 'project.read')) return <PermissionDenied />;
 
-  const { page: pageParam, sort: sortKey, dir, status, client, owner, phase: rawPhase, health: rawHealth, archived } = await searchParams;
+  const { page: pageParam, sort: sortKey, dir, status, client, owner, phase: rawPhase, health: rawHealth, archived, q: qRaw } = await searchParams;
+  // Search within domain (bucket G-3): `?q=` goes to the reader, which filters server-side.
+  const q = normaliseSearch(qRaw);
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
   const phase = isPhase(rawPhase) ? rawPhase : undefined;
   const health = isHealth(rawHealth) ? rawHealth : undefined;
   const showArchived = archived === '1' || phase === 'archived';
-  const facetQuery = [client ? `client=${client}` : '', owner ? `owner=${owner}` : '', phase ? `phase=${phase}` : '', health ? `health=${health}` : '', showArchived && phase !== 'archived' ? 'archived=1' : '']
+  const facetQuery = [q ? `q=${encodeURIComponent(q)}` : '', client ? `client=${client}` : '', owner ? `owner=${owner}` : '', phase ? `phase=${phase}` : '', health ? `health=${health}` : '', showArchived && phase !== 'archived' ? 'archived=1' : '']
     .filter(Boolean)
     .join('&');
   const currentQuery = [status ? `status=${status}` : '', facetQuery, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
+  // The same URL with only the search dropped — "Clear search" keeps the facets.
+  const withoutSearch = [status ? `status=${status}` : '', ...facetQuery.split('&').filter((p) => p && !p.startsWith('q='))].filter(Boolean).join('&');
   const [rawProjects, savedViews, escalations, pendingClaims, facets, lifecycles] = await Promise.all([
-    listProjectsForTable(),
+    listProjectsForTable(200, q || undefined),
     listSavedViews('/projects'),
     listPhaseFourEscalations(),
     can(context, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
@@ -253,7 +260,9 @@ export default async function ProjectsPage({
         title="All projects"
         description={
           allProjects.length === 0
-            ? 'No projects yet. Winning a deal on a lead creates one.'
+            ? q
+              ? `No project matches ‘${q}’.`
+              : 'No projects yet. Winning a deal on a lead creates one.'
             : `Every project, its stage and how far its plan has come · ${allProjects.length} project${allProjects.length === 1 ? '' : 's'}${archivedCount > 0 && !showArchived ? ` · ${archivedCount} archived` : ''}.`
         }
       />
@@ -283,8 +292,11 @@ export default async function ProjectsPage({
         </StatGrid>
       ) : null}
 
-      {allProjects.length > 0 || archivedCount > 0 ? (
-        <FilterBar clearHref="/projects" filtered={Boolean(status || client || owner || phase || health || showArchived)}>
+      {allProjects.length > 0 || archivedCount > 0 || q ? (
+        <FilterBar clearHref="/projects" filtered={Boolean(status || client || owner || phase || health || showArchived || q)}>
+          {/* Search within domain (bucket G-3): name or code, filtered by the reader. */}
+          <DomainSearch action="/projects" value={q} placeholder="Search name or code…" label="Search projects" preserve={{ status, client, owner, phase, health, archived }} />
+          <SearchSummary q={q} count={projects.length} clearHref={`/projects${withoutSearch ? `?${withoutSearch}` : ''}`} />
           <FilterChips
             options={[
               { key: 'all', label: 'All', href: chipHref(null), active: !status },

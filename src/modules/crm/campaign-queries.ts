@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { ilikeAny } from '@/lib/db/search';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -105,14 +106,17 @@ async function withEmails(rows: CampaignRaw[]): Promise<CampaignListRow[]> {
   });
 }
 
-export async function listCampaigns(limit = 200): Promise<CampaignListRow[]> {
+export async function listCampaigns(limit = 200, q?: string): Promise<CampaignListRow[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
+  let query = supabase
     .schema('crm')
     .from('campaigns')
     .select(CAMPAIGN_SELECT)
     .order('created_at', { ascending: false })
     .limit(limit);
+  // Search within domain (bucket G-3): the campaign's name, server-side.
+  if (q) query = query.or(ilikeAny(['name'], q));
+  const { data, error } = await query;
   if (error) unreadable('listCampaigns', error);
   return withEmails((data ?? []) as CampaignRaw[]);
 }

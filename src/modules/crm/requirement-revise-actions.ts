@@ -32,6 +32,11 @@ export async function reviseRequirementVersionAction(_prev: FormState, formData:
       platforms: linesOf(text('platforms')),
       integrations: linesOf(text('integrations')),
       timelineBudgetNotes: text('timelineBudgetNotes').trim(),
+      // SCR-029 (bucket G-3) — the three sections the PDF lists that the
+      // payload had folded away. One item per line, like every other list.
+      objectives: linesOf(text('objectives')),
+      businessRules: linesOf(text('businessRules')),
+      nonFunctionalRequirements: linesOf(text('nonFunctionalRequirements')),
     },
   });
 

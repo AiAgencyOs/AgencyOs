@@ -210,6 +210,7 @@ describe('F. the write path is owner-gated at the application layer too (defense
     // Decision E2 of 2026-09-30 put the cost-rate props on the same element;
     // the pin is that the roster reaches the panel, not that nothing else does.
     assert.match(PAGE, /<MemberRolesPanel members={rosterWithRoles}[^>]*\/>/);
-    assert.match(PAGE, /const rosterWithRoles = await listInternalRosterWithRoles\(\);/);
+    // Bucket G-3: the roster may be read with the page's `?q=` search (server-side, in the reader).
+    assert.match(PAGE, /const rosterWithRoles = await listInternalRosterWithRoles\((?:q \|\| undefined)?\);/);
   });
 });

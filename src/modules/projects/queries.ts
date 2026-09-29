@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { ilikeAny } from '@/lib/db/search';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -1485,14 +1486,20 @@ export type RosterMemberWithRoles = RosterMember & {
   createdAt: string;
 };
 
-export async function listInternalRosterWithRoles(): Promise<RosterMemberWithRoles[]> {
+export async function listInternalRosterWithRoles(q?: string): Promise<RosterMemberWithRoles[]> {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
+  // Search within domain (bucket G-3): a person's name or email, server-side.
+  // The embed becomes an inner join only while searching, so a membership
+  // whose user row does not match drops out; unsearched, every membership
+  // is listed as before.
+  let query = supabase
     .schema('core')
     .from('memberships')
-    .select('id, user_id, role, status, created_at, organization_id, users:user_id(full_name, email)')
+    .select(q ? 'id, user_id, role, status, created_at, organization_id, users:user_id!inner(full_name, email)' : 'id, user_id, role, status, created_at, organization_id, users:user_id(full_name, email)')
     .order('role', { ascending: true });
+  if (q) query = query.or(ilikeAny(['full_name', 'email'], q), { referencedTable: 'users' });
+  const { data, error } = await query;
   if (error) unreadable('listInternalRosterWithRoles', error);
 
   const rows = (data ?? []) as Record<string, unknown>[];
@@ -2769,16 +2776,20 @@ export type ProjectTableRow = ProjectListItem & {
  * themselves: `projects.projects` has no progress column anywhere in the
  * schema, so nothing here is stored or estimated.
  */
-export async function listProjectsForTable(limit = 200): Promise<ProjectTableRow[]> {
+export async function listProjectsForTable(limit = 200, q?: string): Promise<ProjectTableRow[]> {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
+  let query = supabase
     .schema('projects')
     .from('projects')
     .select(`${LIST_SELECT}, client_account_id, starts_on, ends_on, status_reason`)
     .is('deleted_at', null)
     .order('created_at', { ascending: false })
     .limit(limit);
+  // Search within domain (bucket G-3): server-side, over the human-named columns.
+  if (q) query = query.or(ilikeAny(['name', 'code'], q));
+
+  const { data, error } = await query;
 
   if (error) unreadable('listProjectsForTable', error);
   const rows = data ?? [];

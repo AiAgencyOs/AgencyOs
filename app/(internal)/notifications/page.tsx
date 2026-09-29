@@ -6,10 +6,11 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { isSeverity, SEVERITIES, SEVERITY_LABEL } from '@/lib/admin/escalation-types';
 import { listNotificationHistory } from '@/lib/admin/notification-state';
 import { requireInternal } from '@/lib/auth/session';
+import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
 import { listInternalRoster } from '@/modules/projects/queries';
-import { buttonClass, Card, CardHeader, EmptyState, FilterBar, FilterChips, humanize, IconCheck, PageHeader } from '@/ui';
+import { buttonClass, Card, CardHeader, DomainSearch, EmptyState, FilterBar, FilterChips, humanize, IconCheck, PageHeader, SearchSummary } from '@/ui';
 
 import { ACTION_CATEGORY_LABEL, categoryOf } from './action-items';
 import { listAnnotatedActionItems } from './annotated-items';
@@ -35,12 +36,19 @@ export const metadata: Metadata = { title: 'Notifications' };
 export default async function NotificationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string; severity?: string; show?: string }>;
+  searchParams: Promise<{ category?: string; severity?: string; show?: string; q?: string }>;
 }) {
   const context = await requireInternal('/notifications');
   const clock = await agencyClock();
-  const { category, severity, show } = await searchParams;
-  const [all, history, roster] = await Promise.all([listAnnotatedActionItems(context, clock), listNotificationHistory(30), listInternalRoster()]);
+  const { category, severity, show, q: qRaw } = await searchParams;
+  // Search within domain (bucket G-3). A notification is not a table row: the
+  // items are composed on the server from a dozen sources by
+  // listAnnotatedActionItems, so the search is applied here, on the server,
+  // over the composed title and detail — there is no column to hand PostgREST.
+  const q = normaliseSearch(qRaw);
+  const needle = q.toLowerCase();
+  const [everything, history, roster] = await Promise.all([listAnnotatedActionItems(context, clock), listNotificationHistory(30), listInternalRoster()]);
+  const all = needle ? everything.filter((r) => r.title.toLowerCase().includes(needle) || (r.detail ?? '').toLowerCase().includes(needle)) : everything;
 
   const attention = all.filter((r) => r.attention);
   const parked = all.filter((r) => !r.attention);
@@ -55,13 +63,13 @@ export default async function NotificationsPage({
     (r) => (!category || categoryOf(r) === category) && (!severity || (wantedSeverity ? r.severity === wantedSeverity : severity === 'normal' && !r.urgent)),
   );
   const canAnswer = can(context, 'audit.read');
-  const link = (over: Partial<{ category: string; severity: string; show: string }>) => {
-    const next = { category: category ?? '', severity: severity ?? '', show: show ?? '', ...over };
-    const q = Object.entries(next)
+  const link = (over: Partial<{ category: string; severity: string; show: string; q: string }>) => {
+    const next = { category: category ?? '', severity: severity ?? '', show: show ?? '', q, ...over };
+    const search = Object.entries(next)
       .filter(([, v]) => v)
       .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
       .join('&');
-    return `/notifications${q ? `?${q}` : ''}`;
+    return `/notifications${search ? `?${search}` : ''}`;
   };
   const rosterOptions = roster.filter((m) => m.userId !== context.userId).map((m) => ({ userId: m.userId, fullName: m.fullName || m.email }));
 
@@ -79,8 +87,11 @@ export default async function NotificationsPage({
         actions={<LiveRefresh topics={['approvals', 'finance', 'jobs', 'qa', 'tasks', 'conversations']} />}
       />
 
-      {all.length > 0 ? (
-        <FilterBar clearHref="/notifications" filtered={Boolean(show || category || severity)}>
+      {all.length > 0 || q ? (
+        <FilterBar clearHref="/notifications" filtered={Boolean(show || category || severity || q)}>
+          {/* Search within domain (bucket G-3): title or detail of the composed items, filtered on the server. */}
+          <DomainSearch action="/notifications" value={q} placeholder="Search notifications…" label="Search notifications" preserve={{ category, severity, show }} />
+          <SearchSummary q={q} count={rows.length} clearHref={link({ q: '' })} />
           <FilterChips
             options={[
               { key: 'attention', label: `Needs attention (${attention.length})`, href: link({ show: '', category: '' }), active: !show },

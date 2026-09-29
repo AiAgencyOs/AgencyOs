@@ -3,6 +3,7 @@ import Link from 'next/link';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
+import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
 import { listPerformanceNotes, readCompatibilityMatrix } from '@/modules/qa/compatibility-queries';
@@ -40,6 +41,8 @@ import {
   ViewAll,
   type Column,
   type Tone,
+  DomainSearch,
+  SearchSummary,
 } from '@/ui';
 
 export const metadata: Metadata = { title: 'QA' };
@@ -67,13 +70,16 @@ function countBy(defects: OpenDefect[], severity: string): number {
  * no new capability, and no client ever reaches this (Doc 14: "a client is
  * told what was fixed, not what is currently broken").
  */
-export default async function QaDashboardPage() {
+export default async function QaDashboardPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const context = await requireInternal('/qa');
   const clock = await agencyClock();
   if (!can(context, 'project.read')) return <PermissionDenied />;
+  // Search within domain (bucket G-3): the bug list, by title or environment, filtered by the reader.
+  const { q: qRaw } = await searchParams;
+  const q = normaliseSearch(qRaw);
 
   const [defects, coverage, suiteCoverage, matrix, retest, compat, perfNotes, holds] = await Promise.all([
-    listOpenDefects(),
+    listOpenDefects(300, q || undefined),
     readOrgTestCoverage(),
     readSuiteCoverage(),
     readCoverageMatrix(),
@@ -227,12 +233,22 @@ export default async function QaDashboardPage() {
 
           <Card>
             <CardHeader title={`Open bugs (${defects.length})`} description="Open the project to settle a defect on its Quality section." actions={<ViewAll href="/projects" label="Projects" />} />
+            {/* Search within domain (bucket G-3): the bug list by title or environment, filtered by the reader. */}
+            <div className="flex flex-col gap-2 px-4 pb-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-5">
+              <DomainSearch action="/qa" value={q} placeholder="Search bug title or environment…" label="Search open bugs" />
+              <SearchSummary q={q} count={defects.length} clearHref="/qa" />
+            </div>
             {defects.length > 0 ? (
               <div className="px-4 pb-4 sm:px-5">
                 <DataTable dense rows={defects} columns={columns} getKey={(d) => d.id} href={(d) => `/projects/${d.projectId}`} />
               </div>
             ) : (
-              <EmptyState icon={<IconCheck size={22} />} title="No open defects" description="Every raised defect has been fixed, waived, or is not currently blocking anything." action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>} />
+              <EmptyState
+                icon={<IconCheck size={22} />}
+                title={q ? 'No matching open defect' : 'No open defects'}
+                description={q ? `No open defect matches ‘${q}’.` : 'Every raised defect has been fixed, waived, or is not currently blocking anything.'}
+                action={q ? <Link href="/qa" className={buttonClass('secondary', 'sm')}>Clear search</Link> : <Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>}
+              />
             )}
           </Card>
 

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState } from 'react';
 
 import { setAgentProjectAssignmentAction, setAgentToolPermissionAction } from '@/modules/agents/permissions-actions';
@@ -33,7 +34,9 @@ function ToolRow({
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-[13px] sm:px-5">
       <span className="flex flex-wrap items-center gap-2">
-        <code className="text-xs">{toolKey}</code>
+        <Link href={`/agents/tools/${encodeURIComponent(toolKey)}`} className="underline-offset-2 hover:underline">
+          <code className="text-xs">{toolKey}</code>
+        </Link>
         {bound ? <Badge tone="info">bound by definition</Badge> : null}
         {allowed === null ? <Badge tone="warning">no record — refused when called</Badge> : allowed ? <Badge tone="success">allowed</Badge> : <Badge tone="danger">denied</Badge>}
         {recorded?.note ? <span className="text-xs text-muted">{recorded.note}</span> : null}
@@ -79,7 +82,10 @@ export function ToolPermissionsList({
           const r = byKey.get(k);
           return (
             <li key={k} className="flex flex-wrap items-center gap-2 px-4 py-2 text-[13px] sm:px-5">
-              <code className="text-xs">{k}</code>
+              {/* SCR-061: the tool's name opens its detail. */}
+              <Link href={`/agents/tools/${encodeURIComponent(k)}`} className="underline-offset-2 hover:underline">
+                <code className="text-xs">{k}</code>
+              </Link>
               {bound.has(k) ? <Badge tone="info">bound by definition</Badge> : null}
               {!r ? <Badge tone="warning">no record — refused when called</Badge> : r.allowed ? <Badge tone="success">allowed</Badge> : <Badge tone="danger">denied</Badge>}
             </li>

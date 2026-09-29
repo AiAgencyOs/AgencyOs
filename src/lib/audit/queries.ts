@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { ilikeAny } from '@/lib/db/search';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -60,6 +61,8 @@ export type AuditFilter = {
   from?: string;
   to?: string;
   limit?: number;
+  /** Search within domain (bucket G-3): the action or subject type text. Server-side. */
+  q?: string;
 };
 
 const MAX_LIMIT = 200;
@@ -90,6 +93,7 @@ export async function readAuditLog(filter: AuditFilter = {}): Promise<AuditEntry
   }
   if (filter.from) query = query.gte('created_at', filter.from);
   if (filter.to) query = query.lt('created_at', filter.to);
+  if (filter.q) query = query.or(ilikeAny(['action', 'subject_type'], filter.q));
 
   const { data, error } = await query;
   if (error) unreadable('readAuditLog', error);

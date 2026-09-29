@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { ilikeAny } from '@/lib/db/search';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -343,6 +344,8 @@ export type MeetingListFilter = {
   /** Newest first, for a window in the past: the bound then keeps the most recent rather than the oldest. */
   newestFirst?: boolean;
   limit?: number;
+  /** Search within domain (bucket G-3): the meeting's purpose or its lead's title. Server-side. */
+  q?: string;
 };
 
 /**
@@ -375,6 +378,8 @@ export async function listMeetings(filter: MeetingListFilter): Promise<MeetingLi
   if (filter.status) query = query.eq('status', filter.status);
   if (filter.owner) query = query.eq('leads.assigned_to', filter.owner);
   if (filter.mode) query = query.or(`booked_mode.eq.${filter.mode},and(booked_mode.is.null,requested_mode.eq.${filter.mode})`);
+  // `leads` is an inner embed, so its column may sit in the top-level `or`.
+  if (filter.q) query = query.or(ilikeAny(['purpose', 'leads.title'], filter.q));
 
   const { data, error } = await query;
   if (error) unreadable('listMeetings', error);
