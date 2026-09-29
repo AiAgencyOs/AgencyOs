@@ -5,17 +5,21 @@ import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import {
   getActiveProjectsSummary,
   getMessagesSentThisMonth,
+  getProjectCountsByStatus,
   getRecentLeads,
   getRevenueThisMonth,
   getTotalLeadsCount,
 } from '@/lib/admin/dashboard';
 import { getOverview } from '@/lib/admin/overview';
 import { isAvailable, levelLabel, overallStatus, type Avail } from '@/lib/admin/overview-eval';
+import { getSalesFunnel } from '@/lib/admin/sales-funnel';
 import { getAgentUsage } from '@/lib/admin/usage';
 import { requireInternal } from '@/lib/auth/session';
 import { can, type Capability } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
 import {
+  ActivityFeed,
+  Avatar,
   Badge,
   Callout,
   Card,
@@ -28,48 +32,49 @@ import {
   IconAlert,
   IconApprovals,
   IconChevronRight,
+  IconClock,
+  IconInbox,
   IconInvoices,
+  IconMessage,
   IconOperations,
   IconProjects,
   IconRefresh,
   IconSettings,
-  IconUsage,
-  IconUser,
+  IconSparkle,
+  IconUsers,
+  PipelineStrip,
+  ProgressBar,
   Stat,
   StatGrid,
   StatusBadge,
-  TONE_DOT,
-  TONE_TEXT,
+  StatusList,
+  ViewAll,
   type Column,
+  type PipelineStage,
+  type StatusRow,
   type Tone,
 } from '@/ui';
 
-export const metadata: Metadata = { title: 'Overview' };
+import { listActionItems } from '../notifications/action-items';
+
+export const metadata: Metadata = { title: 'Command Center' };
 
 /**
- * The Overview command center — the front door of the Admin control plane.
+ * The Command Center — the front door of the Admin control plane, laid out
+ * as the reference deck's first screen: a greeting, five business KPIs, the
+ * pipeline strip, recent leads and active projects on the left, and the
+ * rail on the right — Tasks & Approvals, System Status, Usage & Cost.
  *
- * It answers the owner's first questions (is the system healthy? what needs
- * attention? what needs me?) from the SAME authoritative reads the detail pages
- * use, composed in `getOverview()`. Nothing here is hard-coded or estimated.
- *
- * The one rule this page exists to keep: a signal that could not be READ shows
- * DATA UNAVAILABLE, never 0 — a monitor that invents zeros manufactures false
- * calm. Every card links to the page that owns the detail, and is shown only to
- * a role that may open that page.
- *
- * That rule is also why the unreadable case is rendered differently rather than
- * just coloured differently: at a glance a red 0 and a green 0 are the same
- * shape, and the whole point is that one of them is not a number at all.
+ * Every figure is a fresh read for this request from the SAME authoritative
+ * readers the detail pages use; nothing here is cached, estimated or
+ * hard-coded. A signal that could not be READ shows DATA UNAVAILABLE, never
+ * 0 — a monitor that invents zeros manufactures false calm — and a quiet
+ * organisation shows quiet numbers rather than the deck's always-busy demo
+ * data. Each card links to the page that owns the detail and is shown only
+ * to a role that may open that page.
  */
 
-/** The page's four states map onto the design system's tones. */
-const TONE: Record<string, Tone> = {
-  good: 'success',
-  warn: 'warning',
-  bad: 'danger',
-  muted: 'neutral',
-};
+const TONE: Record<string, Tone> = { good: 'success', warn: 'warning', bad: 'danger', muted: 'neutral' };
 
 /** "Good morning" / "Good afternoon" / "Good evening", by the hour in the agency's own zone — not the server's. */
 function greeting(clock: AgencyClock, now: Date): string {
@@ -82,9 +87,11 @@ function greeting(clock: AgencyClock, now: Date): string {
 }
 
 function money(minor: number, currency: string): string {
-  return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(
-    minor / 100,
-  );
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(minor / 100);
+}
+
+function compact(n: number): string {
+  return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n);
 }
 
 /** A value tile that honours the read: number when read, DATA UNAVAILABLE when not. */
@@ -98,25 +105,6 @@ function Value({ value }: { value: string }) {
     return <span className="block text-[13px] font-medium leading-snug text-danger">{value}</span>;
   }
   return <>{value}</>;
-}
-
-function HealthRow({
-  label,
-  state,
-}: {
-  label: string;
-  state: { text: string; tone: 'good' | 'warn' | 'bad' | 'muted' };
-}) {
-  const tone = TONE[state.tone] ?? 'neutral';
-  return (
-    <li className="flex items-center justify-between gap-3 px-4 py-3 text-sm sm:px-5">
-      <span className="text-foreground">{label}</span>
-      <span className={cx('flex items-center gap-1.5 text-xs font-medium', TONE_TEXT[tone])}>
-        <span className={cx('h-1.5 w-1.5 shrink-0 rounded-full', TONE_DOT[tone])} />
-        {state.text}
-      </span>
-    </li>
-  );
 }
 
 export default async function OverviewPage() {
@@ -133,74 +121,141 @@ export default async function OverviewPage() {
   const canSeeRevenue = show('invoice.read');
   const canSeeUsage = show('audit.read');
 
-  const [recentLeads, activeProjects, revenue, messagesSent, totalLeads, usage] = await Promise.all([
-    canSeeLeads ? getRecentLeads(5) : Promise.resolve([]),
-    canSeeProjects ? getActiveProjectsSummary(5) : Promise.resolve([]),
-    canSeeRevenue ? getRevenueThisMonth() : Promise.resolve([]),
-    canSeeLeads ? getMessagesSentThisMonth() : Promise.resolve(null),
-    canSeeLeads ? getTotalLeadsCount() : Promise.resolve(null),
-    canSeeUsage ? getAgentUsage() : Promise.resolve(null),
-  ]);
+  const [recentLeads, activeProjects, revenue, messagesSent, totalLeads, usage, funnel, projectCounts, actionItems] =
+    await Promise.all([
+      canSeeLeads ? getRecentLeads(5) : Promise.resolve([]),
+      canSeeProjects ? getActiveProjectsSummary(5) : Promise.resolve([]),
+      canSeeRevenue ? getRevenueThisMonth() : Promise.resolve([]),
+      canSeeLeads ? getMessagesSentThisMonth() : Promise.resolve(null),
+      canSeeLeads ? getTotalLeadsCount() : Promise.resolve(null),
+      canSeeUsage ? getAgentUsage() : Promise.resolve(null),
+      canSeeLeads ? getSalesFunnel(30) : Promise.resolve(null),
+      canSeeProjects ? getProjectCountsByStatus() : Promise.resolve(null),
+      listActionItems(context, clock),
+    ]);
+
+  const now = new Date();
+  const firstName = context.fullName?.split(' ')[0] ?? context.email.split('@')[0];
+
+  const pipeline: PipelineStage[] = [
+    ...(funnel
+      ? ([
+          { label: 'Leads', count: funnel.counts.leads, tone: 'info', href: '/leads' },
+          { label: 'Qualified', count: funnel.counts.qualified, tone: 'brand', href: '/leads?status=qualified' },
+          { label: 'Quoted', count: funnel.counts.quoted, tone: 'accent', href: '/quotations' },
+          { label: 'Won', count: funnel.counts.won, tone: 'success', href: '/sales-funnel' },
+        ] satisfies PipelineStage[])
+      : []),
+    ...(projectCounts
+      ? ([
+          { label: 'Onboarding', count: projectCounts.onboarding ?? 0, tone: 'warning', href: '/projects' },
+          { label: 'In progress', count: projectCounts.active ?? 0, tone: 'info', href: '/projects' },
+          { label: 'Completed', count: projectCounts.completed ?? 0, tone: 'success', href: '/projects' },
+        ] satisfies PipelineStage[])
+      : []),
+  ];
 
   const leadColumns: Column<(typeof recentLeads)[number]>[] = [
-    // The phone number is the Lead 360's, not this card's: at half the canvas
-    // a sixth column clipped the ones that decide what to open (live QA,
-    // 2026-09-29). It sits under the title on a phone-sized card instead.
     {
       key: 'title',
-      header: 'Lead',
+      header: 'Name',
       primary: true,
       cell: (l) => (
-        <>
-          <span className="block">{l.title}</span>
-          {l.contactPhone ? <span className="block font-mono text-[11px] text-muted">{l.contactPhone}</span> : null}
-        </>
+        <span className="flex items-center gap-2.5">
+          <Avatar name={l.title} size="sm" />
+          <span className="min-w-0">
+            <span className="block truncate font-medium">{l.title}</span>
+            {l.contactPhone ? <span className="block font-mono text-[11px] text-muted lg:hidden">{l.contactPhone}</span> : null}
+          </span>
+        </span>
       ),
     },
+    { key: 'phone', header: 'Phone', desktopOnly: true, cellClassName: 'font-mono text-xs text-muted', cell: (l) => l.contactPhone ?? '—' },
     { key: 'source', header: 'Source', desktopOnly: true, cellClassName: 'text-muted', cell: (l) => humanize(l.source) },
-    { key: 'status', header: 'Status', badge: true, cell: (l) => <StatusBadge status={l.status} /> },
     {
-      key: 'assigned',
-      header: 'Assigned',
-      desktopOnly: true,
-      cellClassName: 'text-muted',
-      cell: (l) => l.assignedEmail ?? 'Unassigned',
+      key: 'status',
+      header: 'Status',
+      badge: true,
+      cell: (l) => (
+        <span className="flex items-center gap-2">
+          <StatusBadge status={l.status} dot={false} />
+          {l.assignedEmail ? <span className="hidden text-xs text-muted 2xl:inline">{l.assignedEmail.split('@')[0]}</span> : null}
+        </span>
+      ),
     },
-    {
-      key: 'activity',
-      header: 'Last activity',
-      align: 'right',
-      cellClassName: 'text-muted',
-      cell: (l) => clock.dateTime(l.lastActivityAt),
-    },
+    { key: 'activity', header: 'Last activity', align: 'right', cellClassName: 'text-muted whitespace-nowrap', cell: (l) => clock.dateTime(l.lastActivityAt) },
   ];
 
   const projectColumns: Column<(typeof activeProjects)[number]>[] = [
-    { key: 'name', header: 'Project', primary: true, cell: (p) => p.name },
-    { key: 'client', header: 'Client', desktopOnly: true, cellClassName: 'text-muted', cell: (p) => p.clientName ?? '—' },
-    { key: 'status', header: 'Status', badge: true, cell: (p) => <StatusBadge status={p.status} /> },
+    {
+      key: 'name',
+      header: 'Project name',
+      primary: true,
+      cell: (p) => (
+        <span className="flex items-center gap-2.5">
+          <Avatar name={p.name} size="sm" square tone="neutral" className="bg-sidebar-bg text-sidebar-fg ring-0" />
+          <span className="truncate font-medium">{p.name}</span>
+        </span>
+      ),
+    },
+    { key: 'client', header: 'Client', desktopOnly: true, cellClassName: 'text-muted', cell: (p) => p.clientName ?? 'Internal' },
+    { key: 'status', header: 'Stage', badge: true, cell: (p) => <StatusBadge status={p.status} dot={false} /> },
     {
       key: 'progress',
-      header: 'Milestones',
-      align: 'right',
-      cellClassName: 'tabular text-muted',
-      cell: (p) => (p.milestonesTotal > 0 ? `${p.milestonesMet}/${p.milestonesTotal}` : '—'),
+      header: 'Progress',
+      width: '11rem',
+      cell: (p) =>
+        p.milestonesTotal > 0 ? (
+          <ProgressBar value={(p.milestonesMet / p.milestonesTotal) * 100} label={`${p.name} milestones met`} />
+        ) : (
+          <span className="text-xs text-muted">No plan yet</span>
+        ),
     },
-    {
-      key: 'due',
-      header: 'Due',
-      align: 'right',
-      cellClassName: 'text-muted',
-      cell: (p) => (p.endsOn ? clock.date(p.endsOn) : '—'),
-    },
+    { key: 'due', header: 'Due date', align: 'right', cellClassName: 'text-muted whitespace-nowrap', cell: (p) => (p.endsOn ? clock.date(p.endsOn) : '—') },
   ];
 
   const cronText =
     o.cronAgeSeconds === null
-      ? { text: 'unknown', tone: 'muted' as const }
+      ? { text: 'Unknown', tone: 'muted' as const }
       : o.cronAgeSeconds > 15 * 60
-        ? {text: `${o.cronAgeSeconds > 3600 ? `${Math.floor(o.cronAgeSeconds / 3600)}h` : `${Math.floor(o.cronAgeSeconds / 60)}m`} ago — may be stopped`, tone: 'bad' as const }
-        : { text: 'ticking', tone: 'good' as const };
+        ? { text: `${o.cronAgeSeconds > 3600 ? `${Math.floor(o.cronAgeSeconds / 3600)}h` : `${Math.floor(o.cronAgeSeconds / 60)}m`} ago — may be stopped`, tone: 'bad' as const }
+        : { text: 'Running', tone: 'good' as const };
+
+  const systemRows: StatusRow[] = [
+    {
+      label: 'Database (Supabase)',
+      icon: <IconOperations size={13} />,
+      ...(isAvailable(o.backlog) ? { state: 'Connected', tone: 'success' } : { state: 'DATA UNAVAILABLE', tone: 'danger' }),
+    },
+    {
+      label: 'AI provider',
+      icon: <IconSparkle size={13} />,
+      ...(isAvailable(o.ai)
+        ? o.ai.value.providerConfigured
+          ? { state: 'Configured', tone: 'success' as Tone }
+          : { state: 'Not configured', tone: 'warning' as Tone }
+        : { state: 'DATA UNAVAILABLE', tone: 'danger' as Tone }),
+    },
+    {
+      label: 'WhatsApp (Meta)',
+      icon: <IconMessage size={13} />,
+      ...(!isAvailable(o.whatsapp.numberConfigured)
+        ? { state: 'DATA UNAVAILABLE', tone: 'danger' as Tone }
+        : o.whatsapp.tokenConfigured && o.whatsapp.numberConfigured.value
+          ? { state: 'Configured · verify', tone: 'warning' as Tone }
+          : { state: 'Not configured', tone: 'warning' as Tone }),
+    },
+    { label: 'Scheduler (Cron)', icon: <IconClock size={13} />, state: cronText.text, tone: TONE[cronText.tone] ?? 'neutral' },
+    {
+      label: 'Operational alerts',
+      icon: <IconAlert size={13} />,
+      ...(isAvailable(o.failedDeliveries)
+        ? o.failedDeliveries.value > 0
+          ? { state: `${o.failedDeliveries.value} failed`, tone: 'danger' as Tone }
+          : { state: 'Clear', tone: 'success' as Tone }
+        : { state: 'DATA UNAVAILABLE', tone: 'danger' as Tone }),
+    },
+  ];
 
   const destinations = (
     [
@@ -208,31 +263,35 @@ export default async function OverviewPage() {
       ['Integrations', 'Every dependency & its lifecycle', '/integrations', 'organization.settings'],
       ['Security', 'Structural invariants, live', '/security', 'audit.read'],
       ['Operations', 'Jobs, outbox, failed deliveries', '/operations', 'audit.read'],
-      ['Approvals', 'What needs a decision', '/approvals', null],
       ['Agents', 'Registry & provider posture', '/agents', 'audit.read'],
-      ['Usage & costs', 'What the agents consumed', '/usage', 'audit.read'],
       ['Audit log', 'Who changed what', '/audit', 'audit.read'],
       ['Import', 'Historical-lead review desk', '/import', 'organization.settings'],
       ['Settings', 'Configuration & reactivation', '/settings', 'organization.settings'],
     ] as [string, string, string, Capability | null][]
   ).filter(([, , , cap]) => cap === null || show(cap));
 
+  const urgentCount = actionItems.filter((i) => i.urgent).length;
+
   return (
     <div className="flex flex-col gap-5">
       <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
-          <p className="text-[13px] text-muted">{clock.day(new Date())}</p>
-          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
-            {greeting(clock, new Date())}, {context.fullName?.split(' ')[0] ?? context.email.split('@')[0]}
+          <p className="text-[13px] text-muted">{clock.day(now)}</p>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-[28px]">
+            {greeting(clock, now)}, {firstName}! <span aria-hidden>👋</span>
           </h1>
-          <p className="mt-1.5 text-[13px] text-muted">
-            Signed in as {context.email} · environment{' '}
-            <span className="font-mono">{o.environment.nodeEnv}</span>
-            {o.environment.looksLocal ? ' · local' : ''}
+          <p className="mt-1 text-[13px] text-muted sm:text-sm">
+            Here&apos;s what&apos;s happening with your agency today.
+            {o.environment.looksLocal ? (
+              <>
+                {' '}
+                · <span className="font-mono">{o.environment.nodeEnv}</span> · local
+              </>
+            ) : null}
           </p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1.5">
-          <Badge tone={TONE[label.tone] ?? 'neutral'} dot className="px-2.5 py-1 text-[13px]">
+          <Badge tone={TONE[label.tone] ?? 'neutral'} dot className="px-3 py-1.5 text-[13px]">
             {label.text}
           </Badge>
           <LiveRefresh topics={['approvals', 'finance', 'jobs', 'leads', 'projects', 'agents']} />
@@ -245,26 +304,18 @@ export default async function OverviewPage() {
         </Callout>
       ) : null}
 
-      {/* Business snapshot — leads, projects, revenue, agent activity. Each
-          figure is a fresh read for this request; none of it is cached or
-          estimated, so a quiet organization shows quiet numbers rather than
-          the reference deck's always-busy demo data. */}
+      {/* ── Business snapshot ─────────────────────────────────────────── */}
       {canSeeLeads || canSeeProjects || canSeeRevenue || canSeeUsage ? (
         <StatGrid cols={5}>
           {canSeeLeads ? (
-            <Stat
-              label="Total leads"
-              href="/leads"
-              value={String(totalLeads ?? 0)}
-              tone="brand"
-              icon={<IconUser size={16} />}
-            />
+            <Stat label="Total leads" href="/leads" value={String(totalLeads ?? 0)} caption="All time" tone="brand" icon={<IconUsers size={16} />} />
           ) : null}
           {canSeeProjects ? (
             <Stat
               label="Active projects"
               href="/projects"
               value={String(activeProjects.length)}
+              caption={projectCounts ? `${projectCounts.active ?? 0} in development` : undefined}
               tone="info"
               icon={<IconProjects size={16} />}
             />
@@ -274,6 +325,7 @@ export default async function OverviewPage() {
               label="Revenue (this month)"
               href="/finance"
               value={revenue.length === 0 ? money(0, 'INR') : revenue.map((r) => money(r.paidMinor, r.currency)).join(' + ')}
+              caption="Payments recorded"
               tone="success"
               icon={<IconInvoices size={16} />}
             />
@@ -282,261 +334,177 @@ export default async function OverviewPage() {
             <Stat
               label="AI agent runs"
               href="/usage"
-              value={String(usage?.totals.runs ?? 0)}
+              value={compact(usage?.totals.runs ?? 0)}
+              caption={isAvailable(o.ai) ? `${o.ai.value.agentsRunnable}/${o.ai.value.agentsTotal} agents runnable` : undefined}
               tone="accent"
               icon={<IconAgents size={16} />}
             />
           ) : null}
           {canSeeLeads ? (
-            <Stat
-              label="Messages sent (this month)"
-              href="/communication"
-              value={String(messagesSent ?? 0)}
-              tone="warning"
-              icon={<IconUsage size={16} />}
-            />
+            <Stat label="Messages sent" href="/communication" value={compact(messagesSent ?? 0)} caption="This month" tone="warning" icon={<IconMessage size={16} />} />
           ) : null}
         </StatGrid>
       ) : null}
 
-      {canSeeLeads || canSeeProjects ? (
-        <div className="grid gap-4 xl:grid-cols-[1.35fr_1fr]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(20rem,1fr)]">
+        {/* ── Left column ──────────────────────────────────────────── */}
+        <div className="flex min-w-0 flex-col gap-4">
+          {pipeline.length > 0 ? (
+            <Card>
+              <CardHeader title="Project pipeline" description="Last 30 days of sales, and every project by stage." actions={<ViewAll href="/sales-funnel" />} />
+              <div className="p-4 sm:p-5">
+                <PipelineStrip stages={pipeline} />
+              </div>
+            </Card>
+          ) : null}
+
           {canSeeLeads ? (
             <Card>
-              <CardHeader title="Recent leads" description="Most recently active first." />
+              <CardHeader title="Recent leads" actions={<ViewAll href="/leads" />} />
               <div className="px-4 pb-4 sm:px-5">
                 {recentLeads.length === 0 ? (
-                  <EmptyState icon={<IconUser size={22} />} title="No leads yet" />
+                  <EmptyState icon={<IconUsers size={22} />} title="No leads yet" />
                 ) : (
-                  <DataTable rows={recentLeads} columns={leadColumns} getKey={(l) => l.id} href={(l) => `/leads/${l.id}`} />
+                  <DataTable dense rows={recentLeads} columns={leadColumns} getKey={(l) => l.id} href={(l) => `/leads/${l.id}`} />
                 )}
               </div>
             </Card>
           ) : null}
+
           {canSeeProjects ? (
             <Card>
-              <CardHeader title="Active projects" description="Planning through on hold, most recent first." />
+              <CardHeader title="Active projects" actions={<ViewAll href="/projects" />} />
               <div className="px-4 pb-4 sm:px-5">
                 {activeProjects.length === 0 ? (
                   <EmptyState icon={<IconProjects size={22} />} title="No active projects" />
                 ) : (
-                  <DataTable
-                    rows={activeProjects}
-                    columns={projectColumns}
-                    getKey={(p) => p.id}
-                    href={(p) => `/projects/${p.id}`}
-                  />
+                  <DataTable dense rows={activeProjects} columns={projectColumns} getKey={(p) => p.id} href={(p) => `/projects/${p.id}`} />
                 )}
               </div>
             </Card>
           ) : null}
+
+          {/* Operational KPI tiles — real reads only, each linking to its detail page. */}
+          <StatGrid cols={4}>
+            {show('audit.read') ? (
+              <Stat label="Dead jobs" href="/operations" value={<Value value={num(o.backlog, (b) => String(b.dead_jobs))} />} tone={isAvailable(o.backlog) && o.backlog.value.dead_jobs > 0 ? 'danger' : 'neutral'} icon={<IconOperations size={16} />} />
+            ) : null}
+            <Stat
+              label="Pending approvals"
+              href="/approvals"
+              value={<Value value={num(o.approvals, (a) => String(a.pending))} />}
+              caption={isAvailable(o.approvals) && o.approvals.value.overdue > 0 ? `${o.approvals.value.overdue} overdue` : undefined}
+              tone={isAvailable(o.approvals) && o.approvals.value.overdue > 0 ? 'warning' : 'neutral'}
+              icon={<IconApprovals size={16} />}
+            />
+            {show('invoice.read') ? (
+              <Stat label="Payments to verify" href="/invoices/verify" value={<Value value={num(o.paymentsPendingVerification, String)} />} tone={isAvailable(o.paymentsPendingVerification) && o.paymentsPendingVerification.value > 0 ? 'warning' : 'neutral'} icon={<IconInvoices size={16} />} />
+            ) : null}
+            {show('project.read') ? (
+              <Stat label="Projects on hold" href="/projects" value={<Value value={num(o.projectsOnHold, String)} />} tone={isAvailable(o.projectsOnHold) && o.projectsOnHold.value > 0 ? 'warning' : 'neutral'} icon={<IconProjects size={16} />} />
+            ) : null}
+            {show('organization.settings') ? (
+              <Stat label="Reactivation enrolled" href="/import" value={<Value value={num(o.reactivation, (r) => String(r.enrolled))} />} caption={isAvailable(o.reactivation) ? (o.reactivation.value.pilotEnabled ? 'Pilot on' : 'Pilot off') : undefined} icon={<IconRefresh size={16} />} />
+            ) : null}
+            {show('organization.settings') ? (
+              <Stat label="Config problems" href="/settings" value={String(o.environment.productionProblems)} tone={o.environment.productionProblems > 0 ? 'warning' : 'success'} icon={<IconSettings size={16} />} />
+            ) : null}
+          </StatGrid>
         </div>
-      ) : null}
 
-      {/* Operational KPI tiles — real reads only, each linking to its detail page. */}
-      <StatGrid cols={6}>
-        {show('audit.read') ? (
-          <Stat
-            label="Dead jobs"
-            href="/operations"
-            value={<Value value={num(o.backlog, (b) => String(b.dead_jobs))} />}
-            tone={isAvailable(o.backlog) && o.backlog.value.dead_jobs > 0 ? 'danger' : 'neutral'}
-            icon={<IconOperations size={16} />}
+        {/* ── Right rail ───────────────────────────────────────────── */}
+        <div className="flex min-w-0 flex-col gap-4">
+          <ActivityFeed
+            title={
+              <span className="flex items-center gap-2">
+                Tasks &amp; approvals
+                {urgentCount > 0 ? (
+                  <span className="tabular flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1.5 text-[11px] font-semibold text-white">{urgentCount}</span>
+                ) : null}
+              </span>
+            }
+            viewAllHref="/notifications"
+            items={actionItems.slice(0, 6).map((i) => ({
+              id: i.key,
+              title: i.title,
+              detail: i.detail,
+              when: i.urgent ? 'Urgent' : '',
+              tone: i.urgent ? 'danger' : 'brand',
+              icon: <IconInbox size={13} />,
+              href: i.href,
+            }))}
+            emptyTitle="Nothing needs you"
+            emptyDescription="No approvals, claims, defects or failures are waiting."
+            compact
           />
-        ) : null}
-        {show('audit.read') ? (
-          <Stat
-            label="Failed deliveries"
-            href="/operations"
-            value={<Value value={num(o.failedDeliveries, String)} />}
-            tone={isAvailable(o.failedDeliveries) && o.failedDeliveries.value > 0 ? 'danger' : 'neutral'}
-            icon={<IconAlert size={16} />}
-          />
-        ) : null}
-        <Stat
-          label="Pending approvals"
-          href="/approvals"
-          value={<Value value={num(o.approvals, (a) => String(a.pending))} />}
-          caption={isAvailable(o.approvals) && o.approvals.value.overdue > 0 ? `${o.approvals.value.overdue} overdue` : undefined}
-          tone={isAvailable(o.approvals) && o.approvals.value.overdue > 0 ? 'warning' : 'neutral'}
-          icon={<IconApprovals size={16} />}
-        />
-        {show('audit.read') ? (
-          <Stat
-            label="Agents runnable"
-            href="/agents"
-            value={<Value value={num(o.ai, (a) => `${a.agentsRunnable}/${a.agentsTotal}`)} />}
-            icon={<IconAgents size={16} />}
-          />
-        ) : null}
-        {show('organization.settings') ? (
-          <Stat
-            label="Reactivation enrolled"
-            href="/import"
-            value={<Value value={num(o.reactivation, (r) => String(r.enrolled))} />}
-            caption={isAvailable(o.reactivation) ? (o.reactivation.value.pilotEnabled ? 'pilot on' : 'pilot off') : undefined}
-            tone={isAvailable(o.reactivation) && o.reactivation.value.pilotEnabled ? 'success' : 'neutral'}
-            icon={<IconRefresh size={16} />}
-          />
-        ) : null}
-        {show('organization.settings') ? (
-          <Stat
-            label="Config problems"
-            href="/settings"
-            value={String(o.environment.productionProblems)}
-            tone={o.environment.productionProblems > 0 ? 'warning' : 'success'}
-            icon={<IconSettings size={16} />}
-          />
-        ) : null}
-        {show('invoice.read') ? (
-          <Stat
-            label="Payments awaiting verification"
-            href="/invoices/verify"
-            value={<Value value={num(o.paymentsPendingVerification, String)} />}
-            tone={isAvailable(o.paymentsPendingVerification) && o.paymentsPendingVerification.value > 0 ? 'warning' : 'neutral'}
-            icon={<IconInvoices size={16} />}
-          />
-        ) : null}
-        {show('project.read') ? (
-          <Stat
-            label="Projects on hold"
-            href="/projects"
-            value={<Value value={num(o.projectsOnHold, String)} />}
-            tone={isAvailable(o.projectsOnHold) && o.projectsOnHold.value > 0 ? 'warning' : 'neutral'}
-            icon={<IconProjects size={16} />}
-          />
-        ) : null}
-      </StatGrid>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        {/* Needs attention — the prioritised queue SCR-001 calls for: overdue
-            approvals and recent delivery failures, oldest first. */}
-        <Card>
-          <CardHeader title="Needs attention" description="Soonest deadline or oldest failure first." />
-          {!isAvailable(o.needsAttention) ? (
-            <div className="px-4 py-4 sm:px-5">
-              <Value value="DATA UNAVAILABLE" />
-            </div>
-          ) : o.needsAttention.value.length === 0 ? (
-            <EmptyState
-              icon={<IconAlert size={22} />}
-              title="Nothing needs attention"
-              description="No overdue approvals and no recent delivery failures."
-            />
-          ) : (
-            <ul className="divide-y divide-line">
-              {o.needsAttention.value.map((item) => (
-                <li key={item.id}>
-                  <Link
-                    href={item.href}
-                    className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover sm:px-5"
-                  >
-                    <span
-                      className={cx(
-                        'h-1.5 w-1.5 shrink-0 rounded-full',
-                        item.kind === 'approval' ? TONE_DOT.warning : TONE_DOT.danger,
-                      )}
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-foreground">{item.title}</span>
-                      <span className="block truncate text-[13px] text-muted">{item.detail}</span>
-                    </span>
-                    <span className="shrink-0 text-xs text-faint">{clock.dateTime(item.at)}</span>
-                    <IconChevronRight
-                      size={16}
-                      className="shrink-0 text-faint transition-transform group-hover:translate-x-0.5"
-                    />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-
-        {/* Today — what's on the calendar, in the agency's own zone. */}
-        <Card>
-          <CardHeader title="Today" description={clock.day(new Date())} />
-          {!isAvailable(o.today) ? (
-            <div className="px-4 py-4 sm:px-5">
-              <Value value="DATA UNAVAILABLE" />
-            </div>
-          ) : o.today.value.length === 0 ? (
-            <EmptyState title="No meetings today" description="Nothing on the calendar for today." />
-          ) : (
-            <ul className="divide-y divide-line">
-              {o.today.value.map((m) => (
-                <li key={m.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm sm:px-5">
-                  <span className="min-w-0 truncate text-foreground">{m.title}</span>
-                  <span className="shrink-0 text-xs font-medium text-muted">
-                    {m.at ? clock.clock(m.at) : 'time TBD'}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        {/* System health — each row reflects a real read, or admits it can't. */}
-        <Card>
-          <CardHeader
-            title="System health"
-            description="Configured is not verified. Confirm WhatsApp and the AI provider from their pages before relying on them."
-          />
-          <ul className="divide-y divide-line">
-            <HealthRow label="Application" state={{ text: 'serving', tone: 'good' }} />
-            <HealthRow
-              label="Database"
-              state={isAvailable(o.backlog) ? { text: 'reachable', tone: 'good' } : { text: 'DATA UNAVAILABLE', tone: 'bad' }}
-            />
-            <HealthRow label="Cron scheduler" state={cronText} />
-            <HealthRow
-              label="AI provider"
-              state={
-                isAvailable(o.ai)
-                  ? o.ai.value.providerConfigured
-                    ? { text: 'configured', tone: 'good' }
-                    : { text: 'not configured', tone: 'warn' }
-                  : { text: 'DATA UNAVAILABLE', tone: 'bad' }
+          <Card>
+            <CardHeader
+              title="System status"
+              actions={
+                <span className="flex items-center gap-2">
+                  <Badge tone={TONE[label.tone] ?? 'neutral'} dot>
+                    {label.text}
+                  </Badge>
+                  {show('organization.settings') ? <ViewAll href="/production-readiness" /> : null}
+                </span>
               }
             />
-            <HealthRow
-              label="WhatsApp"
-              state={
-                !isAvailable(o.whatsapp.numberConfigured)
-                  ? { text: 'DATA UNAVAILABLE', tone: 'bad' }
-                  : o.whatsapp.tokenConfigured && o.whatsapp.numberConfigured.value
-                    ? { text: 'configured (verify to confirm)', tone: 'warn' }
-                    : { text: 'not configured', tone: 'warn' }
-              }
-            />
-          </ul>
-        </Card>
+            <StatusList rows={systemRows} className="py-1" />
+          </Card>
 
-        {/* Where to go next — capability-gated links into the control plane. */}
-        <Card>
-          <CardHeader title="Control plane" />
-          <ul className="divide-y divide-line">
-            {destinations.map(([name, blurb, href]) => (
-              <li key={href}>
-                <Link
-                  href={href}
-                  className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover sm:px-5"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium text-foreground">{name}</span>
-                    <span className="block text-[13px] text-muted">{blurb}</span>
-                  </span>
-                  <IconChevronRight
-                    size={16}
-                    className="shrink-0 text-faint transition-transform group-hover:translate-x-0.5"
-                  />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </Card>
+          {canSeeUsage ? (
+            <Card>
+              <CardHeader title="Usage & cost" description="Agent runs recorded in the cost ledger." actions={<ViewAll href="/usage" label="View details" />} />
+              <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4 sm:p-5">
+                {[
+                  ['Agent runs', compact(usage?.totals.runs ?? 0)],
+                  ['Input tokens', compact(usage?.totals.inputTokens ?? 0)],
+                  ['Output tokens', compact(usage?.totals.outputTokens ?? 0)],
+                  ['Total cost', money(usage?.totals.costMinor ?? 0, 'INR')],
+                ].map(([l, v]) => (
+                  <div key={l} className="min-w-0">
+                    <p className="tabular truncate text-lg font-semibold leading-tight text-foreground">{v}</p>
+                    <p className="text-[11px] text-muted">{l}</p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ) : null}
+
+          {isAvailable(o.today) && o.today.value.length > 0 ? (
+            <Card>
+              <CardHeader title="Today" description={clock.day(now)} actions={<ViewAll href="/meetings" />} />
+              <ul className="divide-y divide-line">
+                {o.today.value.map((m) => (
+                  <li key={m.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-[13px] sm:px-5">
+                    <span className="min-w-0 truncate text-foreground">{m.title}</span>
+                    <span className="shrink-0 text-xs font-medium text-muted">{m.at ? clock.clock(m.at) : 'time TBD'}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
+
+          {destinations.length > 0 ? (
+            <Card>
+              <CardHeader title="Control plane" />
+              <ul className="divide-y divide-line">
+                {destinations.map(([name, blurb, href]) => (
+                  <li key={href}>
+                    <Link href={href} className="group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-hover sm:px-5">
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[13px] font-medium text-foreground">{name}</span>
+                        <span className="block text-xs text-muted">{blurb}</span>
+                      </span>
+                      <IconChevronRight size={16} className={cx('shrink-0 text-faint transition-transform group-hover:translate-x-0.5')} />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
+        </div>
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import {
   getLatestConversation,
+  getLeadFacts,
   getLeadHeader,
   getLeadPipeline,
   getLeadReactivation,
@@ -39,12 +40,27 @@ import {
   type ProposalStatus,
 } from '@/modules/sales/schema';
 import {
+  ActivityFeed,
+  Avatar,
   Badge,
+  buttonClass,
   Callout,
   Card,
   CardBody,
   CardHeader,
   ChatBubble,
+  DetailPanel,
+  EntityHeader,
+  HeaderFigure,
+  IconCalendar,
+  IconClock,
+  IconFlag,
+  IconInvoices,
+  IconMessage,
+  IconPhone,
+  IconPlus,
+  IconUser,
+  QuickActions,
   ChatCanvas,
   ChatHeader,
   ComposerBar,
@@ -93,6 +109,7 @@ import { ReactivationPanel } from './reactivation-panel';
 import { WaitingForSomebody } from './waiting-banner';
 import { StartConversationForm } from './start-form';
 import { LeadWorkspace } from './workspace';
+import { TrailLabel } from '../../trail-label';
 
 export const metadata: Metadata = { title: 'Requirement collection' };
 
@@ -154,6 +171,7 @@ export default async function LeadConversationPage({
 
   const lead = await getLeadHeader(leadId);
   if (!lead) notFound();
+  const facts = await getLeadFacts(leadId);
 
   const conversation = await getLatestConversation(leadId);
   const messages = conversation ? await listMessages(conversation.id) : [];
@@ -301,7 +319,7 @@ export default async function LeadConversationPage({
           </ChatCanvas>
 
           {mayWrite ? (
-            <ComposerBar>
+            <ComposerBar id="composer">
               <MessageForm conversationId={conversation.id} leadId={leadId} />
               <SendToClientForm conversationId={conversation.id} leadId={leadId} />
             </ComposerBar>
@@ -317,12 +335,79 @@ export default async function LeadConversationPage({
     </div>
   );
 
+  /* ── The rail's actions and the information pane ────────────────────── */
+
+  const phoneDigits = facts?.contactPhone?.replace(/[^\d]/g, '') ?? null;
+  const budget = qualification.success && qualification.data.budgetMinor !== undefined ? money(qualification.data.budgetMinor, 'INR') : null;
+
+  const quickActions = (
+    <QuickActions
+      actions={[
+        ...(facts?.contactPhone ? [{ label: 'Call now', icon: <IconPhone size={13} />, href: `tel:${facts.contactPhone}` }] : []),
+        ...(phoneDigits ? [{ label: 'Open in WhatsApp', icon: <IconMessage size={13} />, href: `https://wa.me/${phoneDigits}`, tone: 'whatsapp' as const }] : []),
+        ...(mayDraft && opportunity ? [{ label: 'Create quote', icon: <IconInvoices size={13} />, href: '#quotations' }] : []),
+        ...(mayWrite ? [{ label: 'Schedule follow-up', icon: <IconCalendar size={13} />, href: '#sales' }, { label: 'Add note', icon: <IconPlus size={13} />, href: '#sales' }] : []),
+        { label: 'Meetings', icon: <IconClock size={13} />, href: '#meetings' },
+        ...(opportunity && dealStage === 'won' ? [{ label: 'Handoff packet', icon: <IconFlag size={13} />, href: `/handoffs/${opportunity.id}` }] : []),
+        { label: 'All leads', icon: <IconUser size={13} />, href: '/leads' },
+      ]}
+    />
+  );
+
+  const side = (
+    <div className="flex flex-col gap-4">
+      <DetailPanel
+        title="Lead information"
+        actions={mayWrite ? <a href="#sales" className="text-xs font-medium text-brand hover:underline">Edit</a> : undefined}
+        rows={[
+          { label: 'Name', value: facts?.contactName ?? lead.title },
+          { label: 'Phone', value: facts?.contactPhone ? <span className="font-mono">{facts.contactPhone}</span> : 'Not on file' },
+          ...(facts?.contactEmail ? [{ label: 'Email', value: facts.contactEmail }] : []),
+          ...(facts?.contactCompany ? [{ label: 'Company', value: facts.contactCompany }] : []),
+          { label: 'Source', value: humanize(lead.source) },
+          { label: 'Status', value: <StatusBadge status={leadStatus} /> },
+          ...(opportunity ? [{ label: 'Deal stage', value: <StatusBadge status={dealStage} /> }] : []),
+          { label: 'Assigned to', value: facts?.assignedEmail ? facts.assignedEmail.split('@')[0] : 'Unassigned' },
+          { label: 'Budget', value: budget ?? 'Not qualified yet' },
+          ...(qualification.success && qualification.data.timelineNote ? [{ label: 'Timeline', value: qualification.data.timelineNote }] : []),
+          ...(qualification.success && qualification.data.isDecisionMaker !== undefined ? [{ label: 'Decision maker', value: qualification.data.isDecisionMaker ? 'Yes' : 'No' }] : []),
+          ...(facts?.score !== null && facts?.score !== undefined ? [{ label: 'Lead score', value: <Badge tone={facts.score >= 70 ? 'success' : facts.score >= 40 ? 'warning' : 'neutral'}>{facts.score}</Badge> }] : []),
+          ...(facts ? [{ label: 'Created on', value: clock.dateTime(facts.createdAt) }, { label: 'Last activity', value: clock.dateTime(facts.updatedAt) }] : []),
+        ]}
+      />
+      {facts && facts.tags.length > 0 ? (
+        <Card>
+          <CardHeader title="Tags" />
+          <div className="flex flex-wrap gap-1.5 px-4 pb-4 sm:px-5">
+            {facts.tags.map((t) => (
+              <Badge key={t} tone="info">{t}</Badge>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+      <ActivityFeed
+        title="Recent activity"
+        compact
+        emptyTitle="Nothing recorded yet"
+        items={timeline.slice(0, 6).map((e) => ({
+          id: `${e.evidence_type}:${e.evidence_id}:${e.occurred_at}`,
+          title: humanize(e.event_type),
+          detail: e.summary,
+          when: clock.date(e.occurred_at),
+          tone: /lost|disqualif|fail|reject/.test(e.event_type) ? ('danger' as const) : /won|convert|accept|approv/.test(e.event_type) ? ('success' as const) : ('brand' as const),
+        }))}
+      />
+    </div>
+  );
+
   /* ── Pane two: what the business knows ──────────────────────────────── */
 
   const details = (
     <div className="flex flex-col gap-4">
+      {quickActions}
+
       {/* ── Sales pipeline ───────────────────────────────────────────── */}
-      <Card>
+      <Card id="sales">
         <CardHeader
           title="Sales"
           actions={
@@ -486,7 +571,7 @@ export default async function LeadConversationPage({
 
       {/* ── Quotations (G-011, ADM-07) ───────────────────────────────── */}
       {opportunity ? (
-        <Card>
+        <Card id="quotations">
           <CardHeader
             title="Quotations"
             actions={
@@ -685,7 +770,7 @@ export default async function LeadConversationPage({
       ) : null}
 
       {/* ── Meetings (A08/A09, G-234) ────────────────────────────────── */}
-      <Card>
+      <Card id="meetings">
         <CardHeader
           title="Meetings"
           actions={
@@ -853,22 +938,66 @@ export default async function LeadConversationPage({
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <div className="hidden items-center gap-2 text-[13px] text-muted lg:flex">
-        <Link href="/leads" className="flex items-center gap-1.5 hover:text-foreground">
-          <IconArrowLeft size={15} />
-          Leads
-        </Link>
-        <span className="text-faint">/</span>
-        <span className="truncate font-medium text-foreground">{lead.title}</span>
-      </div>
+      <TrailLabel name={lead.title} />
+      <EntityHeader
+        name={lead.title}
+        tile={<Avatar name={facts?.contactName ?? lead.title} size="xl" />}
+        status={<StatusBadge status={leadStatus} />}
+        subtitle={
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {facts?.contactPhone ? (
+              <span className="inline-flex items-center gap-1 font-mono">
+                <IconPhone size={12} />
+                {facts.contactPhone}
+              </span>
+            ) : null}
+            <span>via {humanize(lead.source)}</span>
+            {facts ? <span>Added {clock.dateTime(facts.createdAt)}</span> : null}
+          </span>
+        }
+        facts={[
+          ...(facts?.contactCompany ? [{ label: 'Company', value: facts.contactCompany, icon: <IconUser size={14} /> }] : []),
+          ...(budget ? [{ label: 'Budget', value: budget, icon: <IconInvoices size={14} /> }] : []),
+          { label: 'Assigned to', value: facts?.assignedEmail ? facts.assignedEmail.split('@')[0] : 'Unassigned', icon: <IconUser size={14} /> },
+          ...(opportunity ? [{ label: 'Deal', value: humanize(dealStage), icon: <IconFlag size={14} /> }] : []),
+        ]}
+        actions={
+          <>
+            <Link href="/leads" className={buttonClass('secondary', 'sm')}>
+              <IconArrowLeft size={14} />
+              Leads
+            </Link>
+            {mayWrite && conversation ? (
+              <a href="#composer" className={buttonClass('whatsapp', 'sm')}>
+                <IconMessage size={14} />
+                Send message
+              </a>
+            ) : null}
+          </>
+        }
+        aside={
+          <HeaderFigure
+            value={pipeline?.next_follow_up_at ? clock.dateTime(pipeline.next_follow_up_at) : 'None set'}
+            label="Next follow-up"
+          >
+            {mayWrite ? (
+              <a href="#sales" className="text-[11px] font-medium text-brand hover:underline">
+                {pipeline?.next_follow_up_at ? 'Change' : 'Schedule'}
+              </a>
+            ) : null}
+          </HeaderFigure>
+        }
+      >
+        <div className="mt-4 border-t border-line pt-4">
+          <StatusStepper
+            status={leadStatus}
+            happyPath={['new', 'qualifying', 'qualified', 'converted']}
+            offRamps={['nurture', 'disqualified']}
+          />
+        </div>
+      </EntityHeader>
 
-      <StatusStepper
-        status={leadStatus}
-        happyPath={['new', 'qualifying', 'qualified', 'converted']}
-        offRamps={['nurture', 'disqualified']}
-      />
-
-      <LeadWorkspace chat={chat} details={details} detailsCount={awaitingDecision} />
+      <LeadWorkspace chat={chat} details={details} side={side} detailsCount={awaitingDecision} />
     </div>
   );
 }

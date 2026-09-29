@@ -786,3 +786,58 @@ export async function listFollowUpSequences(filter?: {
     subjectTitle: r.subject_type === 'lead' ? (titleByLead.get(r.subject_id) ?? null) : null,
   }));
 }
+
+export type LeadFacts = {
+  contactName: string | null;
+  contactPhone: string | null;
+  contactEmail: string | null;
+  contactCompany: string | null;
+  assignedEmail: string | null;
+  createdAt: string;
+  updatedAt: string;
+  nextFollowUpAt: string | null;
+  tags: string[];
+  score: number | null;
+};
+
+/**
+ * The facts the Lead 360 header and its "Lead information" card print —
+ * who the person is, who has the lead, when it arrived and when it last
+ * moved. Read beside `getLeadHeader` rather than folded into it because
+ * every other caller of the header wants only the title and status.
+ */
+export async function getLeadFacts(leadId: string): Promise<LeadFacts | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('leads')
+    .select('id, assigned_to, created_at, updated_at, next_follow_up_at, tags, score, contacts:contact_id(full_name, phone, email, company)')
+    .eq('id', leadId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (error) unreadable('getLeadFacts', error);
+  if (!data) return null;
+
+  let assignedEmail: string | null = null;
+  if (data.assigned_to) {
+    const { data: user } = await supabase.schema('core').from('users').select('email').eq('id', data.assigned_to).maybeSingle();
+    assignedEmail = user?.email ?? null;
+  }
+
+  const contact = (data.contacts ?? null) as { full_name: string; phone: string | null; email: string | null; company: string | null } | null;
+
+  return {
+    contactName: contact?.full_name ?? null,
+    contactPhone: contact?.phone ?? null,
+    contactEmail: contact?.email ?? null,
+    contactCompany: contact?.company ?? null,
+    assignedEmail,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+    nextFollowUpAt: data.next_follow_up_at,
+    tags: data.tags ?? [],
+    score: data.score,
+  };
+}

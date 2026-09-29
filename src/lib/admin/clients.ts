@@ -385,3 +385,16 @@ export async function addClientNote(input: AddClientNoteInput): Promise<Result<{
 
   return ok({ added: true });
 }
+
+/** Just the name — for a project header that names its client without paying for the whole client page. */
+export async function readClientName(clientAccountId: string): Promise<string | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('core')
+    .from('client_accounts')
+    .select('name')
+    .eq('id', clientAccountId)
+    .maybeSingle();
+  if (error) return null;
+  return data?.name ?? null;
+}

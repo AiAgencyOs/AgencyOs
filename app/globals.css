@@ -20,20 +20,20 @@
   color-scheme: light;
 
   /* ── Surfaces ─────────────────────────────────────────────────────────── */
-  --background: #fbfaf4; /* the desk the app sits on */
+  --background: #f5f7fb; /* the desk the app sits on — the reference's cool grey canvas */
   --surface: #ffffff; /* cards, panels, rows */
-  --surface-sunken: #f6f4e6; /* table headers, insets, code */
-  --surface-hover: #f1eede;
+  --surface-sunken: #f8fafc; /* table headers, insets, code */
+  --surface-hover: #f1f5f9;
   --surface-overlay: #ffffff; /* dialogs, popovers, sheets */
 
   /* ── Ink ──────────────────────────────────────────────────────────────── */
-  --foreground: #12293a;
-  --muted: #4d6b7a; /* secondary text — passes AA on --surface */
-  --faint: #536f7c; /* tertiary: timestamps, units, hints — 5:1 on white, 4.6:1 on the canvas (axe, 2026-09-29) */
+  --foreground: #0f172a;
+  --muted: #475569; /* secondary text — 7.5:1 on --surface */
+  --faint: #5b6b7d; /* tertiary: timestamps, units, hints — 5.2:1 on white, 4.7:1 on the canvas */
 
   /* ── Lines ────────────────────────────────────────────────────────────── */
-  --line: rgb(18 41 58 / 0.11);
-  --line-strong: rgb(18 41 58 / 0.22);
+  --line: rgb(15 23 42 / 0.09);
+  --line-strong: rgb(15 23 42 / 0.2);
 
   /* ── Brand ────────────────────────────────────────────────────────────────
      Indigo, adopted from the AgencyOS Enterprise Admin Panel reference
@@ -483,4 +483,12 @@ body {
   to {
     transform: none;
   }
+}
+
+/* A horizontal rail (tabs, funnel, timeline) scrolls on a phone without a bar. */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }

@@ -7,12 +7,15 @@ import { can } from '@/lib/authz/permissions';
 import { LEAD_STATUSES } from '@/modules/crm/schema';
 import { listLeadsForTable, listLeadsNeedingAttention } from '@/modules/crm/queries';
 import {
+  Avatar,
+  buttonClass,
   DataTable,
   DEFAULT_PAGE_SIZE,
   EmptyState,
   FilterBar,
   FilterChips,
   humanize,
+  IconImport,
   IconLeads,
   paginate,
   Pagination,
@@ -29,6 +32,7 @@ import {
 import Link from 'next/link';
 
 import { SavedViewsBar } from '../saved-views-bar';
+import { CreateLeadButton } from './create-lead-button';
 
 export const metadata: Metadata = { title: 'Leads' };
 
@@ -68,13 +72,16 @@ type Row = Awaited<ReturnType<typeof listLeadsForTable>>[number];
 const columnsFor = (clock: AgencyClock): Column<Row>[] => [
   {
     key: 'title',
-    header: 'Lead',
+    header: 'Name',
     primary: true,
     cell: (l) => (
-      <>
-        <span className="block font-medium text-foreground">{l.title}</span>
-        {l.contact?.company ? <span className="block text-xs text-muted">{l.contact.company}</span> : null}
-      </>
+      <span className="flex items-center gap-2.5">
+        <Avatar name={l.contact?.fullName ?? l.title} size="md" />
+        <span className="min-w-0">
+          <span className="block truncate">{l.contact?.fullName ?? l.title}</span>
+          <span className="block truncate text-xs font-normal text-muted">{l.contact?.company ?? l.title}</span>
+        </span>
+      </span>
     ),
   },
   {
@@ -164,16 +171,40 @@ export default async function LeadsPage({
         title="Leads"
         description={
           allLeads.length === 0
-            ? 'Conversations captured from WhatsApp, referrals and the website land here.'
-            : `${allLeads.length} conversation${allLeads.length === 1 ? '' : 's'} in the pipeline.`
+            ? 'Manage, track and convert your leads into clients. Conversations captured from WhatsApp, referrals and the website land here.'
+            : `Manage, track and convert your leads into clients · ${allLeads.length} in the pipeline.`
+        }
+        actions={
+          <>
+            {can(context.role, 'organization.settings') ? (
+              <Link href="/import" className={buttonClass('secondary', 'sm')}>
+                <IconImport size={14} />
+                Import leads
+              </Link>
+            ) : null}
+            {can(context.role, 'lead.write') ? <CreateLeadButton /> : null}
+          </>
         }
       />
 
       {allLeads.length > 0 ? (
         <StatGrid cols={6}>
-          <Stat label="Total leads" value={String(allLeads.length)} tone="brand" icon={<IconLeads size={16} />} />
-          {LEAD_STATUSES.map((s) => (
-            <Stat key={s} label={humanize(s)} value={String(countByStatus.get(s) ?? 0)} tone={statusTone(s)} />
+          <Stat
+            label="Total leads"
+            value={String(allLeads.length)}
+            caption={`${countByStatus.get('disqualified') ?? 0} disqualified`}
+            tone="brand"
+            icon={<IconLeads size={16} />}
+          />
+          {LEAD_STATUSES.filter((s) => s !== 'disqualified').map((s) => (
+            <Stat
+              key={s}
+              label={humanize(s)}
+              value={String(countByStatus.get(s) ?? 0)}
+              caption={allLeads.length > 0 ? `${Math.round(((countByStatus.get(s) ?? 0) / allLeads.length) * 100)}% of leads` : undefined}
+              tone={statusTone(s)}
+              href={`/leads?status=${s}`}
+            />
           ))}
         </StatGrid>
       ) : null}

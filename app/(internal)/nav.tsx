@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+
+import { TRAIL_LABEL_EVENT } from './trail-label';
 import { createPortal } from 'react-dom';
 
 import {
@@ -267,6 +269,15 @@ function RailLink({
 export function HeaderTrail({ groups }: { groups: NavGroup[] }) {
   const pathname = usePathname();
   const trail = useMemo(() => trailFor(pathname, groups), [pathname, groups]);
+  // A detail page names itself through `TrailLabel`; until it does, the
+  // crumb says "Detail" rather than guessing from the URL's id.
+  const [detailLabel, setDetailLabel] = useState<string | null>(null);
+  useEffect(() => {
+    const onLabel = (e: Event) => setDetailLabel((e as CustomEvent<string | null>).detail ?? null);
+    window.addEventListener(TRAIL_LABEL_EVENT, onLabel);
+    return () => window.removeEventListener(TRAIL_LABEL_EVENT, onLabel);
+  }, []);
+  useEffect(() => setDetailLabel(null), [pathname]);
   const last = trail[trail.length - 1];
   if (!last) return null;
   const deeper = pathname !== last.href;
@@ -289,8 +300,8 @@ export function HeaderTrail({ groups }: { groups: NavGroup[] }) {
       {deeper ? (
         <span className="flex items-center gap-1">
           <IconChevronRight size={12} className="shrink-0 text-faint" />
-          <span aria-current="page" className="font-medium text-foreground">
-            Detail
+          <span aria-current="page" className="max-w-[16rem] truncate font-medium text-foreground">
+            {detailLabel ?? 'Detail'}
           </span>
         </span>
       ) : null}

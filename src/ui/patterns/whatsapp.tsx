@@ -397,12 +397,16 @@ export function ChatListItem({
 export function ComposerBar({
   className,
   children,
+  id,
 }: {
   className?: string;
   children: React.ReactNode;
+  /** An anchor target, so a "Send message" button can jump to the composer. */
+  id?: string;
 }) {
   return (
     <div
+      id={id}
       className={cx(
         'shrink-0 border-t border-[var(--wa-divider)] bg-[var(--wa-composer)] px-2 py-2 sm:px-3',
         className,

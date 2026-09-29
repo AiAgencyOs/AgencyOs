@@ -2659,3 +2659,70 @@ export async function readDevelopmentPortfolio(): Promise<DevelopmentPortfolioRo
     builds: build.get(p.id) ?? { total: 0, latestStatus: null, latestVersion: null },
   }));
 }
+
+export type ProjectTableRow = ProjectListItem & {
+  clientName: string | null;
+  startsOn: string | null;
+  endsOn: string | null;
+  milestonesMet: number;
+  milestonesTotal: number;
+};
+
+/**
+ * The projects list with what the reference's table shows beside a name —
+ * the client, the dates and milestone progress. Two bounded follow-up reads
+ * (client names by id, milestone rows by project) rather than a per-row
+ * query, and the progress is counted from `met_at` on the milestones
+ * themselves: `projects.projects` has no progress column anywhere in the
+ * schema, so nothing here is stored or estimated.
+ */
+export async function listProjectsForTable(limit = 200): Promise<ProjectTableRow[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('projects')
+    .select(`${LIST_SELECT}, client_account_id, starts_on, ends_on`)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) unreadable('listProjectsForTable', error);
+  const rows = data ?? [];
+  if (rows.length === 0) return [];
+
+  const clientIds = [...new Set(rows.map((r) => r.client_account_id).filter((id): id is string => id !== null))];
+  const projectIds = rows.map((r) => r.id);
+
+  const [{ data: clients }, { data: milestones, error: milestonesError }] = await Promise.all([
+    clientIds.length > 0
+      ? supabase.schema('core').from('client_accounts').select('id, name').in('id', clientIds)
+      : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+    supabase.schema('projects').from('milestones').select('project_id, met_at').in('project_id', projectIds),
+  ]);
+  if (milestonesError) unreadable('listProjectsForTable.milestones', milestonesError);
+
+  const clientName = new Map((clients ?? []).map((c) => [c.id, c.name]));
+  const progress = new Map<string, { met: number; total: number }>();
+  for (const m of milestones ?? []) {
+    const entry = progress.get(m.project_id) ?? { met: 0, total: 0 };
+    entry.total += 1;
+    if (m.met_at) entry.met += 1;
+    progress.set(m.project_id, entry);
+  }
+
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    code: r.code,
+    status: r.status,
+    currency: r.currency,
+    budget_minor: r.budget_minor,
+    created_at: r.created_at,
+    clientName: r.client_account_id ? (clientName.get(r.client_account_id) ?? null) : null,
+    startsOn: r.starts_on,
+    endsOn: r.ends_on,
+    milestonesMet: progress.get(r.id)?.met ?? 0,
+    milestonesTotal: progress.get(r.id)?.total ?? 0,
+  }));
+}

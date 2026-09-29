@@ -10,6 +10,8 @@ import { filterCommands, type Command } from '@/lib/admin/command-palette-eval';
 import { globalSearch, type SearchResult } from '@/lib/admin/global-search';
 import { Button, cx, Field, FormMessage, IconChevronRight, IconSearch, inputClass } from '@/ui';
 
+import { OPEN_CREATE_EVENT } from './shell-controls';
+
 const SEARCH_DEBOUNCE_MS = 200;
 
 type CreateMode = 'lead' | 'client' | null;
@@ -113,9 +115,19 @@ export function CommandPalette({
         setOpen(false);
       }
     };
+    // The header's "+ Create" button: open straight onto the first create the
+    // role may perform, or onto the search when it may perform none.
+    const onCreate = () => {
+      setOpen(true);
+      setTimeout(() => setCreateMode(canCreateLead ? 'lead' : canCreateClient ? 'client' : null), 0);
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+    window.addEventListener(OPEN_CREATE_EVENT, onCreate);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener(OPEN_CREATE_EVENT, onCreate);
+    };
+  }, [canCreateLead, canCreateClient]);
 
   useEffect(() => {
     if (open) {
@@ -163,11 +175,11 @@ export function CommandPalette({
           'flex items-center gap-2 rounded-lg text-muted transition-colors',
           // Phone: a 40px icon target. Desktop: a real search field.
           'h-10 w-10 justify-center hover:bg-surface-hover hover:text-foreground',
-          'md:h-9 md:w-full md:max-w-sm md:justify-start md:border md:border-line md:bg-surface-sunken md:px-3 md:hover:border-line-strong md:hover:bg-surface',
+          'md:h-9 md:w-full md:max-w-[26rem] md:flex-1 md:justify-start md:border md:border-line md:bg-surface-sunken md:px-3 md:hover:border-line-strong md:hover:bg-surface',
         )}
       >
         <IconSearch size={18} className="shrink-0" />
-        <span className="hidden flex-1 text-left text-[13px] md:block">Search…</span>
+        <span className="hidden flex-1 truncate text-left text-[13px] md:block">Search anything… (leads, clients, projects, messages)</span>
         <kbd className="hidden rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px] text-muted md:block">
           ⌘K
         </kbd>

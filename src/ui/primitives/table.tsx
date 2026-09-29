@@ -58,6 +58,7 @@ export function DataTable<T>({
   sort,
   className,
   stickyHeader,
+  dense,
 }: {
   rows: readonly T[];
   columns: ReadonlyArray<Column<T>>;
@@ -73,6 +74,8 @@ export function DataTable<T>({
    * table that must never gain its own scroll box (one inside a drawer).
    */
   stickyHeader?: boolean;
+  /** Tighter rows and a smaller type size — for a table inside a dashboard card. */
+  dense?: boolean;
 }) {
   const primary = columns.find((c) => c.primary) ?? columns[0];
   const badges = columns.filter((c) => c.badge);
@@ -104,7 +107,7 @@ export function DataTable<T>({
           sticky && 'max-h-[calc(100vh-11rem)] overflow-y-auto',
         )}
       >
-        <table className="w-full border-collapse text-sm">
+        <table className={cx('w-full border-collapse', dense ? 'text-[13px]' : 'text-sm')}>
           <thead>
             <tr className="border-b border-line bg-surface-sunken">
               {columns.map((c) => {
@@ -118,7 +121,8 @@ export function DataTable<T>({
                     style={c.width ? { width: c.width } : undefined}
                     aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}
                     className={cx(
-                      'px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted whitespace-nowrap',
+                      'text-[11px] font-semibold uppercase tracking-wider text-muted whitespace-nowrap',
+                      dense ? 'px-3 py-2' : 'px-4 py-2.5',
                       c.align === 'right' ? 'text-right' : 'text-left',
                       sticky && 'sticky top-0 z-10 bg-surface-sunken shadow-[inset_0_-1px_0_var(--line)]',
                     )}
@@ -161,7 +165,8 @@ export function DataTable<T>({
                     <td
                       key={c.key}
                       className={cx(
-                        'px-4 py-3 align-middle',
+                        'align-middle',
+                        dense ? 'px-3 py-2' : 'px-4 py-3',
                         c.align === 'right' ? 'text-right' : 'text-left',
                         c.cellClassName,
                       )}

@@ -6,14 +6,60 @@ import { notFound } from 'next/navigation';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
-import { Badge, DataTable, StatusBadge, StatusStepper, IconArrowUpRight, PermissionDenied } from '@/ui';
+import {
+  ActivityFeed,
+  Avatar,
+  Badge,
+  buttonClass,
+  Card,
+  CardHeader,
+  DataTable,
+  DetailPanel,
+  EntityHeader,
+  HeaderFigure,
+  IconAlert,
+  IconArrowUpRight,
+  IconCalendar,
+  IconCheck,
+  IconClock,
+  IconEdit,
+  IconFile,
+  IconFlag,
+  IconGrid,
+  IconInvoices,
+  IconList,
+  IconPlus,
+  IconUpload,
+  IconUser,
+  IconUsers,
+  PermissionDenied,
+  ProgressBar,
+  Stat,
+  StatGrid,
+  StatusBadge,
+  StatusStepper,
+  Timeline,
+  ViewAll,
+  humanize,
+  statusTone,
+  type ActivityItem,
+  type Column,
+  type TimelineStep,
+} from '@/ui';
+import { readClientName } from '@/lib/admin/clients';
+
+import { TrailLabel } from '../../trail-label';
 import { can } from '@/lib/authz/permissions';
 import {
   listDeliverables,
+  listDevelopmentBreakdown,
   listOnboardingItems,
+  listProjectFiles,
+  listProjectTeam,
   readCompletionSummary,
   readMissingInfoMessage,
   readNextQuestions,
+  type DevelopmentTask,
 } from '@/modules/projects/queries';
 import {
   listFreeMaintenance,
@@ -196,58 +242,198 @@ export default async function ProjectPage({
   const unlocked = nextUnlockedMilestone(billingEntries);
   const unlockedName = plan.find((m) => m.id === unlocked?.milestoneId)?.name ?? null;
 
+  /**
+   * The reference overview's header, KPI row, timeline, task table and right
+   * rail — every figure from readers the workspace's own tabs already use
+   * (Development, Team, Files, Activity), so the overview can never disagree
+   * with the tab it summarises.
+   */
+  const [{ tasks }, team, files, clientName] = await Promise.all([
+    listDevelopmentBreakdown(projectId),
+    listProjectTeam(projectId),
+    listProjectFiles(projectId),
+    project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
+  ]);
+  const nameByUser = new Map(team.map((m) => [m.userId, m.fullName]));
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const taskCounts = {
+    total: tasks.length,
+    done: tasks.filter((t) => t.status === 'done').length,
+    inProgress: tasks.filter((t) => t.status === 'in_progress').length,
+    pending: tasks.filter((t) => t.status === 'todo').length,
+    overdue: tasks.filter((t) => t.status !== 'done' && t.dueOn !== null && t.dueOn < todayKey).length,
+  };
+  const pctOf = (n: number, of: number) => (of > 0 ? Math.round((n / of) * 100) : 0);
+  const daysLeft = project.ends_on
+    ? Math.ceil((new Date(`${project.ends_on}T00:00:00Z`).getTime() - new Date(`${todayKey}T00:00:00Z`).getTime()) / 86_400_000)
+    : null;
+  const overallProgress = plan.length > 0 ? pctOf(summary.milestones_met, summary.milestones_total) : pctOf(taskCounts.done, taskCounts.total);
+  const healthy = quality.open_blockers === 0 && taskCounts.overdue === 0 && status !== 'on_hold';
+
+  // The current milestone is the first one not yet met; everything before it
+  // is done, everything after it is upcoming. `met_at` is the only fact read.
+  let currentSeen = false;
+  const timelineSteps: TimelineStep[] = plan.map((m) => {
+    if (m.met_at) return { label: m.name, caption: `Met ${clock.date(m.met_at)}`, state: 'done' };
+    if (!currentSeen) {
+      currentSeen = true;
+      return { label: m.name, caption: m.due_on ? `Due ${clock.date(m.due_on)}` : 'In progress', state: 'current' };
+    }
+    return { label: m.name, caption: m.due_on ? clock.date(m.due_on) : undefined, state: 'upcoming' };
+  });
+
+  const recentTasks = [...tasks].reverse().slice(0, 5);
+  const taskColumns: Column<DevelopmentTask>[] = [
+    { key: 'title', header: 'Task name', primary: true, cell: (t) => t.title },
+    {
+      key: 'assignee',
+      header: 'Assignee',
+      desktopOnly: true,
+      cell: (t) =>
+        t.assigneeId ? (
+          <span className="flex items-center gap-2">
+            <Avatar name={nameByUser.get(t.assigneeId) ?? t.assigneeId} size="sm" />
+            <span className="truncate text-muted">{nameByUser.get(t.assigneeId) ?? 'Unknown'}</span>
+          </span>
+        ) : (
+          <span className="text-muted">Unassigned</span>
+        ),
+    },
+    { key: 'status', header: 'Status', badge: true, cell: (t) => <StatusBadge status={t.status} dot={false} /> },
+    { key: 'due', header: 'Due date', align: 'right', cellClassName: 'text-muted whitespace-nowrap', cell: (t) => (t.dueOn ? clock.date(t.dueOn) : '—') },
+    {
+      key: 'priority',
+      header: 'Priority',
+      align: 'right',
+      cell: (t) => (
+        <Badge tone={t.priority === 'p0' ? 'danger' : t.priority === 'p1' ? 'warning' : t.priority === 'p2' ? 'info' : 'neutral'}>
+          {t.priority === 'p0' ? 'Critical' : t.priority === 'p1' ? 'High' : t.priority === 'p2' ? 'Medium' : 'Low'}
+        </Badge>
+      ),
+    },
+  ];
+
+  const activity: ActivityItem[] = [
+    ...tasks.filter((t) => t.completedAt).map((t) => ({ id: `task-${t.id}`, at: t.completedAt as string, title: `Task completed — ${t.title}`, detail: t.assigneeId ? nameByUser.get(t.assigneeId) : undefined, tone: 'success' as const, icon: <IconCheck size={13} /> })),
+    ...plan.filter((m) => m.met_at).map((m) => ({ id: `ms-${m.id}`, at: m.met_at as string, title: `Milestone met — ${m.name}`, tone: 'brand' as const, icon: <IconFlag size={13} /> })),
+    ...deliverables.map((d) => ({ id: `del-${d.id}`, at: d.created_at, title: `${humanize(d.kind)} v${d.version} — ${d.title}`, detail: humanize(d.status), tone: statusTone(d.status), icon: <IconFile size={13} /> })),
+    ...files.map((f) => ({ id: `file-${f.id}`, at: f.createdAt, title: `File added — ${f.title}`, detail: f.uploadedByName ?? undefined, tone: 'info' as const, icon: <IconUpload size={13} /> })),
+  ]
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, 6)
+    .map(({ at, ...rest }) => ({ ...rest, when: clock.dateTime(at), href: `/projects/${projectId}/activity` }));
+
   return (
     <div className="flex flex-col gap-5">
-      <header className="flex flex-col gap-2">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Project</p>
-        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{project.name}</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge status={project.status} />
-          {project.budget_minor !== null ? (
-            <span className="tabular text-[13px] text-muted">
-              budget {money(project.budget_minor, project.currency)}
-            </span>
-          ) : null}
-        </div>
-        {/*
-          G-114, ADM-72. An accepted quotation is *not* required to create a
-          project — the owner ruled that Document 10 §2's "should not be
-          created" governs a moment ADM-13 never gated, and that projects
-          predating quotations stay valid. But the decision also requires the
-          absence to be visible as well as auditable, and until this it was
-          only auditable: conversion wrote `proposal_id` since G-017 and
-          nothing read it.
-
-          Both branches state a fact. Saying nothing when there is no
-          quotation would leave a reader to guess whether one exists and was
-          not shown, or does not exist — which is the ambiguity the decision
-          asked to remove.
-        */}
-        <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
-          {quotation
+      <TrailLabel name={project.name} />
+      <EntityHeader
+        name={project.name}
+        status={<StatusBadge status={project.status} />}
+        subtitle={
+          project.description ??
+          (quotation
             ? `Accepted quotation · ${quotation.title} (v${quotation.version})`
-            : 'No accepted quotation is linked to this project.'}
-        </p>
-        {/* Blueprint §8: the WON state carries a handoff link. The packet is
-            keyed by the deal, which a project raised from a win remembers. */}
-        {project.opportunity_id ? (
-          <Link
-            href={`/handoffs/${project.opportunity_id}`}
-            className="inline-flex items-center gap-1 self-start text-[13px] font-medium underline underline-offset-2 hover:text-foreground"
-          >
-            Handoff packet — what Sales handed to this project
-            <IconArrowUpRight size={13} />
-          </Link>
-        ) : null}
-      </header>
-
-      <StatusStepper
-        status={status}
-        happyPath={['planning', 'onboarding', 'active', 'completed']}
-        offRamps={['on_hold', 'cancelled']}
-      />
+            : 'No accepted quotation is linked to this project.')
+        }
+        facts={[
+          { label: 'Client', value: clientName ?? 'Internal project', icon: <IconUser size={14} /> },
+          { label: 'Project code', value: <span className="font-mono">{project.code}</span>, icon: <IconList size={14} /> },
+          { label: 'Start date', value: project.starts_on ? clock.date(project.starts_on) : 'Not set', icon: <IconCalendar size={14} /> },
+          { label: 'Due date', value: project.ends_on ? clock.date(project.ends_on) : 'Not set', icon: <IconCalendar size={14} /> },
+          ...(project.budget_minor !== null ? [{ label: 'Budget', value: money(project.budget_minor, project.currency), icon: <IconInvoices size={14} /> }] : []),
+        ]}
+        actions={
+          <>
+            {project.opportunity_id ? (
+              <Link href={`/handoffs/${project.opportunity_id}`} className={buttonClass('secondary', 'sm')}>
+                Handoff packet
+                <IconArrowUpRight size={13} />
+              </Link>
+            ) : null}
+            <Link href={`/projects/${projectId}/board`} className={buttonClass('secondary', 'sm')}>
+              <IconGrid size={14} />
+              Board
+            </Link>
+            {mayWriteProject ? (
+              <Link href={`/projects/${projectId}/settings`} className={buttonClass('primary', 'sm')}>
+                <IconEdit size={14} />
+                Edit project
+              </Link>
+            ) : null}
+          </>
+        }
+        aside={
+          <HeaderFigure value={`${overallProgress}%`} label="Overall progress">
+            <ProgressBar value={overallProgress} showValue={false} label="Overall progress" tone="brand" />
+          </HeaderFigure>
+        }
+      >
+        <div className="mt-4 border-t border-line pt-4">
+          <StatusStepper
+            status={status}
+            happyPath={['planning', 'onboarding', 'active', 'completed']}
+            offRamps={['on_hold', 'cancelled']}
+          />
+        </div>
+      </EntityHeader>
 
       <ProjectSubNav projectId={projectId} />
+
+      <StatGrid cols={6}>
+        <Stat label="Total tasks" href={`/projects/${projectId}/development`} value={String(taskCounts.total)} caption={`${taskCounts.done} completed · ${pctOf(taskCounts.done, taskCounts.total)}%`} tone="brand" icon={<IconList size={16} />} />
+        <Stat label="In progress" href={`/projects/${projectId}/board`} value={String(taskCounts.inProgress)} caption={`${pctOf(taskCounts.inProgress, taskCounts.total)}%`} tone="info" icon={<IconClock size={16} />} />
+        <Stat label="Pending" href={`/projects/${projectId}/board`} value={String(taskCounts.pending)} caption={`${pctOf(taskCounts.pending, taskCounts.total)}%`} tone="warning" icon={<IconClock size={16} />} />
+        <Stat label="Overdue" href={`/projects/${projectId}/board`} value={String(taskCounts.overdue)} caption={`${pctOf(taskCounts.overdue, taskCounts.total)}%`} tone={taskCounts.overdue > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} />
+        <Stat label="Days left" href={`/projects/${projectId}/calendar`} value={daysLeft === null ? '—' : String(daysLeft)} caption={project.ends_on ? `Due ${clock.date(project.ends_on)}` : 'No due date set'} tone={daysLeft !== null && daysLeft < 0 ? 'danger' : 'accent'} icon={<IconCalendar size={16} />} />
+        <Stat
+          label="Project health"
+          href={`/projects/${projectId}/qa`}
+          value={healthy ? 'On track' : 'At risk'}
+          caption={
+            healthy
+              ? 'No blockers, nothing overdue'
+              : [quality.open_blockers > 0 ? `${quality.open_blockers} blocker${quality.open_blockers === 1 ? '' : 's'}` : null, taskCounts.overdue > 0 ? `${taskCounts.overdue} overdue` : null, status === 'on_hold' ? 'on hold' : null].filter(Boolean).join(' · ')
+          }
+          tone={healthy ? 'success' : 'danger'}
+          icon={<IconCheck size={16} />}
+        />
+      </StatGrid>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(19rem,1fr)]">
+      <div className="flex min-w-0 flex-col gap-4 [&>section]:rounded-xl [&>section]:border [&>section]:border-line [&>section]:bg-surface [&>section]:p-4 [&>section]:shadow-xs sm:[&>section]:p-5">
+      <Card>
+        <CardHeader title="Project timeline" description={plan.length === 0 ? 'No milestones planned yet.' : `${summary.milestones_met} of ${summary.milestones_total} milestones met.`} actions={<ViewAll href={`/projects/${projectId}/plan`} label="View full plan" />} />
+        {timelineSteps.length > 0 ? (
+          <div className="p-4 sm:p-5">
+            <Timeline steps={timelineSteps} />
+          </div>
+        ) : null}
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Recent tasks"
+          actions={
+            <>
+              <ViewAll href={`/projects/${projectId}/development`} />
+              {can(context.role, 'task.write') ? (
+                <Link href={`/projects/${projectId}/development`} className={buttonClass('primary', 'sm')}>
+                  <IconPlus size={14} />
+                  Add task
+                </Link>
+              ) : null}
+            </>
+          }
+        />
+        <div className="px-4 pb-4 sm:px-5">
+          {recentTasks.length === 0 ? (
+            <p className="py-3 text-[13px] text-muted">No tasks yet. Tasks are created on the Development tab.</p>
+          ) : (
+            <DataTable dense rows={recentTasks} columns={taskColumns} getKey={(t) => t.id} href={() => `/projects/${projectId}/development`} />
+          )}
+        </div>
+      </Card>
+
 
       {/* ── Onboarding (G-017, ADM-06) ───────────────────────────────── */}
       {onboarding.length > 0 ? (
@@ -857,6 +1043,91 @@ export default async function ProjectPage({
             : 'No handover prepared.'}
         </p>
       </section>
+      </div>
+
+      {/* ── Right rail ────────────────────────────────────────────────── */}
+      <div className="flex min-w-0 flex-col gap-4">
+        <DetailPanel
+          title="Project details"
+          actions={mayWriteProject ? <ViewAll href={`/projects/${projectId}/settings`} label="Edit" /> : undefined}
+          rows={[
+            { label: 'Project name', value: project.name },
+            { label: 'Client', value: project.client_account_id ? <Link href={`/clients/${project.client_account_id}`} className="text-brand hover:underline">{clientName ?? 'Client'}</Link> : 'Internal project' },
+            { label: 'Code', value: <span className="font-mono">{project.code}</span> },
+            { label: 'Start date', value: project.starts_on ? clock.date(project.starts_on) : 'Not set' },
+            { label: 'Due date', value: project.ends_on ? clock.date(project.ends_on) : 'Not set' },
+            { label: 'Status', value: <StatusBadge status={project.status} /> },
+            { label: 'Budget', value: project.budget_minor === null ? 'Not set' : money(project.budget_minor, project.currency) },
+            ...(can(context.role, 'invoice.read')
+              ? [
+                  { label: 'Invoiced', value: money(summary.invoiced_minor, project.currency) },
+                  { label: 'Amount received', value: `${money(summary.paid_minor, project.currency)}${summary.invoiced_minor > 0 ? ` (${pctOf(summary.paid_minor, summary.invoiced_minor)}%)` : ''}` },
+                  { label: 'Balance', value: money(summary.outstanding_minor, project.currency) },
+                ]
+              : []),
+            { label: 'Team size', value: `${team.length} member${team.length === 1 ? '' : 's'}` },
+            { label: 'Visibility', value: humanize(project.visibility) },
+            { label: 'Quotation', value: quotation ? `${quotation.title} (v${quotation.version})` : 'None linked' },
+            ...(project.description ? [{ label: 'Description', value: <span className="font-normal text-muted">{project.description}</span> }] : []),
+          ]}
+        />
+
+        <Card>
+          <CardHeader title={`Team members (${team.length})`} actions={<ViewAll href={`/projects/${projectId}/team`} label="Manage" />} />
+          {team.length === 0 ? (
+            <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No one assigned yet.</p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {team.slice(0, 5).map((m) => (
+                <li key={m.userId} className="flex items-center gap-3 px-4 py-2.5 sm:px-5">
+                  <Avatar name={m.fullName} size="md" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-medium text-foreground">{m.fullName}</span>
+                    <span className="block truncate text-xs text-muted">{humanize(m.role)}</span>
+                  </span>
+                  <Badge tone="info">{m.tasksDone}/{m.tasksTotal} tasks</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card>
+          <CardHeader title="Recent files" actions={<ViewAll href={`/projects/${projectId}/files`} />} />
+          {files.length === 0 ? (
+            <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No files yet.</p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {files.slice(0, 5).map((f) => (
+                <li key={f.id}>
+                  <a href={f.url} target="_blank" rel="noreferrer noopener" className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-hover sm:px-5">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand">
+                      <IconFile size={15} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium text-foreground">{f.title}</span>
+                      <span className="block truncate text-xs text-muted">
+                        {humanize(f.category)}
+                        {f.uploadedByName ? ` · ${f.uploadedByName}` : ''} · {clock.date(f.createdAt)}
+                      </span>
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <ActivityFeed items={activity} viewAllHref={`/projects/${projectId}/activity`} emptyTitle="No activity yet" emptyDescription="Completed tasks, met milestones, versions and files appear here." compact />
+
+        {team.length > 0 ? (
+          <div className="flex items-center gap-2 px-1 text-xs text-muted">
+            <IconUsers size={14} />
+            Everyone with a task on this project.
+          </div>
+        ) : null}
+      </div>
+      </div>
     </div>
   );
 }

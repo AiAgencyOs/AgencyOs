@@ -47,7 +47,7 @@ const DEFAULT_SERIES_COLORS = [
  * file actually has — plain counts fall back to a locale number format.
  */
 function formatValue(value: number, currency?: string): string {
-  return new Intl.NumberFormat('en-IN', currency ? { style: 'currency', currency } : undefined).format(
+  return new Intl.NumberFormat('en-IN', currency ? { style: 'currency', currency, maximumFractionDigits: 0 } : undefined).format(
     value,
   );
 }
@@ -174,16 +174,19 @@ export function DonutChart({
 
       <ul className="flex min-w-0 flex-1 flex-col gap-1.5">
         {data.map((d, i) => (
-          <li key={d.label} className="flex items-center justify-between gap-3 text-[13px]">
+          <li key={d.label} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-[13px]">
             <span className="flex min-w-0 items-center gap-2">
               <span
                 aria-hidden
                 className="h-2 w-2 shrink-0 rounded-full"
                 style={{ background: palette(i) }}
               />
-              <span className="truncate text-foreground">{d.label}</span>
+              <span className="text-foreground">{d.label}</span>
             </span>
-            <span className="tabular shrink-0 text-muted">{formatValue(d.value, currency)}</span>
+            <span className="tabular shrink-0 text-muted">
+              {formatValue(d.value, currency)}
+              {total > 0 ? <span className="ml-1 text-[11px] text-faint">({Math.round((d.value / total) * 100)}%)</span> : null}
+            </span>
           </li>
         ))}
       </ul>

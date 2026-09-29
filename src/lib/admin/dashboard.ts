@@ -184,3 +184,22 @@ export async function getMessagesSentThisMonth(): Promise<number> {
 
   return count ?? 0;
 }
+
+export type ProjectCountsByStatus = Record<string, number>;
+
+/**
+ * How many projects sit in each delivery status — the right-hand half of
+ * the Command Center's pipeline strip. One `status` column over every
+ * project the caller may read, counted here; the strip prints exactly these.
+ */
+export async function getProjectCountsByStatus(): Promise<ProjectCountsByStatus> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('projects').from('projects').select('status');
+
+  if (error) unreadable('getProjectCountsByStatus', error);
+
+  const counts: ProjectCountsByStatus = {};
+  for (const row of data ?? []) counts[row.status] = (counts[row.status] ?? 0) + 1;
+  return counts;
+}

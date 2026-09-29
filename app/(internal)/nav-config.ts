@@ -218,7 +218,11 @@ export function trailFor(pathname: string, modules: readonly VisibleModule[]): V
   if (!hit) return [];
   const trail: VisibleItem[] = [];
   const first = hit.module.items[0];
-  if (hit.module.title && first) trail.push({ href: first.href, label: hit.module.title });
+  // A module whose title is its first item's label ("Clients › Clients")
+  // would print itself twice; one crumb says it.
+  if (hit.module.title && first && hit.module.title !== hit.item.label) {
+    trail.push({ href: first.href, label: hit.module.title });
+  }
   trail.push(hit.item);
   return trail;
 }

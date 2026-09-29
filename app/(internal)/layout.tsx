@@ -2,13 +2,15 @@ import Link from 'next/link';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { humanize } from '@/ui';
+import { readOrganizationName } from '@/lib/admin/organization';
+import { Avatar, humanize, IconMore } from '@/ui';
 
 import { SignOutButton } from '../(auth)/sign-out-button';
 import { ActionBell } from './action-bell';
 import { CommandPalette } from './command-palette';
 import { BottomTabs, CurrentSectionTitle, HeaderTrail, MobileNav, SidebarNav, Wordmark } from './nav';
 import { visibleModulesFor } from './nav-config';
+import { CreateButton, HelpMenu, UserMenu } from './shell-controls';
 
 /**
  * Gate for the internal application, and the control plane's shell.
@@ -41,6 +43,7 @@ import { visibleModulesFor } from './nav-config';
  */
 export default async function InternalLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const context = await requireInternal();
+  const organizationName = await readOrganizationName();
 
   const visibleGroups = visibleModulesFor(context.role);
 
@@ -51,6 +54,17 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
   );
 
   const identity = { email: context.email, role: context.role };
+  const displayName = context.fullName ?? context.email;
+  const helpLinks = (
+    [
+      ['/production-readiness', 'Production readiness', 'organization.settings'],
+      ['/integrations', 'Integrations', 'organization.settings'],
+      ['/audit', 'Audit log', 'audit.read'],
+      ['/notifications', 'Notifications', null],
+    ] as const
+  )
+    .filter(([, , cap]) => cap === null || can(context.role, cap))
+    .map(([href, label]) => ({ href, label }));
 
   return (
     <div className="min-h-screen bg-background">
@@ -78,21 +92,16 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
         </div>
 
         <div className="shrink-0 border-t border-sidebar-border p-3">
-          <div className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sidebar-active-bg text-[13px] font-semibold uppercase text-sidebar-active-fg">
-              {context.email.slice(0, 2)}
-            </span>
+          <div className="flex items-center gap-2.5 rounded-lg border border-sidebar-border bg-sidebar-hover px-2 py-2">
+            <Avatar name={organizationName ?? displayName} size="md" square tone="warning" className="bg-accent text-accent-fg" />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-medium text-sidebar-fg">
-                {context.fullName ?? context.email}
-              </span>
-              <span className="block truncate text-[11px] text-sidebar-muted">
-                {humanize(context.role)}
-              </span>
+              <span className="block truncate text-[13px] font-semibold text-sidebar-fg">{organizationName ?? 'Organisation'}</span>
+              <span className="block truncate text-[11px] text-sidebar-muted">{displayName}</span>
+              <span className="block truncate text-[10px] uppercase tracking-wider text-sidebar-muted">{humanize(context.role)}</span>
             </span>
-          </div>
-          <div className="mt-2">
-            <SignOutButton full variant="sidebar" />
+            <Link href="/settings" aria-label="Organisation settings" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-fg">
+              <IconMore size={16} />
+            </Link>
           </div>
         </div>
       </aside>
@@ -116,13 +125,16 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
               <HeaderTrail groups={visibleGroups} />
             </div>
 
-            <div className="flex min-w-0 shrink-0 items-center gap-1 md:flex-1 lg:flex-none lg:w-[24rem]">
+            <div className="flex min-w-0 shrink-0 items-center justify-end gap-1.5 md:flex-1">
               <CommandPalette
                 commands={commands}
                 canCreateLead={can(context.role, 'lead.write')}
                 canCreateClient={can(context.role, 'project.write')}
               />
+              <CreateButton enabled={can(context.role, 'lead.write') || can(context.role, 'project.write')} />
               <ActionBell />
+              <HelpMenu links={helpLinks} />
+              <UserMenu name={displayName} email={context.email} role={context.role ?? "member"} signOut={<SignOutButton full variant="secondary" />} />
             </div>
           </div>
         </header>
