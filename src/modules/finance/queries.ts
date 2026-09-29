@@ -531,6 +531,8 @@ export type ExpenseRow = {
   currency: string;
   amountMinor: number;
   incurredOn: string;
+  /** SCR-055 — the receipt's URL, when one was attached. Optional so callers that shape rows by hand (the tax-report tests) need not carry it. */
+  receiptUrl?: string | null;
   createdAt: string;
 };
 
@@ -546,7 +548,7 @@ export async function listExpenses(limit = 500): Promise<ExpenseRow[]> {
   const { data, error: expensesError } = await supabase
     .schema('finance')
     .from('expenses')
-    .select('id, project_id, category, vendor, description, currency, amount_minor, incurred_on, created_at')
+    .select('id, project_id, category, vendor, description, currency, amount_minor, incurred_on, receipt_url, created_at')
     .order('incurred_on', { ascending: false })
     .limit(limit);
 
@@ -561,6 +563,7 @@ export async function listExpenses(limit = 500): Promise<ExpenseRow[]> {
     currency: e.currency,
     amountMinor: e.amount_minor,
     incurredOn: e.incurred_on,
+    receiptUrl: e.receipt_url,
     createdAt: e.created_at,
   }));
 }

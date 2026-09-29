@@ -3777,6 +3777,7 @@ export type Database = {
           incurred_on: string
           organization_id: string
           project_id: string | null
+          receipt_url: string | null
           recorded_by: string | null
           updated_at: string
           vendor: string | null
@@ -3791,6 +3792,7 @@ export type Database = {
           incurred_on: string
           organization_id: string
           project_id?: string | null
+          receipt_url?: string | null
           recorded_by?: string | null
           updated_at?: string
           vendor?: string | null
@@ -3805,6 +3807,7 @@ export type Database = {
           incurred_on?: string
           organization_id?: string
           project_id?: string | null
+          receipt_url?: string | null
           recorded_by?: string | null
           updated_at?: string
           vendor?: string | null
@@ -3911,6 +3914,56 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "invoice_items_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invoice_sends: {
+        Row: {
+          channel: string
+          created_at: string
+          id: string
+          invoice_id: string
+          kind: string
+          message_ref: string | null
+          note: string | null
+          organization_id: string
+          sent_at: string
+          sent_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          channel: string
+          created_at?: string
+          id?: string
+          invoice_id: string
+          kind: string
+          message_ref?: string | null
+          note?: string | null
+          organization_id: string
+          sent_at?: string
+          sent_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          channel?: string
+          created_at?: string
+          id?: string
+          invoice_id?: string
+          kind?: string
+          message_ref?: string | null
+          note?: string | null
+          organization_id?: string
+          sent_at?: string
+          sent_by?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_sends_invoice_id_fkey"
             columns: ["invoice_id"]
             isOneToOne: false
             referencedRelation: "invoices"
@@ -4357,11 +4410,64 @@ export type Database = {
           },
         ]
       }
+      tax_period_locks: {
+        Row: {
+          created_at: string
+          id: string
+          locked_at: string
+          locked_by: string | null
+          note: string | null
+          organization_id: string
+          period_end: string
+          period_start: string
+          unlock_reason: string | null
+          unlocked_at: string | null
+          unlocked_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          locked_at?: string
+          locked_by?: string | null
+          note?: string | null
+          organization_id: string
+          period_end: string
+          period_start: string
+          unlock_reason?: string | null
+          unlocked_at?: string | null
+          unlocked_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          locked_at?: string
+          locked_by?: string | null
+          note?: string | null
+          organization_id?: string
+          period_end?: string
+          period_start?: string
+          unlock_reason?: string | null
+          unlocked_at?: string | null
+          unlocked_by?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      close_reconciliation: {
+        Args: { p_reconciliation_id: string }
+        Returns: {
+          outcome: string
+          reconciliation_id: string | null
+          unresolved: number
+        }[]
+      }
       confirm_billing_mode: {
         Args: { p_mode: string; p_note?: string; p_project_id: string; p_source?: string }
         Returns: {
@@ -4425,6 +4531,41 @@ export type Database = {
         Returns: {
           invoice_id: string | null
           number: string | null
+          outcome: string
+        }[]
+      }
+      lock_tax_period: {
+        Args: { p_note?: string; p_period_end: string; p_period_start: string }
+        Returns: {
+          lock_id: string | null
+          outcome: string
+        }[]
+      }
+      open_reconciliation: {
+        Args: { p_account_id?: string; p_period_end: string; p_period_start: string; p_source: string }
+        Returns: {
+          outcome: string
+          reconciliation_id: string | null
+        }[]
+      }
+      record_invoice_send: {
+        Args: {
+          p_channel: string
+          p_invoice_id: string
+          p_kind: string
+          p_message_ref?: string
+          p_note?: string
+          p_sent_at?: string
+        }
+        Returns: {
+          outcome: string
+          send_id: string | null
+        }[]
+      }
+      unlock_tax_period: {
+        Args: { p_lock_id: string; p_reason: string }
+        Returns: {
+          lock_id: string | null
           outcome: string
         }[]
       }

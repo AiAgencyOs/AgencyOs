@@ -432,6 +432,7 @@ export async function recordExpenseAction(_prev: FormState, formData: FormData):
     incurredOn: text('incurredOn'),
     ...(projectId ? { projectId } : {}),
     ...(vendor ? { vendor } : {}),
+    ...(text('receiptUrl') ? { receiptUrl: text('receiptUrl') } : {}),
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };
@@ -496,6 +497,7 @@ export async function updateExpenseAction(_prev: FormState, formData: FormData):
     incurredOn: text('incurredOn'),
     ...(projectId ? { projectId } : {}),
     ...(vendor ? { vendor } : {}),
+    ...(text('receiptUrl') ? { receiptUrl: text('receiptUrl') } : {}),
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };

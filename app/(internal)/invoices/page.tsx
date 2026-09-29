@@ -9,10 +9,13 @@ import { can } from '@/lib/authz/permissions';
 import { listInvoices, listPendingPaymentClaims } from '@/modules/finance/queries';
 import { listBillableMilestones, listBillingClients, listInvoicesFiltered } from '@/modules/finance/overview-queries';
 import { INVOICE_STATUSES, milestoneInvoiceability } from '@/modules/finance/schema';
+import { readInvoiceSendSummaries, type InvoiceSendSummary } from '@/modules/finance/sends-queries';
+import { needsReminder } from '@/modules/finance/sends-schema';
 import { listProjects } from '@/modules/projects/queries';
 import { SavedViewsBar } from '../saved-views-bar';
 import { CreateFromMilestoneForm } from './create-from-milestone-form';
 import {
+  Badge,
   Callout,
   DataTable,
   DEFAULT_PAGE_SIZE,
@@ -55,7 +58,7 @@ function money(minor: number, currency: string): string {
 
 type Row = Awaited<ReturnType<typeof listInvoices>>[number];
 
-const columnsFor = (clock: AgencyClock): Column<Row>[] => [
+const columnsFor = (clock: AgencyClock, sends: Map<string, InvoiceSendSummary>, now: Date): Column<Row>[] => [
   {
     key: 'number',
     header: 'Number',
@@ -63,7 +66,39 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     cellClassName: 'font-mono text-xs',
     cell: (i) => i.number,
   },
-  { key: 'status', header: 'Status', badge: true, cell: (i) => <StatusBadge status={i.status} /> },
+  {
+    key: 'status',
+    header: 'Status',
+    badge: true,
+    cell: (i) => (
+      <span className="inline-flex flex-wrap items-center gap-1">
+        <StatusBadge status={i.status} />
+        {/* SCR-051: issued, past due, and no reminder recorded in the last 7 days. */}
+        {needsReminder(i, sends.get(i.id)?.lastReminderAt ?? null, now) ? <Badge tone="warning">needs reminder</Badge> : null}
+      </span>
+    ),
+  },
+  {
+    key: 'sent',
+    header: 'Last sent',
+    desktopOnly: true,
+    cellClassName: 'text-muted',
+    cell: (i) => {
+      const s = sends.get(i.id);
+      return s?.lastAt ? `${s.lastKind === 'reminder' ? 'reminded' : 'sent'} ${clock.date(s.lastAt)}` : '—';
+    },
+  },
+  {
+    key: 'pdf',
+    header: '',
+    align: 'right',
+    desktopOnly: true,
+    cell: (i) => (
+      <a href={`/api/invoices/${i.id}/pdf`} target="_blank" rel="noreferrer" className="text-xs font-medium text-brand hover:underline">
+        Open PDF
+      </a>
+    ),
+  },
   {
     key: 'total',
     header: 'Total',
@@ -135,7 +170,7 @@ export default async function InvoicesPage({
   // SCR-051: client and project filters are applied by the reader at the
   // database; the milestone picker needs every invoice (to know which
   // milestones are already billed) and every milestone, unfiltered.
-  const [allInvoices, pendingClaims, savedViews, clients, projects, milestones, everyInvoice] = await Promise.all([
+  const [allInvoices, pendingClaims, savedViews, clients, projects, milestones, everyInvoice, sendSummaries] = await Promise.all([
     listInvoicesFiltered({ clientId, projectId }),
     can(context.role, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
     listSavedViews('/invoices'),
@@ -143,7 +178,10 @@ export default async function InvoicesPage({
     listProjects(500),
     canCreate ? listBillableMilestones() : Promise.resolve([]),
     canCreate ? listInvoices(2000) : Promise.resolve([]),
+    readInvoiceSendSummaries(),
   ]);
+  const now = new Date();
+  const reminderCount = allInvoices.filter((i) => needsReminder(i, sendSummaries.get(i.id)?.lastReminderAt ?? null, now)).length;
   const invoicedMilestones = new Set(everyInvoice.map((i) => i.milestone_id).filter((id): id is string => id !== null));
   const eligible = milestones
     .filter((m) => !invoicedMilestones.has(m.id))
@@ -237,6 +275,12 @@ export default async function InvoicesPage({
 
       <SavedViewsBar page="/invoices" currentQuery={currentQuery} views={savedViews} />
 
+      {reminderCount > 0 ? (
+        <Callout tone="warning" icon={<IconClock size={16} />}>
+          {reminderCount} invoice{reminderCount === 1 ? ' is' : 's are'} past due with no reminder recorded in the last 7 days. Open each one, send the reminder yourself, and record it there.
+        </Callout>
+      ) : null}
+
       {pendingClaims.length > 0 ? (
         <Callout tone="warning" icon={<IconAlert size={16} />}>
           <span className="flex flex-wrap items-center gap-2">
@@ -252,7 +296,7 @@ export default async function InvoicesPage({
         <>
           <DataTable
             rows={pageRows}
-            columns={columnsFor(clock)}
+            columns={columnsFor(clock, sendSummaries, now)}
             getKey={(i) => i.id}
             href={(i) => `/invoices/${i.id}`}
             sort={{

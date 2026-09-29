@@ -50,6 +50,19 @@ const columnsFor = (
   { key: 'description', header: 'What', primary: true, cell: (e) => e.description },
   { key: 'category', header: 'Category', badge: true, cell: (e) => e.category },
   { key: 'vendor', header: 'Vendor', cellClassName: 'text-muted', cell: (e) => e.vendor ?? '—' },
+  {
+    key: 'receipt',
+    header: 'Receipt',
+    desktopOnly: true,
+    cell: (e) =>
+      e.receiptUrl ? (
+        <a href={e.receiptUrl} target="_blank" rel="noreferrer" className="text-xs font-medium text-brand hover:underline">
+          Open
+        </a>
+      ) : (
+        <span className="text-xs text-muted">—</span>
+      ),
+  },
   { key: 'project', header: 'Project', cellClassName: 'text-muted', cell: (e) => projectName(e.projectId) },
   {
     key: 'amount',

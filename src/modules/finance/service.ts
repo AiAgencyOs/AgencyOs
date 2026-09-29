@@ -9,6 +9,8 @@ import { getBillableMilestone } from '@/modules/projects/service';
 import { toLadderProgress } from './ladder';
 
 import { billingReadiness, checkGstin, taxRateBpForMode, type BillingReadiness } from './gstin';
+import { lockedPeriodRefusal } from './tax-lock-schema';
+import { activeTaxLockCovering } from './tax-lock-service';
 
 import {
   applyPayment,
@@ -801,6 +803,12 @@ export async function issueInvoice(
     return err('CONFLICT', 'This invoice has no amount and cannot be issued.');
   }
 
+  // SCR-056: issuing stamps issued_at = now(), so today is the issue date; a
+  // locked reporting period (a filed return) cannot take a new invoice.
+  const issueLock = await activeTaxLockCovering(supabase, new Date().toISOString().slice(0, 10));
+  if (!issueLock.ok) return issueLock;
+  if (issueLock.data) return err('CONFLICT', lockedPeriodRefusal(issueLock.data, 'issued'));
+
   // The line items are no longer counted here. That was a second unlocked
   // round trip whose `error` was never read, so a failed read came back as
   // "this invoice has no line items" — a read failure presented as a domain
@@ -1162,6 +1170,14 @@ export async function voidInvoice(
     );
   }
 
+  // SCR-056: voiding an invoice issued into a locked (filed) period would
+  // change a figure already reported. Refused with the lock's note verbatim.
+  if (invoice.issued_at) {
+    const voidLock = await activeTaxLockCovering(supabase, invoice.issued_at.slice(0, 10));
+    if (!voidLock.ok) return voidLock;
+    if (voidLock.data) return err('CONFLICT', lockedPeriodRefusal(voidLock.data, 'voided'));
+  }
+
   const note = `Voided: ${parsed.data.reason}`;
 
   // The checks above ran before anything was locked, so they answer for the
@@ -1232,7 +1248,7 @@ type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 type AdminClient = ReturnType<typeof createAdminClient>;
 
 const INVOICE_COLUMNS =
-  'id, organization_id, client_account_id, project_id, milestone_id, number, status, currency, total_minor, paid_minor, notes';
+  'id, organization_id, client_account_id, project_id, milestone_id, number, status, currency, total_minor, paid_minor, notes, issued_at';
 
 /**
  * The invoice a write is about to act on.
@@ -2234,6 +2250,7 @@ export async function recordExpense(input: RecordExpenseInput): Promise<Result<{
       amount_minor: parsed.data.amountMinor,
       currency: parsed.data.currency ?? 'INR',
       incurred_on: parsed.data.incurredOn,
+      receipt_url: parsed.data.receiptUrl ?? null,
       recorded_by: context.userId,
     })
     .select('id')
@@ -2362,6 +2379,7 @@ export async function updateExpense(input: UpdateExpenseInput): Promise<Result<{
       description: parsed.data.description,
       amount_minor: parsed.data.amountMinor,
       incurred_on: parsed.data.incurredOn,
+      receipt_url: parsed.data.receiptUrl ?? null,
       ...(parsed.data.currency ? { currency: parsed.data.currency } : {}),
     })
     .eq('id', parsed.data.expenseId)
