@@ -605,6 +605,8 @@ export const recordExpenseSchema = z.object({
   amountMinor: z.number().int().min(0),
   currency: z.string().trim().length(3).optional(),
   incurredOn: z.string().trim().min(1, 'Say when this was incurred'),
+  /** SCR-055 — where the receipt lives, as a URL (finance.expenses.receipt_url). */
+  receiptUrl: z.string().trim().url('A link to the receipt, starting with http').max(2000).optional(),
 });
 
 export type RecordExpenseInput = z.infer<typeof recordExpenseSchema>;

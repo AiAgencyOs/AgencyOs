@@ -16,6 +16,7 @@ import {
   taxPeriodOptions,
   type TaxTotals,
 } from '@/modules/finance/tax-report';
+import { listTaxPeriodLocks, lockStateFor } from '@/modules/finance/tax-lock-queries';
 import { SavedViewsBar } from '../../saved-views-bar';
 import {
   Badge,
@@ -30,6 +31,7 @@ import {
   humanize,
   IconDownload,
   IconInvoices,
+  IconLock,
   IconRupee,
   IconTrendUp,
   paginate,
@@ -45,6 +47,7 @@ import {
 } from '@/ui';
 
 import { PeriodSelect } from './period-select';
+import { LockPeriodForm, UnlockPeriodForm } from './period-lock';
 
 export const metadata: Metadata = { title: 'GST & tax' };
 
@@ -132,12 +135,18 @@ export default async function TaxReportPage({
   };
   const currentQuery = qs({}).slice(1);
 
-  const [allInvoices, allReceipts, allExpenses, savedViews] = await Promise.all([
+  const [allInvoices, allReceipts, allExpenses, savedViews, locks] = await Promise.all([
     listTaxReportInvoices(),
     listReceipts(),
     listExpenses(),
     listSavedViews('/finance/tax'),
+    listTaxPeriodLocks(),
   ]);
+  // SCR-056: the lock state of THIS window. The resolver's half-open ISO
+  // instants become calendar days, the shape finance.tax_period_locks holds.
+  const lockWindow = period.from && period.to ? { start: period.from.slice(0, 10), end: period.to.slice(0, 10) } : null;
+  const lockState = lockWindow ? lockStateFor(locks, lockWindow.start, lockWindow.end) : null;
+  const mayLock = can(context.role, 'invoice.issue');
 
   const periodInvoices = invoicesInPeriod(allInvoices, period);
   const receipts = receiptsInPeriod(allReceipts, period);
@@ -169,6 +178,79 @@ export default async function TaxReportPage({
       />
 
       <SavedViewsBar page="/finance/tax" currentQuery={currentQuery} views={savedViews} />
+
+      {/*
+        Period lock — SCR-056. A filed return is a number reported; the lock
+        is the record that it was, and the finance service refuses to issue
+        or void an invoice dated inside an active lock.
+      */}
+      <Card>
+        <CardHeader
+          icon={<IconLock size={16} />}
+          title={lockWindow ? `Reporting period: ${period.label}` : 'Reporting period lock'}
+          description={
+            lockWindow
+              ? `${lockWindow.start} to ${lockWindow.end} (exclusive). Lock it once the return for this window is filed.`
+              : 'Pick a month, quarter or financial year above to lock it. "All time" is not a reporting period.'
+          }
+          actions={
+            lockState?.exact ? (
+              <Badge tone="danger" dot>locked</Badge>
+            ) : lockState && lockState.overlapping.length > 0 ? (
+              <Badge tone="warning" dot>covered by a wider lock</Badge>
+            ) : lockWindow ? (
+              <Badge tone="success" dot>open</Badge>
+            ) : null
+          }
+        />
+        {lockWindow && lockState ? (
+          <div className="flex flex-col gap-3 px-4 py-3 sm:px-5">
+            {lockState.exact ? (
+              <p className="text-[13px] text-muted">
+                Locked {clock.dateTime(lockState.exact.lockedAt)} by {lockState.exact.lockedByName ?? 'somebody'}
+                {lockState.exact.note ? <> — “{lockState.exact.note}”</> : null}. Invoices dated in this window cannot be issued or voided.
+              </p>
+            ) : null}
+            {lockState.overlapping.map((l) => (
+              <p key={l.id} className="text-[13px] text-muted">
+                Inside the lock on {l.periodStart} to {l.periodEnd}, locked {clock.dateTime(l.lockedAt)} by {l.lockedByName ?? 'somebody'}
+                {l.note ? <> — “{l.note}”</> : null}.
+              </p>
+            ))}
+            {mayLock ? (
+              lockState.exact ? (
+                <UnlockPeriodForm lockId={lockState.exact.id} label={period.label} />
+              ) : (
+                <LockPeriodForm periodStart={lockWindow.start} periodEnd={lockWindow.end} label={period.label} />
+              )
+            ) : (
+              <p className="text-[13px] text-muted">Only an owner or ops admin can lock or unlock a period.</p>
+            )}
+          </div>
+        ) : null}
+        {locks.length > 0 ? (
+          <div className="border-t border-line">
+            <DataTable
+              rows={locks.slice(0, 20)}
+              dense
+              columns={[
+                { key: 'period', header: 'Period', primary: true, cellClassName: 'font-mono text-xs', cell: (l) => `${l.periodStart} → ${l.periodEnd}` },
+                { key: 'state', header: 'State', badge: true, cell: (l) => (l.unlockedAt ? <Badge>unlocked</Badge> : <Badge tone="danger">locked</Badge>) },
+                { key: 'locked', header: 'Locked', cellClassName: 'text-muted', cell: (l) => `${clock.date(l.lockedAt)} · ${l.lockedByName ?? '—'}` },
+                { key: 'note', header: 'Note', desktopOnly: true, cellClassName: 'text-muted', cell: (l) => l.note ?? '—' },
+                {
+                  key: 'unlocked',
+                  header: 'Unlocked',
+                  desktopOnly: true,
+                  cellClassName: 'text-muted',
+                  cell: (l) => (l.unlockedAt ? `${clock.date(l.unlockedAt)} · ${l.unlockedByName ?? '—'}: ${l.unlockReason ?? ''}` : '—'),
+                },
+              ]}
+              getKey={(l) => l.id}
+            />
+          </div>
+        ) : null}
+      </Card>
 
       {unconfirmedCount > 0 ? (
         <Callout tone="warning">

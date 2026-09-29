@@ -50,6 +50,10 @@ export function EditExpenseForm({ expense, projects }: { expense: ExpenseRow; pr
           <span className={labelClass}>Incurred on</span>
           <input type="date" name="incurredOn" required defaultValue={expense.incurredOn} className={inputClass} />
         </label>
+        <label className="col-span-2 flex flex-col gap-1">
+          <span className={labelClass}>Receipt link</span>
+          <input type="url" name="receiptUrl" maxLength={2000} defaultValue={expense.receiptUrl ?? ''} className={inputClass} placeholder="https://…" />
+        </label>
         <div className="col-span-2 flex flex-wrap items-center gap-3">
           <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
             {pending ? 'Saving…' : 'Save'}

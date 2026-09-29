@@ -27,8 +27,12 @@ import {
   type InvoiceStatus,
 } from '@/modules/finance/schema';
 import { getProject, listPaymentPlan } from '@/modules/projects/queries';
+import { listInvoiceSends } from '@/modules/finance/sends-queries';
+import { INVOICE_SEND_CHANNEL_LABEL, needsReminder, type InvoiceSendChannel } from '@/modules/finance/sends-schema';
+import { buttonClass } from '@/ui';
 
 import { RecordRefundForm, RequestRefundForm } from './refund-panel';
+import { RecordInvoiceSendForm } from './send-panel';
 
 import { IssueInvoiceForm, RecordPaymentForm, VoidInvoiceForm,
   VerifyPaymentButton,
@@ -73,7 +77,7 @@ export default async function InvoicePage({
   const invoice = await getInvoice(invoiceId);
   if (!invoice) notFound();
 
-  const [items, payments, receipts, clientName, project, billing, claims, accounts] = await Promise.all([
+  const [items, payments, receipts, clientName, project, billing, claims, accounts, sends] = await Promise.all([
     listInvoiceItems(invoiceId),
     listInvoicePayments(invoiceId),
     listInvoiceReceipts(invoiceId),
@@ -82,7 +86,10 @@ export default async function InvoicePage({
     readInvoiceBillingProfile(invoice.project_id),
     listInvoicePaymentClaims(invoiceId),
     listPaymentAccounts(),
+    listInvoiceSends(invoiceId),
   ]);
+  const lastReminderAt = sends.find((s) => s.kind === 'reminder')?.sentAt ?? null;
+  const reminderDue = needsReminder(invoice, lastReminderAt, new Date());
   const receivingAccounts = accounts.filter((a) => a.status === 'active');
   const taxRatePct = invoice.subtotal_minor > 0 ? Math.round((invoice.tax_minor / invoice.subtotal_minor) * 1000) / 10 : 0;
 
@@ -116,6 +123,15 @@ export default async function InvoicePage({
             {invoice.number}
           </h1>
           <StatusBadge status={status} />
+          {reminderDue ? <Badge tone="warning">needs a reminder</Badge> : null}
+          <a
+            href={`/api/invoices/${invoice.id}/pdf`}
+            target="_blank"
+            rel="noreferrer"
+            className={buttonClass('secondary', 'sm')}
+          >
+            Open PDF{isDraft ? ' (draft)' : ''}
+          </a>
         </div>
         <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
           {clientName ?? 'Client account'}
@@ -399,6 +415,40 @@ export default async function InvoicePage({
             No claims submitted. A claim is what a client (or an admin on their behalf) says was paid; it becomes a payment above only once somebody verifies it under <Link href="/invoices/verify" className="text-brand hover:underline">Verify payments</Link>.
           </p>
         )}
+      </section>
+
+      {/*
+        Sent / reminders — SCR-051. The record of somebody sending this bill
+        and chasing it. Records only: the PDF above is what they send.
+      */}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-[13px] font-semibold tracking-tight">
+          Sent / reminders <span className="text-muted">({sends.length})</span>
+        </h2>
+        {sends.length > 0 ? (
+          <DataTable
+            rows={sends}
+            dense
+            columns={[
+              { key: 'when', header: 'When', primary: true, cell: (s) => clock.dateTime(s.sentAt) },
+              { key: 'kind', header: 'What', badge: true, cell: (s) => <Badge tone={s.kind === 'reminder' ? 'warning' : 'brand'}>{s.kind === 'reminder' ? 'reminder' : 'sent'}</Badge> },
+              { key: 'channel', header: 'On', cellClassName: 'text-muted', cell: (s) => INVOICE_SEND_CHANNEL_LABEL[s.channel as InvoiceSendChannel] ?? s.channel },
+              { key: 'by', header: 'By', cellClassName: 'text-muted', cell: (s) => s.sentByName ?? '—' },
+              { key: 'ref', header: 'Reference', cellClassName: 'font-mono text-xs text-muted', cell: (s) => s.messageRef ?? '—' },
+              { key: 'note', header: 'Note', cellClassName: 'text-muted', cell: (s) => s.note ?? '—' },
+            ]}
+            getKey={(s) => s.id}
+          />
+        ) : (
+          <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
+            {isDraft
+              ? 'A draft has not been sent. Issue it, open the PDF, send it yourself, then record that here.'
+              : 'Nobody has recorded sending this invoice. Open the PDF, send it, then record that here so the list can say when it was last chased.'}
+          </p>
+        )}
+        {mayIssue && !isDraft && status !== 'void' ? (
+          <RecordInvoiceSendForm invoiceId={invoice.id} defaultKind={sends.some((s) => s.kind === 'sent') ? 'reminder' : 'sent'} />
+        ) : null}
       </section>
 
       {/*

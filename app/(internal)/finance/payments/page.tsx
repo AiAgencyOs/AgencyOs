@@ -6,10 +6,17 @@ import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { listPayments, listPendingPaymentClaims } from '@/modules/finance/queries';
+import { listPaymentAccounts, listPayments, listPendingPaymentClaims } from '@/modules/finance/queries';
 import { listPaymentSubmissions } from '@/modules/finance/overview-queries';
+import { listReconciliationItems, listReconciliations, readMatchProposal } from '@/modules/finance/reconciliation-queries';
 
 import { ClaimsDrawerList } from './claims-drawer';
+import {
+  AddReconciliationItemForm,
+  CloseReconciliationForm,
+  OpenReconciliationForm,
+  ResolveReconciliationItemForm,
+} from './reconciliation-panel';
 import { SavedViewsBar } from '../../saved-views-bar';
 import {
   Badge,
@@ -116,28 +123,49 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
 export default async function PaymentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; page?: string; sort?: string; dir?: string }>;
+  searchParams: Promise<{ status?: string; page?: string; sort?: string; dir?: string; recon?: string }>;
 }) {
   const context = await requireInternal('/finance/payments');
   const clock = await agencyClock();
   if (!can(context.role, 'invoice.read')) return <PermissionDenied />;
 
-  const { status, page: pageParam, sort: sortKey, dir } = await searchParams;
+  const { status, page: pageParam, sort: sortKey, dir, recon: reconParam } = await searchParams;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
   const currentQuery = [status ? `status=${status}` : '', sortKey ? `sort=${sortKey}&dir=${direction}` : '']
     .filter(Boolean)
     .join('&');
-  const [allPayments, savedViews, pendingClaims, claims] = await Promise.all([
+  const mayReconcile = can(context.role, 'invoice.issue');
+  const [allPayments, savedViews, pendingClaims, claims, reconciliations, accounts] = await Promise.all([
     listPayments(),
     listSavedViews('/finance/payments'),
-    can(context.role, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
+    mayReconcile ? listPendingPaymentClaims() : Promise.resolve([]),
     listPaymentSubmissions('all', 300),
+    listReconciliations(),
+    listPaymentAccounts(),
   ]);
+  // Reconciliation — Doc 15 §15/§29, gap row 053. The tables existed with no
+  // door; reconciliation-service.ts is the door now. The selected period is
+  // `?recon=`, else the first open one.
+  const selectedRecon = reconciliations.find((r) => r.id === reconParam) ?? reconciliations.find((r) => r.status === 'open') ?? null;
+  const reconItems = selectedRecon ? await listReconciliationItems(selectedRecon.id) : [];
+  // §29's auto-match: proposed for each unmatched line, never applied.
+  const proposals = new Map<string, string | null>();
+  if (selectedRecon?.status === 'open') {
+    await Promise.all(
+      reconItems
+        .filter((i) => i.finding !== 'matched' && !i.paymentId)
+        .map(async (i) => {
+          const p = await readMatchProposal(i.id);
+          proposals.set(i.id, p.outcome === 'matched' ? p.paymentId : null);
+        }),
+    );
+  }
+  const paymentOptions = allPayments
+    .filter((p) => p.status === 'captured')
+    .map((p) => ({ id: p.id, label: `${money(p.amount_minor, p.currency)} · ${p.invoiceNumber} · ${p.provider_payment_id}` }));
   // SCR-053's four KPIs count the claims table and say so: "submitted" is
   // what clients said, "verified" / "rejected" the answers, "pending" what
-  // has none yet. The ledger rows below are money that moved. No
-  // reconciliation control: `finance.reconciliations` exists with no
-  // service over it, and a button onto a table with no door would be a fake.
+  // has none yet. The ledger rows below are money that moved.
   const pendingCount = claims.filter((c) => c.status === 'pending_verification' || c.status === 'mismatch').length;
   const verifiedCount = claims.filter((c) => c.status === 'verified').length;
   const rejectedCount = claims.filter((c) => c.status === 'rejected').length;
@@ -263,6 +291,89 @@ export default async function PaymentsPage({
           }
         />
       )}
+
+      <Card id="reconciliation">
+        <CardHeader
+          title="Reconciliation"
+          description="Recorded payments checked against the bank statement, period by period (Doc 15 §15). A reading, never a correction: nothing here alters a payment."
+          actions={
+            reconciliations.length > 0 ? (
+              <FilterChips
+                options={reconciliations.slice(0, 8).map((r) => ({
+                  key: r.id,
+                  label: `${r.periodStart} → ${r.periodEnd}${r.status === 'closed' ? ' (closed)' : ''}`,
+                  href: `/finance/payments?recon=${r.id}#reconciliation`,
+                  active: selectedRecon?.id === r.id,
+                }))}
+              />
+            ) : null
+          }
+        />
+        <div className="flex flex-col gap-4 px-4 py-4 sm:px-5">
+          {selectedRecon ? (
+            <>
+              <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                <Badge tone={selectedRecon.status === 'open' ? 'brand' : 'neutral'} dot>{selectedRecon.status}</Badge>
+                <span className="font-medium">{selectedRecon.source}</span>
+                <span className="text-muted">
+                  · {selectedRecon.itemCount} line{selectedRecon.itemCount === 1 ? '' : 's'}
+                  {selectedRecon.unresolvedCount > 0 ? `, ${selectedRecon.unresolvedCount} unexplained` : ''}
+                  · opened {clock.date(selectedRecon.openedAt)}
+                  {selectedRecon.closedAt ? ` · closed ${clock.date(selectedRecon.closedAt)}` : ''}
+                </span>
+              </div>
+
+              {reconItems.length > 0 ? (
+                <DataTable
+                  rows={reconItems}
+                  dense
+                  columns={[
+                    { key: 'date', header: 'Date', primary: true, cell: (i) => clock.date(i.statementDate) },
+                    { key: 'line', header: 'Statement line', cellClassName: 'font-mono text-xs', cell: (i) => i.statementLine },
+                    { key: 'amount', header: 'Amount', align: 'right', cellClassName: 'tabular font-medium', cell: (i) => money(i.amountMinor, 'INR') },
+                    { key: 'finding', header: 'Finding', badge: true, cell: (i) => <Badge tone={i.finding === 'matched' ? 'success' : i.reason ? 'neutral' : 'warning'}>{humanize(i.finding)}</Badge> },
+                    {
+                      key: 'work',
+                      header: selectedRecon.status === 'open' && mayReconcile ? 'Work it' : 'Reason',
+                      cell: (i) =>
+                        selectedRecon.status === 'open' && mayReconcile ? (
+                          <ResolveReconciliationItemForm
+                            itemId={i.id}
+                            finding={i.finding}
+                            paymentId={i.paymentId}
+                            reason={i.reason}
+                            proposedPaymentId={proposals.get(i.id) ?? null}
+                            payments={paymentOptions}
+                          />
+                        ) : (
+                          <span className="text-muted">{i.reason ?? '—'}</span>
+                        ),
+                    },
+                  ]}
+                  getKey={(i) => i.id}
+                />
+              ) : (
+                <p className="text-[13px] text-muted">No statement lines entered yet. There is no bank import — paste each line from the statement.</p>
+              )}
+
+              {selectedRecon.status === 'open' && mayReconcile ? (
+                <>
+                  <AddReconciliationItemForm reconciliationId={selectedRecon.id} payments={paymentOptions} />
+                  <CloseReconciliationForm reconciliationId={selectedRecon.id} unresolved={selectedRecon.unresolvedCount} />
+                </>
+              ) : null}
+            </>
+          ) : (
+            <p className="text-[13px] text-muted">No reconciliation has been opened yet.</p>
+          )}
+
+          {mayReconcile && !reconciliations.some((r) => r.status === 'open' && r.accountId === null) ? (
+            <OpenReconciliationForm accounts={accounts.filter((a) => a.status === 'active').map((a) => ({ id: a.id, label: a.label }))} />
+          ) : mayReconcile ? (
+            <p className="text-xs text-muted">Close the open period before opening another for the same account.</p>
+          ) : null}
+        </div>
+      </Card>
 
       <Card id="claims">
         <CardHeader
