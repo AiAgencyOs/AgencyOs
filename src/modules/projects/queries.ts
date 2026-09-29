@@ -119,6 +119,7 @@ export type DevelopmentTask = {
   assigneeId: string | null;
   dueOn: string | null;
   completedAt: string | null;
+  estimateHours: number | null;
 };
 
 /**
@@ -154,7 +155,7 @@ export async function listDevelopmentBreakdown(
       supabase
         .schema('projects')
         .from('tasks')
-        .select('id, module_id, feature_id, title, description, status, priority, assignee_id, due_on, completed_at')
+        .select('id, module_id, feature_id, title, description, status, priority, assignee_id, due_on, completed_at, estimate_hours')
         .eq('project_id', projectId)
         .order('created_at', { ascending: true }),
     ]);
@@ -192,6 +193,7 @@ export async function listDevelopmentBreakdown(
       assigneeId: t.assignee_id,
       dueOn: t.due_on,
       completedAt: t.completed_at,
+      estimateHours: t.estimate_hours === null ? null : Number(t.estimate_hours),
     })),
   };
 }

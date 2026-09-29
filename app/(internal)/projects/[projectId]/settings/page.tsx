@@ -6,7 +6,7 @@ import { can } from '@/lib/authz/permissions';
 import { getProject } from '@/modules/projects/queries';
 import { Callout, PageHeader, PermissionDenied } from '@/ui';
 
-import { ProjectVisibilityForm } from '../settings-panel';
+import { ProjectDetailsForm, ProjectVisibilityForm } from '../settings-panel';
 import { ProjectSubNav } from '../project-subnav';
 
 export const metadata: Metadata = { title: 'Settings' };
@@ -37,7 +37,26 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
       <ProjectSubNav projectId={projectId} />
 
       {canWrite ? (
-        <ProjectVisibilityForm projectId={projectId} current={project.visibility} />
+        <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 shadow-xs sm:p-5">
+          <h2 className="text-sm font-semibold tracking-tight">Project details</h2>
+          <p className="text-[13px] text-muted">The name, description, dates and budget the header and the projects list print. Status is changed on the Overview; billing on its own section.</p>
+          <ProjectDetailsForm
+            projectId={projectId}
+            name={project.name}
+            description={project.description}
+            startsOn={project.starts_on}
+            endsOn={project.ends_on}
+            budgetMinor={project.budget_minor}
+            currency={project.currency}
+          />
+        </section>
+      ) : null}
+
+      {canWrite ? (
+        <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 shadow-xs sm:p-5">
+          <h2 className="text-sm font-semibold tracking-tight">Client portal visibility</h2>
+          <ProjectVisibilityForm projectId={projectId} current={project.visibility} />
+        </section>
       ) : (
         <Callout tone="info">
           Client portal visibility is currently <strong>{project.visibility}</strong>. You do not have

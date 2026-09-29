@@ -70,7 +70,17 @@ export type ClientNote = {
   createdAt: string;
 };
 
+export type ClientQuotation = { id: string; title: string; version: number; status: string; totalMinor: number; currency: string; createdAt: string; validUntil: string | null; leadId: string | null; dealName: string };
+export type ClientMeeting = { id: string; status: string; mode: string | null; startAt: string | null; timezone: string | null; purpose: string | null; leadId: string | null };
+export type ClientContact = { id: string; fullName: string; email: string | null; phone: string | null; jobTitle: string | null };
+
 export type ClientDetail = ClientListItem & {
+  /** Every quotation raised on one of this client's deals, newest first. */
+  quotations: ClientQuotation[];
+  /** Meetings on those deals, soonest first. */
+  meetings: ClientMeeting[];
+  /** People at the client (`crm.contacts.client_account_id`). */
+  contacts: ClientContact[];
   projects: { id: string; name: string; status: string; budgetMinor: number | null; currency: string }[];
   invoices: { id: string; number: string; status: string; totalMinor: number; paidMinor: number; currency: string }[];
   files: ClientFile[];
@@ -173,6 +183,55 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
     .eq('client_account_id', clientAccountId)
     .order('created_at', { ascending: false });
   if (invoicesError) unreadable('getClient.invoices', invoicesError);
+
+  // The client's deals, then what hangs off them: quotations and meetings
+  // are keyed by opportunity, contacts by the account itself.
+  const { data: deals, error: dealsError } = await supabase
+    .schema('sales')
+    .from('opportunities')
+    .select('id, name, lead_id')
+    .eq('client_account_id', clientAccountId);
+  if (dealsError) unreadable('getClient.deals', dealsError);
+  const dealIds = (deals ?? []).map((d) => d.id);
+  const dealById = new Map((deals ?? []).map((d) => [d.id, d]));
+
+  const [{ data: proposals, error: proposalsError }, { data: meetings, error: meetingsError }, { data: contacts, error: contactsError }] = await Promise.all([
+    dealIds.length > 0
+      ? supabase.schema('sales').from('proposals').select('id, title, version, status, total_minor, currency, created_at, valid_until, opportunity_id').in('opportunity_id', dealIds).order('created_at', { ascending: false }).limit(50)
+      : Promise.resolve({ data: [], error: null }),
+    dealIds.length > 0
+      ? supabase.schema('crm').from('meetings').select('id, status, booked_mode, requested_mode, confirmed_start_at, requested_start_at, timezone, purpose, opportunity_id').in('opportunity_id', dealIds).order('created_at', { ascending: false }).limit(50)
+      : Promise.resolve({ data: [], error: null }),
+    supabase.schema('crm').from('contacts').select('id, full_name, email, phone, job_title').eq('client_account_id', clientAccountId).order('full_name'),
+  ]);
+  if (proposalsError) unreadable('getClient.quotations', proposalsError);
+  if (meetingsError) unreadable('getClient.meetings', meetingsError);
+  if (contactsError) unreadable('getClient.contacts', contactsError);
+
+  const quotations: ClientQuotation[] = (proposals ?? []).map((p) => ({
+    id: p.id,
+    title: p.title,
+    version: p.version,
+    status: p.status,
+    totalMinor: p.total_minor,
+    currency: p.currency,
+    createdAt: p.created_at,
+    validUntil: p.valid_until,
+    leadId: dealById.get(p.opportunity_id)?.lead_id ?? null,
+    dealName: dealById.get(p.opportunity_id)?.name ?? 'Deal',
+  }));
+  const clientMeetings: ClientMeeting[] = (meetings ?? [])
+    .map((m) => ({
+      id: m.id,
+      status: m.status,
+      mode: m.booked_mode ?? m.requested_mode,
+      startAt: m.confirmed_start_at ?? m.requested_start_at,
+      timezone: m.timezone,
+      purpose: m.purpose,
+      leadId: m.opportunity_id ? (dealById.get(m.opportunity_id)?.lead_id ?? null) : null,
+    }))
+    .sort((a, b) => (b.startAt ?? '').localeCompare(a.startAt ?? ''));
+  const clientContacts: ClientContact[] = (contacts ?? []).map((c) => ({ id: c.id, fullName: c.full_name, email: c.email, phone: c.phone, jobTitle: c.job_title }));
 
   const projectRows = projects ?? [];
   const invoiceRows = invoices ?? [];
@@ -300,6 +359,9 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
   }));
 
   return {
+    quotations,
+    meetings: clientMeetings,
+    contacts: clientContacts,
     id: account.id,
     name: account.name,
     billingEmail: account.billing_email,

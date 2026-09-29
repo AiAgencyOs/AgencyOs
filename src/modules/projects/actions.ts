@@ -77,6 +77,8 @@ import {
   shareUiVersionWithClient,
   recordUiVersionClientDecision,
   lockUiVersion,
+  updateTask,
+  updateProject,
 } from './service';
 
 /** Server Actions for delivery — thin wrappers over service.ts. */
@@ -1463,4 +1465,44 @@ export async function lockUiVersionAction(_prev: FormState, formData: FormData):
       ? 'Already locked — this did not change anything.'
       : 'Locked. This is now the exact prototype source.',
   };
+}
+
+export async function updateTaskAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const estimateRaw = String(formData.get('estimateHours') ?? '').trim();
+  const result = await updateTask({
+    taskId: String(formData.get('taskId') ?? ''),
+    projectId,
+    title: String(formData.get('title') ?? ''),
+    description: String(formData.get('description') ?? '').trim() || null,
+    priority: String(formData.get('priority') ?? 'p2') as 'p0' | 'p1' | 'p2' | 'p3',
+    assigneeId: String(formData.get('assigneeId') ?? '').trim() || null,
+    dueOn: String(formData.get('dueOn') ?? '').trim() || null,
+    estimateHours: estimateRaw ? Number(estimateRaw) : null,
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}/board`);
+  revalidatePath(`/projects/${projectId}/development`);
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath('/my-tasks');
+  return { status: 'success', message: 'Task saved.' };
+}
+
+export async function updateProjectAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const budgetRaw = String(formData.get('budget') ?? '').trim();
+  const budget = budgetRaw === '' ? null : Math.round(Number(budgetRaw) * 100);
+  const result = await updateProject({
+    projectId,
+    name: String(formData.get('name') ?? ''),
+    description: String(formData.get('description') ?? '').trim() || null,
+    startsOn: String(formData.get('startsOn') ?? '').trim() || null,
+    endsOn: String(formData.get('endsOn') ?? '').trim() || null,
+    budgetMinor: budget !== null && Number.isFinite(budget) ? budget : null,
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}/settings`);
+  revalidatePath('/projects');
+  return { status: 'success', message: 'Project saved.' };
 }

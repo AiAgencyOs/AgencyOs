@@ -1134,3 +1134,29 @@ export type OpenScopeVersionInput = z.infer<typeof openScopeVersionSchema>;
 export type AddScopeItemInput = z.infer<typeof addScopeItemSchema>;
 export type RemoveScopeItemInput = z.infer<typeof removeScopeItemSchema>;
 export type FreezeScopeVersionInput = z.infer<typeof freezeScopeVersionSchema>;
+
+/** Editing a task after it exists — the columns the Board's task drawer shows. */
+export const updateTaskSchema = z.object({
+  taskId: z.uuid(),
+  projectId: z.uuid(),
+  title: z.string().trim().min(1, 'A task needs a title').max(200),
+  description: z.string().trim().max(4000).nullable(),
+  priority: z.enum(['p0', 'p1', 'p2', 'p3']),
+  assigneeId: z.uuid().nullable(),
+  dueOn: z.iso.date().nullable(),
+  estimateHours: z.number().nonnegative().max(10_000).nullable(),
+});
+export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
+
+/** The project's own facts — name, description, dates and budget. Status is its own door. */
+export const updateProjectSchema = z
+  .object({
+    projectId: z.uuid(),
+    name: z.string().trim().min(1, 'A project needs a name').max(200),
+    description: z.string().trim().max(4000).nullable(),
+    startsOn: z.iso.date().nullable(),
+    endsOn: z.iso.date().nullable(),
+    budgetMinor: z.number().int().nonnegative().max(1_000_000_000_000).nullable(),
+  })
+  .refine((v) => !v.startsOn || !v.endsOn || v.startsOn <= v.endsOn, { message: 'The due date cannot be before the start date.', path: ['endsOn'] });
+export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;

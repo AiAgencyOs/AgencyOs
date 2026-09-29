@@ -67,6 +67,10 @@ import {
   removeDependencySchema,
   type AddDependencyInput,
   type RemoveDependencyInput,
+  updateTaskSchema,
+  updateProjectSchema,
+  type UpdateTaskInput,
+  type UpdateProjectInput,
 } from './schema';
 import type { BillableMilestone } from './types';
 import { LOCKED_PAYMENT_STRUCTURE, lockedAmountsFor } from './payment-structure';
@@ -2042,4 +2046,99 @@ export async function freezeScopeVersion(input: FreezeScopeVersionInput): Promis
     default:
       return err('INTERNAL', 'Could not freeze the scope baseline.');
   }
+}
+
+/**
+ * Edits a task's own facts — title, description, priority, assignee, due
+ * date, estimate. Status is NOT here: `setTaskStatus` owns that transition
+ * and its audit vocabulary, and a second writer for it is the mistake the
+ * Board was built to avoid. The assignee must be a member of this
+ * organisation; RLS (`tasks_write`, `core.can_write`) scopes the row.
+ */
+export async function updateTask(input: UpdateTaskInput): Promise<Result<{ taskId: string }>> {
+  const parsed = updateTaskSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Invalid task.', { details: parsed.error.flatten().fieldErrors as Record<string, string[]> });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'task.write')) {
+    return err('FORBIDDEN', 'You do not have permission to edit tasks.');
+  }
+
+  const supabase = await createClient();
+  const { data: task } = await supabase
+    .schema('projects')
+    .from('tasks')
+    .select('id, organization_id, project_id')
+    .eq('id', parsed.data.taskId)
+    .eq('project_id', parsed.data.projectId)
+    .maybeSingle();
+  if (!task) return err('NOT_FOUND', 'Task not found.');
+
+  if (parsed.data.assigneeId) {
+    const { data: member } = await supabase
+      .schema('core')
+      .from('memberships')
+      .select('user_id')
+      .eq('organization_id', task.organization_id)
+      .eq('user_id', parsed.data.assigneeId)
+      .maybeSingle();
+    if (!member) return err('VALIDATION', 'That person is not a member of this organisation.');
+  }
+
+  const { error } = await supabase
+    .schema('projects')
+    .from('tasks')
+    .update({
+      title: parsed.data.title,
+      description: parsed.data.description,
+      priority: parsed.data.priority,
+      assignee_id: parsed.data.assigneeId,
+      due_on: parsed.data.dueOn,
+      estimate_hours: parsed.data.estimateHours,
+    })
+    .eq('id', task.id);
+  if (error) return err('INTERNAL', 'Could not save the task.');
+
+  return ok({ taskId: task.id });
+}
+
+/**
+ * Edits the project's own facts. Status, visibility and billing each keep
+ * their own doors; this touches only what the header prints — name,
+ * description, the two dates and the budget — under `project.write` and
+ * the `projects_write` policy.
+ */
+export async function updateProject(input: UpdateProjectInput): Promise<Result<{ projectId: string }>> {
+  const parsed = updateProjectSchema.safeParse(input);
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    return err('VALIDATION', first?.message ?? 'Invalid project.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to edit this project.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('projects')
+    .update({
+      name: parsed.data.name,
+      description: parsed.data.description,
+      starts_on: parsed.data.startsOn,
+      ends_on: parsed.data.endsOn,
+      budget_minor: parsed.data.budgetMinor,
+    })
+    .eq('id', parsed.data.projectId)
+    .is('deleted_at', null)
+    .select('id')
+    .maybeSingle();
+  if (error) return err('INTERNAL', 'Could not save the project.');
+  if (!data) return err('NOT_FOUND', 'Project not found.');
+
+  return ok({ projectId: data.id });
 }

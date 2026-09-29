@@ -57,6 +57,7 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
     columnId: t.status,
     title: t.title,
     description: t.description,
+    estimateHours: t.estimateHours ?? null,
     priority: t.priority,
     assigneeId: t.assigneeId,
     assigneeName: t.assigneeId ? (nameByUser.get(t.assigneeId) ?? null) : null,
@@ -84,6 +85,7 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
         tasks={boardTasks}
         modules={modules.map((m) => ({ id: m.id, name: m.name }))}
         people={assignees}
+        roster={roster.map((r) => ({ userId: r.userId, fullName: r.fullName })).sort((a, b) => a.fullName.localeCompare(b.fullName))}
         canWrite={canWrite}
       />
     </div>

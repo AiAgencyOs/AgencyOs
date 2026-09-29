@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useActionState, useEffect, useMemo, useRef, useState } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
-import { createTaskAction, setTaskStatusAction } from '@/modules/projects/actions';
+import { createTaskAction, setTaskStatusAction, updateTaskAction } from '@/modules/projects/actions';
 import {
   Avatar,
   Badge,
@@ -34,6 +34,7 @@ import {
 export type BoardTask = KanbanItem & {
   title: string;
   description: string | null;
+  estimateHours: number | null;
   priority: string;
   assigneeId: string | null;
   assigneeName: string | null;
@@ -76,13 +77,17 @@ export function ProjectBoard({
   tasks,
   modules,
   people,
+  roster,
   canWrite,
 }: {
   projectId: string;
   columns: KanbanColumn[];
   tasks: BoardTask[];
   modules: BoardModule[];
+  /** People with a task on this board — the assignee filter. */
   people: BoardPerson[];
+  /** Everyone in the organisation — who a task may be assigned to. */
+  roster: BoardPerson[];
   canWrite: boolean;
 }) {
   const router = useRouter();
@@ -221,6 +226,7 @@ export function ProjectBoard({
         task={openTask}
         projectId={projectId}
         columns={columns}
+        roster={roster}
         canWrite={canWrite}
         onClose={() => setOpenTask(null)}
         onMoved={(taskId, toStatus) => {
@@ -298,6 +304,7 @@ function TaskDrawer({
   task,
   projectId,
   columns,
+  roster,
   canWrite,
   onClose,
   onMoved,
@@ -305,6 +312,7 @@ function TaskDrawer({
   task: BoardTask | null;
   projectId: string;
   columns: KanbanColumn[];
+  roster: BoardPerson[];
   canWrite: boolean;
   onClose: () => void;
   onMoved: (taskId: string, toStatus: string) => void;
@@ -352,10 +360,14 @@ function TaskDrawer({
               </p>
             </div>
           </div>
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Description</p>
-            {task.description ? <p className="mt-1 whitespace-pre-wrap leading-relaxed">{task.description}</p> : <p className="mt-1 text-muted">No description recorded.</p>}
-          </div>
+          {canWrite ? (
+            <TaskEditForm key={task.id} task={task} projectId={projectId} roster={roster} onSaved={onClose} />
+          ) : (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Description</p>
+              {task.description ? <p className="mt-1 whitespace-pre-wrap leading-relaxed">{task.description}</p> : <p className="mt-1 text-muted">No description recorded.</p>}
+            </div>
+          )}
           {task.completedLabel ? (
             <p className="flex items-center gap-1.5 text-success">
               <IconCheck size={13} />
@@ -363,7 +375,7 @@ function TaskDrawer({
             </p>
           ) : null}
           <p className="text-xs text-muted">
-            Comments, subtasks, time logs and attachments are not part of a task in this data model. Edit the title, module or assignee on the{' '}
+            Comments, subtasks, time logs and attachments are not part of a task in this data model. Modules and features are arranged on the{' '}
             <Link href={`/projects/${projectId}/development`} className="font-medium text-brand hover:underline">
               Development page
             </Link>
@@ -372,6 +384,68 @@ function TaskDrawer({
         </div>
       ) : null}
     </Drawer>
+  );
+}
+
+/** The task's own facts, edited in place — `updateTaskAction`; status stays on its own control above. */
+function TaskEditForm({ task, projectId, roster, onSaved }: { task: BoardTask; projectId: string; roster: BoardPerson[]; onSaved: () => void }) {
+  const [state, action, pending] = useActionState(updateTaskAction, IDLE_STATE);
+  const router = useRouter();
+  const handled = useRef<typeof state | null>(null);
+  useEffect(() => {
+    if (state.status === 'success' && handled.current !== state) {
+      handled.current = state;
+      router.refresh();
+      onSaved();
+    }
+  }, [state, router, onSaved]);
+
+  return (
+    <form action={action} className="flex flex-col gap-3 rounded-lg border border-line p-3">
+      <input type="hidden" name="taskId" value={task.id} />
+      <input type="hidden" name="projectId" value={projectId} />
+      <div className="flex flex-col gap-1">
+        <label htmlFor="edit-task-title" className={labelClass}>Title</label>
+        <input id="edit-task-title" name="title" required maxLength={200} defaultValue={task.title} className={inputClass} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-1">
+          <label htmlFor="edit-task-priority" className={labelClass}>Priority</label>
+          <select id="edit-task-priority" name="priority" defaultValue={task.priority} className={selectClass}>
+            {Object.entries(PRIORITY).map(([k, v]) => (
+              <option key={k} value={k}>{v.label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="edit-task-assignee" className={labelClass}>Assignee</label>
+          <select id="edit-task-assignee" name="assigneeId" defaultValue={task.assigneeId ?? ''} className={selectClass}>
+            <option value="">Unassigned</option>
+            {roster.map((p) => (
+              <option key={p.userId} value={p.userId}>{p.fullName}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="edit-task-due" className={labelClass}>Due date</label>
+          <input id="edit-task-due" name="dueOn" type="date" defaultValue={task.dueOn ?? ''} className={inputClass} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="edit-task-estimate" className={labelClass}>Estimate (hours)</label>
+          <input id="edit-task-estimate" name="estimateHours" type="number" min="0" step="0.5" defaultValue={task.estimateHours ?? ''} className={inputClass} />
+        </div>
+      </div>
+      <div className="flex flex-col gap-1">
+        <label htmlFor="edit-task-description" className={labelClass}>Description</label>
+        <textarea id="edit-task-description" name="description" rows={4} maxLength={4000} defaultValue={task.description ?? ''} className={textareaClass} placeholder="What done looks like" />
+      </div>
+      <div className="flex items-center gap-2">
+        <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
+          {pending ? 'Saving…' : 'Save task'}
+        </button>
+        <FormMessage status={state.status} message={state.message} />
+      </div>
+    </form>
   );
 }
 

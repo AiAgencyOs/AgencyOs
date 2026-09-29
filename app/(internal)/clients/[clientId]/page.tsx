@@ -117,6 +117,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
   const timeline: ActivityItem[] = [
     { id: 'created', at: client.createdAt, title: 'Client account created', tone: 'success' as const, icon: <IconCheck size={13} /> },
     ...client.notes.map((n) => ({ id: `note-${n.id}`, at: n.createdAt, title: 'Note added', detail: n.body, tone: 'info' as const, icon: <IconMessage size={13} /> })),
+    ...client.quotations.map((qn) => ({ id: `q-${qn.id}`, at: qn.createdAt, title: `Quotation v${qn.version} ${humanize(qn.status)}`, detail: `${qn.title} · ${money(qn.totalMinor, qn.currency)}`, tone: 'brand' as const, icon: <IconInvoices size={13} /> })),
   ]
     .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, 6)
@@ -188,6 +189,53 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
               )}
             </Card>
           ) : null}
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader title="Recent quotations" actions={<ViewAll href="/quotations" />} />
+              {client.quotations.length === 0 ? (
+                <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No quotation has been raised on this client's deals.</p>
+              ) : (
+                <ul className="divide-y divide-line">
+                  {client.quotations.slice(0, 6).map((qn) => (
+                    <li key={qn.id}>
+                      <Link href={qn.leadId ? `/leads/${qn.leadId}#quotations` : '/quotations'} className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium text-foreground">
+                            {qn.title} <span className="font-mono text-[11px] text-muted">v{qn.version}</span>
+                          </span>
+                          <span className="block truncate text-xs text-muted">{qn.dealName} · {clock.date(qn.createdAt)}</span>
+                        </span>
+                        <span className="tabular shrink-0 font-medium">{money(qn.totalMinor, qn.currency)}</span>
+                        <StatusBadge status={qn.status} dot={false} />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+            <Card>
+              <CardHeader title="Meetings" actions={<ViewAll href="/meetings" />} />
+              {client.meetings.length === 0 ? (
+                <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No meeting has been requested or booked on this client's deals.</p>
+              ) : (
+                <ul className="divide-y divide-line">
+                  {client.meetings.slice(0, 6).map((m) => (
+                    <li key={m.id}>
+                      <Link href={`/meetings/${m.id}`} className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-info-soft text-info"><IconCalendar size={14} /></span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium text-foreground">{m.purpose ?? humanize(m.mode ?? 'meeting')}</span>
+                          <span className="block truncate text-xs text-muted">{m.startAt ? `${clock.dateTime(m.startAt)}${m.timezone ? ` · ${m.timezone}` : ''}` : 'No time agreed'}</span>
+                        </span>
+                        <StatusBadge status={m.status} dot={false} />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
             <Card id="notes">
@@ -290,11 +338,25 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
           />
 
           <Card>
-            <CardHeader title="Contacts" />
-            <p className="px-4 py-3 text-[13px] text-muted sm:px-5">
-              <IconUser size={14} className="mr-1 inline align-[-2px]" />
-              {client.billingEmail ? `Billing: ${client.billingEmail}` : 'No billing contact on file.'}
-            </p>
+            <CardHeader title={`Contacts (${client.contacts.length})`} />
+            {client.contacts.length === 0 ? (
+              <p className="px-4 py-3 text-[13px] text-muted sm:px-5">
+                <IconUser size={14} className="mr-1 inline align-[-2px]" />
+                {client.billingEmail ? `Billing: ${client.billingEmail}` : 'No contact on file.'}
+              </p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {client.contacts.map((c) => (
+                  <li key={c.id} className="flex items-center gap-3 px-4 py-2.5 sm:px-5">
+                    <Avatar name={c.fullName} size="md" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium text-foreground">{c.fullName}</span>
+                      <span className="block truncate text-xs text-muted">{[c.jobTitle, c.email, c.phone].filter(Boolean).join(' · ') || 'No details'}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
 
           <ActivityFeed title="Client timeline" items={timeline} emptyTitle="Nothing recorded yet" compact />
