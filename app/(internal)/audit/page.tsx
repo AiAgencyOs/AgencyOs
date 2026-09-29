@@ -46,7 +46,7 @@ export default async function AuditPage({
       subjectType: subject,
       actorType: actor,
       // SCR-066: the audit half of an event chain, linked from /operations.
-      correlationId: correlation && correlation.trim() ? correlation.trim() : undefined,
+      correlationId: correlation && /^[0-9a-f-]{36}$/i.test(correlation.trim()) ? correlation.trim() : undefined,
       from: fromDay ? `${fromDay}T00:00:00Z` : undefined,
       to: toDay ? `${toDay}T23:59:59.999Z` : undefined,
       limit: 100,

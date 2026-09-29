@@ -319,7 +319,7 @@ export default async function LeadsPage({
             })),
           ]}
         />
-        <form method="get" action="/leads" className="flex flex-wrap items-center gap-2">
+        <form method="get" action="/leads" className="flex flex-wrap items-center gap-2 [&_input]:w-auto [&_select]:w-auto">
           {status ? <input type="hidden" name="status" value={status} /> : null}
           <label className="relative">
             <span className="sr-only">Search leads</span>
