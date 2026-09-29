@@ -6,6 +6,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
 import { listPerformanceNotes, readCompatibilityMatrix } from '@/modules/qa/compatibility-queries';
+import { listReleaseHolds } from '@/modules/projects/release-hold-queries';
 import { listRetestQueue, readCoverageMatrix } from '@/modules/qa/dashboard-queries';
 import { listOpenDefects, readOrgTestCoverage, readSuiteCoverage, type OpenDefect } from '@/modules/qa/queries';
 import {
@@ -63,7 +64,7 @@ export default async function QaDashboardPage() {
   const clock = await agencyClock();
   if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
-  const [defects, coverage, suiteCoverage, matrix, retest, compat, perfNotes] = await Promise.all([
+  const [defects, coverage, suiteCoverage, matrix, retest, compat, perfNotes, holds] = await Promise.all([
     listOpenDefects(),
     readOrgTestCoverage(),
     readSuiteCoverage(),
@@ -71,6 +72,8 @@ export default async function QaDashboardPage() {
     listRetestQueue(),
     readCompatibilityMatrix(),
     listPerformanceNotes(),
+    // SCR-044 — a standing release hold shows as "held" in the readiness column.
+    listReleaseHolds(),
   ]);
   const blockers = countBy(defects, 'blocker');
   const majors = countBy(defects, 'major');
@@ -195,7 +198,15 @@ export default async function QaDashboardPage() {
                         <td className="py-2 pr-3 text-right tabular font-medium">{r.total}</td>
                         <td className={`py-2 pr-3 text-right tabular ${r.awaitingRetest > 0 ? 'text-warning' : 'text-muted'}`}>{r.awaitingRetest}</td>
                         <td className={`py-2 pr-3 text-right tabular ${r.openBlocking > 0 ? 'text-danger' : 'text-muted'}`}>{r.openBlocking}</td>
-                        <td className="py-2 text-right">{r.productionReadyAt ? <Badge tone="success">ready</Badge> : <Badge tone="neutral">not yet</Badge>}</td>
+                        <td className="py-2 text-right">
+                          {r.productionReadyAt ? (
+                            <Badge tone="success">ready</Badge>
+                          ) : holds.has(r.projectId) ? (
+                            <span title={holds.get(r.projectId)}><Badge tone="danger">held</Badge></span>
+                          ) : (
+                            <Badge tone="neutral">not yet</Badge>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

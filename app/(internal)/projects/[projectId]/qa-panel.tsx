@@ -197,7 +197,18 @@ export function ProductionReadyForm({ projectId }: { projectId: string }) {
 }
 
 /** Who takes the defect and how bad it is — `triageDefectAction`. Status stays with `SettleDefectForm`. */
-export function DefectTriageForm({ projectId, defect, roster }: { projectId: string; defect: Defect & { assignee_id?: string | null }; roster: { userId: string; fullName: string }[] }) {
+export function DefectTriageForm({
+  projectId,
+  defect,
+  roster,
+  tasks,
+}: {
+  projectId: string;
+  defect: Defect & { assignee_id?: string | null; task_id?: string | null };
+  roster: { userId: string; fullName: string }[];
+  /** SCR-047: the project's tasks, for the linked-task select. Omitted by callers that have not read them. */
+  tasks?: { id: string; title: string; status: string }[];
+}) {
   const [state, action, pending] = useActionState(triageDefectAction, IDLE_STATE);
   if (defect.status === 'verified' || defect.status === 'wontfix') return null;
 
@@ -205,6 +216,17 @@ export function DefectTriageForm({ projectId, defect, roster }: { projectId: str
     <form action={action} className="mt-2 flex flex-wrap items-end gap-2">
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="defectId" value={defect.id} />
+      {tasks ? (
+        <div className="flex min-w-48 flex-col gap-1">
+          <label className={label} htmlFor={`defect-task-${defect.id}`}>Linked task</label>
+          <select id={`defect-task-${defect.id}`} name="taskId" defaultValue={defect.task_id ?? ''} className={selectClass}>
+            <option value="">No task</option>
+            {tasks.map((t) => (
+              <option key={t.id} value={t.id}>{t.title}{t.status === 'done' ? ' (done)' : ''}</option>
+            ))}
+          </select>
+        </div>
+      ) : null}
       <div className="flex flex-col gap-1">
         <label className={label} htmlFor={`defect-assignee-${defect.id}`}>Assigned to</label>
         <select id={`defect-assignee-${defect.id}`} name="assigneeId" defaultValue={defect.assignee_id ?? ''} className={selectClass}>

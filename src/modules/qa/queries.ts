@@ -17,7 +17,7 @@ import type { Defect, ProjectQuality } from './types';
  */
 
 const SELECT =
-  'id, severity, status, title, reproduction, expected, actual, environment, evidence_url, resolution, deliverable_id, verified_at, created_at, assignee_id';
+  'id, severity, status, title, reproduction, expected, actual, environment, evidence_url, resolution, deliverable_id, verified_at, created_at, assignee_id, task_id';
 
 export async function listDefects(projectId: string): Promise<Defect[]> {
   const supabase = await createClient();

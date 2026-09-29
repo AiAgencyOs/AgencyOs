@@ -220,5 +220,7 @@ export const triageDefectSchema = z.object({
   severity: z.enum(DEFECT_SEVERITIES),
   /** Required when the severity changes — a downgrade with no reason is a bug hidden by silence. */
   reason: z.string().trim().max(500).optional(),
+  /** SCR-047: the task the defect is about (`qa.defects.task_id`). Null unlinks; omitted leaves it alone. */
+  taskId: z.uuid().nullable().optional(),
 });
 export type TriageDefectInput = z.infer<typeof triageDefectSchema>;

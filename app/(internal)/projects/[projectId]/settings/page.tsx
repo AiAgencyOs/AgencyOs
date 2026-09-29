@@ -6,10 +6,12 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { readAuditLog } from '@/lib/audit/queries';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { getProject, listDevelopmentBreakdown, listPaymentPlan, readChangeRequests } from '@/modules/projects/queries';
+import { getProject, listDevelopmentBreakdown, listInternalRoster, listPaymentPlan, readChangeRequests } from '@/modules/projects/queries';
+import { readProjectDefaults } from '@/modules/projects/project-defaults-queries';
 import { Badge, Callout, Card, CardHeader, EmptyState, IconAudit, PageHeader, PermissionDenied, Stat, StatGrid, StatusBadge } from '@/ui';
 
 import { ProjectDetailsForm, ProjectVisibilityForm } from '../settings-panel';
+import { DefaultAssigneeForm, WatchersPanel } from './project-defaults-panel';
 import { ProjectSubNav } from '../project-subnav';
 
 export const metadata: Metadata = { title: 'Settings' };
@@ -38,13 +40,19 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
   // Activity tab lists) and the audit rows whose subject IS this project.
   // `audit.audit_log` is gated to `audit.read`, so the card says so for
   // anyone who cannot see it rather than showing them an empty list.
-  const [clock, { tasks }, milestones, changeRequests, audit] = await Promise.all([
+  const [clock, { tasks }, milestones, changeRequests, audit, defaults, roster] = await Promise.all([
     agencyClock(),
     listDevelopmentBreakdown(projectId),
     listPaymentPlan(projectId),
     readChangeRequests(projectId),
     canAudit ? readAuditLog({ subjectId: projectId, limit: 50 }) : Promise.resolve([]),
+    readProjectDefaults(projectId),
+    listInternalRoster(),
   ]);
+  const members = roster.map((m) => ({ userId: m.userId, fullName: m.fullName }));
+  // SCR-027: adding or removing another person's watch is owner / ops_admin
+  // (project.sign_off's two roles), which `project_watchers_write` mirrors.
+  const mayManageWatchers = can(context.role, 'project.sign_off');
   const tasksCompleted = tasks.filter((t) => t.completedAt !== null).length;
   const milestonesMet = milestones.filter((m) => m.met_at !== null).length;
   const changeRequestEvents = changeRequests.reduce((sum, cr) => sum + 1 + (cr.decidedAt ? 1 : 0), 0);
@@ -138,11 +146,29 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
         )}
       </Card>
 
-      <Callout tone="info">
-        Default assignees and phase notifications are not built: <code>projects.projects</code> has no
-        default-assignee column and there is no notification-preference table, so there is nothing
-        honest for a setting here to write to.
-      </Callout>
+      {/* SCR-027: the default assignee a new task goes to, and who hears
+          about phase changes (projects.default_assignee_id, project_watchers). */}
+      <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 shadow-xs sm:p-5">
+        <h2 className="text-sm font-semibold tracking-tight">Default assignee</h2>
+        {canWrite ? (
+          <DefaultAssigneeForm projectId={projectId} current={defaults.defaultAssigneeId} roster={members} />
+        ) : (
+          <p className="text-[13px] text-muted">
+            {defaults.defaultAssigneeId
+              ? `New tasks go to ${members.find((m) => m.userId === defaults.defaultAssigneeId)?.fullName ?? 'a member'}.`
+              : 'New tasks start unassigned.'}{' '}
+            You do not have permission to change it.
+          </p>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 shadow-xs sm:p-5">
+        <h2 className="text-sm font-semibold tracking-tight">Phase notifications</h2>
+        <p className="text-[13px] text-muted">
+          Who hears, in their Action Center, when this project&apos;s status or a Phase 2, 3 or 4 workspace changes state.
+        </p>
+        <WatchersPanel projectId={projectId} watchers={defaults.watchers} roster={members} mayManageOthers={mayManageWatchers} selfId={context.userId} />
+      </section>
 
       <Callout tone="info">
         Project templates are not built — nothing in this product defines what a template copies

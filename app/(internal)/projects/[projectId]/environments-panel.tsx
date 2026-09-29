@@ -11,7 +11,9 @@ import {
 import { ENVIRONMENT_KINDS } from '@/modules/projects/schema';
 import type { ProjectDependency, ProjectEnvironment } from '@/modules/projects/queries';
 import { IDLE_STATE } from '@/modules/identity/types';
-import { buttonClass, Card, FormMessage, humanize, inputClass, labelClass, selectClass, textareaClass } from '@/ui';
+import { Badge, buttonClass, Card, FormMessage, humanize, inputClass, labelClass, selectClass, textareaClass } from '@/ui';
+
+import { DependencyStatusForm } from './builds/dependency-status-form';
 
 /** SCR-043's environment/dependency forms and rows — thin client wrappers over the server actions. */
 
@@ -158,7 +160,8 @@ export function DependencyCard({
   projectId,
   editable,
 }: {
-  dependency: ProjectDependency;
+  /** `suppliedAtLabel` is the page's clock-formatted `suppliedAt`, since a client component has no clock. */
+  dependency: ProjectDependency & { suppliedAtLabel?: string };
   projectId: string;
   editable: boolean;
 }) {
@@ -180,9 +183,19 @@ export function DependencyCard({
           )}
           {dependency.version ? <span className="block text-xs text-muted">{dependency.version}</span> : null}
         </div>
-        {editable ? <RemoveDependencyButton projectId={projectId} dependencyId={dependency.id} /> : null}
+        <span className="flex items-center gap-2">
+          {/* SCR-043: open until somebody marks it supplied or waived. */}
+          <Badge tone={dependency.status === 'open' ? 'warning' : dependency.status === 'supplied' ? 'success' : 'neutral'}>{dependency.status}</Badge>
+          {editable ? <RemoveDependencyButton projectId={projectId} dependencyId={dependency.id} /> : null}
+        </span>
       </div>
       {dependency.notes ? <p className="mt-2 text-sm text-muted">{dependency.notes}</p> : null}
+      {dependency.status !== 'open' ? (
+        <p className="mt-1 text-xs text-muted">
+          {humanize(dependency.status)}{dependency.suppliedAtLabel ? ` ${dependency.suppliedAtLabel}` : ''}{dependency.note ? ` — ${dependency.note}` : ''}
+        </p>
+      ) : null}
+      {editable ? <DependencyStatusForm projectId={projectId} dependencyId={dependency.id} current={dependency.status} /> : null}
     </Card>
   );
 }

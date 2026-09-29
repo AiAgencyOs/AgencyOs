@@ -45,6 +45,7 @@ export function QaInsights({
   planItems,
   planVersions,
   defects,
+  tasks,
   history,
   roster,
   builds,
@@ -56,7 +57,9 @@ export function QaInsights({
   /** The current plan's items — category per item — or none. */
   planItems: { category: string }[];
   planVersions: TestPlanVersion[];
-  defects: (Defect & { assignee_id?: string | null })[];
+  defects: (Defect & { assignee_id?: string | null; task_id?: string | null })[];
+  /** SCR-047: the project's tasks, for the linked-task select and label. */
+  tasks: { id: string; title: string; status: string }[];
   history: Map<string, DefectHistoryEntry[]>;
   roster: { userId: string; fullName: string }[];
   builds: { id: string; kind: string; version: number; title: string }[];
@@ -235,6 +238,14 @@ export function QaInsights({
                       {assignee ? assignee.fullName : 'unassigned'} · raised {clock.date(d.created_at)}
                     </span>
                   </div>
+                  {d.task_id ? (
+                    <p className="text-xs text-muted">
+                      Task:{' '}
+                      <Link href={`/projects/${projectId}/development/tasks/${d.task_id}`} className="underline underline-offset-2 hover:text-foreground">
+                        {tasks.find((t) => t.id === d.task_id)?.title ?? 'open task'}
+                      </Link>
+                    </p>
+                  ) : null}
                   {trail.length > 0 ? (
                     <ol className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
                       {trail.map((h, i) => (
@@ -245,7 +256,7 @@ export function QaInsights({
                       ))}
                     </ol>
                   ) : null}
-                  {mayWrite ? <DefectTriageForm projectId={projectId} defect={d} roster={roster} /> : null}
+                  {mayWrite ? <DefectTriageForm projectId={projectId} defect={d} roster={roster} tasks={tasks} /> : null}
                   {mayWrite ? <SettleDefectForm projectId={projectId} defect={d} /> : null}
                 </li>
               );
@@ -257,7 +268,7 @@ export function QaInsights({
           <Link href={`/projects/${projectId}`} className="underline underline-offset-2">
             project overview
           </Link>
-          . A defect carries no task link — `qa.defects` has no such column.
+          . A defect names the task it is about at triage (SCR-047); the task&apos;s own page lists its defects.
         </p>
       </Card>
     </>

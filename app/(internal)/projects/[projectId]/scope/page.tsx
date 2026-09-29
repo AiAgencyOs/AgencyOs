@@ -13,6 +13,7 @@ import { Badge, Card, CardHeader, EmptyState, humanize, IconCheck, IconClock, Ic
 
 import { ChangeRequestList, SubmitChangeRequestForm } from '../change-request-panel';
 import { OpenScopeVersionForm, ScopeVersionCard, type FreezeCheck } from '../scope-panel';
+import { UnfreezeScopeVersionForm } from './unfreeze-form';
 import { ProjectSubNav } from '../project-subnav';
 
 export const metadata: Metadata = { title: 'Scope' };
@@ -193,7 +194,15 @@ export default async function ScopePage({ params, searchParams }: { params: Prom
       ) : null}
 
       {active ? (
-        <ScopeVersionCard projectId={projectId} scopeVersion={active} editable={false} />
+        <>
+          <ScopeVersionCard projectId={projectId} scopeVersion={active} editable={false} />
+          {/* SCR-030: the owner's unfreeze override, offered only when v{active}
+              is the newest version — the door refuses `later_version_exists`
+              otherwise, and a draft is by definition a later version. */}
+          {isOwner && !draft ? (
+            <UnfreezeScopeVersionForm projectId={projectId} scopeVersionId={active.id} version={active.version} />
+          ) : null}
+        </>
       ) : !draft ? (
         <EmptyState
           icon={<IconProjects size={22} />}

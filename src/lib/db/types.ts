@@ -5559,6 +5559,44 @@ export type Database = {
           },
         ]
       }
+      project_watchers: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          phases: string[]
+          project_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          phases?: string[]
+          project_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          phases?: string[]
+          project_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_watchers_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       repositories: {
         Row: {
           created_at: string
@@ -7017,6 +7055,7 @@ export type Database = {
           completion_override_reason: string | null
           created_at: string
           currency: string
+          default_assignee_id: string | null
           deleted_at: string | null
           delivery_lead_id: string | null
           description: string | null
@@ -7027,6 +7066,9 @@ export type Database = {
           organization_id: string
           production_ready_at: string | null
           proposal_id: string | null
+          release_held_at: string | null
+          release_held_by: string | null
+          release_hold_reason: string | null
           start_override_reason: string | null
           started_at: string | null
           starts_on: string | null
@@ -7044,6 +7086,7 @@ export type Database = {
           completion_override_reason?: string | null
           created_at?: string
           currency?: string
+          default_assignee_id?: string | null
           deleted_at?: string | null
           delivery_lead_id?: string | null
           description?: string | null
@@ -7054,6 +7097,9 @@ export type Database = {
           organization_id: string
           production_ready_at?: string | null
           proposal_id?: string | null
+          release_held_at?: string | null
+          release_held_by?: string | null
+          release_hold_reason?: string | null
           start_override_reason?: string | null
           started_at?: string | null
           starts_on?: string | null
@@ -7071,6 +7117,7 @@ export type Database = {
           completion_override_reason?: string | null
           created_at?: string
           currency?: string
+          default_assignee_id?: string | null
           deleted_at?: string | null
           delivery_lead_id?: string | null
           description?: string | null
@@ -7081,6 +7128,9 @@ export type Database = {
           organization_id?: string
           production_ready_at?: string | null
           proposal_id?: string | null
+          release_held_at?: string | null
+          release_held_by?: string | null
+          release_hold_reason?: string | null
           start_override_reason?: string | null
           started_at?: string | null
           starts_on?: string | null
@@ -7781,9 +7831,21 @@ export type Database = {
           superseded: string
         }[]
       }
+      hold_release: {
+        Args: { p_project_id: string; p_reason: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       install_default_onboarding_baseline: {
         Args: { p_organization_id: string }
         Returns: number
+      }
+      lift_release_hold: {
+        Args: { p_project_id: string; p_reason: string }
+        Returns: {
+          outcome: string
+        }[]
       }
       mark_production_ready: {
         Args: { p_project_id: string }
@@ -7934,6 +7996,12 @@ export type Database = {
           detail: string
           outcome: string
           scope_item_ids: string[]
+        }[]
+      }
+      set_dependency_status: {
+        Args: { p_dependency_id: string; p_note?: string; p_status: string }
+        Returns: {
+          outcome: string
         }[]
       }
       set_handover_rollback_plan: {
@@ -8323,6 +8391,12 @@ export type Database = {
           subject_id: string
         }[]
       }
+      unfreeze_scope_version: {
+        Args: { p_reason: string; p_version_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
@@ -8368,6 +8442,7 @@ export type Database = {
           resolution: string | null
           severity: string
           status: string
+          task_id: string | null
           title: string
           updated_at: string
           verified_at: string | null
@@ -8389,6 +8464,7 @@ export type Database = {
           resolution?: string | null
           severity: string
           status?: string
+          task_id?: string | null
           title: string
           updated_at?: string
           verified_at?: string | null
@@ -8410,6 +8486,7 @@ export type Database = {
           resolution?: string | null
           severity?: string
           status?: string
+          task_id?: string | null
           title?: string
           updated_at?: string
           verified_at?: string | null
