@@ -8,6 +8,7 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
 import { getAgentUsage } from '@/lib/admin/usage';
 import { providerCredentialStatus } from '@/lib/ai/vault';
+import { listLatestAgentValidations } from '@/modules/agents/validation-queries';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
@@ -43,6 +44,7 @@ import {
 } from '@/ui';
 
 import { SetProviderCredentialForm, VerifyAiProviderForm } from '../settings/forms';
+import { RevokeProviderCredentialForm } from '../settings/revoke-provider-form';
 
 export const metadata: Metadata = { title: 'AI Workforce' };
 
@@ -91,6 +93,8 @@ export default async function AgentsPage() {
 
   const isAdmin = can(context.role, 'organization.settings');
   const vaultStatus = isAdmin ? await providerCredentialStatus(await createClient()) : null;
+  // SCR-062: the last time a person validated each agent (ai.agent_validations).
+  const personValidations = await listLatestAgentValidations();
 
   const usageByAgent = new Map(usage.perAgent.map((u) => [u.agentKey, u]));
   const nameByKey = new Map(agents.map((a) => [a.key, a.displayName]));
@@ -135,6 +139,22 @@ export default async function AgentsPage() {
       },
     },
     { key: 'autonomy', header: 'Autonomy', desktopOnly: true, cellClassName: 'text-muted', cell: (a) => a.autonomyLevel },
+    {
+      key: 'validated',
+      header: 'Validated by a person',
+      desktopOnly: true,
+      cellClassName: 'text-xs text-muted',
+      cell: (a) => {
+        const v = personValidations.get(a.key);
+        if (!v) return 'never';
+        return (
+          <span className="flex items-center gap-1.5">
+            <Badge tone={v.outcome === 'ok' ? 'success' : 'danger'}>{v.outcome}</Badge>
+            <span>{clock.dateTime(v.validatedAt)}{v.validatedByName ? ` · ${v.validatedByName}` : ''}</span>
+          </span>
+        );
+      },
+    },
     { key: 'steps', header: 'Max steps', align: 'right', desktopOnly: true, cellClassName: 'tabular text-muted', cell: (a) => (a.maxSteps === null ? '—' : String(a.maxSteps)) },
     { key: 'maxCost', header: 'Max cost', align: 'right', desktopOnly: true, cellClassName: 'tabular text-muted', cell: (a) => { const c = formatCostMinor(a.maxCostMinor); return c ? `₹${c}` : '—'; } },
     { key: 'runs', header: 'Runs', align: 'right', cellClassName: 'tabular', cell: (a) => String(usageByAgent.get(a.key)?.runs ?? 0) },
@@ -333,9 +353,10 @@ export default async function AgentsPage() {
                 {vaultStatus?.ok ? (
                   <ul className="flex flex-wrap gap-3 text-xs">
                     {vaultStatus.data.map((row) => (
-                      <li key={row.provider} className="flex items-center gap-1">
+                      <li key={row.provider} className="flex flex-wrap items-center gap-1">
                         <Badge tone={row.configured ? 'success' : 'neutral'}>{row.provider}</Badge>
                         <span className="text-muted">{row.configured ? `set ${row.updatedAt}` : 'not set'}</span>
+                        {row.configured && context.role === 'owner' ? <RevokeProviderCredentialForm provider={row.provider} /> : null}
                       </li>
                     ))}
                   </ul>

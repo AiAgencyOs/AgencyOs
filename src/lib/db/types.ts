@@ -80,6 +80,50 @@ export type Database = {
           },
         ]
       }
+      agent_routing_overrides: {
+        Row: {
+          agent_key: string
+          category: string
+          created_at: string
+          id: string
+          note: string | null
+          organization_id: string
+          preferred_models: string[]
+          set_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          agent_key: string
+          category: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          organization_id: string
+          preferred_models: string[]
+          set_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          agent_key?: string
+          category?: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          organization_id?: string
+          preferred_models?: string[]
+          set_by?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_routing_overrides_agent_key_fkey"
+            columns: ["agent_key"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
       agent_runs: {
         Row: {
           agent_key: string
@@ -265,6 +309,53 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "agent_tool_permissions_agent_key_fkey"
+            columns: ["agent_key"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
+      agent_validations: {
+        Row: {
+          agent_key: string
+          created_at: string
+          findings: Json
+          id: string
+          organization_id: string
+          outcome: string
+          registry_revision: string
+          updated_at: string
+          validated_at: string
+          validated_by: string | null
+        }
+        Insert: {
+          agent_key: string
+          created_at?: string
+          findings?: Json
+          id?: string
+          organization_id: string
+          outcome: string
+          registry_revision: string
+          updated_at?: string
+          validated_at?: string
+          validated_by?: string | null
+        }
+        Update: {
+          agent_key?: string
+          created_at?: string
+          findings?: Json
+          id?: string
+          organization_id?: string
+          outcome?: string
+          registry_revision?: string
+          updated_at?: string
+          validated_at?: string
+          validated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_validations_agent_key_fkey"
             columns: ["agent_key"]
             isOneToOne: false
             referencedRelation: "agents"
@@ -746,11 +837,28 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      revoke_provider_credential: {
+        Args: { p_provider: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       set_agent_project_assignment: {
         Args: {
           p_active: boolean
           p_agent_key: string
           p_project_id: string
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      set_agent_routing_override: {
+        Args: {
+          p_agent_key: string
+          p_category: string
+          p_note?: string
+          p_preferred_models: string[]
         }
         Returns: {
           outcome: string
@@ -1818,6 +1926,13 @@ export type Database = {
       bootstrap_first_owner: { Args: { p_user_id: string }; Returns: string }
       can_manage_delivery: { Args: never; Returns: boolean }
       can_write: { Args: never; Returns: boolean }
+      cancel_job: {
+        Args: { p_job_id: string; p_reason: string }
+        Returns: {
+          job_status: string
+          outcome: string
+        }[]
+      }
       claim_agent_job: {
         Args: { p_kinds: string[]; p_worker_id: string }
         Returns: {

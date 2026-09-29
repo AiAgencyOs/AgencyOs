@@ -6,6 +6,8 @@ import { useState } from 'react';
 import type { Workflow } from '@/lib/admin/run-chain';
 import { Badge, Drawer, StatusBadge, buttonClass } from '@/ui';
 
+import { CancelJobForm } from './cancel-job-form';
+
 /**
  * Workflow runs by correlation id, with an "inspect event chain" drawer —
  * SCR-066. Everything shown was read on the server (runs, jobs); the drawer
@@ -78,6 +80,7 @@ export function WorkflowList({ workflows }: { workflows: Workflow[] }) {
                         </span>
                       </span>
                       {j.lastError ? <span className="break-words text-xs text-danger">{j.lastError}</span> : null}
+                      {j.status === 'queued' || j.status === 'failed' ? <CancelJobForm jobId={j.id} compact /> : null}
                     </li>
                   ))}
                 </ul>
@@ -105,9 +108,12 @@ export function WorkflowList({ workflows }: { workflows: Workflow[] }) {
             </div>
             {open.jobs.some((j) => j.status === 'dead') ? (
               <p className="text-xs text-muted">
-                A dead job in this chain can be requeued from the Dead letters list above. No door cancels a workflow.
+                A dead job in this chain can be requeued from the Dead letters list above.
               </p>
             ) : null}
+            <p className="text-xs text-muted">
+              Cancelling stops a job that has not started; a running one settles on its own first. Each cancellation is audited with its reason.
+            </p>
           </div>
         ) : null}
       </Drawer>

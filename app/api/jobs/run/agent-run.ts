@@ -15,6 +15,7 @@
  * accounting would be an agent that could skip them.
  */
 
+import { routedModelFor } from '@/lib/ai/agent-routing';
 import { resolveProvider } from '@/lib/ai/router';
 import type { AiMessage, AiToolSpec, AiUsage, StructuredResponse } from '@/lib/ai/types';
 import type { createAdminClient } from '@/lib/db/admin';
@@ -298,14 +299,17 @@ export async function callModel(
       stepCount: number;
     }
 > {
-  const provider = await resolveProvider(ctx.agent.default_model);
+  // SCR-064: an owner's (agent, category) override, then the category policy,
+  // are asked before the row's default — null means nothing but the default.
+  const routed = await routedModelFor(ctx.admin, ctx.job.organization_id, ctx.agent.key);
+  const provider = routed ? await resolveProvider(routed) : await resolveProvider(ctx.agent.default_model);
 
   if (!provider.ok) {
     return { ok: false, kind: 'no_provider', detail: provider.error.message, stepCount: 0 };
   }
 
   const request = {
-    model: ctx.agent.default_model,
+    model: routed ?? ctx.agent.default_model,
     system: spec.systemPrompt,
     messages: [...messages],
     jsonSchema: spec.jsonSchema(),
@@ -441,7 +445,8 @@ export async function callModelWithTools(
       stepCount: number;
     }
 > {
-  const provider = await resolveProvider(ctx.agent.default_model);
+  const routed = await routedModelFor(ctx.admin, ctx.job.organization_id, ctx.agent.key);
+  const provider = routed ? await resolveProvider(routed) : await resolveProvider(ctx.agent.default_model);
   if (!provider.ok) {
     return { ok: false, kind: 'no_provider', detail: provider.error.message, stepCount: 0 };
   }
@@ -464,7 +469,7 @@ export async function callModelWithTools(
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
     const request = {
-      model: ctx.agent.default_model,
+      model: routed ?? ctx.agent.default_model,
       system: spec.systemPrompt,
       messages,
       tools,
