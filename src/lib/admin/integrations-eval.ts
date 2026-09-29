@@ -32,6 +32,12 @@ export type IntegrationSignals = {
   transcriberConfigured: Avail<boolean>;
   imageGeneratorConfigured: Avail<boolean>;
   alertWebhookConfigured: boolean;
+  /**
+   * Live Git — Decision: reversed by the owner on 2026-09-29. Whether a
+   * GITHUB_TOKEN is present (never its value) and how many projects have
+   * linked a repository. Optional so an older caller still evaluates.
+   */
+  github?: { tokenConfigured: boolean; linkedRepositories: Avail<number> };
 };
 
 export function evaluateIntegrations(s: IntegrationSignals): Integration[] {
@@ -140,6 +146,31 @@ export function evaluateIntegrations(s: IntegrationSignals): Integration[] {
     href: '/settings',
     external: true,
   });
+
+  // GitHub (read-only) — Decision: reversed by the owner on 2026-09-29.
+  // CONFIGURED at most: a token being present says nothing about whether it
+  // can read a given repository; each project's Repository tab is where a
+  // real read succeeds or says why not. The count is of links, not of
+  // anything GitHub answered.
+  if (s.github) {
+    const links = s.github.linkedRepositories;
+    const linked = links.ok ? links.value : null;
+    const linkedText =
+      linked === null
+        ? 'linked repositories: DATA UNAVAILABLE'
+        : `${linked} linked ${linked === 1 ? 'repository' : 'repositories'}`;
+    out.push({
+      id: 'github',
+      name: 'GitHub (read-only)',
+      category: 'Source control',
+      lifecycle: !links.ok ? 'FAILED' : s.github.tokenConfigured ? 'CONFIGURED' : 'NOT_CONFIGURED',
+      detail: s.github.tokenConfigured
+        ? `GITHUB_TOKEN is set — ${linkedText}; each project's Repository tab reads live`
+        : `GITHUB_TOKEN unset — ${linkedText}; links are kept, nothing is read`,
+      href: '/settings',
+      external: true,
+    });
+  }
 
   return out;
 }

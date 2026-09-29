@@ -5802,6 +5802,53 @@ export type Database = {
           },
         ]
       }
+      repository_links: {
+        Row: {
+          created_at: string
+          default_branch: string
+          id: string
+          linked_by: string | null
+          organization_id: string
+          owner: string
+          project_id: string
+          provider: string
+          repo: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          default_branch?: string
+          id?: string
+          linked_by?: string | null
+          organization_id: string
+          owner: string
+          project_id: string
+          provider?: string
+          repo: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          default_branch?: string
+          id?: string
+          linked_by?: string | null
+          organization_id?: string
+          owner?: string
+          project_id?: string
+          provider?: string
+          repo?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "repository_links_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: true
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       design_asset_links: {
         Row: {
           asset_id: string
@@ -7839,6 +7886,24 @@ export type Database = {
     }
     Functions: {
       account_health_signals: {
+      link_repository: {
+        Args: {
+          p_default_branch?: string
+          p_owner: string
+          p_project_id: string
+          p_repo: string
+        }
+        Returns: {
+          id: string
+          outcome: string
+        }[]
+      }
+      unlink_repository: {
+        Args: { p_project_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
         Args: { p_client_account_id: string }
         Returns: {
           signal: string

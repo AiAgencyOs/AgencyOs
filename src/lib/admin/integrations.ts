@@ -39,13 +39,28 @@ async function readOrgNumber(): Promise<boolean> {
   return typeof settings.whatsapp_phone_number_id === 'string' && settings.whatsapp_phone_number_id.trim().length > 0;
 }
 
+/**
+ * How many projects have linked a GitHub repository — Decision: reversed by
+ * the owner on 2026-09-29. A count of links under RLS, THROWING on failure so
+ * the row reads FAILED rather than "0 linked". Nothing here asks GitHub.
+ */
+async function countRepositoryLinks(): Promise<number> {
+  const supabase = await createClient();
+  const { count, error } = await supabase
+    .schema('projects')
+    .from('repository_links')
+    .select('id', { head: true, count: 'exact' });
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export type IntegrationsView = { integrations: Integration[]; summary: Record<string, number> };
 
 export async function getIntegrations(): Promise<IntegrationsView> {
   const config = configStatus();
   const present = (key: string) => config.items.find((i) => i.key === key)?.present ?? false;
 
-  const [database, cronAgeSeconds, numberConfigured, aiProviderConfigured, transcriberConfigured, imageGeneratorConfigured] =
+  const [database, cronAgeSeconds, numberConfigured, aiProviderConfigured, transcriberConfigured, imageGeneratorConfigured, linkedRepositories] =
     await Promise.all([
       avail(pingDatabase()),
       readCronAgeSeconds(),
@@ -53,6 +68,7 @@ export async function getIntegrations(): Promise<IntegrationsView> {
       avail(Promise.resolve().then(() => hasConfiguredProvider())),
       avail(Promise.resolve().then(() => hasConfiguredTranscriber())),
       avail(hasConfiguredImageGenerator()),
+      avail(countRepositoryLinks()),
     ]);
 
   const integrations = evaluateIntegrations({
@@ -63,6 +79,7 @@ export async function getIntegrations(): Promise<IntegrationsView> {
     transcriberConfigured,
     imageGeneratorConfigured,
     alertWebhookConfigured: present('ALERT_WEBHOOK_URL'),
+    github: { tokenConfigured: present('GITHUB_TOKEN'), linkedRepositories },
   });
 
   return { integrations, summary: integrationsSummary(integrations) };

@@ -4,10 +4,12 @@ import { notFound } from 'next/navigation';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject, listRepositories } from '@/modules/projects/queries';
+import { getRepositoryLink } from '@/modules/projects/repository-link-queries';
 import { Callout, EmptyState, IconIntegrations, PageHeader, PermissionDenied } from '@/ui';
 
 import { AddRepositoryForm, RepositoryCard } from '../repository-panel';
 import { ProjectSubNav } from '../project-subnav';
+import { GithubPanel } from './github-panel';
 
 export const metadata: Metadata = { title: 'Repository' };
 
@@ -19,6 +21,14 @@ export const metadata: Metadata = { title: 'Repository' };
  * (20260922110000_a_repository_is_a_link_too.sql) for the full reasoning.
  * `defaultBranch` is therefore a fact somebody typed, not one this page
  * verifies against the host.
+ *
+ * Decision: reversed by the owner on 2026-09-29 — the tab ALSO carries one
+ * live GitHub repository per project (`projects.repository_links`): linked
+ * and unlinked through a governed door, read on each request through
+ * src/lib/git/github.ts with `GITHUB_TOKEN` (commits on the linked branch,
+ * open pull requests, branch count), never written to, and honest about a
+ * read that fails or a token that is absent. The link rows below stay what
+ * they were: where the code and its reviews live, typed by a person.
  */
 export default async function RepositoryPage({ params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
@@ -30,7 +40,7 @@ export default async function RepositoryPage({ params }: { params: Promise<{ pro
   if (!project) notFound();
 
   const editable = can(context.role, 'project.write');
-  const repositories = await listRepositories(projectId);
+  const [repositories, link] = await Promise.all([listRepositories(projectId), getRepositoryLink(projectId)]);
 
   return (
     <div className="flex flex-col gap-5">
@@ -45,9 +55,13 @@ export default async function RepositoryPage({ params }: { params: Promise<{ pro
 
       <ProjectSubNav projectId={projectId} />
 
+      <GithubPanel projectId={projectId} link={link} editable={editable} />
+
+      <h2 className="text-[13px] font-semibold tracking-tight">Repository links</h2>
       <Callout tone="info">
-        These are links to where the code and its reviews actually live — not a live GitHub/GitLab
-        integration. Branch and review state shown here is whatever was typed in, not read from the host.
+        These are links to where the code and its reviews actually live, typed by a person. Branch and review
+        state on these rows is whatever was typed in, not read from the host — the live read above is the only
+        thing on this page that asks GitHub.
       </Callout>
 
       {repositories.length > 0 ? (

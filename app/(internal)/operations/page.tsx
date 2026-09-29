@@ -18,12 +18,15 @@ import { listMeetingsAwaitingNotes } from '@/modules/crm/meeting-notes-queries';
 import { listPendingGroupSetups } from '@/modules/projects/queries';
 
 import { CancelJobForm } from './cancel-job-form';
+import { OutboxList } from './outbox-list';
 import { WorkflowList } from './workflow-list';
 import {
   listDeadJobs,
   listDeferredSends,
   listFailedDeliveries,
+  listOutboxEvents,
   listQueuedJobs,
+  parseOutboxStatus,
   readBacklog,
   readCronAgeSeconds,
   readWedgedFollowUps,
@@ -66,10 +69,20 @@ export const metadata: Metadata = { title: 'Operations' };
  * reuses the row rather than inserting one that would collide on its dedupe
  * key.
  */
-export default async function OperationsPage() {
+export default async function OperationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ outbox?: string; outboxPage?: string }>;
+}) {
   const context = await requireInternal('/operations');
   const clock = await agencyClock();
   if (!can(context.role, 'audit.read')) return <PermissionDenied />;
+
+  // D17, reversed by the owner on 2026-09-29: the outbox rows may be listed
+  // read-only. The filter and page live in the URL (GET form), like every
+  // other list here.
+  const { outbox: outboxStatus, outboxPage } = await searchParams;
+  const outboxPageNumber = Math.max(1, Number.parseInt(outboxPage ?? '1', 10) || 1);
 
   // Reading the failures and reviving them are different permissions, even
   // though both resolve to owner and ops_admin today. Drawing the button from
@@ -77,7 +90,7 @@ export default async function OperationsPage() {
   // one of the two lists changes.
   const canRequeue = can(context.role, 'job.requeue');
 
-  const [backlog, dead, cronAge, wedged, failedRows, deferred, ai, groupSetups, queued, awaitingNotes, workflows] = await Promise.all([
+  const [backlog, dead, cronAge, wedged, failedRows, deferred, ai, groupSetups, queued, awaitingNotes, workflows, outbox] = await Promise.all([
     readBacklog(),
     listDeadJobs(),
     readCronAgeSeconds(),
@@ -89,6 +102,7 @@ export default async function OperationsPage() {
     listQueuedJobs(),
     listMeetingsAwaitingNotes(),
     listRecentWorkflows(20),
+    listOutboxEvents({ status: parseOutboxStatus(outboxStatus), page: outboxPageNumber, pageSize: 25 }),
   ]);
 
   const severity = severityOf(backlog);
@@ -455,8 +469,9 @@ export default async function OperationsPage() {
         <div className="flex flex-col gap-2">
           <h2 className="text-[13px] font-semibold tracking-tight">Outbox</h2>
           <p className="text-xs text-muted">
-            Events written but not yet published to their consumers. Only the dispatcher reads the outbox
-            table itself (D17); this page reports the backlog view's counts.
+            Events written but not yet published to their consumers. The dispatcher is the only thing that
+            changes these rows; this page may list them read-only (D17 — Decision: reversed by the owner on
+            2026-09-29). The counts are the backlog view&apos;s; the rows are the table&apos;s own.
           </p>
           <dl className="grid grid-cols-2 gap-3">
             <div className="rounded-lg border border-line bg-surface px-4 py-3">
@@ -468,6 +483,7 @@ export default async function OperationsPage() {
               <dd className={`text-xl font-semibold tabular ${backlog.dead_events > 0 ? 'text-danger' : ''}`}>{backlog.dead_events}</dd>
             </div>
           </dl>
+          <OutboxList page={outbox} dateTime={(iso) => clock.dateTime(iso)} />
         </div>
       </div>
 

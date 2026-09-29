@@ -27,6 +27,7 @@ const AREAS: readonly ConfigArea[] = [
   'AI provider',
   'Speech to text',
   'Figma',
+  'GitHub',
   'Calendar',
   'Alerts',
 ];

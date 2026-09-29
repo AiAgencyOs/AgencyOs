@@ -50,6 +50,15 @@ export const serverSchema = z.object({
   FIGMA_ACCESS_TOKEN: z.string().min(8, 'FIGMA_ACCESS_TOKEN looks too short').optional(),
 
   /**
+   * A GitHub token for READING a linked repository — Decision: reversed by
+   * the owner on 2026-09-29. Optional; without it the Repository tab says
+   * plainly that GitHub is not configured and shows the link alone. With it
+   * the panel reads recent commits, open pull requests and the branch count.
+   * Nothing in this product writes to GitHub with it.
+   */
+  GITHUB_TOKEN: z.string().min(8, 'GITHUB_TOKEN looks too short').optional(),
+
+  /**
    * The token Meta echoes during the webhook subscription handshake. Optional
    * alone; in production it must be set together with WHATSAPP_APP_SECRET.
    */

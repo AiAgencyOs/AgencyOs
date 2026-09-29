@@ -230,3 +230,113 @@ export async function listQueuedJobs(limit = 50): Promise<QueuedJob[]> {
     correlationId: j.correlation_id,
   }));
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// The outbox rows themselves — D17, reversed by the owner on 2026-09-29
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const OUTBOX_STATUSES = ['unpublished', 'dead', 'published', 'all'] as const;
+export type OutboxStatus = (typeof OUTBOX_STATUSES)[number];
+
+export function parseOutboxStatus(value: string | undefined): OutboxStatus {
+  return (OUTBOX_STATUSES as readonly string[]).includes(value ?? '') ? (value as OutboxStatus) : 'unpublished';
+}
+
+export type OutboxEventRow = {
+  id: number;
+  /** The event type — `invoice.paid`, `payment.recorded` — which is what the outbox calls a kind. */
+  kind: string;
+  /**
+   * Derived, not stored: the table has no status column. `dead_at` set means
+   * the dispatcher gave up; `published_at` set means it was published;
+   * neither means it is waiting for the next dispatcher pass.
+   */
+  status: 'unpublished' | 'dead' | 'published';
+  attempts: number;
+  createdAt: string;
+  publishedAt: string | null;
+  deadAt: string | null;
+  correlationId: string | null;
+  subjectType: string | null;
+  subjectId: string | null;
+};
+
+export type OutboxPage = {
+  rows: OutboxEventRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  status: OutboxStatus;
+};
+
+/**
+ * A read-only page of `core.outbox_events` — D17, reversed by the owner on
+ * 2026-09-29. The Operations page used to show two counts and say that only
+ * the dispatcher reads the table; the owner decided an operator may LIST the
+ * unpublished and dead rows too, so a count of 3 has three rows under it.
+ *
+ * This is the ONE reader of the outbox outside src/lib/events/dispatch.ts,
+ * and tests/outbox-transactional.test.ts pins that it stays a reader: a
+ * select, a count, a filter and a range, and no insert, update, delete or
+ * rpc anywhere near it. The dispatcher publishes and parks; nothing here
+ * changes a row, and there is no retry door because none exists in the
+ * database — the page says so rather than pretending.
+ *
+ * What the table does not have, this does not invent: there is no
+ * `last_error` (an event that cannot enqueue its jobs is logged, not
+ * annotated) and no `next_attempt_at` (the next dispatcher pass takes every
+ * live row, fewest attempts first), so neither is a column here. `status` is
+ * derived from `published_at` / `dead_at`, and says so on its type.
+ *
+ * RLS-scoped (outbox_select: own organization, internal staff), and a failed
+ * read refuses for the G-054 reason the whole page holds.
+ */
+export async function listOutboxEvents(options: {
+  status?: OutboxStatus;
+  page?: number;
+  pageSize?: number;
+} = {}): Promise<OutboxPage> {
+  const status = options.status ?? 'unpublished';
+  const pageSize = Math.min(Math.max(options.pageSize ?? 25, 1), 100);
+  const page = Math.max(options.page ?? 1, 1);
+  const from = (page - 1) * pageSize;
+
+  const supabase = await createClient();
+
+  let query = supabase
+    .schema('core')
+    .from('outbox_events')
+    .select('id, type, attempts, created_at, published_at, dead_at, correlation_id, subject_type, subject_id', {
+      count: 'exact',
+    });
+
+  if (status === 'unpublished') query = query.is('published_at', null).is('dead_at', null);
+  else if (status === 'dead') query = query.not('dead_at', 'is', null);
+  else if (status === 'published') query = query.not('published_at', 'is', null);
+
+  const { data, error, count } = await query
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .range(from, from + pageSize - 1);
+
+  if (error) unreadable('listOutboxEvents', error);
+
+  return {
+    status,
+    page,
+    pageSize,
+    total: count ?? 0,
+    rows: (data ?? []).map((e) => ({
+      id: e.id,
+      kind: e.type,
+      status: e.dead_at ? 'dead' : e.published_at ? 'published' : 'unpublished',
+      attempts: e.attempts,
+      createdAt: e.created_at,
+      publishedAt: e.published_at,
+      deadAt: e.dead_at,
+      correlationId: e.correlation_id,
+      subjectType: e.subject_type,
+      subjectId: e.subject_id,
+    })),
+  };
+}
