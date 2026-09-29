@@ -106,29 +106,35 @@ Google/WhatsApp/AI integrations (no credentials — the screens correctly say
 
 ## 5. Realtime multi-session E2E (brief tests 1–13)
 
-**Push path: scripted and wired to CI, awaiting its first green run.**
-`tests/e2e/realtime-two-sessions.spec.mjs` (`npm run e2e:realtime`) signs
-in two browser contexts and runs the five scenarios below verbatim, each
-tied to a service-role read-back; `.github/workflows/realtime.yml` starts
-Supabase with the pinned CLI, builds and serves the app, runs the eight
-fixture-dependent verifiers against the fresh database, stops and restarts
-the realtime container for the degrade scenario, and uploads screenshots
-and `summary.json`. The container this work was done in has no Docker, so
-the run itself is CI's; §9h records its state. What was verified live here
-instead: the publication holds exactly the 39 tables the
-topics name (`pg_publication_tables`, re-applying the migration is a no-op),
-and the client's honest fallback (*Reconnecting*, then polling) in a real
-browser. The status machine and topic↔publication correspondence are unit
-tested. On an environment with Docker, `npm run verify:db:up` gives a
-Realtime server and the procedure is:
+**Push path: run in CI and green** — `.github/workflows/realtime.yml`,
+run 7 on `fa61ae1`, 2026-09-29 20:04–20:11 UTC:
+<https://github.com/AiAgencyOs/AgencyOs/actions/runs/36623721606>.
+`tests/e2e/realtime-two-sessions.spec.mjs` signed in two browser contexts
+(owner as A, ops_admin as B) against a Supabase stack started from
+scratch (`supabase start && supabase db reset`, every migration and the
+seed), after the eight fixture-dependent verifiers passed on the same
+database. Every scenario is tied to a service-role read-back:
 
-```
-# Session A: /leads  ·  Session B: ⌘K → New lead → A's list and the dashboard KPI update; pill says Live
-# Session A: /approvals · B: raise + decide → A updates after the decision commits, never before
-# Session A: /invoices/verify · B: submit a claim → A shows it; verify in B → A shows PAID after the RPC returns
-# Session A: /operations · fail a job → A shows it; requeue → A clears it
-# Stop the realtime container → Reconnecting, then Degraded; start it → Live and the list catches up
-```
+| # | Scenario | Result |
+|---|---|---|
+| 0 | Sign in A (owner) and B (ops_admin); memberships read back | passed |
+| 1 | B creates a lead through ⌘K → A's dashboard "Recent leads" and "Total leads" and A's `/leads` list and KPI update without a reload; pill says Live | passed (KPI 7 → 8, row in `crm.leads`) |
+| 2 | Approval raised → A shows it pending and "Waiting" +1 by push; B approves → A's "Waiting" goes back down only after `state = approved` commits | passed |
+| 3 | B records a payment claim on the project → A's `/invoices/verify` shows it by push; B confirms with evidence → A shows "verified by" by push (`status = verified`) | passed |
+| 4 | A dead job planted → A shows it under Dead letters by push; B presses Requeue → the row leaves Dead letters and appears in Job queue in A by push (`status = queued`, attempts 0) | passed |
+| 5 | `docker stop supabase_realtime_AgencyOS` → A shows Reconnecting, then Degraded; a row written while down; `docker start` → A returns to Live and shows the row it missed | passed |
+
+Two findings from the first real run were fixed on the way: a channel
+whose socket stayed down never reached Degraded (supabase-js retries the
+transport silently, so the hook now counts each silent ten-second window
+as a failure), and four spec details (palette button scope, a fresh
+database's missing approval policy, the claim status name, the requeue
+poll). Screenshots and `summary.json` are the run's artifact.
+
+Earlier, on the local stack (no Realtime server), the publication was
+verified to hold exactly the 39 tables the topics name and the client's
+fallback (Reconnecting, then polling) was seen in a real browser; the
+status machine and topic↔publication correspondence are unit tested.
 
 ## 6. Permissions
 
@@ -446,6 +452,6 @@ transitions need their own seeded fixtures and were not driven.
 
 ## 11. Open items, in priority order
 
-1. The first green run of `.github/workflows/realtime.yml` (§5 push path and the eight fixture-dependent verifiers on a fresh database). The workflow is on the branch; it runs on `workflow_dispatch`, pull requests and pushes to `main`.
+1. The element-level remainder in `AGENCYOS_ADMIN_PDF_ELEMENT_AUDIT.md` (199 partial, 69 missing), being built as bucket F per `AGENCYOS_ADMIN_BUCKET_F_PLAN.md`.
 2. A screen-reader pass through the harness (axe is done: 10/10 screens clean).
-3. `roadmap.json`'s three test counts (`tests`, `testSuites`, `testsPassing`) are derived from Node 22's TAP output plus a count of `it()` calls in the 31 files that cannot load there; CI's Node 26 summary is the source and `check:record` will say if they differ.
+3. `roadmap.json`'s test counts are now CI's Node 26 figures (6686 / 1419 / 6686) and `check:record` is green in CI.
