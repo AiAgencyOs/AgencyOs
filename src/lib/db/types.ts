@@ -5609,6 +5609,61 @@ export type Database = {
           },
         ]
       }
+      design_asset_links: {
+        Row: {
+          asset_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          organization_id: string
+          screen_id: string | null
+          ui_version_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          asset_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id: string
+          screen_id?: string | null
+          ui_version_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          asset_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id?: string
+          screen_id?: string | null
+          ui_version_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "design_asset_links_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "design_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "design_asset_links_screen_id_fkey"
+            columns: ["screen_id"]
+            isOneToOne: false
+            referencedRelation: "screens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "design_asset_links_ui_version_id_fkey"
+            columns: ["ui_version_id"]
+            isOneToOne: false
+            referencedRelation: "ui_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       design_assets: {
         Row: {
           created_at: string
@@ -7252,11 +7307,15 @@ export type Database = {
           purpose: string | null
           baseline_version: number | null
           dependencies: string | null
+          design_state: string
+          figma_url: string | null
+          qa_status: string
           required_data: string | null
           required_sections: string | null
           responsive_behaviour: string | null
           screen_key: string
           status: string
+          superseded_by: string | null
           updated_at: string
           user_role: string
           validation: string | null
@@ -7281,11 +7340,15 @@ export type Database = {
           purpose?: string | null
           baseline_version?: number | null
           dependencies?: string | null
+          design_state?: string
+          figma_url?: string | null
+          qa_status?: string
           required_data?: string | null
           required_sections?: string | null
           responsive_behaviour?: string | null
           screen_key: string
           status?: string
+          superseded_by?: string | null
           updated_at?: string
           user_role: string
           validation?: string | null
@@ -7310,11 +7373,15 @@ export type Database = {
           purpose?: string | null
           baseline_version?: number | null
           dependencies?: string | null
+          design_state?: string
+          figma_url?: string | null
+          qa_status?: string
           required_data?: string | null
           required_sections?: string | null
           responsive_behaviour?: string | null
           screen_key?: string
           status?: string
+          superseded_by?: string | null
           updated_at?: string
           user_role?: string
           validation?: string | null
@@ -7332,6 +7399,13 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "screens_superseded_by_fkey"
+            columns: ["superseded_by"]
+            isOneToOne: false
+            referencedRelation: "screens"
             referencedColumns: ["id"]
           },
         ]
@@ -7788,6 +7862,78 @@ export type Database = {
           outcome: string
           status: string
           total: number
+        }[]
+      }
+      add_screen: {
+        Args: {
+          p_actions?: string
+          p_dependencies?: string
+          p_entry_point?: string
+          p_exit_action?: string
+          p_has_empty_state?: boolean
+          p_has_error_state?: boolean
+          p_has_loading_state?: boolean
+          p_has_success_state?: boolean
+          p_name: string
+          p_project_id: string
+          p_purpose?: string
+          p_required_data?: string
+          p_required_sections?: string
+          p_scope_item_ids?: string[]
+          p_screen_key: string
+          p_user_role: string
+        }
+        Returns: {
+          detail: string
+          outcome: string
+          screen_id: string
+        }[]
+      }
+      merge_screens: {
+        Args: {
+          p_name: string
+          p_purpose?: string
+          p_screen_key: string
+          p_source_ids: string[]
+          p_user_role?: string
+        }
+        Returns: {
+          detail: string
+          outcome: string
+          screen_id: string
+        }[]
+      }
+      screen_list_closed_by: {
+        Args: { p_project_id: string }
+        Returns: string
+      }
+      set_screen_design_state: {
+        Args: {
+          p_design_state: string
+          p_screen_id: string
+        }
+        Returns: {
+          detail: string
+          outcome: string
+        }[]
+      }
+      split_screen: {
+        Args: {
+          p_parts: Json
+          p_source_id: string
+        }
+        Returns: {
+          detail: string
+          outcome: string
+          screen_ids: string[]
+        }[]
+      }
+      submit_screen_for_qa: {
+        Args: { p_screen_id: string }
+        Returns: {
+          detail: string
+          outcome: string
+          scope_item_ids: string[]
         }[]
       }
       set_handover_rollback_plan: {

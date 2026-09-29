@@ -14,7 +14,7 @@ import type { Tables } from '@/lib/db/types';
 export type ProjectScreen = Tables<{ schema: 'projects' }, 'screens'>;
 
 const SCREEN_SELECT =
-  'id, project_id, organization_id, deliverable_id, name, screen_key, status, user_role, purpose, entry_point, exit_action, actions, required_data, required_sections, dependencies, validation, permission_behaviour, responsive_behaviour, accessibility_notes, has_empty_state, has_error_state, has_loading_state, has_success_state, baseline_version, created_at, created_by, updated_at';
+  'id, project_id, organization_id, deliverable_id, name, screen_key, status, user_role, purpose, entry_point, exit_action, actions, required_data, required_sections, dependencies, validation, permission_behaviour, responsive_behaviour, accessibility_notes, has_empty_state, has_error_state, has_loading_state, has_success_state, baseline_version, figma_url, design_state, qa_status, superseded_by, created_at, created_by, updated_at';
 
 /** Every screen recorded for a project, in `screen_key` order. */
 export async function listProjectScreens(projectId: string): Promise<ProjectScreen[]> {

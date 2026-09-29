@@ -133,7 +133,9 @@ export async function readRequirementSets(versionIds: readonly string[]): Promis
     const [screenLinks, testItems] =
       itemIds.length > 0
         ? await Promise.all([
-            supabase.schema('projects').from('screen_scope_items').select('scope_item_id').in('scope_item_id', itemIds),
+            // A superseded screen (merged or split away, 20260929200000) is
+            // history, not coverage — the same exclusion projects.ui_coverage makes.
+            supabase.schema('projects').from('screen_scope_items').select('scope_item_id, screens!inner(status)').in('scope_item_id', itemIds).neq('screens.status', 'superseded'),
             supabase.schema('qa').from('test_plan_items').select('scope_item_id').in('scope_item_id', itemIds),
           ])
         : [{ data: [], error: null }, { data: [], error: null }];

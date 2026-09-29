@@ -37,8 +37,12 @@ import {
   ViewAll,
 } from '@/ui';
 
+import { listDesignAssetLinks, listUiVersionOptions } from '@/modules/projects/screen-edit-queries';
+import { listProjectScreens } from '@/modules/projects/screens-queries';
+
 import { ProjectSubNav } from '../project-subnav';
 import { WorkspaceHeader } from '../workspace-header';
+import { LinkAssetForm, UnlinkAssetForm } from './asset-link-forms';
 import { DesignSubNav } from './design-subnav';
 import { AssignReviewerForm } from './design-forms';
 import { Nothing, PHASE_TONE, Section, when } from './design-shared';
@@ -93,10 +97,18 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
 
   const spend = await readProjectSpend(projectId);
   const screenCoverage = await readUiCoverage(projectId);
-  const [designAssets, sampleScreens] = await Promise.all([
+  const [designAssets, sampleScreens, assetLinks, uiVersions, inventory] = await Promise.all([
     readDesignAssets(projectId),
     readSampleScreens(projectId, trail.themes.map((t) => t.id)),
+    listDesignAssetLinks(projectId),
+    listUiVersionOptions(projectId),
+    listProjectScreens(projectId),
   ]);
+  // SCR-038 — where an asset may be linked: every live screen and every UI version.
+  const linkTargets = [
+    ...inventory.filter((s) => s.status !== 'superseded').map((s) => ({ value: `screen:${s.id}`, label: `Screen · ${s.name} (${s.screen_key})` })),
+    ...uiVersions.map((v) => ({ value: `ui_version:${v.id}`, label: `UI version ${v.version} · ${humanize(v.status)}` })),
+  ];
 
   const themeById = new Map(trail.themes.map((t) => [t.id, t]));
   const reviewerName = phase.reviewerUserId ? (roster.find((r) => r.userId === phase.reviewerUserId)?.fullName ?? null) : null;
@@ -379,10 +391,10 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
             ) : (
               /*
                 SCR-038 — one folder per kind. `design_assets` carries no
-                approved/draft status and no link to a screen or a version
-                (there is no join table), so each folder shows the kind and
-                the rights note the row was generated under, and nothing
-                pretends to a state the table does not hold.
+                approved/draft status, so each folder shows the kind and the
+                rights note the row was generated under. Where an asset is
+                used is `design_asset_links` (20260929200000): a screen or a
+                UI version, linked and unlinked here.
               */
               <div className="flex flex-col gap-2 px-4 pb-4 sm:px-5">
                 {[...new Set(designAssets.map((a) => a.kind))].map((kind) => {
@@ -404,6 +416,33 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
                               <span>{asset.model}</span>
                             </span>
                             <p className="text-xs text-muted">{asset.rightsNote}</p>
+                            {(() => {
+                              const links = assetLinks.filter((l) => l.assetId === asset.id);
+                              const taken = new Set(links.map((l) => (l.screenId ? `screen:${l.screenId}` : `ui_version:${l.uiVersionId}`)));
+                              return (
+                                <div className="flex flex-col gap-1.5 border-t border-line pt-1.5">
+                                  {links.length === 0 ? (
+                                    <span className="text-xs text-muted">Not linked to a screen or a UI version.</span>
+                                  ) : (
+                                    <ul className="flex flex-col gap-1">
+                                      {links.map((l) => (
+                                        <li key={l.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                          {l.screenId ? (
+                                            <Link href={`/projects/${projectId}/design/screens/${l.screenId}`} className="underline hover:text-foreground">
+                                              {l.targetLabel}
+                                            </Link>
+                                          ) : (
+                                            <span>{l.targetLabel}</span>
+                                          )}
+                                          {mayDecide ? <UnlinkAssetForm projectId={projectId} linkId={l.id} /> : null}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                  {mayDecide ? <LinkAssetForm projectId={projectId} assetId={asset.id} targets={linkTargets.filter((t) => !taken.has(t.value))} /> : null}
+                                </div>
+                              );
+                            })()}
                           </li>
                         ))}
                       </ul>
