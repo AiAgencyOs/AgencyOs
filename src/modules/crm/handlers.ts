@@ -2071,7 +2071,12 @@ export async function announceM2PaymentVerified(admin: Admin, job: AnnounceJob):
   if (!milestone) {
     return { status: 'succeeded', outcome: 'gone', detail: 'the milestone no longer exists' };
   }
-  if (milestone.position !== 2) {
+  // `position` is 0-indexed (see generateM2Invoice in src/modules/finance/service.ts):
+  // M1/M2/M3/M4 land at 0/1/2/3, as written by projects.replace_payment_plan and
+  // as every list/detail view already renders (`milestone.position + 1`). This
+  // used to say `!== 2`, which is M3 — confirmed live on a scratch Postgres that
+  // a freshly installed locked payment structure puts M2 at position 1.
+  if (milestone.position !== 1) {
     return { status: 'succeeded', outcome: 'not_mine', detail: `position ${milestone.position} is not M2` };
   }
 

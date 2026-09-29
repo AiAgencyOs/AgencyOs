@@ -36,7 +36,12 @@ describe('A. no new gate — a second listener on the one that already exists', 
   test('the milestone is RE-READ, not trusted from the event payload', () => {
     assert.match(HANDLER, /\.from\('milestones'\)/);
     assert.match(HANDLER, /\.eq\('id', event\.milestoneId\)/);
-    assert.match(HANDLER, /if \(milestone\.position !== 2\)/);
+    // `position` is 0-indexed (projects.replace_payment_plan derives it from
+    // WITH ORDINALITY minus one, and every list/detail view renders
+    // `milestone.position + 1`): M2 is at position 1, not 2. Confirmed live
+    // on a scratch Postgres by tests/phase4-full-pipeline-e2e.test.ts, which
+    // is what caught this handler's copy of the same off-by-one.
+    assert.match(HANDLER, /if \(milestone\.position !== 1\)/);
   });
 
   test('a non-M2 milestone is explicitly not this handler\'s concern', () => {

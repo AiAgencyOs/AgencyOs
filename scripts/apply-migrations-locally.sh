@@ -33,13 +33,15 @@
 #   scripts/apply-migrations-locally.sh            apply, report, tear down
 #   KEEP=1 scripts/apply-migrations-locally.sh     leave the server running for psql
 #
-# Needs a local Postgres 16+ install (initdb, pg_ctl, psql on PATH or under
-# /opt/homebrew/opt/postgresql@16). Uses a unix socket in a temp directory and
-# an unused port, so it cannot collide with anything else.
+# Needs a local Postgres 16+ install (initdb, pg_ctl, psql on PATH, under
+# /opt/homebrew/opt/postgresql@{16,17} on macOS, or under /usr/lib/postgresql/*
+# on Debian/Ubuntu, where `apt-get install postgresql` does not put server
+# binaries on PATH). Uses a unix socket in a temp directory and an unused
+# port, so it cannot collide with anything else.
 # ═══════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
-for candidate in /opt/homebrew/opt/postgresql@17/bin /opt/homebrew/opt/postgresql@16/bin; do
+for candidate in /opt/homebrew/opt/postgresql@17/bin /opt/homebrew/opt/postgresql@16/bin /usr/lib/postgresql/*/bin; do
   if [ -x "$candidate/postgres" ]; then export PATH="$candidate:$PATH"; break; fi
 done
 command -v initdb >/dev/null || { echo "✖ no local Postgres (initdb) found"; exit 2; }
