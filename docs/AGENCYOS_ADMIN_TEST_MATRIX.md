@@ -330,6 +330,27 @@ task through the existing services), `createTask` with `dueOn`. New CSV
 and JSON routes: project report, screen inventory, asset handoff, QA
 evidence, invoices, expenses, usage.
 
+### 9e. Bucket B build (2026-09-29, late)
+
+Four migrations applied to the local database (each re-applied to prove
+idempotency; the tenancy-guard catalogue functions report no gaps),
+twelve new tables and the added columns confirmed in
+`information_schema`, PostgREST restarted for the schema cache. Driven as
+the owner in the browser with a database read-back after each write: a
+task's blocked reason, checklist item, comment and attachment; a project
+put on hold with a reason (chip and settings show it) and resumed; a
+notification resolved with a note ("1 item needs attention" after); client
+tags `retail, priority` and an owner set, `/clients?tag=priority` filters
+to the row; a search saved and listed; an announcement drafted, published
+and shown on Communication; the invoice PDF route served
+`application/pdf` (52 KB) and two sends recorded; August 2026 locked
+with a note, then unlocked with a reason, both in the lock history; an
+agent tool permission recorded. One defect found and fixed: the My Tasks
+drawer imported a runtime helper from a server-only queries module, which
+500'd the route; the types moved to a server-free file. `npm test`
+5868 pass / 52 fail (baseline); typecheck and ESLint clean; the eleven
+guard tests green; sweep 92 of 93 routes 200 with no 5xx.
+
 ## 10. Regression
 
 Unit: the failure set is byte-identical before and after (Node 22, 52

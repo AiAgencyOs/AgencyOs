@@ -178,3 +178,25 @@ client tags and owner, agent tool permissions, GST period lock, expense
 receipts, pause and cancel reasons); C is settled (lead scoring, agent
 enable and caps, project templates, live Git, the outbox list, template
 sends from the composer, margin arithmetic).
+
+## Status after the bucket B build (2026-09-29, late)
+
+Bucket B was built as four migrations with their doors and screens
+(`20260929140000` task collaboration and status reasons, `20260929150000`
+notification state, client tags/owner, saved searches, announcements,
+`20260929160000` invoice sends, period locks, receipts, reconciliation
+doors and the invoice PDF, `20260929170000` test cases and per-case
+results, compatibility columns, release rollback/smoke, agent policy
+tables). Each applied idempotently on the local database and was driven
+in the browser (test matrix §9e).
+
+What still stays open, and why:
+
+| Item | Why |
+|---|---|
+| File storage, versions, trash, share links | The product's file model is link-based by decision (SCR-024); storage would be a platform choice, not a screen. |
+| Invoice reminders that actually send | Recording exists; a WhatsApp document send for invoices is a governed door nobody has specified (the quotation one is agent-driven). |
+| Bank import for reconciliation | Statement lines are typed in; no import format was decided. |
+| Runner enforcement of agent tool permissions / assignments | The rows are a policy record; the orchestrator does not read them yet — stated on the page. |
+| Time logs on tasks | No table; the PDF names it but no rule for what a log is worth. |
+| Everything in bucket C | Settled decisions (ADM-82, ADM-88, D17, templates, live Git, composer template sends, margin arithmetic). |
