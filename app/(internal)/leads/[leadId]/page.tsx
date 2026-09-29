@@ -92,6 +92,8 @@ import {
 } from '@/ui';
 
 import { ExtractionForm, MessageForm, SendToClientForm } from './message-form';
+import { SendTemplateForm } from './template-send-form';
+import { listWhatsAppTemplates } from '@/modules/crm/template-queries';
 import { RequirementDecisionForm } from './requirement-decision-form';
 import { RequirementSetPanel } from './requirement-set-panel';
 import { RequirementReviseForm } from './requirement-revise-form';
@@ -222,6 +224,11 @@ export default async function LeadConversationPage({
   const requirementSets = await readRequirementSets(versions.map((v) => v.id));
   const mayWrite = can(context.role, 'lead.write');
   const mayAssign = can(context.role, 'lead.assign');
+  // Owner decision 2026-09-29 — the composer's template picker: only the
+  // templates Meta approved and an Admin left active; the door checks again.
+  const approvedTemplates = mayWrite && conversation
+    ? (await listWhatsAppTemplates()).filter((t) => t.status === 'approved' && t.active)
+    : [];
   // The capability triple ADM-07 describes. Re-checked here for rendering only;
   // the service checks it again and RLS refuses the rows regardless.
   const mayDraft = can(context.role, 'proposal.draft');
@@ -427,6 +434,17 @@ export default async function LeadConversationPage({
           {mayWrite ? (
             <ComposerBar id="composer">
               <MessageForm conversationId={conversation.id} leadId={leadId} />
+              <SendTemplateForm
+                conversationId={conversation.id}
+                leadId={leadId}
+                proposalId={liveProposal?.id ?? null}
+                templates={approvedTemplates.map((t) => ({
+                  id: t.id,
+                  label: `${t.templateName} · ${t.languageCode} (${t.situationKey.replace(/_/g, ' ')})`,
+                  parameters: t.parameters,
+                }))}
+                windowShut={windowState === 'closed' || windowState === 'never'}
+              />
               <SendToClientForm conversationId={conversation.id} leadId={leadId} />
             </ComposerBar>
           ) : (

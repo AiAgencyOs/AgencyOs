@@ -29,10 +29,14 @@ import {
 import { getProject, listPaymentPlan } from '@/modules/projects/queries';
 import { listInvoiceSends } from '@/modules/finance/sends-queries';
 import { INVOICE_SEND_CHANNEL_LABEL, needsReminder, type InvoiceSendChannel } from '@/modules/finance/sends-schema';
+import { listInvoiceReminders, readInvoiceReminderPolicy } from '@/modules/finance/reminder-queries';
+import { listInvoiceThreads } from '@/lib/admin/invoice-threads';
+import { readWhatsAppReadiness } from '@/lib/admin/whatsapp-readiness';
 import { buttonClass } from '@/ui';
 
 import { RecordRefundForm, RequestRefundForm } from './refund-panel';
 import { RecordInvoiceSendForm } from './send-panel';
+import { SendInvoiceWhatsAppForm } from './whatsapp-send-panel';
 
 import { IssueInvoiceForm, RecordPaymentForm, VoidInvoiceForm,
   VerifyPaymentButton,
@@ -90,6 +94,17 @@ export default async function InvoicePage({
   ]);
   const lastReminderAt = sends.find((s) => s.kind === 'reminder')?.sentAt ?? null;
   const reminderDue = needsReminder(invoice, lastReminderAt, new Date());
+  // Owner decision 2026-09-29: the invoice is SENT over WhatsApp from here,
+  // and past-due reminders go automatically. The threads it can go on, whether
+  // this deployment can send at all, the reminders with their delivery state,
+  // and the policy that drives them.
+  const mayIssueInvoice = can(context.role, 'invoice.issue');
+  const [threads, whatsappReady, reminders, reminderPolicy] = await Promise.all([
+    mayIssueInvoice ? listInvoiceThreads(invoice) : Promise.resolve([]),
+    mayIssueInvoice ? readWhatsAppReadiness() : Promise.resolve({ ok: false as const, reason: 'not permitted' }),
+    listInvoiceReminders(invoiceId),
+    readInvoiceReminderPolicy(),
+  ]);
   const receivingAccounts = accounts.filter((a) => a.status === 'active');
   const taxRatePct = invoice.subtotal_minor > 0 ? Math.round((invoice.tax_minor / invoice.subtotal_minor) * 1000) / 10 : 0;
 
@@ -447,8 +462,67 @@ export default async function InvoicePage({
           </p>
         )}
         {mayIssue && !isDraft && status !== 'void' ? (
-          <RecordInvoiceSendForm invoiceId={invoice.id} defaultKind={sends.some((s) => s.kind === 'sent') ? 'reminder' : 'sent'} />
+          <>
+            {/*
+              Owner decision 2026-09-29: the bill goes over WhatsApp from here,
+              through the quotation's own governed door. The hand-record form
+              below stays for a send made outside AgencyOS.
+            */}
+            <SendInvoiceWhatsAppForm invoiceId={invoice.id} threads={threads} configured={whatsappReady} />
+            <RecordInvoiceSendForm invoiceId={invoice.id} defaultKind={sends.some((s) => s.kind === 'sent') ? 'reminder' : 'sent'} />
+          </>
         ) : null}
+      </section>
+
+      {/*
+        Reminders — owner decision 2026-09-29. Every reminder on this bill,
+        automatic or by hand, with the delivery state of the message it became.
+        An automatic reminder that could not go says why, in its note.
+      */}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-[13px] font-semibold tracking-tight">
+          Reminders <span className="text-muted">({reminders.length})</span>
+        </h2>
+        <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
+          {reminderPolicy.enabled
+            ? `Automatic reminders are on: a past-due invoice is chased on WhatsApp every ${reminderPolicy.intervalDays} day${reminderPolicy.intervalDays === 1 ? '' : 's'} — as text inside the 24-hour window, as the approved "invoice_reminder" template outside it. `
+            : 'Automatic reminders are off. '}
+          <Link href="/settings/finance" className="text-brand hover:underline">Settings › Finance</Link>
+        </p>
+        {reminders.length > 0 ? (
+          <DataTable
+            rows={reminders}
+            dense
+            columns={[
+              { key: 'when', header: 'When', primary: true, cell: (r) => clock.dateTime(r.sentAt) },
+              { key: 'who', header: 'By', badge: true, cell: (r) => <Badge tone={r.automatic ? 'brand' : 'neutral'}>{r.automatic ? 'automatic' : (r.sentByName ?? 'by hand')}</Badge> },
+              { key: 'channel', header: 'On', cellClassName: 'text-muted', cell: (r) => INVOICE_SEND_CHANNEL_LABEL[r.channel as InvoiceSendChannel] ?? r.channel },
+              {
+                key: 'delivery',
+                header: 'Delivery',
+                badge: true,
+                cell: (r) =>
+                  r.delivery === 'sent' ? (
+                    <Badge tone="success">sent</Badge>
+                  ) : r.delivery === 'failed' ? (
+                    <Badge tone="danger">failed{r.deliveryError ? `: ${r.deliveryError}` : ''}</Badge>
+                  ) : r.delivery === 'pending' ? (
+                    <Badge tone="warning">queued</Badge>
+                  ) : r.automatic ? (
+                    <Badge tone="warning">not sent</Badge>
+                  ) : (
+                    <span className="text-muted">recorded by hand</span>
+                  ),
+              },
+              { key: 'note', header: 'Note', cellClassName: 'text-muted', cell: (r) => r.note ?? '—' },
+            ]}
+            getKey={(r) => r.id}
+          />
+        ) : (
+          <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
+            No reminder has been sent on this invoice.
+          </p>
+        )}
       </section>
 
       {/*
