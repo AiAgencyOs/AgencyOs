@@ -8,6 +8,7 @@ import { IDLE_STATE } from '@/modules/identity/types';
 import type { MyTaskDetail } from '@/modules/projects/my-tasks-queries';
 import type { RosterMember } from '@/modules/projects/queries';
 import { emptyTaskCollab, type TaskCollab } from '@/modules/projects/task-collab-types';
+import { emptyTaskTime, type TaskTime } from '@/modules/projects/time-log-queries';
 import { TASK_STATUSES } from '@/modules/projects/schema';
 import {
   Badge,
@@ -23,6 +24,7 @@ import {
 } from '@/ui';
 
 import { BlockReasonField, TaskCollabPanel } from '../task-collab-panel';
+import { TimeLogPanel } from '../time-log-panel';
 
 const PRIORITIES = ['p0', 'p1', 'p2', 'p3'] as const;
 
@@ -42,12 +44,15 @@ export function TaskDrawerButton({
   task,
   roster,
   collab,
+  time,
   label,
   className,
 }: {
   task: MyTaskDetail;
   roster: RosterMember[];
   collab?: TaskCollab;
+  /** Decision 4 of 2026-09-29: the task's time entries and who is looking, for the Log time section. */
+  time?: { task: TaskTime; currentUserId: string; canDeleteAny: boolean; today: string };
   label?: React.ReactNode;
   className?: string;
 }) {
@@ -122,6 +127,12 @@ export function TaskDrawerButton({
           <div className="border-t border-line pt-4">
             <TaskCollabPanel projectId={task.projectId} taskId={task.id} status={task.status} collab={collab ?? emptyTaskCollab(task.id)} canWrite compact />
           </div>
+
+          {time ? (
+            <div className="border-t border-line pt-4">
+              <TimeLogPanel projectId={task.projectId} taskId={task.id} time={time.task ?? emptyTaskTime(task.id)} currentUserId={time.currentUserId} canDeleteAny={time.canDeleteAny} canWrite today={time.today} compact />
+            </div>
+          ) : null}
 
           <form action={editAction} className="flex flex-col gap-3 border-t border-line pt-4">
             <input type="hidden" name="projectId" value={task.projectId} />

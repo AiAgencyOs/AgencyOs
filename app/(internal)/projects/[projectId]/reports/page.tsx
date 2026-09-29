@@ -8,6 +8,7 @@ import { readClientName } from '@/lib/admin/clients';
 import { isDayKey, shiftDay } from '@/lib/admin/month-grid';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { readProjectMargin } from '@/modules/finance/margin-queries';
 import { listExpenses, listProjectInvoices } from '@/modules/finance/queries';
 import {
   getProject,
@@ -17,6 +18,7 @@ import {
   readProjectSpend,
 } from '@/modules/projects/queries';
 import { listReportTasks, weekStartOf, weeksBetween } from '@/modules/projects/report-queries';
+import { readProjectTime } from '@/modules/projects/time-log-queries';
 import { listDefects } from '@/modules/qa/queries';
 import { blocksDelivery, type DefectSeverity, type DefectStatus } from '@/modules/qa/schema';
 import {
@@ -90,7 +92,7 @@ export default async function ProjectReportPage({
   if (!project) notFound();
 
   const mayReadMoney = can(context.role, 'invoice.read');
-  const [plan, breakdown, defects, invoices, expenses, spend, roster, clock, clientName] = await Promise.all([
+  const [plan, breakdown, defects, invoices, expenses, spend, roster, clock, clientName, time, margin] = await Promise.all([
     listPaymentPlan(projectId),
     listDevelopmentBreakdown(projectId),
     listDefects(projectId),
@@ -100,7 +102,12 @@ export default async function ProjectReportPage({
     listInternalRoster(),
     agencyClock(),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
+    // Decision 4 of 2026-09-29: hours logged, per person and per task.
+    readProjectTime(projectId),
+    // Margin — decision: reversed by the owner on 2026-09-29. Cash basis.
+    mayReadMoney ? readProjectMargin(projectId) : Promise.resolve(null),
   ]);
+  const timeCsvHref = `/api/projects/${projectId}/report/time`;
 
   const currency = project.currency;
   const { tasks, modules } = breakdown;
@@ -267,6 +274,46 @@ export default async function ProjectReportPage({
         </Card>
 
         <Card>
+          <CardHeader
+            title="Time"
+            description={time.entryCount > 0 ? `${time.totalHours} h logged in ${time.entryCount} entr${time.entryCount === 1 ? 'y' : 'ies'} by ${time.people.length} ${time.people.length === 1 ? 'person' : 'people'}. Hours only — no rate is recorded, so nothing here is billed.` : 'No time logged yet. Hours are logged per task from the task drawer (decision 4 of 2026-09-29).'}
+            actions={
+              <a href={timeCsvHref} className={buttonClass('ghost', 'sm')}>
+                <IconDownload size={14} />
+                Time CSV
+              </a>
+            }
+          />
+          {time.entryCount === 0 ? null : (
+            <div className="grid gap-4 px-4 pb-4 sm:grid-cols-2 sm:px-5">
+              <div>
+                <p className="mb-1 text-xs font-medium text-muted">Per person</p>
+                <ul className="flex flex-col gap-1 text-[13px]">
+                  {time.people.map((p) => (
+                    <li key={p.personId} className="flex items-baseline justify-between gap-2">
+                      <span className="truncate">{p.personName}</span>
+                      <span className="tabular text-muted">{p.hours} h · {p.entries}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <p className="mb-1 text-xs font-medium text-muted">Per task</p>
+                <ul className="flex flex-col gap-1 text-[13px]">
+                  {time.tasks.slice(0, 12).map((t) => (
+                    <li key={t.taskId} className="flex items-baseline justify-between gap-2">
+                      <Link href={`/projects/${projectId}/development/tasks/${t.taskId}`} className="truncate underline-offset-2 hover:underline">{t.taskTitle}</Link>
+                      <span className="tabular text-muted">{t.hours} h · {t.entries}</span>
+                    </li>
+                  ))}
+                  {time.tasks.length > 12 ? <li className="text-xs text-muted">and {time.tasks.length - 12} more in the CSV.</li> : null}
+                </ul>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <Card>
           <CardHeader title="Risks and quality" description="Open defects by severity, and what would stop a release." actions={<ViewAll href={`/projects/${projectId}/qa`} label="QA" />} />
           {openDefects.length === 0 ? (
             <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No open defects.</p>
@@ -284,7 +331,8 @@ export default async function ProjectReportPage({
 
         {mayReadMoney ? (
           <Card className="xl:col-span-2">
-            <CardHeader title="Money" description="Invoiced and paid against budget and recorded cost. No margin is computed — the figures sit side by side." actions={<ViewAll href="/finance/expenses" label="Expenses" />} />
+            {/* Margin — decision: reversed by the owner on 2026-09-29. Cash-basis estimate: paid − (expenses + AI cost). */}
+            <CardHeader title="Money" description="Invoiced and paid against budget and recorded cost, and the margin between what was paid and what was spent — a cash-basis estimate." actions={<ViewAll href="/finance/expenses" label="Expenses" />} />
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 px-4 pb-4 text-[13px] sm:grid-cols-5 sm:px-5">
               <div><dt className="text-xs text-muted">Budget</dt><dd className="tabular font-medium">{budget > 0 ? money(budget, currency) : '—'}</dd></div>
               <div><dt className="text-xs text-muted">Invoiced</dt><dd className="tabular font-medium">{money(invoiced, currency)}</dd></div>
@@ -292,6 +340,21 @@ export default async function ProjectReportPage({
               <div><dt className="text-xs text-muted">Expenses recorded</dt><dd className="tabular font-medium text-danger">{money(spent, currency)}</dd></div>
               <div><dt className="text-xs text-muted">AI cost</dt><dd className="tabular font-medium">{aiCost > 0 ? money(aiCost, 'INR') : '—'}</dd></div>
             </dl>
+            {margin ? (
+              <div className="mx-4 mb-4 rounded-lg border border-line bg-canvas px-4 py-3 sm:mx-5">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="text-xs font-medium text-muted">Margin · {margin.label}</span>
+                  <span className={cx('tabular text-base font-semibold', margin.marginMinor < 0 ? 'text-danger' : 'text-success')}>
+                    {money(margin.marginMinor, currency)}
+                    {margin.marginPercent !== null ? <span className="ml-2 text-xs font-normal text-muted">{margin.marginPercent}% of paid</span> : null}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-muted">
+                  {money(margin.paidMinor, currency)} paid − ({money(margin.expensesMinor, currency)} expenses + {money(margin.aiCostMinor, 'INR')} AI cost). Invoiced-but-unpaid amounts are not counted.
+                  {' '}Logged time is not costed: no cost rate exists in the schema, so hours stay hours.
+                </p>
+              </div>
+            ) : null}
             {budget > 0 ? (
               <div className="px-4 pb-4 sm:px-5">
                 <ProgressBar value={Math.min(100, (invoiced / budget) * 100)} label="Invoiced against budget" />

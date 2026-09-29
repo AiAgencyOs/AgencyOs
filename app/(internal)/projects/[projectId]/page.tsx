@@ -106,6 +106,7 @@ function money(minor: number, currency: string): string {
 import { AddDeliverableForm, SubmitDeliverableForm } from './deliverables-panel';
 import { DefectTriageForm, ProductionReadyForm, RaiseDefectForm, SettleDefectForm } from './qa-panel';
 import { WatchProjectButton } from './watch-button';
+import { SaveTemplateButton } from './save-template-button';
 import { readMyWatch } from '@/modules/projects/project-defaults-queries';
 import { RecordClaimForm, VerifyClaimForm } from './claims-panel';
 import { ProjectGroupPanel } from './group-panel';
@@ -382,6 +383,8 @@ export default async function ProjectPage({
               Board
             </Link>
             <WatchProjectButton projectId={projectId} watching={myWatch !== null} />
+            {/* Decision: reversed by the owner on 2026-09-29 — a project can be saved as a template. */}
+            {mayWriteProject ? <SaveTemplateButton projectId={projectId} projectName={project.name} /> : null}
             {mayWriteProject ? (
               <Link href={`/projects/${projectId}/settings`} className={buttonClass('primary', 'sm')}>
                 <IconEdit size={14} />

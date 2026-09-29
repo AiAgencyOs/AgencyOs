@@ -21,6 +21,14 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     '/**': ['src/lib/pdf/fonts/**'],
   },
+
+  // Project files are uploaded through a Server Action (decision 5 of
+  // 2026-09-29, src/modules/projects/files-storage-service.ts). The default
+  // 1 MB body would refuse most documents before the door ever saw them;
+  // the door itself refuses anything over MAX_UPLOAD_BYTES (50 MB).
+  experimental: {
+    serverActions: { bodySizeLimit: '52mb' },
+  },
 };
 
 export default nextConfig;

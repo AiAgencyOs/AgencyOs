@@ -7,12 +7,14 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject } from '@/modules/projects/queries';
 import { readTaskCollab } from '@/modules/projects/task-collab-queries';
+import { readTaskTime } from '@/modules/projects/time-log-queries';
 import { readTaskDetail } from '@/modules/projects/task-queries';
 import { listDefectsForTask } from '@/modules/qa/defect-task-queries';
 import { Badge, Card, CardHeader, DetailList, DetailRow, humanize, PageHeader, statusTone } from '@/ui';
 
 import { ProjectSubNav } from '../../../project-subnav';
 import { TaskCollabPanel } from '../../../../../task-collab-panel';
+import { TimeLogPanel } from '../../../../../time-log-panel';
 import { TaskClarificationForm } from './task-clarification-form';
 
 export const metadata: Metadata = { title: 'Task' };
@@ -44,7 +46,7 @@ export default async function TaskDetailPage({
 
   const clock = await agencyClock();
   // SCR-047 — the defects triaged against this task.
-  const [collab, defects] = await Promise.all([readTaskCollab(taskId, clock), listDefectsForTask(taskId)]);
+  const [collab, defects, time] = await Promise.all([readTaskCollab(taskId, clock), listDefectsForTask(taskId), readTaskTime(taskId)]);
   const { task, module, feature, scopeItems, evidence, plan, dependencies } = detail;
   const mayPlan = can(context.role, 'project.write');
   const mayWriteTask = can(context.role, 'task.write');
@@ -118,6 +120,16 @@ export default async function TaskDetailPage({
         />
         <div className="px-4 pb-4 sm:px-5">
           <TaskCollabPanel projectId={projectId} taskId={task.id} status={task.status} collab={collab} canWrite={mayWriteTask} />
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Time"
+          description={time.entries.length > 0 ? `${time.totalHours} h logged across ${time.entries.length} entr${time.entries.length === 1 ? 'y' : 'ies'}. Hours only — no rate is recorded, so nothing here is billed.` : 'Manual hours per task with a date and a note (decision 4 of 2026-09-29). No billing effect.'}
+        />
+        <div className="px-4 pb-4 sm:px-5">
+          <TimeLogPanel projectId={projectId} taskId={task.id} time={time} currentUserId={context.userId} canDeleteAny={mayPlan} canWrite={mayWriteTask} today={clock.dayKey(new Date())} />
         </div>
       </Card>
 

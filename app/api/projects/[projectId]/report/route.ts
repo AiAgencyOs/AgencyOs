@@ -4,6 +4,7 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { isDayKey, shiftDay } from '@/lib/admin/month-grid';
 import { getAuthContext } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { readProjectMargin } from '@/modules/finance/margin-queries';
 import { getProject, listDevelopmentBreakdown, listInternalRoster } from '@/modules/projects/queries';
 import { listReportTasks } from '@/modules/projects/report-queries';
 
@@ -71,6 +72,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
         .map(csvCell)
         .join(','),
     );
+  }
+
+  // Margin — decision: reversed by the owner on 2026-09-29. Appended as its
+  // own block, only for a reader who may read money, in minor units as the
+  // rows are stored. Cash basis: paid − (expenses + AI cost); time is not
+  // costed because no rate exists.
+  if (can(context.role, 'invoice.read')) {
+    const margin = await readProjectMargin(projectId);
+    lines.push('');
+    lines.push(['metric', 'value_minor', 'basis'].join(','));
+    lines.push(['paid', margin.paidMinor, 'cash-basis estimate'].map(csvCell).join(','));
+    lines.push(['expenses', margin.expensesMinor, 'recorded'].map(csvCell).join(','));
+    lines.push(['ai_cost', margin.aiCostMinor, 'recorded, INR'].map(csvCell).join(','));
+    lines.push(['margin', margin.marginMinor, `${margin.label}; time not costed (no cost rate in schema)`].map(csvCell).join(','));
   }
 
   const slug = project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'project';

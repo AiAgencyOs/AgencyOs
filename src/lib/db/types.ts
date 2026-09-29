@@ -5670,44 +5670,176 @@ export type Database = {
       project_files: {
         Row: {
           category: string
+          content_type: string | null
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
           description: string | null
           id: string
           organization_id: string
+          parent_file_id: string | null
           project_id: string
+          size_bytes: number | null
+          storage_path: string | null
           title: string
           updated_at: string
           uploaded_by: string | null
-          url: string
+          url: string | null
+          version: number
         }
         Insert: {
           category?: string
+          content_type?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           description?: string | null
           id?: string
           organization_id: string
+          parent_file_id?: string | null
           project_id: string
+          size_bytes?: number | null
+          storage_path?: string | null
           title: string
           updated_at?: string
           uploaded_by?: string | null
-          url: string
+          url?: string | null
+          version?: number
         }
         Update: {
           category?: string
+          content_type?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           description?: string | null
           id?: string
           organization_id?: string
+          parent_file_id?: string | null
           project_id?: string
+          size_bytes?: number | null
+          storage_path?: string | null
           title?: string
           updated_at?: string
           uploaded_by?: string | null
-          url?: string
+          url?: string | null
+          version?: number
         }
         Relationships: [
           {
+            foreignKeyName: "project_files_parent_file_id_fkey"
+            columns: ["parent_file_id"]
+            isOneToOne: false
+            referencedRelation: "project_files"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "project_files_project_id_fkey"
             columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_file_shares: {
+        Row: {
+          access_count: number
+          created_at: string
+          created_by: string | null
+          expires_at: string
+          file_id: string
+          id: string
+          last_accessed_at: string | null
+          organization_id: string
+          project_id: string
+          revoked_at: string | null
+          token: string
+          updated_at: string
+        }
+        Insert: {
+          access_count?: number
+          created_at?: string
+          created_by?: string | null
+          expires_at: string
+          file_id: string
+          id?: string
+          last_accessed_at?: string | null
+          organization_id: string
+          project_id: string
+          revoked_at?: string | null
+          token: string
+          updated_at?: string
+        }
+        Update: {
+          access_count?: number
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string
+          file_id?: string
+          id?: string
+          last_accessed_at?: string | null
+          organization_id?: string
+          project_id?: string
+          revoked_at?: string | null
+          token?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_file_shares_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "project_files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_file_shares_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_templates: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          name: string
+          organization_id: string
+          source_project_id: string | null
+          template_items: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          organization_id: string
+          source_project_id?: string | null
+          template_items?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          organization_id?: string
+          source_project_id?: string | null
+          template_items?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_templates_source_project_id_fkey"
+            columns: ["source_project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
@@ -7833,9 +7965,95 @@ export type Database = {
           },
         ]
       }
+      time_logs: {
+        Row: {
+          created_at: string
+          hours: number
+          id: string
+          logged_on: string
+          note: string | null
+          organization_id: string
+          person_id: string
+          project_id: string
+          task_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          hours: number
+          id?: string
+          logged_on: string
+          note?: string | null
+          organization_id: string
+          person_id: string
+          project_id: string
+          task_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          hours?: number
+          id?: string
+          logged_on?: string
+          note?: string | null
+          organization_id?: string
+          person_id?: string
+          project_id?: string
+          task_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "time_logs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_logs_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
-      [_ in never]: never
+      time_log_totals_by_person: {
+        Row: {
+          entries: number | null
+          hours: number | null
+          last_logged_on: string | null
+          organization_id: string | null
+          person_id: string | null
+          project_id: string | null
+        }
+        Relationships: []
+      }
+      time_log_totals_by_project: {
+        Row: {
+          entries: number | null
+          hours: number | null
+          last_logged_on: string | null
+          organization_id: string | null
+          people: number | null
+          project_id: string | null
+        }
+        Relationships: []
+      }
+      time_log_totals_by_task: {
+        Row: {
+          entries: number | null
+          hours: number | null
+          last_logged_on: string | null
+          organization_id: string | null
+          project_id: string | null
+          task_id: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       account_health_signals: {
@@ -8047,6 +8265,15 @@ export type Database = {
           blocking_number: string
           milestone_count: number
           outcome: string
+        }[]
+      }
+      resolve_file_share: {
+        Args: { p_token: string }
+        Returns: {
+          content_type: string | null
+          file_id: string
+          storage_path: string
+          title: string
         }[]
       }
       requirement_coverage: {

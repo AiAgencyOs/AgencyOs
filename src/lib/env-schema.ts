@@ -128,6 +128,19 @@ export const serverSchema = z.object({
    * vault is unusable rather than silently insecure.
    */
   VAULT_ENCRYPTION_KEY: z.string().min(32, 'VAULT_ENCRYPTION_KEY must be at least 32 characters').optional(),
+
+  /**
+   * The Supabase Storage bucket project files are uploaded to (decision 5 of
+   * 2026-09-29). Defaults to `project-files`, the bucket migration
+   * 20260930110000 creates where a storage service exists. Not a secret;
+   * modelled so the name is one value the whole app reads, and so a stack
+   * with no storage (the local one) can be told apart from a misspelt one.
+   */
+  SUPABASE_FILES_BUCKET: z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9][a-z0-9-]{1,62}$/, 'SUPABASE_FILES_BUCKET must be a bucket name (lowercase letters, digits, hyphens)')
+    .default('project-files'),
 });
 
 export type ServerEnv = z.infer<typeof serverSchema>;
