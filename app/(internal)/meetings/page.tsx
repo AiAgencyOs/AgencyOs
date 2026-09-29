@@ -16,6 +16,7 @@ import {
   timezonePair,
   whenOf,
 } from '@/modules/crm/meetings-view';
+import { readMeetingProjects } from '@/modules/crm/meeting-project-queries';
 import { listJobsForMeetings, listMeetings } from '@/modules/crm/queries';
 import { MEETING_MODES, MEETING_STATUSES } from '@/modules/crm/schema';
 import { Badge, Callout, EmptyState, IconCalendar, IconClock, MonthGrid, PageHeader, Stat, StatGrid, StatusBadge, cx, humanize, statusTone, PermissionDenied, type CalendarEntry } from '@/ui';
@@ -84,6 +85,8 @@ export default async function MeetingsPage({
 
   const rows = await listMeetings({ from: window.from, to: window.to, status, mode, owner, newestFirst: window.key === 'past', limit: LIMIT });
   const jobs = await listJobsForMeetings(rows.map((r) => r.id));
+  // SCR-010 — the project each meeting is about, when it is about one.
+  const projectLinks = await readMeetingProjects(rows.map((r) => r.id));
   const byMeeting = new Map<string, typeof jobs>();
   for (const j of jobs) if (j.kind === 'meeting.reminder') byMeeting.set(j.meetingId, [...(byMeeting.get(j.meetingId) ?? []), j]);
   const owners = [...new Set(rows.map((r) => r.lead?.assigned_to).filter((id): id is string => Boolean(id)))];
@@ -268,6 +271,7 @@ export default async function MeetingsPage({
                             {m.contact?.full_name ?? m.lead?.title ?? 'Unnamed lead'}
                             {m.contact?.full_name && m.lead?.title ? <span className="ml-1.5 text-muted">· {m.lead.title}</span> : null}
                           </span>
+                          {projectLinks.get(m.id) ? <Badge tone="info">Project: {projectLinks.get(m.id)!.projectName}</Badge> : null}
                           <StatusBadge status={m.status} />
                           <Badge tone="neutral">{humanize(m.booked_mode ?? m.requested_mode)}{m.booked_mode ? '' : ' (requested)'}</Badge>
                           {overlap ? (

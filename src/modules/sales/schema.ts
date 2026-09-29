@@ -1031,6 +1031,14 @@ export const quotationDocumentSchema = z
     /** G-182 — the words the client reads above the figures. */
     coveringNote: z.string().nullish().catch(null),
     /**
+     * SCR-012 (bucket F-B) — the commercial terms as EDITED in the composer.
+     * Null (every quotation before this field, and every one the drafter
+     * left alone) means `commercialTermsFor(validityDays)` prints exactly as
+     * it always did; a stored list is what the owner approved and the
+     * client reads, frozen with the rest of the document by proposals_guard.
+     */
+    commercialTerms: z.array(z.string()).nullish().catch(null),
+    /**
      * G-184 — the pre-authorised offer this version carries, in the owner's
      * own words. Written by `sales.apply_approved_offer` while the quotation
      * is still a draft, which is the only moment it can be.

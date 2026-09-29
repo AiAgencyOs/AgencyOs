@@ -6,16 +6,23 @@ import {
   getSalesFunnel,
   MIN_LEADS_TO_NAME_A_LEAK,
 } from '@/lib/admin/sales-funnel';
+import { agencyClock, getAgencyTimeZone } from '@/lib/admin/agency-clock';
+import { meetingsToday } from '@/lib/admin/overview';
+import { listRecentSalesActivity, listUpcomingMeetings } from '@/lib/admin/sales-activity';
 import { requireInternal } from '@/lib/auth/session';
+import { listLeadsForTable } from '@/modules/crm/queries';
+import { listMyTasks } from '@/modules/projects/queries';
 import { isOpenOpportunity, LOST_CATEGORY_LABELS, OPPORTUNITY_STAGES, type OpportunityStage } from '@/modules/sales/schema';
 import { listPipelineOpportunities } from '@/modules/sales/pipeline-queries';
 import { listInternalRoster } from '@/modules/projects/queries';
 import { can } from '@/lib/authz/permissions';
 import Link from 'next/link';
 
-import { buttonClass, DonutChart, FilterChips, humanize, IconCheck, IconDownload, IconRupee, IconTarget, IconTrendUp, IconUsers, PageHeader, Stat, StatGrid, statusTone, type KanbanColumn, PermissionDenied } from '@/ui';
+import { BarChart, buttonClass, Card, CardHeader, DonutChart, FilterChips, humanize, IconCheck, IconDownload, IconRupee, IconTarget, IconTrendUp, IconUsers, PageHeader, Stat, StatGrid, statusTone, StatusBadge, type KanbanColumn, PermissionDenied } from '@/ui';
 
+import { TodayCard } from '../today-card';
 import { PipelineBoard, type PipelineCard } from './pipeline-board';
+import { SalesActions } from './sales-actions';
 
 export const metadata: Metadata = { title: 'Sales funnel' };
 
@@ -77,6 +84,7 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
   const { days: daysParam, source: sourceParam, owner: ownerParam } = await searchParams;
   const days = (WINDOWS as readonly number[]).includes(Number(daysParam)) ? Number(daysParam) : 90;
 
+  const canWritePipeline = can(context.role, 'lead.write');
   const { counts, steps, biggestDrop, outOfOrder, lostReasons } = await getSalesFunnel(days);
   const reflex = await getPricingReflex(days);
   const leadSources = await getLeadSourceBreakdown(days);
@@ -104,9 +112,32 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
     return `/sales-funnel${qs ? `?${qs}` : ''}`;
   };
 
+  // SCR-005 — today, upcoming meetings, recent activity, the add buttons'
+  // lead list. Each a reader that already exists or a row-level read.
+  const clock = await agencyClock();
+  const now = new Date();
+  const todayWindow = clock.today(now);
+  const todayKey = clock.dayKey(now);
+  const agencyZone = await getAgencyTimeZone();
+  // Said as unavailable rather than as none when the read fails, like the dashboard.
+  const todayMeetings: { ok: true; value: Awaited<ReturnType<typeof meetingsToday>> } | { ok: false } = await meetingsToday(todayWindow.from, todayWindow.to)
+    .then((value) => ({ ok: true as const, value }))
+    .catch(() => ({ ok: false as const }));
+  const [myTasks, upcoming, activity, leadsForActions] = await Promise.all([
+    listMyTasks(context.userId),
+    listUpcomingMeetings(now),
+    listRecentSalesActivity(10),
+    canWritePipeline ? listLeadsForTable(200) : Promise.resolve([]),
+  ]);
+  const dueToday = myTasks.filter((t) => t.dueOn === todayKey);
+  const overdueMine = myTasks.filter((t) => t.dueOn !== null && t.dueOn < todayKey).length;
+  const exportQuery = new URLSearchParams();
+  if (source) exportQuery.set('source', source);
+  if (owner) exportQuery.set('owner', owner);
+  const exportHref = `/api/sales/pipeline/export${exportQuery.toString() ? `?${exportQuery}` : ''}`;
+
   const openStages = OPPORTUNITY_STAGES.filter(isOpenOpportunity);
   const open = opportunities.filter((o) => isOpenOpportunity(o.stage as OpportunityStage));
-  const canWritePipeline = can(context.role, 'lead.write');
 
   // SCR-004's KPI row — every figure a sum or count of rows, per stage.
   const currency = open[0]?.currency ?? opportunities[0]?.currency ?? 'INR';
@@ -149,9 +180,11 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
                 </Link>
               ))}
             </div>
-            <a href="/api/sales/pipeline/export" className={buttonClass('secondary', 'sm')}>
-              <IconDownload size={14} /> Export CSV
+            {/* SCR-005 — the export carries the page's own filters. */}
+            <a href={exportHref} className={buttonClass('secondary', 'sm')}>
+              <IconDownload size={14} /> Export CSV{filtering ? ' (filtered)' : ''}
             </a>
+            <SalesActions leads={leadsForActions.map((l) => ({ id: l.id, title: l.contact?.fullName ?? l.title, conversationId: null }))} agencyZone={agencyZone} canWrite={canWritePipeline} />
           </div>
         }
       />
@@ -190,6 +223,98 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
         <Stat label="Won" value={String(counts.won)} caption={wonValue > 0 ? `${money(wonValue, currency)} across all won deals` : `${counts.lost} lost`} tone="success" icon={<IconCheck size={16} />} />
         <Stat label="Win rate" value={winRate === null ? '—' : `${winRate}%`} caption={decided > 0 ? `${counts.won} won of ${decided} decided` : 'Nothing decided in the window'} tone={winRate !== null && winRate >= 50 ? 'success' : 'neutral'} icon={<IconTrendUp size={16} />} />
       </StatGrid>
+
+      {/* SCR-005 — pipeline value by stage. One measure (money), ordered
+          categories, a single series: a bar chart in one hue, the figures
+          in a table beneath for anyone who cannot read the colour or wants
+          the number. Only the open stages are open value; won and lost are
+          shown as what they are, beside. */}
+      <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4">
+        <p className="text-sm font-medium">Pipeline value by stage</p>
+        <p className="text-[12.5px] text-muted">
+          The sum of deal values in each stage{filtering ? ', matching the filters' : ''}, in {currency}. Won and lost are the settled ends of the same line.
+        </p>
+        {opportunities.length === 0 ? (
+          <p className="mt-1 text-sm text-muted">No deals yet, so nothing to sum.</p>
+        ) : (
+          <>
+            <div className="mt-2">
+              <BarChart
+                data={OPPORTUNITY_STAGES.map((st) => ({ label: STAGE_LABEL[st], value: Math.round((valueByStage.get(st) ?? 0) / 100) }))}
+                colors={OPPORTUNITY_STAGES.map((st) => (isOpenOpportunity(st) ? 'var(--brand)' : st === 'won' ? 'var(--success)' : 'var(--muted)'))}
+                currency={currency}
+                height={200}
+              />
+            </div>
+            <details className="text-[12.5px]">
+              <summary className="cursor-pointer text-muted">The figures as a table</summary>
+              <table className="mt-2 w-full max-w-md text-[12.5px]">
+                <thead>
+                  <tr className="text-left text-[11px] uppercase tracking-wide text-faint">
+                    <th className="py-1">Stage</th>
+                    <th className="py-1 text-right">Deals</th>
+                    <th className="py-1 text-right">Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {OPPORTUNITY_STAGES.map((st) => (
+                    <tr key={st} className="border-t border-line">
+                      <td className="py-1">{STAGE_LABEL[st]}</td>
+                      <td className="py-1 text-right tabular">{opportunities.filter((o) => o.stage === st).length}</td>
+                      <td className="py-1 text-right tabular">{money(valueByStage.get(st) ?? 0, currency)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </details>
+          </>
+        )}
+      </section>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <TodayCard clock={clock} now={now} meetings={todayMeetings} dueToday={dueToday} overdueCount={overdueMine} paymentsToVerify={null} />
+
+        <Card>
+          <CardHeader title="Upcoming meetings" description="Agreed or requested, soonest first." actions={<Link href="/meetings?window=week" className="text-xs text-muted underline underline-offset-2 hover:text-foreground">All meetings</Link>} />
+          <ul className="divide-y divide-line">
+            {upcoming.length === 0 ? (
+              <li className="px-4 py-3 text-[13px] text-muted sm:px-5">Nothing agreed or requested ahead.</li>
+            ) : (
+              upcoming.map((m) => (
+                <li key={m.id}>
+                  <Link href={`/meetings/${m.id}`} className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
+                    <span className="min-w-0 flex-1 truncate text-foreground">{m.leadTitle}</span>
+                    <span className="shrink-0 text-xs text-muted">{humanize(m.mode)}</span>
+                    <span className="shrink-0 text-xs tabular text-muted">{clock.dateTime(m.at)}{m.agreed ? '' : ' (requested)'}</span>
+                  </Link>
+                </li>
+              ))
+            )}
+          </ul>
+        </Card>
+
+        <Card>
+          <CardHeader title="Recent sales activity" description="The newest rows on any lead: notes, status changes, messages, calls, agent runs, assignments." />
+          <ul className="divide-y divide-line">
+            {activity.length === 0 ? (
+              <li className="px-4 py-3 text-[13px] text-muted sm:px-5">Nothing recorded on any lead yet.</li>
+            ) : (
+              activity.map((a) => (
+                <li key={a.id}>
+                  <Link href={`/leads/${a.leadId}`} className="flex flex-col gap-0.5 px-4 py-2 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
+                    <span className="flex items-center gap-2">
+                      <StatusBadge status={a.kind} dot={false} />
+                      <span className="min-w-0 flex-1 truncate font-medium text-foreground">{a.leadTitle}</span>
+                      <span className="shrink-0 text-[11px] text-faint">{clock.dateTime(a.occurredAt)}</span>
+                    </span>
+                    {a.body ? <span className="truncate text-xs text-muted">{a.body}</span> : null}
+                  </Link>
+                </li>
+              ))
+            )}
+          </ul>
+        </Card>
+      </div>
 
       <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4">
         <p className="text-sm font-medium">Open pipeline</p>

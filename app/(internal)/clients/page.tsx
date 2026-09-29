@@ -2,12 +2,14 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { listClientProjectStatusCounts } from '@/lib/admin/client-projects';
 import { listClients } from '@/lib/admin/clients';
 import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { SavedViewsBar } from '../saved-views-bar';
 import { CreateLeadButton } from '../leads/create-lead-button';
+import { ClientEditButton } from './client-edit-form';
 import { ClientPreviewButton } from './preview-drawer';
 import {
   Avatar,
@@ -46,7 +48,7 @@ function money(minor: number, currency: string): string {
 
 type Row = Awaited<ReturnType<typeof listClients>>[number];
 
-const columnsFor = (clock: AgencyClock): Column<Row>[] => [
+const columnsFor = (clock: AgencyClock, mayEdit: boolean): Column<Row>[] => [
   {
     key: 'name',
     header: 'Client name',
@@ -68,7 +70,9 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     cellClassName: 'text-muted',
     cell: (c) => (c.projectsTotal === 0 ? 'None yet' : `${c.projectsActive} active · ${c.projectsTotal} total`),
   },
-  { key: 'invoiced', header: 'Total value', align: 'right', cellClassName: 'tabular', cell: (c) => money(c.invoicedMinor, c.currency), sortKey: 'invoiced' },
+  // SCR-014 — revenue is what was PAID; invoiced is the claim beside it.
+  { key: 'paid', header: 'Revenue (paid)', align: 'right', cellClassName: 'tabular', cell: (c) => money(c.paidMinor, c.currency), sortKey: 'paid' },
+  { key: 'invoiced', header: 'Invoiced', align: 'right', desktopOnly: true, cellClassName: 'tabular text-muted', cell: (c) => money(c.invoicedMinor, c.currency), sortKey: 'invoiced' },
   { key: 'outstanding', header: 'Outstanding', align: 'right', cellClassName: 'tabular font-medium', cell: (c) => money(c.outstandingMinor, c.currency), sortKey: 'outstanding' },
   {
     key: 'status',
@@ -106,11 +110,17 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     header: '',
     align: 'right',
     desktopOnly: true,
-    cell: (c) => <ClientPreviewButton clientId={c.id} name={c.name} />,
+    cell: (c) => (
+      <span className="flex items-center justify-end gap-1">
+        <ClientPreviewButton clientId={c.id} name={c.name} />
+        {mayEdit ? <ClientEditButton client={{ id: c.id, name: c.name, legalName: c.legalName, gstin: c.gstin, pan: c.pan, billingAddress: c.billingAddress }} /> : null}
+      </span>
+    ),
   },
 ];
 
 const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
+  paid: (a, b) => a.paidMinor - b.paidMinor,
   invoiced: (a, b) => a.invoicedMinor - b.invoicedMinor,
   outstanding: (a, b) => a.outstandingMinor - b.outstandingMinor,
   created: (a, b) => a.createdAt.localeCompare(b.createdAt),
@@ -145,6 +155,9 @@ export default async function ClientsPage({
   const facet = [tag ? `tag=${encodeURIComponent(tag)}` : '', owner ? `owner=${encodeURIComponent(owner)}` : ''].filter(Boolean);
   const currentQuery = [status ? `status=${status}` : '', q ? `q=${encodeURIComponent(q)}` : '', ...facet, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
   const [allClients, savedViews] = await Promise.all([listClients(), listSavedViews('/clients')]);
+  // SCR-014 — completed and pending, counted from the projects table.
+  const projectCounts = await listClientProjectStatusCounts(allClients.map((c) => c.id));
+  const mayEditClients = can(context.role, 'project.write');
 
   const active = allClients.filter((c) => c.status === 'active');
   const archived = allClients.filter((c) => c.status !== 'active');
@@ -153,9 +166,12 @@ export default async function ClientsPage({
   const currency = allClients[0]?.currency ?? 'INR';
   const sameCurrency = allClients.every((c) => c.currency === currency);
   const totalInvoiced = allClients.filter((c) => c.currency === currency).reduce((n, c) => n + c.invoicedMinor, 0);
+  const totalPaid = allClients.filter((c) => c.currency === currency).reduce((n, c) => n + c.paidMinor, 0);
+  const completed = allClients.filter((c) => (projectCounts.get(c.id)?.completed ?? 0) > 0);
+  const pendingClients = allClients.filter((c) => (projectCounts.get(c.id)?.pending ?? 0) > 0);
 
   const byStatus =
-    status === 'active' ? active : status === 'archived' ? archived : status === 'owing' ? owing : status === 'working' ? withProjects : allClients;
+    status === 'active' ? active : status === 'archived' ? archived : status === 'owing' ? owing : status === 'working' ? withProjects : status === 'completed' ? completed : status === 'pending' ? pendingClients : allClients;
   const bySearch = needle ? byStatus.filter((c) => c.name.toLowerCase().includes(needle) || (c.billingEmail ?? '').toLowerCase().includes(needle)) : byStatus;
   // SCR-014 — `?tag=` and `?owner=` (owner is a user id; `none` means unowned).
   const filtered = bySearch.filter((c) => (!tag || c.tags.includes(tag)) && (!owner || (owner === 'none' ? c.ownerId === null : c.ownerId === owner)));
@@ -195,19 +211,21 @@ export default async function ClientsPage({
       />
 
       {allClients.length > 0 ? (
-        <StatGrid cols={5}>
-          <Stat label="Total clients" value={String(allClients.length)} caption={`${archived.length} archived`} tone="brand" icon={<IconUsers size={16} />} href="/clients" />
-          <Stat label="Active clients" value={String(active.length)} caption="On the books" tone="success" icon={<IconUser size={16} />} href="/clients?status=active" />
-          <Stat label="Working now" value={String(withProjects.length)} caption="With an active project" tone="info" icon={<IconCheck size={16} />} href="/clients?status=working" />
-          <Stat label="Owing" value={String(owing.length)} caption="With an outstanding balance" tone={owing.length > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/clients?status=owing" />
+        <StatGrid cols={6}>
+          <Stat label="Total clients" value={String(allClients.length)} caption={`${archived.length} archived · ${owing.length} owing`} tone="brand" icon={<IconUsers size={16} />} href="/clients" />
+          <Stat label="Active clients" value={String(active.length)} caption={`${withProjects.length} with an active project`} tone="success" icon={<IconUser size={16} />} href="/clients?status=active" />
+          {/* SCR-014 — completed and pending are counts of PROJECTS by client, from the projects table. */}
+          <Stat label="Completed" value={String(completed.length)} caption="Clients with a completed project" tone="info" icon={<IconCheck size={16} />} href="/clients?status=completed" />
+          <Stat label="Pending" value={String(pendingClients.length)} caption="Clients with a project not yet completed" tone={pendingClients.length > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/clients?status=pending" />
           <Stat
-            label="Total invoiced"
-            value={money(totalInvoiced, currency)}
-            caption={sameCurrency ? 'From all clients' : `${currency} clients only`}
+            label="Total revenue"
+            value={money(totalPaid, currency)}
+            caption={`Paid, not invoiced · ${money(totalInvoiced, currency)} invoiced${sameCurrency ? '' : ` · ${currency} only`}`}
             tone="accent"
             icon={<IconRupee size={16} />}
             href="/finance"
           />
+          <Stat label="Owing" value={String(owing.length)} caption="With an outstanding balance" tone={owing.length > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/clients?status=owing" />
         </StatGrid>
       ) : null}
 
@@ -218,6 +236,8 @@ export default async function ClientsPage({
               { key: 'all', label: `All clients (${allClients.length})`, href: chip(null), active: !status },
               { key: 'active', label: `Active (${active.length})`, href: chip('active'), active: status === 'active' },
               { key: 'working', label: `Working (${withProjects.length})`, href: chip('working'), active: status === 'working' },
+              { key: 'completed', label: `Completed (${completed.length})`, href: chip('completed'), active: status === 'completed' },
+              { key: 'pending', label: `Pending (${pendingClients.length})`, href: chip('pending'), active: status === 'pending' },
               { key: 'owing', label: `Owing (${owing.length})`, href: chip('owing'), active: status === 'owing' },
               { key: 'archived', label: `Archived (${archived.length})`, href: chip('archived'), active: status === 'archived' },
             ]}
@@ -256,7 +276,7 @@ export default async function ClientsPage({
         <>
           <DataTable
             rows={pageRows}
-            columns={columnsFor(clock)}
+            columns={columnsFor(clock, mayEditClients)}
             getKey={(c) => c.id}
             href={(c) => `/clients/${c.id}`}
             sort={{ key: sortKey, direction, makeHref: (key, nextDirection) => qs(`sort=${key}&dir=${nextDirection}`) }}

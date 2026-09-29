@@ -77,6 +77,24 @@ export function RequirementSetPanel({
         </span>
       </summary>
       <div className="flex flex-col gap-4 border-t border-line px-3 py-3">
+        {/* SCR-009 (bucket F-B) — the four fields the PDF lists as part of the
+            versioned requirement: who uses it, on what, what it talks to,
+            and what the client said about time and money. Drawn from the
+            payload itself, never from coverage quotes. */}
+        <List title="User roles" items={payload.userRoles} muted="who uses it" />
+        <List title="Platforms" items={payload.platforms} muted="where it runs" />
+        <List title="Integrations" items={payload.integrations} muted="what it must talk to" />
+        {payload.timelineBudgetNotes ? (
+          <div className="flex flex-col gap-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+              Timeline and budget notes<span className="ml-1 font-normal normal-case tracking-normal">— in the client&rsquo;s words</span>
+            </p>
+            <p className="whitespace-pre-wrap text-[13px]">{payload.timelineBudgetNotes}</p>
+          </div>
+        ) : null}
+        {payload.userRoles.length + payload.platforms.length + payload.integrations.length === 0 && !payload.timelineBudgetNotes ? (
+          <p className="text-[13px] text-muted">No user roles, platforms, integrations or timeline/budget notes recorded on this version — edit it as a new version to add them.</p>
+        ) : null}
         <List title="Constraints and rules" items={payload.constraints} muted="what it must respect" />
         <List title="Excluded" items={payload.exclusions} muted="ruled out, in the client's words" />
         <List title="Assumptions" items={payload.assumptions} muted="not confirmed by the client" />

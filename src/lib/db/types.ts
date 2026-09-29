@@ -1327,37 +1327,49 @@ export type Database = {
       }
       client_accounts: {
         Row: {
+          billing_address: string | null
           billing_email: string | null
           created_at: string
           currency: string
+          gstin: string | null
           id: string
+          legal_name: string | null
           name: string
           organization_id: string
           owner_id: string | null
+          pan: string | null
           status: string
           tags: string[]
           updated_at: string
         }
         Insert: {
+          billing_address?: string | null
           billing_email?: string | null
           created_at?: string
           currency?: string
+          gstin?: string | null
           id?: string
+          legal_name?: string | null
           name: string
           organization_id: string
           owner_id?: string | null
+          pan?: string | null
           status?: string
           tags?: string[]
           updated_at?: string
         }
         Update: {
+          billing_address?: string | null
           billing_email?: string | null
           created_at?: string
           currency?: string
+          gstin?: string | null
           id?: string
+          legal_name?: string | null
           name?: string
           organization_id?: string
           owner_id?: string | null
+          pan?: string | null
           status?: string
           tags?: string[]
           updated_at?: string
@@ -1373,6 +1385,55 @@ export type Database = {
           {
             foreignKeyName: "client_accounts_owner_id_fkey"
             columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_account_members: {
+        Row: {
+          client_account_id: string
+          created_at: string
+          id: string
+          organization_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          client_account_id: string
+          created_at?: string
+          id?: string
+          organization_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          client_account_id?: string
+          created_at?: string
+          id?: string
+          organization_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_account_members_client_account_id_fkey"
+            columns: ["client_account_id"]
+            isOneToOne: false
+            referencedRelation: "client_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_account_members_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_account_members_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
@@ -2219,6 +2280,10 @@ export type Database = {
           state: string
         }[]
       }
+      gstin_check_character: {
+        Args: { p_first14: string }
+        Returns: string
+      }
       is_admin: { Args: never; Returns: boolean }
       is_client: { Args: never; Returns: boolean }
       is_internal: { Args: never; Returns: boolean }
@@ -2235,6 +2300,10 @@ export type Database = {
         Returns: {
           outcome: string
         }[]
+      }
+      set_client_account_team: {
+        Args: { p_client_account_id: string; p_user_ids: string[] }
+        Returns: { outcome: string }[]
       }
       set_membership_status: {
         Args: { p_membership_id: string; p_status: string }
@@ -2401,6 +2470,17 @@ export type Database = {
           fk_column: string
           parent: string
         }[]
+      }
+      update_client_account: {
+        Args: {
+          p_billing_address?: string | null
+          p_client_account_id: string
+          p_gstin?: string | null
+          p_legal_name?: string | null
+          p_name: string
+          p_pan?: string | null
+        }
+        Returns: { outcome: string }[]
       }
       update_own_profile: {
         Args: { p_avatar_url: string; p_full_name: string }
@@ -3415,6 +3495,10 @@ export type Database = {
           requirements: Json
           score: number | null
           score_inputs: Json | null
+          score_override: number | null
+          score_override_at: string | null
+          score_override_by: string | null
+          score_override_reason: string | null
           score_reasons: Json | null
           scored_at: string | null
           service: string | null
@@ -3449,6 +3533,10 @@ export type Database = {
           requirements?: Json
           score?: number | null
           score_inputs?: Json | null
+          score_override?: number | null
+          score_override_at?: string | null
+          score_override_by?: string | null
+          score_override_reason?: string | null
           score_reasons?: Json | null
           scored_at?: string | null
           service?: string | null
@@ -3483,6 +3571,10 @@ export type Database = {
           requirements?: Json
           score?: number | null
           score_inputs?: Json | null
+          score_override?: number | null
+          score_override_at?: string | null
+          score_override_by?: string | null
+          score_override_reason?: string | null
           score_reasons?: Json | null
           scored_at?: string | null
           service?: string | null
@@ -3598,6 +3690,7 @@ export type Database = {
           opportunity_id: string | null
           organization_id: string
           outcome: string | null
+          project_id: string | null
           proposed_slots: Json | null
           provider: string | null
           provider_event_id: string | null
@@ -3634,6 +3727,7 @@ export type Database = {
           opportunity_id?: string | null
           organization_id: string
           outcome?: string | null
+          project_id?: string | null
           proposed_slots?: Json | null
           provider?: string | null
           provider_event_id?: string | null
@@ -3670,6 +3764,7 @@ export type Database = {
           opportunity_id?: string | null
           organization_id?: string
           outcome?: string | null
+          project_id?: string | null
           proposed_slots?: Json | null
           provider?: string | null
           provider_event_id?: string | null
@@ -4235,6 +4330,10 @@ export type Database = {
           campaign_id: string | null
         }[]
       }
+      decide_follow_up_sequence: {
+        Args: { p_action: string; p_next_due_at?: string | null; p_reason: string; p_sequence_id: string }
+        Returns: { outcome: string }[]
+      }
       defer_send: {
         Args: {
           p_blocked_on?: string
@@ -4454,6 +4553,10 @@ export type Database = {
           outcome: string
           meeting_id: string | null
         }[]
+      }
+      override_lead_score: {
+        Args: { p_lead_id: string; p_reason: string; p_score?: number | null }
+        Returns: { outcome: string }[]
       }
       propose_meeting_slots: {
         Args: { p_meeting_id: string; p_slots: Json; p_availability_source: string; p_availability_read_at: string; p_duration_minutes: number }
@@ -9962,12 +10065,14 @@ export type Database = {
           currency: string
           expected_close_on: string | null
           id: string
+          kind: string
           lead_id: string | null
           lost_category: string | null
           lost_reason: string | null
           name: string
           organization_id: string
           owner_id: string | null
+          source_project_id: string | null
           stage: string
           updated_at: string
           value_minor: number
@@ -9979,12 +10084,14 @@ export type Database = {
           currency?: string
           expected_close_on?: string | null
           id?: string
+          kind?: string
           lead_id?: string | null
           lost_category?: string | null
           lost_reason?: string | null
           name: string
           organization_id: string
           owner_id?: string | null
+          source_project_id?: string | null
           stage?: string
           updated_at?: string
           value_minor?: number
@@ -9996,12 +10103,14 @@ export type Database = {
           currency?: string
           expected_close_on?: string | null
           id?: string
+          kind?: string
           lead_id?: string | null
           lost_category?: string | null
           lost_reason?: string | null
           name?: string
           organization_id?: string
           owner_id?: string | null
+          source_project_id?: string | null
           stage?: string
           updated_at?: string
           value_minor?: number
@@ -10487,6 +10596,10 @@ export type Database = {
           lost_category: string
           share: number
         }[]
+      }
+      open_renewal: {
+        Args: { p_client_account_id: string; p_kind: string; p_name: string; p_project_id: string; p_value_minor?: number }
+        Returns: { lead_id: string | null; opportunity_id: string | null; outcome: string }[]
       }
       record_plan_set_choice: {
         Args: {

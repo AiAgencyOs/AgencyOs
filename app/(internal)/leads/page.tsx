@@ -42,6 +42,7 @@ import Link from 'next/link';
 import { SavedViewsBar } from '../saved-views-bar';
 import { LeadBulkTable, type BulkLeadRow } from './bulk-table';
 import { CreateLeadButton } from './create-lead-button';
+import { LeadPreviewButton } from './preview-drawer';
 import { RescoreAllLeadsButton } from './rescore-all-button';
 
 export const metadata: Metadata = { title: 'Leads' };
@@ -136,6 +137,14 @@ const columnsFor = (clock: AgencyClock, scores: Map<string, LeadScoreSummary>): 
     cellClassName: 'text-muted',
     cell: (l) => clock.dateTime(l.updated_at),
     sortKey: 'activity',
+  },
+  {
+    // SCR-006 — the preview drawer, fetched on open (preview-actions.ts).
+    key: 'preview',
+    header: '',
+    align: 'right',
+    desktopOnly: true,
+    cell: (l) => <LeadPreviewButton leadId={l.id} name={l.contact?.fullName ?? l.title} />,
   },
 ];
 
@@ -240,7 +249,8 @@ export default async function LeadsPage({
       (!status || l.status === status) &&
       (!source || l.source === source) &&
       (!owner || (owner === 'unassigned' ? l.assigned_to === null : l.assigned_to === owner)) &&
-      (!needle || `${l.title} ${l.contact?.fullName ?? ''} ${l.contact?.company ?? ''} ${l.contact?.phone ?? ''}`.toLowerCase().includes(needle)) &&
+      // SCR-006 — name, phone, EMAIL and company, one box.
+      (!needle || `${l.title} ${l.contact?.fullName ?? ''} ${l.contact?.company ?? ''} ${l.contact?.phone ?? ''} ${l.contact?.email ?? ''}`.toLowerCase().includes(needle)) &&
       (!boundedByBudget ||
         (() => {
           const b = facts.get(l.id)?.budgetMinor ?? null;
@@ -354,7 +364,7 @@ export default async function LeadsPage({
           {status ? <input type="hidden" name="status" value={status} /> : null}
           <label className="relative">
             <span className="sr-only">Search leads</span>
-            <input name="q" defaultValue={q ?? ''} placeholder="Search leads…" className={cx(inputClass, 'w-52 pl-3')} />
+            <input name="q" defaultValue={q ?? ''} placeholder="Search name, phone, email, company…" className={cx(inputClass, 'w-64 pl-3')} />
           </label>
           <select name="source" defaultValue={source ?? ''} aria-label="Source" className={cx(selectClass, 'w-auto')}>
             <option value="">All sources</option>

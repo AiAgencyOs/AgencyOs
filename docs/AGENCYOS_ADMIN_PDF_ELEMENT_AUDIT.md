@@ -56,52 +56,52 @@ screen exists; at element level it does not hold.
 
 | SCR | Element | Status | What is missing |
 |---|---|---|---|
-| 005 | Pipeline value chart | PARTIAL | Stat tile, no chart |
-| 005 | Today tasks / Upcoming meetings / Recent sales activity | MISSING ×3 | Not on the page |
-| 005 | Open lead or quotation from card | PARTIAL | Cards link to the lead only |
-| 005 | Add lead, meeting, follow-up | PARTIAL | No buttons on the page |
-| 005 | Export filtered pipeline | PARTIAL | Export ignores the filters |
-| 006 | Search by name, phone, email, company | PARTIAL | Email is not matched |
-| 006 | Lead preview drawer | MISSING | Rows link to Lead 360 |
-| 006 | Assign owner, update stage, set next follow-up, add tag (bulk) | PARTIAL | Next follow-up not in the bulk bar |
-| 007 | Current deal stage/value | PARTIAL | Value only inside the edit form |
-| 007 | Last contact and next follow-up | PARTIAL | "Last activity" is the row's updated time, not last contact |
-| 007 | Follow-ups sub-screen | PARTIAL | Sequences not shown on the lead |
-| 007 | Create quotation after requirements are accepted | PARTIAL | Drafting is not gated on an accepted requirement |
-| 008 | AI suggestion vs human decision | MISSING | Score is deterministic; no AI-vs-human view |
-| 008 | Approve/override score with reason | MISSING | No override door |
-| 008 | Return to discovery when evidence is incomplete | PARTIAL | qualified → qualifying only via nurture |
-| 009 | Source transcript references | PARTIAL | Counts and ids; no links to the transcript |
-| 009 | User roles / Platforms / Integrations / Timeline-budget notes | PARTIAL ×4 | Coverage quotes or qualification form, not part of the versioned requirement |
-| 010 | Link meeting to lead/client/project | PARTIAL | Meetings belong to a lead; project link only via memory attach |
-| 011 | Quote count and total value | PARTIAL | No overall total |
-| 011 | Status filters / Client-project-service filters / Validity-expiry filters | PARTIAL ×3 | No superseded/expired, no project/service, no expired filter |
-| 011 | Delivery status | PARTIAL | Sent date only; no delivered/read/failed |
-| 012 | Quotation number/date/validity | PARTIAL | No quotation number in the composer |
-| 012 | Terms & conditions | PARTIAL | Only in the PDF, not editable in the composer |
-| 012 | Preview PDF | PARTIAL | No preview before saving |
-| 013 | Due today, overdue, upcoming, paused, failed | PARTIAL | No overdue/upcoming split, no failed count |
-| 013 | Lead/client/project context | PARTIAL | Rows link to the lead only |
-| 013 | Reactivation cohort | PARTIAL | Link to Import only |
-| 013 | Schedule, reschedule, complete, pause, cancel | PARTIAL | Stop and Resume only |
+| 005 | Pipeline value chart | BUILT | `app/(internal)/sales-funnel/page.tsx` (BarChart by stage, one hue, table beneath) |
+| 005 | Today tasks / Upcoming meetings / Recent sales activity | BUILT ×3 | `app/(internal)/today-card.tsx` (shared with the dashboard), `src/lib/admin/sales-activity.ts`, `app/(internal)/sales-funnel/page.tsx` |
+| 005 | Open lead or quotation from card | BUILT | `app/(internal)/sales-funnel/page.tsx` — cards open the lead; quotations open from the lead's Quotations card (`#quotations`), which the composer's success state also links |
+| 005 | Add lead, meeting, follow-up | BUILT | `app/(internal)/sales-funnel/sales-actions.tsx` (quick-create lead; the Lead 360's meeting-request and follow-up forms on a picked lead) |
+| 005 | Export filtered pipeline | BUILT | `app/api/sales/pipeline/export/route.ts` (`?source=&owner=`), linked from `sales-funnel/page.tsx` |
+| 006 | Search by name, phone, email, company | BUILT | `app/(internal)/leads/page.tsx` (contact email joined in `src/modules/crm/queries.ts` TABLE_SELECT) |
+| 006 | Lead preview drawer | BUILT | `app/(internal)/leads/preview-drawer.tsx` + `preview-actions.ts` |
+| 006 | Assign owner, update stage, set next follow-up, add tag (bulk) | BUILT | `app/(internal)/leads/bulk-actions-bar.tsx`, `src/modules/crm/bulk-schema.ts` / `bulk-service.ts` (`follow_up` kind → `setLeadFollowUp`) |
+| 007 | Current deal stage/value | BUILT | `app/(internal)/leads/[leadId]/page.tsx` (header facts: Deal, Deal value) |
+| 007 | Last contact and next follow-up | BUILT | `app/(internal)/leads/[leadId]/page.tsx` (last message on the thread, last client reply; next follow-up in the header figure) |
+| 007 | Follow-ups sub-screen | BUILT | `app/(internal)/leads/[leadId]/page.tsx` sequences card, `src/modules/crm/lead-sequence-queries.ts`, shared `follow-ups/sequence-controls.tsx` |
+| 007 | Create quotation after requirements are accepted | BUILT | `app/(internal)/leads/[leadId]/page.tsx` (first draft waits for an accepted version and cites it; `quotation-panel.tsx` posts `requirementVersionId`) |
+| 008 | AI suggestion vs human decision | BUILT | `app/(internal)/leads/[leadId]/page.tsx` (Computed vs Human decision), `src/modules/crm/lead-score-override-queries.ts` |
+| 008 | Approve/override score with reason | BUILT | `crm.override_lead_score` (20261001110000), `src/modules/crm/lead-score-override-service.ts`, `leads/[leadId]/score-panel.tsx` |
+| 008 | Return to discovery when evidence is incomplete | BUILT | `crm.leads_guard` + `LEAD_TRANSITIONS.qualified` gain `qualifying` (20261001110000, `src/modules/crm/schema.ts`) |
+| 009 | Source transcript references | BUILT | `app/(internal)/leads/[leadId]/page.tsx` (per-message anchors; "read N messages — up to…" and the confirmation message link to them) |
+| 009 | User roles / Platforms / Integrations / Timeline-budget notes | BUILT ×4 | `requirementPayloadSchema` (`src/modules/crm/schema.ts`), `leads/[leadId]/requirement-set-panel.tsx`, `requirement-revise-form.tsx` |
+| 010 | Link meeting to lead/client/project | BUILT | `crm.meetings.project_id` (20261001110000), `src/modules/crm/meeting-project-*.ts`, `meetings/[meetingId]/project-link-form.tsx`, list badge in `meetings/page.tsx` |
+| 011 | Quote count and total value | BUILT | `app/(internal)/quotations/page.tsx` (Total value tile, live value beside) |
+| 011 | Status filters / Client-project-service filters / Validity-expiry filters | BUILT ×3 | `app/(internal)/quotations/page.tsx` (superseded chip; `?project=`, `?service=`; `?expired=1`), `src/modules/sales/quotation-project-queries.ts` |
+| 011 | Delivery status | BUILT | `src/modules/sales/delivery-status-queries.ts` (derived from the outbound message's receipts), column in `quotations/page.tsx` |
+| 012 | Quotation number/date/validity | BUILT | `app/(internal)/quotations/new/composer.tsx` (number derived on save, G-170; date; validity), returned by `composeQuotationAction`, Number column on the list |
+| 012 | Terms & conditions | BUILT | `composer.tsx` terms editor → `src/modules/sales/terms-service.ts` (`document.commercialTerms`), printed by `quotation-standards.ts` |
+| 012 | Preview PDF | BUILT | `app/api/quotations/preview/route.ts` + `src/modules/sales/preview-service.ts` (same renderer, nothing saved) |
+| 013 | Due today, overdue, upcoming, paused, failed | BUILT | `app/(internal)/follow-ups/page.tsx` (five tiles, each opening `?due=`/`?status=`) |
+| 013 | Lead/client/project context | BUILT | `src/modules/crm/follow-up-context-queries.ts`, column in `follow-ups/page.tsx` |
+| 013 | Reactivation cohort | PARTIAL | Link to Import only — the cohort is the Import desk's own screen; not moved in F-B |
+| 013 | Schedule, reschedule, complete, pause, cancel | BUILT | `crm.decide_follow_up_sequence` (20261001110000), `src/modules/crm/follow-up-decision-*.ts`, `follow-ups/sequence-controls.tsx` (schedule = the lead's follow-up form, also on the Sales dashboard) |
 
 ## Clients (014–017)
 
 | SCR | Element | Status | What is missing |
 |---|---|---|---|
-| 014 | Total, active, completed, pending, total revenue | PARTIAL | No completed/pending; invoiced is not revenue |
-| 014 | Add/edit client | PARTIAL | No client edit door |
-| 015 | Settings tab | PARTIAL | Owner and tags in the side panel; no tab |
-| 015 | Create project | PARTIAL | Links to the lead; does not use the manual project door |
-| 015 | Schedule meeting | MISSING | "View all" only |
-| 015 | Upload file | MISSING | Files tab is a read-only roll-up |
-| 015 | Edit billing details | MISSING | No billing/GST/PAN edit form on the client |
-| 015 | Manage assigned team | PARTIAL | Single relationship owner only |
-| 016 | Projects by status / Milestone schedule / Change-request charges | PARTIAL ×3 | Counts and badges only; no breakdown, schedule or amounts |
-| 016 | Create new service/project | PARTIAL | Link only |
-| 016 | Start renewal/upsell flow | MISSING | Not built |
-| 017 | Recent uploads | PARTIAL | Linked files only |
-| 017 | Upload/download file | MISSING | No upload on the client |
+| 014 | Total, active, completed, pending, total revenue | BUILT | `app/(internal)/clients/page.tsx` (completed/pending from `src/lib/admin/client-projects.ts`; revenue = paid) |
+| 014 | Add/edit client | BUILT | `core.update_client_account` (20261001110000), `src/lib/admin/client-edit.ts`, `clients/client-edit-form.tsx` (list drawer + Settings tab) |
+| 015 | Settings tab | BUILT | `app/(internal)/clients/[clientId]/page.tsx` `?tab=settings` (owner, tags, billing edit, assigned team) |
+| 015 | Create project | BUILT | `clients/[clientId]/client-360-forms.tsx` `ClientCreateProjectButton` → `CreateProjectForm` (manual door) with the client pre-filled |
+| 015 | Schedule meeting | BUILT | `clients/[clientId]/client-360-forms.tsx` `ClientMeetingForm` (the Lead 360's meeting-request form on a client lead) |
+| 015 | Upload file | BUILT | `clients/[clientId]/client-360-forms.tsx` `ClientUploadForm` → bucket-E `UploadFileForm` on a project of the client |
+| 015 | Edit billing details | BUILT | `clients/client-edit-form.tsx` on the Settings tab (legal name, GSTIN with checksum, PAN, billing address) |
+| 015 | Manage assigned team | BUILT | `core.client_account_members` + `core.set_client_account_team` (20261001110000), `src/lib/admin/client-team.ts`, `clients/[clientId]/settings-forms.tsx` |
+| 016 | Projects by status / Milestone schedule / Change-request charges | BUILT ×3 | `clients/[clientId]/page.tsx` Projects tab (per-status tiles, dated milestone schedule, `src/lib/admin/client-change-requests.ts` with amounts) |
+| 016 | Create new service/project | BUILT | `clients/[clientId]/client-360-forms.tsx` (manual project door, pre-filled) |
+| 016 | Start renewal/upsell flow | BUILT | `sales.open_renewal` (20261001110000), `src/modules/sales/renewal-*.ts`, `RenewalForm` on the Projects tab |
+| 017 | Recent uploads | BUILT | `src/lib/admin/client-uploads.ts`, Communication tab and Files card in `clients/[clientId]/page.tsx` |
+| 017 | Upload/download file | BUILT | `ClientUploadForm` (upload) and the signed download route linked per upload (`/api/projects/[projectId]/files/[fileId]/download`) |
 
 ## Projects (018–027)
 

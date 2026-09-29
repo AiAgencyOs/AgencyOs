@@ -19,6 +19,7 @@ export type ProposalListItem = Pick<
   | 'valid_until'
   | 'approval_request_id'
   | 'sent_at'
+  | 'sent_message_ref'
   | 'decided_at'
   | 'created_at'
   // A member of a plan-set is an ordinary proposal with three extra facts

@@ -5,8 +5,8 @@ import { LEAD_STATUSES, NURTURE_REASONS } from './schema';
 /**
  * Bulk actions over the leads list — SCR-006.
  *
- * Three single-row doors (`setLeadOwner`, `setLeadStatus`, `setLeadTags` in
- * service.ts), each applied once per selected lead. The bulk shape is the
+ * Four single-row doors (`setLeadOwner`, `setLeadStatus`, `setLeadTags`,
+ * `setLeadFollowUp` in service.ts), each applied once per selected lead. The bulk shape is the
  * union of the single shapes and nothing more: no field exists here that a
  * one-lead form could not also send.
  */
@@ -31,6 +31,13 @@ export const bulkLeadActionSchema = z.discriminatedUnion('kind', [
     kind: z.literal('tag'),
     leadIds: z.array(z.uuid()).min(1).max(BULK_LEAD_LIMIT),
     tag: z.string().trim().min(1).max(40),
+  }),
+  // SCR-006 (bucket F-B) — set next follow-up, the single-row `setLeadFollowUp` door per lead.
+  z.object({
+    kind: z.literal('follow_up'),
+    leadIds: z.array(z.uuid()).min(1).max(BULK_LEAD_LIMIT),
+    /** ISO instant, or null to clear the reminder. */
+    nextFollowUpAt: z.iso.datetime().nullable(),
   }),
 ]);
 

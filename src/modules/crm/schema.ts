@@ -49,7 +49,9 @@ export const LEAD_TRANSITIONS: Record<LeadStatus, readonly LeadStatus[]> = {
   // ready yet" is something you learn at any point — including from a client
   // who was about to sign.
   qualifying: ['qualified', 'nurture', 'disqualified'],
-  qualified: ['converted', 'nurture', 'disqualified'],
+  // SCR-008: back to discovery when the evidence turns out incomplete —
+  // `crm.leads_guard` (20261001110000) admits the same move.
+  qualified: ['qualifying', 'converted', 'nurture', 'disqualified'],
   // And it is a waiting room, not a terminus: a lead comes back OUT of it,
   // which is the entire reason it is not `disqualified`.
   nurture: ['qualifying', 'qualified', 'disqualified'],
@@ -279,6 +281,17 @@ export const requirementPayloadSchema = z.object({
   niceToHaves: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
   exclusions: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
   designReferences: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
+  /**
+   * SCR-009 (bucket F-B). Four facts the PDF's requirement screen shows as
+   * part of the versioned requirement rather than as coverage quotes: who
+   * will use it, on what, what it must talk to, and what the client said
+   * about time and money. All default empty so every historical payload
+   * still parses; jsonb shape only, no DDL.
+   */
+  userRoles: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
+  platforms: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
+  integrations: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
+  timelineBudgetNotes: z.string().trim().max(2_000).default(''),
 });
 
 /**

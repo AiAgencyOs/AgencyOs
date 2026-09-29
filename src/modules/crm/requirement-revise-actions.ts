@@ -27,6 +27,11 @@ export async function reviseRequirementVersionAction(_prev: FormState, formData:
       niceToHaves: linesOf(text('niceToHaves')),
       exclusions: linesOf(text('exclusions')),
       designReferences: linesOf(text('designReferences')),
+      // SCR-009 (bucket F-B) — the four fields the versioned requirement carries.
+      userRoles: linesOf(text('userRoles')),
+      platforms: linesOf(text('platforms')),
+      integrations: linesOf(text('integrations')),
+      timelineBudgetNotes: text('timelineBudgetNotes').trim(),
     },
   });
 

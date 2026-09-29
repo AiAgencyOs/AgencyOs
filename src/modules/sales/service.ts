@@ -1151,7 +1151,7 @@ type SendRow = {
  */
 class SurroundingsUnreadable extends Error {}
 
-async function quotationDocumentSurroundings(
+export async function quotationDocumentSurroundings(
   supabase: Awaited<ReturnType<typeof createClient>>,
   opportunityId: string | null,
 ): Promise<{ organizationName: string; timeZone: string; preparedFor: string | null; contactLine: string | null; validityDays: number }> {

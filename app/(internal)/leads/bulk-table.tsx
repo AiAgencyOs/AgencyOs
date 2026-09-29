@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Avatar, DataTable, StatusBadge, humanize, type Column, type SortDirection, type SortState } from '@/ui';
 
 import { BulkActionsBar, type BulkRoster } from './bulk-actions-bar';
+import { LeadPreviewButton } from './preview-drawer';
 
 /**
  * The leads table with a selection column — SCR-006's multi-select.
@@ -126,6 +127,8 @@ export function LeadBulkTable({
     { key: 'score', header: 'Score', align: 'right', cellClassName: 'tabular', cell: (l) => (l.score === null ? <span className="text-muted">—</span> : l.score), sortKey: 'score' },
     { key: 'created', header: 'Created', align: 'right', cellClassName: 'text-muted', cell: (l) => l.created, sortKey: 'created' },
     { key: 'activity', header: 'Last activity', align: 'right', cellClassName: 'text-muted', cell: (l) => l.lastActivity, sortKey: 'activity' },
+    // SCR-006 — the preview drawer, fetched on open (preview-actions.ts).
+    { key: 'preview', header: '', align: 'right', desktopOnly: true, cell: (l) => <LeadPreviewButton leadId={l.id} name={l.name} /> },
   ];
 
   return (

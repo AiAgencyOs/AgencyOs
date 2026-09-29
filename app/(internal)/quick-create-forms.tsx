@@ -31,7 +31,7 @@ function money(minor: number, currency: string): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(minor / 100);
 }
 
-export function CreateProjectForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (href: string) => void }) {
+export function CreateProjectForm({ onCancel, onCreated, initialClientAccountId }: { onCancel: () => void; onCreated: (href: string) => void; /** SCR-015 — Client 360 pre-fills its own client. */ initialClientAccountId?: string }) {
   const [clients, setClients] = useState<ClientAccountOption[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Decision: reversed by the owner on 2026-09-29 — a project may start from a template.
@@ -40,7 +40,7 @@ export function CreateProjectForm({ onCancel, onCreated }: { onCancel: () => voi
   const [outcome, setOutcome] = useState<{ projectId: string; written: string; skipped: string[] } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fields, setFields] = useState({ clientAccountId: '', name: '', currency: 'INR', startsOn: '', endsOn: '', budget: '', templateId: '' });
+  const [fields, setFields] = useState({ clientAccountId: initialClientAccountId ?? '', name: '', currency: 'INR', startsOn: '', endsOn: '', budget: '', templateId: '' });
 
   useEffect(() => {
     listClientAccountOptionsAction()

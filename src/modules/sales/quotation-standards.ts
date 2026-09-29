@@ -513,7 +513,9 @@ export function quotationSectionsFor(
       (doc.optionalAddons as ReadonlyArray<{ label: string; priceRupees: number }> | null | undefined) ?? null,
     theme: doc.industryTheme ?? null,
     regulatedClauses: regulatedClauses.length > 0 ? regulatedClauses : null,
-    commercialTerms: commercialTermsFor(options?.validityDays),
+    // SCR-012 — the terms as edited in the composer, when they were; the
+    // standard clauses otherwise, exactly as before.
+    commercialTerms: doc.commercialTerms && doc.commercialTerms.length > 0 ? doc.commercialTerms : commercialTermsFor(options?.validityDays),
     internalNote,
     phaseLabel,
     deferredLines,

@@ -2,7 +2,12 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { agencyClock, getAgencyTimeZone, type AgencyClock } from '@/lib/admin/agency-clock';
+import { listClientChangeRequests } from '@/lib/admin/client-change-requests';
+import { readClientIdentity } from '@/lib/admin/client-edit';
+import { listClientProjectStatusCounts } from '@/lib/admin/client-projects';
+import { readClientTeam } from '@/lib/admin/client-team';
+import { listClientUploads } from '@/lib/admin/client-uploads';
 import { readClientCommercialTimeline, type CommercialEvent } from '@/lib/admin/client-commercials';
 import { listClientMeetingNotes, readClientUnreadReplies } from '@/lib/admin/client-communication';
 import { listClientLeadThreads } from '@/lib/admin/client-threads';
@@ -13,6 +18,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listAnnouncements } from '@/modules/crm/announcements-queries';
 import { listEligibleMilestones } from '@/modules/finance/eligible-milestones-queries';
+import { readStorageStatus } from '@/modules/projects/files-storage-queries';
 import { listInternalRoster } from '@/modules/projects/queries';
 import {
   ActivityFeed,
@@ -53,13 +59,16 @@ import {
 
 import { TrailLabel } from '../../trail-label';
 import { GenerateClientInvoiceButton } from './client-forms';
+import { ClientEditForm } from '../client-edit-form';
+import { ClientMeetingForm, ClientUploadForm, RenewalForm } from './client-360-forms';
 import { ClientCreateButtons } from './create-buttons';
+import { ClientTeamForm } from './settings-forms';
 import { AddClientNoteForm } from './note-form';
 import { ClientOwnerForm, ClientTagsForm } from './ownership-forms';
 import { ClientSendForm } from './send-form';
 import { AttachMeetingSummaryForm } from '../../meetings/[meetingId]/attach-memory-form';
 
-const TABS = ['overview', 'projects', 'quotations', 'invoices', 'communication', 'files', 'notes', 'activity'] as const;
+const TABS = ['overview', 'projects', 'quotations', 'invoices', 'communication', 'files', 'notes', 'activity', 'settings'] as const;
 type Tab = (typeof TABS)[number];
 
 function tabOf(value: string | undefined): Tab {
@@ -160,6 +169,24 @@ export default async function ClientDetailPage({
     listAnnouncements({ audience: 'clients', status: 'published', limit: 10 }),
   ]);
   const rosterOptions = roster.map((m) => ({ userId: m.userId, fullName: m.fullName || m.email }));
+  // SCR-015/016/017 (bucket F-B): the identity the edit door writes, the
+  // assigned team, per-status project counts, change-request charges,
+  // recent uploads, storage reachability for the upload door, and the
+  // agency zone for the meeting form.
+  const [identity, team, statusCounts, changeRequests, uploads, storage, agencyZone] = await Promise.all([
+    readClientIdentity(clientId),
+    readClientTeam(clientId),
+    listClientProjectStatusCounts([clientId]),
+    listClientChangeRequests(client.projects.map((p) => ({ id: p.id, name: p.name, currency: p.currency }))),
+    listClientUploads(client.projects.map((p) => ({ id: p.id, name: p.name }))),
+    context.organizationId ? readStorageStatus(context.organizationId) : Promise.resolve({ reachable: false as const, bucket: '', reason: 'No organization on this session.' }),
+    getAgencyTimeZone(),
+  ]);
+  const byStatus = statusCounts.get(clientId)?.byStatus ?? {};
+  const completedProjects = client.projects.filter((p) => p.status === 'completed').map((p) => ({ id: p.id, name: p.name }));
+  const milestoneSchedule = commercialEvents.filter((e) => e.kind === 'milestone');
+  const leadOptions = leads.map((l) => ({ id: l.id, title: l.title, conversationId: leadThreads.find((t) => t.leadId === l.id)?.conversationId ?? null }));
+  const chargedTotal = changeRequests.filter((cr) => cr.amountMinor !== null && cr.currency === client.currency && cr.status !== 'rejected').reduce((n, cr) => n + (cr.amountMinor ?? 0), 0);
   const base = `/clients/${clientId}`;
   const tabHref = (t: Tab) => (t === 'overview' ? base : `${base}?tab=${t}`);
   const invoiceTarget = eligible.find((e) => e.eligible)?.projectId ?? null;
@@ -245,11 +272,12 @@ export default async function ClientDetailPage({
             ) : null}
             {can(context.role, 'project.write') ? (
               <ClientCreateButtons
-                leadId={opportunities.open?.leadId ?? leads[0]?.id ?? null}
+                clientAccountId={client.id}
                 opportunityId={opportunities.open?.id ?? null}
                 invoiceHref={invoiceTarget ? `/projects/${invoiceTarget}#billing` : `${base}?tab=invoices`}
               />
             ) : null}
+            {mayMessage ? <ClientMeetingForm leads={leadOptions} agencyZone={agencyZone} /> : null}
           </>
         }
       />
@@ -317,7 +345,60 @@ export default async function ClientDetailPage({
         </ul>
       </div>
 
+      {tab === 'settings' ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {/* SCR-015 — the Settings tab: owner, tags, billing identity, assigned team. */}
+          <Card>
+            <CardHeader title="Billing details" description="Name, legal name, GSTIN, PAN and billing address — the account's identity on every document. The GSTIN's checksum is verified; a pass is not a registration. Audited." />
+            <div className="px-4 pb-4 sm:px-5">
+              {mayEditClient && identity ? <ClientEditForm client={identity} /> : (
+                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[13px]">
+                  <dt className="text-muted">Legal name</dt><dd>{client.legalName ?? '—'}</dd>
+                  <dt className="text-muted">GSTIN</dt><dd className="font-mono">{client.gstin ?? '—'}</dd>
+                  <dt className="text-muted">PAN</dt><dd className="font-mono">{client.pan ?? '—'}</dd>
+                  <dt className="text-muted">Billing address</dt><dd className="whitespace-pre-wrap">{client.billingAddress ?? '—'}</dd>
+                </dl>
+              )}
+            </div>
+          </Card>
+          <div className="flex flex-col gap-4">
+            <Card>
+              <CardHeader title="Relationship" description="Who answers for this client, and how it is tagged." />
+              <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+                {mayEditClient ? (
+                  <>
+                    <ClientOwnerForm clientAccountId={client.id} ownerId={client.ownerId} roster={rosterOptions} />
+                    <ClientTagsForm clientAccountId={client.id} tags={client.tags} />
+                  </>
+                ) : (
+                  <p className="text-[13px] text-muted">Owner: {client.ownerName ?? 'nobody'} · Tags: {client.tags.join(', ') || 'none'}</p>
+                )}
+              </div>
+            </Card>
+            <Card>
+              <CardHeader title="Assigned team" description={`${team.length} assigned. Every name must hold an active membership; the set is replaced whole and audited.`} />
+              <div className="px-4 pb-4 sm:px-5">
+                {mayEditClient ? (
+                  <ClientTeamForm clientAccountId={client.id} members={roster.map((m) => ({ userId: m.userId, fullName: m.fullName || m.email, role: m.role }))} assigned={team} />
+                ) : team.length === 0 ? (
+                  <p className="text-[13px] text-muted">Nobody assigned yet.</p>
+                ) : (
+                  <ul className="flex flex-wrap gap-1">{team.map((id) => <Badge key={id} tone="neutral">{roster.find((m) => m.userId === id)?.fullName ?? id.slice(0, 8)}</Badge>)}</ul>
+                )}
+              </div>
+            </Card>
+          </div>
+        </div>
+      ) : null}
+
       {tab === 'projects' ? (
+        <>
+        {/* SCR-016 — projects by status: a count per status word, each a link to the list filtered to it. */}
+        <StatGrid cols={5}>
+          {(['planning', 'active', 'on_hold', 'completed', 'cancelled'] as const).map((st) => (
+            <Stat key={st} label={humanize(st)} value={String(byStatus[st] ?? 0)} tone={st === 'completed' ? 'success' : st === 'active' ? 'brand' : st === 'on_hold' ? 'warning' : 'neutral'} icon={<IconProjects size={16} />} href={`/projects?status=${st}&client=${client.id}`} />
+          ))}
+        </StatGrid>
         <Card>
           <CardHeader title="Client projects" description={`${client.projectsActive} active of ${client.projectsTotal}.`} actions={<ViewAll href="/projects" />} />
           {client.projects.length > 0 ? (
@@ -325,9 +406,68 @@ export default async function ClientDetailPage({
               <DataTable dense rows={client.projects} columns={projectColumns} getKey={(p) => p.id} href={(p) => `/projects/${p.id}`} />
             </div>
           ) : (
-            <EmptyState icon={<IconProjects size={20} />} title="No projects yet" description="Winning a deal on one of this client's leads creates one." />
+            <EmptyState icon={<IconProjects size={20} />} title="No projects yet" description="Winning a deal on one of this client's leads creates one, and so does the Create project button above." />
           )}
         </Card>
+
+        {/* SCR-016 — the milestone schedule across the client's projects, dated. */}
+        <Card>
+          <CardHeader title="Milestone schedule" description="Every payment milestone on this client's projects, in order, with its due date and amount." />
+          {milestoneSchedule.length === 0 ? (
+            <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No milestone plan on any project yet.</p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {milestoneSchedule.map((e) => (
+                <li key={e.id} className="flex flex-wrap items-center gap-3 px-4 py-2 text-[13px] sm:px-5">
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium text-foreground">{e.title}</span>
+                    <span className="block text-xs text-muted">{e.projectName}{e.detail ? ` · ${e.detail}` : ''}</span>
+                  </span>
+                  <StatusBadge status={e.status} dot={false} />
+                  <span className="tabular text-xs text-muted">{eventWhen(clock, e.at)}</span>
+                  {e.amountMinor !== null ? <span className="tabular font-medium">{money(e.amountMinor, e.currency)}</span> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        {/* SCR-016 — change-request charges, with the amount each was priced at. */}
+        <Card>
+          <CardHeader title="Change-request charges" description={`Every change request on this client's projects. Priced changes carry their quotation's total; ${money(chargedTotal, client.currency)} charged in all.`} />
+          {changeRequests.length === 0 ? (
+            <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No change request has been raised on this client's projects.</p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {changeRequests.map((cr) => (
+                <li key={cr.id} className="flex flex-wrap items-center gap-3 px-4 py-2 text-[13px] sm:px-5">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-foreground">{cr.requested}</span>
+                    <span className="block text-xs text-muted">
+                      <Link href={`/projects/${cr.projectId}`} className="hover:underline">{cr.projectName}</Link> · {clock.date(cr.createdAt)}
+                      {cr.classification ? ` · ${humanize(cr.classification)}` : ''}
+                    </span>
+                  </span>
+                  <StatusBadge status={cr.status} dot={false} />
+                  {cr.amountMinor !== null ? (
+                    <span className="tabular font-medium">{money(cr.amountMinor, cr.currency)}{cr.proposalVersion !== null ? <span className="ml-1 text-xs font-normal text-muted">v{cr.proposalVersion} {cr.proposalStatus ? humanize(cr.proposalStatus) : ''}</span> : null}</span>
+                  ) : (
+                    <span className="text-xs text-muted">not priced yet</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        {/* SCR-016 — renewal / upsell: a new deal of a stated kind from a completed project. */}
+        <Card>
+          <CardHeader title="Renewal / upsell" description="Opens a new opportunity in discovery on the original lead, naming the completed project it continues. Audited." />
+          <div className="px-4 pb-4 sm:px-5">
+            {mayMessage ? <RenewalForm clientAccountId={client.id} completedProjects={completedProjects} /> : <p className="text-[13px] text-muted">Your role can read this but not open deals.</p>}
+          </div>
+        </Card>
+        </>
       ) : null}
 
       {tab === 'quotations' ? (
@@ -446,8 +586,27 @@ export default async function ClientDetailPage({
               <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No announcement has been published for clients.</p>
             )}
           </Card>
+          {/* SCR-017 — recent uploads: the stored files across the client's projects, newest first. */}
+          <Card>
+            <CardHeader title="Recent uploads" description="Files stored on this client's projects, newest first. A download is a short-lived signed link under your own session." />
+            {uploads.length === 0 ? (
+              <p className="px-4 py-3 text-[13px] text-muted sm:px-5">Nothing has been uploaded on this client's projects yet.</p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {uploads.map((f) => (
+                  <li key={f.id} className="flex items-center gap-3 px-4 py-2 text-[13px] sm:px-5">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand"><IconFile size={15} /></span>
+                    <span className="min-w-0 flex-1">
+                      <a href={f.downloadHref} className="block truncate font-medium text-foreground underline-offset-2 hover:underline">{f.title}{f.version > 1 ? ` · v${f.version}` : ''}</a>
+                      <span className="block truncate text-xs text-muted">{f.projectName} · {humanize(f.category)} · {clock.dateTime(f.uploadedAt)}{f.uploadedByEmail ? ` · ${f.uploadedByEmail.split('@')[0]}` : ''}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
           <Callout tone="info">
-            Sending a message from here is not built: outbound WhatsApp goes through each thread's own conversation view, where the 24-hour window and template rules are enforced.
+            Outbound WhatsApp goes through each thread's own conversation view (or the composer below on the Communication card), where the 24-hour window and template rules are enforced.
           </Callout>
         </>
       ) : null}
@@ -513,7 +672,7 @@ export default async function ClientDetailPage({
 
       {tab === 'overview' ? (
       <StatGrid cols={6}>
-        <Stat label="Total projects" value={String(client.projectsTotal)} caption={`${client.projectsActive} active`} tone="brand" icon={<IconProjects size={16} />} />
+        <Stat label="Total projects" value={String(client.projectsTotal)} caption={Object.entries(byStatus).map(([st, n]) => `${n} ${humanize(st).toLowerCase()}`).join(' · ') || 'none yet'} tone="brand" icon={<IconProjects size={16} />} href={tabHref('projects')} />
         {canSeeMoney ? (
           <>
             <Stat label="Total invoiced" value={money(client.invoicedMinor, client.currency)} caption={`${client.invoices.length} invoice${client.invoices.length === 1 ? '' : 's'}`} tone="info" icon={<IconInvoices size={16} />} />
@@ -681,7 +840,29 @@ export default async function ClientDetailPage({
             </Card>
 
             <Card>
-              <CardHeader title="Client files" description="Rolled up from every project this client has." />
+              <CardHeader title="Client files" description="Rolled up from every project this client has: stored uploads first, then linked files." />
+              {/* SCR-015/017 — upload through the bucket-E storage door, on a project of this client. */}
+              {mayEditClient ? (
+                <div className="border-b border-line px-4 py-3 sm:px-5">
+                  {!storage.reachable ? <p className="mb-2 text-xs text-warning">Storage is not reachable, so nothing can be uploaded: {storage.reason}</p> : null}
+                  <ClientUploadForm clientId={client.id} projects={client.projects.map((p) => ({ id: p.id, name: p.name }))} reachable={storage.reachable} />
+                </div>
+              ) : null}
+              {uploads.length > 0 ? (
+                <ul className="divide-y divide-line border-b border-line">
+                  {uploads.slice(0, 6).map((f) => (
+                    <li key={f.id}>
+                      <a href={f.downloadHref} className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-hover sm:px-5">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-success-soft text-success"><IconFile size={15} /></span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[13px] font-medium text-foreground">{f.title}{f.version > 1 ? ` · v${f.version}` : ''}</span>
+                          <span className="block truncate text-xs text-muted">{f.projectName} · {humanize(f.category)} · uploaded {clock.date(f.uploadedAt)}</span>
+                        </span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               {client.files.length > 0 ? (
                 <ul className="divide-y divide-line">
                   {client.files.slice(0, 6).map((f) => (
@@ -700,9 +881,9 @@ export default async function ClientDetailPage({
                     </li>
                   ))}
                 </ul>
-              ) : (
-                <EmptyState icon={<IconFile size={20} />} title="No files yet" description="Files linked on any of this client's projects appear here." />
-              )}
+              ) : uploads.length === 0 ? (
+                <EmptyState icon={<IconFile size={20} />} title="No files yet" description="Files uploaded or linked on any of this client's projects appear here." />
+              ) : null}
             </Card>
           </div>
           ) : null}
@@ -755,6 +936,9 @@ export default async function ClientDetailPage({
             title="Client details"
             rows={[
               { label: 'Company name', value: client.name },
+              ...(client.legalName ? [{ label: 'Legal name', value: client.legalName }] : []),
+              ...(client.gstin ? [{ label: 'GSTIN', value: <span className="font-mono">{client.gstin}</span> }] : []),
+              ...(client.pan ? [{ label: 'PAN', value: <span className="font-mono">{client.pan}</span> }] : []),
               { label: 'Billing email', value: client.billingEmail ?? 'Not set' },
               { label: 'Currency', value: client.currency },
               { label: 'Status', value: <Badge tone={client.status === 'active' ? 'success' : 'neutral'}>{humanize(client.status)}</Badge> },
@@ -780,9 +964,10 @@ export default async function ClientDetailPage({
             ]}
           >
             {mayEditClient ? (
-              <div className="flex flex-col gap-3 border-t border-line px-4 py-3 sm:px-5">
-                <ClientOwnerForm clientAccountId={client.id} ownerId={client.ownerId} roster={rosterOptions} />
-                <ClientTagsForm clientAccountId={client.id} tags={client.tags} />
+              <div className="border-t border-line px-4 py-3 sm:px-5">
+                <Link href={tabHref('settings')} className="text-xs font-medium text-brand hover:underline">
+                  Edit owner, tags, billing details and team →
+                </Link>
               </div>
             ) : null}
           </DetailPanel>

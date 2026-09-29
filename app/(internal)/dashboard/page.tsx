@@ -32,7 +32,6 @@ import {
   IconAgents,
   IconAlert,
   IconApprovals,
-  IconCheck,
   IconChevronRight,
   IconClock,
   IconInbox,
@@ -62,6 +61,7 @@ import {
 import { listMyTasks, listPhaseFourEscalations } from '@/modules/projects/queries';
 
 import { listActionItems } from '../notifications/action-items';
+import { TodayCard } from '../today-card';
 
 export const metadata: Metadata = { title: 'Command Center' };
 
@@ -525,50 +525,15 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
             </Card>
           ) : null}
 
-          <Card>
-            <CardHeader title="Today" description={clock.day(now)} actions={<ViewAll href="/my-tasks" label="My tasks" />} />
-            <ul className="divide-y divide-line">
-              {isAvailable(o.today)
-                ? o.today.value.map((m) => (
-                    <li key={m.id} className="flex items-center gap-3 px-4 py-2.5 text-[13px] sm:px-5">
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-info-soft text-info"><IconClock size={13} /></span>
-                      <span className="min-w-0 flex-1 truncate text-foreground">{m.title}</span>
-                      <span className="shrink-0 text-xs font-medium text-muted">{m.at ? clock.clock(m.at) : 'time TBD'}</span>
-                    </li>
-                  ))
-                : (
-                    <li className="px-4 py-2.5 text-[13px] text-danger sm:px-5">Meetings: DATA UNAVAILABLE</li>
-                  )}
-              {dueToday.map((t) => (
-                <li key={t.id}>
-                  <Link href={`/projects/${t.projectId}/board`} className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand"><IconCheck size={13} /></span>
-                    <span className="min-w-0 flex-1 truncate text-foreground">{t.title}</span>
-                    <span className="shrink-0 text-xs text-muted">Task due · {t.projectName}</span>
-                  </Link>
-                </li>
-              ))}
-              {overdueMine.length > 0 ? (
-                <li>
-                  <Link href="/my-tasks" className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger"><IconAlert size={13} /></span>
-                    <span className="min-w-0 flex-1 text-foreground">{overdueMine.length} of your task{overdueMine.length === 1 ? '' : 's'} overdue</span>
-                  </Link>
-                </li>
-              ) : null}
-              {show('invoice.read') && isAvailable(o.paymentsPendingVerification) && o.paymentsPendingVerification.value > 0 ? (
-                <li>
-                  <Link href="/invoices/verify" className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-warning-soft text-warning"><IconInvoices size={13} /></span>
-                    <span className="min-w-0 flex-1 text-foreground">{o.paymentsPendingVerification.value} payment{o.paymentsPendingVerification.value === 1 ? '' : 's'} to verify</span>
-                  </Link>
-                </li>
-              ) : null}
-              {(!isAvailable(o.today) || o.today.value.length === 0) && dueToday.length === 0 && overdueMine.length === 0 && !(show('invoice.read') && isAvailable(o.paymentsPendingVerification) && o.paymentsPendingVerification.value > 0) ? (
-                <li className="px-4 py-3 text-[13px] text-muted sm:px-5">Nothing on the calendar, nothing of yours due, nothing to verify.</li>
-              ) : null}
-            </ul>
-          </Card>
+          {/* Shared with the Sales dashboard (SCR-005): one component, the same rows. */}
+          <TodayCard
+            clock={clock}
+            now={now}
+            meetings={o.today}
+            dueToday={dueToday}
+            overdueCount={overdueMine.length}
+            paymentsToVerify={show('invoice.read') && isAvailable(o.paymentsPendingVerification) ? o.paymentsPendingVerification.value : null}
+          />
 
           {destinations.length > 0 ? (
             <Card>
