@@ -56,7 +56,7 @@ a record that only its editor changes.
 
 | ID | Screen | Route | Guard | Reads | Live | Status |
 |---|---|---|---|---|---|---|
-| SCR-014 | Client Management | `/clients` | `project.read` | `listClients` | — | COMPLETE |
+| SCR-014 | Client Management | `/clients` | `project.read` | `listClients`, name/email search, CSV export (`/api/clients/export`) | — | COMPLETE |
 | SCR-015 | Client 360 | `/clients/[clientId]` | `project.read` | `getClient` (projects, invoices, communication, files, notes) | — | COMPLETE |
 | SCR-016 | Client Projects & Commercials | `/clients/[clientId]` › projects/invoices | `project.read` | same | — | GROUPED |
 | SCR-017 | Client Communication, Files & Notes | `/clients/[clientId]` › communication/files/notes | `project.read` | `crm.conversations` (project_group), `project_files`, `core.client_notes` (20260928120000) | — | COMPLETE (notes gap closed) |
@@ -71,9 +71,9 @@ a record that only its editor changes.
 | SCR-021 | My Tasks | `/my-tasks` | internal | `listMyTasks` | — | COMPLETE |
 | SCR-022 | Project Calendar | `/projects/[projectId]/calendar` | `project.read` | tasks + milestones + meetings by date (`MonthGrid`) | — | COMPLETE |
 | SCR-023 | Project Milestones / Gantt | `/projects/[projectId]/plan` (Gantt) + `/calendar` | `project.read` | `listPaymentPlan` (`projects.milestones`), plan milestones | — | COMPLETE — bars are the planned windows between due dates (derived, labelled as such); the schema holds no start date, and the page says so |
-| SCR-024 | Project Files | `/projects/[projectId]/files` | `project.write` to add | `projects.project_files` (link-based) | — | COMPLETE |
-| SCR-025 | Project Team | `/projects/[projectId]/team` | `project.read` | `listProjectTeam`, team defaults | — | COMPLETE |
-| SCR-026 | Project Reports | `/reports` + Overview | `project.read` | org-wide reports; per-project figures on Overview | — | GROUPED |
+| SCR-024 | Project Files | `/projects/[projectId]/files` | `project.write` to add/edit | `projects.project_files` (link-based; rename/refile through `updateProjectFile`) | — | COMPLETE |
+| SCR-025 | Project Team | `/projects/[projectId]/team` | `project.read` (`project.write` to set the lead) | `listProjectTeam`, `listInternalRoster`, `projects.delivery_lead_id` through `setDeliveryLead` | — | COMPLETE |
+| SCR-026 | Project Reports | `/projects/[projectId]/reports` (+ `/reports` org-wide) | `project.read` | plan, board, defects, invoices, expenses, agent spend — the tabs' own readers, no stored trend | — | COMPLETE |
 | SCR-027 | Project Settings, Activity & Templates | `/projects/[projectId]/settings`, `/activity` | `project.write` | visibility, activity timeline | — | COMPLETE (templates DECLINED — traceability row 27) |
 
 ### Requirements & Scope
@@ -82,7 +82,7 @@ a record that only its editor changes.
 |---|---|---|---|---|---|---|
 | SCR-028 | Requirements Dashboard | `/requirements` | `lead.read` | pending requirement decisions across leads | — | COMPLETE |
 | SCR-029 | Requirement Set / Detail | `/leads/[leadId]` › versions | `lead.read` | `crm.requirement_versions` in full | — | GROUPED |
-| SCR-030 | Scope Versions & Freeze | `/projects/[projectId]/scope` | `project.write` | `readScopeBaseline`, `listScopeVersionHistory` | — | COMPLETE |
+| SCR-030 | Scope Versions & Freeze | `/projects/[projectId]/scope` | `project.write` | `readScopeBaseline`, `listScopeVersionHistory`, `listScopeItemsForVersion` (title-matched compare with the current baseline), change-request KPI row | — | COMPLETE |
 | SCR-031 | Change Requests & Traceability | `/projects/[projectId]/scope` › change requests | `project.write` | `projects.change_requests` (classify / decide / apply) | — | COMPLETE |
 
 ### Design & Prototype
@@ -94,7 +94,7 @@ a record that only its editor changes.
 | SCR-034 | Screen Inventory | `/projects/[projectId]/design` › gallery | `project.read` | `projects.screen_baselines`, `readSampleScreens` (`representative_screens`) | — | COMPLETE — gallery of representative screens with stored previews; Figma stays canonical |
 | SCR-035 | Screen Detail / Coverage Matrix | `/projects/[projectId]/ui-versions/[uiVersionId]` | `project.read` | UI version detail, coverage | — | COMPLETE |
 | SCR-036 | Design Review & Approval | `/projects/[projectId]/design/final` | `project.read` | client decisions, revision history, lock | — | COMPLETE |
-| SCR-037 | Prototype Builds & Review | `/projects/[projectId]/prototype`, `/prototype/preview/[uiVersionId]` | `project.read` | prototype artifacts, QA scan, client review | — | COMPLETE |
+| SCR-037 | Prototype Builds & Review | `/projects/[projectId]/prototype`, `/prototype/preview/[uiVersionId]` | `project.read` | prototype artifacts, build table with client decision · latest QA run · approval state | — | COMPLETE |
 | SCR-038 | Assets, Brand Kit & Feedback History | `/design/themes` (brand kit) + `/design/final` (feedback) | `project.read` | token sets, design assets, decisions | — | GROUPED |
 
 ### Development
@@ -124,11 +124,11 @@ a record that only its editor changes.
 |---|---|---|---|---|---|---|
 | SCR-050 | Finance Overview | `/finance` | `invoice.read` | `listInvoices`, `listPayments`, `listExpenses`, pending claims (income vs expenses, payment status, top revenue, upcoming) | — | COMPLETE |
 | SCR-051 | Invoices | `/invoices` | `invoice.read` | `listInvoices`, saved views | — | COMPLETE |
-| SCR-052 | Invoice Detail / Create | `/invoices/[invoiceId]` | `invoice.issue` to act | invoice, items, payments, receipts, PDF | — | COMPLETE |
+| SCR-052 | Invoice Detail / Create | `/invoices/[invoiceId]` | `invoice.issue` to act | invoice, items, billing profile (mode · GSTIN · address, `readInvoiceBillingProfile`), GST line, linked milestone, payments, payment claims (`listInvoicePaymentClaims`), receipts, refunds, receiving accounts | — | COMPLETE |
 | SCR-053 | Payments | `/finance/payments` | `invoice.read` | `listPayments` | — | COMPLETE |
 | SCR-054 | Payment Verification | `/invoices/verify` | `invoice.issue` | `listPendingPaymentClaims` (human-only gate) | — | COMPLETE |
-| SCR-055 | Expenses & Profitability | `/finance` (net profit, margin, expense breakdown) + `/finance/expenses` | `invoice.read` | `listExpenses`, `listPayments`, `listInvoices` | — | COMPLETE — net = payments received − expenses recorded, margin over received; stated on the tile, not an accounting P&L |
-| SCR-056 | GST, Tax & Financial Reports | `/finance/tax` | `invoice.read` | invoice register, tax totals | — | PARTIAL — no GST return generation (needs GST-portal integration) |
+| SCR-055 | Expenses & Profitability | `/finance` (net profit, margin, expense breakdown) + `/finance/expenses` | `invoice.read` (`invoice.issue` to record/edit) | `listExpenses`, `listPayments`, `listInvoices`; `recordExpense`, `updateExpense` | — | COMPLETE — net = payments received − expenses recorded, margin over received; stated on the tile, not an accounting P&L |
+| SCR-056 | GST, Tax & Financial Reports | `/finance/tax` (+ `/api/finance/tax/export`) | `invoice.read` | `listTaxReportInvoices` split by the CONFIRMED billing mode (GST / non-GST / unconfirmed), period selector (month, quarter, Indian FY), receipts (`listReceipts`), cash-basis P&L against expenses, CSV | — | COMPLETE — no GST return generation (needs GST-portal integration, stated on the page) |
 
 ### Communication
 
@@ -160,8 +160,8 @@ a record that only its editor changes.
 
 | ID | Screen | Route | Guard | Reads | Live | Status |
 |---|---|---|---|---|---|---|
-| SCR-068 | Approval Center, Policies & Overrides | `/approvals`, `/approvals/[requestId]`, `/settings/approvals` | internal (per-request lock decides) | `listPendingApprovals`, policies | approvals | COMPLETE |
-| SCR-069 | Security, Roles & Audit Log | `/security`, `/security/users`, `/audit` | `audit.read` | invariant scan, roles, `audit.audit_log` | audit (audit page) | COMPLETE |
+| SCR-068 | Approval Center, Policies & Overrides | `/approvals`, `/approvals/[requestId]`, `/settings/approvals` | internal (per-request lock decides) | `listPendingApprovals`, `listDecidedApprovals` (KPI row, recent decisions), policies | approvals | COMPLETE |
+| SCR-069 | Security, Roles & Audit Log | `/security`, `/security/users`, `/audit` (+ `/api/audit/export`) | `audit.read` | invariant scan, roles, `audit.audit_log` with subject/actor/date filters and per-entry before/after diff | audit (audit page) | COMPLETE |
 
 ### Integrations
 
@@ -173,7 +173,7 @@ a record that only its editor changes.
 
 | ID | Screen | Route | Guard | Reads | Live | Status |
 |---|---|---|---|---|---|---|
-| SCR-071 | Organization Settings & Business Rules | `/settings` (General, Commercial, Team, Communication, Approvals) | `organization.settings` | `core.organizations.settings` through `set_organization_setting` (whitelist + audit) | — | COMPLETE |
+| SCR-071 | Organization Settings & Business Rules | `/settings` (General, Commercial, Team, Communication, Approvals, Finance) | `organization.settings` | `core.organizations.settings` through `set_organization_setting` (whitelist + audit); `finance.payment_accounts` (Doc 15 §9) through `createPaymentAccount` / `setPaymentAccountStatus` | — | COMPLETE |
 
 ## 2. Totals
 

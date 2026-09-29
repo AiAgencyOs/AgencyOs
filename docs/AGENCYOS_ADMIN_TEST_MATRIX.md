@@ -214,6 +214,51 @@ set is unchanged (the Node 22 `mock.module` class; `npm test` on this
 machine: 5772 pass, 53 fail before and after — `commit-the-whole-file-at-once`
 is in that class: it mocks `@/lib/db/server`).
 
+### 9b. PDF gap passes 5–7 (2026-09-29, evening)
+
+Driven from the PDF's per-screen requirements (§6) rather than the
+images: the element-level gap matrix listed forty feasible items and
+these passes closed the finance, projects, requirements and governance
+rows. Each one was exercised in the browser against the local stack as
+the owner, with a real write and a re-read, not a paint check:
+
+- **Receiving accounts** (Settings › Finance): a bank account and a UPI
+  account added through the form (kind-specific fields), the UPI one
+  deactivated (`1 active · 1 inactive`), and only the active one shown
+  under "Pay into" on an invoice.
+- **Billing → invoice**: GST mode confirmed on the seed project, the
+  first GSTIN refused by the checksum ("the check character does not
+  match"), a valid one saved as profile v2, a four-milestone plan
+  configured, `INV-2026-0001` drafted at ₹4,50,000 + 18% GST = ₹5,31,000
+  and issued. The invoice page prints the profile, the 18% line, the
+  linked milestone (30% of the plan) and the receiving account.
+- **GST & tax**: the September window shows 1 GST invoice against 6
+  whose projects never confirmed a mode (flagged, not folded into
+  non-GST); the period select navigates; the CSV carries the same rows
+  with mode and GSTIN; an empty period yields a header-only file.
+- **Milestones**: M2's due date set from the plan page and drawn on the
+  Gantt; **delivery lead** assigned from the roster on the team page; a
+  **file** linked, then renamed and refiled with a description.
+- **Clients** search (`?q=north` → 1 row) and CSV; **sales funnel** at
+  30 days with the KPI row and pipeline CSV; **scope** KPI row.
+- **Expense** recorded (₹4,500, tooling) then edited to ₹4,800, vendor
+  and project; **approvals** KPI row and recent decisions from 91 settled
+  requests; **audit** before/after table opened, subject filter applied,
+  CSV of 78 rows; **scope compare** v1 → v2 on the fixture project
+  (0 added · 0 removed · 1 changed · 3 unchanged — the vendor portal
+  moved from excluded to included); a **prototype** build added and
+  tabulated with "no run" / "none raised"; the **project report** for the
+  seed project (0/5 milestones, 1/6 tasks, 1 open defect, ₹5,31,000
+  invoiced of a ₹15,00,000 budget, ₹4,800 expenses).
+
+Guards restored on the way: the lead-score card read a column ADM-88
+made permanently null and is gone; the design page's spend and coverage
+phrasing, `projects/actions.ts`'s import order, and the cross-project
+reader's end-of-file region all pass again. `npm test`: 5809 pass, 52
+fail — the 52 are the Node 22 `mock.module` class only. New unit test:
+`tests/finance-tax-report.test.ts` (7 cases: period parsing, mode split,
+cash-basis P&L, CSV quoting).
+
 ## 10. Regression
 
 Unit: the failure set is byte-identical before and after (Node 22, 52

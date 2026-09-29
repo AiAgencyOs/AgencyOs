@@ -399,7 +399,14 @@ at 1440 and 390 (`scripts/local-qa/`, screenshots in the test matrix §9):
 
 Every usable reference image now has a built counterpart. Image 39
 (project finance) is the Project 360's billing, payment plan and claims
-sections; image 23 stays excluded. The canvas moved to the reference's
+sections; image 23 stays excluded. Beyond the images, the PDF's §6
+element lists were walked as a gap matrix (forty feasible items) and the
+finance, projects, requirements and governance rows built in passes 5–7
+— invoice billing profile and claims, receiving accounts, the GST & tax
+report, milestone dates, delivery lead, file edit, per-project report,
+scope compare, prototype QA/approval columns, audit diffs, approvals
+history, expense edit, and CSV exports for clients, pipeline, tax and
+audit (test matrix §9b). The canvas moved to the reference's
 cool grey (`#f5f7fb`) with `#0f172a` ink.
 
 ## 5. Conflicts resolved on 2026-09-29

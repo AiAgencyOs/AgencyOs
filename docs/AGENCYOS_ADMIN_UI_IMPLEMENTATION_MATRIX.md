@@ -272,3 +272,19 @@ one place a UI element (`expense-form.tsx`) exists with no backing database
 table — worth flagging distinctly from the "deliberately deferred" pattern
 seen elsewhere, since it's a partially-built form rather than a documented
 decision not to build.
+
+### Update 2026-09-29 (evening) — PDF gap passes 5–7
+
+New doors, each schema → service (`requireInternal` + `can`, then RLS) →
+action → client form, none optimistic: `createPaymentAccount`,
+`setPaymentAccountStatus`, `updateExpense` (finance); `updateProjectFile`,
+`setMilestoneDueOn`, `setDeliveryLead` (projects). New readers:
+`readInvoiceBillingProfile`, `listInvoicePaymentClaims`,
+`listPaymentAccounts`, `listTaxReportInvoices`, `listReceipts` (finance);
+`listMilestoneTaskCounts`, `listScopeItemsForVersion` (projects);
+`listDecidedApprovals` (approvals); `readAuditLog` now carries both
+snapshots plus `auditFacets`. Pure module `src/modules/finance/tax-report.ts`
+holds the period, split, P&L and CSV arithmetic (unit-tested). New routes:
+`/settings/finance`, `/projects/[id]/reports`, and CSV exports under
+`/api/{clients,sales/pipeline,finance/tax,audit}/export`, each behind the
+page's own capability.
