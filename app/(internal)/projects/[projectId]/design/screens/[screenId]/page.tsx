@@ -10,6 +10,7 @@ import { readTestPlan } from '@/modules/qa/queries';
 import { getProject } from '@/modules/projects/queries';
 import { listScreenScopeItems } from '@/modules/projects/design-export-queries';
 import { listDesignAssetOptions, listMappableScopeItems, listScreenAssets, readScreenListState } from '@/modules/projects/screen-edit-queries';
+import { coverageOf } from '@/modules/projects/screen-states-schema';
 import { getProjectScreen, listProjectScreens, splitList } from '@/modules/projects/screens-queries';
 import { Badge, Callout, Card, CardHeader, DetailPanel, humanize, PermissionDenied, StatusBadge } from '@/ui';
 
@@ -18,6 +19,7 @@ import { WorkspaceHeader } from '../../../workspace-header';
 import { LinkAssetForm, UnlinkAssetForm } from '../../asset-link-forms';
 import { DesignSubNav } from '../../design-subnav';
 import { DESIGN_STATE_LABEL, DesignStateForm, FigmaUrlForm, MapScopeItemForm, SubmitForQaForm, UnmapScopeItemForm } from '../screen-forms';
+import { ScreenStatesPanel } from '../screen-states-panel';
 
 export const metadata: Metadata = { title: 'Screen' };
 
@@ -31,6 +33,12 @@ export const metadata: Metadata = { title: 'Screen' };
  * mapping controls are not drawn (migration 20260929200000). Reference
  * assets (SCR-038) can be linked regardless: a link says where an image was
  * used and changes nothing about the list.
+ *
+ * Bucket F (migration 20261001130000): device targets, the component list
+ * and responsive coverage are structured fields on the row, and the four
+ * states, the role and those fields are edited after creation through
+ * `projects.set_screen_states` (the panel on the right). The design preview
+ * is the linked asset's image, or the Figma frame when only that exists.
  */
 export default async function ProjectScreenPage({ params }: { params: Promise<{ projectId: string; screenId: string }> }) {
   const { projectId, screenId } = await params;
@@ -73,6 +81,11 @@ export default async function ProjectScreenPage({ params }: { params: Promise<{ 
 
   const sections = splitList(screen.required_sections);
   const dependencies = splitList(screen.dependencies);
+  const deviceTargets = screen.device_targets ?? [];
+  const components = screen.components ?? [];
+  const coverage = coverageOf(deviceTargets, screen.responsive_coverage);
+  const coverageMap = (screen.responsive_coverage && typeof screen.responsive_coverage === 'object' ? screen.responsive_coverage : {}) as Record<string, unknown>;
+  const preview = assets.find((a) => a.imageBase64) ?? null;
 
   const ListCard = ({ title, hint, items, empty }: { title: string; hint: string; items: string[]; empty: string }) => (
     <Card>
@@ -142,6 +155,9 @@ export default async function ProjectScreenPage({ params }: { params: Promise<{ 
             rows={[
               { label: 'Purpose', value: text(screen.purpose) },
               { label: 'User role', value: humanize(screen.user_role) },
+              { label: 'Device targets', value: deviceTargets.length === 0 ? <span className="text-muted">Not recorded</span> : <span className="flex flex-wrap gap-1">{deviceTargets.map((d) => <Badge key={d} tone="neutral" dot={false}>{d}</Badge>)}</span> },
+              { label: 'Responsive coverage', value: !coverage ? <span className="text-muted">No device targets</span> : <span className="flex flex-wrap items-center gap-1"><span className={coverage.covered === coverage.total ? 'text-success' : 'text-warning'}>{coverage.covered}/{coverage.total} covered</span>{deviceTargets.map((d) => <Badge key={d} tone={coverageMap[d] === true ? 'success' : 'neutral'} dot={false}>{d}</Badge>)}</span> },
+              { label: 'Components', value: components.length === 0 ? <span className="text-muted">Not recorded</span> : <span className="flex flex-wrap gap-1">{components.map((c) => <Badge key={c} tone="neutral" dot={false}>{c}</Badge>)}</span> },
               { label: 'Entry point', value: text(screen.entry_point) },
               { label: 'Exit action', value: text(screen.exit_action) },
               { label: 'Actions', value: text(screen.actions) },
@@ -181,6 +197,21 @@ export default async function ProjectScreenPage({ params }: { params: Promise<{ 
           </Card>
 
           <Card>
+            <CardHeader title="Design preview" description="The linked asset's image where one exists; otherwise the Figma frame. A screen with neither says so." />
+            <div className="px-4 pb-4 sm:px-5">
+              {preview ? (
+                <img src={`data:${preview.mediaType};base64,${preview.imageBase64}`} alt={preview.prompt ?? screen.name} className="max-h-96 w-auto rounded-lg border border-line" />
+              ) : screen.figma_url ? (
+                <a href={screen.figma_url} target="_blank" rel="noreferrer" className="text-[13px] underline hover:text-foreground">
+                  Open the Figma frame
+                </a>
+              ) : (
+                <p className="text-[13px] text-muted">No preview: no asset with an image is linked and no Figma frame is attached.</p>
+              )}
+            </div>
+          </Card>
+
+          <Card>
             <CardHeader title={`Assets (${assets.length})`} description="Reference imagery linked to this screen (SCR-038). Optional support for the design, never the canonical artifact." />
             <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
               {assets.length === 0 ? (
@@ -189,7 +220,13 @@ export default async function ProjectScreenPage({ params }: { params: Promise<{ 
                 <ul className="grid gap-3 sm:grid-cols-2">
                   {assets.map((a) => (
                     <li key={a.linkId} className="flex flex-col gap-1.5 text-[13px]">
-                      <img src={`data:${a.mediaType};base64,${a.imageBase64}`} alt={a.prompt} className="w-full rounded-lg border border-line" />
+                      {a.imageBase64 ? (
+                        <img src={`data:${a.mediaType};base64,${a.imageBase64}`} alt={a.prompt ?? 'design asset'} className="w-full rounded-lg border border-line" />
+                      ) : (
+                        <Link href={`/projects/${projectId}/design#design-assets`} className="rounded-lg border border-line px-3 py-6 text-center text-xs underline">
+                          Uploaded asset — view it on the Design overview
+                        </Link>
+                      )}
                       <span className="flex items-center justify-between gap-2">
                         <Badge tone="neutral">{a.kind.replace(/_/g, ' ')}</Badge>
                         {mayEdit ? <UnlinkAssetForm projectId={projectId} linkId={a.linkId} screenId={screen.id} /> : null}
@@ -218,15 +255,37 @@ export default async function ProjectScreenPage({ params }: { params: Promise<{ 
             </Card>
           ) : null}
 
-          <DetailPanel
-            title="States"
-            rows={[
-              { label: 'Empty state', value: flag(screen.has_empty_state) },
-              { label: 'Error state', value: flag(screen.has_error_state) },
-              { label: 'Loading state', value: flag(screen.has_loading_state) },
-              { label: 'Success state', value: flag(screen.has_success_state) },
-            ]}
-          />
+          {drawable ? (
+            <Card>
+              <CardHeader title="States and fields" description="Add or remove a state after creation, and keep the role, device targets, components and responsive coverage current (SCR-035). Audited with before and after." />
+              <div className="px-4 pb-4 sm:px-5">
+                <ScreenStatesPanel
+                  projectId={projectId}
+                  screenId={screen.id}
+                  current={{
+                    hasEmptyState: screen.has_empty_state,
+                    hasLoadingState: screen.has_loading_state,
+                    hasErrorState: screen.has_error_state,
+                    hasSuccessState: screen.has_success_state,
+                    userRole: screen.user_role,
+                    deviceTargets,
+                    components,
+                    responsiveCoverage: coverageMap,
+                  }}
+                />
+              </div>
+            </Card>
+          ) : (
+            <DetailPanel
+              title="States"
+              rows={[
+                { label: 'Empty state', value: flag(screen.has_empty_state) },
+                { label: 'Error state', value: flag(screen.has_error_state) },
+                { label: 'Loading state', value: flag(screen.has_loading_state) },
+                { label: 'Success state', value: flag(screen.has_success_state) },
+              ]}
+            />
+          )}
           <DetailPanel
             title="Record"
             rows={[

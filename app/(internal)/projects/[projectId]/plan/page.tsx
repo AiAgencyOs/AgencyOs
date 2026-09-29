@@ -7,8 +7,10 @@ import { can } from '@/lib/authz/permissions';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { readClientName } from '@/lib/admin/clients';
 import { listEligibleMilestones } from '@/modules/finance/eligible-milestones-queries';
+import { listPlanLayers } from '@/modules/projects/plan-layers-queries';
+import { PLAN_LAYER_LABEL, PLAN_LAYERS } from '@/modules/projects/plan-layers-types';
 import { listPlanVersions } from '@/modules/projects/plan-versions-queries';
-import { getProject, listMilestoneTaskCounts, listPaymentPlan, readPlanBoard } from '@/modules/projects/queries';
+import { getProject, listDevelopmentBreakdown, listMilestoneTaskCounts, listPaymentPlan, readPlanBoard } from '@/modules/projects/queries';
 import { Badge, Card, CardHeader, cx, Gantt, IconCalendar, IconCheck, IconClock, IconFlag, PermissionDenied, ProgressBar, Stat, StatGrid, StatusBadge, ViewAll, type GanttRow, type Tone } from '@/ui';
 
 import { MilestoneDueForm } from '../milestone-controls';
@@ -18,6 +20,7 @@ import { WorkspaceHeader } from '../workspace-header';
 
 import { ProjectSubNav } from '../project-subnav';
 import { PlanBreakdownForm } from './plan-breakdown-form';
+import { PlanLayersPanel } from './plan-layers-panel';
 
 import {
   ActivatePlanForm,
@@ -51,6 +54,15 @@ export const metadata: Metadata = { title: 'Operational plan' };
  * is already a status board, a payment plan, an onboarding checklist, a group
  * card and a billing ladder; the blueprint is a working surface somebody sits
  * with, and nesting it would make both worse.
+ *
+ * Bucket F (migration 20261001130000) — SCR-040: each deliverable carries
+ * its seven layers (frontend, backend, database, apis, integrations, auth,
+ * business_logic) and an execution order in `projects.plan_layers`, edited
+ * in place on an active plan; the definition of done is printed per
+ * deliverable from what the plan holds (readiness, evidence, layers done);
+ * the client dependencies outstanding and the module/feature breakdown are
+ * summarised here where the PDF puts them, from the same readers the
+ * Development tab uses.
  */
 
 const PHASE_TONE: Record<string, Tone> = {
@@ -81,6 +93,17 @@ export default async function ProjectPlanPage({
     listEligibleMilestones([projectId]),
     listPlanVersions(projectId),
   ]);
+  const [layersByDeliverable, breakdown] = await Promise.all([listPlanLayers(board.deliverables.map((d) => d.id)), listDevelopmentBreakdown(projectId)]);
+  // SCR-040 — execution order first, then the plan's own position.
+  const orderedDeliverables = [...board.deliverables].sort((a, b) => {
+    const oa = layersByDeliverable.get(a.id)?.executionOrder ?? Number.MAX_SAFE_INTEGER;
+    const ob = layersByDeliverable.get(b.id)?.executionOrder ?? Number.MAX_SAFE_INTEGER;
+    return oa - ob;
+  });
+  // The register's own vocabulary: client_information and client_access are what the client owes.
+  const clientDependencies = board.dependencies.filter((d) => d.kind === 'client_information' || d.kind === 'client_access');
+  const clientOutstanding = clientDependencies.filter((d) => ['pending', 'requested', 'blocked'].includes(d.status));
+
   // SCR-023: the two doors on a payment milestone, gated the way their
   // services are. `nextToBill` is the same rule the project page applies.
   const mayMarkMet = can(context.role, 'milestone.write');
@@ -323,10 +346,18 @@ export default async function ProjectPlanPage({
               </p>
             ) : (
               <ul className="flex flex-col gap-1">
-                {board.deliverables.map((d) => (
+                {orderedDeliverables.map((d) => {
+                  const layers = layersByDeliverable.get(d.id) ?? null;
+                  const layerEntries = PLAN_LAYERS.map((l) => ({ layer: l, entry: layers?.layers[l] ?? null }));
+                  const applicable = layerEntries.filter((e) => e.entry && e.entry.status !== 'not_applicable');
+                  const done = applicable.filter((e) => e.entry?.status === 'done').length;
+                  return (
                   <li key={d.id} className="flex flex-col gap-1 rounded-md border border-line p-3 text-[13px]">
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <span className="font-medium">{d.name}</span>
+                      <span className="flex items-center gap-2 font-medium">
+                        {layers?.executionOrder ? <Badge tone="neutral">#{layers.executionOrder}</Badge> : null}
+                        {d.name}
+                      </span>
                       <span className="text-muted">
                         {d.applicablePhase.replace('_', ' ')} · {d.status}
                         {d.ownerRole ? ` · ${d.ownerRole}` : ''}
@@ -334,6 +365,20 @@ export default async function ProjectPlanPage({
                     </div>
                     <p className="text-muted">Ready when: {d.readinessCriteria}</p>
                     <p className="text-muted">Evidence: {d.evidenceRequired}</p>
+                    {/* SCR-040 — Definition of Done, from what the plan holds: readiness + evidence + every applicable layer done. */}
+                    <p className="text-muted">
+                      Definition of done: readiness met, evidence attached
+                      {applicable.length > 0 ? `, ${done} of ${applicable.length} layers done` : ', layers not yet broken down'}
+                      {layers?.executionOrder ? `, in order #${layers.executionOrder}` : ''}.
+                    </p>
+                    {/* SCR-040 — frontend / backend / database / APIs / integrations / auth / business-logic breakdown. */}
+                    <span className="flex flex-wrap gap-1">
+                      {layerEntries.map(({ layer, entry }) => (
+                        <Badge key={layer} tone={!entry ? 'neutral' : entry.status === 'done' ? 'success' : entry.status === 'in_progress' ? 'info' : entry.status === 'not_applicable' ? 'neutral' : 'warning'} dot={false} className={!entry || entry.status === 'not_applicable' ? 'opacity-60' : undefined}>
+                          {PLAN_LAYER_LABEL[layer]}{entry ? ` · ${entry.status.replace('_', ' ')}` : ''}
+                        </Badge>
+                      ))}
+                    </span>
                     {d.ambiguityNote ? (
                       <p className="text-foreground">Unclear: {d.ambiguityNote}</p>
                     ) : null}
@@ -342,8 +387,10 @@ export default async function ProjectPlanPage({
                         Not linked to approved scope — validation will flag it.
                       </p>
                     ) : null}
+                    {mayBreakDown && plan.status !== 'superseded' ? <PlanLayersPanel projectId={projectId} planDeliverableId={d.id} current={layers} /> : null}
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )}
             {mayPlan && plan.status === 'draft' ? (
@@ -403,6 +450,62 @@ export default async function ProjectPlanPage({
             {mayPlan && plan.status === 'draft' ? (
               <AddMilestoneForm projectId={projectId} planId={plan.id} />
             ) : null}
+          </section>
+
+          {/* SCR-040 — client dependencies outstanding, and the module → feature breakdown the plan was broken into. */}
+          <section className="flex flex-col gap-2">
+            <h2 className="text-[13px] font-semibold tracking-tight">
+              Client dependencies outstanding <span className="text-muted">({clientOutstanding.length})</span>
+            </h2>
+            {clientDependencies.length === 0 ? (
+              <p className="text-[13px] text-muted">The register names nothing the client owes.</p>
+            ) : clientOutstanding.length === 0 ? (
+              <p className="text-[13px] text-muted">Every client dependency is received or written off.</p>
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {clientOutstanding.map((d) => (
+                  <li key={d.id} className="flex flex-wrap items-baseline justify-between gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
+                    <span className="font-medium">{d.description}</span>
+                    <span className="flex items-center gap-2 text-muted">
+                      {d.kind.replace(/_/g, ' ')} · by {d.neededByPhase.replace('_', ' ')} · {d.ownerRole}
+                      <Badge tone={d.status === 'blocked' ? 'danger' : 'warning'}>{d.status}</Badge>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="flex flex-col gap-2">
+            <h2 className="text-[13px] font-semibold tracking-tight">
+              Modules and features <span className="text-muted">({breakdown.modules.length} · {breakdown.features.length})</span>
+            </h2>
+            {breakdown.modules.length === 0 ? (
+              <p className="text-[13px] text-muted">
+                Not broken down yet. Once the plan is active, break it into modules, features and tasks —{' '}
+                <Link href={`/projects/${projectId}/development`} className="underline underline-offset-2">
+                  the Development tab
+                </Link>{' '}
+                holds the board.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {breakdown.modules.map((m) => {
+                  const features = breakdown.features.filter((f) => f.moduleId === m.id);
+                  const tasks = breakdown.tasks.filter((t) => t.moduleId === m.id);
+                  return (
+                    <li key={m.id} className="flex flex-wrap items-baseline justify-between gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
+                      <Link href={`/projects/${projectId}/development`} className="font-medium underline-offset-2 hover:underline">
+                        {m.name}
+                      </Link>
+                      <span className="text-muted">
+                        {features.length} feature{features.length === 1 ? '' : 's'} · {tasks.filter((t) => t.status === 'done').length}/{tasks.length} tasks done · <StatusBadge status={m.status} dot={false} />
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </section>
 
           <section className="flex flex-col gap-2">
