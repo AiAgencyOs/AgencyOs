@@ -119,7 +119,7 @@ describe('D. the migration keeps its promises', () => {
     assert.match(store, /core\.is_owner\(\)/);
     const status = sql.slice(sql.indexOf('function core.secret_status('), sql.indexOf('function core.record_secret_check('));
     assert.match(status, /core\.is_admin\(\)/);
-    assert.doesNotMatch(status.split('comment on')[0], /ciphertext|auth_tag/);
+    assert.doesNotMatch(status.split('comment on')[0] ?? '', /ciphertext|auth_tag/);
   });
   test('the audit rows never carry the value', () => {
     const audits = sql.match(/core\.record_audit\([\s\S]*?\);/g) ?? [];
