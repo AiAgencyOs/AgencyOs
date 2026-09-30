@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { funnelMinLeadsToNameLeak } from '@/lib/admin/operational-defaults';
+import { readOperationalSettings } from '@/lib/admin/settings';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -96,20 +98,25 @@ export type SalesFunnel = {
    * system — which is a finding worth surfacing rather than a number to fix.
    */
   outOfOrder: boolean;
+  /** The sample floor in force — the owner's setting, or the default when unset. */
+  minLeadsToNameLeak: number;
 };
 
 /**
  * Fewer than this and the drops are noise rather than signal.
  *
  * Twenty is not a statistical claim; it is a refusal to name a leak from four
- * leads. The page says so where a reader can see it.
+ * leads. The page says so where a reader can see it. The number is the
+ * owner's to change (`funnel_min_leads_to_name_leak`, 5–500, configurability
+ * audit B-4); `getSalesFunnel` returns the one in force as `minLeadsToNameLeak`
+ * and 20 is what unset means (`DEFAULT_FUNNEL_MIN_LEADS_TO_NAME_LEAK`).
  */
-export const MIN_LEADS_TO_NAME_A_LEAK = 20;
 
 const pct = (n: number, of: number): number | null => (of > 0 ? Math.round((n / of) * 1000) / 10 : null);
 
 export async function getSalesFunnel(sinceDays = 90): Promise<SalesFunnel> {
   const supabase = await createClient();
+  const minLeadsToNameLeak = funnelMinLeadsToNameLeak(await readOperationalSettings());
 
   const from = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();
 
@@ -172,7 +179,7 @@ export async function getSalesFunnel(sinceDays = 90): Promise<SalesFunnel> {
   const outOfOrder = steps.some((s, i) => i > 0 && s.count > steps[i - 1]!.count);
 
   let biggestDrop: SalesFunnel['biggestDrop'] = null;
-  if (counts.leads >= MIN_LEADS_TO_NAME_A_LEAK) {
+  if (counts.leads >= minLeadsToNameLeak) {
     for (let i = 1; i < steps.length; i += 1) {
       const from_ = steps[i - 1]!;
       const to = steps[i]!;
@@ -197,7 +204,7 @@ export async function getSalesFunnel(sinceDays = 90): Promise<SalesFunnel> {
     share: Number(row.share),
   }));
 
-  return { counts, steps, biggestDrop, outOfOrder, lostReasons };
+  return { counts, steps, biggestDrop, outOfOrder, lostReasons, minLeadsToNameLeak };
 }
 
 /**

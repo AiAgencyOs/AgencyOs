@@ -5,18 +5,22 @@ import { createClient } from '@/lib/db/server';
 
 import {
   ApprovedOfferForm,
+  FunnelSampleFloorForm,
   NegotiationLimitsForm,
   PaymentTermsForm,
   QuotationValidityForm,
   PricingModelForm,
   ThirdPartyChargesForm,
 } from '../forms';
+import { SettingHistory } from '../setting-history';
+import { loadSettingHistory } from '../setting-history-entries';
 
 export const metadata: Metadata = { title: 'Settings — Commercial' };
 
 export default async function SettingsCommercialPage() {
   await requireInternal('/settings');
 
+  const historyOf = await loadSettingHistory();
   const supabase = await createClient();
   const { data: orgRows } = await supabase.schema('core').from('organizations').select('settings').limit(1);
   const orgSettings = (orgRows?.[0]?.settings ?? {}) as Record<string, unknown>;
@@ -98,6 +102,10 @@ export default async function SettingsCommercialPage() {
           multiplierTarget={multiplierTarget}
           multiplierMax={multiplierMax}
         />
+        <SettingHistory
+          label="Pricing model"
+          entries={historyOf('pricing_day_rate_rupees', 'pricing_ai_day_rate_rupees', 'pricing_multiplier_min', 'pricing_multiplier_target', 'pricing_multiplier_max')}
+        />
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
@@ -121,6 +129,7 @@ export default async function SettingsCommercialPage() {
             : 'Not set — quotations say 15 days, the figure most of the agency’s own past quotations used. Whole days, 1 to 90.'}
         </p>
         <QuotationValidityForm current={setting('quotation_validity_days')} />
+        <SettingHistory label="Quotation validity" entries={historyOf('quotation_validity_days')} />
 
         <h3 className="mt-6 text-sm font-medium">Third-party charges</h3>
         <p className="text-xs text-muted">
@@ -143,6 +152,25 @@ export default async function SettingsCommercialPage() {
           maxDiscount={maxDiscount}
           maxAutonomous={maxAutonomous}
         />
+        <SettingHistory
+          label="Negotiation limits"
+          entries={historyOf('negotiation_max_rounds', 'negotiation_min_price_rupees', 'negotiation_max_discount_pct', 'negotiation_max_autonomous_quote_rupees')}
+        />
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
+        <h2 className="text-[13px] font-semibold tracking-tight">How many leads before the funnel names a leak</h2>
+        <p className="text-xs text-muted">
+          {setting('funnel_min_leads_to_name_leak')
+            ? `Set — the funnel names its biggest drop once a window holds ${setting('funnel_min_leads_to_name_leak')} leads.`
+            : 'Not set — the funnel names its biggest drop once a window holds 20 leads. Whole leads, 5 to 500.'}
+        </p>
+        <p className="text-xs text-muted">
+          Below this the biggest drop is noise, so the report says it does not have enough rather
+          than point at a stage. It changes when the report speaks, never a count.
+        </p>
+        <FunnelSampleFloorForm current={setting('funnel_min_leads_to_name_leak')} />
+        <SettingHistory label="Funnel sample floor" entries={historyOf('funnel_min_leads_to_name_leak')} />
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
