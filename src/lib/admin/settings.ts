@@ -379,7 +379,11 @@ export type OrganizationSettingKey =
   // follow-ups go out. Unset means the code's old default, exactly as before.
   | 'quotation_validity_days'
   | 'outreach_window_start_hour'
-  | 'outreach_window_end_hour';
+  | 'outreach_window_end_hour'
+  // Configurability audit B-3/B-4 — how many days ahead a meeting time is
+  // offered, and how many leads the funnel needs before it names a leak.
+  | 'meeting_offer_horizon_days'
+  | 'funnel_min_leads_to_name_leak';
 
 const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   whatsapp_phone_number_id: 'a numeric WhatsApp phone_number_id (digits only)',
@@ -408,6 +412,8 @@ const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   quotation_validity_days: 'a whole number of days between 1 and 90',
   outreach_window_start_hour: 'an hour on the 24-hour clock, 0 to 22',
   outreach_window_end_hour: 'an hour on the 24-hour clock, 1 to 23, after the start',
+  meeting_offer_horizon_days: 'a whole number of days between 1 and 60',
+  funnel_min_leads_to_name_leak: 'a whole number of leads between 5 and 500',
 };
 
 /**

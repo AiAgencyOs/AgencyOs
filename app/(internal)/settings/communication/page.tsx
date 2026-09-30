@@ -13,6 +13,7 @@ import { Badge, Stat, StatGrid, StatusBadge } from '@/ui';
 import {
   InternalGroupForm,
   InternalRecipientForm,
+  MeetingOfferHorizonForm,
   OutreachLimitsForm,
   OutreachWindowForm,
   PilotToggleForm,
@@ -24,6 +25,8 @@ import {
   WhatsAppNumberForm,
   WhatsAppTemplatesForm,
 } from '../forms';
+import { SettingHistory } from '../setting-history';
+import { loadSettingHistory } from '../setting-history-entries';
 import { AnnouncementsPanel } from './announcements-panel';
 
 export const metadata: Metadata = { title: 'Settings — Communication' };
@@ -31,6 +34,7 @@ export const metadata: Metadata = { title: 'Settings — Communication' };
 export default async function SettingsCommunicationPage() {
   const context = await requireInternal('/settings');
 
+  const historyOf = await loadSettingHistory();
   const supabase = await createClient();
   const { data: orgRows } = await supabase.schema('core').from('organizations').select('settings').limit(1);
   const orgSettings = (orgRows?.[0]?.settings ?? {}) as Record<string, unknown>;
@@ -211,6 +215,16 @@ export default async function SettingsCommunicationPage() {
             : 'Not set — follow-ups go out between 10:00 and 19:00 in the agency’s timezone, on business days. A follow-up that falls due outside these hours waits for the next opening.'}
         </p>
         <OutreachWindowForm start={setting('outreach_window_start_hour')} end={setting('outreach_window_end_hour')} />
+        <SettingHistory label="Sending window" entries={historyOf('outreach_window_start_hour', 'outreach_window_end_hour')} />
+
+        <h2 className="text-[13px] font-semibold tracking-tight">How far ahead a meeting time is offered</h2>
+        <p className="text-xs text-muted">
+          {setting('meeting_offer_horizon_days')
+            ? `Set — when a lead named no time, Propose a time reads the next ${setting('meeting_offer_horizon_days')} days of the calendar.`
+            : 'Not set — when a lead named no time, Propose a time reads the next 7 days of the calendar. Whole days, 1 to 60. A time the lead did name is unaffected.'}
+        </p>
+        <MeetingOfferHorizonForm current={setting('meeting_offer_horizon_days')} />
+        <SettingHistory label="Meeting offer horizon" entries={historyOf('meeting_offer_horizon_days')} />
 
         <h2 className="text-[13px] font-semibold tracking-tight">How quickly the agent answers</h2>
         <p className="text-xs text-muted">
@@ -257,6 +271,7 @@ export default async function SettingsCommunicationPage() {
             bound the day, this bounds the run.
           </p>
           <ReactivationCapForm maxPerRun={setting('reactivation_max_per_run')} />
+          <SettingHistory label="Reactivation per-run cap" entries={historyOf('reactivation_max_per_run')} />
         </div>
       </div>
 
@@ -277,6 +292,7 @@ export default async function SettingsCommunicationPage() {
             )}
           </span>
           <WhatsAppNumberForm current={whatsappPhoneNumberId} />
+          <SettingHistory label="WhatsApp phone number id" entries={historyOf('whatsapp_phone_number_id')} />
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface px-4 py-3 text-sm">
           <VerifyWhatsAppButton />
@@ -301,6 +317,7 @@ export default async function SettingsCommunicationPage() {
             )}
           </span>
           <TestRecipientForm current={whatsappTestRecipient} />
+          <SettingHistory label="Internal WhatsApp test recipient" entries={historyOf('whatsapp_test_recipient')} />
           {whatsappTestRecipient ? (
             <SendWhatsAppTestForm recipient={whatsappTestRecipient} lastSentAt={whatsappTestSentAt} />
           ) : (

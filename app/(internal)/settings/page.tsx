@@ -6,14 +6,13 @@ import { readCronAgeSeconds } from '@/lib/observability/queries';
 
 import Link from 'next/link';
 
-import { agencyClock } from '@/lib/admin/agency-clock';
-import { readSettingHistory } from '@/lib/admin/settings-history';
 import { readSettingImpact } from '@/lib/admin/settings-impact';
 import { buttonClass } from '@/ui';
 
 import { QuotationContactForm } from './forms';
 import { OrganizationNameFormWithPreview, TimezoneFormWithPreview } from './high-risk-forms';
-import { SettingHistory, type SettingHistoryEntry } from './setting-history';
+import { SettingHistory } from './setting-history';
+import { loadSettingHistory } from './setting-history-entries';
 
 /**
  * Configuration, from the owner's chair — without the SQL or the .env file.
@@ -58,12 +57,8 @@ export default async function SettingsGeneralPage() {
   await requireInternal('/settings');
 
   const status = await configStatusResolved();
-  const clock = await agencyClock();
   // SCR-071: what a high-risk change touches, and each setting's recorded history.
-  const [cronAge, impact, history] = await Promise.all([readCronAgeSeconds(), readSettingImpact(), readSettingHistory()]);
-  const show = (v: unknown) => (v === null || v === undefined ? '' : typeof v === 'string' ? v : JSON.stringify(v));
-  const historyOf = (key: string): SettingHistoryEntry[] =>
-    (history.get(key) ?? []).map((h) => ({ auditId: h.auditId, before: show(h.before), after: show(h.after), actor: `${h.actorType ?? 'unknown'} ${h.actorId ? h.actorId.slice(0, 8) : ''}`.trim(), atLabel: clock.dateTime(h.at) }));
+  const [cronAge, impact, historyOf] = await Promise.all([readCronAgeSeconds(), readSettingImpact(), loadSettingHistory()]);
 
   // The agency timezone is a business fact, not a secret, so it is shown. Null
   // by design until an owner sets it (G-137) — and until then nothing sends.
@@ -185,6 +180,7 @@ export default async function SettingsGeneralPage() {
           invented one.
         </p>
         <QuotationContactForm email={contactEmail} phone={contactPhone} location={contactLocation} />
+        <SettingHistory label="Quotation contact" entries={historyOf('quotation_contact_email', 'quotation_contact_phone', 'quotation_contact_location')} />
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">

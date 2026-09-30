@@ -20,6 +20,8 @@ import {
   setNegotiationLimitsAction,
   setOrganizationNameAction,
   setOutreachLimitsAction,
+  setFunnelSampleFloorAction,
+  setMeetingOfferHorizonAction,
   setOutreachWindowAction,
   setQuotationValidityAction,
   setPaymentTermsAction,
@@ -1284,6 +1286,54 @@ export function OutreachWindowForm({ start, end }: { start: string | null; end: 
       </label>
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
         {pending ? 'Saving…' : 'Save window'}
+      </button>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** How many days ahead a meeting time is offered when the lead named none — configurability audit B-3. */
+export function MeetingOfferHorizonForm({ current }: { current: string | null }) {
+  const [state, action, pending] = useActionState(setMeetingOfferHorizonAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <label className="flex flex-col gap-1">
+        <span className="text-xs font-medium">Look ahead (days, 1–60)</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          name="horizon_days"
+          defaultValue={current ?? ''}
+          placeholder="7"
+          className={`${inputClass} w-24 tabular`}
+        />
+      </label>
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Saving…' : 'Save horizon'}
+      </button>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** How many leads the funnel needs before it names its biggest drop — configurability audit B-4. */
+export function FunnelSampleFloorForm({ current }: { current: string | null }) {
+  const [state, action, pending] = useActionState(setFunnelSampleFloorAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <label className="flex flex-col gap-1">
+        <span className="text-xs font-medium">Leads needed (5–500)</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          name="min_leads"
+          defaultValue={current ?? ''}
+          placeholder="20"
+          className={`${inputClass} w-24 tabular`}
+        />
+      </label>
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Saving…' : 'Save floor'}
       </button>
       <Message status={state.status} message={state.message} />
     </form>

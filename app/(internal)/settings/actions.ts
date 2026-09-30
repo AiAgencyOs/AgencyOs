@@ -919,3 +919,59 @@ export async function setOutreachWindowAction(_prev: FormState, formData: FormDa
         : `Set. Follow-ups go out between ${startRaw}:00 and ${endRaw}:00 agency time, on business days. Ones already due are moved into the window on the next run.`,
   };
 }
+
+/**
+ * How far ahead a meeting time is offered — configurability audit B-3.
+ *
+ * Was `DEFAULT_HORIZON_DAYS = 7` in `booking.ts`: the days the calendar is
+ * read when a lead named no window. Whole days, 1–60; empty clears, and
+ * cleared reads as 7 again — never as zero.
+ */
+export async function setMeetingOfferHorizonAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const raw = String(formData.get('horizon_days') ?? '').trim();
+  if (raw !== '') {
+    const parsed = Number(raw);
+    if (!/^[0-9]+$/.test(raw) || !Number.isInteger(parsed) || parsed < 1 || parsed > 60) {
+      return { status: 'error', message: 'The horizon must be a whole number of days between 1 and 60.' };
+    }
+  }
+  const result = await setOrganizationSetting('meeting_offer_horizon_days', raw);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message:
+      raw === ''
+        ? 'Horizon cleared — a proposal with no named window reads the next 7 days again.'
+        : `Set. A proposal with no named window reads the next ${raw} day${raw === '1' ? '' : 's'} of the calendar.`,
+  };
+}
+
+/**
+ * How many leads the funnel needs before it names a leak — configurability
+ * audit B-4.
+ *
+ * Was `MIN_LEADS_TO_NAME_A_LEAK = 20` in `sales-funnel.ts`. It changes when the
+ * report speaks, never a count. Whole leads, 5–500; empty clears, and cleared
+ * reads as 20 again.
+ */
+export async function setFunnelSampleFloorAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const raw = String(formData.get('min_leads') ?? '').trim();
+  if (raw !== '') {
+    const parsed = Number(raw);
+    if (!/^[0-9]+$/.test(raw) || !Number.isInteger(parsed) || parsed < 5 || parsed > 500) {
+      return { status: 'error', message: 'The sample floor must be a whole number of leads between 5 and 500.' };
+    }
+  }
+  const result = await setOrganizationSetting('funnel_min_leads_to_name_leak', raw);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  revalidatePath('/sales-funnel');
+  return {
+    status: 'success',
+    message:
+      raw === ''
+        ? 'Sample floor cleared — the funnel names its biggest drop from 20 leads again.'
+        : `Set. The funnel names its biggest drop once a window holds ${raw} leads.`,
+  };
+}

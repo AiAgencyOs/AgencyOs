@@ -4,7 +4,6 @@ import {
   getLeadSourceBreakdown,
   getPricingReflex,
   getSalesFunnel,
-  MIN_LEADS_TO_NAME_A_LEAK,
 } from '@/lib/admin/sales-funnel';
 import { agencyClock, getAgencyTimeZone } from '@/lib/admin/agency-clock';
 import { meetingsToday } from '@/lib/admin/overview';
@@ -85,7 +84,7 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
   const days = (WINDOWS as readonly number[]).includes(Number(daysParam)) ? Number(daysParam) : 90;
 
   const canWritePipeline = can(context, 'lead.write');
-  const { counts, steps, biggestDrop, outOfOrder, lostReasons } = await getSalesFunnel(days);
+  const { counts, steps, biggestDrop, outOfOrder, lostReasons, minLeadsToNameLeak } = await getSalesFunnel(days);
   const reflex = await getPricingReflex(days);
   const leadSources = await getLeadSourceBreakdown(days);
   const widest = Math.max(...steps.map((s) => s.count), 1);
@@ -403,7 +402,7 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
             ) : (
               <p className="rounded-lg border border-line bg-surface p-4 text-sm text-muted">
                 Not enough leads yet to say where the losses are. Below{' '}
-                {MIN_LEADS_TO_NAME_A_LEAK} in the window, the biggest drop is noise — naming a
+                {minLeadsToNameLeak} in the window, the biggest drop is noise — naming a
                 stage on that evidence would be a guess wearing a number.
               </p>
             )}
