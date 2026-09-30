@@ -200,7 +200,8 @@ function KanbanCard({ id, disabled, children }: { id: string; disabled: boolean;
       ref={setNodeRef}
       style={transform ? { transform: CSS.Translate.toString(transform) } : undefined}
       className={cx(isDragging && 'z-10 opacity-60', !disabled && 'cursor-grab touch-none active:cursor-grabbing')}
-      {...(disabled ? {} : { ...attributes, ...listeners })}
+      // dnd-kit's default role="button" would nest the card's own links inside a button (axe: nested-interactive)
+      {...(disabled ? {} : { ...attributes, role: 'group', ...listeners })}
     >
       {children}
     </div>

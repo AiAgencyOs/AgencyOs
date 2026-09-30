@@ -141,7 +141,7 @@ export function ChatCanvas({
   children: React.ReactNode;
 }) {
   return (
-    <div className={cx('wa-wallpaper relative flex-1 overflow-y-auto', className)}>
+    <div tabIndex={0} role="region" aria-label="Messages" className={cx('wa-wallpaper relative flex-1 overflow-y-auto', className)}>
       <div className="relative flex flex-col gap-1 px-3 py-4 sm:px-6">{children}</div>
     </div>
   );
@@ -295,7 +295,7 @@ export function ChatBubble({
         )}
       >
         {author ? (
-          <p className="mb-0.5 text-[12.5px] font-semibold text-[var(--wa-header)] dark:text-[var(--wa-accent)]">
+          <p className="mb-0.5 text-[12.5px] font-semibold text-[var(--wa-sender)] dark:text-[var(--wa-accent)]">
             {author}
           </p>
         ) : null}

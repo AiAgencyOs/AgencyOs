@@ -16,7 +16,7 @@ export function LeadStageStrip({ leadStatus, dealStage }: { leadStatus: string; 
               s.state === 'current' && 'bg-brand-soft text-brand',
               s.state === 'done' && 'bg-success-soft/60 text-success',
               s.state === 'lost' && 'bg-danger-soft text-danger',
-              s.state === 'upcoming' && (s.label === 'Lost' ? 'text-danger/70' : 'text-muted'),
+              s.state === 'upcoming' && (s.label === 'Lost' ? 'text-danger' : 'text-muted'),
             )}
           >
             {s.state === 'done' ? <IconCheck size={13} /> : null}

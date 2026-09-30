@@ -355,14 +355,13 @@ export default async function ClientDetailPage({
       />
 
 
-      <div role="tablist" aria-label="Client sections" className="rounded-xl border border-line bg-surface shadow-xs">
+      <nav aria-label="Client sections" className="rounded-xl border border-line bg-surface shadow-xs">
         <ul className="scrollbar-none flex overflow-x-auto px-2">
           {TABS.map((t) => (
             <li key={t} className="shrink-0">
               <Link
                 href={tabHref(t)}
-                role="tab"
-                aria-selected={t === tab}
+                aria-current={t === tab ? 'page' : undefined}
                 className={cx(
                   'relative flex h-11 items-center gap-2 px-3.5 text-[13px] font-medium transition-colors',
                   t === tab ? 'text-brand' : 'text-muted hover:text-foreground',
@@ -376,7 +375,7 @@ export default async function ClientDetailPage({
             </li>
           ))}
         </ul>
-      </div>
+      </nav>
 
       {tab !== 'overview' ? workTiles : null}
 

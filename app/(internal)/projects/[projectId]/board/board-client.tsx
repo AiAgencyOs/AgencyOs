@@ -624,7 +624,7 @@ function TaskCard({ task, selected, collab, onOpen }: { task: BoardTask; selecte
       ) : null}
       <div className="mt-2.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
         <span className="flex min-w-0 items-center gap-2">
-          {task.assigneeName ? <Avatar name={task.assigneeName} size="sm" /> : <span className="h-6 w-6 rounded-full border border-dashed border-line-strong" aria-label="Unassigned" />}
+          {task.assigneeName ? <Avatar name={task.assigneeName} size="sm" /> : <span role="img" className="h-6 w-6 rounded-full border border-dashed border-line-strong" aria-label="Unassigned" />}
           {task.dueLabel ? (
             <span className={cx('flex items-center gap-1 whitespace-nowrap text-[11px]', task.overdue ? 'font-medium text-danger' : 'text-muted')}>
               <IconCalendar size={12} />

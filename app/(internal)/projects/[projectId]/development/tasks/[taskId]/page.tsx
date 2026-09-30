@@ -489,7 +489,7 @@ export default async function TaskDetailPage({
               <div className="px-4 pb-4 sm:px-5">
                 {sprints.length === 0 ? (
                   <p className="text-[13px] text-muted">
-                    This project has no sprint yet. <Link href={`/projects/${projectId}/tasks`} className="text-brand hover:underline">Create one on the Tasks tab.</Link>
+                    This project has no sprint yet. <Link href={`/projects/${projectId}/tasks`} className="text-brand underline underline-offset-2">Create one on the Tasks tab.</Link>
                   </p>
                 ) : (
                   <PlaceInSprintForm projectId={projectId} taskId={task.id} current={task.sprint?.id ?? null} sprints={sprints.map((s) => ({ id: s.id, name: s.name, closed: s.closedAt !== null }))} />
