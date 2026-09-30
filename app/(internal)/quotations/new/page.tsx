@@ -6,9 +6,12 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listLeadsForTable, listThirdPartyCharges } from '@/modules/crm/queries';
 import { listInternalRoster } from '@/modules/projects/queries';
+import { readClausesInForce } from '@/modules/sales/clauses-service';
 import { listDealBillingModes } from '@/modules/sales/composer-queries';
 import { listPipelineOpportunities } from '@/modules/sales/pipeline-queries';
 import { listPaymentStructures } from '@/modules/sales/queries';
+import { clauseBodies } from '@/modules/sales/quotation-clauses';
+import { commercialTermsFor } from '@/modules/sales/quotation-standards';
 import { isOpenOpportunity, type OpportunityStage } from '@/modules/sales/schema';
 import { PageHeader, PermissionDenied } from '@/ui';
 
@@ -65,13 +68,19 @@ export default async function NewQuotationPage({ searchParams }: { searchParams:
       };
     });
 
+  // Audit B-6 — the standard terms with the owner's clause wording in them, so
+  // the textarea starts from what a quotation would actually print. A failed
+  // read refuses rather than offering the constants over the owner's words.
+  const inForce = await readClausesInForce();
+  if (!inForce.ok) throw new Error(inForce.error.message);
+  const defaultTerms = commercialTermsFor(undefined, clauseBodies(inForce.data));
   const defaultValidUntil = new Date(Date.now() + validityDays * 86_400_000).toISOString().slice(0, 10);
 
   return (
     <div className="flex flex-col gap-5">
       <TrailLabel name="Create quotation" />
       <PageHeader title="Create quotation" description="Create a professional quotation for your client — drafted, itemised, priced and sent to the owner for approval in one pass." />
-      <QuotationComposer deals={deals} defaultValidUntil={defaultValidUntil} validityDays={validityDays} taxRatePercent={18} initialOpportunityId={opportunity} charges={charges} structures={structures} roster={mayAssign ? roster : undefined} />
+      <QuotationComposer deals={deals} defaultValidUntil={defaultValidUntil} validityDays={validityDays} defaultTerms={defaultTerms} taxRatePercent={18} initialOpportunityId={opportunity} charges={charges} structures={structures} roster={mayAssign ? roster : undefined} />
     </div>
   );
 }

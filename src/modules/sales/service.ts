@@ -63,6 +63,7 @@ import {
  * service.ts, never a sibling's schema.
  */
 import { quotationValidityDays } from '@/lib/admin/operational-defaults';
+import { clausesForProposal } from './quotation-clauses';
 import { quotationSectionsFor } from './quotation-standards';
 
 export { quotationMessage } from './schema';
@@ -1289,8 +1290,16 @@ export async function quotationPdfForProposal(
       // so a line drafted before the column existed draws exactly as it did.
       ...(Array.isArray(i.serves) ? { serves: i.serves as string[] } : {}),
     }));
+    // Audit B-6 — the clause wording this quotation prints: today's for a
+    // draft, and for anything issued the snapshot it took when first rendered,
+    // so a re-render never reads today's clauses. A failed read blocks the
+    // render (like the surroundings) rather than printing defaults over the
+    // owner's own words.
+    const clauses = await clausesForProposal(supabase, proposal.id);
+    if (!clauses.ok) throw new SurroundingsUnreadable(clauses.error.message);
     const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems, {
       validityDays: surroundings.validityDays,
+      clauses: clauses.data,
     });
     const rendered = await renderQuotationPdf({
       ...surroundings,
@@ -1504,8 +1513,16 @@ export async function sendProposal(
       // so a line drafted before the column existed draws exactly as it did.
       ...(Array.isArray(i.serves) ? { serves: i.serves as string[] } : {}),
     }));
+    // Audit B-6 — the clause wording this quotation prints: today's for a
+    // draft, and for anything issued the snapshot it took when first rendered,
+    // so a re-render never reads today's clauses. A failed read blocks the
+    // render (like the surroundings) rather than printing defaults over the
+    // owner's own words.
+    const clauses = await clausesForProposal(supabase, proposal.id);
+    if (!clauses.ok) throw new SurroundingsUnreadable(clauses.error.message);
     const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems, {
       validityDays: surroundings.validityDays,
+      clauses: clauses.data,
     });
     const rendered = await renderQuotationPdf({
       ...surroundings,

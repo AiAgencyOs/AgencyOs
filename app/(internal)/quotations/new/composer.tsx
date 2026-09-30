@@ -5,7 +5,6 @@ import { useActionState, useMemo, useState } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
 import { composeQuotationAction, type ComposeQuotationState } from '@/modules/sales/actions';
-import { COMMERCIAL_TERMS } from '@/modules/sales/quotation-standards';
 import { Avatar, Badge, buttonClass, Callout, Card, CardHeader, cx, FormMessage, IconAlert, IconCheck, IconPlus, inputClass, labelClass, selectClass, textareaClass } from '@/ui';
 
 export type ComposerDeal = {
@@ -41,6 +40,7 @@ export function QuotationComposer({
   deals,
   defaultValidUntil,
   validityDays,
+  defaultTerms,
   taxRatePercent,
   initialOpportunityId,
   charges,
@@ -50,6 +50,8 @@ export function QuotationComposer({
   deals: ComposerDeal[];
   defaultValidUntil: string;
   validityDays: number;
+  /** The standard commercial terms as they would print today — the owner's clause wording where they have set it (audit B-6). */
+  defaultTerms: readonly string[];
   taxRatePercent: number | null;
   initialOpportunityId?: string;
   /** G-207 — the Admin-maintained third-party charges; the only figures a quotation may cite for them. */
@@ -399,7 +401,7 @@ export function QuotationComposer({
         <Card>
           <CardHeader title="Terms & conditions" description="One clause per line. Printed on the PDF as the commercial terms; the standard clauses are pre-filled and every edit is what the owner approves." />
           <div className="flex flex-col gap-2 px-4 pb-4 sm:px-5">
-            <textarea name="commercialTerms" rows={6} maxLength={15000} defaultValue={COMMERCIAL_TERMS.join('\n')} className={textareaClass} aria-label="Commercial terms, one per line" />
+            <textarea name="commercialTerms" rows={6} maxLength={15000} defaultValue={defaultTerms.join('\n')} className={textareaClass} aria-label="Commercial terms, one per line" />
             <span className="text-[11px] text-muted">The validity clause is printed from the date above; leave it as it is unless this quotation's terms differ.</span>
           </div>
         </Card>

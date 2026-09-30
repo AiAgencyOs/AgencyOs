@@ -28,7 +28,9 @@ import {
 } from './service';
 import { setOpportunityOwner } from './owner-service';
 import { setProposalTerms } from './terms-service';
-import { COMMERCIAL_TERMS } from './quotation-standards';
+import { readClausesInForce } from './clauses-service';
+import { clauseBodies } from './quotation-clauses';
+import { commercialTermsFor } from './quotation-standards';
 import { termsFromText } from './terms-schema';
 import { quotationReferenceCode } from '@/lib/pdf/quotation';
 
@@ -511,7 +513,12 @@ export async function composeQuotationAction(
   // differ from the standard clauses: an untouched textarea stores nothing
   // and the PDF prints exactly what it always did.
   const terms = termsFromText(String(formData.get('commercialTerms') ?? ''));
-  if (terms.length > 0 && terms.join('\n') !== COMMERCIAL_TERMS.join('\n')) {
+  // The standard clauses are the owner's wording where they have set it
+  // (audit B-6), which is what the composer's textarea started from; a failed
+  // read stores the edited text rather than guess what "untouched" meant.
+  const inForce = terms.length > 0 ? await readClausesInForce() : null;
+  const standard = inForce?.ok ? commercialTermsFor(undefined, clauseBodies(inForce.data)) : null;
+  if (terms.length > 0 && (!standard || terms.join('\n') !== standard.join('\n'))) {
     const termed = await setProposalTerms({ proposalId, terms });
     if (!termed.ok) ownerNote += ` The terms were not saved: ${termed.error.message}`;
   }

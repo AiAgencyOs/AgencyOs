@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 
 import { requireInternal } from '@/lib/auth/session';
+import { hasRole } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 
 import {
@@ -11,11 +12,12 @@ import {
   PricingModelForm,
   ThirdPartyChargesForm,
 } from '../forms';
+import { QuotationClausesPanel, type ClauseCard } from './clauses-panel';
 
 export const metadata: Metadata = { title: 'Settings — Commercial' };
 
 export default async function SettingsCommercialPage() {
-  await requireInternal('/settings');
+  const context = await requireInternal('/settings');
 
   const supabase = await createClient();
   const { data: orgRows } = await supabase.schema('core').from('organizations').select('settings').limit(1);
@@ -71,6 +73,35 @@ export default async function SettingsCommercialPage() {
   const termsResult = await readPaymentStructures();
   const paymentTerms = termsResult.ok ? (termsResult.data[0] ?? null) : null;
 
+  // Audit B-6 — the four quotation clauses and every version of each. A read
+  // that failed refuses (G-054): an empty list would say "never edited" over
+  // wording the owner published.
+  const { readQuotationClauses } = await import('@/modules/sales/clauses-service');
+  const { CLAUSE_KEYS, CLAUSE_LABELS, CLAUSE_HINTS, DEFAULT_CLAUSES } = await import('@/modules/sales/quotation-clauses');
+  const clauseRead = await readQuotationClauses();
+  if (!clauseRead.ok) throw new Error(clauseRead.error.message);
+  const canEditClauses = hasRole(context, 'owner') || hasRole(context, 'ops_admin');
+  const clauseCards: ClauseCard[] = CLAUSE_KEYS.map((key) => {
+    const versions = clauseRead.data.filter((v) => v.key === key).sort((a, b) => b.version - a.version);
+    const current = versions[0];
+    const row = (v: (typeof versions)[number]) => ({
+      version: v.version,
+      body: v.body,
+      by: v.createdByName,
+      when: v.effectiveFrom.slice(0, 10),
+    });
+    return {
+      key,
+      label: CLAUSE_LABELS[key],
+      hint: CLAUSE_HINTS[key],
+      body: current?.body ?? DEFAULT_CLAUSES[key],
+      version: current?.version ?? null,
+      by: current?.createdByName ?? null,
+      when: current ? current.effectiveFrom.slice(0, 10) : null,
+      history: versions.map(row),
+    };
+  });
+
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
@@ -121,6 +152,14 @@ export default async function SettingsCommercialPage() {
             : 'Not set — quotations say 15 days, the figure most of the agency’s own past quotations used. Whole days, 1 to 90.'}
         </p>
         <QuotationValidityForm current={setting('quotation_validity_days')} />
+
+        <h3 className="mt-6 text-sm font-medium">Quotation clauses</h3>
+        <p className="text-xs text-muted">
+          {clauseCards.some((c) => c.version !== null)
+            ? 'Some of these are in your own words. A quotation prints the wording in force when it was first issued and keeps it — editing here never rewrites one already sent.'
+            : 'Standard wording — none of these has been edited. Publish your own and every quotation issued from then on prints it; ones already issued keep what they printed.'}
+        </p>
+        <QuotationClausesPanel clauses={clauseCards} canEdit={canEditClauses} />
 
         <h3 className="mt-6 text-sm font-medium">Third-party charges</h3>
         <p className="text-xs text-muted">
