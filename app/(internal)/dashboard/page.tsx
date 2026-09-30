@@ -113,6 +113,14 @@ function money(minor: number, currency: string): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(minor / 100);
 }
 
+/** "2m ago" / "3h ago" / "4d ago" — the reference's Last Activity wording. */
+function ago(at: string | Date, now: Date): string {
+  const secs = Math.max(0, Math.round((now.getTime() - new Date(at).getTime()) / 1000));
+  if (secs < 3600) return `${Math.max(1, Math.floor(secs / 60))}m ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  return `${Math.floor(secs / 86400)}d ago`;
+}
+
 function compact(n: number): string {
   return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n);
 }
@@ -187,17 +195,14 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
       ? ([
           { label: 'Leads', count: funnel.counts.leads, tone: 'info', href: '/leads' },
           { label: 'Qualified', count: funnel.counts.qualified, tone: 'brand', href: '/leads?status=qualified' },
-          { label: 'Quoted', count: funnel.counts.quoted, tone: 'accent', href: '/quotations' },
-          { label: 'Won', count: funnel.counts.won, tone: 'success', href: '/sales-funnel' },
+          { label: 'Quoted', count: funnel.counts.quoted, tone: 'warning', href: '/quotations' },
         ] satisfies PipelineStage[])
       : []),
     ...(projectCounts
       ? ([
-          { label: 'Planning', count: projectCounts.planning ?? 0, tone: 'neutral', href: '/projects?status=planning' },
           { label: 'Onboarding', count: projectCounts.onboarding ?? 0, tone: 'warning', href: '/projects?status=onboarding' },
-          { label: 'In progress', count: projectCounts.active ?? 0, tone: 'info', href: '/projects?status=active' },
-          { label: 'On hold', count: projectCounts.on_hold ?? 0, tone: 'danger', href: '/projects?status=on_hold' },
-          { label: 'Completed', count: projectCounts.completed ?? 0, tone: 'success', href: '/projects?status=completed' },
+          { label: 'In Progress', count: projectCounts.active ?? 0, tone: 'success', href: '/projects?status=active' },
+          { label: 'Launched', count: projectCounts.completed ?? 0, tone: 'success', href: '/projects?status=completed' },
         ] satisfies PipelineStage[])
       : []),
   ];
@@ -210,33 +215,24 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
       cell: (l) => (
         <span className="flex items-center gap-2.5">
           <Avatar name={l.title} size="sm" />
-          <span className="min-w-0">
+          <span className="min-w-0 max-w-[6.5rem]">
             <span className="block truncate font-medium">{l.title}</span>
             {l.contactPhone ? <span className="block font-mono text-[11px] text-muted lg:hidden">{l.contactPhone}</span> : null}
           </span>
         </span>
       ),
     },
-    { key: 'phone', header: 'Phone', desktopOnly: true, cellClassName: 'font-mono text-xs text-muted', cell: (l) => l.contactPhone ?? '—' },
+    { key: 'phone', header: 'Phone', desktopOnly: true, cellClassName: 'text-muted whitespace-nowrap', cell: (l) => l.contactPhone ?? '—' },
     { key: 'source', header: 'Source', desktopOnly: true, cellClassName: 'text-muted', cell: (l) => humanize(l.source) },
-    {
-      key: 'status',
-      header: 'Status',
-      badge: true,
-      cell: (l) => (
-        <span className="flex items-center gap-2">
-          <StatusBadge status={l.status} dot={false} />
-          {l.assignedEmail ? <span className="hidden text-xs text-muted 2xl:inline">{l.assignedEmail.split('@')[0]}</span> : null}
-        </span>
-      ),
-    },
-    { key: 'activity', header: 'Last activity', align: 'right', cellClassName: 'text-muted whitespace-nowrap', cell: (l) => clock.dateTime(l.lastActivityAt) },
+    { key: 'status', header: 'Status', badge: true, cell: (l) => <StatusBadge status={l.status} dot={false} /> },
+    { key: 'assigned', header: 'Assigned', desktopOnly: true, cellClassName: 'text-muted', cell: (l) => (l.assignedEmail ? l.assignedEmail.split('@')[0] : '—') },
+    { key: 'activity', header: 'Last Activity', cellClassName: 'text-muted whitespace-nowrap', cell: (l) => ago(l.lastActivityAt, now) },
   ];
 
   const projectColumns: Column<(typeof activeProjects)[number]>[] = [
     {
       key: 'name',
-      header: 'Project name',
+      header: 'Project Name',
       primary: true,
       cell: (p) => (
         <span className="flex items-center gap-2.5">
@@ -246,21 +242,24 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
       ),
     },
     { key: 'client', header: 'Client', desktopOnly: true, cellClassName: 'text-muted', cell: (p) => p.clientName ?? 'Internal' },
-    { key: 'status', header: 'Stage', badge: true, cell: (p) => <StatusBadge status={p.status} dot={false} /> },
     {
-      // SCR-001 "Project health table" — the projects list's own at-risk rule.
-      key: 'health',
-      header: 'Health',
+      // The stage word, with the projects list's own at-risk rule beneath it
+      // when a project is not on track (SCR-001 "Project health").
+      key: 'status',
+      header: 'Stage',
+      badge: true,
       cell: (p) => {
         const input = { status: p.status, endsOn: p.endsOn, escalated: escalatedProjectIds.has(p.id), todayKey };
         const health = projectHealth(input);
         const reason = projectHealthReason(input);
         return (
-          <span className="flex items-center gap-1.5">
-            <Badge tone={PROJECT_HEALTH_TONE[health]} dot>
-              {PROJECT_HEALTH_LABEL[health]}
-            </Badge>
-            {reason ? <span className="hidden text-xs text-muted 2xl:inline">{reason}</span> : null}
+          <span className="flex flex-col items-start gap-1">
+            <StatusBadge status={p.status} dot={false} />
+            {reason ? (
+              <Badge tone={PROJECT_HEALTH_TONE[health]} dot>
+                {PROJECT_HEALTH_LABEL[health]} · {reason}
+              </Badge>
+            ) : null}
           </span>
         );
       },
@@ -276,7 +275,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
           <span className="text-xs text-muted">No plan yet</span>
         ),
     },
-    { key: 'due', header: 'Due date', align: 'right', cellClassName: 'text-muted whitespace-nowrap', cell: (p) => (p.endsOn ? clock.date(p.endsOn) : '—') },
+    { key: 'due', header: 'Due Date', cellClassName: 'text-muted whitespace-nowrap', cell: (p) => (p.endsOn ? clock.date(p.endsOn) : '—') },
   ];
 
   const cronText =
@@ -293,7 +292,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
       ...(isAvailable(o.backlog) ? { state: 'Connected', tone: 'success' } : { state: 'DATA UNAVAILABLE', tone: 'danger' }),
     },
     {
-      label: 'AI provider',
+      label: 'AI Provider',
       icon: <IconSparkle size={13} />,
       ...(isAvailable(o.ai)
         ? o.ai.value.providerConfigured
@@ -312,7 +311,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
     },
     { label: 'Scheduler (Cron)', icon: <IconClock size={13} />, state: cronText.text, tone: TONE[cronText.tone] ?? 'neutral' },
     {
-      label: 'Operational alerts',
+      label: 'Operational Alerts',
       icon: <IconAlert size={13} />,
       ...(isAvailable(o.failedDeliveries)
         ? o.failedDeliveries.value > 0
@@ -357,42 +356,11 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1.5">
           <Badge tone={TONE[label.tone] ?? 'neutral'} dot className="px-3 py-1.5 text-[13px]">
-            {label.text}
+            {status.level === 'operational' ? 'Everything is running' : label.text}
           </Badge>
           <LiveRefresh topics={['approvals', 'finance', 'jobs', 'leads', 'projects', 'agents']} />
         </div>
       </header>
-
-      {/* SCR-001 — the window selector and what happened inside it. Counts
-          of rows with a timestamp in the range; nothing is projected. */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-faint">Date range</span>
-          <FilterChips
-            options={OVERVIEW_WINDOWS.map((d) => ({
-              key: String(d),
-              label: `Last ${d} days`,
-              href: d === 30 ? '/dashboard' : `/dashboard?days=${d}`,
-              active: sinceDays === d,
-            }))}
-          />
-        </div>
-        {canSeeProjects ? (
-          <Link href="/reports" className={buttonClass('secondary', 'sm')}>
-            Generate report
-          </Link>
-        ) : null}
-      </div>
-
-      {/* SCR-001 "Quick actions" — the header's own create forms, and the queue. */}
-      <QuickActionsRow canCreateLead={show('lead.write')} canCreateProject={show('project.write')} canCreateInvoice={canCreateInvoice} pendingApprovals={isAvailable(o.approvals) ? o.approvals.value.pending : null} />
-
-      <StatGrid cols={4}>
-        <Stat label="Leads created" href={canSeeLeads ? `/leads?createdFrom=${windowFrom}` : undefined} value={<Value value={num(o.window, (w) => String(w.leadsCreated))} />} caption={`in the last ${sinceDays} days`} />
-        <Stat label="Deals won" href={canSeeLeads ? `/sales-funnel?days=${sinceDays}` : undefined} value={<Value value={num(o.window, (w) => String(w.dealsWon))} />} caption={`closed won in the last ${sinceDays} days`} />
-        <Stat label="Invoices issued" href={canSeeRevenue ? `/invoices?issuedFrom=${windowFrom}` : undefined} value={<Value value={num(o.window, (w) => String(w.invoicesIssued))} />} caption={`issued in the last ${sinceDays} days`} />
-        <Stat label="Meetings completed" href={canSeeLeads ? '/meetings?window=past&status=completed' : undefined} value={<Value value={num(o.window, (w) => String(w.meetingsCompleted))} />} caption={`completed in the last ${sinceDays} days`} />
-      </StatGrid>
 
       {status.level !== 'operational' ? (
         <Callout tone={label.tone === 'bad' ? 'danger' : 'warning'} icon={<IconAlert size={16} />}>
@@ -404,21 +372,21 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
       {canSeeLeads || canSeeProjects || canSeeRevenue || canSeeUsage ? (
         <StatGrid cols={5}>
           {canSeeLeads ? (
-            <Stat label="Total leads" href="/leads" value={String(totalLeads ?? 0)} caption="All time" tone="brand" icon={<IconUsers size={16} />} />
+            <Stat label="Total Leads" href="/leads" value={String(totalLeads ?? 0)} caption="All time" tone="brand" icon={<IconUsers size={16} />} />
           ) : null}
           {canSeeProjects ? (
             <Stat
-              label="Active projects"
+              label="Active Projects"
               href="/projects?status=open"
               value={openProjects === null ? 'DATA UNAVAILABLE' : String(openProjects)}
-              caption={projectCounts ? `${projectCounts.active ?? 0} in development · planning to on hold` : undefined}
+              caption={projectCounts ? `${projectCounts.active ?? 0} in development` : undefined}
               tone="info"
               icon={<IconProjects size={16} />}
             />
           ) : null}
           {canSeeRevenue ? (
             <Stat
-              label="Revenue (this month)"
+              label="Revenue (This Month)"
               href="/finance"
               value={revenue.length === 0 ? money(0, 'INR') : revenue.map((r) => money(r.paidMinor, r.currency)).join(' + ')}
               caption="Payments recorded"
@@ -428,7 +396,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
           ) : null}
           {canSeeUsage ? (
             <Stat
-              label="AI agent runs"
+              label="AI Agent Runs"
               href="/usage"
               value={compact(usage?.totals.runs ?? 0)}
               caption={isAvailable(o.ai) ? `${o.ai.value.agentsRunnable}/${o.ai.value.agentsTotal} agents runnable` : undefined}
@@ -437,31 +405,49 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
             />
           ) : null}
           {canSeeLeads ? (
-            <Stat label="Messages sent" href="/communication" value={compact(messagesSent ?? 0)} caption="This month" tone="warning" icon={<IconMessage size={16} />} />
+            <Stat label="Messages Sent" href="/communication" value={compact(messagesSent ?? 0)} caption="This month" tone="warning" icon={<IconMessage size={16} />} />
           ) : null}
         </StatGrid>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(20rem,1fr)]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(22rem,1fr)]">
         {/* ── Left column ──────────────────────────────────────────── */}
         <div className="flex min-w-0 flex-col gap-4">
           {pipeline.length > 0 ? (
             <Card>
-              <CardHeader title="Project pipeline" description={`Last ${sinceDays} days of sales, and every project by stage.`} actions={<ViewAll href={`/sales-funnel?days=${sinceDays}`} />} />
+              <CardHeader title="Project Pipeline" actions={<ViewAll href={`/sales-funnel?days=${sinceDays}`} />} />
               <div className="p-4 sm:p-5">
                 <PipelineStrip stages={pipeline} />
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-faint">Date range</span>
+                    <FilterChips
+                      options={OVERVIEW_WINDOWS.map((d) => ({
+                        key: String(d),
+                        label: `Last ${d} days`,
+                        href: d === 30 ? '/dashboard' : `/dashboard?days=${d}`,
+                        active: sinceDays === d,
+                      }))}
+                    />
+                  </div>
+                  {canSeeProjects ? (
+                    <Link href="/reports" className={buttonClass('secondary', 'sm')}>
+                      Generate report
+                    </Link>
+                  ) : null}
+                </div>
               </div>
             </Card>
           ) : null}
 
           {canSeeLeads ? (
             <Card>
-              <CardHeader title="Recent leads" actions={<ViewAll href="/leads" />} />
+              <CardHeader title="Recent Leads" actions={<ViewAll href="/leads" />} />
               <div className="px-4 pb-4 sm:px-5">
                 {recentLeads.length === 0 ? (
                   <EmptyState icon={<IconUsers size={22} />} title="No leads yet" description="Leads arrive from WhatsApp, referrals and the website — or are entered by hand." action={<Link href="/leads" className={buttonClass('secondary', 'sm')}>Open leads</Link>} />
                 ) : (
-                  <DataTable dense rows={recentLeads} columns={leadColumns} getKey={(l) => l.id} href={(l) => `/leads/${l.id}`} />
+                  <DataTable dense rows={recentLeads} columns={leadColumns} getKey={(l) => l.id} href={(l) => `/leads/${l.id}`} rowActions={(l) => [{ key: 'open', label: 'Open lead', href: `/leads/${l.id}` }]} />
                 )}
               </div>
             </Card>
@@ -469,17 +455,126 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
 
           {canSeeProjects ? (
             <Card>
-              <CardHeader title="Active projects" actions={<ViewAll href="/projects" />} />
+              <CardHeader title="Active Projects" actions={<ViewAll href="/projects" />} />
               <div className="px-4 pb-4 sm:px-5">
                 {activeProjects.length === 0 ? (
                   <EmptyState icon={<IconProjects size={22} />} title="No active projects" description="A project starts from a won deal, a template, or by hand from the header's Create." action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>} />
                 ) : (
-                  <DataTable dense rows={activeProjects} columns={projectColumns} getKey={(p) => p.id} href={(p) => `/projects/${p.id}`} />
+                  <DataTable dense rows={activeProjects} columns={projectColumns} getKey={(p) => p.id} href={(p) => `/projects/${p.id}`} rowActions={(p) => [{ key: 'open', label: 'Open project', href: `/projects/${p.id}` }]} />
                 )}
               </div>
             </Card>
           ) : null}
 
+        </div>
+
+        {/* ── Right rail ───────────────────────────────────────────── */}
+        <div className="flex min-w-0 flex-col gap-4">
+          <ActivityFeed
+            title={
+              <span className="flex items-center gap-2">
+                Tasks &amp; Approvals
+                {urgentCount > 0 ? (
+                  <span className="tabular flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1.5 text-[11px] font-semibold text-white">{urgentCount}</span>
+                ) : null}
+              </span>
+            }
+            viewAllHref="/notifications"
+            items={actionItems
+              .filter((i) => i.attention)
+              .slice(0, 6)
+              .map((i) => ({
+                id: i.key,
+                title: i.title,
+                detail: i.detail,
+                when: i.urgent ? 'Urgent' : '',
+                tone: i.urgent ? 'danger' : 'brand',
+                icon: <IconInbox size={13} />,
+                href: i.href,
+                // SCR-001 "Acknowledge / escalate an operational item" — the
+                // same recorded door the inbox uses (core.escalations).
+                action: (
+                  <EscalateControl
+                    subjectType={categoryOf(i)}
+                    subjectKey={i.key}
+                    title={i.title}
+                    escalation={
+                      i.escalation
+                        ? {
+                            id: i.escalation.id,
+                            toRole: i.escalation.toRole,
+                            reason: i.escalation.reason,
+                            state: i.escalation.state,
+                            fromUserName: i.escalation.fromUserName,
+                            acknowledgedByName: i.escalation.acknowledgedByName,
+                            createdAtLabel: clock.dateTime(i.escalation.createdAt),
+                          }
+                        : null
+                    }
+                    canAnswer={canAnswerEscalations}
+                    compact
+                  />
+                ),
+              }))}
+            emptyTitle="Nothing needs you"
+            emptyDescription="No approvals, claims, defects or failures are waiting."
+            compact
+          />
+
+          <Card>
+            <CardHeader
+              title="System Status"
+              actions={
+                <span className="flex items-center gap-2">
+                  <Badge tone={TONE[label.tone] ?? 'neutral'} dot>
+                    {label.text}
+                  </Badge>
+                  {show('organization.settings') ? <ViewAll href="/production-readiness" /> : null}
+                </span>
+              }
+            />
+            <StatusList rows={systemRows} className="py-1" />
+          </Card>
+
+          {canSeeUsage ? (
+            <Card>
+              <CardHeader title="Usage & Cost (This Month)" actions={<ViewAll href="/usage" label="View Details" />} />
+              <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4 sm:p-5">
+                {[
+                  ['Agent runs', compact(usage?.totals.runs ?? 0)],
+                  ['Input tokens', compact(usage?.totals.inputTokens ?? 0)],
+                  ['Output tokens', compact(usage?.totals.outputTokens ?? 0)],
+                  ['Total cost', money(usage?.totals.costMinor ?? 0, 'INR')],
+                ].map(([l, v]) => (
+                  <div key={l} className="min-w-0">
+                    <p className="tabular truncate text-lg font-semibold leading-tight text-foreground">{v}</p>
+                    <p className="text-[11px] text-muted">{l}</p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ) : null}
+
+        </div>
+      </div>
+
+      {/* Everything the reference deck does not draw but the Command Center
+          still owes the operator: the window counts, the shortcuts, the finance
+          gate, the operational tiles, today's list and the control plane. */}
+      <section aria-labelledby="dash-more" className="flex flex-col gap-4">
+        <h2 id="dash-more" className="text-base font-bold tracking-tight text-foreground">More from your agency</h2>
+      {/* SCR-001 "Quick actions" — the header's own create forms, and the queue. */}
+      <QuickActionsRow canCreateLead={show('lead.write')} canCreateProject={show('project.write')} canCreateInvoice={canCreateInvoice} pendingApprovals={isAvailable(o.approvals) ? o.approvals.value.pending : null} />
+
+      <StatGrid cols={4}>
+        <Stat label="Leads created" href={canSeeLeads ? `/leads?createdFrom=${windowFrom}` : undefined} value={<Value value={num(o.window, (w) => String(w.leadsCreated))} />} caption={`in the last ${sinceDays} days`} />
+        <Stat label="Deals won" href={canSeeLeads ? `/sales-funnel?days=${sinceDays}` : undefined} value={<Value value={num(o.window, (w) => String(w.dealsWon))} />} caption={`closed won in the last ${sinceDays} days`} />
+        <Stat label="Invoices issued" href={canSeeRevenue ? `/invoices?issuedFrom=${windowFrom}` : undefined} value={<Value value={num(o.window, (w) => String(w.invoicesIssued))} />} caption={`issued in the last ${sinceDays} days`} />
+        <Stat label="Meetings completed" href={canSeeLeads ? '/meetings?window=past&status=completed' : undefined} value={<Value value={num(o.window, (w) => String(w.meetingsCompleted))} />} caption={`completed in the last ${sinceDays} days`} />
+      </StatGrid>
+
+        <div className="grid gap-4 xl:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-4">
           {/* SCR-001 "Finance gate queue" — the unpaid milestone invoices holding
               a phase (finance-gate.ts) and the claims awaiting a decision, from
               the same readers /invoices and /invoices/verify use. */}
@@ -536,8 +631,41 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
             </Card>
           ) : null}
 
+          </div>
+          <div className="flex min-w-0 flex-col gap-4">
+          {/* Shared with the Sales dashboard (SCR-005): one component, the same rows. */}
+          <TodayCard
+            clock={clock}
+            now={now}
+            meetings={o.today}
+            reminders={reminders}
+            dueToday={dueToday}
+            overdueCount={overdueMine.length}
+            paymentsToVerify={show('invoice.read') && isAvailable(o.paymentsPendingVerification) ? o.paymentsPendingVerification.value : null}
+          />
+
+          {destinations.length > 0 ? (
+            <Card>
+              <CardHeader title="Control plane" />
+              <ul className="divide-y divide-line">
+                {destinations.map(([name, blurb, href]) => (
+                  <li key={href}>
+                    <Link href={href} className="group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-hover sm:px-5">
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[13px] font-medium text-foreground">{name}</span>
+                        <span className="block text-xs text-muted">{blurb}</span>
+                      </span>
+                      <IconChevronRight size={16} className={cx('shrink-0 text-faint transition-transform group-hover:translate-x-0.5')} />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
+          </div>
+        </div>
           {/* Operational KPI tiles — real reads only, each linking to its detail page. */}
-          <StatGrid cols={4}>
+        <StatGrid cols={4}>
             {canSeeProjects ? (
               <Stat label="Blocked projects" href="/projects/escalations" value={String(escalations.length)} caption="Phase 4 escalations" tone={escalations.length > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} />
             ) : null}
@@ -568,126 +696,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
               <Stat label="Config problems" href="/settings" value={String(o.environment.productionProblems)} tone={o.environment.productionProblems > 0 ? 'warning' : 'success'} icon={<IconSettings size={16} />} />
             ) : null}
           </StatGrid>
-        </div>
-
-        {/* ── Right rail ───────────────────────────────────────────── */}
-        <div className="flex min-w-0 flex-col gap-4">
-          <ActivityFeed
-            title={
-              <span className="flex items-center gap-2">
-                Tasks &amp; approvals
-                {urgentCount > 0 ? (
-                  <span className="tabular flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1.5 text-[11px] font-semibold text-white">{urgentCount}</span>
-                ) : null}
-              </span>
-            }
-            viewAllHref="/notifications"
-            items={actionItems
-              .filter((i) => i.attention)
-              .slice(0, 6)
-              .map((i) => ({
-                id: i.key,
-                title: i.title,
-                detail: i.detail,
-                when: i.urgent ? 'Urgent' : '',
-                tone: i.urgent ? 'danger' : 'brand',
-                icon: <IconInbox size={13} />,
-                href: i.href,
-                // SCR-001 "Acknowledge / escalate an operational item" — the
-                // same recorded door the inbox uses (core.escalations).
-                action: (
-                  <EscalateControl
-                    subjectType={categoryOf(i)}
-                    subjectKey={i.key}
-                    title={i.title}
-                    escalation={
-                      i.escalation
-                        ? {
-                            id: i.escalation.id,
-                            toRole: i.escalation.toRole,
-                            reason: i.escalation.reason,
-                            state: i.escalation.state,
-                            fromUserName: i.escalation.fromUserName,
-                            acknowledgedByName: i.escalation.acknowledgedByName,
-                            createdAtLabel: clock.dateTime(i.escalation.createdAt),
-                          }
-                        : null
-                    }
-                    canAnswer={canAnswerEscalations}
-                    compact
-                  />
-                ),
-              }))}
-            emptyTitle="Nothing needs you"
-            emptyDescription="No approvals, claims, defects or failures are waiting."
-            compact
-          />
-
-          <Card>
-            <CardHeader
-              title="System status"
-              actions={
-                <span className="flex items-center gap-2">
-                  <Badge tone={TONE[label.tone] ?? 'neutral'} dot>
-                    {label.text}
-                  </Badge>
-                  {show('organization.settings') ? <ViewAll href="/production-readiness" /> : null}
-                </span>
-              }
-            />
-            <StatusList rows={systemRows} className="py-1" />
-          </Card>
-
-          {canSeeUsage ? (
-            <Card>
-              <CardHeader title="Usage & cost" description="Agent runs recorded in the cost ledger." actions={<ViewAll href="/usage" label="View details" />} />
-              <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4 sm:p-5">
-                {[
-                  ['Agent runs', compact(usage?.totals.runs ?? 0)],
-                  ['Input tokens', compact(usage?.totals.inputTokens ?? 0)],
-                  ['Output tokens', compact(usage?.totals.outputTokens ?? 0)],
-                  ['Total cost', money(usage?.totals.costMinor ?? 0, 'INR')],
-                ].map(([l, v]) => (
-                  <div key={l} className="min-w-0">
-                    <p className="tabular truncate text-lg font-semibold leading-tight text-foreground">{v}</p>
-                    <p className="text-[11px] text-muted">{l}</p>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          ) : null}
-
-          {/* Shared with the Sales dashboard (SCR-005): one component, the same rows. */}
-          <TodayCard
-            clock={clock}
-            now={now}
-            meetings={o.today}
-            reminders={reminders}
-            dueToday={dueToday}
-            overdueCount={overdueMine.length}
-            paymentsToVerify={show('invoice.read') && isAvailable(o.paymentsPendingVerification) ? o.paymentsPendingVerification.value : null}
-          />
-
-          {destinations.length > 0 ? (
-            <Card>
-              <CardHeader title="Control plane" />
-              <ul className="divide-y divide-line">
-                {destinations.map(([name, blurb, href]) => (
-                  <li key={href}>
-                    <Link href={href} className="group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-hover sm:px-5">
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-[13px] font-medium text-foreground">{name}</span>
-                        <span className="block text-xs text-muted">{blurb}</span>
-                      </span>
-                      <IconChevronRight size={16} className={cx('shrink-0 text-faint transition-transform group-hover:translate-x-0.5')} />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          ) : null}
-        </div>
-      </div>
+      </section>
     </div>
   );
 }

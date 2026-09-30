@@ -44,6 +44,8 @@ import {
   type ActivityItem,
   type Column,
   type TimelineStep,
+  DonutChart,
+  QuickActions,
 } from '@/ui';
 import { readClientName } from '@/lib/admin/clients';
 
@@ -326,6 +328,7 @@ export default async function ProjectPage({
 
   const recentTasks = [...tasks].reverse().slice(0, 5);
   const taskColumns: Column<DevelopmentTask>[] = [
+    { key: 'index', header: '#', width: '2.5rem', desktopOnly: true, cellClassName: 'tabular text-muted', cell: (t) => recentTasks.indexOf(t) + 1 },
     { key: 'title', header: 'Task name', primary: true, cell: (t) => t.title },
     {
       key: 'assignee',
@@ -417,24 +420,18 @@ export default async function ProjectPage({
           </HeaderFigure>
         }
       >
-        <div className="mt-4 border-t border-line pt-4">
-          <StatusStepper
-            status={status}
-            happyPath={['planning', 'onboarding', 'active', 'completed']}
-            offRamps={['on_hold', 'cancelled']}
-          />
-        </div>
       </EntityHeader>
 
       <ProjectSubNav projectId={projectId} />
 
       <StatGrid cols={6}>
-        <Stat label="Total tasks" href={`/projects/${projectId}/development`} value={String(taskCounts.total)} caption={`${taskCounts.done} completed · ${pctOf(taskCounts.done, taskCounts.total)}%`} tone="brand" icon={<IconList size={16} />} />
-        <Stat label="In progress" href={`/projects/${projectId}/board`} value={String(taskCounts.inProgress)} caption={`${pctOf(taskCounts.inProgress, taskCounts.total)}%`} tone="info" icon={<IconClock size={16} />} />
-        <Stat label="Pending" href={`/projects/${projectId}/board`} value={String(taskCounts.pending)} caption={`${pctOf(taskCounts.pending, taskCounts.total)}%`} tone="warning" icon={<IconClock size={16} />} />
-        <Stat label="Overdue" href={`/projects/${projectId}/board`} value={String(taskCounts.overdue)} caption={`${pctOf(taskCounts.overdue, taskCounts.total)}%`} tone={taskCounts.overdue > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} />
-        <Stat label="Days left" href={`/projects/${projectId}/calendar`} value={daysLeft === null ? '—' : String(daysLeft)} caption={project.ends_on ? `Due ${clock.date(project.ends_on)}` : 'No due date set'} tone={daysLeft !== null && daysLeft < 0 ? 'danger' : 'accent'} icon={<IconCalendar size={16} />} />
+        <Stat compact label="Total tasks" href={`/projects/${projectId}/development`} value={String(taskCounts.total)} caption={`${taskCounts.done} completed · ${pctOf(taskCounts.done, taskCounts.total)}%`} tone="brand" icon={<IconList size={16} />} />
+        <Stat compact label="In progress" href={`/projects/${projectId}/board`} value={String(taskCounts.inProgress)} caption={`${pctOf(taskCounts.inProgress, taskCounts.total)}%`} tone="info" icon={<IconClock size={16} />} />
+        <Stat compact label="Pending" href={`/projects/${projectId}/board`} value={String(taskCounts.pending)} caption={`${pctOf(taskCounts.pending, taskCounts.total)}%`} tone="warning" icon={<IconClock size={16} />} />
+        <Stat compact label="Overdue" href={`/projects/${projectId}/board`} value={String(taskCounts.overdue)} caption={`${pctOf(taskCounts.overdue, taskCounts.total)}%`} tone={taskCounts.overdue > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} />
+        <Stat compact label="Days left" href={`/projects/${projectId}/calendar`} value={daysLeft === null ? '—' : String(daysLeft)} caption={project.ends_on ? `Due ${clock.date(project.ends_on)}` : 'No due date set'} tone={daysLeft !== null && daysLeft < 0 ? 'danger' : 'accent'} icon={<IconCalendar size={16} />} />
         <Stat
+          compact
           label="Project health"
           href={`/projects/${projectId}/qa`}
           value={healthy ? 'On track' : 'At risk'}
@@ -448,7 +445,131 @@ export default async function ProjectPage({
         />
       </StatGrid>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(19rem,1fr)]">
+      <div className="flex min-w-0 flex-col gap-4 [&>section]:rounded-xl [&>section]:border [&>section]:border-line [&>section]:bg-surface [&>section]:p-4 [&>section]:shadow-xs sm:[&>section]:p-5">
+      <Card>
+        <CardHeader title="Project timeline" actions={<ViewAll href={`/projects/${projectId}/plan`} label="View full plan" />} />
+        {timelineSteps.length > 0 ? (
+          <div className="p-4 sm:p-5">
+            <Timeline steps={timelineSteps} />
+            <p className="mt-3 text-xs text-muted">{summary.milestones_met} of {summary.milestones_total} milestones met.</p>
+          </div>
+        ) : (
+          <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No milestones planned yet.</p>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Recent tasks"
+          actions={
+            <>
+              <ViewAll href={`/projects/${projectId}/development`} />
+              {/* SCR-019: create a task in place — the same createTaskAction the Development page uses. */}
+              {can(context, 'task.write') ? <QuickTaskForm projectId={projectId} modules={modules.map((m) => ({ id: m.id, name: m.name }))} /> : null}
+            </>
+          }
+        />
+        <div className="px-4 pb-4 sm:px-5">
+          {recentTasks.length === 0 ? (
+            <p className="py-3 text-[13px] text-muted">No tasks yet. Tasks are created on the Development tab.</p>
+          ) : (
+            <DataTable dense rows={recentTasks} columns={taskColumns} getKey={(t) => t.id} href={() => `/projects/${projectId}/development`} />
+          )}
+        </div>
+      </Card>
+
+
+      <Card>
+        <CardHeader title="Task status" actions={<ViewAll href={`/projects/${projectId}/board`} label="Board" />} />
+        <div className="px-4 pb-4 sm:px-5">
+          {taskCounts.total === 0 ? (
+            <p className="text-[13px] text-muted">No tasks yet.</p>
+          ) : (
+            <DonutChart
+              data={[
+                { label: 'Completed', value: taskCounts.done },
+                { label: 'In progress', value: taskCounts.inProgress },
+                { label: 'To do', value: taskCounts.pending },
+                { label: 'Other (review, blocked)', value: taskCounts.total - taskCounts.done - taskCounts.inProgress - taskCounts.pending },
+              ]}
+              height={150}
+              totalLabel="Total tasks"
+            />
+          )}
+        </div>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
+        <Card>
+          <CardHeader title={`Team members (${team.length})`} actions={<ViewAll href={`/projects/${projectId}/team`} label="Manage" />} />
+          {team.length === 0 ? (
+            <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No one assigned yet.</p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {team.slice(0, 5).map((m) => (
+                <li key={m.userId} className="flex items-center gap-3 px-4 py-2.5 sm:px-5">
+                  <Avatar name={m.fullName} size="md" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-medium text-foreground">{m.fullName}</span>
+                    <span className="block truncate text-xs text-muted">{m.tasksDone}/{m.tasksTotal} tasks</span>
+                  </span>
+                  <Badge tone="info">{humanize(m.role)}</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Recent files"
+            actions={<ViewAll href={`/projects/${projectId}/files`} />}
+          />
+          {/* SCR-019: link a file in place — the Files tab's own door. */}
+          {mayWriteProject ? (
+            <details className="border-b border-line px-4 py-2 sm:px-5">
+              <summary className="cursor-pointer text-xs text-muted hover:underline">+ Link a file</summary>
+              <div className="pt-2 [&>section]:border-0 [&>section]:p-0 [&>section]:shadow-none">
+                <AddProjectFileForm projectId={projectId} />
+              </div>
+            </details>
+          ) : null}
+          {files.length === 0 ? (
+            <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No files yet.</p>
+          ) : (
+            <ul className="divide-y divide-line">
+              <li className="hidden grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.9fr)] gap-3 bg-surface-sunken px-4 py-1.5 text-[11px] font-semibold text-muted sm:grid sm:px-5">
+                <span>Name</span>
+                <span>Uploaded by</span>
+                <span>Date</span>
+              </li>
+              {files.slice(0, 5).map((f) => (
+                <li key={f.id}>
+                  <a href={f.url} target="_blank" rel="noreferrer noopener" className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-hover sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.9fr)] sm:px-5">
+                    <span className="flex min-w-0 items-center gap-2.5">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand">
+                        <IconFile size={15} />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-[13px] font-medium text-foreground">{f.title}</span>
+                        <span className="block truncate text-xs text-muted sm:hidden">
+                          {humanize(f.category)}{f.uploadedByName ? ` · ${f.uploadedByName}` : ''} · {clock.date(f.createdAt)}
+                        </span>
+                        <span className="hidden truncate text-xs text-muted sm:block">{humanize(f.category)}</span>
+                      </span>
+                    </span>
+                    <span className="hidden truncate text-[13px] text-muted sm:block">{f.uploadedByName ?? '—'}</span>
+                    <span className="hidden truncate text-[13px] text-muted sm:block">{clock.date(f.createdAt)}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
         {[
           {
             label: 'Phase 3 · Design',
@@ -491,38 +612,6 @@ export default async function ProjectPage({
           </Link>
         ))}
       </div>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(19rem,1fr)]">
-      <div className="flex min-w-0 flex-col gap-4 [&>section]:rounded-xl [&>section]:border [&>section]:border-line [&>section]:bg-surface [&>section]:p-4 [&>section]:shadow-xs sm:[&>section]:p-5">
-      <Card>
-        <CardHeader title="Project timeline" description={plan.length === 0 ? 'No milestones planned yet.' : `${summary.milestones_met} of ${summary.milestones_total} milestones met.`} actions={<ViewAll href={`/projects/${projectId}/plan`} label="View full plan" />} />
-        {timelineSteps.length > 0 ? (
-          <div className="p-4 sm:p-5">
-            <Timeline steps={timelineSteps} />
-          </div>
-        ) : null}
-      </Card>
-
-      <Card>
-        <CardHeader
-          title="Recent tasks"
-          actions={
-            <>
-              <ViewAll href={`/projects/${projectId}/development`} />
-              {/* SCR-019: create a task in place — the same createTaskAction the Development page uses. */}
-              {can(context, 'task.write') ? <QuickTaskForm projectId={projectId} modules={modules.map((m) => ({ id: m.id, name: m.name }))} /> : null}
-            </>
-          }
-        />
-        <div className="px-4 pb-4 sm:px-5">
-          {recentTasks.length === 0 ? (
-            <p className="py-3 text-[13px] text-muted">No tasks yet. Tasks are created on the Development tab.</p>
-          ) : (
-            <DataTable dense rows={recentTasks} columns={taskColumns} getKey={(t) => t.id} href={() => `/projects/${projectId}/development`} />
-          )}
-        </div>
-      </Card>
-
 
       {/* ── Onboarding (G-017, ADM-06) ───────────────────────────────── */}
       {onboarding.length > 0 ? (
@@ -642,6 +731,11 @@ export default async function ProjectPage({
 
       <section className="flex flex-col gap-3">
         <h2 className="text-[13px] font-semibold tracking-tight">Delivery status</h2>
+        <StatusStepper
+          status={status}
+          happyPath={['planning', 'onboarding', 'active', 'completed']}
+          offRamps={['on_hold', 'cancelled']}
+        />
         {mayWriteProject ? (
           <>
             {/*
@@ -1180,25 +1274,16 @@ export default async function ProjectPage({
           ]}
         />
 
-        <Card>
-          <CardHeader title={`Team members (${team.length})`} actions={<ViewAll href={`/projects/${projectId}/team`} label="Manage" />} />
-          {team.length === 0 ? (
-            <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No one assigned yet.</p>
-          ) : (
-            <ul className="divide-y divide-line">
-              {team.slice(0, 5).map((m) => (
-                <li key={m.userId} className="flex items-center gap-3 px-4 py-2.5 sm:px-5">
-                  <Avatar name={m.fullName} size="md" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium text-foreground">{m.fullName}</span>
-                    <span className="block truncate text-xs text-muted">{humanize(m.role)}</span>
-                  </span>
-                  <Badge tone="info">{m.tasksDone}/{m.tasksTotal} tasks</Badge>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+        <ActivityFeed items={activity} viewAllHref={`/projects/${projectId}/activity`} emptyTitle="No activity yet" emptyDescription="Completed tasks, met milestones, versions and files appear here." compact />
+
+        <QuickActions
+          actions={[
+            ...(can(context, 'task.write') ? [{ label: 'Add task', href: `/projects/${projectId}/board`, icon: <IconList size={14} /> }] : []),
+            { label: 'Upload file', href: `/projects/${projectId}/files`, icon: <IconUpload size={14} /> },
+            { label: 'Schedule meeting', href: `/projects/${projectId}/calendar`, icon: <IconCalendar size={14} /> },
+            { label: 'View plan', href: `/projects/${projectId}/plan`, icon: <IconFlag size={14} /> },
+          ]}
+        />
 
         <Card>
           <CardHeader title={`Assigned agents (${assignedAgents.length})`} description="The owner's record on each agent's page; the runner does not read it yet." />
@@ -1275,46 +1360,6 @@ export default async function ProjectPage({
             hasClientThread={group.linked !== null}
           />
         </Card>
-
-        <Card>
-          <CardHeader
-            title="Recent files"
-            actions={<ViewAll href={`/projects/${projectId}/files`} />}
-          />
-          {/* SCR-019: link a file in place — the Files tab's own door. */}
-          {mayWriteProject ? (
-            <details className="border-b border-line px-4 py-2 sm:px-5">
-              <summary className="cursor-pointer text-xs text-muted hover:underline">+ Link a file</summary>
-              <div className="pt-2 [&>section]:border-0 [&>section]:p-0 [&>section]:shadow-none">
-                <AddProjectFileForm projectId={projectId} />
-              </div>
-            </details>
-          ) : null}
-          {files.length === 0 ? (
-            <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No files yet.</p>
-          ) : (
-            <ul className="divide-y divide-line">
-              {files.slice(0, 5).map((f) => (
-                <li key={f.id}>
-                  <a href={f.url} target="_blank" rel="noreferrer noopener" className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-hover sm:px-5">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand">
-                      <IconFile size={15} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium text-foreground">{f.title}</span>
-                      <span className="block truncate text-xs text-muted">
-                        {humanize(f.category)}
-                        {f.uploadedByName ? ` · ${f.uploadedByName}` : ''} · {clock.date(f.createdAt)}
-                      </span>
-                    </span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-
-        <ActivityFeed items={activity} viewAllHref={`/projects/${projectId}/activity`} emptyTitle="No activity yet" emptyDescription="Completed tasks, met milestones, versions and files appear here." compact />
 
         {team.length > 0 ? (
           <div className="flex items-center gap-2 px-1 text-xs text-muted">

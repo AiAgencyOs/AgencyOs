@@ -24,8 +24,10 @@ import {
   IconClock,
   IconList,
   IconSearch,
+  inputClass,
   MonthGrid,
   PageHeader,
+  selectClass,
   Stat,
   StatGrid,
   statusTone,
@@ -99,14 +101,25 @@ const HEADER_TINT: Record<Tone, string> = {
 export default async function MyTasksPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; month?: string }>;
+  searchParams: Promise<{ view?: string; month?: string; q?: string; project?: string; priority?: string; status?: string }>;
 }) {
   const context = await requireInternal('/my-tasks');
   const clock = await agencyClock();
-  const { view: rawView, month: rawMonth } = await searchParams;
+  const { view: rawView, month: rawMonth, q: rawQ, project: rawProject, priority: rawPriority, status: rawStatus } = await searchParams;
   const view = viewOf(rawView);
 
-  const [tasks, roster] = await Promise.all([listMyTasksDetailed(context.userId), listInternalRoster()]);
+  const [allTasks, roster] = await Promise.all([listMyTasksDetailed(context.userId), listInternalRoster()]);
+  // The toolbar is a plain GET form, so it filters without JavaScript; the figures above stay the whole list.
+  const q = (rawQ ?? '').trim().toLowerCase();
+  const projectOptions = [...new Map(allTasks.map((t) => [t.projectId, t.projectName])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  const tasks = allTasks.filter(
+    (t) =>
+      (!q || t.title.toLowerCase().includes(q)) &&
+      (!rawProject || t.projectId === rawProject) &&
+      (!rawPriority || t.priority === rawPriority) &&
+      (!rawStatus || t.status === rawStatus),
+  );
+  const filtering = allTasks.length !== tasks.length;
   // SCR-021: the checklist, comments, attachments and blocker per task, read
   // once for the list so the drawer opens from what the page already holds.
   const collab = await readTaskCollabFor(tasks.map((t) => t.id), clock);
@@ -115,22 +128,24 @@ export default async function MyTasksPage({
   // Time section. Who is looking decides which entries they may delete.
   const time = await readTaskTimeFor(tasks.map((t) => t.id));
   const timeUser: TimeUser = { currentUserId: context.userId, canDeleteAny: can(context, 'project.write'), today };
-  const overdue = tasks.filter((t) => t.dueOn !== null && dueLabel(clock, t.dueOn).overdue);
+  const all = allTasks;
+  const overdue = all.filter((t) => t.dueOn !== null && dueLabel(clock, t.dueOn).overdue);
   // SCR-021's three asks beside the reference's own figures: due today,
   // blocked, and waiting for review — the agency's today, not the server's.
-  const dueToday = tasks.filter((t) => t.dueOn === today);
-  const blocked = tasks.filter((t) => t.status === 'blocked');
+  const dueToday = all.filter((t) => t.dueOn === today);
+  const blocked = all.filter((t) => t.status === 'blocked');
   const month = isMonthKey(rawMonth) ? rawMonth : monthKeyOf(today);
   const byStatus = (s: string) => tasks.filter((t) => t.status === s);
+  const byStatusAll = (s: string) => all.filter((t) => t.status === s);
   const columns = TASK_STATUSES.filter((s) => s !== 'done');
-  const pct = (n: number) => (tasks.length > 0 ? `${Math.round((n / tasks.length) * 100)}%` : undefined);
+  const pct = (n: number) => (all.length > 0 ? `${Math.round((n / all.length) * 100)}%` : undefined);
   const name = context.fullName ?? context.email;
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         title="My tasks"
-        description={tasks.length === 0 ? 'Nothing assigned to you right now.' : 'Manage and track all your tasks across projects.'}
+        description={allTasks.length === 0 ? 'Nothing assigned to you right now.' : 'Manage and track all your tasks across projects.'}
         actions={
           <span className="flex items-center gap-2 rounded-lg border border-line bg-surface px-2 py-1">
             <Avatar name={name} size="sm" />
@@ -139,35 +154,69 @@ export default async function MyTasksPage({
         }
       />
 
-      {tasks.length > 0 ? (
+      {allTasks.length > 0 ? (
         <StatGrid cols={5}>
-          <Stat label="Open tasks" value={String(tasks.length)} caption="Assigned to me" tone="brand" icon={<IconCheck size={16} />} />
-          <Stat label="To do" value={String(byStatus('todo').length)} caption={pct(byStatus('todo').length)} tone="warning" icon={<IconList size={16} />} />
-          <Stat label="In progress" value={String(byStatus('in_progress').length)} caption={pct(byStatus('in_progress').length)} tone="info" icon={<IconClock size={16} />} />
-          <Stat label="In review" value={String(byStatus('in_review').length)} caption={pct(byStatus('in_review').length)} tone="accent" icon={<IconSearch size={16} />} />
+          <Stat label="Open tasks" value={String(allTasks.length)} caption="Assigned to me" tone="brand" icon={<IconCheck size={16} />} />
+          <Stat label="To do" value={String(byStatusAll('todo').length)} caption={pct(byStatusAll('todo').length)} tone="warning" icon={<IconList size={16} />} />
+          <Stat label="In progress" value={String(byStatusAll('in_progress').length)} caption={pct(byStatusAll('in_progress').length)} tone="info" icon={<IconClock size={16} />} />
+          <Stat label="In review" value={String(byStatusAll('in_review').length)} caption={pct(byStatusAll('in_review').length)} tone="accent" icon={<IconSearch size={16} />} />
           <Stat label="Overdue" value={String(overdue.length)} caption={overdue.length > 0 ? 'Past their due date' : 'Nothing overdue'} tone={overdue.length > 0 ? 'danger' : 'success'} icon={<IconAlert size={16} />} />
         </StatGrid>
       ) : null}
 
-      {tasks.length > 0 ? (
+      {allTasks.length > 0 ? (
         <StatGrid>
           <Stat label="Due today" value={String(dueToday.length)} caption={dueToday.length > 0 ? 'Finish these first' : 'Nothing due today'} tone={dueToday.length > 0 ? 'warning' : 'neutral'} icon={<IconCalendar size={16} />} />
           <Stat label="Blocked" value={String(blocked.length)} caption={blocked.length > 0 ? 'Waiting on something' : 'Nothing blocked'} tone={blocked.length > 0 ? 'warning' : 'neutral'} icon={<IconAlert size={16} />} />
-          <Stat label="Waiting for review" value={String(byStatus('in_review').length)} caption="Submitted, not yet accepted" tone="accent" icon={<IconSearch size={16} />} />
-          <Stat label="Without a due date" value={String(tasks.filter((t) => t.dueOn === null).length)} caption="Not on the calendar" tone="neutral" icon={<IconClock size={16} />} />
+          <Stat label="Waiting for review" value={String(byStatusAll('in_review').length)} caption="Submitted, not yet accepted" tone="accent" icon={<IconSearch size={16} />} />
+          <Stat label="Without a due date" value={String(all.filter((t) => t.dueOn === null).length)} caption="Not on the calendar" tone="neutral" icon={<IconClock size={16} />} />
         </StatGrid>
       ) : null}
 
-      {tasks.length > 0 ? (
-        <FilterChips
-          options={VIEWS.map((v) => ({
-            key: v,
-            label: humanize(v),
-            href: v === 'columns' ? '/my-tasks' : `/my-tasks?view=${v}`,
-            active: v === view,
-          }))}
-        />
+      {allTasks.length > 0 ? (
+        <form method="get" action="/my-tasks" className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface p-2 shadow-xs">
+          <input type="hidden" name="view" value={view} />
+          <label className="relative w-full sm:w-auto sm:min-w-[14rem] sm:flex-1 sm:max-w-xs">
+            <span className="sr-only">Search tasks</span>
+            <IconSearch size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
+            <input name="q" defaultValue={rawQ ?? ''} placeholder="Search tasks…" className={cx(inputClass, 'pl-8')} />
+          </label>
+          <select name="project" aria-label="Filter by project" defaultValue={rawProject ?? ''} className={cx(selectClass, 'sm:w-auto sm:min-w-[9rem]')}>
+            <option value="">All projects</option>
+            {projectOptions.map(([id, projectName]) => (
+              <option key={id} value={id}>{projectName}</option>
+            ))}
+          </select>
+          <select name="priority" aria-label="Filter by priority" defaultValue={rawPriority ?? ''} className={cx(selectClass, 'sm:w-auto sm:min-w-[8rem]')}>
+            <option value="">All priorities</option>
+            {Object.entries(PRIORITY).map(([k, v]) => (
+              <option key={k} value={k}>{v.label}</option>
+            ))}
+          </select>
+          <select name="status" aria-label="Filter by status" defaultValue={rawStatus ?? ''} className={cx(selectClass, 'sm:w-auto sm:min-w-[8rem]')}>
+            <option value="">All statuses</option>
+            {columns.map((c) => (
+              <option key={c} value={c}>{humanize(c)}</option>
+            ))}
+          </select>
+          <button type="submit" className={buttonClass('secondary', 'sm')}>Filter</button>
+          {filtering || rawQ ? (
+            <Link href={view === 'columns' ? '/my-tasks' : `/my-tasks?view=${view}`} className="text-[13px] font-medium text-brand hover:underline">Reset</Link>
+          ) : null}
+          <span className="ml-auto flex items-center gap-2">
+            <span className="text-xs text-muted">{filtering ? `${tasks.length} of ${allTasks.length}` : allTasks.length} task{allTasks.length === 1 ? '' : 's'}</span>
+            <FilterChips
+              options={VIEWS.map((v) => ({
+                key: v,
+                label: humanize(v),
+                href: `/my-tasks?${new URLSearchParams({ ...(v === 'columns' ? {} : { view: v }), ...Object.fromEntries(Object.entries({ q: rawQ, project: rawProject, priority: rawPriority, status: rawStatus }).filter(([, val]) => val)) as Record<string, string> }).toString()}`,
+                active: v === view,
+              }))}
+            />
+          </span>
+        </form>
       ) : null}
+
 
       {tasks.length > 0 && view === 'list' ? <ListView tasks={tasks} roster={roster} collab={collab} time={time} timeUser={timeUser} clock={clock} today={today} /> : null}
       {tasks.length > 0 && view === 'calendar' ? <CalendarView tasks={tasks} roster={roster} collab={collab} time={time} timeUser={timeUser} month={month} today={today} /> : null}
@@ -181,7 +230,7 @@ export default async function MyTasksPage({
               <section key={s} className="flex flex-col rounded-xl border border-line bg-surface-sunken/60">
                 <h2 className={cx('flex items-center gap-2 rounded-t-xl px-3 py-2.5 text-[13px] font-semibold', HEADER_TINT[tone], TONE_TEXT[tone])}>
                   {COLUMN_ICON[s]}
-                  <span className="text-foreground">{humanize(s)}</span>
+                  <span className="text-foreground">{s === 'todo' ? 'To do' : humanize(s)}</span>
                   <span className={cx('tabular rounded-full px-1.5 py-0.5 text-[10px] font-semibold', TONE_CHIP[tone])}>{list.length}</span>
                 </h2>
                 <ul className="flex min-h-[80px] flex-1 flex-col gap-2 p-2">
@@ -225,7 +274,16 @@ export default async function MyTasksPage({
         </div>
       ) : null}
 
-      {tasks.length === 0 ? (
+      {allTasks.length > 0 && tasks.length === 0 ? (
+        <EmptyState
+          icon={<IconSearch size={22} />}
+          title="No task matches these filters"
+          description="Reset the filters to see every task assigned to you."
+          action={<Link href="/my-tasks" className={buttonClass('secondary', 'sm')}>Reset filters</Link>}
+        />
+      ) : null}
+
+      {allTasks.length === 0 ? (
         <EmptyState
           icon={<IconCheck size={22} />}
           title="Nothing assigned to you"

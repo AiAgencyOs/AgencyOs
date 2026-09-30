@@ -246,43 +246,8 @@ export default async function ClientDetailPage({
     .slice(0, 6)
     .map(({ at, ...rest }) => ({ ...rest, when: clock.date(at) }));
 
-  return (
-    <div className="flex flex-col gap-5">
-      <TrailLabel name={client.name} />
-      <EntityHeader
-        name={client.name}
-        tile={<Avatar name={client.name} size="xl" />}
-        status={<Badge tone={client.status === 'active' ? 'success' : 'neutral'} dot>{humanize(client.status)} client</Badge>}
-        subtitle={`Client since ${clock.date(client.createdAt)}`}
-        facts={[
-          ...(client.billingEmail ? [{ label: 'Billing email', value: client.billingEmail, icon: <IconInbox size={14} /> }] : []),
-          { label: 'Currency', value: client.currency, icon: <IconInvoices size={14} /> },
-          { label: 'Projects', value: `${client.projectsActive} active · ${client.projectsTotal} total`, icon: <IconProjects size={14} /> },
-        ]}
-        actions={
-          <>
-            <Link href="/clients" className={buttonClass('secondary', 'sm')}>
-              All clients
-            </Link>
-            {canWriteNotes ? (
-              <Link href={`${base}?tab=notes#notes`} className={buttonClass('secondary', 'sm')}>
-                <IconPlus size={14} />
-                Add note
-              </Link>
-            ) : null}
-            {can(context, 'project.write') ? (
-              <ClientCreateButtons
-                clientAccountId={client.id}
-                opportunityId={opportunities.open?.id ?? null}
-                invoiceHref={invoiceTarget ? `/projects/${invoiceTarget}#billing` : `${base}?tab=invoices`}
-              />
-            ) : null}
-            {mayMessage ? <ClientMeetingForm leads={leadOptions} agencyZone={agencyZone} /> : null}
-          </>
-        }
-      />
-
-      <StatGrid>
+  const workTiles = (
+    <StatGrid>
         <Stat
           label="Next follow-up"
           value={nextFollowUp ? clock.date(nextFollowUp.at) : '—'}
@@ -322,6 +287,44 @@ export default async function ClientDetailPage({
           href={tabHref('notes')}
         />
       </StatGrid>
+  );
+
+  return (
+    <div className="flex flex-col gap-5">
+      <TrailLabel name={client.name} />
+      <EntityHeader
+        name={client.name}
+        tile={<Avatar name={client.name} size="xl" />}
+        status={<Badge tone={client.status === 'active' ? 'success' : 'neutral'} dot>{humanize(client.status)} client</Badge>}
+        subtitle={`Client since ${clock.date(client.createdAt)}`}
+        facts={[
+          ...(client.billingEmail ? [{ label: 'Billing email', value: client.billingEmail, icon: <IconInbox size={14} /> }] : []),
+          { label: 'Currency', value: client.currency, icon: <IconInvoices size={14} /> },
+          { label: 'Projects', value: `${client.projectsActive} active · ${client.projectsTotal} total`, icon: <IconProjects size={14} /> },
+        ]}
+        actions={
+          <>
+            <Link href="/clients" className={buttonClass('secondary', 'sm')}>
+              All clients
+            </Link>
+            {canWriteNotes ? (
+              <Link href={`${base}?tab=notes#notes`} className={buttonClass('secondary', 'sm')}>
+                <IconPlus size={14} />
+                Add note
+              </Link>
+            ) : null}
+            {can(context, 'project.write') ? (
+              <ClientCreateButtons
+                clientAccountId={client.id}
+                opportunityId={opportunities.open?.id ?? null}
+                invoiceHref={invoiceTarget ? `/projects/${invoiceTarget}#billing` : `${base}?tab=invoices`}
+              />
+            ) : null}
+            {mayMessage ? <ClientMeetingForm leads={leadOptions} agencyZone={agencyZone} /> : null}
+          </>
+        }
+      />
+
 
       <div role="tablist" aria-label="Client sections" className="rounded-xl border border-line bg-surface shadow-xs">
         <ul className="scrollbar-none flex overflow-x-auto px-2">
@@ -344,6 +347,8 @@ export default async function ClientDetailPage({
           ))}
         </ul>
       </div>
+
+      {tab !== 'overview' ? workTiles : null}
 
       {tab === 'settings' ? (
         <div className="grid gap-4 xl:grid-cols-2">
@@ -680,10 +685,11 @@ export default async function ClientDetailPage({
             <Stat label="Outstanding" value={money(client.outstandingMinor, client.currency)} caption={pending > 0 ? `${pending} pending` : 'Nothing pending'} tone={client.outstandingMinor > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} />
           </>
         ) : null}
-        <Stat label="Client since" value={clock.date(client.createdAt)} caption={monthsSince === 0 ? 'This month' : `${monthsSince} month${monthsSince === 1 ? '' : 's'}`} tone="accent" icon={<IconCalendar size={16} />} />
+        <Stat label="Client since" value={<span className="text-lg">{clock.date(client.createdAt)}</span>} caption={monthsSince === 0 ? 'This month' : `${monthsSince} month${monthsSince === 1 ? '' : 's'}`} tone="accent" icon={<IconCalendar size={16} />} />
         <Stat label="Client health" value={healthy ? 'Good' : 'Attention'} caption={overdue > 0 ? `${overdue} overdue invoice${overdue === 1 ? '' : 's'}` : client.status !== 'active' ? humanize(client.status) : 'No overdue invoices'} tone={healthy ? 'success' : 'danger'} icon={healthy ? <IconCheck size={16} /> : <IconAlert size={16} />} />
       </StatGrid>
       ) : null}
+      {tab === 'overview' ? workTiles : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(19rem,1fr)]">
         <div className="flex min-w-0 flex-col gap-4">

@@ -119,7 +119,8 @@ export function DataTable<T>({
         role="region"
         aria-label={ariaLabel ?? 'Table'}
         className={cx(
-          'hidden overflow-x-auto rounded-xl border border-line bg-surface shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand lg:block',
+          'hidden overflow-x-auto bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand lg:block',
+          !dense && 'rounded-xl border border-line shadow-xs',
           sticky && 'max-h-[calc(100vh-11rem)] overflow-y-auto',
         )}
       >
@@ -167,7 +168,7 @@ export function DataTable<T>({
                 );
               })}
               {rowActions ? <th className={cx('w-12', sticky && 'sticky top-0 z-10 bg-surface-sunken')}><span className="sr-only">Actions</span></th> : null}
-              {href ? <th className={cx('w-10', sticky && 'sticky top-0 z-10 bg-surface-sunken')} /> : null}
+              {href && !rowActions ? <th className={cx('w-10', sticky && 'sticky top-0 z-10 bg-surface-sunken')} /> : null}
             </tr>
           </thead>
           <tbody>
@@ -208,7 +209,7 @@ export function DataTable<T>({
                       <RowActionsMenu actions={rowActions(row)} />
                     </td>
                   ) : null}
-                  {href ? (
+                  {href && !rowActions ? (
                     <td className="pr-3 text-right" aria-hidden>
                       <IconChevronRight
                         size={16}

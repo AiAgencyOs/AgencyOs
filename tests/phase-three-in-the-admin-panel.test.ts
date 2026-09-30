@@ -60,7 +60,7 @@ describe('A. §8’s areas are all present', () => {
                          'Internal review', 'Admin decisions', 'What was sent to the client',
                          'What the client said', 'Revision history',
                          'Final direction and Phase 4 handoff', 'Cost and usage']) {
-      assert.match(PAGE, new RegExp(`title="${title}"`), `${title} has no section`);
+      assert.match(PAGE, new RegExp(`title="${title}"`, 'i'), `${title} has no section`);
     }
   });
 

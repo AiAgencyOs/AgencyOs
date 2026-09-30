@@ -18,8 +18,6 @@ import {
   CardHeader,
   cx,
   EmptyState,
-  FilterBar,
-  FilterChips,
   humanize,
   IconCalendar,
   IconCheck,
@@ -197,33 +195,33 @@ export default async function ProjectCalendarPage({
   const upcoming = entries.filter((e) => e.date >= today).slice(0, 6);
   const overdueCount = entries.filter((e) => e.overdue).length;
 
+  const toolbar = (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <Link href={link(view, today)} className="inline-flex h-9 items-center rounded-lg border border-line bg-surface px-3 text-[13px] font-medium text-foreground hover:bg-surface-hover">Today</Link>
+      <div className="inline-flex overflow-hidden rounded-lg border border-line text-[13px] font-medium" role="group" aria-label="Calendar view">
+        {VIEWS.map((v) => (
+          <Link
+            key={v}
+            href={link(v, anchor)}
+            aria-current={v === view ? 'true' : undefined}
+            className={cx('px-3.5 py-2 transition-colors', v === view ? 'bg-brand text-brand-fg' : 'bg-surface text-muted hover:bg-surface-hover')}
+          >
+            {humanize(v)}
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-5">
       <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={can(context, 'project.write')} />
 
       <ProjectSubNav projectId={projectId} />
 
-      <FilterBar>
-        <FilterChips options={VIEWS.map((v) => ({ key: v, label: humanize(v), href: link(v, anchor), active: v === view }))} />
-        <div className="flex flex-wrap items-center gap-2">
-          {KINDS.map((k) => (
-            <Link
-              key={k}
-              href={link(view, anchor, toggleKind(k))}
-              aria-current={kinds.has(k) ? 'true' : undefined}
-              className={cx(
-                'rounded-full px-3 py-1.5 text-xs font-medium ring-1 ring-inset transition-colors',
-                kinds.has(k) ? 'bg-surface text-foreground ring-line-strong' : 'bg-surface-sunken text-faint ring-line line-through',
-              )}
-            >
-              {humanize(k)}s
-            </Link>
-          ))}
-        </div>
-      </FilterBar>
-
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(18rem,1fr)]">
         <div className="flex min-w-0 flex-col gap-4">
+          {view !== 'month' ? toolbar : null}
           {view === 'week' ? (
             <Card>
               <CardHeader
@@ -308,7 +306,7 @@ export default async function ProjectCalendarPage({
           {view === 'month' ? (
           <Card>
             <CardHeader
-              title="Project calendar"
+              title="Project Calendar"
               description="View all project tasks, milestones and important dates in one place."
               actions={
                 <span className="flex items-center gap-2 text-xs text-muted">
@@ -318,7 +316,8 @@ export default async function ProjectCalendarPage({
                 </span>
               }
             />
-            <div className="p-3 sm:p-4">
+            <div className="flex flex-col gap-3 p-3 sm:p-4">
+              {toolbar}
               <MonthGrid month={month} entriesByDate={gridEntriesByDate} todayKey={today} monthHref={(m) => `/projects/${projectId}/calendar?month=${m}${typesParam}`} />
               {mayWrite ? (
                 <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[13px] text-muted">
@@ -389,7 +388,7 @@ export default async function ProjectCalendarPage({
 
         <div className="flex min-w-0 flex-col gap-4">
           <Card>
-            <CardHeader title="Upcoming" actions={<ViewAll href={`/projects/${projectId}/board`} />} />
+            <CardHeader title="Upcoming Events" actions={<ViewAll href={`/projects/${projectId}/board`} />} />
             {upcoming.length === 0 ? (
               <p className="px-4 py-3 text-[13px] text-muted sm:px-5">Nothing dated ahead.</p>
             ) : (
@@ -411,7 +410,7 @@ export default async function ProjectCalendarPage({
           </Card>
 
           <Card>
-            <CardHeader title="Milestones on calendar" actions={<ViewAll href={`/projects/${projectId}/plan`} />} />
+            <CardHeader title="Milestones on Calendar" actions={<ViewAll href={`/projects/${projectId}/plan`} />} />
             {milestones.length === 0 ? (
               <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No milestones planned.</p>
             ) : (
@@ -441,6 +440,7 @@ export default async function ProjectCalendarPage({
           </Card>
 
           <QuickActions
+            title="Quick Actions"
             actions={[
               ...(can(context, 'task.write') ? [{ label: 'Add task', icon: <IconPlus size={13} />, href: `/projects/${projectId}/board` }] : []),
               ...(can(context, 'milestone.write') ? [{ label: 'Plan milestones', icon: <IconFlag size={13} />, href: `/projects/${projectId}/plan` }] : []),
@@ -450,6 +450,22 @@ export default async function ProjectCalendarPage({
           />
         </div>
       </div>
+
+      <Card>
+        <CardHeader title="Calendar Filters" />
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 pb-4 text-[13px] sm:px-5">
+          {KINDS.map((k) => (
+            <Link key={k} href={link(view, anchor, toggleKind(k))} className="inline-flex items-center gap-2 text-foreground">
+              <span aria-hidden className={cx('flex h-4 w-4 items-center justify-center rounded border', kinds.has(k) ? 'border-brand bg-brand text-brand-fg' : 'border-line-strong bg-surface')}>
+                {kinds.has(k) ? <IconCheck size={11} /> : null}
+              </span>
+              Show {humanize(k)}s
+              <span className="sr-only">{kinds.has(k) ? '(on)' : '(off)'}</span>
+            </Link>
+          ))}
+          {kinds.size !== KINDS.length ? <Link href={link(view, anchor, new Set(KINDS))} className="text-brand hover:underline">Reset</Link> : null}
+        </div>
+      </Card>
     </div>
   );
 }

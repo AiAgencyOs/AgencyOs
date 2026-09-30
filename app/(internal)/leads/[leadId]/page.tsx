@@ -80,6 +80,7 @@ import {
   IconPlus,
   IconRupee,
   IconUser,
+  IconChevronDown,
   QuickActions,
   ChatCanvas,
   ChatHeader,
@@ -1439,6 +1440,18 @@ export default async function LeadConversationPage({
         ]}
         actions={
           <>
+            {mayWrite ? (
+              <a href="#sales" className={buttonClass('secondary', 'sm')}>
+                <IconUser size={14} />
+                Assign
+              </a>
+            ) : null}
+            {mayWrite ? (
+              <a href="#sales" className={buttonClass('secondary', 'sm')}>
+                Move to
+                <IconChevronDown size={14} />
+              </a>
+            ) : null}
             <Link href="/leads" className={buttonClass('secondary', 'sm')}>
               <IconArrowLeft size={14} />
               Leads

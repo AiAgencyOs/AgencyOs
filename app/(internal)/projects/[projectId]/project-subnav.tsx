@@ -9,6 +9,7 @@ import {
   IconGrid,
   IconList,
   IconOverview,
+  IconRupee,
   IconPalette,
   IconSettings,
   IconSparkle,
@@ -43,6 +44,7 @@ export function ProjectSubNav({ projectId }: { projectId: string }) {
     { href: `${base}/files`, label: 'Files', icon: <IconFile size={15} /> },
     { href: `${base}/team`, label: 'Team', icon: <IconUsers size={15} /> },
     { href: `${base}/activity`, label: 'Activity', icon: <IconActivity size={15} /> },
+    { href: `${base}/finance`, label: 'Finance', icon: <IconRupee size={15} /> },
     { href: `${base}/reports`, label: 'Reports', icon: <IconTrendUp size={15} /> },
     { href: `${base}/settings`, label: 'Settings', icon: <IconSettings size={15} /> },
   ];

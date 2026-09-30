@@ -98,99 +98,53 @@ export default async function RequirementsPage() {
     <div className="flex flex-col gap-5">
       <PageHeader title="Requirements" description="Define, track and decide every requirement version across all leads — oldest waiting first." />
 
-      <StatGrid cols={4}>
+      <StatGrid cols={5}>
         <Stat label="Awaiting decision" value={String(proposed.length)} caption="Across every lead" tone={proposed.length > 0 ? 'warning' : 'success'} icon={<IconClock size={16} />} />
         <Stat label="AI extracted" value={String(fromAgent)} caption={proposed.length > 0 ? `${Math.round((fromAgent / proposed.length) * 100)}% of the queue` : 'Nothing queued'} tone="brand" icon={<IconSparkle size={16} />} />
-        <Stat label="Drafted by hand" value={String(proposed.length - fromAgent)} tone="info" icon={<IconUser size={16} />} />
-        <Stat label="Waiting 3+ days" value={String(stale)} caption={oldest === null ? undefined : `Oldest: ${oldest} day${oldest === 1 ? '' : 's'}`} tone={stale > 0 ? 'danger' : 'success'} icon={<IconCheck size={16} />} />
-      </StatGrid>
-
-      <StatGrid cols={4}>
         <Stat label="Frozen scopes" value={String(overview.frozenScopes)} caption="Scope versions past draft" tone="success" icon={<IconCheck size={16} />} />
         <Stat label="Open change requests" value={String(overview.openChangeRequests)} caption={`${overview.pendingApprovalChangeRequests} awaiting approval`} tone={overview.openChangeRequests > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/approvals" />
         <Stat label="Open clarifications" value={String(overview.openClarifications)} caption="Plan and UI questions not resolved" tone={overview.openClarifications > 0 ? 'info' : 'neutral'} icon={<IconSparkle size={16} />} />
-        <Stat label="Projects with scope" value={String(overview.projects.filter((p) => p.scopeVersion !== null).length)} caption={`of ${overview.projects.length}`} tone="brand" icon={<IconUser size={16} />} href="/projects" />
       </StatGrid>
 
-      {/*
-        SCR-028's three cross-project counts. Each is a fact a per-project or
-        per-lead page already showed one at a time; the dashboard's job is the
-        "which ones?" — so every non-zero number opens onto a list beneath.
-      */}
-      <StatGrid>
-        <Stat
-          label="Awaiting client confirmation"
-          value={String(dashboard.awaitingClientConfirmation)}
-          caption="sent to the client, no answer recorded"
-          tone={dashboard.awaitingClientConfirmation > 0 ? 'info' : 'neutral'}
-          icon={<IconClock size={16} />}
-        />
-        <Stat
-          label="Projects with open questions"
-          value={String(openQuestionProjects)}
-          caption="a plan question or a PM Agent clarification unanswered"
-          tone={openQuestionProjects > 0 ? 'warning' : 'success'}
-          icon={<IconSparkle size={16} />}
-          href={openQuestionProjects > 0 ? '#open-questions' : undefined}
-        />
-        <Stat
-          label="Scope drift alerts"
-          value={String(dashboard.scopeDrift.length)}
-          caption="change requests raised against a frozen baseline, unsettled"
-          tone={dashboard.scopeDrift.length > 0 ? 'danger' : 'success'}
-          icon={<IconCheck size={16} />}
-          href={dashboard.scopeDrift.length > 0 ? '#scope-drift' : undefined}
-        />
-      </StatGrid>
-
-      {/* SCR-028: recent requirement changes across every project, with the
-          export and the two doors (the Plan/Scope pages' own) beside it. */}
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(20rem,1fr)]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(18rem,1fr)]">
+        <div className="flex min-w-0 flex-col gap-4">
         <Card>
-          <CardHeader
-            title="Recent requirement changes"
-            description="Change requests raised or decided, baselines frozen and plan questions raised — newest first, across every project."
-            actions={
-              <a href="/api/requirements/scope-summary" className="inline-flex items-center gap-1 text-[13px] text-muted underline-offset-2 hover:underline">
-                Export scope summary (CSV)
-              </a>
-            }
-          />
-          {recent.length === 0 ? (
-            <EmptyState
-              icon={<IconClock size={22} />}
-              title="No requirement changes yet"
-              description="A change request, a frozen baseline or a plan question will appear here as it happens."
-              action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open a project's scope</Link>}
-            />
+          <CardHeader title="Requirements List" description="Open the lead to read the version and accept or reject it." actions={<ViewAll href="/leads" label="All leads" />} />
+          {proposed.length > 0 ? (
+            <div className="px-4 pb-4 sm:px-5">
+              <DataTable dense rows={proposed} columns={columns} getKey={(r) => r.id} href={(r) => `/leads/${r.leadId}`} />
+            </div>
           ) : (
-            <ul className="divide-y divide-line">
-              {recent.map((r) => (
-                <li key={r.id}>
-                  <Link href={r.href} className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-[13px] hover:bg-surface-hover sm:px-5">
-                    <Badge tone={r.kind === 'scope_frozen' ? 'success' : r.kind === 'requirement_decided' ? 'info' : r.kind === 'plan_question' ? 'warning' : 'neutral'}>
-                      {r.kind === 'scope_frozen' ? 'baseline' : r.kind === 'plan_question' ? 'question' : 'change request'}
-                    </Badge>
-                    <span className="font-medium">{r.projectName}</span>
-                    <span className="min-w-0 flex-1 truncate text-muted">{r.summary}</span>
-                    {r.status ? <Badge tone="neutral">{r.status.replace(/_/g, ' ')}</Badge> : null}
-                    <span className="text-xs text-muted">{clock.dateTime(r.at)}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <EmptyState
+              icon={<IconCheck size={22} />}
+              title="Nothing awaiting a decision"
+              description="A requirement version proposed by the agent or drafted by hand appears here until an owner accepts or rejects it."
+              action={<Link href="/leads" className={buttonClass('secondary', 'sm')}>Open leads</Link>}
+            />
           )}
         </Card>
-        <div className="flex min-w-0 flex-col gap-3">
-          {mayRaise ? (
-            <RequirementsDoors projects={projectPlans} />
-          ) : (
-            <Card>
-              <CardHeader title="Request clarification · Create change request" description="Raising a plan question or a change request takes the milestone.write permission (owner, ops admin, delivery lead)." />
-            </Card>
-          )}
-        </div>
-      </div>
+
+        <Card>
+        <CardHeader title="Requirement sets by project" description="The scope version each project works to, and what is open against it." />
+        {overview.projects.length === 0 ? (
+          <EmptyState title="No projects yet" action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>} />
+        ) : (
+          <div className="px-4 pb-4 sm:px-5">
+            <DataTable
+              dense
+              rows={overview.projects}
+              getKey={(p) => p.projectId}
+              href={(p) => `/projects/${p.projectId}/scope`}
+              columns={[
+                { key: 'project', header: 'Project', primary: true, cell: (p) => p.projectName },
+                { key: 'scope', header: 'Scope version', cell: (p) => (p.scopeVersion === null ? <Badge tone="neutral">none</Badge> : <span className="flex items-center gap-1.5"><span className="font-mono text-xs">v{p.scopeVersion}</span><Badge tone={p.scopeStatus === 'active' ? 'success' : 'neutral'}>{p.scopeStatus ?? '—'}</Badge></span>) },
+                { key: 'crs', header: 'Open change requests', align: 'right', cellClassName: 'tabular', cell: (p) => String(p.openChangeRequests) },
+                { key: 'qs', header: 'Open clarifications', align: 'right', cellClassName: 'tabular', cell: (p) => String(p.openClarifications) },
+              ]}
+            />
+          </div>
+        )}
+      </Card>
 
       {openQuestionProjects > 0 ? (
         <Card id="open-questions">
@@ -242,46 +196,69 @@ export default async function RequirementsPage() {
         </Card>
       ) : null}
 
-      <Card>
-        <CardHeader title="Requirement sets by project" description="The scope version each project works to, and what is open against it." />
-        {overview.projects.length === 0 ? (
-          <EmptyState title="No projects yet" action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>} />
-        ) : (
-          <div className="px-4 pb-4 sm:px-5">
-            <DataTable
-              dense
-              rows={overview.projects}
-              getKey={(p) => p.projectId}
-              href={(p) => `/projects/${p.projectId}/scope`}
-              columns={[
-                { key: 'project', header: 'Project', primary: true, cell: (p) => p.projectName },
-                { key: 'scope', header: 'Scope version', cell: (p) => (p.scopeVersion === null ? <Badge tone="neutral">none</Badge> : <span className="flex items-center gap-1.5"><span className="font-mono text-xs">v{p.scopeVersion}</span><Badge tone={p.scopeStatus === 'active' ? 'success' : 'neutral'}>{p.scopeStatus ?? '—'}</Badge></span>) },
-                { key: 'crs', header: 'Open change requests', align: 'right', cellClassName: 'tabular', cell: (p) => String(p.openChangeRequests) },
-                { key: 'qs', header: 'Open clarifications', align: 'right', cellClassName: 'tabular', cell: (p) => String(p.openClarifications) },
-              ]}
-            />
-          </div>
-        )}
-      </Card>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(18rem,1fr)]">
         <Card>
-          <CardHeader title="Requirement versions" description="Open the lead to read the version and accept or reject it." actions={<ViewAll href="/leads" label="All leads" />} />
-          {proposed.length > 0 ? (
-            <div className="px-4 pb-4 sm:px-5">
-              <DataTable dense rows={proposed} columns={columns} getKey={(r) => r.id} href={(r) => `/leads/${r.leadId}`} />
-            </div>
-          ) : (
+          <CardHeader
+            title="Recent requirement changes"
+            description="Change requests raised or decided, baselines frozen and plan questions raised — newest first, across every project."
+            actions={
+              <a href="/api/requirements/scope-summary" className="inline-flex items-center gap-1 text-[13px] text-muted underline-offset-2 hover:underline">
+                Export scope summary (CSV)
+              </a>
+            }
+          />
+          {recent.length === 0 ? (
             <EmptyState
-              icon={<IconCheck size={22} />}
-              title="Nothing awaiting a decision"
-              description="A requirement version proposed by the agent or drafted by hand appears here until an owner accepts or rejects it."
-              action={<Link href="/leads" className={buttonClass('secondary', 'sm')}>Open leads</Link>}
+              icon={<IconClock size={22} />}
+              title="No requirement changes yet"
+              description="A change request, a frozen baseline or a plan question will appear here as it happens."
+              action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open a project's scope</Link>}
             />
+          ) : (
+            <ul className="divide-y divide-line">
+              {recent.map((r) => (
+                <li key={r.id}>
+                  <Link href={r.href} className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-[13px] hover:bg-surface-hover sm:px-5">
+                    <Badge tone={r.kind === 'scope_frozen' ? 'success' : r.kind === 'requirement_decided' ? 'info' : r.kind === 'plan_question' ? 'warning' : 'neutral'}>
+                      {r.kind === 'scope_frozen' ? 'baseline' : r.kind === 'plan_question' ? 'question' : 'change request'}
+                    </Badge>
+                    <span className="font-medium">{r.projectName}</span>
+                    <span className="min-w-0 flex-1 truncate text-muted">{r.summary}</span>
+                    {r.status ? <Badge tone="neutral">{r.status.replace(/_/g, ' ')}</Badge> : null}
+                    <span className="text-xs text-muted">{clock.dateTime(r.at)}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
           )}
         </Card>
+        </div>
 
         <div className="flex min-w-0 flex-col gap-4">
+          {mayRaise ? (
+            <RequirementsDoors projects={projectPlans} />
+          ) : (
+            <Card>
+              <CardHeader title="Request clarification · Create change request" description="Raising a plan question or a change request takes the milestone.write permission (owner, ops admin, delivery lead)." />
+            </Card>
+          )}
+          <Card>
+            <CardHeader title="Queue Health" />
+            <dl className="flex flex-col divide-y divide-line px-4 pb-3 text-[13px] sm:px-5">
+              {[
+                ['Drafted by hand', String(proposed.length - fromAgent), null],
+                ['Waiting 3+ days', String(stale), oldest === null ? null : `oldest ${oldest} day${oldest === 1 ? '' : 's'}`],
+                ['Projects with scope', `${overview.projects.filter((p) => p.scopeVersion !== null).length} of ${overview.projects.length}`, null],
+                ['Awaiting client confirmation', String(dashboard.awaitingClientConfirmation), 'sent, no answer recorded'],
+                ['Projects with open questions', String(openQuestionProjects), null],
+                ['Scope drift alerts', String(dashboard.scopeDrift.length), 'unsettled change requests'],
+              ].map(([k, v, note]) => (
+                <div key={k} className="flex items-baseline justify-between gap-3 py-2">
+                  <dt className="text-muted">{k}{note ? <span className="block text-xs text-faint">{note}</span> : null}</dt>
+                  <dd className="tabular font-semibold text-foreground">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          </Card>
           <Card>
             <CardHeader title="How a requirement moves" />
             <ol className="flex flex-col gap-3 px-4 py-3 text-[13px] sm:px-5">
@@ -302,6 +279,7 @@ export default async function RequirementsPage() {
             </ol>
           </Card>
           <QuickActions
+            title="Quick Actions"
             actions={[
               { label: 'Leads', icon: <IconUser size={13} />, href: '/leads' },
               { label: 'Communication', icon: <IconSparkle size={13} />, href: '/communication' },

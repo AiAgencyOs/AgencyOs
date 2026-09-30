@@ -81,7 +81,8 @@ export function BarChart({
           tick={{ fill: 'var(--muted)', fontSize: 11 }}
           axisLine={false}
           tickLine={false}
-          width={32}
+          width={currency ? 60 : 32}
+          tickFormatter={(v) => (currency ? new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(Number(v)) : String(v))}
         />
         <Tooltip
           cursor={{ fill: 'var(--surface-hover)' }}
@@ -166,7 +167,7 @@ export function DonutChart({
         </ResponsiveContainer>
         {totalLabel ? (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-            <span className="tabular text-xl font-semibold text-foreground">{formatValue(total, currency)}</span>
+            <span className={cx('tabular font-semibold leading-tight text-foreground', currency ? 'text-sm' : 'text-xl')}>{formatValue(total, currency)}</span>
             <span className="text-[11px] text-muted">{totalLabel}</span>
           </div>
         ) : null}
@@ -272,6 +273,61 @@ export function TrendChart({
           ))}
         </ul>
       ) : null}
+    </div>
+  );
+}
+
+
+/**
+ * Grouped bars — "income vs expenses" in the reference: one cluster per x
+ * value, one bar per series, with a hand-built legend above.
+ */
+export function GroupedBarChart({
+  data,
+  series,
+  xKey,
+  height = 220,
+  currency,
+}: {
+  data: Record<string, string | number>[];
+  series: { key: string; label: string; color?: string }[];
+  xKey: string;
+  height?: number;
+  currency?: string;
+}) {
+  const color = (i: number, c?: string) => c ?? DEFAULT_SERIES_COLORS[i % DEFAULT_SERIES_COLORS.length];
+  return (
+    <div className="flex flex-col gap-2">
+      <ul className="flex flex-wrap items-center gap-4 text-xs text-muted">
+        {series.map((s, i) => (
+          <li key={s.key} className="flex items-center gap-1.5">
+            <span aria-hidden className="h-2.5 w-2.5 rounded-sm" style={{ background: color(i, s.color) }} />
+            {s.label}
+          </li>
+        ))}
+      </ul>
+      <ResponsiveContainer width="100%" height={height}>
+        <ReBarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }} barGap={2}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" vertical={false} />
+          <XAxis dataKey={xKey} tick={{ fill: 'var(--muted)', fontSize: 11 }} axisLine={{ stroke: 'var(--line)' }} tickLine={false} />
+          <YAxis
+            allowDecimals={false}
+            tick={{ fill: 'var(--muted)', fontSize: 11 }}
+            axisLine={false}
+            tickLine={false}
+            width={currency ? 60 : 32}
+            tickFormatter={(v) => (currency ? new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(Number(v)) : String(v))}
+          />
+          <Tooltip
+            cursor={{ fill: 'var(--surface-hover)' }}
+            formatter={(value) => (typeof value === 'number' ? formatValue(value, currency) : value)}
+            contentStyle={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 8, fontSize: 12, color: 'var(--foreground)' }}
+          />
+          {series.map((s, i) => (
+            <Bar key={s.key} dataKey={s.key} name={s.label} fill={color(i, s.color)} radius={[3, 3, 0, 0]} maxBarSize={28} />
+          ))}
+        </ReBarChart>
+      </ResponsiveContainer>
     </div>
   );
 }

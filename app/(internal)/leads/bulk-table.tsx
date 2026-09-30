@@ -3,10 +3,10 @@
 import Link from 'next/link';
 import { useState } from 'react';
 
-import { Avatar, DataTable, StatusBadge, humanize, type Column, type SortDirection, type SortState } from '@/ui';
+import { Avatar, Badge, DataTable, StatusBadge, humanize, type Column, type SortDirection, type SortState } from '@/ui';
 
-import { BulkActionsBar, type BulkRoster } from './bulk-actions-bar';
 import { LeadPreviewButton } from './preview-drawer';
+import { BulkActionsBar, type BulkRoster } from './bulk-actions-bar';
 
 /**
  * The leads table with a selection column — SCR-006's multi-select.
@@ -22,6 +22,9 @@ export type BulkLeadRow = {
   name: string;
   subtitle: string;
   phone: string | null;
+  email: string | null;
+  /** The lead's recorded service — the reference's "Interested In". */
+  service: string | null;
   source: string;
   status: string;
   assigned: string;
@@ -96,39 +99,54 @@ export function LeadBulkTable({
       cell: (l) => (
         <span className="flex items-center gap-2.5">
           <Avatar name={l.name} size="md" />
-          <span className="min-w-0">
-            <Link href={`/leads/${l.id}`} className="block truncate hover:text-brand">
-              {l.name}
-            </Link>
-            <span className="block truncate text-xs font-normal text-muted">{l.subtitle}</span>
-          </span>
+          <Link href={`/leads/${l.id}`} className="block max-w-[8rem] truncate hover:text-brand">
+            {l.name}
+          </Link>
         </span>
       ),
     },
-    { key: 'phone', header: 'Phone', desktopOnly: true, cellClassName: 'font-mono text-xs text-muted', cell: (l) => l.phone ?? '—' },
-    { key: 'source', header: 'Source', desktopOnly: true, cellClassName: 'text-muted', cell: (l) => humanize(l.source) },
-    { key: 'status', header: 'Status', badge: true, cell: (l) => <StatusBadge status={l.status} /> },
-    { key: 'assigned', header: 'Assigned', desktopOnly: true, cellClassName: 'text-muted', cell: (l) => l.assigned },
     {
-      key: 'budget',
-      header: 'Budget',
-      align: 'right',
-      desktopOnly: true,
-      cellClassName: 'tabular text-muted',
-      cell: (l) => l.budget ?? '—',
-    },
-    {
-      key: 'tags',
-      header: 'Tags',
+      key: 'contact',
+      header: 'Contact Details',
       desktopOnly: true,
       cellClassName: 'text-xs text-muted',
-      cell: (l) => (l.tags.length > 0 ? l.tags.join(', ') : '—'),
+      cell: (l) => (
+        <span className="block min-w-0">
+          <span className="block max-w-[10rem] truncate">{l.email ?? '—'}</span>
+          <span className="block">{l.phone ?? ''}</span>
+        </span>
+      ),
+    },
+    { key: 'source', header: 'Source', desktopOnly: true, cell: (l) => <Badge tone="neutral" dot={false}>{humanize(l.source)}</Badge> },
+    { key: 'status', header: 'Status', badge: true, cell: (l) => <StatusBadge status={l.status} /> },
+    {
+      key: 'interest',
+      header: 'Interested In',
+      desktopOnly: true,
+      cellClassName: 'text-muted',
+      cell: (l) => (
+        <span className="block min-w-0">
+          <span className="block max-w-[9rem] truncate">{l.service ?? '—'}</span>
+          {l.budget ? <span className="tabular block text-xs">{l.budget}</span> : null}
+        </span>
+      ),
+    },
+    {
+      key: 'assigned',
+      header: 'Assigned To',
+      desktopOnly: true,
+      cell: (l) =>
+        l.assigned === 'Unassigned' ? (
+          <span className="text-muted">Unassigned</span>
+        ) : (
+          <span className="flex items-center gap-2">
+            <Avatar name={l.assigned} size="sm" />
+            <span className="max-w-[6rem] truncate">{l.assigned.split('@')[0]}</span>
+          </span>
+        ),
     },
     { key: 'score', header: 'Score', align: 'right', cellClassName: 'tabular', cell: (l) => (l.score === null ? <span className="text-muted">—</span> : l.score), sortKey: 'score' },
-    { key: 'created', header: 'Created', align: 'right', cellClassName: 'text-muted', cell: (l) => l.created, sortKey: 'created' },
-    { key: 'activity', header: 'Last activity', align: 'right', cellClassName: 'text-muted', cell: (l) => l.lastActivity, sortKey: 'activity' },
-    // SCR-006 — the preview drawer, fetched on open (preview-actions.ts).
-    { key: 'preview', header: '', align: 'right', desktopOnly: true, cell: (l) => <LeadPreviewButton leadId={l.id} name={l.name} /> },
+    { key: 'created', header: 'Created On', cellClassName: 'text-muted whitespace-nowrap', cell: (l) => l.created, sortKey: 'created' },
   ];
 
   return (
@@ -157,7 +175,18 @@ export function LeadBulkTable({
         </div>
       ) : null}
 
-      <DataTable rows={rows} columns={columns} getKey={(l) => l.id} sort={sort} />
+      <DataTable
+        rows={rows}
+        columns={columns}
+        getKey={(l) => l.id}
+        sort={sort}
+        rowActions={(l) => [
+          { key: 'preview', label: 'Preview', node: <LeadPreviewButton leadId={l.id} name={l.name} /> },
+          { key: 'open', label: 'Open lead', href: `/leads/${l.id}` },
+          { key: 'meeting', label: 'Request a meeting', href: `/leads/${l.id}#meetings` },
+          { key: 'quotation', label: 'Quotations', href: `/leads/${l.id}#quotations` },
+        ]}
+      />
     </div>
   );
 }

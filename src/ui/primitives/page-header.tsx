@@ -26,24 +26,24 @@ export function PageHeader({
 }) {
   return (
     <header className={cx('flex flex-col gap-3', className)}>
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
-        <div className="min-w-0">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 lg:flex-nowrap">
+        <div className="min-w-0 flex-1">
           {eyebrow ? (
             <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
               {eyebrow}
             </p>
           ) : null}
-          <Heading className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+          <Heading className="text-2xl font-bold tracking-tight text-foreground sm:text-[28px] sm:leading-tight">
             {title}
           </Heading>
           {description ? (
-            <p className="mt-1.5 max-w-2xl break-words text-[13px] leading-relaxed text-muted sm:text-sm">
+            <p className="mt-1.5 max-w-3xl break-words text-[13px] leading-relaxed text-muted sm:text-sm">
               {description}
             </p>
           ) : null}
         </div>
         {actions ? (
-          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">{actions}</div>
+          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 lg:shrink-0 lg:justify-end">{actions}</div>
         ) : null}
       </div>
       {meta ? <div className="flex flex-wrap items-center gap-2">{meta}</div> : null}

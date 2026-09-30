@@ -7,7 +7,9 @@ import { useState } from 'react';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { setOpportunityStageAction } from '@/modules/sales/actions';
 import { OPPORTUNITY_TRANSITIONS, type OpportunityStage } from '@/modules/sales/schema';
-import { Callout, IconAlert, KanbanBoard, type KanbanColumn } from '@/ui';
+import { Callout, IconAlert, IconPlus, KanbanBoard, StatusBadge, type KanbanColumn } from '@/ui';
+
+import { openQuickCreate } from '../shell-controls';
 
 export type PipelineCard = {
   id: string;
@@ -15,6 +17,10 @@ export type PipelineCard = {
   leadId: string;
   name: string;
   valueLabel: string;
+  /** The lead's own title — the reference's second line on a deal card. */
+  contact: string | null;
+  /** "3d ago" — when the deal was opened. */
+  ago: string;
 };
 
 /**
@@ -77,19 +83,31 @@ export function PipelineBoard({
         items={deals}
         disabled={!canWrite}
         onMove={handleMove}
+        emptyLabel="No deals"
+        renderColumnFooter={
+          canWrite
+            ? () => (
+                <button type="button" onClick={() => openQuickCreate('lead')} className="flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-[13px] font-medium text-brand transition-colors hover:bg-surface-hover">
+                  <IconPlus size={14} /> Add Lead
+                </button>
+              )
+            : undefined
+        }
         renderCard={(deal) => (
           <div className="rounded-lg border border-line bg-surface p-3 shadow-xs">
             {/* A drag only starts once the pointer moves past the 6px
                 threshold `KanbanBoard`'s `PointerSensor` requires, so an
                 ordinary click still reaches this link without any extra
                 handling here. */}
-            <Link
-              href={`/leads/${deal.leadId}`}
-              className="block truncate text-[13px] font-medium text-foreground hover:underline"
-            >
-              {deal.name}
+            <Link href={`/leads/${deal.leadId}`} className="block truncate text-sm font-semibold text-foreground hover:underline">
+              {deal.contact ?? deal.name}
             </Link>
-            <p className="mt-1 text-xs text-muted">{deal.valueLabel}</p>
+            {deal.contact ? <p className="truncate text-xs text-muted">{deal.name}</p> : null}
+            <p className="tabular mt-2 text-sm font-semibold text-foreground">{deal.valueLabel}</p>
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <span className="text-xs text-muted">{deal.ago}</span>
+              <StatusBadge status={deal.columnId} dot={false} />
+            </div>
           </div>
         )}
       />

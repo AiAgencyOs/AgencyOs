@@ -186,13 +186,12 @@ export default async function ProjectPlanPage({
       <ProjectSubNav projectId={projectId} />
 
       {milestones.length > 0 ? (
-        <StatGrid cols={6}>
+        <StatGrid cols={5}>
           <Stat label="Total milestones" value={String(milestones.length)} caption={undated.length > 0 ? `${undated.length} undated` : 'All dated'} tone="brand" icon={<IconFlag size={16} />} />
           <Stat label="Completed" value={String(met)} caption={`${Math.round((met / milestones.length) * 100)}%`} tone="success" icon={<IconCheck size={16} />} />
           <Stat label="In progress" value={String(gantt.filter((g) => g.state === 'current').length)} caption={next ? next.name : 'Nothing pending'} tone="info" icon={<IconClock size={16} />} />
           {/* SCR-023: pending — not met, not the one in hand, not late: everything still ahead. */}
-          <Stat label="Pending" value={String(milestones.filter((m) => !m.met_at).length - gantt.filter((g) => g.state === 'current').length - late)} caption="Not met, still ahead" tone="warning" icon={<IconFlag size={16} />} />
-          <Stat label="Late" value={String(late)} caption={late > 0 ? 'Past due and not met' : 'Nothing overdue'} tone={late > 0 ? 'danger' : 'neutral'} icon={<IconClock size={16} />} />
+          <Stat label="Pending" value={String(milestones.filter((m) => !m.met_at).length - gantt.filter((g) => g.state === 'current').length - late)} caption={late > 0 ? `${late} past due` : 'Not met, still ahead'} tone="warning" icon={<IconFlag size={16} />} />
           <Stat label="Final delivery" value={finalDue ? clock.date(finalDue) : '—'} caption={daysLeft === null ? 'No final date' : daysLeft >= 0 ? `${daysLeft} days left` : `${-daysLeft} days overdue`} tone={daysLeft !== null && daysLeft < 0 ? 'danger' : 'accent'} icon={<IconCalendar size={16} />} />
         </StatGrid>
       ) : null}
@@ -201,10 +200,16 @@ export default async function ProjectPlanPage({
         <div className="flex min-w-0 flex-col gap-4">
           <Card>
             <CardHeader
-              title="Project milestone timeline"
-              description="Each bar is the planned window that ends at the milestone's due date. Green is met, blue is the one in hand, red is past due."
-              actions={<ViewAll href={`/projects/${projectId}/calendar`} label="Calendar" />}
+              title="Project Milestone Timeline"
+              actions={
+                <div className="flex items-center gap-1.5 text-xs font-medium" role="group" aria-label="Milestone view">
+                  <a href="#payment-milestones" className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-muted hover:bg-surface-hover">List</a>
+                  <span aria-current="true" className="inline-flex items-center gap-1.5 rounded-lg border border-brand/40 bg-brand-soft px-3 py-1.5 text-brand">Gantt</span>
+                  <Link href={`/projects/${projectId}/calendar`} className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-muted hover:bg-surface-hover">Calendar</Link>
+                </div>
+              }
             />
+            <p className="px-4 pb-2 text-xs text-muted sm:px-5">Each bar is the planned window that ends at the milestone&apos;s due date.</p>
             {gantt.length > 0 ? (
               <Gantt rows={gantt} todayKey={today} />
             ) : (
@@ -217,10 +222,45 @@ export default async function ProjectPlanPage({
             ) : null}
           </Card>
 
+          {(() => {
+            const picked = (pickedMilestoneId ? milestones.find((m) => m.id === pickedMilestoneId) : null) ?? next;
+            if (!picked) return null;
+            const list = tasksByMilestone[picked.id] ?? [];
+            return (
+              <Card>
+                <CardHeader title={`Milestone Tasks (${picked.name})`} actions={<ViewAll href={`/projects/${projectId}/board?milestone=${picked.id}`} />} />
+                {list.length === 0 ? (
+                  <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No tasks are filed under this milestone yet.</p>
+                ) : (
+                  <table className="w-full text-left text-[13px]">
+                    <thead>
+                      <tr className="border-y border-line bg-surface-sunken text-xs text-muted">
+                        <th scope="col" className="px-4 py-2 font-medium sm:px-5">#</th>
+                        <th scope="col" className="py-2 font-medium">Task</th>
+                        <th scope="col" className="py-2 font-medium">Status</th>
+                        <th scope="col" className="px-4 py-2 font-medium sm:px-5">Due Date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-line">
+                      {list.slice(0, 8).map((t, i) => (
+                        <tr key={t.id}>
+                          <td className="px-4 py-2 text-muted sm:px-5">{i + 1}</td>
+                          <td className="py-2"><Link href={`/projects/${projectId}/development/tasks/${t.id}`} className="text-foreground hover:underline">{t.title}</Link></td>
+                          <td className="py-2"><StatusBadge status={t.status} dot={false} /></td>
+                          <td className="px-4 py-2 text-muted sm:px-5">{t.dueOn ? clock.date(t.dueOn) : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </Card>
+            );
+          })()}
+
           {milestones.length > 0 ? (
-            <Card>
+            <Card id="payment-milestones">
               <CardHeader
-                title="Payment milestones"
+                title="Payment Milestones"
                 description="Each milestone's due date, the work filed under it on the Board, and whether it has been met. Dates drive the timeline above and the calendar."
               />
               <ul className="divide-y divide-line">
@@ -638,17 +678,19 @@ export default async function ProjectPlanPage({
             const open = list.filter((t) => t.status !== 'done');
             return (
               <Card>
-                <CardHeader title="Milestone details" description={pickedMilestoneId === picked.id ? 'The milestone you picked.' : 'The next one to meet — pick another from the list.'} />
+                <CardHeader title="Milestone Details" />
                 <div className="flex flex-col gap-2 px-4 pb-4 text-[13px] sm:px-5">
                   <p className="flex items-center gap-2 font-medium text-foreground">
                     <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-white"><IconFlag size={13} /></span>
                     {picked.name}
                   </p>
-                  <dl className="grid grid-cols-[6rem_1fr] gap-y-1.5 text-muted">
+                  <dl className="grid grid-cols-[6rem_1fr] items-center gap-y-1.5 text-muted">
                     <dt>Due</dt>
                     <dd className="text-foreground">{picked.due_on ? clock.date(picked.due_on) : 'Not dated'}</dd>
                     <dt>Status</dt>
                     <dd><StatusBadge status={picked.met_at ? 'completed' : picked.status} dot={false} /></dd>
+                    <dt>Progress</dt>
+                    <dd><ProgressBar value={picked.met_at ? 100 : list.length === 0 ? 0 : Math.round(((list.length - open.length) / list.length) * 100)} tone="info" label={`Progress of ${picked.name}`} /></dd>
                     <dt>Payment</dt>
                     <dd className="text-foreground">{picked.payment_percent === null ? 'None attached' : `${picked.payment_percent}% of the plan`}</dd>
                     <dt>Tasks</dt>
@@ -665,6 +707,16 @@ export default async function ProjectPlanPage({
                       {list.length > 8 ? <li className="text-xs text-muted">and {list.length - 8} more on the Board.</li> : null}
                     </ul>
                   ) : null}
+                  {(() => {
+                    const after = milestones.find((m) => !m.met_at && m.id !== picked.id && m.position > picked.position);
+                    return after ? (
+                      <div className="border-t border-line pt-2">
+                        <p className="text-[13px] font-semibold text-foreground">Next Milestone</p>
+                        <p className="mt-1 text-[13px] text-foreground">{after.name}</p>
+                        <p className="text-xs text-muted">{after.due_on ? clock.date(after.due_on) : 'Not dated'}</p>
+                      </div>
+                    ) : null;
+                  })()}
                   {/* SCR-023 "Open tasks": the Board, filtered to this milestone. */}
                   <Link href={`/projects/${projectId}/board?milestone=${picked.id}`} className="self-start text-xs text-brand underline-offset-2 hover:underline">
                     Open {open.length > 0 ? `${open.length} open task${open.length === 1 ? '' : 's'}` : 'tasks'} on the Board →
@@ -675,7 +727,7 @@ export default async function ProjectPlanPage({
           })()}
 
           <Card>
-            <CardHeader title="Upcoming deadlines" />
+            <CardHeader title="Upcoming Deadlines" actions={<ViewAll href={`/projects/${projectId}/calendar`} />} />
             {upcoming.length === 0 ? (
               <p className="px-4 py-3 text-[13px] text-muted sm:px-5">Nothing dated ahead.</p>
             ) : (
@@ -699,6 +751,13 @@ export default async function ProjectPlanPage({
               </ul>
             )}
           </Card>
+
+          {milestones.length > 0 ? (
+            <div className="rounded-xl border border-brand/20 bg-brand-soft p-4 text-[13px]">
+              <p className="font-semibold text-foreground">{met === milestones.length ? 'All milestones met' : 'Keep going!'}</p>
+              <p className="mt-0.5 text-muted">{met} of {milestones.length} milestones met ({Math.round((met / milestones.length) * 100)}%) towards project completion.</p>
+            </div>
+          ) : null}
 
           <Card>
             <CardHeader title="Blueprint status" />

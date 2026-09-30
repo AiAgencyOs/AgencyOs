@@ -13,12 +13,14 @@ import { readBaselineComparison } from '@/modules/qa/baseline-queries';
 import { describeCron } from '@/modules/qa/cron';
 import { compareToBudgets, listMetricResults, listPerformanceBudgets, listStabilityIncidents } from '@/modules/qa/performance-queries';
 import { listSuiteSchedules } from '@/modules/qa/schedule-queries';
-import { Badge, Card, CardHeader } from '@/ui';
+import { readClientName } from '@/lib/admin/clients';
+import { Badge, Card, CardHeader, IconAlert, IconCheck as IconOk, IconClock, IconList, Stat, StatGrid } from '@/ui';
 
 import { BudgetForm, CloseRunForm, MetricForm, OpenIncidentForm, OpenRunForm, RerunButton, ResolveIncidentForm, ScheduleSuiteForm } from './run-lifecycle-panel';
-import { EmptyState, IconCheck, PageHeader, PermissionDenied } from '@/ui';
+import { EmptyState, IconCheck, PermissionDenied } from '@/ui';
 
 import { ProjectSubNav } from '../project-subnav';
+import { WorkspaceHeader } from '../workspace-header';
 import { RaiseDefectForm } from '../qa-panel';
 import { DraftTestPlanForm, TestPlanCard, TestRunsCard } from '../test-plan-panel';
 import { QaInsights } from './qa-insights';
@@ -41,6 +43,7 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
   const project = await getProject(projectId);
   if (!project) notFound();
 
+  const clientName = project.client_account_id ? await readClientName(project.client_account_id) : null;
   const [{ active }, plan, deliverables, runs, runDetails, planVersions, defects, roster, clock, caseResults, { tasks }] = await Promise.all([
     readScopeBaseline(projectId),
     readTestPlan(projectId),
@@ -75,9 +78,16 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader title={`${project.name} — Test plan`} description="What this project is to be tested for, against its frozen scope baseline." />
+      <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={canWrite} />
 
       <ProjectSubNav projectId={projectId} />
+
+      <StatGrid cols={4}>
+        <Stat label="Test runs" value={String(runs.length)} caption={`${runs.filter((r) => r.status === 'open').length} open`} tone="brand" icon={<IconList size={16} />} />
+        <Stat label="Passed" value={String(runs.reduce((n, r) => n + r.passed, 0))} caption={runs.reduce((n, r) => n + r.passed + r.failed + r.blocked, 0) > 0 ? `${Math.round((runs.reduce((n, r) => n + r.passed, 0) / runs.reduce((n, r) => n + r.passed + r.failed + r.blocked, 0)) * 100)}% of recorded results` : 'No results recorded'} tone="success" icon={<IconOk size={16} />} />
+        <Stat label="Failed" value={String(runs.reduce((n, r) => n + r.failed, 0))} caption={`${runs.reduce((n, r) => n + r.blocked, 0)} blocked`} tone={runs.some((r) => r.failed > 0) ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} />
+        <Stat label="Open defects" value={String(defects.filter((d) => d.status !== 'verified' && d.status !== 'wontfix').length)} caption="Not yet verified" tone="warning" icon={<IconClock size={16} />} />
+      </StatGrid>
 
       {!active ? (
         <EmptyState

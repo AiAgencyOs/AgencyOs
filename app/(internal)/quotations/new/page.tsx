@@ -15,7 +15,7 @@ import { PageHeader, PermissionDenied } from '@/ui';
 import { TrailLabel } from '../../trail-label';
 import { QuotationComposer, type ComposerDeal } from './composer';
 
-export const metadata: Metadata = { title: 'Create quotation' };
+export const metadata: Metadata = { title: 'Create Quotation' };
 
 /**
  * SCR-012 — the quotation composer, the reference's one-screen "Create
@@ -70,7 +70,7 @@ export default async function NewQuotationPage({ searchParams }: { searchParams:
   return (
     <div className="flex flex-col gap-5">
       <TrailLabel name="Create quotation" />
-      <PageHeader title="Create quotation" description="Create a professional quotation for your client — drafted, itemised, priced and sent to the owner for approval in one pass." />
+      <PageHeader title="Create Quotation" description="Create a professional quotation for your client" />
       <QuotationComposer deals={deals} defaultValidUntil={defaultValidUntil} validityDays={validityDays} taxRatePercent={18} initialOpportunityId={opportunity} charges={charges} structures={structures} roster={mayAssign ? roster : undefined} />
     </div>
   );

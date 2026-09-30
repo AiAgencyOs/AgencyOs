@@ -78,7 +78,7 @@ export function ActivityFeed({
 }
 
 /** The small brand-coloured "View all →" a card header carries in the reference. */
-export function ViewAll({ href, label = 'View all' }: { href: string; label?: string }) {
+export function ViewAll({ href, label = 'View All' }: { href: string; label?: string }) {
   return (
     <Link href={href} className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline">
       {label}

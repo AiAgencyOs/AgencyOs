@@ -164,12 +164,12 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
       <DesignSubNav projectId={projectId} />
 
       <StatGrid cols={6}>
-        <Stat label="Total screens" value={String(trail.baseline?.screenCount ?? 0)} caption={trail.baseline ? `Baseline v${trail.baseline.version} · ${trail.baseline.status}` : 'No baseline drafted'} tone="brand" icon={<IconFile size={16} />} href={`/projects/${projectId}/design/screens`} />
-        <Stat label="Approved screens" value={String(approvedScreens)} caption={liveScreens.length > 0 ? `of ${liveScreens.length} live` : 'None recorded'} tone={liveScreens.length > 0 && approvedScreens === liveScreens.length ? 'success' : 'info'} icon={<IconCheck size={16} />} href={`/projects/${projectId}/design/screens?status=approved`} />
-        <Stat label="Approved assets" value={String(assetLibrary.approved)} caption={`${assetLibrary.draft} draft · ${assetLibrary.uploaded} uploaded`} tone={assetLibrary.approved > 0 ? 'success' : 'neutral'} icon={<IconUpload size={16} />} href="#design-assets" />
-        <Stat label="Theme options" value={String(trail.themes.length)} caption={trail.themes.length > 0 ? `${trail.themes.filter((t) => t.clientStatus === 'selected').length} selected by the client` : undefined} tone="accent" icon={<IconSparkle size={16} />} href={`/projects/${projectId}/design/themes`} />
-        <Stat label="Pending review" value={String(pendingInternal + pendingAdmin)} caption={`${pendingInternal} internal · ${pendingAdmin} admin`} tone={pendingInternal + pendingAdmin > 0 ? 'warning' : 'success'} icon={<IconClock size={16} />} href={`/projects/${projectId}/design/themes`} />
-        <Stat label="Phase status" value={humanize(phase.state)} caption={phase.blockedReason ? 'Blocked' : trail.handoff ? 'Handed to Phase 4' : `Started ${when(phase.startedAt)}`} tone={phase.blockedReason ? 'danger' : trail.handoff ? 'success' : 'info'} icon={phase.blockedReason ? <IconAlert size={16} /> : <IconCheck size={16} />} />
+        <Stat label="Total Screens" value={String(trail.baseline?.screenCount ?? 0)} caption={trail.baseline ? `Baseline v${trail.baseline.version} · ${trail.baseline.status}` : 'No baseline drafted'} tone="brand" icon={<IconFile size={16} />} href={`/projects/${projectId}/design/screens`} />
+        <Stat label="Approved Screens" value={String(approvedScreens)} caption={liveScreens.length > 0 ? `of ${liveScreens.length} live` : 'None recorded'} tone={liveScreens.length > 0 && approvedScreens === liveScreens.length ? 'success' : 'info'} icon={<IconCheck size={16} />} href={`/projects/${projectId}/design/screens?status=approved`} />
+        <Stat label="Approved Assets" value={String(assetLibrary.approved)} caption={`${assetLibrary.draft} draft · ${assetLibrary.uploaded} uploaded`} tone={assetLibrary.approved > 0 ? 'success' : 'neutral'} icon={<IconUpload size={16} />} href="#design-assets" />
+        <Stat label="Theme Options" value={String(trail.themes.length)} caption={trail.themes.length > 0 ? `${trail.themes.filter((t) => t.clientStatus === 'selected').length} selected by the client` : undefined} tone="accent" icon={<IconSparkle size={16} />} href={`/projects/${projectId}/design/themes`} />
+        <Stat label="Pending Review" value={String(pendingInternal + pendingAdmin)} caption={`${pendingInternal} internal · ${pendingAdmin} admin`} tone={pendingInternal + pendingAdmin > 0 ? 'warning' : 'success'} icon={<IconClock size={16} />} href={`/projects/${projectId}/design/themes`} />
+        <Stat label="Phase Status" value={humanize(phase.state)} caption={phase.blockedReason ? 'Blocked' : trail.handoff ? 'Handed to Phase 4' : `Started ${when(phase.startedAt)}`} tone={phase.blockedReason ? 'danger' : trail.handoff ? 'success' : 'info'} icon={phase.blockedReason ? <IconAlert size={16} /> : <IconCheck size={16} />} />
       </StatGrid>
 
       {/* §8 — Phase 3 Overview. The counts are printed as stored and never
@@ -254,7 +254,7 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
           </Card>
 
           <Card>
-            <CardHeader title="Theme options" actions={<ViewAll href={`/projects/${projectId}/design/themes`} />} />
+            <CardHeader title="Theme Options" actions={<ViewAll href={`/projects/${projectId}/design/themes`} />} />
             {trail.themes.length === 0 ? (
               <div className="px-4 pb-4 sm:px-5">
                 <Nothing>No theme option has been drafted.</Nothing>
@@ -299,7 +299,7 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
               door and nothing else. */}
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>
-              <CardHeader title={`Design versions (${designVersions.length})`} description="Every design deliverable recorded, newest first, with its review state." actions={<ViewAll href={`/projects/${projectId}`} label="Overview" />} />
+              <CardHeader title={`Design Versions (${designVersions.length})`} description="Every design deliverable recorded, newest first, with its review state." actions={<ViewAll href={`/projects/${projectId}`} label="Overview" />} />
               <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
                 {designVersions.length === 0 ? (
                   <Nothing>No design version has been recorded as a deliverable yet.</Nothing>
@@ -328,7 +328,7 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
               </div>
             </Card>
             <Card>
-              <CardHeader title={`Prototype links (${prototypeVersions.length})`} description="The prototype builds and the UI versions they were built from." actions={<ViewAll href={`/projects/${projectId}/prototype`} label="Prototype" />} />
+              <CardHeader title={`Prototype Links (${prototypeVersions.length})`} description="The prototype builds and the UI versions they were built from." actions={<ViewAll href={`/projects/${projectId}/prototype`} label="Prototype" />} />
               <div className="flex flex-col gap-2 px-4 pb-4 sm:px-5">
                 {prototypeVersions.length === 0 && uiVersions.length === 0 ? (
                   <Nothing>No prototype build or UI version yet. They appear once Phase 4 drafts one.</Nothing>
@@ -372,7 +372,7 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
               a threshold here would be inventing the business rule.
             */}
             <Section
-              title="Screen coverage"
+              title="Screen Coverage"
               hint="Doc 12 §9. Blocking flags are the three the database refuses a design against; the rest are for a person to weigh.">
               {screenCoverage.length === 0 ? (
                 <Nothing>Nothing is flagged. Every included scope item has a screen, and every screen has what §9 asks of it.</Nothing>
@@ -390,7 +390,7 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
               )}
             </Section>
 
-            <Section title="Cost and usage">
+            <Section title="Cost and Usage">
               {spend.length === 0 ? (
                 <Nothing>No agent run has been attributed to this project yet. When a design agent runs, its usage is recorded against the project like every other run.</Nothing>
               ) : (
@@ -438,7 +438,7 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
 
         <div className="flex min-w-0 flex-col gap-4">
           <DetailPanel
-            title="Project details"
+            title="Project Details"
             rows={[
               { label: 'Project', value: project.name },
               { label: 'Client', value: clientName ?? 'Internal project' },
@@ -457,7 +457,7 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
           </DetailPanel>
 
           <Card>
-            <CardHeader title="Design progress" actions={<ViewAll href={`/projects/${projectId}/design/final`} label="Final selection" />} />
+            <CardHeader title="Design Progress" actions={<ViewAll href={`/projects/${projectId}/design/final`} label="Final selection" />} />
             <div className="px-4 pb-2 sm:px-5">
               <ProgressBar value={(doneSteps / steps.length) * 100} label="Design steps complete" tone="brand" />
             </div>
@@ -478,7 +478,7 @@ export default async function ProjectDesignPage({ params }: { params: Promise<{ 
 
           {/* SCR-032 — Recent activity: the audit rows of every design subject on this project. */}
           <ActivityFeed
-            title="Recent activity"
+            title="Recent Activity"
             items={activityItems}
             compact
             emptyTitle="Nothing recorded yet"

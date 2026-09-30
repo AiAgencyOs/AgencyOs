@@ -32,7 +32,6 @@ import {
   Card,
   CardHeader,
   DonutChart,
-  FilterBar,
   humanize,
   IconAlert,
   IconCheck,
@@ -200,7 +199,12 @@ export default async function ProjectReportPage({
 
       <ProjectSubNav projectId={projectId} />
 
-      <FilterBar>
+      <section aria-labelledby="reports-title" className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="reports-title" className="text-xl font-bold tracking-tight text-foreground">Project Reports</h2>
+          <p className="text-[13px] text-muted">Track progress, performance, team activity and key insights</p>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
         <form action={reportBase} method="GET" className="flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1">
             <span className={labelClass}>From</span>
@@ -228,31 +232,8 @@ export default async function ProjectReportPage({
           <IconDownload size={14} />
           Export PDF
         </a>
-      </FilterBar>
-
-      {/* SCR-026: project health — one rule (projectHealth) shared with the projects list and the PDF; each reason links to where it is fixed. */}
-      <Card>
-        <CardHeader
-          title={`Project health: ${health.label}`}
-          description={health.reasons.length === 0 ? 'No blocked work, nothing past due, no release-blocking defect.' : `${health.reasons.length} reason${health.reasons.length === 1 ? '' : 's'}.`}
-        />
-        {health.reasons.length > 0 ? (
-          <ul className="flex flex-wrap gap-2 px-4 pb-4 sm:px-5">
-            {health.reasons.map((r) => (
-              <li key={r}>
-                <Link
-                  href={
-                    /task/.test(r) ? `/projects/${projectId}/board` : /milestone/.test(r) ? `/projects/${projectId}/plan` : /defect/.test(r) ? `/projects/${projectId}/qa` : /claim/.test(r) ? `/projects/${projectId}` : /escalation/.test(r) ? '/projects/escalations' : `/projects/${projectId}/plan`
-                  }
-                  className={cx('inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset', health.level === 'blocked' ? 'bg-danger-soft text-danger ring-danger/25' : 'bg-warning-soft text-warning ring-warning/30')}
-                >
-                  {r}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </Card>
+        </div>
+      </section>
 
       <StatGrid cols={5}>
         <Stat label="Completion" value={`${completion}%`} caption={plan.length > 0 ? `${milestonesMet} of ${plan.length} milestones met` : `${tasksDone} of ${tasks.length} tasks done`} tone="brand" icon={<IconFlag size={16} />} href={`/projects/${projectId}/plan`} />
@@ -266,9 +247,10 @@ export default async function ProjectReportPage({
         <Stat label="AI cost" value={aiCost > 0 ? money(aiCost, 'INR') : '—'} caption={aiRuns > 0 ? `${aiRuns} agent runs` : 'No runs attributed'} tone="accent" icon={<IconUsage size={16} />} href={`/projects/${projectId}/design`} />
       </StatGrid>
 
-      <Card>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]">
+        <Card>
         <CardHeader
-          title="Completion trend"
+          title="Task Completion Trend"
           description={`Tasks completed per week (Monday start), ${clock.date(`${from}T00:00:00`)} – ${clock.date(`${to}T00:00:00`)} · ${completedInRange.length} in range.`}
           actions={<ViewAll href={`/projects/${projectId}/board`} label="Board" />}
         />
@@ -281,13 +263,12 @@ export default async function ProjectReportPage({
         )}
       </Card>
 
-      <div className="grid gap-4 xl:grid-cols-2">
         <Card>
-          <CardHeader title="Task distribution" description="Every task on the Board by status and priority." actions={<ViewAll href={`/projects/${projectId}/board`} label="Board" />} />
+          <CardHeader title="Task Distribution" actions={<ViewAll href={`/projects/${projectId}/board`} label="Board" />} />
           {tasks.length === 0 ? (
             <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No tasks yet.</p>
           ) : (
-            <div className="grid gap-4 px-4 pb-4 sm:grid-cols-2 sm:px-5">
+            <div className="grid gap-4 px-4 pb-4 sm:px-5">
               <DonutChart data={[...byStatus.entries()].map(([label, value]) => ({ label: humanize(label), value }))} totalLabel="Tasks" height={170} />
               <BarChart data={[...byPriority.entries()].map(([label, value]) => ({ label: humanize(label), value }))} height={170} />
             </div>
@@ -295,7 +276,7 @@ export default async function ProjectReportPage({
         </Card>
 
         <Card>
-          <CardHeader title="Work by person" description="Tasks assigned and finished, per team member." actions={<ViewAll href={`/projects/${projectId}/team`} label="Team" />} />
+          <CardHeader title="Team Activity" actions={<ViewAll href={`/projects/${projectId}/team`} label="Team" />} />
           {byAssignee.size === 0 ? (
             <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">Nothing assigned yet.</p>
           ) : (
@@ -315,8 +296,11 @@ export default async function ProjectReportPage({
           )}
         </Card>
 
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-3">
         <Card>
-          <CardHeader title="Milestones" description="The payment plan's milestones, met or not." actions={<ViewAll href={`/projects/${projectId}/plan`} label="Plan" />} />
+          <CardHeader title="Phase Progress" actions={<ViewAll href={`/projects/${projectId}/plan`} label="Plan" />} />
           {plan.length === 0 ? (
             <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No payment plan yet.</p>
           ) : (
@@ -334,6 +318,24 @@ export default async function ProjectReportPage({
           )}
         </Card>
 
+        <Card>
+          <CardHeader title="Upcoming Deadlines" actions={<ViewAll href={`/projects/${projectId}/plan`} />} />
+          {plan.filter((m) => !m.met_at && m.due_on).length === 0 ? (
+            <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">Nothing dated ahead.</p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {plan.filter((m) => !m.met_at && m.due_on).slice(0, 5).map((m) => (
+                <li key={m.id} className="flex items-center justify-between gap-2 px-4 py-2 text-[13px] sm:px-5">
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium text-foreground">{m.name}</span>
+                    <span className="block text-xs text-muted">{m.due_on ? clock.date(m.due_on) : ''}</span>
+                  </span>
+                  <span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium', m.due_on && m.due_on < today ? 'bg-danger-soft text-danger' : 'bg-info-soft text-info')}>{m.due_on && m.due_on < today ? 'Late' : 'Upcoming'}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
         <Card>
           <CardHeader
             title="Time"
@@ -390,8 +392,36 @@ export default async function ProjectReportPage({
           )}
         </Card>
 
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
         <Card>
-          <CardHeader title="Risks and quality" description="Open defects by severity, and what would stop a release." actions={<ViewAll href={`/projects/${projectId}/qa`} label="QA" />} />
+          <CardHeader title="Project Health" />
+          <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+            <div className={cx('rounded-xl px-4 py-3', health.level === 'blocked' ? 'bg-danger-soft text-danger' : health.level === 'at_risk' ? 'bg-warning-soft text-warning' : 'bg-success-soft text-success')}>
+              <p className="text-lg font-bold">{health.label}</p>
+              <p className="text-[13px]">{health.reasons.length === 0 ? 'No blocked work, nothing past due, no release-blocking defect.' : `${health.reasons.length} reason${health.reasons.length === 1 ? '' : 's'}.`}</p>
+            </div>
+        {health.reasons.length > 0 ? (
+          <ul className="flex flex-wrap gap-2 ">
+            {health.reasons.map((r) => (
+              <li key={r}>
+                <Link
+                  href={
+                    /task/.test(r) ? `/projects/${projectId}/board` : /milestone/.test(r) ? `/projects/${projectId}/plan` : /defect/.test(r) ? `/projects/${projectId}/qa` : /claim/.test(r) ? `/projects/${projectId}` : /escalation/.test(r) ? '/projects/escalations' : `/projects/${projectId}/plan`
+                  }
+                  className={cx('inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset', health.level === 'blocked' ? 'bg-danger-soft text-danger ring-danger/25' : 'bg-warning-soft text-warning ring-warning/30')}
+                >
+                  {r}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+          </div>
+        </Card>
+        <Card>
+          <CardHeader title="Risks & Issues" actions={<ViewAll href={`/projects/${projectId}/qa`} label="QA" />} />
           {openDefects.length === 0 ? (
             <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No open defects.</p>
           ) : (
@@ -432,8 +462,10 @@ export default async function ProjectReportPage({
           ) : null}
         </Card>
 
+      </div>
+
         {mayReadMoney ? (
-          <Card className="xl:col-span-2">
+          <Card>
             {/* Margin — decision: reversed by the owner on 2026-09-29. Cash-basis estimate: paid − (expenses + AI cost + time cost); time costed per person by decision E2 of 2026-09-30. */}
             <CardHeader title="Money" description="Invoiced and paid against budget and recorded cost, and the margin between what was paid and what was spent — a cash-basis estimate." actions={<ViewAll href="/finance/expenses" label="Expenses" />} />
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 px-4 pb-4 text-[13px] sm:grid-cols-6 sm:px-5">
@@ -498,7 +530,6 @@ export default async function ProjectReportPage({
             ) : null}
           </Card>
         ) : null}
-      </div>
     </div>
   );
 }

@@ -143,7 +143,7 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
-        title="QA & testing"
+        title="QA & Testing"
         description="Test runs, suite coverage and every open defect across all projects — most severe first."
         actions={<LiveRefresh topics={['qa', 'deliverables']} />}
       />
@@ -158,35 +158,9 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(19rem,1fr)]">
         <div className="flex min-w-0 flex-col gap-4">
-          <Card>
-            <CardHeader title="Test suites" description="Regression, compatibility and performance — the last 30 days, across every project." />
-            <ul className="divide-y divide-line">
-              {suiteCoverage.map((s) => {
-                const rate = s.runsLast30Days > 0 ? Math.round((s.passedLast30Days / s.runsLast30Days) * 100) : null;
-                return (
-                  <li key={s.suite} className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5">
-                    <span className="w-32 shrink-0 text-[13px] font-medium">{humanize(s.suite)}</span>
-                    <span className="min-w-[10rem] flex-1">
-                      {rate === null ? <span className="text-xs text-muted">No runs recorded</span> : <ProgressBar value={rate} label={`${s.suite} pass rate`} tone={rate >= 80 ? 'success' : rate >= 50 ? 'warning' : 'danger'} />}
-                    </span>
-                    <span className="flex shrink-0 items-center gap-2 text-xs">
-                      <Badge tone="neutral">{s.runsLast30Days} run{s.runsLast30Days === 1 ? '' : 's'}</Badge>
-                      {s.runsLast30Days > 0 ? (
-                        <>
-                          <Badge tone="success">{s.passedLast30Days} passed</Badge>
-                          <Badge tone={s.failedLast30Days > 0 ? 'danger' : 'neutral'}>{s.failedLast30Days} failed</Badge>
-                        </>
-                      ) : null}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </Card>
-
           {/* SCR-044 (bucket F): recent runs, org-wide — open first, each linking to its run, its build and its project. */}
           <Card>
-            <CardHeader title="Recent runs" description={`${evidence.openRuns} open across every project. A run is opened against a build, closed once with its counts, and rerun by pointing a new run at it.`} />
+            <CardHeader title="Test Runs" description={`${evidence.openRuns} open across every project. A run is opened against a build, closed once with its counts, and rerun by pointing a new run at it.`} />
             {recentRuns.length === 0 ? (
               <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No test run recorded yet.</p>
             ) : (
@@ -218,17 +192,74 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
             )}
           </Card>
 
-          {/* SCR-044 (bucket F): bug trend — raised and settled per week, from qa.defects; the two lines are direct-labelled by the legend and read as counts. */}
           <Card>
-            <CardHeader title="Bug trend" description="Defects raised and settled (verified or won't-fix) per week, last 12 weeks. Counts of rows, UTC weeks starting Monday." />
-            <div className="p-4 sm:p-5">
-              {trend.every((p) => p.raised === 0 && p.settled === 0) ? (
-                <p className="text-[13px] text-muted">No defect raised or settled in the last 12 weeks.</p>
-              ) : (
-                <TrendChart data={trendRows} xKey="week" series={[{ key: 'raised', label: 'Raised', color: 'var(--danger)' }, { key: 'settled', label: 'Settled', color: 'var(--success)' }]} height={200} />
-              )}
-              <p className="mt-2 text-xs text-muted">Open at the end of the last week: {trend[trend.length - 1]?.openAtEnd ?? 0}.</p>
-            </div>
+            <CardHeader
+              title="Device Testing"
+              description={`Device × browser, from compatibility-suite runs in the last 90 days. Each cell is runs recorded and tests failed — a report, not a gate.${compat.unplaced > 0 ? ` ${compat.unplaced} run${compat.unplaced === 1 ? '' : 's'} recorded no device or browser and sit${compat.unplaced === 1 ? 's' : ''} outside the grid.` : ''}`}
+            />
+            {compat.devices.length === 0 ? (
+              <EmptyState icon={<IconList size={22} />} title="No placed compatibility run" description="A cell appears once a compatibility run records the device and browser it ran on." action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>} />
+            ) : (
+              <div className="overflow-x-auto px-4 pb-4 sm:px-5">
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-wider text-muted">
+                      <th className="py-2 pr-3">Device</th>
+                      {compat.browsers.map((b) => (
+                        <th key={b} className="py-2 pr-3 text-right">{b}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {compat.devices.map((d) => (
+                      <tr key={d} className="border-b border-line last:border-0">
+                        <td className="py-2 pr-3 font-medium">{d}</td>
+                        {compat.browsers.map((b) => {
+                          const cell = compat.cells.get(`${d}|${b}`);
+                          return (
+                            <td key={b} className="py-2 pr-3 text-right tabular">
+                              {cell ? (
+                                <span className={cell.failed > 0 ? 'text-danger' : 'text-success'}>
+                                  {cell.runs} run{cell.runs === 1 ? '' : 's'} · {cell.failed} failed
+                                </span>
+                              ) : (
+                                <span className="text-muted">—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader title="Test suites" description="Regression, compatibility and performance — the last 30 days, across every project." />
+            <ul className="divide-y divide-line">
+              {suiteCoverage.map((s) => {
+                const rate = s.runsLast30Days > 0 ? Math.round((s.passedLast30Days / s.runsLast30Days) * 100) : null;
+                return (
+                  <li key={s.suite} className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5">
+                    <span className="w-32 shrink-0 text-[13px] font-medium">{humanize(s.suite)}</span>
+                    <span className="min-w-[10rem] flex-1">
+                      {rate === null ? <span className="text-xs text-muted">No runs recorded</span> : <ProgressBar value={rate} label={`${s.suite} pass rate`} tone={rate >= 80 ? 'success' : rate >= 50 ? 'warning' : 'danger'} />}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2 text-xs">
+                      <Badge tone="neutral">{s.runsLast30Days} run{s.runsLast30Days === 1 ? '' : 's'}</Badge>
+                      {s.runsLast30Days > 0 ? (
+                        <>
+                          <Badge tone="success">{s.passedLast30Days} passed</Badge>
+                          <Badge tone={s.failedLast30Days > 0 ? 'danger' : 'neutral'}>{s.failedLast30Days} failed</Badge>
+                        </>
+                      ) : null}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
           </Card>
 
           <Card>
@@ -250,6 +281,19 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
                 action={q ? <Link href="/qa" className={buttonClass('secondary', 'sm')}>Clear search</Link> : <Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>}
               />
             )}
+          </Card>
+
+          {/* SCR-044 (bucket F): bug trend — raised and settled per week, from qa.defects; the two lines are direct-labelled by the legend and read as counts. */}
+          <Card>
+            <CardHeader title="Bug trend" description="Defects raised and settled (verified or won't-fix) per week, last 12 weeks. Counts of rows, UTC weeks starting Monday." />
+            <div className="p-4 sm:p-5">
+              {trend.every((p) => p.raised === 0 && p.settled === 0) ? (
+                <p className="text-[13px] text-muted">No defect raised or settled in the last 12 weeks.</p>
+              ) : (
+                <TrendChart data={trendRows} xKey="week" series={[{ key: 'raised', label: 'Raised', color: 'var(--danger)' }, { key: 'settled', label: 'Settled', color: 'var(--success)' }]} height={200} />
+              )}
+              <p className="mt-2 text-xs text-muted">Open at the end of the last week: {trend[trend.length - 1]?.openAtEnd ?? 0}.</p>
+            </div>
           </Card>
 
           <Card>
@@ -311,50 +355,6 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
           </Card>
 
           <Card>
-            <CardHeader
-              title="Compatibility matrix"
-              description={`Device × browser, from compatibility-suite runs in the last 90 days. Each cell is runs recorded and tests failed — a report, not a gate.${compat.unplaced > 0 ? ` ${compat.unplaced} run${compat.unplaced === 1 ? '' : 's'} recorded no device or browser and sit${compat.unplaced === 1 ? 's' : ''} outside the grid.` : ''}`}
-            />
-            {compat.devices.length === 0 ? (
-              <EmptyState icon={<IconList size={22} />} title="No placed compatibility run" description="A cell appears once a compatibility run records the device and browser it ran on." action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>} />
-            ) : (
-              <div className="overflow-x-auto px-4 pb-4 sm:px-5">
-                <table className="w-full text-[13px]">
-                  <thead>
-                    <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-wider text-muted">
-                      <th className="py-2 pr-3">Device</th>
-                      {compat.browsers.map((b) => (
-                        <th key={b} className="py-2 pr-3 text-right">{b}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {compat.devices.map((d) => (
-                      <tr key={d} className="border-b border-line last:border-0">
-                        <td className="py-2 pr-3 font-medium">{d}</td>
-                        {compat.browsers.map((b) => {
-                          const cell = compat.cells.get(`${d}|${b}`);
-                          return (
-                            <td key={b} className="py-2 pr-3 text-right tabular">
-                              {cell ? (
-                                <span className={cell.failed > 0 ? 'text-danger' : 'text-success'}>
-                                  {cell.runs} run{cell.runs === 1 ? '' : 's'} · {cell.failed} failed
-                                </span>
-                              ) : (
-                                <span className="text-muted">—</span>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Card>
-
-          <Card>
             <CardHeader title="Performance notes" description="What performance-suite runs measured, in the tester's words. No target is applied — Doc 14 §16 says targets are project-specific and none is configured." />
             {perfNotes.length === 0 ? (
               <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No performance run has recorded notes.</p>
@@ -400,7 +400,7 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
 
         <div className="flex min-w-0 flex-col gap-4">
           <Card>
-            <CardHeader title="QA progress" description={`Item results across ${runs} run${runs === 1 ? '' : 's'} in the last 30 days.`} />
+            <CardHeader title="QA Progress" description={`Item results across ${runs} run${runs === 1 ? '' : 's'} in the last 30 days.`} />
             <div className="p-4 sm:p-5">
               {outcomes === 0 ? (
                 <p className="text-[13px] text-muted">No test results recorded in the last 30 days.</p>
@@ -430,6 +430,15 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
             </ul>
           </Card>
 
+          <QuickActions
+            title="Quick Actions"
+            actions={[
+              { label: 'Projects', icon: <IconProjects size={13} />, href: '/projects' },
+              { label: 'Production readiness', icon: <IconCheck size={13} />, href: '/production-readiness' },
+              { label: 'Approvals', icon: <IconClock size={13} />, href: '/approvals' },
+              { label: 'Reports', icon: <IconList size={13} />, href: '/reports' },
+            ]}
+          />
           {/* SCR-044 (bucket F): the org-wide QA evidence summary — every figure a count of rows; the per-project CSV stays on each project's QA page. */}
           <Card>
             <CardHeader title="QA evidence summary" description="Org-wide, all time. The per-project evidence CSV is on each project's QA page." />
@@ -484,14 +493,6 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
             </Card>
           ) : null}
 
-          <QuickActions
-            actions={[
-              { label: 'Projects', icon: <IconProjects size={13} />, href: '/projects' },
-              { label: 'Production readiness', icon: <IconCheck size={13} />, href: '/production-readiness' },
-              { label: 'Approvals', icon: <IconClock size={13} />, href: '/approvals' },
-              { label: 'Reports', icon: <IconList size={13} />, href: '/reports' },
-            ]}
-          />
           {defects[0] ? (
             <Card>
               <CardHeader title="Most severe open" />

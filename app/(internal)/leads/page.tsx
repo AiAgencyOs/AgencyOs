@@ -13,13 +13,22 @@ import { readLeadServices } from '@/modules/crm/lead-service-queries';
 import { listInternalRoster } from '@/modules/projects/queries';
 import {
   Avatar,
+  Badge,
+  BarChart,
   buttonClass,
+  Card,
+  CardHeader,
+  IconActivity,
+  IconList,
+  IconPhone,
+  IconSearch,
+  IconTarget,
+  IconUser,
   cx,
   DataTable,
   DEFAULT_PAGE_SIZE,
   EmptyState,
   FilterBar,
-  FilterChips,
   humanize,
   inputClass,
   IconImport,
@@ -30,7 +39,6 @@ import {
   selectClass,
   Stat,
   StatGrid,
-  statusTone,
   StatusBadge,
   type Column,
   PermissionDenied,
@@ -80,7 +88,7 @@ function waitedFor(iso: string, now: Date): string {
 
 type Row = Awaited<ReturnType<typeof listLeadsForTable>>[number];
 
-const columnsFor = (clock: AgencyClock, scores: Map<string, LeadScoreSummary>): Column<Row>[] => [
+const columnsFor = (clock: AgencyClock, scores: Map<string, LeadScoreSummary>, services: Map<string, string | null>, createdOf: (id: string) => string | undefined): Column<Row>[] => [
   {
     key: 'title',
     header: 'Name',
@@ -88,34 +96,38 @@ const columnsFor = (clock: AgencyClock, scores: Map<string, LeadScoreSummary>): 
     cell: (l) => (
       <span className="flex items-center gap-2.5">
         <Avatar name={l.contact?.fullName ?? l.title} size="md" />
-        <span className="min-w-0">
-          <span className="block truncate">{l.contact?.fullName ?? l.title}</span>
-          <span className="block truncate text-xs font-normal text-muted">{l.contact?.company ?? l.title}</span>
-        </span>
+        <span className="block max-w-[10rem] truncate">{l.contact?.fullName ?? l.title}</span>
       </span>
     ),
   },
   {
-    key: 'phone',
-    header: 'Phone',
+    key: 'contact',
+    header: 'Contact Details',
     desktopOnly: true,
-    cellClassName: 'font-mono text-xs text-muted',
-    cell: (l) => l.contact?.phone ?? '—',
+    cellClassName: 'text-xs text-muted',
+    cell: (l) => (
+      <span className="block min-w-0">
+        <span className="block max-w-[11rem] truncate">{l.contact?.email ?? '—'}</span>
+        <span className="block">{l.contact?.phone ?? ''}</span>
+      </span>
+    ),
   },
-  {
-    key: 'source',
-    header: 'Source',
-    desktopOnly: true,
-    cellClassName: 'text-muted',
-    cell: (l) => humanize(l.source),
-  },
+  { key: 'source', header: 'Source', desktopOnly: true, cell: (l) => <Badge tone="neutral" dot={false}>{humanize(l.source)}</Badge> },
   { key: 'status', header: 'Status', badge: true, cell: (l) => <StatusBadge status={l.status} /> },
+  { key: 'interest', header: 'Interested In', desktopOnly: true, cellClassName: 'text-muted', cell: (l) => <span className="block max-w-[9rem] truncate">{services.get(l.id) ?? '—'}</span> },
   {
     key: 'assigned',
-    header: 'Assigned',
+    header: 'Assigned To',
     desktopOnly: true,
-    cellClassName: 'text-muted',
-    cell: (l) => l.assignedEmail ?? 'Unassigned',
+    cell: (l) =>
+      l.assignedEmail ? (
+        <span className="flex items-center gap-2">
+          <Avatar name={l.assignedEmail} size="sm" />
+          <span className="max-w-[7rem] truncate">{l.assignedEmail.split('@')[0]}</span>
+        </span>
+      ) : (
+        <span className="text-muted">Unassigned</span>
+      ),
   },
   // ADM-88 — Decision: reversed by the owner on 2026-09-29. The stored score,
   // which never exists without its reasons; unscored is a dash, not a zero.
@@ -132,19 +144,10 @@ const columnsFor = (clock: AgencyClock, scores: Map<string, LeadScoreSummary>): 
   },
   {
     key: 'activity',
-    header: 'Last activity',
-    align: 'right',
-    cellClassName: 'text-muted',
-    cell: (l) => clock.dateTime(l.updated_at),
+    header: 'Created On',
+    cellClassName: 'text-muted whitespace-nowrap',
+    cell: (l) => { const c = createdOf(l.id); return c ? clock.date(c) : clock.dateTime(l.updated_at); },
     sortKey: 'activity',
-  },
-  {
-    // SCR-006 — the preview drawer, fetched on open (preview-actions.ts).
-    key: 'preview',
-    header: '',
-    align: 'right',
-    desktopOnly: true,
-    cell: (l) => <LeadPreviewButton leadId={l.id} name={l.contact?.fullName ?? l.title} />,
   },
 ];
 
@@ -168,6 +171,9 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
  * independently refuses the rows underneath, so a mistake in either layer
  * still fails closed.
  */
+const PALETTE = ['var(--danger)', 'var(--info)', 'var(--warning)', 'var(--success)', 'var(--accent)', 'var(--brand)'];
+const STATUS_COLOR: Record<string, string> = { new: 'var(--info)', qualifying: 'var(--warning)', qualified: 'var(--accent)', nurture: 'var(--muted)', disqualified: 'var(--danger)', converted: 'var(--success)' };
+
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function money(minor: number): string {
@@ -271,14 +277,21 @@ export default async function LeadsPage({
   const leads = sortRows(filtered, sortKey, direction, comparators);
   const { page, pageCount, rows: pageRows } = paginate(leads, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
 
+  const monthStart = `${clock.dayKey(now).slice(0, 7)}-01`;
+  const newThisMonth = allLeads.filter((l) => (facts.get(l.id)?.createdAt ?? '') >= `${monthStart}T00:00:00`).length;
+  const pct = (n: number) => (allLeads.length > 0 ? `${Math.round((n / allLeads.length) * 100)}% of total` : '');
+  const sourceCounts = new Map<string, number>();
+  for (const l of allLeads) sourceCounts.set(l.source, (sourceCounts.get(l.source) ?? 0) + 1);
+  const sourceRows = [...sourceCounts.entries()].sort((a, b) => b[1] - a[1]).map(([src, n]) => ({ source: src, pct: Math.round((n / allLeads.length) * 100) }));
+
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Leads"
         description={
           allLeads.length === 0
-            ? 'Manage, track and convert your leads into clients. Conversations captured from WhatsApp, referrals and the website land here.'
-            : `Manage, track and convert your leads into clients · ${allLeads.length} in the pipeline.`
+            ? 'Manage your incoming leads, track conversations and convert them into clients. Conversations captured from WhatsApp, referrals and the website land here.'
+            : `Manage your incoming leads, track conversations and convert them into clients · ${allLeads.length} in the pipeline.`
         }
         actions={
           <>
@@ -297,85 +310,40 @@ export default async function LeadsPage({
       />
 
       {allLeads.length > 0 ? (
-        <StatGrid cols={6}>
-          <Stat
-            label="Total leads"
-            value={String(allLeads.length)}
-            caption={`${countByStatus.get('disqualified') ?? 0} disqualified`}
-            tone="brand"
-            icon={<IconLeads size={16} />}
-          />
-          {LEAD_STATUSES.filter((s) => s !== 'disqualified').map((s) => (
-            <Stat
-              key={s}
-              label={humanize(s)}
-              value={String(countByStatus.get(s) ?? 0)}
-              caption={allLeads.length > 0 ? `${Math.round(((countByStatus.get(s) ?? 0) / allLeads.length) * 100)}% of leads` : undefined}
-              tone={statusTone(s)}
-              href={`/leads?status=${s}`}
-            />
-          ))}
+        <StatGrid cols={5}>
+          <Stat label="Total Leads" value={String(allLeads.length)} caption={`${countByStatus.get('disqualified') ?? 0} disqualified`} tone="brand" icon={<IconLeads size={16} />} />
+          <Stat label="New This Month" value={String(newThisMonth)} caption="Created this month" tone="info" icon={<IconActivity size={16} />} href={`/leads?createdFrom=${monthStart}`} />
+          <Stat label="Qualifying" value={String(countByStatus.get('qualifying') ?? 0)} caption={pct(countByStatus.get('qualifying') ?? 0)} tone="warning" icon={<IconPhone size={16} />} href="/leads?status=qualifying" />
+          <Stat label="Qualified" value={String(countByStatus.get('qualified') ?? 0)} caption={pct(countByStatus.get('qualified') ?? 0)} tone="success" icon={<IconTarget size={16} />} href="/leads?status=qualified" />
+          <Stat label="Converted" value={String(countByStatus.get('converted') ?? 0)} caption={pct(countByStatus.get('converted') ?? 0)} tone="accent" icon={<IconUser size={16} />} href="/leads?status=converted" />
         </StatGrid>
       ) : null}
 
-      {/* Doc 09 §31, under ADM-88: a fact-tier order, never a score. At the
-          top because at 200-300 leads a month the first question of the day is
-          not "what is my pipeline" but "who is waiting for me". */}
-      {waiting.length > 0 ? (
-        <section className="rounded-lg border border-line bg-surface p-4">
-          <p className="mb-2 text-[12.5px] text-muted">Who needs you first</p>
-          <div className="flex flex-col divide-y divide-line">
-            {waiting.map((lead) => (
-              <Link
-                key={lead.lead_id}
-                href={`/leads/${lead.lead_id}`}
-                className="flex items-center gap-3 py-1.5 hover:opacity-80"
-              >
-                <span
-                  className={`w-36 shrink-0 rounded px-1.5 py-0.5 text-center text-[11.5px] ${
-                    ATTENTION[lead.reason]?.tone ?? 'bg-surface-sunken'
-                  }`}
-                >
-                  {ATTENTION[lead.reason]?.label ?? lead.reason}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-sm">{lead.title}</span>
-                <span className="shrink-0 text-[12.5px] tabular text-muted">
-                  {lead.waiting_since ? waitedFor(lead.waiting_since, now) : ''}
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
       <FilterBar clearHref="/leads" filtered={Boolean(status || q || source || owner || boundedByBudget || createdFrom || createdTo || service)}>
-        <FilterChips
-          options={[
-            { key: 'all', label: 'All', href: `/leads?${keep.filter((k) => !k.startsWith('status=')).join('&')}`, active: !status },
-            ...LEAD_STATUSES.map((s) => ({
-              key: s,
-              label: `${humanize(s)} (${countByStatus.get(s) ?? 0})`,
-              href: `/leads?${[...keep.filter((k) => !k.startsWith('status=')), `status=${s}`].join('&')}`,
-              active: status === s,
-            })),
-          ]}
-        />
-        <form method="get" action="/leads" className="flex flex-wrap items-center gap-2 [&_input]:w-auto [&_select]:w-auto">
-          {status ? <input type="hidden" name="status" value={status} /> : null}
-          <label className="relative">
+        <form method="get" action="/leads" className="flex w-full flex-wrap items-center gap-2 [&_input]:w-auto [&_select]:w-auto">
+          <label className="relative min-w-[14rem] flex-1">
             <span className="sr-only">Search leads</span>
-            <input name="q" defaultValue={q ?? ''} placeholder="Search name, phone, email, company…" className={cx(inputClass, 'w-64 pl-3')} />
+            <span aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><IconSearch size={15} /></span>
+            <input name="q" defaultValue={q ?? ''} placeholder="Search leads by name, email, phone, source…" className={cx(inputClass, '!w-full pl-9')} />
           </label>
           <select name="source" defaultValue={source ?? ''} aria-label="Source" className={cx(selectClass, 'w-auto')}>
-            <option value="">All sources</option>
+            <option value="">All Sources</option>
             {sources.map((s) => (
               <option key={s} value={s}>
                 {humanize(s)}
               </option>
             ))}
           </select>
+          <select name="status" defaultValue={status ?? ''} aria-label="Status" className={cx(selectClass, 'w-auto')}>
+            <option value="">All Status</option>
+            {LEAD_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {humanize(s)} ({countByStatus.get(s) ?? 0})
+              </option>
+            ))}
+          </select>
           <select name="owner" defaultValue={owner ?? ''} aria-label="Assigned to" className={cx(selectClass, 'w-auto')}>
-            <option value="">All team members</option>
+            <option value="">All Assigned</option>
             <option value="unassigned">Unassigned</option>
             {owners.map(([id, email]) => (
               <option key={id} value={id}>
@@ -383,21 +351,28 @@ export default async function LeadsPage({
               </option>
             ))}
           </select>
-          <input type="number" min="0" name="budgetMin" defaultValue={budgetMin ?? ''} placeholder="Budget ≥ ₹" aria-label="Budget at least" className={cx(inputClass, 'w-32')} />
-          <input type="number" min="0" name="budgetMax" defaultValue={budgetMax ?? ''} placeholder="Budget ≤ ₹" aria-label="Budget at most" className={cx(inputClass, 'w-32')} />
-          <input type="date" name="createdFrom" defaultValue={createdFrom ?? ''} aria-label="Created from" className={cx(inputClass, 'w-40')} />
-          <input type="date" name="createdTo" defaultValue={createdTo ?? ''} aria-label="Created to" className={cx(inputClass, 'w-40')} />
-          <input name="service" list="leads-service-values" defaultValue={service} maxLength={80} placeholder="Service" aria-label="Service" className={cx(inputClass, 'w-40')} />
-          <datalist id="leads-service-values">
-            {services.distinct.map((s) => (
-              <option key={s} value={s} />
-            ))}
-          </datalist>
-          <button type="submit" className={buttonClass('secondary', 'sm')}>
+          <details className="group relative" open={Boolean(boundedByBudget || createdFrom || createdTo || service)}>
+            <summary className={cx(buttonClass('secondary', 'sm'), 'cursor-pointer list-none [&::-webkit-details-marker]:hidden')}>
+              <IconList size={14} /> Filter
+            </summary>
+            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface p-3 lg:absolute lg:right-0 lg:z-20 lg:w-[22rem] lg:shadow-lg">
+              <input type="number" min="0" name="budgetMin" defaultValue={budgetMin ?? ''} placeholder="Budget ≥ ₹" aria-label="Budget at least" className={cx(inputClass, 'w-32')} />
+              <input type="number" min="0" name="budgetMax" defaultValue={budgetMax ?? ''} placeholder="Budget ≤ ₹" aria-label="Budget at most" className={cx(inputClass, 'w-32')} />
+              <input type="date" name="createdFrom" defaultValue={createdFrom ?? ''} aria-label="Created from" className={cx(inputClass, 'w-40')} />
+              <input type="date" name="createdTo" defaultValue={createdTo ?? ''} aria-label="Created to" className={cx(inputClass, 'w-40')} />
+              <input name="service" list="leads-service-values" defaultValue={service} maxLength={80} placeholder="Service" aria-label="Service" className={cx(inputClass, 'w-40')} />
+              <datalist id="leads-service-values">
+                {services.distinct.map((s) => (
+                  <option key={s} value={s} />
+                ))}
+              </datalist>
+            </div>
+          </details>
+          <button type="submit" className={buttonClass('primary', 'sm')}>
             Apply
           </button>
-          {q || source || owner || boundedByBudget || createdFrom || createdTo || service ? (
-            <Link href={status ? `/leads?status=${status}` : '/leads'} className="text-xs font-medium text-brand hover:underline">
+          {q || source || status || owner || boundedByBudget || createdFrom || createdTo || service ? (
+            <Link href="/leads" className="text-xs font-medium text-brand hover:underline">
               Reset
             </Link>
           ) : null}
@@ -417,6 +392,8 @@ export default async function LeadsPage({
                 name: l.contact?.fullName ?? l.title,
                 subtitle: l.contact?.company ?? l.title,
                 phone: l.contact?.phone ?? null,
+                email: l.contact?.email ?? null,
+                service: services.byLead.get(l.id) ?? null,
                 source: l.source,
                 status: l.status,
                 assigned: l.assignedEmail ?? 'Unassigned',
@@ -446,12 +423,12 @@ export default async function LeadsPage({
         <>
           <DataTable
             rows={pageRows}
-            columns={columnsFor(clock, scores)}
+            columns={columnsFor(clock, scores, services.byLead, (id) => facts.get(id)?.createdAt)}
             getKey={(l) => l.id}
-            href={(l) => `/leads/${l.id}`}
             // Bucket F: the shared per-row overflow menu — the row's secondary
             // destinations, each a page that already exists.
             rowActions={(l) => [
+              { key: 'preview', label: 'Preview', node: <LeadPreviewButton leadId={l.id} name={l.contact?.fullName ?? l.title} /> },
               { key: 'open', label: 'Open lead', href: `/leads/${l.id}` },
               { key: 'meeting', label: 'Request a meeting', href: `/leads/${l.id}#meetings` },
               { key: 'quotation', label: 'Quotations', href: `/leads/${l.id}#quotations` },
@@ -483,6 +460,61 @@ export default async function LeadsPage({
           action={status || q || source || owner || boundedByBudget || createdFrom || createdTo || service ? <Link href="/leads" className={buttonClass('secondary', 'sm')}>Clear filters</Link> : <Link href="/import" className={buttonClass('secondary', 'sm')}>Import historical leads</Link>}
         />
       )}
+      {/* Doc 09 §31, under ADM-88: a fact-tier order, never a score. At the
+          top because at 200-300 leads a month the first question of the day is
+          not "what is my pipeline" but "who is waiting for me". */}
+      {waiting.length > 0 ? (
+        <section className="rounded-lg border border-line bg-surface p-4">
+          <p className="mb-2 text-[12.5px] text-muted">Who needs you first</p>
+          <div className="flex flex-col divide-y divide-line">
+            {waiting.map((lead) => (
+              <Link
+                key={lead.lead_id}
+                href={`/leads/${lead.lead_id}`}
+                className="flex items-center gap-3 py-1.5 hover:opacity-80"
+              >
+                <span
+                  className={`w-36 shrink-0 rounded px-1.5 py-0.5 text-center text-[11.5px] ${
+                    ATTENTION[lead.reason]?.tone ?? 'bg-surface-sunken'
+                  }`}
+                >
+                  {ATTENTION[lead.reason]?.label ?? lead.reason}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm">{lead.title}</span>
+                <span className="shrink-0 text-[12.5px] tabular text-muted">
+                  {lead.waiting_since ? waitedFor(lead.waiting_since, now) : ''}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {allLeads.length > 0 ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader title="Lead Source Breakdown" />
+            <ul className="flex flex-col gap-2 px-4 pb-4 sm:px-5">
+              {sourceRows.map((r, i) => (
+                <li key={r.source} className="grid grid-cols-[6.5rem_1fr_2.75rem] items-center gap-3 text-[13px]">
+                  <span className="truncate text-muted">{humanize(r.source)}</span>
+                  <span className="h-2 overflow-hidden rounded-full bg-surface-sunken">
+                    <span className="block h-full rounded-full" style={{ width: `${r.pct}%`, background: PALETTE[i % PALETTE.length] }} />
+                  </span>
+                  <span className="tabular text-right text-muted">{r.pct}%</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+          <Card>
+            <CardHeader title="Lead Status Funnel" />
+            <div className="px-4 pb-4 sm:px-5">
+              <BarChart data={LEAD_STATUSES.map((s) => ({ label: humanize(s), value: countByStatus.get(s) ?? 0 }))} colors={LEAD_STATUSES.map((s) => STATUS_COLOR[s] ?? 'var(--brand)')} height={170} />
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
     </div>
   );
 }

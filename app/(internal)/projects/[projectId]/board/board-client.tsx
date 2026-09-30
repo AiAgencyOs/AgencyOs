@@ -15,7 +15,6 @@ import {
   buttonClass,
   Callout,
   cx,
-  DonutChart,
   filterChipClass,
   Drawer,
   FormMessage,
@@ -55,6 +54,8 @@ export type BoardTask = KanbanItem & {
   completedLabel: string | null;
   overdue: boolean;
 };
+
+type SortKey = '' | 'due' | 'priority' | 'title';
 
 export type BoardModule = { id: string; name: string };
 export type BoardPerson = { userId: string; fullName: string };
@@ -130,6 +131,7 @@ export function ProjectBoard({
   const [priority, setPriority] = useState('');
   const [moduleFilter, setModuleFilter] = useState('');
   const [milestoneFilter, setMilestoneFilter] = useState(initialMilestone ?? '');
+  const [sort, setSort] = useState<SortKey>('');
   const [adding, setAdding] = useState<string | null>(null);
   const [openTask, setOpenTask] = useState<BoardTask | null>(null);
   // A card dropped on Blocked waits here for its reason — the drop's promise
@@ -163,7 +165,7 @@ export function ProjectBoard({
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return tasks.filter(
+    const rows = tasks.filter(
       (t) =>
         (!q || t.title.toLowerCase().includes(q)) &&
         (!assignee || (assignee === 'unassigned' ? t.assigneeId === null : t.assigneeId === assignee)) &&
@@ -171,7 +173,11 @@ export function ProjectBoard({
         (!moduleFilter || t.moduleId === moduleFilter) &&
         (!milestoneFilter || (milestoneFilter === 'none' ? t.milestoneId === null : t.milestoneId === milestoneFilter)),
     );
-  }, [tasks, query, assignee, priority, moduleFilter, milestoneFilter]);
+    if (sort === 'due') rows.sort((a, b) => (a.dueOn ?? '9999').localeCompare(b.dueOn ?? '9999'));
+    else if (sort === 'priority') rows.sort((a, b) => a.priority.localeCompare(b.priority));
+    else if (sort === 'title') rows.sort((a, b) => a.title.localeCompare(b.title));
+    return rows;
+  }, [tasks, query, assignee, priority, moduleFilter, milestoneFilter, sort]);
 
   const filtered = visible.length !== tasks.length;
 
@@ -183,8 +189,10 @@ export function ProjectBoard({
         </Callout>
       ) : null}
 
+      <section aria-labelledby="task-board-heading" className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-3 shadow-xs sm:p-4">
+      <h2 id="task-board-heading" className="text-base font-bold tracking-tight text-foreground">Task board</h2>
       {/* ── Toolbar ─────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface p-2 shadow-xs">
+      <div className="flex flex-wrap items-center gap-2">
         <label className="relative w-full sm:w-auto sm:min-w-[14rem] sm:flex-1 sm:max-w-xs">
           <span className="sr-only">Search tasks</span>
           <IconSearch size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
@@ -230,6 +238,12 @@ export function ProjectBoard({
           </select>
         ) : null}
         {rosterSource === 'members' ? <span className="text-[11px] text-muted" title="Assignees are the project's members; the organisation roster is offered when a project has none.">assignees: project members</span> : null}
+        <select aria-label="Sort tasks" value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className={cx(selectClass, 'sm:w-auto sm:min-w-[8rem]')}>
+          <option value="">Sort: default</option>
+          <option value="due">Sort: due date</option>
+          <option value="priority">Sort: priority</option>
+          <option value="title">Sort: title</option>
+        </select>
         <span className="ml-auto text-xs text-muted">
           {filtered ? `${visible.length} of ${tasks.length}` : tasks.length} task{tasks.length === 1 ? '' : 's'}
           {filtered ? (
@@ -259,7 +273,7 @@ export function ProjectBoard({
       {/* SCR-020: open-task counts per assignee and per module, on the board
           itself. Each chip is also the filter for that person or module. */}
       {tasks.some((t) => t.columnId !== 'done') ? (
-        <div className="flex flex-col gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-[13px] shadow-xs">
+        <div className="flex flex-col gap-1.5 text-[13px]">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="mr-1 text-[11px] font-semibold uppercase tracking-wider text-muted">Open by assignee</span>
             {countBy(tasks, (t) => t.assigneeId).map(([id, n]) => (
@@ -317,10 +331,7 @@ export function ProjectBoard({
         renderCard={(task) => <TaskCard task={task} collab={collab[task.id]} onOpen={() => setOpenTask(task)} />}
       />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(18rem,1fr)]">
-        <RecentCompletions tasks={tasks} />
-        <TaskSummary tasks={tasks} columns={columns} />
-      </div>
+      </section>
 
       <TaskDrawer
         task={openTask}
@@ -395,11 +406,11 @@ function TaskCard({ task, collab, onOpen }: { task: BoardTask; collab: TaskColla
           </span>
         </div>
       ) : null}
-      <div className="mt-2.5 flex items-center justify-between gap-2">
+      <div className="mt-2.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
         <span className="flex min-w-0 items-center gap-2">
           {task.assigneeName ? <Avatar name={task.assigneeName} size="sm" /> : <span className="h-6 w-6 rounded-full border border-dashed border-line-strong" aria-label="Unassigned" />}
           {task.dueLabel ? (
-            <span className={cx('flex items-center gap-1 text-[11px]', task.overdue ? 'font-medium text-danger' : 'text-muted')}>
+            <span className={cx('flex items-center gap-1 whitespace-nowrap text-[11px]', task.overdue ? 'font-medium text-danger' : 'text-muted')}>
               <IconCalendar size={12} />
               {task.dueLabel}
             </span>
@@ -660,49 +671,6 @@ function TaskEditForm({ task, projectId, roster, onSaved }: { task: BoardTask; p
         <FormMessage status={state.status} message={state.message} />
       </div>
     </form>
-  );
-}
-
-function RecentCompletions({ tasks }: { tasks: BoardTask[] }) {
-  const done = tasks.filter((t) => t.completedLabel).slice(0, 4);
-  return (
-    <section className="rounded-xl border border-line bg-surface p-4 shadow-xs sm:p-5">
-      <h2 className="text-sm font-semibold tracking-tight text-foreground">Recent activity</h2>
-      {done.length === 0 ? (
-        <p className="mt-2 text-[13px] text-muted">Nothing has been completed on this board yet.</p>
-      ) : (
-        <ul className="mt-3 grid gap-3 sm:grid-cols-2">
-          {done.map((t) => (
-            <li key={t.id} className="flex items-start gap-3">
-              <Avatar name={t.assigneeName ?? 'Unassigned'} size="md" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] text-foreground">
-                  <span className="font-medium">{t.assigneeName ?? 'Someone'}</span> completed a task
-                </span>
-                <span className="block truncate text-xs text-muted">{t.title}</span>
-              </span>
-              <span className="shrink-0 text-[11px] text-faint">{t.completedLabel}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-function TaskSummary({ tasks, columns }: { tasks: BoardTask[]; columns: KanbanColumn[] }) {
-  const data = columns.map((c) => ({ label: c.label, value: tasks.filter((t) => t.columnId === c.id).length }));
-  return (
-    <section className="rounded-xl border border-line bg-surface p-4 shadow-xs sm:p-5">
-      <h2 className="text-sm font-semibold tracking-tight text-foreground">Task summary</h2>
-      {tasks.length === 0 ? (
-        <p className="mt-2 text-[13px] text-muted">No tasks to summarise.</p>
-      ) : (
-        <div className="mt-2">
-          <DonutChart data={data} height={150} totalLabel="Total tasks" />
-        </div>
-      )}
-    </section>
   );
 }
 

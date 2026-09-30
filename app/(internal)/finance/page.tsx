@@ -39,7 +39,7 @@ import {
   Stat,
   StatGrid,
   StatusBadge,
-  TrendChart,
+  GroupedBarChart,
   ViewAll,
   type Column,
 } from '@/ui';
@@ -230,7 +230,7 @@ export default async function FinanceOverviewPage({
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
-        title="Finance overview"
+        title="Finance Overview"
         description={
           invoices.length === 0
             ? 'No invoices raised yet. Income, expenses, payments and profitability across every project will appear here.'
@@ -305,29 +305,28 @@ export default async function FinanceOverviewPage({
         </FilterBar>
       </form>
 
-      <StatGrid cols={6}>
-        <Stat label="Total invoiced" value={money(invoiced, currency)} caption={`${inCurrency.length} invoice${inCurrency.length === 1 ? '' : 's'}`} tone="brand" icon={<IconTrendUp size={16} />} href="/invoices" />
-        <Stat label="Total received" value={money(received, currency)} caption={`${paymentsInCurrency.length} payment${paymentsInCurrency.length === 1 ? '' : 's'}`} tone="success" icon={<IconCheck size={16} />} href="/finance/payments" />
-        <Stat label="Collection rate" value={collection === null ? '—' : `${collection}%`} caption={collection === null ? 'Nothing invoiced yet' : 'Received ÷ invoiced, live invoices only'} tone={collection !== null && collection >= 100 ? 'success' : collection !== null && collection < 50 ? 'warning' : 'neutral'} icon={<IconTrendUp size={16} />} />
-        <Stat label="Outstanding" value={money(outstanding, currency)} caption={`${pendingInvoices.length} pending invoice${pendingInvoices.length === 1 ? '' : 's'}${overdue.length > 0 ? ` · ${overdue.length} overdue` : ''}`} tone={overdue.length > 0 ? 'danger' : outstanding > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/invoices" />
-        <Stat label="Total expenses" value={money(spent, currency)} caption={`${expensesInCurrency.length} recorded`} tone="danger" icon={<IconRupee size={16} />} href="/finance/expenses" />
-        <Stat label="Net profit" value={money(net, currency)} caption={received > 0 ? `${Math.round((net / received) * 100)}% margin` : 'Received minus expenses'} tone={net >= 0 ? 'accent' : 'danger'} icon={<IconUsage size={16} />} />
+      <StatGrid cols={5}>
+        <Stat label="Total Invoiced" value={money(invoiced, currency)} caption={`${inCurrency.length} invoice${inCurrency.length === 1 ? '' : 's'}`} tone="success" icon={<IconTrendUp size={16} />} href="/invoices" />
+        <Stat label="Total Received" value={money(received, currency)} caption={collection === null ? `${paymentsInCurrency.length} payment${paymentsInCurrency.length === 1 ? '' : 's'}` : `${collection}% Collection Rate`} tone="info" icon={<IconCheck size={16} />} href="/finance/payments" />
+        <Stat label="Outstanding" value={money(outstanding, currency)} caption={`${pendingInvoices.length} pending invoice${pendingInvoices.length === 1 ? '' : 's'}${overdue.length > 0 ? ` · ${overdue.length} overdue` : ''}`} tone={overdue.length > 0 ? 'danger' : 'warning'} icon={<IconClock size={16} />} href="/invoices" />
+        <Stat label="Total Expenses" value={money(spent, currency)} caption={`${expensesInCurrency.length} recorded`} tone="danger" icon={<IconRupee size={16} />} href="/finance/expenses" />
+        <Stat label="Net Profit" value={money(net, currency)} caption={received > 0 ? `${Math.round((net / received) * 100)}% margin` : 'Received minus expenses'} tone={net >= 0 ? 'accent' : 'danger'} icon={<IconUsage size={16} />} />
       </StatGrid>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]">
         <Card>
-          <CardHeader title="Income vs expenses" description="Payments captured and expenses incurred, by month." />
+          <CardHeader title="Income vs Expenses" />
           <div className="p-4 sm:p-5">
             {series.every((s) => s.income === 0 && s.expenses === 0) ? (
               <p className="py-6 text-center text-[13px] text-muted">No payments or expenses in the last six months.</p>
             ) : (
-              <TrendChart data={series} xKey="month" series={[{ key: 'income', label: 'Income' }, { key: 'expenses', label: 'Expenses', color: 'var(--danger)' }]} currency={currency} height={220} />
+              <GroupedBarChart data={series} xKey="month" series={[{ key: 'income', label: 'Income', color: 'var(--brand)' }, { key: 'expenses', label: 'Expenses', color: 'var(--accent)' }]} currency={currency} height={220} />
             )}
           </div>
         </Card>
 
         <Card>
-          <CardHeader title="Payment status" />
+          <CardHeader title="Payment Status" />
           <div className="p-4 sm:p-5">
             {statusData.length === 0 ? (
               <p className="py-6 text-center text-[13px] text-muted">No live invoices.</p>
@@ -338,7 +337,7 @@ export default async function FinanceOverviewPage({
         </Card>
 
         <Card>
-          <CardHeader title="Top project revenue" actions={<ViewAll href="/projects" />} />
+          <CardHeader title="Top Project Revenue" actions={<ViewAll href="/projects" />} />
           {topProjects.length === 0 ? (
             <p className="px-4 py-4 text-[13px] text-muted sm:px-5">No payments against a project yet.</p>
           ) : (
@@ -364,7 +363,7 @@ export default async function FinanceOverviewPage({
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
-          <CardHeader title="Recent invoices" actions={<ViewAll href="/invoices" />} />
+          <CardHeader title="Recent Invoices" actions={<ViewAll href="/invoices" />} />
           {invoices.length === 0 ? (
             <EmptyState icon={<IconInvoices size={20} />} title="No invoices yet" action={<Link href="/invoices" className={buttonClass('secondary', 'sm')}>Open invoices</Link>} />
           ) : (
@@ -374,7 +373,7 @@ export default async function FinanceOverviewPage({
           )}
         </Card>
         <Card>
-          <CardHeader title="Recent payments" actions={<ViewAll href="/finance/payments" />} />
+          <CardHeader title="Recent Payments" actions={<ViewAll href="/finance/payments" />} />
           {payments.length === 0 ? (
             <EmptyState icon={<IconCheck size={20} />} title="No payments recorded yet" action={<Link href="/invoices/verify" className={buttonClass('secondary', 'sm')}>Verify payments</Link>} />
           ) : (
@@ -385,9 +384,9 @@ export default async function FinanceOverviewPage({
         </Card>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)]">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)]">
         <Card>
-          <CardHeader title="Expense breakdown" actions={<ViewAll href="/finance/expenses" />} />
+          <CardHeader title="Expense Breakdown" actions={<ViewAll href="/finance/expenses" />} />
           <div className="p-4 sm:p-5">
             {categoryData.length === 0 ? (
               <p className="py-6 text-center text-[13px] text-muted">No expenses recorded.</p>
@@ -398,7 +397,7 @@ export default async function FinanceOverviewPage({
         </Card>
 
         <Card>
-          <CardHeader title="Upcoming payments" description="Unpaid invoices with a due date still ahead." actions={<ViewAll href="/invoices" />} />
+          <CardHeader title="Upcoming Payments" actions={<ViewAll href="/invoices" />} />
           {upcoming.length === 0 ? (
             <p className="px-4 py-4 text-[13px] text-muted sm:px-5">Nothing is due ahead.</p>
           ) : (
@@ -426,15 +425,15 @@ export default async function FinanceOverviewPage({
         <div className="flex flex-col gap-4">
           <QuickActions
             actions={[
-              { label: 'Raise invoice', icon: <IconPlus size={13} />, href: '/projects' },
-              { label: 'Verify payment', icon: <IconCheck size={13} />, href: '/invoices/verify' },
-              { label: 'Add expense', icon: <IconRupee size={13} />, href: '/finance/expenses' },
-              { label: 'GST & tax', icon: <IconUsage size={13} />, href: '/finance/tax' },
+              { label: 'Create Invoice', icon: <IconPlus size={13} />, href: '/projects' },
+              { label: 'Record Payment', icon: <IconCheck size={13} />, href: '/invoices/verify' },
+              { label: 'Add Expense', icon: <IconRupee size={13} />, href: '/finance/expenses' },
+              { label: 'Generate Report', icon: <IconUsage size={13} />, href: '/finance/tax' },
             ]}
           />
           <Card>
             <CardHeader
-              title="Payment verification"
+              title="Payment Verification"
               description={pendingClaims.length === 0 ? 'No claims are waiting.' : `${pendingClaims.length} claim${pendingClaims.length === 1 ? '' : 's'} awaiting a decision.`}
               actions={<ViewAll href="/invoices/verify" label="Open queue" />}
             />

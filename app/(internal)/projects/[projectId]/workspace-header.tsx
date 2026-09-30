@@ -18,12 +18,14 @@ export function WorkspaceHeader({
   clientName,
   canEdit,
   actions,
+  aside,
 }: {
   project: ProjectDetail;
   clock: AgencyClock;
   clientName: string | null;
   canEdit: boolean;
   actions?: React.ReactNode;
+  aside?: React.ReactNode;
 }) {
   const daysLeft = project.ends_on
     ? Math.ceil((new Date(`${project.ends_on}T00:00:00Z`).getTime() - Date.now()) / 86_400_000)
@@ -55,6 +57,7 @@ export function WorkspaceHeader({
               ]
             : []),
         ]}
+        aside={aside}
         actions={
           <>
             {actions}

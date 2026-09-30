@@ -26,6 +26,8 @@ import {
   IconCheck,
   IconUser,
   IconUsers,
+  IconPlus,
+  IconSearch,
   PermissionDenied,
   ProgressBar,
   Stat,
@@ -59,8 +61,9 @@ export const metadata: Metadata = { title: 'Team' };
  * model, and a control that pretends to would be the fake-success failure
  * the brief forbids. People join a project by being assigned a task.
  */
-export default async function ProjectTeamPage({ params }: { params: Promise<{ projectId: string }> }) {
+export default async function ProjectTeamPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ q?: string }> }) {
   const { projectId } = await params;
+  const { q } = await searchParams;
 
   const context = await requireInternal(`/projects/${projectId}/team`);
   if (!can(context, 'project.read')) return <PermissionDenied />;
@@ -96,6 +99,8 @@ export default async function ProjectTeamPage({ params }: { params: Promise<{ pr
   const tasksTotal = team.reduce((n, m) => n + m.tasksTotal, 0);
   const tasksDone = team.reduce((n, m) => n + m.tasksDone, 0);
 
+  const needle = q?.trim().toLowerCase() ?? '';
+  const shownTeam = needle ? team.filter((m) => m.fullName.toLowerCase().includes(needle) || m.email.toLowerCase().includes(needle)) : team;
   type Member = (typeof team)[number];
   const columns: Column<Member>[] = [
     {
@@ -126,16 +131,16 @@ export default async function ProjectTeamPage({ params }: { params: Promise<{ pr
       // SCR-025: what the role lets this person do here, read from the
       // capability matrix rather than restated.
       key: 'may',
-      header: 'May',
+      header: 'Permissions',
       desktopOnly: true,
       cell: (m) => {
         const caps = isRole(m.role) ? capabilitiesFor(m.role) : [];
-        const delivery = DELIVERY_CAPABILITIES.filter((c) => caps.includes(c));
-        const other = caps.length - delivery.length;
+        const delivery = DELIVERY_CAPABILITIES.filter((c) => caps.includes(c) && !c.endsWith('.read')).slice(0, 2);
+        const other = DELIVERY_CAPABILITIES.filter((c) => caps.includes(c) && !c.endsWith('.read')).length - delivery.length;
         return (
           <span className="flex flex-wrap items-center gap-1">
             {delivery.length > 0 ? delivery.map((c) => <Badge key={c} tone={c.endsWith('.read') ? 'neutral' : 'brand'}>{c}</Badge>) : <span className="text-xs text-muted">nothing on a project</span>}
-            {other > 0 ? <span className="text-xs text-muted">+{other} elsewhere</span> : null}
+            {other > 0 ? <span className="text-xs text-muted">+{other} more</span> : null}
           </span>
         );
       },
@@ -147,6 +152,28 @@ export default async function ProjectTeamPage({ params }: { params: Promise<{ pr
       <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={can(context, 'project.write')} />
 
       <ProjectSubNav projectId={projectId} />
+
+      <section aria-labelledby="team-title" className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="team-title" className="text-xl font-bold tracking-tight text-foreground">Project Team</h2>
+          <p className="text-[13px] text-muted">Manage team members, roles, permissions and collaboration</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <form action={`/projects/${projectId}/team`} method="GET" className="relative">
+            <label>
+              <span className="sr-only">Search team members</span>
+              <span aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><IconSearch size={15} /></span>
+              <input type="search" name="q" defaultValue={q ?? ''} placeholder="Search team members..." className="h-10 w-64 rounded-lg border border-line bg-surface pl-9 pr-3 text-[13px] text-foreground placeholder:text-faint" />
+            </label>
+          </form>
+          {canEdit ? (
+            <a href="#invite-member" className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-[13px] font-semibold text-brand-fg shadow-xs hover:opacity-90">
+              <IconPlus size={15} />
+              Invite Member
+            </a>
+          ) : null}
+        </div>
+      </section>
 
       {team.length > 0 ? (
         <StatGrid cols={5}>
@@ -162,46 +189,39 @@ export default async function ProjectTeamPage({ params }: { params: Promise<{ pr
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(18rem,1fr)]">
         <div className="flex min-w-0 flex-col gap-4">
-        {/* SCR-025 (20261001120000): the project's own roster — assign, set a project role, remove. */}
         <Card>
-          <CardHeader
-            title={`Project members (${members.length})`}
-            description="Who is on this project and in what role. The Board offers these people first when assigning a task, and the organisation roster when the project has none."
-          />
-          <ProjectMembersPanel projectId={projectId} members={members} roster={roster} lastActive={lastActive} lastActiveLabels={lastActiveLabels} mayEdit={canEdit} />
-        </Card>
-        <Card>
-          <CardHeader title="Everyone with a task" description="Everyone with a task assigned on this project, whether or not they are on the roster above. A person joins by being assigned work on the Board." />
+          <CardHeader title="Team Members" description="Everyone with a task assigned on this project, whether or not they are on the roster above. A person joins by being assigned work on the Board." />
           {team.length > 0 ? (
             <div className="px-4 pb-4 sm:px-5">
-              <DataTable dense rows={team} columns={columns} getKey={(m) => m.userId} />
+              <DataTable dense rows={shownTeam} columns={columns} getKey={(m) => m.userId} />
             </div>
           ) : (
             <EmptyState icon={<IconUser size={22} />} title="No one assigned yet" description="A person shows up here the first time a task on this project is assigned to them." />
           )}
         </Card>
+        {/* SCR-025 (20261001120000): the project's own roster — assign, set a project role, remove. */}
+        <Card id="invite-member">
+          <CardHeader
+            title={`Project Members (${members.length})`}
+            description="Add team members to collaborate on this project. The Board offers them first when assigning a task."
+          />
+          <ProjectMembersPanel projectId={projectId} members={members} roster={roster} lastActive={lastActive} lastActiveLabels={lastActiveLabels} mayEdit={canEdit} />
+        </Card>
         </div>
 
         <div className="flex flex-col gap-4">
         <Card>
-          <CardHeader title="Delivery lead" description="Who answers for this project's delivery. Set from the agency roster; nothing else changes." />
-          <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
-            {lead ? (
-              <div className="flex items-center gap-2.5">
-                <Avatar name={lead.fullName} size="md" />
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium">{lead.fullName}</span>
-                  <span className="block truncate text-xs text-muted">{lead.email} · {humanize(lead.role)}</span>
-                </span>
-              </div>
+          <CardHeader title="Team Role Distribution" />
+          <div className="p-4 sm:p-5">
+            {roles.length === 0 ? (
+              <p className="text-[13px] text-muted">Nothing to distribute yet.</p>
             ) : (
-              <p className="text-[13px] text-muted">{project.delivery_lead_id ? 'Assigned to someone no longer on the roster.' : 'Nobody has been named yet.'}</p>
+              <DonutChart data={roles.map(([role, n]) => ({ label: humanize(role), value: n }))} totalLabel="Members" height={150} />
             )}
-            {canEdit ? <DeliveryLeadForm projectId={projectId} current={project.delivery_lead_id} roster={roster} /> : null}
           </div>
         </Card>
         <Card>
-          <CardHeader title="Recent team activity" description="Assigned tasks, most recently changed first. A completed task is dated by its completion." />
+          <CardHeader title="Recent Team Activity" description="Assigned tasks, most recently changed first. A completed task is dated by its completion." />
           {activity.length > 0 ? (
             <ul className="divide-y divide-line">
               {activity.slice(0, 10).map((a) => (
@@ -221,13 +241,20 @@ export default async function ProjectTeamPage({ params }: { params: Promise<{ pr
           )}
         </Card>
         <Card>
-          <CardHeader title="Team role distribution" />
-          <div className="p-4 sm:p-5">
-            {roles.length === 0 ? (
-              <p className="text-[13px] text-muted">Nothing to distribute yet.</p>
+          <CardHeader title="Delivery Lead" description="Who answers for this project's delivery. Set from the agency roster; nothing else changes." />
+          <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+            {lead ? (
+              <div className="flex items-center gap-2.5">
+                <Avatar name={lead.fullName} size="md" />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium">{lead.fullName}</span>
+                  <span className="block truncate text-xs text-muted">{lead.email} · {humanize(lead.role)}</span>
+                </span>
+              </div>
             ) : (
-              <DonutChart data={roles.map(([role, n]) => ({ label: humanize(role), value: n }))} totalLabel="Members" height={150} />
+              <p className="text-[13px] text-muted">{project.delivery_lead_id ? 'Assigned to someone no longer on the roster.' : 'Nobody has been named yet.'}</p>
             )}
+            {canEdit ? <DeliveryLeadForm projectId={projectId} current={project.delivery_lead_id} roster={roster} /> : null}
           </div>
         </Card>
         </div>

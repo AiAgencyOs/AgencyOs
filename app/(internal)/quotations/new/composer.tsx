@@ -126,7 +126,7 @@ export function QuotationComposer({
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_minmax(16rem,0.9fr)]">
         <Card>
-          <CardHeader title="Client information" />
+          <CardHeader title="Client Information" />
           <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
             <label className="flex flex-col gap-1">
               <span className={labelClass}>Deal</span>
@@ -174,7 +174,7 @@ export function QuotationComposer({
         </Card>
 
         <Card>
-          <CardHeader title="Quotation details" />
+          <CardHeader title="Quotation Details" />
           <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2 sm:px-5">
             <label className="flex flex-col gap-1 sm:col-span-2">
               <span className={labelClass}>Title</span>
@@ -241,20 +241,63 @@ export function QuotationComposer({
         </Card>
 
         <Card>
-          <CardHeader title="Quotation summary" />
-          <dl className="flex flex-col gap-2 px-4 pb-4 text-[13px] sm:px-5">
-            <div className="flex justify-between"><dt className="text-muted">Subtotal</dt><dd className="tabular">{money(subtotal, currency)}</dd></div>
-            <div className="flex justify-between"><dt className="text-muted">Discount</dt><dd className="tabular">− {money(discountN, currency)}</dd></div>
-            <div className="flex justify-between"><dt className="text-muted">Tax</dt><dd className="tabular">{money(shownTaxN, currency)}</dd></div>
-            <div className="flex justify-between border-t border-line pt-2 text-base font-semibold"><dt>Total</dt><dd className="tabular">{money(total, currency)}</dd></div>
-          </dl>
-          <p className="px-4 pb-4 text-[11px] text-muted sm:px-5">Shown as you type. The stored total is computed by the pricing step from the saved lines.</p>
+          <CardHeader title="Template & Settings" description="Amounts in the deal's currency." />
+          <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+            <label className="flex flex-col gap-1">
+              <span className={labelClass}>Discount</span>
+              <input name="discount" type="number" min="0" step="0.01" value={discount} onChange={(e) => setDiscount(e.target.value)} className={inputClass} placeholder="0" />
+            </label>
+            <div className="flex flex-col gap-1">
+            <label className="flex flex-col gap-1">
+              <span className={labelClass}>Tax{taxRatePercent !== null ? ` (GST ${taxRatePercent}%)` : ''}</span>
+              <input
+                name="tax"
+                type="number"
+                min="0"
+                step="0.01"
+                value={shownTax}
+                onChange={(e) => {
+                  setTax(e.target.value);
+                  setGst(false);
+                }}
+                className={inputClass}
+                placeholder="0"
+              />
+            </label>
+              <label className="flex items-center gap-2 text-[12px] text-muted">
+                <input
+                  type="checkbox"
+                  checked={gstOn}
+                  onChange={(e) => {
+                    setGst(e.target.checked);
+                    if (e.target.checked) setTax(String(gstTax));
+                  }}
+                  className="h-4 w-4 rounded border-line-strong"
+                />
+                GST {gstRate}% on the discounted subtotal
+                {deal?.billingMode === 'gst'
+                  ? ' — pre-filled from the project’s confirmed GST billing mode'
+                  : deal?.billingMode === 'non_gst'
+                    ? ' — the project’s confirmed mode is non-GST; left off'
+                    : ' — no confirmed billing mode on this deal yet; manual'}
+              </label>
+              {!gstOn && suggestedTax !== null && suggestedTax > 0 && Number(tax) !== suggestedTax ? (
+                <button type="button" onClick={() => setTax(String(suggestedTax))} className="self-start text-[11px] font-medium text-brand hover:underline">
+                  Apply {taxRatePercent}% → {money(suggestedTax, currency)}
+                </button>
+              ) : (
+                <span className="text-[11px] text-muted">Every quotation says GST is extra; enter the tax this one carries.</span>
+              )}
+            </div>
+          </div>
         </Card>
+
       </div>
 
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
       <Card>
         <CardHeader
-          title="Services / items"
+          title="Services / Items"
           actions={
             <button type="button" onClick={() => setLines((ls) => [...ls, { key: Date.now(), description: '', quantity: '1', unitPrice: '' }])} className={buttonClass('primary', 'sm')}>
               <IconPlus size={14} />
@@ -312,63 +355,23 @@ export function QuotationComposer({
           </div>
         ) : null}
       </Card>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card>
-          <CardHeader title="Pricing" description="Amounts in the deal's currency." />
-          <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2 sm:px-5">
-            <label className="flex flex-col gap-1">
-              <span className={labelClass}>Discount</span>
-              <input name="discount" type="number" min="0" step="0.01" value={discount} onChange={(e) => setDiscount(e.target.value)} className={inputClass} placeholder="0" />
-            </label>
-            <div className="flex flex-col gap-1">
-            <label className="flex flex-col gap-1">
-              <span className={labelClass}>Tax{taxRatePercent !== null ? ` (GST ${taxRatePercent}%)` : ''}</span>
-              <input
-                name="tax"
-                type="number"
-                min="0"
-                step="0.01"
-                value={shownTax}
-                onChange={(e) => {
-                  setTax(e.target.value);
-                  setGst(false);
-                }}
-                className={inputClass}
-                placeholder="0"
-              />
-            </label>
-              <label className="flex items-center gap-2 text-[12px] text-muted">
-                <input
-                  type="checkbox"
-                  checked={gstOn}
-                  onChange={(e) => {
-                    setGst(e.target.checked);
-                    if (e.target.checked) setTax(String(gstTax));
-                  }}
-                  className="h-4 w-4 rounded border-line-strong"
-                />
-                GST {gstRate}% on the discounted subtotal
-                {deal?.billingMode === 'gst'
-                  ? ' — pre-filled from the project’s confirmed GST billing mode'
-                  : deal?.billingMode === 'non_gst'
-                    ? ' — the project’s confirmed mode is non-GST; left off'
-                    : ' — no confirmed billing mode on this deal yet; manual'}
-              </label>
-              {!gstOn && suggestedTax !== null && suggestedTax > 0 && Number(tax) !== suggestedTax ? (
-                <button type="button" onClick={() => setTax(String(suggestedTax))} className="self-start text-[11px] font-medium text-brand hover:underline">
-                  Apply {taxRatePercent}% → {money(suggestedTax, currency)}
-                </button>
-              ) : (
-                <span className="text-[11px] text-muted">Every quotation says GST is extra; enter the tax this one carries.</span>
-              )}
-            </div>
-          </div>
+      <Card>
+          <CardHeader title="Quotation Summary" />
+          <dl className="flex flex-col gap-2 px-4 pb-4 text-[13px] sm:px-5">
+            <div className="flex justify-between"><dt className="text-muted">Subtotal</dt><dd className="tabular">{money(subtotal, currency)}</dd></div>
+            <div className="flex justify-between"><dt className="text-muted">Discount</dt><dd className="tabular">− {money(discountN, currency)}</dd></div>
+            <div className="flex justify-between"><dt className="text-muted">Tax</dt><dd className="tabular">{money(shownTaxN, currency)}</dd></div>
+            <div className="flex justify-between border-t border-line pt-2 text-base font-semibold"><dt>Total</dt><dd className="tabular">{money(total, currency)}</dd></div>
+          </dl>
+          <p className="px-4 pb-4 text-[11px] text-muted sm:px-5">Shown as you type. The stored total is computed by the pricing step from the saved lines.</p>
         </Card>
+      </div>
 
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+        <div className="flex min-w-0 flex-col gap-4">
         {structures && structures.length > 0 ? (
           <Card>
-            <CardHeader title="Payment schedule preview" description="How the total splits under the agency's payment terms. A preview only — the plan is set on the project once the deal is won." />
+            <CardHeader title="Payment Schedule" description="How the total splits under the agency's payment terms. A preview only — the plan is set on the project once the deal is won." />
             <div className="flex flex-col gap-2 px-4 pb-4 sm:px-5">
               <select value={structureName || suggestedStructure?.name || ''} onChange={(e) => setStructureName(e.target.value)} aria-label="Payment structure" className={selectClass}>
                 {structures.map((st) => (
@@ -397,14 +400,6 @@ export function QuotationComposer({
         ) : null}
 
         <Card>
-          <CardHeader title="Terms & conditions" description="One clause per line. Printed on the PDF as the commercial terms; the standard clauses are pre-filled and every edit is what the owner approves." />
-          <div className="flex flex-col gap-2 px-4 pb-4 sm:px-5">
-            <textarea name="commercialTerms" rows={6} maxLength={15000} defaultValue={COMMERCIAL_TERMS.join('\n')} className={textareaClass} aria-label="Commercial terms, one per line" />
-            <span className="text-[11px] text-muted">The validity clause is printed from the date above; leave it as it is unless this quotation's terms differ.</span>
-          </div>
-        </Card>
-
-        <Card>
           <CardHeader title="Approval" description="A quotation reaches the client only after the owner approves it." />
           <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
             <label className="flex items-center gap-2 text-[13px]">
@@ -419,6 +414,15 @@ export function QuotationComposer({
             ) : null}
           </div>
         </Card>
+        </div>
+        <Card>
+          <CardHeader title="Terms & Conditions" description="One clause per line. Printed on the PDF as the commercial terms; the standard clauses are pre-filled and every edit is what the owner approves." />
+          <div className="flex flex-col gap-2 px-4 pb-4 sm:px-5">
+            <textarea name="commercialTerms" rows={6} maxLength={15000} defaultValue={COMMERCIAL_TERMS.join('\n')} className={textareaClass} aria-label="Commercial terms, one per line" />
+            <span className="text-[11px] text-muted">The validity clause is printed from the date above; leave it as it is unless this quotation's terms differ.</span>
+          </div>
+        </Card>
+
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2 rounded-xl border border-line bg-surface p-3 shadow-xs">

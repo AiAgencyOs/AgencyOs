@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { cx, TONE_CHIP, TONE_TEXT, type Tone } from '../tokens';
+import { cx, TONE_CHIP, type Tone } from '../tokens';
 import { Badge } from './badge';
 
 /**
@@ -25,6 +25,7 @@ export function Stat({
   trend,
   href,
   className,
+  compact = false,
 }: {
   label: React.ReactNode;
   value: React.ReactNode;
@@ -40,33 +41,16 @@ export function Stat({
   trend?: { direction: 'up' | 'down'; label: React.ReactNode; tone?: 'success' | 'danger' };
   href?: string;
   className?: string;
+  /** Narrower chip and padding for a six-across KPI row (the project overview). */
+  compact?: boolean;
 }) {
   const trendTone = trend ? (trend.tone ?? (trend.direction === 'up' ? 'success' : 'danger')) : undefined;
 
-  const body = (
+  const figure = (
     <>
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</p>
-        {icon ? (
-          <span
-            className={cx(
-              'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
-              TONE_CHIP[tone],
-            )}
-          >
-            {icon}
-          </span>
-        ) : null}
-      </div>
-      <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <p
-          className={cx(
-            'tabular text-2xl font-semibold leading-none tracking-tight sm:text-[28px]',
-            tone === 'neutral' ? 'text-foreground' : TONE_TEXT[tone],
-          )}
-        >
-          {value}
-        </p>
+      <p className="text-[13px] font-medium leading-tight text-muted">{label}</p>
+      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <p className="tabular max-w-full break-words text-[22px] font-bold leading-none tracking-tight text-foreground sm:text-2xl">{value}</p>
         {trend && trendTone ? (
           <Badge tone={trendTone} className="gap-1">
             <span aria-hidden>{trend.direction === 'up' ? '↑' : '↓'}</span>
@@ -74,19 +58,39 @@ export function Stat({
           </Badge>
         ) : null}
       </div>
-      {caption ? <p className="mt-1.5 text-xs leading-relaxed text-muted">{caption}</p> : null}
+      {caption ? <p className="mt-1.5 text-xs leading-snug text-muted">{caption}</p> : null}
     </>
   );
 
+  // The reference's tile: a soft icon chip on the left, the label, the number
+  // (with its delta) and the caption stacked to its right.
+  const body = icon ? (
+    <div className="flex items-center gap-3">
+      <span
+        className={cx(
+          'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl [&>svg]:h-5 [&>svg]:w-5',
+          compact ? 'sm:h-11 sm:w-11' : 'sm:h-12 sm:w-12 sm:rounded-xl 2xl:h-14 2xl:w-14 2xl:rounded-2xl sm:[&>svg]:h-6 sm:[&>svg]:w-6',
+          TONE_CHIP[tone],
+        )}
+      >
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1">{figure}</div>
+    </div>
+  ) : (
+    figure
+  );
+
   const skin =
-    'rounded-xl border border-line bg-surface p-4 shadow-xs transition-colors sm:p-5';
+    'rounded-xl border border-line bg-surface p-4 shadow-xs transition-colors';
+  const pad = compact ? 'sm:p-3.5' : 'sm:p-5';
 
   return href ? (
-    <Link href={href} className={cx(skin, 'block hover:bg-surface-hover', className)}>
+    <Link href={href} className={cx(skin, pad, 'block hover:bg-surface-hover', className)}>
       {body}
     </Link>
   ) : (
-    <div className={cx(skin, className)}>{body}</div>
+    <div className={cx(skin, pad, className)}>{body}</div>
   );
 }
 

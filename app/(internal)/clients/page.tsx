@@ -14,9 +14,11 @@ import { ClientPreviewButton } from './preview-drawer';
 import {
   Avatar,
   Badge,
+  Card,
   buttonClass,
   cx,
   DataTable,
+  DetailPanel,
   DEFAULT_PAGE_SIZE,
   EmptyState,
   FilterBar,
@@ -40,7 +42,7 @@ import {
   type SortDirection,
 } from '@/ui';
 
-export const metadata: Metadata = { title: 'Clients' };
+export const metadata: Metadata = { title: 'Client Management' };
 
 function money(minor: number, currency: string): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(minor / 100);
@@ -48,32 +50,29 @@ function money(minor: number, currency: string): string {
 
 type Row = Awaited<ReturnType<typeof listClients>>[number];
 
-const columnsFor = (clock: AgencyClock, mayEdit: boolean): Column<Row>[] => [
+const columnsFor = (clock: AgencyClock, indexOf: (id: string) => number): Column<Row>[] => [
+  { key: 'n', header: '#', desktopOnly: true, cellClassName: 'tabular text-muted', cell: (c) => indexOf(c.id) },
   {
     key: 'name',
-    header: 'Client name',
+    header: 'Client Name',
     primary: true,
     cell: (c) => (
       <span className="flex items-center gap-2.5">
         <Avatar name={c.name} size="md" />
-        <span className="min-w-0">
-          <span className="block truncate">{c.name}</span>
-          {c.billingEmail ? <span className="block truncate text-xs font-normal text-muted">{c.billingEmail}</span> : null}
-        </span>
+        <span className="block max-w-[9rem] truncate">{c.name}</span>
       </span>
     ),
   },
+  { key: 'email', header: 'Email / Phone', desktopOnly: true, cellClassName: 'text-xs text-muted', cell: (c) => <span className="block max-w-[7rem] truncate">{c.billingEmail ?? '—'}</span> },
   {
     key: 'projects',
     header: 'Projects',
     desktopOnly: true,
-    cellClassName: 'text-muted',
+    cellClassName: 'text-muted whitespace-nowrap',
     cell: (c) => (c.projectsTotal === 0 ? 'None yet' : `${c.projectsActive} active · ${c.projectsTotal} total`),
   },
   // SCR-014 — revenue is what was PAID; invoiced is the claim beside it.
-  { key: 'paid', header: 'Revenue (paid)', align: 'right', cellClassName: 'tabular', cell: (c) => money(c.paidMinor, c.currency), sortKey: 'paid' },
-  { key: 'invoiced', header: 'Invoiced', align: 'right', desktopOnly: true, cellClassName: 'tabular text-muted', cell: (c) => money(c.invoicedMinor, c.currency), sortKey: 'invoiced' },
-  { key: 'outstanding', header: 'Outstanding', align: 'right', cellClassName: 'tabular font-medium', cell: (c) => money(c.outstandingMinor, c.currency), sortKey: 'outstanding' },
+  { key: 'invoiced', header: 'Total Value', align: 'right', cellClassName: 'tabular font-medium', cell: (c) => money(c.invoicedMinor, c.currency), sortKey: 'invoiced' },
   {
     key: 'status',
     header: 'Status',
@@ -84,39 +83,7 @@ const columnsFor = (clock: AgencyClock, mayEdit: boolean): Column<Row>[] => [
       </Badge>
     ),
   },
-  {
-    // SCR-014 — the relationship owner, with the tags beneath.
-    key: 'owner',
-    header: 'Owner',
-    desktopOnly: true,
-    cell: (c) => (
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className={c.ownerName ? 'text-foreground' : 'text-muted'}>{c.ownerName ?? 'Nobody'}</span>
-        {c.tags.length > 0 ? (
-          <span className="flex flex-wrap gap-1">
-            {c.tags.slice(0, 4).map((t) => (
-              <Badge key={t} tone="neutral">{t}</Badge>
-            ))}
-            {c.tags.length > 4 ? <span className="text-[11px] text-faint">+{c.tags.length - 4}</span> : null}
-          </span>
-        ) : null}
-      </span>
-    ),
-  },
-  { key: 'created', header: 'Joined', align: 'right', cellClassName: 'text-muted whitespace-nowrap', cell: (c) => clock.date(c.createdAt), sortKey: 'created' },
-  {
-    // SCR-014: the preview drawer, fetched on open (preview-actions.ts).
-    key: 'preview',
-    header: '',
-    align: 'right',
-    desktopOnly: true,
-    cell: (c) => (
-      <span className="flex items-center justify-end gap-1">
-        <ClientPreviewButton clientId={c.id} name={c.name} />
-        {mayEdit ? <ClientEditButton client={{ id: c.id, name: c.name, legalName: c.legalName, gstin: c.gstin, pan: c.pan, billingAddress: c.billingAddress }} /> : null}
-      </span>
-    ),
-  },
+  { key: 'created', header: 'Joined Date', cellClassName: 'text-muted whitespace-nowrap', cell: (c) => clock.date(c.createdAt), sortKey: 'created' },
 ];
 
 const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
@@ -140,13 +107,13 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
 export default async function ClientsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; q?: string; tag?: string; owner?: string }>;
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; q?: string; tag?: string; owner?: string; client?: string }>;
 }) {
   const context = await requireInternal('/clients');
   const clock = await agencyClock();
   if (!can(context, 'project.read')) return <PermissionDenied />;
 
-  const { page: pageParam, sort: sortKey, dir, status, q: qRaw, tag: tagRaw, owner: ownerRaw } = await searchParams;
+  const { page: pageParam, sort: sortKey, dir, status, q: qRaw, tag: tagRaw, owner: ownerRaw, client: clientParam } = await searchParams;
   const q = (qRaw ?? '').trim();
   const tag = (tagRaw ?? '').trim().toLowerCase();
   const owner = (ownerRaw ?? '').trim();
@@ -177,6 +144,7 @@ export default async function ClientsPage({
   const filtered = bySearch.filter((c) => (!tag || c.tags.includes(tag)) && (!owner || (owner === 'none' ? c.ownerId === null : c.ownerId === owner)));
   const clients = sortRows(filtered, sortKey, direction, COMPARATORS);
   const { page, pageCount, rows: pageRows } = paginate(clients, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
+  const selected = pageRows.find((c) => c.id === clientParam) ?? pageRows[0] ?? null;
   const keep = [status ? `status=${status}` : '', q ? `q=${encodeURIComponent(q)}` : '', ...facet].filter(Boolean);
   const qs = (extra: string) => `/clients?${keep.length ? `${keep.join('&')}&` : ''}${extra}`;
   const chip = (s: string | null) => `/clients?${[s ? `status=${s}` : '', q ? `q=${encodeURIComponent(q)}` : '', ...facet].filter(Boolean).join('&')}`;
@@ -191,41 +159,40 @@ export default async function ClientsPage({
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
-        title="Client management"
+        title="Client Management"
         description="Manage your clients, track projects, communication and business growth."
         actions={
           <>
             <a href={`/api/clients/export${exportQuery ? `?${exportQuery}` : ''}`} className={buttonClass('secondary', 'sm')}>
               <IconDownload size={14} />
-              Export CSV
+              Export
             </a>
             {can(context, 'organization.settings') ? (
               <Link href="/import" className={buttonClass('secondary', 'sm')}>
                 <IconImport size={14} />
-                Import
+                Import Clients
               </Link>
             ) : null}
-            {can(context, 'project.write') ? <CreateLeadButton mode="client" label="Add client" /> : null}
+            {can(context, 'project.write') ? <CreateLeadButton mode="client" label="Add Client" /> : null}
           </>
         }
       />
 
       {allClients.length > 0 ? (
-        <StatGrid cols={6}>
-          <Stat label="Total clients" value={String(allClients.length)} caption={`${archived.length} archived · ${owing.length} owing`} tone="brand" icon={<IconUsers size={16} />} href="/clients" />
-          <Stat label="Active clients" value={String(active.length)} caption={`${withProjects.length} with an active project`} tone="success" icon={<IconUser size={16} />} href="/clients?status=active" />
+        <StatGrid cols={5}>
+          <Stat label="Total Clients" value={String(allClients.length)} caption={`${archived.length} archived · ${owing.length} owing`} tone="brand" icon={<IconUsers size={16} />} href="/clients" />
+          <Stat label="Active Clients" value={String(active.length)} caption={`${withProjects.length} with an active project`} tone="success" icon={<IconUser size={16} />} href="/clients?status=active" />
           {/* SCR-014 — completed and pending are counts of PROJECTS by client, from the projects table. */}
-          <Stat label="Completed" value={String(completed.length)} caption="Clients with a completed project" tone="info" icon={<IconCheck size={16} />} href="/clients?status=completed" />
-          <Stat label="Pending" value={String(pendingClients.length)} caption="Clients with a project not yet completed" tone={pendingClients.length > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/clients?status=pending" />
+          <Stat label="Completed Clients" value={String(completed.length)} caption="Clients with a completed project" tone="info" icon={<IconCheck size={16} />} href="/clients?status=completed" />
+          <Stat label="Pending Clients" value={String(pendingClients.length)} caption="With a project not yet completed" tone={pendingClients.length > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/clients?status=pending" />
           <Stat
-            label="Total revenue"
+            label="Total Revenue"
             value={money(totalPaid, currency)}
-            caption={`Paid, not invoiced · ${money(totalInvoiced, currency)} invoiced${sameCurrency ? '' : ` · ${currency} only`}`}
+            caption={`Paid · ${money(totalInvoiced, currency)} invoiced${sameCurrency ? '' : ` · ${currency} only`}`}
             tone="accent"
             icon={<IconRupee size={16} />}
             href="/finance"
           />
-          <Stat label="Owing" value={String(owing.length)} caption="With an outstanding balance" tone={owing.length > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/clients?status=owing" />
         </StatGrid>
       ) : null}
 
@@ -233,21 +200,21 @@ export default async function ClientsPage({
         <FilterBar>
           <FilterChips
             options={[
-              { key: 'all', label: `All clients (${allClients.length})`, href: chip(null), active: !status },
+              { key: 'all', label: `All Clients (${allClients.length})`, href: chip(null), active: !status },
               { key: 'active', label: `Active (${active.length})`, href: chip('active'), active: status === 'active' },
-              { key: 'working', label: `Working (${withProjects.length})`, href: chip('working'), active: status === 'working' },
-              { key: 'completed', label: `Completed (${completed.length})`, href: chip('completed'), active: status === 'completed' },
               { key: 'pending', label: `Pending (${pendingClients.length})`, href: chip('pending'), active: status === 'pending' },
+              { key: 'completed', label: `Completed (${completed.length})`, href: chip('completed'), active: status === 'completed' },
+              { key: 'working', label: `Working (${withProjects.length})`, href: chip('working'), active: status === 'working' },
               { key: 'owing', label: `Owing (${owing.length})`, href: chip('owing'), active: status === 'owing' },
               { key: 'archived', label: `Archived (${archived.length})`, href: chip('archived'), active: status === 'archived' },
             ]}
           />
-          <form method="get" action="/clients" className="flex flex-wrap items-center gap-2">
+          <form method="get" action="/clients" className="ml-auto flex flex-wrap items-center gap-2">
             {status ? <input type="hidden" name="status" value={status} /> : null}
             {tag ? <input type="hidden" name="tag" value={tag} /> : null}
             {owner ? <input type="hidden" name="owner" value={owner} /> : null}
-            <input name="q" defaultValue={q} placeholder="Search name or email…" aria-label="Search clients" className={cx(inputClass, 'w-56')} />
-            <button type="submit" className={buttonClass('secondary', 'sm')}>Search</button>
+            <input name="q" defaultValue={q} placeholder="Search clients…" aria-label="Search clients" className={cx(inputClass, 'w-56')} />
+            <button type="submit" className={buttonClass('secondary', 'sm')}>Filter</button>
             {q ? <Link href={chip(status ?? null)} className="text-xs text-muted hover:underline">Clear</Link> : null}
           </form>
           {allTags.length > 0 ? (
@@ -273,16 +240,56 @@ export default async function ClientsPage({
       <SavedViewsBar page="/clients" currentQuery={currentQuery} views={savedViews} />
 
       {clients.length > 0 ? (
-        <>
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="flex min-w-0 flex-col gap-3">
+          <Card className="px-1 pb-1">
           <DataTable
+            dense
             rows={pageRows}
-            columns={columnsFor(clock, mayEditClients)}
+            columns={columnsFor(clock, (id) => clients.findIndex((x) => x.id === id) + 1)}
             getKey={(c) => c.id}
-            href={(c) => `/clients/${c.id}`}
+            rowActions={(c) => [
+              { key: 'open', label: 'Open client', href: `/clients/${c.id}` },
+              { key: 'select', label: 'Show details', href: qs(`client=${c.id}`) },
+              { key: 'preview', label: 'Preview', node: <ClientPreviewButton clientId={c.id} name={c.name} /> },
+              ...(mayEditClients ? [{ key: 'edit', label: 'Edit', node: <ClientEditButton client={{ id: c.id, name: c.name, legalName: c.legalName, gstin: c.gstin, pan: c.pan, billingAddress: c.billingAddress }} /> }] : []),
+            ]}
             sort={{ key: sortKey, direction, makeHref: (key, nextDirection) => qs(`sort=${key}&dir=${nextDirection}`) }}
           />
+          </Card>
           <Pagination page={page} pageCount={pageCount} makeHref={(p) => qs(`${sortKey ? `sort=${sortKey}&dir=${direction}&` : ''}page=${p}`)} />
-        </>
+          </div>
+          {selected ? (
+            <DetailPanel
+              title="Client Details"
+              actions={<Link href={`/clients/${selected.id}`} className="text-xs font-medium text-brand hover:underline">Open</Link>}
+              rows={[
+                { label: 'Client', value: selected.name },
+                { label: 'Status', value: <Badge tone={selected.status === 'active' ? 'success' : 'neutral'} dot>{selected.status === 'active' ? 'Active' : 'Archived'}</Badge> },
+                { label: 'Client since', value: clock.date(selected.createdAt) },
+                { label: 'Email', value: selected.billingEmail },
+                { label: 'Owner', value: selected.ownerName ?? 'Nobody' },
+                { label: 'Total projects', value: String(selected.projectsTotal) },
+                { label: 'Total value', value: money(selected.invoicedMinor, selected.currency) },
+                { label: 'Paid', value: money(selected.paidMinor, selected.currency) },
+                { label: 'Pending', value: money(selected.outstandingMinor, selected.currency) },
+              ]}
+            >
+              <div className="border-t border-line px-4 py-3 sm:px-5">
+                <p className="mb-2 text-sm font-bold text-foreground">Client Tags</p>
+                {selected.tags.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {selected.tags.map((t) => (
+                      <Badge key={t} tone="info">{t}</Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[13px] text-muted">No tags yet.</p>
+                )}
+              </div>
+            </DetailPanel>
+          ) : null}
+        </div>
       ) : (
         <EmptyState
           icon={<IconUser size={22} />}
