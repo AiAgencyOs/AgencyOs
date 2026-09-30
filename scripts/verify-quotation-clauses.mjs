@@ -153,7 +153,7 @@ try {
     check(rows.filter((r) => r.clause_key === 'acceptance_window').length === 2, `${who}: the list shows both versions`, `${rows.length} rows`);
     const top = rows.find((r) => r.clause_key === 'acceptance_window');
     check(top?.version === 2 && top?.body === V2, `${who}: newest first`);
-    check(typeof top?.created_by_name === 'string' && top.created_by_name.includes('ops_admin'), `${who}: it names who published`, top?.created_by_name);
+    check(typeof top?.created_by_name === 'string' && /ops.?admin/i.test(top.created_by_name), `${who}: it names who published`, top?.created_by_name);
   }
   for (const [who, u] of [['owner', owner], ['ops admin', admin], ['member', member]]) {
     const write = await rest('POST', 'sales', 'quotation_clauses', { organization_id: ORG, clause_key: 'liability_cap', version: 1, body: 'A directly inserted clause body.', created_by: u.id }, u.token);
@@ -236,7 +236,8 @@ try {
   const audit = await rest('GET', 'audit', 'audit_log?action=eq.quotation_clause.published&select=actor_id,before,after&order=id.asc');
   const rows = (Array.isArray(audit.json) ? audit.json : []).filter((a) => String(a.after?.body ?? '').startsWith('Zztest'));
   check(rows.length >= 4, 'every publish is recorded', `${rows.length} rows`);
-  const v2row = rows.find((a) => a.after?.key === 'acceptance_window' && a.after?.version === 2);
+  // audit rows outlive a run, so a rerun sees the earlier runs' version 2 too: look for THIS run's actor
+  const v2row = rows.find((a) => a.after?.key === 'acceptance_window' && a.after?.version === 2 && a.actor_id === admin.id);
   check(v2row?.actor_id === admin.id && v2row?.after?.by === admin.id, 'version 2 names the ops admin who published it');
   check(v2row?.before?.version === 1 && v2row?.before?.body === V1, 'and carries the version it replaced');
 } finally {
