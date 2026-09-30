@@ -34,13 +34,13 @@ export function PageHeader({
             {title}
           </h1>
           {description ? (
-            <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
+            <p className="mt-1.5 max-w-2xl break-words text-[13px] leading-relaxed text-muted sm:text-sm">
               {description}
             </p>
           ) : null}
         </div>
         {actions ? (
-          <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
+          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">{actions}</div>
         ) : null}
       </div>
       {meta ? <div className="flex flex-wrap items-center gap-2">{meta}</div> : null}

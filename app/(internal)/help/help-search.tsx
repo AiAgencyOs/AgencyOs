@@ -84,8 +84,8 @@ export function HelpSearch({ screens, initialQuery }: { screens: readonly HelpSc
                       )}
                     </p>
                   </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-                    <Badge tone={s.status.startsWith('COMPLETE') ? 'success' : s.status.startsWith('GROUPED') ? 'info' : 'warning'}>
+                  <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
+                    <Badge wrap tone={s.status.startsWith('COMPLETE') ? 'success' : s.status.startsWith('GROUPED') ? 'info' : 'warning'}>
                       {s.status}
                     </Badge>
                     <Badge tone="neutral">{s.capability}</Badge>

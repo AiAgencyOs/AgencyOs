@@ -39,7 +39,7 @@ export default async function ProfilePage() {
         meta={
           <>
             <Badge tone="neutral">{humanize(profile.role)}</Badge>
-            <Badge tone="info">
+            <Badge tone="info" wrap>
               Times shown in {clock.timeZone} — now {clock.dateTime(now)}
             </Badge>
           </>

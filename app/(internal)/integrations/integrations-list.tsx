@@ -89,7 +89,7 @@ export function IntegrationsList({
                   {i.category} · {i.detail}
                 </span>
               </div>
-              <span className="flex items-center gap-2 text-xs">
+              <span className="flex flex-wrap items-center gap-2 text-xs">
                 <span className={STYLE[i.lifecycle].text}>{i.lifecycle.replace('_', ' ')}</span>
                 {i.external ? (
                   <span className="rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted">external</span>
