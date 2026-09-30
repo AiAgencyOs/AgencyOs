@@ -105,6 +105,7 @@ export default async function SettingsGeneralPage() {
           <Link href="/security/users" className={buttonClass('secondary', 'sm')}>Users &amp; roles</Link>
           <Link href="/security/incidents" className={buttonClass('secondary', 'sm')}>Incidents</Link>
           <Link href="/integrations" className={buttonClass('secondary', 'sm')}>Integrations</Link>
+          <Link href="/security/keys" className={buttonClass('primary', 'sm')}>Keys &amp; secrets</Link>
           <Link href="/agents#vault" className={buttonClass('secondary', 'sm')}>Provider key vault</Link>
           <Link href="/governance/overrides" className={buttonClass('secondary', 'sm')}>Overrides &amp; emergency controls</Link>
         </div>

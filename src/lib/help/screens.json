@@ -1,6 +1,6 @@
 {
   "source": "docs/AGENCYOS_ADMIN_MASTER_SCREEN_INVENTORY.md",
-  "inventoryHash": "bc203f26d471f98e57ce0015c38d380200c06785a1dabd55903a12d69e700345",
+  "inventoryHash": "15c346323c80eb339e9a489aa81db05c0367a48a93d442eb2a88b347da84fc1e",
   "count": 71,
   "screens": [
     {
@@ -935,12 +935,13 @@
       "id": "SCR-071",
       "title": "Organization Settings & Business Rules",
       "module": "Organization Settings",
-      "route": "/settings (General, Commercial, Team, Communication, Approvals, Finance)",
+      "route": "/settings (General, Commercial, Team, Communication, Approvals, Finance), /security/keys (Keys & secrets)",
       "routes": [
-        "/settings"
+        "/settings",
+        "/security/keys"
       ],
       "capability": "organization.settings",
-      "reads": "core.organizations.settings through set_organization_setting (whitelist + audit); finance.payment_accounts (Doc 15 §9) through createPaymentAccount / setPaymentAccountStatus",
+      "reads": "core.organizations.settings through set_organization_setting (whitelist + audit); finance.payment_accounts (Doc 15 §9) through createPaymentAccount / setPaymentAccountStatus; core.secret_credentials (every integration key, encrypted) through core.store_secret / revoke_secret / secret_status / record_secret_check (owner stores and revokes, admin verifies)",
       "live": "—",
       "status": "COMPLETE"
     }

@@ -383,6 +383,14 @@ jobs:
       - name: A scope baseline moves only by transition — Doc 11
         run: npm run db:verify:scope
 
+      # Every integration key is kept in one encrypted vault. Who may store,
+      # replace and revoke one, that no role can reach the table directly, and
+      # that the audit names the slot and never the value are all database
+      # rules: a policy with no grant, four security-definer doors, an
+      # append-only log. None can be checked by reading TypeScript.
+      - name: A key is kept in one place — the Keys & secrets vault
+        run: npm run db:verify:vault
+
       # Document 05 is thirteen pages and had no tables. Two rules are
       # structural rather than advisory and both are checked here: a memory
       # claiming explicit or verified confidence must carry provenance, and an

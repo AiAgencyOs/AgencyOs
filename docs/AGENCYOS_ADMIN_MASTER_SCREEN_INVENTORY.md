@@ -173,7 +173,7 @@ a record that only its editor changes.
 
 | ID | Screen | Route | Guard | Reads | Live | Status |
 |---|---|---|---|---|---|---|
-| SCR-071 | Organization Settings & Business Rules | `/settings` (General, Commercial, Team, Communication, Approvals, Finance) | `organization.settings` | `core.organizations.settings` through `set_organization_setting` (whitelist + audit); `finance.payment_accounts` (Doc 15 §9) through `createPaymentAccount` / `setPaymentAccountStatus` | — | COMPLETE |
+| SCR-071 | Organization Settings & Business Rules | `/settings` (General, Commercial, Team, Communication, Approvals, Finance), `/security/keys` (Keys & secrets) | `organization.settings` | `core.organizations.settings` through `set_organization_setting` (whitelist + audit); `finance.payment_accounts` (Doc 15 §9) through `createPaymentAccount` / `setPaymentAccountStatus`; `core.secret_credentials` (every integration key, encrypted) through `core.store_secret` / `revoke_secret` / `secret_status` / `record_secret_check` (owner stores and revokes, admin verifies) | — | COMPLETE |
 
 ## 2. Totals
 
