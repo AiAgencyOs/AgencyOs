@@ -91,7 +91,7 @@ other provider keys, `VAULT_ENCRYPTION_KEY`, `WHATSAPP_APP_SECRET`,
 (`ai.provider_credentials`, AES-256-GCM) and are shown only as
 present/absent — Settings › General is explicit that secrets are never
 rendered or sent to the browser. Every key with a vault slot can now also be
-added under Governance & Security › Keys & secrets; screens that say such a key
+added under Security & Audit › Keys & secrets; screens that say such a key
 is missing name that screen (and link to it) with the environment as the
 alternative.
 

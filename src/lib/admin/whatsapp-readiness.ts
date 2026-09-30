@@ -27,10 +27,10 @@ export async function readWhatsAppReadiness(): Promise<WhatsAppReadiness> {
     typeof settings.whatsapp_phone_number_id === 'string' && settings.whatsapp_phone_number_id.trim().length > 0;
 
   if (!tokenConfigured && !numberConfigured) {
-    return { ok: false, reason: 'WHATSAPP_ACCESS_TOKEN is not set (add it under Governance & Security › Keys & secrets) and no WhatsApp number is registered under Settings › Communication.' };
+    return { ok: false, reason: 'WHATSAPP_ACCESS_TOKEN is not set (add it under Security & Audit › Keys & secrets) and no WhatsApp number is registered under Settings › Communication.' };
   }
   if (!tokenConfigured) {
-    return { ok: false, reason: 'WHATSAPP_ACCESS_TOKEN is not set, so nothing can be sent — add it under Governance & Security › Keys & secrets.' };
+    return { ok: false, reason: 'WHATSAPP_ACCESS_TOKEN is not set, so nothing can be sent — add it under Security & Audit › Keys & secrets.' };
   }
   if (!numberConfigured) {
     return { ok: false, reason: 'No WhatsApp number is registered for this organization under Settings › Communication.' };

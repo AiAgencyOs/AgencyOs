@@ -19,7 +19,7 @@ type Show = (typeof SHOWS)[number];
 
 /**
  * Keys & secrets — one screen for every key the system uses. It hangs off
- * SCR-071 (Organization Settings) and sits under Governance & Security.
+ * SCR-071 (Organization Settings) and sits under Security & Audit.
  *
  * What it does: shows, for each key, where the running system reads it from
  * (the hosting environment or the encrypted vault), when a stored copy was set

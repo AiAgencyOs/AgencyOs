@@ -74,7 +74,7 @@ export function evaluateReadiness(s: ReadinessSignals): ReadinessCheck[] {
       s.productionProblems.length === 0
         ? 'productionConfigProblems() reports nothing missing'
         : `${s.productionProblems.length} unmet: ${s.productionProblems.slice(0, 6).join(', ')}`,
-    remediation: 'Add each missing key under Governance & Security › Keys & secrets, or set the missing values in the deployment environment (never in the product).',
+    remediation: 'Add each missing key under Security & Audit › Keys & secrets, or set the missing values in the deployment environment (never in the product).',
     external: true,
   });
 
@@ -107,7 +107,7 @@ export function evaluateReadiness(s: ReadinessSignals): ReadinessCheck[] {
             ? `verified with Meta ${s.whatsapp.verifiedAt}${s.whatsapp.verifiedNumber ? ` (${s.whatsapp.verifiedNumber})` : ''} — the test send to the internal recipient has not been made`
             : 'token and phone number id present — NOT yet verified against Meta',
     remediation: !whatsappConfigured
-      ? 'Add WHATSAPP_ACCESS_TOKEN under Governance & Security › Keys & secrets (or set it in the deployment environment) and the org phone number id under Settings › Communication, then verify.'
+      ? 'Add WHATSAPP_ACCESS_TOKEN under Security & Audit › Keys & secrets (or set it in the deployment environment) and the org phone number id under Settings › Communication, then verify.'
       : s.whatsapp.verifiedAt
         ? 'Send the test message to the internal recipient from Settings.'
         : 'Run "Verify configuration" on Settings, then send the test message to the internal recipient.',
@@ -129,7 +129,7 @@ export function evaluateReadiness(s: ReadinessSignals): ReadinessCheck[] {
           : 'a provider key is present — NOT yet exercised against the API',
     remediation: providerConfigured
       ? 'Run "Verify provider" on the Agents page — one real call, its answer recorded.'
-      : 'Add the provider API key under Governance & Security › Keys & secrets (or set it in the deployment environment).',
+      : 'Add the provider API key under Security & Audit › Keys & secrets (or set it in the deployment environment).',
     external: true,
   });
 
@@ -168,7 +168,7 @@ export function evaluateReadiness(s: ReadinessSignals): ReadinessCheck[] {
     title: 'Operational alerts reach a human',
     status: s.alertWebhookConfigured ? 'green' : 'yellow',
     evidence: s.alertWebhookConfigured ? 'ALERT_WEBHOOK_URL is set' : 'ALERT_WEBHOOK_URL is unset — alerts are only logged',
-    remediation: 'Add ALERT_WEBHOOK_URL under Governance & Security › Keys & secrets (or set it in the deployment environment) so failures page a person, not just the log.',
+    remediation: 'Add ALERT_WEBHOOK_URL under Security & Audit › Keys & secrets (or set it in the deployment environment) so failures page a person, not just the log.',
     external: true,
   });
 

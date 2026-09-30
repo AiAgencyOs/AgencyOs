@@ -7,7 +7,7 @@ import { CAPABILITIES } from '../src/lib/authz/permissions.ts';
 import { currentItem, NAV_MODULES, trailFor, visibleModulesFor } from '../app/(internal)/nav-config.ts';
 
 /**
- * The rail is the screen architecture's §2 list, in its order, and nothing
+ * The rail is the reference screenshots' module list, in its order (the PDF's §2 list, regrouped), and nothing
  * in it points at a page that does not exist or a capability that does not.
  */
 describe('the admin navigation is the screen architecture, sectioned', () => {
@@ -23,13 +23,15 @@ describe('the admin navigation is the screen architecture, sectioned', () => {
     'finance',
     'communication',
     'ai',
+    'approvals',
     'operations',
-    'governance',
+    'analytics',
     'integrations',
-    'settings',
+    'security',
+    'organization',
   ];
 
-  it('has the fifteen modules the PDF locks, in that order', () => {
+  it('has the modules in the order of the reference screenshots (the owner chose them over the PDF grouping, 2026-10-03)', () => {
     assert.deepEqual(
       NAV_MODULES.map((m) => m.key),
       LOCKED_ORDER,
