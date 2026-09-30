@@ -8,6 +8,8 @@ import { can } from '@/lib/authz/permissions';
 import { listTasksByMilestone } from '@/modules/projects/milestone-tasks-queries';
 import { listAssigneeCandidates } from '@/modules/projects/project-members-queries';
 import { getProject, listDevelopmentBreakdown, listInternalRoster, listPaymentPlan, listProjectFiles, listProjectTeam } from '@/modules/projects/queries';
+import { topLevelTasks } from '@/modules/projects/project-view-derive';
+import { countPeriods, periodDelta, trendOf } from '@/lib/admin/period-delta';
 import { readTaskCollabFor } from '@/modules/projects/task-collab-queries';
 import Link from 'next/link';
 
@@ -73,7 +75,7 @@ export default async function ProjectBoardPage({ params, searchParams }: { param
   // SCR-020: the assignee list reads from the project's members (20261001120000)
   // and falls back to the organisation roster when the project has none; the
   // phase filter is the payment milestone a task is filed under.
-  const [{ tasks, modules }, roster, clock, clientName, candidates, tasksByMilestone, milestones, team, files] = await Promise.all([
+  const [{ tasks: allTasks, modules }, roster, clock, clientName, candidates, tasksByMilestone, milestones, team, files] = await Promise.all([
     listDevelopmentBreakdown(projectId),
     listInternalRoster(),
     agencyClock(),
@@ -84,6 +86,8 @@ export default async function ProjectBoardPage({ params, searchParams }: { param
     listProjectTeam(projectId),
     listProjectFiles(projectId),
   ]);
+  // A subtask is drawn under its parent on the task page, not as a card of its own.
+  const tasks = topLevelTasks(allTasks);
   const milestoneByTask = new Map<string, string>();
   for (const [milestoneId, list] of Object.entries(tasksByMilestone)) for (const t of list) milestoneByTask.set(t.id, milestoneId);
   const milestoneName = new Map(milestones.map((m) => [m.id, m.name]));
@@ -99,6 +103,9 @@ export default async function ProjectBoardPage({ params, searchParams }: { param
   const boardTasks: BoardTask[] = tasks.map((t) => ({
     id: t.id,
     columnId: t.status,
+    status: t.status,
+    startOn: t.startOn,
+    labels: t.labels,
     title: t.title,
     description: t.description,
     estimateHours: t.estimateHours ?? null,
@@ -164,16 +171,14 @@ export default async function ProjectBoardPage({ params, searchParams }: { param
       <ProjectSubNav projectId={projectId} />
 
       <StatGrid cols={5}>
-        <Stat compact label="Total tasks" value={String(tasks.length)} caption={`${count('done')} completed`} tone="brand" icon={<IconList size={16} />} />
+        <Stat compact label="Total tasks" value={String(tasks.length)} caption={`${count('done')} completed`} tone="brand" icon={<IconList size={16} />} trend={trendOf(periodDelta(countPeriods(tasks.map((t) => t.createdAt), new Date())))} />
         <Stat compact label="In progress" value={String(count('in_progress'))} caption={`${pctOf(count('in_progress'))}%`} tone="warning" icon={<IconClock size={16} />} />
         <Stat compact label="In review" value={String(count('in_review'))} caption={`${pctOf(count('in_review'))}%`} tone="accent" icon={<IconSearch size={16} />} />
         <Stat compact label="Pending" value={String(count('todo'))} caption={`${pctOf(count('todo'))}%`} tone="danger" icon={<IconList size={16} />} />
         <Stat compact label="Days left" value={daysLeft === null ? '—' : String(daysLeft)} caption={project.ends_on ? `Due ${clock.date(project.ends_on)}` : 'No due date set'} tone={daysLeft !== null && daysLeft < 0 ? 'danger' : 'info'} icon={<IconAlert size={16} />} />
       </StatGrid>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_16rem]">
-        <div className="flex min-w-0 flex-col gap-4">
-          <ProjectBoard
+      <ProjectBoard
             projectId={projectId}
             columns={COLUMNS}
             tasks={boardTasks}
@@ -185,9 +190,56 @@ export default async function ProjectBoardPage({ params, searchParams }: { param
             initialMilestone={initialMilestone && milestoneName.has(initialMilestone) ? initialMilestone : ''}
             canWrite={canWrite}
             collab={collab}
+            currentUserId={context.userId}
+            todayKey={todayKey}
+            rail={
+              <>
+          <Card>
+            <CardHeader title="Project timeline" actions={<ViewAll href={`/projects/${projectId}/plan`} />} />
+            <div className="px-4 pb-4 sm:px-5">
+              {steps.length === 0 ? (
+                <p className="text-[13px] text-muted">No milestones planned yet.</p>
+              ) : (
+                <Timeline steps={steps} orientation="vertical" label="Project phases" />
+              )}
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader title="Team members" actions={<ViewAll href={`/projects/${projectId}/team`} />} />
+            {team.length === 0 ? (
+              <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No one assigned yet.</p>
+            ) : (
+              <ul className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+                {team.slice(0, 5).map((m) => (
+                  <li key={m.userId} className="flex items-center gap-3">
+                    <Avatar name={m.fullName} size="md" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium text-foreground">{m.fullName}</span>
+                      <span className="block truncate text-xs text-muted">{humanize(m.role)}</span>
+                    </span>
+                  </li>
+                ))}
+                {team.length > 5 ? (
+                  <li>
+                    <Link href={`/projects/${projectId}/team`} className="text-xs font-medium text-brand hover:underline">+{team.length - 5} more members</Link>
+                  </li>
+                ) : null}
+              </ul>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader title="Task summary" />
+            <div className="px-4 pb-4 sm:px-5 [&>div]:sm:flex-col! [&>div]:sm:items-start!">
+              {tasks.length === 0 ? <p className="text-[13px] text-muted">No tasks to summarise.</p> : <DonutChart data={donut} height={150} totalLabel="Total tasks" />}
+            </div>
+          </Card>
+              </>
+            }
           />
 
-          <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-3">
             <Card>
               <CardHeader title="Recent activity" actions={<ViewAll href={`/projects/${projectId}/activity`} />} />
               {recentDone.length === 0 ? (
@@ -256,52 +308,6 @@ export default async function ProjectBoardPage({ params, searchParams }: { param
               )}
             </Card>
           </div>
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-4">
-          <Card>
-            <CardHeader title="Project timeline" actions={<ViewAll href={`/projects/${projectId}/plan`} />} />
-            <div className="px-4 pb-4 sm:px-5">
-              {steps.length === 0 ? (
-                <p className="text-[13px] text-muted">No milestones planned yet.</p>
-              ) : (
-                <Timeline steps={steps} orientation="vertical" label="Project phases" />
-              )}
-            </div>
-          </Card>
-
-          <Card>
-            <CardHeader title="Team members" actions={<ViewAll href={`/projects/${projectId}/team`} />} />
-            {team.length === 0 ? (
-              <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No one assigned yet.</p>
-            ) : (
-              <ul className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
-                {team.slice(0, 5).map((m) => (
-                  <li key={m.userId} className="flex items-center gap-3">
-                    <Avatar name={m.fullName} size="md" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium text-foreground">{m.fullName}</span>
-                      <span className="block truncate text-xs text-muted">{humanize(m.role)}</span>
-                    </span>
-                  </li>
-                ))}
-                {team.length > 5 ? (
-                  <li>
-                    <Link href={`/projects/${projectId}/team`} className="text-xs font-medium text-brand hover:underline">+{team.length - 5} more members</Link>
-                  </li>
-                ) : null}
-              </ul>
-            )}
-          </Card>
-
-          <Card>
-            <CardHeader title="Task summary" />
-            <div className="px-4 pb-4 sm:px-5 [&>div]:sm:flex-col! [&>div]:sm:items-start!">
-              {tasks.length === 0 ? <p className="text-[13px] text-muted">No tasks to summarise.</p> : <DonutChart data={donut} height={150} totalLabel="Total tasks" />}
-            </div>
-          </Card>
-        </div>
-      </div>
     </div>
   );
 }

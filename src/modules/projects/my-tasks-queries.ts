@@ -74,3 +74,46 @@ export async function listMyTasksDetailed(userId: string): Promise<MyTaskDetail[
     moduleName: t.module_id ? (moduleNameById.get(t.module_id) ?? null) : null,
   }));
 }
+
+/**
+ * My tasks' Completed column: what I finished most recently, and how many in
+ * all. `listMyTasksDetailed` leaves done work out on purpose (it is the open
+ * list); this is the other half, bounded so the column never grows unbounded.
+ */
+export async function listMyCompletedTasks(userId: string, limit = 8): Promise<{ tasks: MyTaskDetail[]; total: number }> {
+  const supabase = await createClient();
+  const { data, error, count } = await supabase
+    .schema('projects')
+    .from('tasks')
+    .select('id, title, description, status, priority, due_on, estimate_hours, assignee_id, completed_at, created_at, project_id, module_id', { count: 'exact' })
+    .eq('assignee_id', userId)
+    .eq('status', 'done')
+    .order('completed_at', { ascending: false, nullsFirst: false })
+    .limit(limit);
+  if (error) unreadable('listMyCompletedTasks', error);
+  const rows = data ?? [];
+  if (rows.length === 0) return { tasks: [], total: count ?? 0 };
+  const projectIds = [...new Set(rows.map((t) => t.project_id))];
+  const { data: projects, error: projectsError } = await supabase.schema('projects').from('projects').select('id, name').in('id', projectIds);
+  if (projectsError) unreadable('listMyCompletedTasks.projects', projectsError);
+  const names = new Map((projects ?? []).map((p) => [p.id, p.name]));
+  return {
+    total: count ?? rows.length,
+    tasks: rows.map((t) => ({
+      id: t.id,
+      title: t.title,
+      description: t.description,
+      status: t.status,
+      priority: t.priority,
+      dueOn: t.due_on,
+      estimateHours: t.estimate_hours === null ? null : Number(t.estimate_hours),
+      assigneeId: t.assignee_id,
+      completedAt: t.completed_at,
+      createdAt: t.created_at,
+      projectId: t.project_id,
+      projectName: names.get(t.project_id) ?? 'Unknown project',
+      moduleId: t.module_id,
+      moduleName: null,
+    })),
+  };
+}

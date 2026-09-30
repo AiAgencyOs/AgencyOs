@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 
-import { Avatar, Badge, DataTable, StatusBadge, humanize, type Column, type SortDirection, type SortState } from '@/ui';
+import { Avatar, Badge, Card, DataTable, StatusBadge, humanize, type Column, type SortDirection, type SortState } from '@/ui';
 
 import { LeadPreviewButton } from './preview-drawer';
 import { BulkActionsBar, type BulkRoster } from './bulk-actions-bar';
@@ -48,6 +48,7 @@ export function LeadBulkTable({
   sortKey,
   sortDirection,
   sortHrefPrefix,
+  detailsHrefPrefix,
 }: {
   rows: BulkLeadRow[];
   roster: BulkRoster;
@@ -59,6 +60,8 @@ export function LeadBulkTable({
   sortDirection: SortDirection;
   /** The list URL with the kept filters and a trailing `?` or `&`, so `sort=…&dir=…` can be appended. */
   sortHrefPrefix: string;
+  /** The list URL with the kept filters and a trailing `?` or `&`, so `lead=<id>` selects a row for the Lead Details rail. */
+  detailsHrefPrefix: string;
 }) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   // Built here rather than passed: a function is not serialisable across
@@ -98,10 +101,13 @@ export function LeadBulkTable({
       primary: true,
       cell: (l) => (
         <span className="flex items-center gap-2.5">
-          <Avatar name={l.name} size="md" />
-          <Link href={`/leads/${l.id}`} className="block max-w-[8rem] truncate hover:text-brand">
-            {l.name}
-          </Link>
+          <Avatar name={l.name} size="sm" />
+          <span className="min-w-0">
+            <Link href={`/leads/${l.id}`} className="block max-w-[5.5rem] truncate hover:text-brand">
+              {l.name}
+            </Link>
+            <span className="block max-w-[5.5rem] truncate text-[11px] font-normal text-muted">{humanize(l.source)}</span>
+          </span>
         </span>
       ),
     },
@@ -109,16 +115,26 @@ export function LeadBulkTable({
       key: 'contact',
       header: 'Contact Details',
       desktopOnly: true,
-      cellClassName: 'text-xs text-muted',
+      cellClassName: 'text-[11px] text-muted',
       cell: (l) => (
         <span className="block min-w-0">
-          <span className="block max-w-[10rem] truncate">{l.email ?? '—'}</span>
+          <span className="block max-w-[5.5rem] truncate">{l.email ?? '—'}</span>
           <span className="block">{l.phone ?? ''}</span>
         </span>
       ),
     },
-    { key: 'source', header: 'Source', desktopOnly: true, cell: (l) => <Badge tone="neutral" dot={false}>{humanize(l.source)}</Badge> },
-    { key: 'status', header: 'Status', badge: true, cell: (l) => <StatusBadge status={l.status} /> },
+    {
+      key: 'status',
+      header: 'Status',
+      badge: true,
+      sortKey: 'score',
+      cell: (l) => (
+        <span className="flex flex-col items-start gap-1">
+          <StatusBadge status={l.status} />
+          <span className="tabular text-[11px] text-muted">{l.score === null ? 'Unscored' : `Score ${l.score}`}</span>
+        </span>
+      ),
+    },
     {
       key: 'interest',
       header: 'Interested In',
@@ -126,10 +142,26 @@ export function LeadBulkTable({
       cellClassName: 'text-muted',
       cell: (l) => (
         <span className="block min-w-0">
-          <span className="block max-w-[9rem] truncate">{l.service ?? '—'}</span>
-          {l.budget ? <span className="tabular block text-xs">{l.budget}</span> : null}
+          <span className="block max-w-[5.5rem] truncate">{l.service ?? '—'}</span>
         </span>
       ),
+    },
+    { key: 'budget', header: 'Budget', desktopOnly: true, cellClassName: 'tabular whitespace-nowrap text-[12px] text-muted', cell: (l) => l.budget ?? '—' },
+    {
+      key: 'tags',
+      header: 'Tags',
+      desktopOnly: true,
+      cell: (l) =>
+        l.tags.length === 0 ? (
+          <span className="text-muted">—</span>
+        ) : (
+          <span className="flex max-w-[4.5rem] gap-1 overflow-hidden">
+            {l.tags.slice(0, 1).map((t) => (
+              <Badge key={t} tone="info" dot={false}>{t}</Badge>
+            ))}
+            {l.tags.length > 1 ? <span className="text-xs text-muted">+{l.tags.length - 1}</span> : null}
+          </span>
+        ),
     },
     {
       key: 'assigned',
@@ -141,11 +173,10 @@ export function LeadBulkTable({
         ) : (
           <span className="flex items-center gap-2">
             <Avatar name={l.assigned} size="sm" />
-            <span className="max-w-[6rem] truncate">{l.assigned.split('@')[0]}</span>
+            <span className="hidden max-w-[5rem] truncate min-[1800px]:inline">{l.assigned.split('@')[0]}</span>
           </span>
         ),
     },
-    { key: 'score', header: 'Score', align: 'right', cellClassName: 'tabular', cell: (l) => (l.score === null ? <span className="text-muted">—</span> : l.score), sortKey: 'score' },
     { key: 'created', header: 'Created On', cellClassName: 'text-muted whitespace-nowrap', cell: (l) => l.created, sortKey: 'created' },
   ];
 
@@ -175,18 +206,23 @@ export function LeadBulkTable({
         </div>
       ) : null}
 
+      <Card className="px-1 pb-1">
       <DataTable
+        dense
+        tight
         rows={rows}
         columns={columns}
         getKey={(l) => l.id}
         sort={sort}
         rowActions={(l) => [
           { key: 'preview', label: 'Preview', node: <LeadPreviewButton leadId={l.id} name={l.name} /> },
+          { key: 'details', label: 'Show details', href: `${detailsHrefPrefix}lead=${l.id}` },
           { key: 'open', label: 'Open lead', href: `/leads/${l.id}` },
           { key: 'meeting', label: 'Request a meeting', href: `/leads/${l.id}#meetings` },
           { key: 'quotation', label: 'Quotations', href: `/leads/${l.id}#quotations` },
         ]}
       />
+      </Card>
     </div>
   );
 }

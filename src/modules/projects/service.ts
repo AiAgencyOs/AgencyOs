@@ -1840,7 +1840,7 @@ export async function createTask(input: CreateTaskInput): Promise<Result<{ taskI
       title: parsed.data.title,
       description: parsed.data.description ?? null,
       due_on: parsed.data.dueOn ?? null,
-      assignee_id: defaults.default_assignee_id,
+      assignee_id: parsed.data.assigneeId ?? defaults.default_assignee_id,
     })
     .select('id')
     .single();
@@ -2132,6 +2132,19 @@ export async function updateTask(input: UpdateTaskInput): Promise<Result<{ taskI
     if (!member) return err('VALIDATION', 'That person is not a member of this organisation.');
   }
 
+  // The two dates travel together through their own door (20261004100000):
+  // "start is never after due" is one rule and two separate writes can each be
+  // fine and together wrong. The door audits it as task.schedule_set.
+  const { data: scheduled, error: scheduleError } = await supabase.schema('projects').rpc('set_task_schedule', {
+    p_task_id: task.id,
+    p_start_on: parsed.data.startOn as string,
+    p_due_on: parsed.data.dueOn as string,
+  });
+  if (scheduleError) return err('INTERNAL', 'Could not save the task’s dates.');
+  const outcome = ((Array.isArray(scheduled) ? scheduled[0] : scheduled) as { outcome?: string } | undefined)?.outcome;
+  if (outcome === 'start_after_due') return err('VALIDATION', 'The start date cannot be after the due date.');
+  if (outcome !== 'set') return err('INTERNAL', 'Could not save the task’s dates.');
+
   const { error } = await supabase
     .schema('projects')
     .from('tasks')
@@ -2140,7 +2153,6 @@ export async function updateTask(input: UpdateTaskInput): Promise<Result<{ taskI
       description: parsed.data.description,
       priority: parsed.data.priority,
       assignee_id: parsed.data.assigneeId,
-      due_on: parsed.data.dueOn,
       estimate_hours: parsed.data.estimateHours,
     })
     .eq('id', task.id);

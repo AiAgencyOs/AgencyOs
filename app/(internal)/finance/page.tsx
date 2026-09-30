@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
+import { periodDelta, sumPeriods, trendOf, type PeriodCounts } from '@/lib/admin/period-delta';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listExpenses, listPayments, listPendingPaymentClaims } from '@/modules/finance/queries';
@@ -22,7 +23,11 @@ import {
   EmptyState,
   humanize,
   IconAlert,
+  IconCalendar,
   IconCheck,
+  IconChevronDown,
+  IconDownload,
+  IconFile,
   IconClock,
   IconInvoices,
   IconPlus,
@@ -106,13 +111,15 @@ export default async function FinanceOverviewPage({
     .filter((m) => milestoneInvoiceability({ status: m.status, amountMinor: m.amountMinor, paymentPercent: m.paymentPercent }).ok)
     .map((m) => ({ id: m.id, projectId: m.projectId, name: m.name, position: m.position, amountLabel: money(m.amountMinor, m.currency) }));
 
-  const [invoices, allPayments, allExpenses, pendingClaims, projects, clients] = await Promise.all([
+  const [invoices, allPayments, allExpenses, pendingClaims, projects, clients, recentInvoices] = await Promise.all([
     listInvoicesFiltered({ days, clientId, projectId }),
     listPayments(500),
     listExpenses(500),
     canIssue ? listPendingPaymentClaims() : Promise.resolve([]),
     can(context, 'project.read') ? listProjects(200) : Promise.resolve([]),
     listBillingClients(),
+    // Two 30-day windows for the KPI chips: the client/project filter applies, the Period filter does not.
+    listInvoicesFiltered({ days: 60, clientId, projectId }),
   ]);
   const invoiceIds = new Set(invoices.map((i) => i.id));
   const payments = filtered ? allPayments.filter((p) => invoiceIds.has(p.invoiceId)) : allPayments;
@@ -126,6 +133,13 @@ export default async function FinanceOverviewPage({
   if (clientId) exportQuery.set('client', clientId);
   if (projectId) exportQuery.set('project', projectId);
   const exportHref = `/api/finance/invoices/export${exportQuery.size > 0 ? `?${exportQuery.toString()}` : ''}`;
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const financialDocuments = [
+    { title: 'GST & Tax Report (PDF)', note: 'The tax report for this month', href: `/api/finance/tax/pdf?period=${thisMonth}` },
+    { title: 'GST & Tax Report (CSV)', note: 'The same rows, as a spreadsheet', href: `/api/finance/tax/export?period=${thisMonth}` },
+    { title: 'Invoices (CSV)', note: 'Every invoice in the current filter', href: exportHref },
+    { title: 'Expenses (CSV)', note: 'Every recorded expense', href: '/api/finance/expenses/export' },
+  ];
 
   const live = invoices.filter((i) => LIVE.has(i.status));
   const invoicedByCurrency = new Map<string, number>();
@@ -145,6 +159,26 @@ export default async function FinanceOverviewPage({
   const collection = invoiced > 0 ? Math.round((received / invoiced) * 100) : null;
   const pendingInvoices = inCurrency.filter((i) => i.paid_minor < i.total_minor);
   const overdue = inCurrency.filter((i) => i.status === 'overdue');
+
+  // KPI chips: this 30 days against the 30 before, from issue / capture /
+  // incurred dates. Outstanding is a balance, not a flow, so it has no chip.
+  const chipNow = new Date();
+  const recentIds = new Set(recentInvoices.map((i) => i.id));
+  const invoicedFlow = sumPeriods(
+    recentInvoices.filter((i) => LIVE.has(i.status) && i.currency === currency).map((i) => ({ at: i.issued_at, amount: i.total_minor })),
+    chipNow,
+  );
+  const receivedFlow = sumPeriods(
+    allPayments
+      .filter((p) => p.currency === currency && p.status !== 'refunded' && (!(clientId || projectId) || recentIds.has(p.invoiceId)))
+      .map((p) => ({ at: p.captured_at, amount: p.amount_minor })),
+    chipNow,
+  );
+  const spentFlow = sumPeriods(
+    allExpenses.filter((e) => e.currency === currency && (!projectId || e.projectId === projectId)).map((e) => ({ at: `${e.incurredOn}T12:00:00Z`, amount: e.amountMinor })),
+    chipNow,
+  );
+  const netFlow: PeriodCounts = { current: receivedFlow.current - spentFlow.current, previous: receivedFlow.previous - spentFlow.previous };
 
   // Six calendar months ending this month, in the agency's own zone.
   const monthKey = (iso: string) => clock.dayKey(new Date(iso)).slice(0, 7);
@@ -227,8 +261,36 @@ export default async function FinanceOverviewPage({
     { key: 'status', header: 'Status', badge: true, cell: (p) => <StatusBadge status={p.verified_at ? 'verified' : p.status} dot={false} /> },
   ];
 
+  const rangeLabel = days ? `${clock.date(new Date(now.getTime() - days * 86_400_000))} - ${clock.date(now)}` : 'All time';
+
   return (
     <div className="flex flex-col gap-5">
+      {/* The reference's date-range pill: the Period filter, shown as the range it resolves to. Each option is a link, so it needs no script. */}
+      <div className="flex justify-end">
+        <details className="group relative">
+          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-[13px] font-medium text-foreground shadow-sm [&::-webkit-details-marker]:hidden">
+            <IconCalendar size={15} />
+            <span className="tabular">{rangeLabel}</span>
+            <IconChevronDown size={14} />
+          </summary>
+          <ul className="absolute right-0 z-20 mt-1 w-48 rounded-lg border border-line bg-surface p-1 shadow-lg">
+            {DAY_OPTIONS.map((o) => {
+              const q = new URLSearchParams();
+              if (o.value) q.set('days', o.value);
+              if (clientId) q.set('client', clientId);
+              if (projectId) q.set('project', projectId);
+              return (
+                <li key={o.value}>
+                  <Link href={`/finance${q.size > 0 ? `?${q.toString()}` : ''}`} className={`block rounded-md px-3 py-1.5 text-[13px] hover:bg-surface-hover ${String(days ?? '') === o.value ? 'font-semibold text-brand' : 'text-foreground'}`}>
+                    {o.label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </details>
+      </div>
+
       <PageHeader
         title="Finance Overview"
         description={
@@ -306,11 +368,11 @@ export default async function FinanceOverviewPage({
       </form>
 
       <StatGrid cols={5}>
-        <Stat label="Total Invoiced" value={money(invoiced, currency)} caption={`${inCurrency.length} invoice${inCurrency.length === 1 ? '' : 's'}`} tone="success" icon={<IconTrendUp size={16} />} href="/invoices" />
-        <Stat label="Total Received" value={money(received, currency)} caption={collection === null ? `${paymentsInCurrency.length} payment${paymentsInCurrency.length === 1 ? '' : 's'}` : `${collection}% Collection Rate`} tone="info" icon={<IconCheck size={16} />} href="/finance/payments" />
+        <Stat label="Total Invoiced" value={money(invoiced, currency)} caption={`${inCurrency.length} invoice${inCurrency.length === 1 ? '' : 's'}`} trend={trendOf(periodDelta(invoicedFlow))} tone="success" icon={<IconTrendUp size={16} />} href="/invoices" />
+        <Stat label="Total Received" value={money(received, currency)} caption={collection === null ? `${paymentsInCurrency.length} payment${paymentsInCurrency.length === 1 ? '' : 's'}` : `${collection}% Collection Rate`} trend={trendOf(periodDelta(receivedFlow))} tone="info" icon={<IconCheck size={16} />} href="/finance/payments" />
         <Stat label="Outstanding" value={money(outstanding, currency)} caption={`${pendingInvoices.length} pending invoice${pendingInvoices.length === 1 ? '' : 's'}${overdue.length > 0 ? ` · ${overdue.length} overdue` : ''}`} tone={overdue.length > 0 ? 'danger' : 'warning'} icon={<IconClock size={16} />} href="/invoices" />
-        <Stat label="Total Expenses" value={money(spent, currency)} caption={`${expensesInCurrency.length} recorded`} tone="danger" icon={<IconRupee size={16} />} href="/finance/expenses" />
-        <Stat label="Net Profit" value={money(net, currency)} caption={received > 0 ? `${Math.round((net / received) * 100)}% margin` : 'Received minus expenses'} tone={net >= 0 ? 'accent' : 'danger'} icon={<IconUsage size={16} />} />
+        <Stat label="Total Expenses" value={money(spent, currency)} caption={`${expensesInCurrency.length} recorded`} trend={trendOf(periodDelta(spentFlow), true)} tone="danger" icon={<IconRupee size={16} />} href="/finance/expenses" />
+        <Stat label="Net Profit" value={money(net, currency)} caption={received > 0 ? `${Math.round((net / received) * 100)}% margin` : 'Received minus expenses'} trend={trendOf(periodDelta(netFlow))} tone={net >= 0 ? 'accent' : 'danger'} icon={<IconUsage size={16} />} />
       </StatGrid>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]">
@@ -384,7 +446,7 @@ export default async function FinanceOverviewPage({
         </Card>
       </div>
 
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)]">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)] [&>*]:min-w-0">
         <Card>
           <CardHeader title="Expense Breakdown" actions={<ViewAll href="/finance/expenses" />} />
           <div className="p-4 sm:p-5">
@@ -431,6 +493,25 @@ export default async function FinanceOverviewPage({
               { label: 'Generate Report', icon: <IconUsage size={13} />, href: '/finance/tax' },
             ]}
           />
+          <Card>
+            <CardHeader title="Financial Documents" description="Generated when you download them, for the current month." />
+            <ul className="divide-y divide-line px-4 pb-2 sm:px-5">
+              {financialDocuments.map((d) => (
+                <li key={d.title} className="flex items-center gap-3 py-2.5">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-danger-soft text-danger">
+                    <IconFile size={16} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-medium text-foreground">{d.title}</span>
+                    <span className="block truncate text-xs text-muted">{d.note}</span>
+                  </span>
+                  <a href={d.href} className={buttonClass('secondary', 'sm')} aria-label={`Download ${d.title}`}>
+                    <IconDownload size={13} /> Download
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </Card>
           <Card>
             <CardHeader
               title="Payment Verification"

@@ -214,7 +214,7 @@ describe('E. every bug row links to the page, and every tile opens the list it c
     assert.match(insights, /if \(severityFilter && d\.severity !== severityFilter\) return false;/);
     assert.match(insights, /\{visibleDefects\.map\(\(d\) => \{/);
     assert.match(insights, /<FilterChips/);
-    assert.match(tab, /defects\?: string; severity\?: string \}>/);
+    assert.match(tab, /defects\?: string; severity\?: string(?:; platform\?: string)? \}>/);
     assert.match(tab, /filter=\{\{ defects: defectsFilter, severity: severityFilter \}\}/);
   });
 });

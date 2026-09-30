@@ -41,6 +41,9 @@ import {
 import { readDealBillingMode, readOpportunityOwner } from '@/modules/sales/composer-queries';
 
 import { SalesOwnerForm } from './composer-extras';
+import { LeadTabs } from './lead-tabs';
+import { LeadStageStrip } from './stage-strip';
+import { listTasksForLead } from '@/modules/crm/lead-task-queries';
 import { listInternalRoster } from '@/modules/projects/queries';
 
 import { MeetingRequestForm } from './meeting-request-form';
@@ -91,8 +94,12 @@ import {
   IconInfo,
   IconLock,
   IconSparkle,
+  IconActivity,
+  IconEdit,
+  IconFile,
+  IconList,
+  IconTarget,
   StatusBadge,
-  StatusStepper,
   SystemNote,
   humanize,
   PermissionDenied,
@@ -261,6 +268,7 @@ export default async function LeadConversationPage({
     readRequirementLinks(versionIds),
     versionIds.length > 0 ? readRequirementLinkTargets({ opportunityId: opportunity?.id ?? null, projectIds: projectGroup ? [projectGroup.projectId] : [] }) : Promise.resolve({ quotations: [], designs: [], tasks: [] }),
   ]);
+  const leadTasks = await listTasksForLead(opportunity?.id ?? null);
   const openObjections = await listOpenObjectionsForLead(leadId);
   const meetings = await listMeetingsForLead(leadId);
   // SCR-007 — the follow-up sequences running against this lead, its proposals and its meetings.
@@ -306,7 +314,7 @@ export default async function LeadConversationPage({
   /* ── Pane one: the conversation ─────────────────────────────────────── */
 
   const chat = (
-    <div className="flex h-[68dvh] min-h-[420px] flex-col overflow-hidden rounded-xl border border-line shadow-sm lg:sticky lg:top-[4.75rem] lg:h-[calc(100dvh-11.5rem)]">
+    <div id="conversation" className="scroll-mt-24 flex h-[68dvh] min-h-[420px] flex-col overflow-hidden rounded-xl border border-line shadow-sm lg:sticky lg:top-[4.75rem] lg:h-[calc(100dvh-11.5rem)]">
       <ChatHeader
         name={lead.title}
         status={
@@ -508,7 +516,7 @@ export default async function LeadConversationPage({
   );
 
   const side = (
-    <div className="flex flex-col gap-4">
+    <div id="overview" className="scroll-mt-24 flex flex-col gap-4">
       <DetailPanel
         title="Lead information"
         actions={mayWrite ? <a href="#sales" className="text-xs font-medium text-brand hover:underline">Edit</a> : undefined}
@@ -609,6 +617,28 @@ export default async function LeadConversationPage({
           </div>
         </Card>
       ) : null}
+      {/* Tasks belong to projects; a lead's are the open tasks of the project its deal became. */}
+      <Card>
+        <CardHeader title={`Tasks (${leadTasks.length})`} />
+        {leadTasks.length === 0 ? (
+          <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">
+            {opportunity ? 'No open task yet. Tasks appear here once the deal becomes a project.' : 'No deal yet, so no project and no tasks.'}
+          </p>
+        ) : (
+          <ul className="divide-y divide-line px-4 pb-2 sm:px-5">
+            {leadTasks.map((t) => (
+              <li key={t.id} className="flex items-start justify-between gap-2 py-2.5 text-[13px]">
+                <span className="min-w-0">
+                  <Link href={`/projects/${t.projectId}`} className="block truncate font-medium text-foreground hover:text-brand">{t.title}</Link>
+                  <span className="block truncate text-xs text-muted">{t.projectName}{t.dueOn ? ` · due ${clock.date(`${t.dueOn}T12:00:00Z`)}` : ''}</span>
+                </span>
+                <Badge tone={t.priority === 'p0' || t.priority === 'p1' ? 'danger' : 'neutral'} dot={false}>{t.priority.toUpperCase()}</Badge>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+      <div id="activity" className="scroll-mt-24">
       <ActivityFeed
         title="Recent activity"
         compact
@@ -621,6 +651,7 @@ export default async function LeadConversationPage({
           tone: /lost|disqualif|fail|reject/.test(e.event_type) ? ('danger' as const) : /won|convert|accept|approv/.test(e.event_type) ? ('success' as const) : ('brand' as const),
         }))}
       />
+      </div>
     </div>
   );
 
@@ -777,7 +808,7 @@ export default async function LeadConversationPage({
               <AssignOwnerForm leadId={leadId} current={facts?.assignedTo ?? null} roster={roster.map((r) => ({ userId: r.userId, fullName: r.fullName }))} />
               {conversation && !conversation.agent_paused_at ? <PauseAgentForm conversationId={conversation.id} leadId={leadId} /> : null}
 
-              <details className="rounded-lg border border-line bg-surface px-3 py-2">
+              <details id="qualification" className="scroll-mt-24 rounded-lg border border-line bg-surface px-3 py-2">
                 <summary className="cursor-pointer text-[13px] font-semibold">
                   Qualification
                 </summary>
@@ -835,7 +866,9 @@ export default async function LeadConversationPage({
                 </>
               )}
 
-              <LeadNoteForm leadId={leadId} />
+              <div id="notes" className="scroll-mt-24">
+                <LeadNoteForm leadId={leadId} />
+              </div>
             </>
           ) : null}
 
@@ -1217,7 +1250,7 @@ export default async function LeadConversationPage({
 
       {/* ── Extracted requirements ───────────────────────────────────── */}
       {conversation ? (
-        <Card>
+        <Card id="requirements">
           <CardHeader
             title="Extracted requirements"
             icon={<IconSparkle size={16} />}
@@ -1478,13 +1511,24 @@ export default async function LeadConversationPage({
         }
       >
         <div className="mt-4 border-t border-line pt-4">
-          <StatusStepper
-            status={leadStatus}
-            happyPath={['new', 'qualifying', 'qualified', 'converted']}
-            offRamps={['nurture', 'disqualified']}
-          />
+          <LeadStageStrip leadStatus={leadStatus} dealStage={opportunity ? dealStage : null} />
         </div>
       </EntityHeader>
+
+      <LeadTabs
+        initial="conversation"
+        tabs={[
+          { id: 'overview', label: 'Overview', icon: <IconList size={14} /> },
+          { id: 'conversation', label: 'Conversation', icon: <IconMessage size={14} /> },
+          { id: 'qualification', label: 'Qualification', icon: <IconTarget size={14} /> },
+          { id: 'requirements', label: 'Requirements', icon: <IconFile size={14} /> },
+          { id: 'quotations', label: 'Quote', icon: <IconInvoices size={14} /> },
+          { id: 'sequences', label: 'Follow-ups', icon: <IconCalendar size={14} /> },
+          { id: 'meetings', label: 'Meetings', icon: <IconClock size={14} /> },
+          { id: 'activity', label: 'Activity', icon: <IconActivity size={14} /> },
+          { id: 'notes', label: 'Notes', icon: <IconEdit size={14} /> },
+        ]}
+      />
 
       <LeadWorkspace
         chat={

@@ -1127,6 +1127,8 @@ export const createTaskSchema = z.object({
   description: z.string().trim().max(4000).optional(),
   // SCR-022: a task created from a calendar day carries that day.
   dueOn: z.iso.date().optional(),
+  /** The person the task is for; omitted, it goes to the project's default assignee. */
+  assigneeId: z.uuid().optional(),
 });
 
 export const setModuleStatusSchema = z.object({ moduleId: z.uuid(), status: z.enum(MODULE_STATUSES) });
@@ -1186,9 +1188,11 @@ export const updateTaskSchema = z.object({
   description: z.string().trim().max(4000).nullable(),
   priority: z.enum(['p0', 'p1', 'p2', 'p3']),
   assigneeId: z.uuid().nullable(),
+  /** The day work is planned to begin (migration 20261004100000); never after the due date. */
+  startOn: z.iso.date().nullable().default(null),
   dueOn: z.iso.date().nullable(),
   estimateHours: z.number().nonnegative().max(10_000).nullable(),
-});
+}).refine((v) => !v.startOn || !v.dueOn || v.startOn <= v.dueOn, { message: 'The start date cannot be after the due date.', path: ['startOn'] });
 export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
 
 /** The project's own facts — name, description, dates and budget. Status is its own door. */

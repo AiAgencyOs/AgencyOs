@@ -26,6 +26,7 @@ export function Stat({
   href,
   className,
   compact = false,
+  ring,
 }: {
   label: React.ReactNode;
   value: React.ReactNode;
@@ -40,6 +41,8 @@ export function Stat({
    */
   trend?: { direction: 'up' | 'down'; label: React.ReactNode; tone?: 'success' | 'danger' };
   href?: string;
+  /** A small progress ring at the tile's right edge (the design dashboard's 88%): a share of something real, 0 to 100. */
+  ring?: { percent: number; label: string };
   className?: string;
   /** Narrower chip and padding for a six-across KPI row (the project overview). */
   compact?: boolean;
@@ -76,6 +79,7 @@ export function Stat({
         {icon}
       </span>
       <div className="min-w-0 flex-1">{figure}</div>
+      {ring ? <ProgressRing percent={ring.percent} label={ring.label} tone={tone} /> : null}
     </div>
   ) : (
     figure
@@ -125,3 +129,29 @@ export function StatGrid({
     <div className={cx('grid grid-cols-2 gap-3', DESKTOP_COLS[cols], className)}>{children}</div>
   );
 }
+
+/** A donut ring with its percentage in the middle; `label` names what the percentage is of, for assistive tech. */
+function ProgressRing({ percent, label, tone }: { percent: number; label: string; tone: Tone }) {
+  const value = Math.max(0, Math.min(100, Math.round(percent)));
+  const r = 16;
+  const c = 2 * Math.PI * r;
+  return (
+    <span role="img" aria-label={`${value}% ${label}`} className={cx('relative hidden h-10 w-10 shrink-0 items-center justify-center 2xl:flex', TONE_TEXT_RING[tone])}>
+      <svg viewBox="0 0 40 40" className="absolute inset-0 -rotate-90" aria-hidden>
+        <circle cx="20" cy="20" r={r} fill="none" strokeWidth="4" className="stroke-line" />
+        <circle cx="20" cy="20" r={r} fill="none" strokeWidth="4" strokeLinecap="round" stroke="currentColor" strokeDasharray={c} strokeDashoffset={c * (1 - value / 100)} />
+      </svg>
+      <span className="tabular text-[9px] font-semibold text-foreground">{value}%</span>
+    </span>
+  );
+}
+
+const TONE_TEXT_RING: Record<Tone, string> = {
+  neutral: 'text-muted',
+  brand: 'text-brand',
+  accent: 'text-accent',
+  success: 'text-success',
+  warning: 'text-warning',
+  danger: 'text-danger',
+  info: 'text-info',
+};

@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useActionState, useEffect, useMemo, useRef, useState } from 'react';
+import { useActionState, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
 import { createTaskAction, setTaskStatusAction, updateTaskAction } from '@/modules/projects/actions';
 import type { TaskCollab } from '@/modules/projects/task-collab-queries';
+import { GROUP_BY_OPTIONS, groupKeyOf, groupsFor, type GroupBy } from '@/modules/projects/project-view-derive';
 
 import { BlockReasonField, TaskCollabPanel } from '../../../task-collab-panel';
 import {
@@ -22,6 +23,7 @@ import {
   IconAttach,
   IconCalendar,
   IconCheck,
+  IconList,
   IconMessage,
   IconMore,
   IconPlus,
@@ -38,6 +40,8 @@ import {
 } from '@/ui';
 
 export type BoardTask = KanbanItem & {
+  /** The task's real status; `columnId` is the group it is drawn under (the same thing when grouped by status). */
+  status: string;
   title: string;
   description: string | null;
   estimateHours: number | null;
@@ -50,6 +54,8 @@ export type BoardTask = KanbanItem & {
   moduleId: string | null;
   moduleName: string | null;
   dueOn: string | null;
+  startOn: string | null;
+  labels: string[];
   dueLabel: string | null;
   completedLabel: string | null;
   overdue: boolean;
@@ -88,7 +94,7 @@ const PRIORITY: Record<string, { label: string; tone: 'danger' | 'warning' | 'in
 function countBy(tasks: readonly BoardTask[], key: (t: BoardTask) => string | null): [string | null, number][] {
   const counts = new Map<string | null, number>();
   for (const t of tasks) {
-    if (t.columnId === 'done') continue;
+    if (t.status === 'done') continue;
     counts.set(key(t), (counts.get(key(t)) ?? 0) + 1);
   }
   return [...counts.entries()].sort((a, b) => b[1] - a[1]);
@@ -106,6 +112,9 @@ export function ProjectBoard({
   initialMilestone,
   canWrite,
   collab,
+  currentUserId,
+  todayKey,
+  rail,
 }: {
   projectId: string;
   columns: KanbanColumn[];
@@ -123,6 +132,10 @@ export function ProjectBoard({
   canWrite: boolean;
   /** Comments, checklist, attachments and the blocker per task id — SCR-020. */
   collab: Record<string, TaskCollab>;
+  currentUserId: string;
+  todayKey: string;
+  /** The rest of the right-hand rail (timeline, team, summary) — server-rendered by the page and drawn under Task details. */
+  rail?: React.ReactNode;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -132,11 +145,23 @@ export function ProjectBoard({
   const [moduleFilter, setModuleFilter] = useState('');
   const [milestoneFilter, setMilestoneFilter] = useState(initialMilestone ?? '');
   const [sort, setSort] = useState<SortKey>('');
+  const [quick, setQuick] = useState<QuickFilter>('');
+  const [groupBy, setGroupBy] = useState<GroupBy>('status');
+  const [view, setView] = useState<'board' | 'list'>('board');
   const [adding, setAdding] = useState<string | null>(null);
-  const [openTask, setOpenTask] = useState<BoardTask | null>(null);
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const railRef = useRef<HTMLDivElement>(null);
+  const groupId = useId();
   // A card dropped on Blocked waits here for its reason — the drop's promise
   // stays pending (so the optimistic move holds) until the prompt answers.
   const [blockPrompt, setBlockPrompt] = useState<{ task: BoardTask; resolve: (reason: string | null) => void } | null>(null);
+  const openTask = tasks.find((t) => t.id === openTaskId) ?? null;
+
+  function select(task: BoardTask) {
+    setOpenTaskId(task.id);
+    // Below the wide layout the rail sits under the board: bring it into view.
+    if (typeof window !== 'undefined' && window.innerWidth < 1280) railRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 
   async function handleMove(taskId: string, toStatus: string, reason?: string) {
     setError(null);
@@ -163,6 +188,22 @@ export function ProjectBoard({
     router.refresh();
   }
 
+  const weekEnd = useMemo(() => {
+    const d = new Date(`${todayKey}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + 7);
+    return d.toISOString().slice(0, 10);
+  }, [todayKey]);
+  const quickTest = useMemo<Record<Exclude<QuickFilter, ''>, (t: BoardTask) => boolean>>(
+    () => ({
+      mine: (t) => t.assigneeId === currentUserId,
+      overdue: (t) => t.overdue,
+      week: (t) => t.status !== 'done' && t.dueOn !== null && t.dueOn >= todayKey && t.dueOn <= weekEnd,
+      high: (t) => t.status !== 'done' && (t.priority === 'p0' || t.priority === 'p1'),
+      files: (t) => (collab[t.id]?.attachments.length ?? 0) > 0,
+    }),
+    [currentUserId, todayKey, weekEnd, collab],
+  );
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     const rows = tasks.filter(
@@ -171,18 +212,48 @@ export function ProjectBoard({
         (!assignee || (assignee === 'unassigned' ? t.assigneeId === null : t.assigneeId === assignee)) &&
         (!priority || t.priority === priority) &&
         (!moduleFilter || t.moduleId === moduleFilter) &&
-        (!milestoneFilter || (milestoneFilter === 'none' ? t.milestoneId === null : t.milestoneId === milestoneFilter)),
+        (!milestoneFilter || (milestoneFilter === 'none' ? t.milestoneId === null : t.milestoneId === milestoneFilter)) &&
+        (!quick || quickTest[quick](t)),
     );
     if (sort === 'due') rows.sort((a, b) => (a.dueOn ?? '9999').localeCompare(b.dueOn ?? '9999'));
     else if (sort === 'priority') rows.sort((a, b) => a.priority.localeCompare(b.priority));
     else if (sort === 'title') rows.sort((a, b) => a.title.localeCompare(b.title));
     return rows;
-  }, [tasks, query, assignee, priority, moduleFilter, milestoneFilter, sort]);
+  }, [tasks, query, assignee, priority, moduleFilter, milestoneFilter, sort, quick, quickTest]);
 
   const filtered = visible.length !== tasks.length;
 
+  // The columns: the five statuses, or one per value of the chosen grouping.
+  const groupedColumns: KanbanColumn[] = useMemo(() => {
+    if (groupBy === 'status') return columns;
+    const labels = {
+      assignees: new Map(people.concat(roster).map((p) => [p.userId, p.fullName] as const)),
+      modules: new Map(modules.map((m) => [m.id, m.name] as const)),
+      phases: new Map(milestones.map((m) => [m.id, m.name] as const)),
+    };
+    return groupsFor(visible, groupBy, labels, { statuses: columns.map((c) => c.id), phases: milestones.map((m) => m.id) }).map((g) => ({ id: g.key, label: g.label, tone: 'neutral' as const }));
+  }, [groupBy, columns, visible, people, roster, modules, milestones]);
+  const groupedItems: BoardTask[] = useMemo(() => visible.map((t) => ({ ...t, columnId: groupKeyOf({ status: t.status, assigneeId: t.assigneeId, priority: t.priority, moduleId: t.moduleId, milestoneId: t.milestoneId }, groupBy) })), [visible, groupBy]);
+
+  const clearFilters = () => {
+    setQuery('');
+    setAssignee('');
+    setPriority('');
+    setModuleFilter('');
+    setMilestoneFilter('');
+    setQuick('');
+  };
+  const quickCounts = {
+    mine: tasks.filter(quickTest.mine).length,
+    overdue: tasks.filter(quickTest.overdue).length,
+    week: tasks.filter(quickTest.week).length,
+    high: tasks.filter(quickTest.high).length,
+    files: tasks.filter(quickTest.files).length,
+  };
+
   return (
-    <div className="flex flex-col gap-4">
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_17rem]">
+      <div className="flex min-w-0 flex-col gap-4">
       {error ? (
         <Callout tone="danger" icon={<IconAlert size={16} />}>
           {error}
@@ -244,20 +315,28 @@ export function ProjectBoard({
           <option value="priority">Sort: priority</option>
           <option value="title">Sort: title</option>
         </select>
+        <label className="flex items-center gap-1.5 text-[13px] text-muted" htmlFor={groupId}>
+          Group by
+          <select id={groupId} value={groupBy} onChange={(e) => setGroupBy(e.target.value as GroupBy)} className={cx(selectClass, 'sm:w-auto sm:min-w-[7.5rem]')}>
+            {GROUP_BY_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </label>
+        <div role="group" aria-label="View" className="flex overflow-hidden rounded-lg border border-line">
+          {(['board', 'list'] as const).map((v) => (
+            <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)} className={cx('h-9 px-3 text-[13px] font-medium', view === v ? 'bg-brand-soft text-brand' : 'bg-surface text-muted hover:text-foreground')}>
+              {v === 'board' ? 'Board' : 'List'}
+            </button>
+          ))}
+          <Link href={`/projects/${projectId}/calendar`} className="flex h-9 items-center border-l border-line bg-surface px-3 text-[13px] font-medium text-muted hover:text-foreground">
+            Calendar
+          </Link>
+        </div>
         <span className="ml-auto text-xs text-muted">
           {filtered ? `${visible.length} of ${tasks.length}` : tasks.length} task{tasks.length === 1 ? '' : 's'}
           {filtered ? (
-            <button
-              type="button"
-              onClick={() => {
-                setQuery('');
-                setAssignee('');
-                setPriority('');
-                setModuleFilter('');
-                setMilestoneFilter('');
-              }}
-              className="ml-2 font-medium text-brand hover:underline"
-            >
+            <button type="button" onClick={clearFilters} className="ml-2 font-medium text-brand hover:underline">
               Clear
             </button>
           ) : null}
@@ -272,7 +351,7 @@ export function ProjectBoard({
 
       {/* SCR-020: open-task counts per assignee and per module, on the board
           itself. Each chip is also the filter for that person or module. */}
-      {tasks.some((t) => t.columnId !== 'done') ? (
+      {tasks.some((t) => t.status !== 'done') ? (
         <div className="flex flex-col gap-1.5 text-[13px]">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="mr-1 text-[11px] font-semibold uppercase tracking-wider text-muted">Open by assignee</span>
@@ -308,44 +387,39 @@ export function ProjectBoard({
         </div>
       ) : null}
 
-      <KanbanBoard
-        columns={columns}
-        items={visible}
-        disabled={!canWrite}
-        onMove={handleMove}
-        renderColumnAction={(col) =>
-          canWrite ? (
-            <button type="button" onClick={() => setAdding(col.id)} aria-label={`Add task in ${col.label}`} className="flex h-6 w-6 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface hover:text-foreground">
-              <IconPlus size={14} />
-            </button>
-          ) : null
-        }
-        renderColumnFooter={(col) =>
-          canWrite ? (
-            <button type="button" onClick={() => setAdding(col.id)} className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg text-xs font-medium text-brand transition-colors hover:bg-brand-soft">
-              <IconPlus size={13} />
-              Add task
-            </button>
-          ) : null
-        }
-        renderCard={(task) => <TaskCard task={task} collab={collab[task.id]} onOpen={() => setOpenTask(task)} />}
-      />
+      {groupBy !== 'status' && view === 'board' ? (
+        <p className="text-xs text-muted">Grouped by {GROUP_BY_OPTIONS.find((o) => o.value === groupBy)?.label.toLowerCase()}: cards do not move between these columns. Group by status to drag a task.</p>
+      ) : null}
+
+      {view === 'board' ? (
+        <KanbanBoard
+          key={groupBy}
+          columns={groupedColumns}
+          items={groupedItems}
+          disabled={!canWrite || groupBy !== 'status'}
+          onMove={handleMove}
+          renderColumnAction={(col) =>
+            canWrite && groupBy === 'status' ? (
+              <button type="button" onClick={() => setAdding(col.id)} aria-label={`Add task in ${col.label}`} className="flex h-6 w-6 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface hover:text-foreground">
+                <IconPlus size={14} />
+              </button>
+            ) : null
+          }
+          renderColumnFooter={(col) =>
+            canWrite && groupBy === 'status' ? (
+              <button type="button" onClick={() => setAdding(col.id)} className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg text-xs font-medium text-brand transition-colors hover:bg-brand-soft">
+                <IconPlus size={13} />
+                Add task
+              </button>
+            ) : null
+          }
+          renderCard={(task) => <TaskCard task={task} selected={task.id === openTaskId} collab={collab[task.id]} onOpen={() => select(task)} />}
+        />
+      ) : (
+        <TaskListView columns={groupedColumns} items={groupedItems} selectedId={openTaskId} onSelect={select} />
+      )}
 
       </section>
-
-      <TaskDrawer
-        task={openTask}
-        collab={openTask ? collab[openTask.id] : undefined}
-        projectId={projectId}
-        columns={columns}
-        roster={roster}
-        canWrite={canWrite}
-        onClose={() => setOpenTask(null)}
-        onMoved={(taskId, toStatus, reason) => {
-          setOpenTask(null);
-          handleMove(taskId, toStatus, reason).catch(() => undefined);
-        }}
-      />
 
       <BlockReasonPrompt
         task={blockPrompt?.task ?? null}
@@ -365,22 +439,136 @@ export function ProjectBoard({
           }}
         />
       ) : null}
+      </div>
+
+      {/* ── The always-open rail: the selected task, quick filters, then the page's own cards ── */}
+      <div className="flex min-w-0 flex-col gap-4">
+        <div ref={railRef} className="scroll-mt-4 rounded-xl border border-line bg-surface p-4 shadow-xs">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-bold tracking-tight text-foreground">Task details</h2>
+            {openTask ? (
+              <button type="button" onClick={() => setOpenTaskId(null)} aria-label="Close task details" className="flex h-6 w-6 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-foreground">
+                <span aria-hidden>×</span>
+              </button>
+            ) : null}
+          </div>
+          {openTask ? (
+            <TaskDetails
+              task={openTask}
+              collab={collab[openTask.id]}
+              projectId={projectId}
+              columns={columns}
+              roster={roster}
+              canWrite={canWrite}
+              onMoved={(taskId, toStatus, reason) => {
+                handleMove(taskId, toStatus, reason).catch(() => undefined);
+              }}
+              onSaved={() => setOpenTaskId(null)}
+            />
+          ) : (
+            <div className="flex flex-col items-center gap-1.5 px-2 py-8 text-center">
+              <span aria-hidden className="mb-1 flex h-12 w-12 items-center justify-center rounded-xl bg-surface-sunken text-faint">
+                <IconList size={22} />
+              </span>
+              <p className="text-[13px] font-semibold text-foreground">Select a task</p>
+              <p className="text-xs text-muted">Click any task to view details, comments, attachments and activity.</p>
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-line bg-surface p-4 shadow-xs">
+          <h2 className="text-base font-bold tracking-tight text-foreground">Quick filters</h2>
+          <ul className="mt-2 flex flex-col">
+            {QUICK_FILTERS.map((f) => (
+              <li key={f.key}>
+                <button
+                  type="button"
+                  aria-pressed={quick === f.key}
+                  onClick={() => setQuick(quick === f.key ? '' : f.key)}
+                  className={cx('flex h-9 w-full items-center justify-between gap-2 rounded-lg px-2 text-[13px] font-medium', quick === f.key ? 'bg-brand-soft text-brand' : 'text-foreground hover:bg-surface-hover')}
+                >
+                  {f.label}
+                  <span className="tabular rounded-full bg-surface-sunken px-2 py-0.5 text-[11px] text-muted">{quickCounts[f.key]}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {rail}
+      </div>
     </div>
   );
 }
 
-function TaskCard({ task, collab, onOpen }: { task: BoardTask; collab: TaskCollab | undefined; onOpen: () => void }) {
+type QuickFilter = '' | 'mine' | 'overdue' | 'week' | 'high' | 'files';
+const QUICK_FILTERS: { key: Exclude<QuickFilter, ''>; label: string }[] = [
+  { key: 'mine', label: 'My tasks' },
+  { key: 'overdue', label: 'Overdue' },
+  { key: 'week', label: 'Due this week' },
+  { key: 'high', label: 'High priority' },
+  { key: 'files', label: 'With attachments' },
+];
+
+/** The reference's List view: the same filtered tasks as a table, one section per group. */
+function TaskListView({ columns, items, selectedId, onSelect }: { columns: KanbanColumn[]; items: BoardTask[]; selectedId: string | null; onSelect: (task: BoardTask) => void }) {
+  if (items.length === 0) return <p className="py-6 text-center text-[13px] text-muted">No task matches these filters.</p>;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[40rem] text-[13px]">
+        <thead>
+          <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-wider text-muted">
+            <th className="py-2 pr-3">Task</th>
+            <th className="py-2 pr-3">Assignee</th>
+            <th className="py-2 pr-3">Priority</th>
+            <th className="py-2 pr-3">Status</th>
+            <th className="py-2">Due date</th>
+          </tr>
+        </thead>
+        {columns.map((col) => {
+          const rows = items.filter((t) => t.columnId === col.id);
+          if (rows.length === 0) return null;
+          return (
+            <tbody key={col.id} className="divide-y divide-line">
+              <tr className="bg-surface-sunken">
+                <th colSpan={5} scope="colgroup" className="px-2 py-1.5 text-left text-[12px] font-semibold text-foreground">
+                  {col.label} <span className="font-normal text-muted">({rows.length})</span>
+                </th>
+              </tr>
+              {rows.map((t) => {
+                const p = PRIORITY[t.priority] ?? { label: t.priority, tone: 'neutral' as const };
+                return (
+                  <tr key={t.id} className={selectedId === t.id ? 'bg-brand-soft' : 'hover:bg-surface-hover'}>
+                    <td className="py-2 pr-3">
+                      <button type="button" onClick={() => onSelect(t)} className="text-left font-medium text-foreground hover:underline">{t.title}</button>
+                    </td>
+                    <td className="py-2 pr-3 text-muted">{t.assigneeName ?? 'Unassigned'}</td>
+                    <td className="py-2 pr-3"><Badge tone={p.tone}>{p.label}</Badge></td>
+                    <td className="py-2 pr-3"><StatusBadge status={t.status} dot={false} /></td>
+                    <td className={cx('whitespace-nowrap py-2', t.overdue ? 'font-medium text-danger' : 'text-muted')}>{t.dueLabel ?? '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          );
+        })}
+      </table>
+    </div>
+  );
+}
+
+function TaskCard({ task, selected, collab, onOpen }: { task: BoardTask; selected: boolean; collab: TaskCollab | undefined; onOpen: () => void }) {
   const p = PRIORITY[task.priority] ?? { label: task.priority.toUpperCase(), tone: 'neutral' as const };
   const progress = collab?.progress;
   const comments = collab?.comments.length ?? 0;
   const attachments = collab?.attachments.length ?? 0;
   return (
-    <div className="rounded-lg border border-line bg-surface p-3 shadow-xs transition-shadow hover:shadow-sm">
+    <div className={cx('rounded-lg border bg-surface p-3 shadow-xs transition-shadow hover:shadow-sm', selected ? 'border-brand ring-1 ring-brand' : 'border-line')}>
       <div className="flex items-start justify-between gap-2">
         <p className="text-[13px] font-medium leading-snug text-foreground">{task.title}</p>
         <button
           type="button"
-          aria-label={`Open ${task.title}`}
+          aria-label={`Show details of ${task.title}`}
           onClick={onOpen}
           className="-mr-1 -mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-faint hover:bg-surface-hover hover:text-foreground"
           onPointerDown={(e) => e.stopPropagation()}
@@ -390,9 +578,12 @@ function TaskCard({ task, collab, onOpen }: { task: BoardTask; collab: TaskColla
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {task.moduleName ? <Badge tone="info">{task.moduleName}</Badge> : null}
+        {task.labels.map((l) => (
+          <Badge key={l} tone="neutral">{l}</Badge>
+        ))}
         <Badge tone={p.tone}>{p.label}</Badge>
       </div>
-      {task.columnId === 'blocked' && collab?.blocked.reason ? (
+      {task.status === 'blocked' && collab?.blocked.reason ? (
         <p className="mt-2 flex items-start gap-1 text-[11px] text-danger" title={collab.blocked.reason}>
           <IconAlert size={11} className="mt-0.5 shrink-0" />
           <span className="line-clamp-2">{collab.blocked.reason}</span>
@@ -489,47 +680,57 @@ const EMPTY_COLLAB = (taskId: string): TaskCollab => ({
   attachments: [],
   blocked: { reason: null, at: null, sinceLabel: null },
 });
-function TaskDrawer({
+function TaskDetails({
   task,
   collab,
   projectId,
   columns,
   roster,
   canWrite,
-  onClose,
   onMoved,
+  onSaved,
 }: {
-  task: BoardTask | null;
+  task: BoardTask;
   collab: TaskCollab | undefined;
   projectId: string;
   columns: KanbanColumn[];
   roster: BoardPerson[];
   canWrite: boolean;
-  onClose: () => void;
+  onSaved: () => void;
   onMoved: (taskId: string, toStatus: string, reason?: string) => void;
 }) {
-  const p = task ? (PRIORITY[task.priority] ?? { label: task.priority.toUpperCase(), tone: 'neutral' as const }) : null;
+  const p = PRIORITY[task.priority] ?? { label: task.priority.toUpperCase(), tone: 'neutral' as const };
   // Choosing Blocked in the select does not move the task by itself: the
   // reason field appears and the move is one submit with both in it.
   const [blocking, setBlocking] = useState(false);
-  const taskId = task?.id;
+  const taskId = task.id;
   useEffect(() => setBlocking(false), [taskId]);
   return (
-    <Drawer open={task !== null} onClose={onClose} title={task?.title ?? 'Task'} description={task?.moduleName ? `Module · ${task.moduleName}` : undefined}>
-      {task && p ? (
-        <div className="flex flex-col gap-4 text-[13px]">
+    <div className="mt-3 flex flex-col gap-4 text-[13px]">
+      <div>
+        <Link href={`/projects/${projectId}/development/tasks/${task.id}`} className="text-[15px] font-semibold leading-snug text-foreground hover:underline">{task.title}</Link>
+        {task.moduleName ? <p className="mt-0.5 text-xs text-muted">Module · {task.moduleName}</p> : null}
+        {task.labels.length > 0 ? (
+          <p className="mt-1.5 flex flex-wrap gap-1.5">
+            {task.labels.map((l) => (
+              <Badge key={l} tone="neutral">{l}</Badge>
+            ))}
+          </p>
+        ) : null}
+      </div>
+      <div className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-lg border border-line p-3">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Status</p>
               {canWrite ? (
                 <select
                   aria-label="Task status"
-                  value={blocking ? 'blocked' : task.columnId}
+                  value={blocking ? 'blocked' : task.status}
                   onChange={(e) => {
-                    if (e.target.value === 'blocked' && task.columnId !== 'blocked') setBlocking(true);
+                    if (e.target.value === 'blocked' && task.status !== 'blocked') setBlocking(true);
                     else {
                       setBlocking(false);
-                      if (e.target.value !== task.columnId) onMoved(task.id, e.target.value);
+                      if (e.target.value !== task.status) onMoved(task.id, e.target.value);
                     }
                   }}
                   className={cx(selectClass, 'mt-1')}
@@ -541,7 +742,7 @@ function TaskDrawer({
                   ))}
                 </select>
               ) : (
-                <p className="mt-1"><StatusBadge status={task.columnId} /></p>
+                <p className="mt-1"><StatusBadge status={task.status} /></p>
               )}
             </div>
             <div className="rounded-lg border border-line p-3">
@@ -583,7 +784,7 @@ function TaskDrawer({
             </form>
           ) : null}
           {canWrite ? (
-            <TaskEditForm key={task.id} task={task} projectId={projectId} roster={roster} onSaved={onClose} />
+            <TaskEditForm key={task.id} task={task} projectId={projectId} roster={roster} onSaved={onSaved} />
           ) : (
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Description</p>
@@ -597,7 +798,7 @@ function TaskDrawer({
             </p>
           ) : null}
           <div className="border-t border-line pt-4">
-            <TaskCollabPanel projectId={projectId} taskId={task.id} status={task.columnId} collab={collab ?? EMPTY_COLLAB(task.id)} canWrite={canWrite} compact />
+            <TaskCollabPanel projectId={projectId} taskId={task.id} status={task.status} collab={collab ?? EMPTY_COLLAB(task.id)} canWrite={canWrite} compact />
           </div>
           <p className="text-xs text-muted">
             Time logs are not part of a task in this data model. Modules and features are arranged on the{' '}
@@ -606,9 +807,8 @@ function TaskDrawer({
             </Link>
             .
           </p>
-        </div>
-      ) : null}
-    </Drawer>
+      </div>
+    </div>
   );
 }
 
@@ -650,6 +850,10 @@ function TaskEditForm({ task, projectId, roster, onSaved }: { task: BoardTask; p
               <option key={p.userId} value={p.userId}>{p.fullName}</option>
             ))}
           </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="edit-task-start" className={labelClass}>Start date</label>
+          <input id="edit-task-start" name="startOn" type="date" defaultValue={task.startOn ?? ''} className={inputClass} />
         </div>
         <div className="flex flex-col gap-1">
           <label htmlFor="edit-task-due" className={labelClass}>Due date</label>

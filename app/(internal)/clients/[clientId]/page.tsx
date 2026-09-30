@@ -37,7 +37,9 @@ import {
   IconAlert,
   IconCalendar,
   IconCheck,
+  IconActivity,
   IconClock,
+  IconEdit,
   IconFile,
   IconInbox,
   IconInvoices,
@@ -45,6 +47,7 @@ import {
   IconMessage,
   IconPlus,
   IconProjects,
+  IconSettings,
   IconUser,
   PermissionDenied,
   ProgressBar,
@@ -74,6 +77,18 @@ type Tab = (typeof TABS)[number];
 function tabOf(value: string | undefined): Tab {
   return (TABS as readonly string[]).includes(value ?? '') ? (value as Tab) : 'overview';
 }
+
+const TAB_ICON: Record<Tab, React.ReactNode> = {
+  overview: <IconClock size={14} />,
+  projects: <IconProjects size={14} />,
+  quotations: <IconLeads size={14} />,
+  invoices: <IconInvoices size={14} />,
+  communication: <IconMessage size={14} />,
+  files: <IconFile size={14} />,
+  notes: <IconEdit size={14} />,
+  activity: <IconActivity size={14} />,
+  settings: <IconSettings size={14} />,
+};
 
 const EVENT_TONE: Record<CommercialEvent['kind'], Tone> = { quotation: 'info', milestone: 'brand', invoice: 'warning', payment: 'success' };
 const EVENT_ICON: Record<CommercialEvent['kind'], React.ReactNode> = {
@@ -246,6 +261,16 @@ export default async function ClientDetailPage({
     .slice(0, 6)
     .map(({ at, ...rest }) => ({ ...rest, when: clock.date(at) }));
 
+  // Deal Timeline: the milestones of the relationship that are on record, oldest first, with the
+  // next follow-up (if any) as the open step at the end. Every entry is a stored row's date.
+  const dealTimeline: { key: string; at: string; title: string; done: boolean }[] = [
+    ...leads.map((l) => ({ key: `lead-${l.id}`, at: l.createdAt, title: 'Lead created', done: true })),
+    ...client.meetings.filter((m) => m.startAt).map((m) => ({ key: `meeting-${m.id}`, at: m.startAt as string, title: m.status === 'completed' || m.status === 'held' ? 'Meeting held' : `Meeting ${humanize(m.status).toLowerCase()}`, done: m.status === 'completed' || m.status === 'held' })),
+    ...client.quotations.map((qn) => ({ key: `q-${qn.id}`, at: qn.createdAt, title: `Quotation v${qn.version} ${humanize(qn.status).toLowerCase()}`, done: true })),
+    { key: 'client', at: client.createdAt, title: 'Client account created', done: true },
+    ...(nextFollowUp ? [{ key: 'next', at: nextFollowUp.at, title: 'Next follow-up', done: false }] : []),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+
   const workTiles = (
     <StatGrid>
         <Stat
@@ -339,6 +364,7 @@ export default async function ClientDetailPage({
                   t === tab ? 'text-brand' : 'text-muted hover:text-foreground',
                 )}
               >
+                <span className="shrink-0">{TAB_ICON[t]}</span>
                 {humanize(t)}
                 {t === 'communication' && unread.total > 0 ? <Badge tone="warning">{unread.total}</Badge> : null}
                 {t === tab ? <span aria-hidden className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-brand" /> : null}
@@ -997,6 +1023,49 @@ export default async function ClientDetailPage({
                   </li>
                 ))}
               </ul>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader title="Assigned Team" actions={mayEditClient ? <Link href={tabHref('settings')} className="text-xs font-medium text-brand hover:underline">Manage</Link> : undefined} />
+            {team.length === 0 ? (
+              <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No one is assigned to this client yet.</p>
+            ) : (
+              <ul className="grid grid-cols-2 gap-3 px-4 pb-4 sm:px-5">
+                {team.map((id) => {
+                  const m = roster.find((r) => r.userId === id);
+                  return (
+                    <li key={id} className="flex min-w-0 items-center gap-2">
+                      <Avatar name={m?.fullName || m?.email || id} size="md" />
+                      <span className="min-w-0">
+                        <span className="block truncate text-[13px] font-medium text-foreground">{m?.fullName || m?.email?.split('@')[0] || id.slice(0, 8)}</span>
+                        <span className="block truncate text-xs text-muted">{m ? humanize(m.role) : ''}</span>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader title="Deal Timeline" actions={<ViewAll href={tabHref('activity')} />} />
+            {dealTimeline.length === 0 ? (
+              <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">Nothing recorded yet.</p>
+            ) : (
+              <ol className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+                {dealTimeline.slice(-6).map((e) => (
+                  <li key={e.key} className="flex items-start gap-3">
+                    <span className={cx('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full', e.done ? 'bg-success text-white' : 'border-2 border-line-strong')}>
+                      {e.done ? <IconCheck size={12} /> : null}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[13px] font-medium text-foreground">{e.title}</span>
+                      <span className="block text-xs text-muted">{clock.dateTime(e.at)}</span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
             )}
           </Card>
 

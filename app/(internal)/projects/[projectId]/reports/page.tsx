@@ -19,6 +19,8 @@ import {
   readProjectSpend,
 } from '@/modules/projects/queries';
 import { listReportTasks, weekStartOf, weeksBetween } from '@/modules/projects/report-queries';
+import { composeRecentActivity, resourceBars } from '@/modules/projects/report-cards';
+import { listProjectFiles } from '@/modules/projects/queries';
 import { readProjectTime } from '@/modules/projects/time-log-queries';
 import { listPaymentClaims } from '@/modules/finance/queries';
 import { readBlockersAcrossProjects } from '@/modules/projects/blockers-queries';
@@ -44,6 +46,7 @@ import {
   labelClass,
   PermissionDenied,
   ProgressBar,
+  Avatar,
   Stat,
   StatGrid,
   cx,
@@ -192,6 +195,15 @@ export default async function ProjectReportPage({
     pendingClaims: claims.filter((c) => c.status === 'pending').length,
   });
   const overdueTasks = tasks.filter((t) => t.status !== 'done' && t.dueOn && t.dueOn < today);
+  // Recent Activity — a timeline of what each table already timestamps (not the audit log); Resource Usage — hours per person.
+  const projectFiles = await listProjectFiles(projectId);
+  const activity = composeRecentActivity({
+    tasks: tasks.map((t) => ({ id: t.id, title: t.title, completedAt: t.completedAt ?? null, assigneeName: t.assigneeId ? nameOf(t.assigneeId) : null })),
+    milestones: plan,
+    defects,
+    files: projectFiles,
+  });
+  const resources = resourceBars(time.people);
 
   return (
     <div className="flex flex-col gap-5">
@@ -337,64 +349,46 @@ export default async function ProjectReportPage({
           )}
         </Card>
         <Card>
-          <CardHeader
-            title="Time"
-            description={
-              time.entryCount > 0
-                ? `${time.totalHours} h logged in ${time.entryCount} entr${time.entryCount === 1 ? 'y' : 'ies'} by ${time.people.length} ${time.people.length === 1 ? 'person' : 'people'}.${
-                    mayReadMoney
-                      ? ` Cost ${money(time.costMinor, 'INR')} at each person's rate on the day of the log${time.uncostedHours > 0 ? `; ${time.uncostedHours} h uncosted — no rate on those days` : ''}. Cost, not billing.`
-                      : ' Nothing here is billed.'
-                  }`
-                : 'No time logged yet. Hours are logged per task from the task drawer (decision 4 of 2026-09-29).'
-            }
-            actions={
-              <a href={timeCsvHref} className={buttonClass('ghost', 'sm')}>
-                <IconDownload size={14} />
-                Time CSV
-              </a>
-            }
-          />
-          {time.entryCount === 0 ? null : (
-            <div className="grid gap-4 px-4 pb-4 sm:grid-cols-2 sm:px-5">
-              <div>
-                <p className="mb-1 text-xs font-medium text-muted">Per person</p>
-                <ul className="flex flex-col gap-1 text-[13px]">
-                  {time.people.map((p) => (
-                    <li key={p.personId} className="flex items-baseline justify-between gap-2">
-                      <span className="truncate">{p.personName}</span>
-                      <span className="tabular text-muted">
-                        {p.hours} h · {p.entries}
-                        {mayReadMoney ? ` · ${money(p.costMinor, 'INR')}` : ''}
-                        {mayReadMoney && p.uncostedHours > 0 ? <span className="ml-1 text-warning">{p.uncostedHours} h uncosted</span> : null}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <p className="mb-1 text-xs font-medium text-muted">Per task</p>
-                <ul className="flex flex-col gap-1 text-[13px]">
-                  {time.tasks.slice(0, 12).map((t) => (
-                    <li key={t.taskId} className="flex items-baseline justify-between gap-2">
-                      <Link href={`/projects/${projectId}/development/tasks/${t.taskId}`} className="truncate underline-offset-2 hover:underline">{t.taskTitle}</Link>
-                      <span className="tabular text-muted">
-                        {t.hours} h · {t.entries}
-                        {mayReadMoney ? ` · ${money(t.costMinor, 'INR')}` : ''}
-                        {mayReadMoney && t.uncostedHours > 0 ? <span className="ml-1 text-warning">{t.uncostedHours} h uncosted</span> : null}
-                      </span>
-                    </li>
-                  ))}
-                  {time.tasks.length > 12 ? <li className="text-xs text-muted">and {time.tasks.length - 12} more in the CSV.</li> : null}
-                </ul>
-              </div>
-            </div>
+          <CardHeader title="Recent Activity" description="Tasks done, milestones met, defects raised and files added — from each table's own dates, not the audit log." />
+          {activity.length === 0 ? (
+            <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">Nothing has happened on this project yet.</p>
+          ) : (
+            <ul className="flex flex-col gap-2.5 px-4 pb-4 sm:px-5">
+              {activity.map((e) => (
+                <li key={e.key} className="flex items-start gap-2.5 text-[13px]">
+                  <span className={cx('mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', e.tone === 'success' ? 'bg-success-soft text-success' : e.tone === 'warning' ? 'bg-warning-soft text-warning' : e.tone === 'info' ? 'bg-info-soft text-info' : 'bg-brand-soft text-brand')}>
+                    <IconCheck size={13} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block break-words">{e.who ? <span className="font-medium">{e.who} </span> : null}{e.verb} <span className="font-medium">{e.subject}</span></span>
+                    <span className="block text-xs text-muted">{clock.dateTime(e.at)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
         </Card>
 
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-3">
+        <Card>
+          <CardHeader title="Resource Usage" description="Hours logged per person — the busiest is the full bar." actions={<ViewAll href={`/projects/${projectId}/team`} label="Team" />} />
+          {resources.length === 0 ? (
+            <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No time logged yet. Hours are logged per task from the task drawer.</p>
+          ) : (
+            <ul className="flex flex-col gap-2.5 px-4 pb-4 sm:px-5">
+              {resources.map((r) => (
+                <li key={r.name} className="flex items-center gap-2.5 text-[13px]">
+                  <Avatar name={r.name} size="sm" />
+                  <span className="w-28 shrink-0 truncate">{r.name}</span>
+                  <ProgressBar value={r.percentOfBusiest} tone="brand" showValue={false} label={`${r.name}: ${r.hours} hours`} className="flex-1" />
+                  <span className="tabular w-14 shrink-0 text-right text-xs text-muted">{r.hours} h</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
         <Card>
           <CardHeader title="Project Health" />
           <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
@@ -463,6 +457,62 @@ export default async function ProjectReportPage({
         </Card>
 
       </div>
+
+      <Card>
+        <CardHeader
+          title="Time"
+          description={
+            time.entryCount > 0
+              ? `${time.totalHours} h logged in ${time.entryCount} entr${time.entryCount === 1 ? 'y' : 'ies'} by ${time.people.length} ${time.people.length === 1 ? 'person' : 'people'}.${
+                  mayReadMoney
+                    ? ` Cost ${money(time.costMinor, 'INR')} at each person's rate on the day of the log${time.uncostedHours > 0 ? `; ${time.uncostedHours} h uncosted — no rate on those days` : ''}. Cost, not billing.`
+                    : ' Nothing here is billed.'
+                }`
+              : 'No time logged yet. Hours are logged per task from the task drawer (decision 4 of 2026-09-29).'
+          }
+          actions={
+            <a href={timeCsvHref} className={buttonClass('ghost', 'sm')}>
+              <IconDownload size={14} />
+              Time CSV
+            </a>
+          }
+        />
+        {time.entryCount === 0 ? null : (
+          <div className="grid gap-4 px-4 pb-4 sm:grid-cols-2 sm:px-5">
+            <div>
+              <p className="mb-1 text-xs font-medium text-muted">Per person</p>
+              <ul className="flex flex-col gap-1 text-[13px]">
+                {time.people.map((p) => (
+                  <li key={p.personId} className="flex items-baseline justify-between gap-2">
+                    <span className="truncate">{p.personName}</span>
+                    <span className="tabular text-muted">
+                      {p.hours} h · {p.entries}
+                      {mayReadMoney ? ` · ${money(p.costMinor, 'INR')}` : ''}
+                      {mayReadMoney && p.uncostedHours > 0 ? <span className="ml-1 text-warning">{p.uncostedHours} h uncosted</span> : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="mb-1 text-xs font-medium text-muted">Per task</p>
+              <ul className="flex flex-col gap-1 text-[13px]">
+                {time.tasks.slice(0, 12).map((t) => (
+                  <li key={t.taskId} className="flex items-baseline justify-between gap-2">
+                    <Link href={`/projects/${projectId}/development/tasks/${t.taskId}`} className="truncate underline-offset-2 hover:underline">{t.taskTitle}</Link>
+                    <span className="tabular text-muted">
+                      {t.hours} h · {t.entries}
+                      {mayReadMoney ? ` · ${money(t.costMinor, 'INR')}` : ''}
+                      {mayReadMoney && t.uncostedHours > 0 ? <span className="ml-1 text-warning">{t.uncostedHours} h uncosted</span> : null}
+                    </span>
+                  </li>
+                ))}
+                {time.tasks.length > 12 ? <li className="text-xs text-muted">and {time.tasks.length - 12} more in the CSV.</li> : null}
+              </ul>
+            </div>
+          </div>
+        )}
+      </Card>
 
         {mayReadMoney ? (
           <Card>

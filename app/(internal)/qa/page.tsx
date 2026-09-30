@@ -7,6 +7,9 @@ import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
 import { listPerformanceNotes, readCompatibilityMatrix } from '@/modules/qa/compatibility-queries';
+import { deviceTiles, PLATFORMS, type Platform } from '@/modules/qa/device-tiles';
+import { DeviceTestingCard, QaTeamCard } from '@/modules/qa/qa-device-view';
+import { listDeviceRuns, readQaTeam } from '@/modules/qa/qa-team-queries';
 import { listReleaseHolds } from '@/modules/projects/release-hold-queries';
 import { listRetestQueue, readCoverageMatrix } from '@/modules/qa/dashboard-queries';
 import { listOpenDefects, readOrgTestCoverage, readSuiteCoverage, type OpenDefect } from '@/modules/qa/queries';
@@ -70,12 +73,13 @@ function countBy(defects: OpenDefect[], severity: string): number {
  * no new capability, and no client ever reaches this (Doc 14: "a client is
  * told what was fixed, not what is currently broken").
  */
-export default async function QaDashboardPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+export default async function QaDashboardPage({ searchParams }: { searchParams: Promise<{ q?: string; platform?: string }> }) {
   const context = await requireInternal('/qa');
   const clock = await agencyClock();
   if (!can(context, 'project.read')) return <PermissionDenied />;
   // Search within domain (bucket G-3): the bug list, by title or environment, filtered by the reader.
-  const { q: qRaw } = await searchParams;
+  const { q: qRaw, platform: platformRaw } = await searchParams;
+  const platform = (PLATFORMS as readonly string[]).includes(platformRaw ?? '') ? (platformRaw as Platform) : null;
   const q = normaliseSearch(qRaw);
 
   const [defects, coverage, suiteCoverage, matrix, retest, compat, perfNotes, holds] = await Promise.all([
@@ -93,7 +97,7 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
   // project, org-wide evidence, schedules, and the roster the retest form needs.
   const mayWrite = can(context, 'project.write');
   const maySignOff = can(context, 'project.sign_off');
-  const [recentRuns, trend, candidates, evidence, schedules, roster, projects] = await Promise.all([
+  const [recentRuns, trend, candidates, evidence, schedules, roster, projects, deviceRuns, qaTeam] = await Promise.all([
     listRecentRuns(25),
     readBugTrend(12),
     listReleaseCandidates(),
@@ -101,7 +105,10 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
     listSuiteSchedules(),
     mayWrite ? listInternalRoster() : Promise.resolve([]),
     maySignOff ? listProjects(500) : Promise.resolve([]),
+    listDeviceRuns(),
+    readQaTeam(),
   ]);
+  const tiles = deviceTiles(deviceRuns);
   const candidateByProject = new Map(candidates.map((c) => [c.projectId, c]));
   const trendRows = trend.map((p) => ({ week: p.week.slice(5), raised: p.raised, settled: p.settled }));
   const blockers = countBy(defects, 'blocker');
@@ -192,14 +199,20 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
             )}
           </Card>
 
-          <Card>
-            <CardHeader
-              title="Device Testing"
-              description={`Device × browser, from compatibility-suite runs in the last 90 days. Each cell is runs recorded and tests failed — a report, not a gate.${compat.unplaced > 0 ? ` ${compat.unplaced} run${compat.unplaced === 1 ? '' : 's'} recorded no device or browser and sit${compat.unplaced === 1 ? 's' : ''} outside the grid.` : ''}`}
-            />
-            {compat.devices.length === 0 ? (
-              <EmptyState icon={<IconList size={22} />} title="No placed compatibility run" description="A cell appears once a compatibility run records the device and browser it ran on." action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>} />
-            ) : (
+          <DeviceTestingCard
+            tiles={tiles}
+            active={platform}
+            hrefFor={(p) => (p ? `/qa?platform=${p}#device-testing` : '/qa#device-testing')}
+            addHref="/projects"
+            date={(iso) => clock.date(iso)}
+          />
+
+          {compat.devices.length > 0 ? (
+            <Card>
+              <CardHeader
+                title="Device × Browser"
+                description={`From compatibility-suite runs in the last 90 days. Each cell is runs recorded and tests failed — a report, not a gate.${compat.unplaced > 0 ? ` ${compat.unplaced} run${compat.unplaced === 1 ? '' : 's'} recorded no device or browser and sit${compat.unplaced === 1 ? 's' : ''} outside the grid.` : ''}`}
+              />
               <div className="overflow-x-auto px-4 pb-4 sm:px-5">
                 <table className="w-full text-[13px]">
                   <thead>
@@ -233,8 +246,8 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
                   </tbody>
                 </table>
               </div>
-            )}
           </Card>
+          ) : null}
 
           <Card>
             <CardHeader title="Test suites" description="Regression, compatibility and performance — the last 30 days, across every project." />
@@ -417,6 +430,8 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
               )}
             </div>
           </Card>
+
+          <QaTeamCard team={qaTeam} manageHref={qaTeam[0]?.projects[0] ? `/projects/${qaTeam[0].projects[0].id}/team` : null} />
 
           <Card>
             <CardHeader title="Defects by severity" />

@@ -5,7 +5,7 @@ import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { isMonthKey, monthKeyOf } from '@/lib/admin/month-grid';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { listMyTasksDetailed, type MyTaskDetail } from '@/modules/projects/my-tasks-queries';
+import { listMyCompletedTasks, listMyTasksDetailed, type MyTaskDetail } from '@/modules/projects/my-tasks-queries';
 import { listInternalRoster, type RosterMember } from '@/modules/projects/queries';
 import { readTaskCollabFor, type TaskCollab } from '@/modules/projects/task-collab-queries';
 import { readTaskTimeFor, type TaskTime } from '@/modules/projects/time-log-queries';
@@ -38,6 +38,8 @@ import {
 } from '@/ui';
 
 import { TaskDrawerButton } from './task-drawer';
+import { MyTaskAdd } from './my-task-add';
+import { listProjects } from '@/modules/projects/queries';
 
 type TimeUser = { currentUserId: string; canDeleteAny: boolean; today: string };
 const timeFor = (time: Record<string, TaskTime>, user: TimeUser, taskId: string) => ({ task: time[taskId] ?? { taskId, totalHours: 0, entries: [] }, ...user });
@@ -108,7 +110,8 @@ export default async function MyTasksPage({
   const { view: rawView, month: rawMonth, q: rawQ, project: rawProject, priority: rawPriority, status: rawStatus } = await searchParams;
   const view = viewOf(rawView);
 
-  const [allTasks, roster] = await Promise.all([listMyTasksDetailed(context.userId), listInternalRoster()]);
+  const [allTasks, roster, completed, projectList] = await Promise.all([listMyTasksDetailed(context.userId), listInternalRoster(), listMyCompletedTasks(context.userId), listProjects(200)]);
+  const mayAdd = can(context, 'task.write');
   // The toolbar is a plain GET form, so it filters without JavaScript; the figures above stay the whole list.
   const q = (rawQ ?? '').trim().toLowerCase();
   const projectOptions = [...new Map(allTasks.map((t) => [t.projectId, t.projectName])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
@@ -119,14 +122,21 @@ export default async function MyTasksPage({
       (!rawPriority || t.priority === rawPriority) &&
       (!rawStatus || t.status === rawStatus),
   );
+  const doneTasks = completed.tasks.filter(
+    (t) =>
+      (!q || t.title.toLowerCase().includes(q)) &&
+      (!rawProject || t.projectId === rawProject) &&
+      (!rawPriority || t.priority === rawPriority) &&
+      (!rawStatus || rawStatus === 'done'),
+  );
   const filtering = allTasks.length !== tasks.length;
   // SCR-021: the checklist, comments, attachments and blocker per task, read
   // once for the list so the drawer opens from what the page already holds.
-  const collab = await readTaskCollabFor(tasks.map((t) => t.id), clock);
+  const collab = await readTaskCollabFor([...tasks, ...doneTasks].map((t) => t.id), clock);
   const today = clock.dayKey(new Date());
   // Decision 4 of 2026-09-29: the hours logged per task, for the drawer's
   // Time section. Who is looking decides which entries they may delete.
-  const time = await readTaskTimeFor(tasks.map((t) => t.id));
+  const time = await readTaskTimeFor([...tasks, ...doneTasks].map((t) => t.id));
   const timeUser: TimeUser = { currentUserId: context.userId, canDeleteAny: can(context, 'project.write'), today };
   const all = allTasks;
   const overdue = all.filter((t) => t.dueOn !== null && dueLabel(clock, t.dueOn).overdue);
@@ -135,7 +145,7 @@ export default async function MyTasksPage({
   const dueToday = all.filter((t) => t.dueOn === today);
   const blocked = all.filter((t) => t.status === 'blocked');
   const month = isMonthKey(rawMonth) ? rawMonth : monthKeyOf(today);
-  const byStatus = (s: string) => tasks.filter((t) => t.status === s);
+  const byStatus = (s: string) => (s === 'done' ? doneTasks : tasks.filter((t) => t.status === s));
   const byStatusAll = (s: string) => all.filter((t) => t.status === s);
   const columns = TASK_STATUSES.filter((s) => s !== 'done');
   const pct = (n: number) => (all.length > 0 ? `${Math.round((n / all.length) * 100)}%` : undefined);
@@ -195,7 +205,7 @@ export default async function MyTasksPage({
           </select>
           <select name="status" aria-label="Filter by status" defaultValue={rawStatus ?? ''} className={cx(selectClass, 'sm:w-auto sm:min-w-[8rem]')}>
             <option value="">All statuses</option>
-            {columns.map((c) => (
+            {[...columns, 'done' as const].map((c) => (
               <option key={c} value={c}>{humanize(c)}</option>
             ))}
           </select>
@@ -221,17 +231,17 @@ export default async function MyTasksPage({
       {tasks.length > 0 && view === 'list' ? <ListView tasks={tasks} roster={roster} collab={collab} time={time} timeUser={timeUser} clock={clock} today={today} /> : null}
       {tasks.length > 0 && view === 'calendar' ? <CalendarView tasks={tasks} roster={roster} collab={collab} time={time} timeUser={timeUser} month={month} today={today} /> : null}
 
-      {tasks.length > 0 && view === 'columns' ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {columns.map((s) => {
+      {(tasks.length > 0 || doneTasks.length > 0) && view === 'columns' ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {[...columns, 'done' as const].map((s) => {
             const tone = s === 'todo' ? 'warning' : statusTone(s);
             const list = byStatus(s);
             return (
               <section key={s} className="flex flex-col rounded-xl border border-line bg-surface-sunken/60">
                 <h2 className={cx('flex items-center gap-2 rounded-t-xl px-3 py-2.5 text-[13px] font-semibold', HEADER_TINT[tone], TONE_TEXT[tone])}>
                   {COLUMN_ICON[s]}
-                  <span className="text-foreground">{s === 'todo' ? 'To do' : humanize(s)}</span>
-                  <span className={cx('tabular rounded-full px-1.5 py-0.5 text-[10px] font-semibold', TONE_CHIP[tone])}>{list.length}</span>
+                  <span className="text-foreground">{s === 'todo' ? 'To do' : s === 'done' ? 'Completed' : humanize(s)}</span>
+                  <span className={cx('tabular rounded-full px-1.5 py-0.5 text-[10px] font-semibold', TONE_CHIP[tone])}>{s === 'done' ? completed.total : list.length}</span>
                 </h2>
                 <ul className="flex min-h-[80px] flex-1 flex-col gap-2 p-2">
                   {list.length === 0 ? <li className="px-2 py-4 text-center text-xs text-faint">No tasks</li> : null}
@@ -268,6 +278,9 @@ export default async function MyTasksPage({
                     );
                   })}
                 </ul>
+                {mayAdd && s !== 'blocked' ? (
+                  <MyTaskAdd status={s as 'todo' | 'in_progress' | 'in_review' | 'done'} statusLabel={s === 'todo' ? 'To do' : s === 'done' ? 'Completed' : humanize(s)} projects={projectList.map((p) => ({ id: p.id, name: p.name }))} />
+                ) : null}
               </section>
             );
           })}

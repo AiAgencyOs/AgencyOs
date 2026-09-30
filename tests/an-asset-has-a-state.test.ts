@@ -114,7 +114,7 @@ describe('C. the reader shows what it can and says what it cannot', () => {
     assert.match(OVERVIEW, /<UploadDesignAssetPanel projectId=\{projectId\} storage=\{assetLibrary\.storage\} \/>/);
     assert.match(OVERVIEW, /<ApproveAssetButton projectId=\{projectId\} assetId=\{asset\.id\} \/>/);
     assert.match(OVERVIEW, /parentAssetId=\{family\.familyId\} compact \/>/);
-    assert.doesNotMatch(OVERVIEW, /<form /);
+    assert.doesNotMatch(OVERVIEW, /<form (?![^>]*method="get")/);
     assert.match(PANELS, /if \(!storage\.reachable\) \{/);
     assert.match(PANELS, /Storage is not reachable, so nothing can be uploaded\./);
   });

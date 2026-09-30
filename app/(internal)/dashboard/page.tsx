@@ -11,6 +11,8 @@ import {
   getRevenueThisMonth,
   getTotalLeadsCount,
 } from '@/lib/admin/dashboard';
+import { getDashboardDeltas } from '@/lib/admin/dashboard-deltas';
+import { periodDelta, trendOf } from '@/lib/admin/period-delta';
 import { OVERVIEW_WINDOWS, overviewWindow } from '@/lib/admin/dashboard-window';
 import { listUnpaidMilestoneInvoices } from '@/lib/admin/finance-gate';
 import { getOverview } from '@/lib/admin/overview';
@@ -161,7 +163,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
   const canVerifyClaims = show('invoice.issue');
   const todayWindow = clock.today();
 
-  const [recentLeads, activeProjects, revenue, messagesSent, totalLeads, usage, funnel, projectCounts, actionItems, escalations, myTasks, reminders, gateInvoices, gateClaims] =
+  const [recentLeads, activeProjects, revenue, messagesSent, totalLeads, usage, funnel, projectCounts, actionItems, escalations, myTasks, reminders, gateInvoices, gateClaims, deltas] =
     await Promise.all([
       canSeeLeads ? getRecentLeads(5) : Promise.resolve([]),
       canSeeProjects ? getActiveProjectsSummary(5) : Promise.resolve([]),
@@ -177,6 +179,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
       canSeeLeads ? listFollowUpReminders(todayWindow) : Promise.resolve([]),
       canSeeRevenue ? listUnpaidMilestoneInvoices() : Promise.resolve([]),
       canVerifyClaims ? listPendingPaymentClaims() : Promise.resolve([]),
+      getDashboardDeltas(new Date(), { leads: canSeeLeads, projects: canSeeProjects, revenue: canSeeRevenue, usage: canSeeUsage }),
     ]);
 
   const now = new Date();
@@ -372,7 +375,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
       {canSeeLeads || canSeeProjects || canSeeRevenue || canSeeUsage ? (
         <StatGrid cols={5}>
           {canSeeLeads ? (
-            <Stat label="Total Leads" href="/leads" value={String(totalLeads ?? 0)} caption="All time" tone="brand" icon={<IconUsers size={16} />} />
+            <Stat label="Total Leads" href="/leads" value={String(totalLeads ?? 0)} caption="All time" trend={trendOf(periodDelta(deltas.leads))} tone="brand" icon={<IconUsers size={16} />} />
           ) : null}
           {canSeeProjects ? (
             <Stat
@@ -380,6 +383,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
               href="/projects?status=open"
               value={openProjects === null ? 'DATA UNAVAILABLE' : String(openProjects)}
               caption={projectCounts ? `${projectCounts.active ?? 0} in development` : undefined}
+              trend={trendOf(periodDelta(deltas.projects))}
               tone="info"
               icon={<IconProjects size={16} />}
             />
@@ -390,6 +394,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
               href="/finance"
               value={revenue.length === 0 ? money(0, 'INR') : revenue.map((r) => money(r.paidMinor, r.currency)).join(' + ')}
               caption="Payments recorded"
+              trend={trendOf(periodDelta(deltas.revenue))}
               tone="success"
               icon={<IconInvoices size={16} />}
             />
@@ -400,12 +405,13 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
               href="/usage"
               value={compact(usage?.totals.runs ?? 0)}
               caption={isAvailable(o.ai) ? `${o.ai.value.agentsRunnable}/${o.ai.value.agentsTotal} agents runnable` : undefined}
+              trend={trendOf(periodDelta(deltas.runs))}
               tone="accent"
               icon={<IconAgents size={16} />}
             />
           ) : null}
           {canSeeLeads ? (
-            <Stat label="Messages Sent" href="/communication" value={compact(messagesSent ?? 0)} caption="This month" tone="warning" icon={<IconMessage size={16} />} />
+            <Stat label="Messages Sent" href="/communication" value={compact(messagesSent ?? 0)} caption="This month" trend={trendOf(periodDelta(deltas.messages))} tone="warning" icon={<IconMessage size={16} />} />
           ) : null}
         </StatGrid>
       ) : null}

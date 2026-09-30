@@ -7544,6 +7544,47 @@ export type Database = {
           },
         ]
       }
+      project_notes: {
+        Row: {
+          body: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          organization_id: string
+          project_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id: string
+          project_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id?: string
+          project_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_notes_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       project_members: {
         Row: {
           added_by: string | null
@@ -9340,6 +9381,41 @@ export type Database = {
         }
         Relationships: []
       }
+      scope_item_comments: {
+        Row: {
+          author_id: string | null
+          body: string
+          created_at: string
+          id: string
+          organization_id: string
+          scope_item_id: string
+        }
+        Insert: {
+          author_id?: string | null
+          body: string
+          created_at?: string
+          id?: string
+          organization_id: string
+          scope_item_id: string
+        }
+        Update: {
+          author_id?: string | null
+          body?: string
+          created_at?: string
+          id?: string
+          organization_id?: string
+          scope_item_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scope_item_comments_scope_item_id_fkey"
+            columns: ["scope_item_id"]
+            isOneToOne: false
+            referencedRelation: "scope_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       scope_items: {
         Row: {
           acceptance_criteria: string | null
@@ -9807,6 +9883,9 @@ export type Database = {
       }
       tasks: {
         Row: {
+          start_on: string | null
+          parent_task_id: string | null
+          labels: string[]
           ready_for_qa_at: string | null
           reopened_count: number
           started_at: string | null
@@ -9831,6 +9910,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          start_on?: string | null
+          parent_task_id?: string | null
+          labels?: string[]
           ready_for_qa_at?: string | null
           reopened_count?: number
           started_at?: string | null
@@ -9855,6 +9937,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          start_on?: string | null
+          parent_task_id?: string | null
+          labels?: string[]
           ready_for_qa_at?: string | null
           reopened_count?: number
           started_at?: string | null
@@ -9879,6 +9964,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "tasks_parent_task_id_fkey"
+            columns: ["parent_task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "tasks_feature_id_fkey"
             columns: ["feature_id"]
@@ -10305,6 +10397,13 @@ export type Database = {
       }
     }
     Functions: {
+      comment_on_scope_item: {
+        Args: { p_body: string; p_scope_item_id: string }
+        Returns: {
+          comment_id: string
+          outcome: string
+        }[]
+      }
       acknowledge_escalation: {
         Args: { p_event_id: string }
         Returns: { outcome: string }[]
@@ -10425,6 +10524,26 @@ export type Database = {
       start_qa_handoff: {
         Args: { p_project_id: string }
         Returns: { blocked: number; event_id: string; not_ready: number; outcome: string }[]
+      }
+      add_project_note: {
+        Args: { p_body?: string; p_project_id: string; p_title: string }
+        Returns: { note_id: string; outcome: string }[]
+      }
+      remove_project_note: {
+        Args: { p_note_id: string }
+        Returns: { outcome: string }[]
+      }
+      set_task_schedule: {
+        Args: { p_due_on: string; p_start_on: string; p_task_id: string }
+        Returns: { outcome: string }[]
+      }
+      add_subtask: {
+        Args: { p_assignee_id?: string; p_due_on?: string; p_parent_id: string; p_title: string }
+        Returns: { outcome: string; task_id: string }[]
+      }
+      set_task_labels: {
+        Args: { p_labels: string[]; p_task_id: string }
+        Returns: { labels: string[]; outcome: string }[]
       }
       start_task: {
         Args: { p_task_id: string }

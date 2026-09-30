@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { countPeriods, periodDelta, trendOf } from '@/lib/admin/period-delta';
 import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
@@ -29,6 +30,8 @@ import {
   DEFAULT_PAGE_SIZE,
   EmptyState,
   FilterBar,
+  FilterChips,
+  DetailPanel,
   humanize,
   inputClass,
   IconImport,
@@ -88,15 +91,18 @@ function waitedFor(iso: string, now: Date): string {
 
 type Row = Awaited<ReturnType<typeof listLeadsForTable>>[number];
 
-const columnsFor = (clock: AgencyClock, scores: Map<string, LeadScoreSummary>, services: Map<string, string | null>, createdOf: (id: string) => string | undefined): Column<Row>[] => [
+const columnsFor = (clock: AgencyClock, scores: Map<string, LeadScoreSummary>, services: Map<string, string | null>, createdOf: (id: string) => string | undefined, factsOf: (id: string) => { budget: string | null; tags: string[] }): Column<Row>[] => [
   {
     key: 'title',
     header: 'Name',
     primary: true,
     cell: (l) => (
       <span className="flex items-center gap-2.5">
-        <Avatar name={l.contact?.fullName ?? l.title} size="md" />
-        <span className="block max-w-[10rem] truncate">{l.contact?.fullName ?? l.title}</span>
+        <Avatar name={l.contact?.fullName ?? l.title} size="sm" />
+        <span className="min-w-0">
+          <span className="block max-w-[5.5rem] truncate">{l.contact?.fullName ?? l.title}</span>
+          <span className="block max-w-[5.5rem] truncate text-[11px] font-normal text-muted">{humanize(l.source)}</span>
+        </span>
       </span>
     ),
   },
@@ -104,17 +110,47 @@ const columnsFor = (clock: AgencyClock, scores: Map<string, LeadScoreSummary>, s
     key: 'contact',
     header: 'Contact Details',
     desktopOnly: true,
-    cellClassName: 'text-xs text-muted',
+    cellClassName: 'text-[11px] text-muted',
     cell: (l) => (
       <span className="block min-w-0">
-        <span className="block max-w-[11rem] truncate">{l.contact?.email ?? '—'}</span>
+        <span className="block max-w-[6rem] truncate">{l.contact?.email ?? '—'}</span>
         <span className="block">{l.contact?.phone ?? ''}</span>
       </span>
     ),
   },
-  { key: 'source', header: 'Source', desktopOnly: true, cell: (l) => <Badge tone="neutral" dot={false}>{humanize(l.source)}</Badge> },
-  { key: 'status', header: 'Status', badge: true, cell: (l) => <StatusBadge status={l.status} /> },
-  { key: 'interest', header: 'Interested In', desktopOnly: true, cellClassName: 'text-muted', cell: (l) => <span className="block max-w-[9rem] truncate">{services.get(l.id) ?? '—'}</span> },
+  {
+    key: 'status',
+    header: 'Status',
+    badge: true,
+    sortKey: 'score',
+    cell: (l) => (
+      <span className="flex flex-col items-start gap-1">
+        <StatusBadge status={l.status} />
+        <span className="tabular text-[11px] text-muted" title={scores.get(l.id)?.reasons.map((r) => `${r.points >= 0 ? '+' : ''}${r.points} ${r.detail}`).join('\n')}>
+          {scores.get(l.id) ? `Score ${scores.get(l.id)!.score}` : 'Unscored'}
+        </span>
+      </span>
+    ),
+  },
+  { key: 'interest', header: 'Interested In', desktopOnly: true, cellClassName: 'text-muted', cell: (l) => <span className="block max-w-[5.5rem] truncate">{services.get(l.id) ?? '—'}</span> },
+  { key: 'budget', header: 'Budget', desktopOnly: true, cellClassName: 'tabular whitespace-nowrap text-muted', cell: (l) => factsOf(l.id).budget ?? '—' },
+  {
+    key: 'tags',
+    header: 'Tags',
+    desktopOnly: true,
+    cell: (l) => {
+      const tags = factsOf(l.id).tags;
+      return tags.length === 0 ? (
+        <span className="text-muted">—</span>
+      ) : (
+        <span className="flex max-w-[6rem] gap-1">
+          {tags.slice(0, 1).map((t) => (
+            <Badge key={t} tone="info" dot={false}>{t}</Badge>
+          ))}
+        </span>
+      );
+    },
+  },
   {
     key: 'assigned',
     header: 'Assigned To',
@@ -123,24 +159,11 @@ const columnsFor = (clock: AgencyClock, scores: Map<string, LeadScoreSummary>, s
       l.assignedEmail ? (
         <span className="flex items-center gap-2">
           <Avatar name={l.assignedEmail} size="sm" />
-          <span className="max-w-[7rem] truncate">{l.assignedEmail.split('@')[0]}</span>
+          <span className="hidden max-w-[5rem] truncate min-[1800px]:inline">{l.assignedEmail.split('@')[0]}</span>
         </span>
       ) : (
         <span className="text-muted">Unassigned</span>
       ),
-  },
-  // ADM-88 — Decision: reversed by the owner on 2026-09-29. The stored score,
-  // which never exists without its reasons; unscored is a dash, not a zero.
-  {
-    key: 'score',
-    header: 'Score',
-    align: 'right',
-    cellClassName: 'tabular',
-    cell: (l) => {
-      const s = scores.get(l.id);
-      return s ? <span title={s.reasons.map((r) => `${r.points >= 0 ? '+' : ''}${r.points} ${r.detail}`).join('\n')}>{s.score}</span> : <span className="text-muted">—</span>;
-    },
-    sortKey: 'score',
   },
   {
     key: 'activity',
@@ -196,12 +219,13 @@ export default async function LeadsPage({
     createdFrom?: string;
     createdTo?: string;
     service?: string;
+    lead?: string;
   }>;
 }) {
   const context = await requireInternal('/leads');
   if (!can(context, 'lead.read')) return <PermissionDenied />;
 
-  const { status, page: pageParam, sort: sortKey, dir, q, source, owner, budgetMin, budgetMax, createdFrom: createdFromParam, createdTo: createdToParam, service: serviceParam } = await searchParams;
+  const { status, page: pageParam, sort: sortKey, dir, q, source, owner, budgetMin, budgetMax, createdFrom: createdFromParam, createdTo: createdToParam, service: serviceParam, lead: leadParam } = await searchParams;
   // SCR-006 — `?service=`: the lead's recorded service, matched whole and
   // case-insensitively; the datalist offers the distinct values in use.
   const service = (serviceParam ?? '').trim().slice(0, 80);
@@ -229,6 +253,7 @@ export default async function LeadsPage({
     service ? `service=${encodeURIComponent(service)}` : '',
   ].filter(Boolean);
   const currentQuery = [...keep, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
+  const statusHref = (st: string | null) => `/leads?${[st ? `status=${st}` : '', ...keep.filter((k) => !k.startsWith('status='))].filter(Boolean).join('&')}`;
   const qs = (extra: string) => `/leads?${[...keep, extra].filter(Boolean).join('&')}`;
 
   const [allLeads, waiting, clock, savedViews] = await Promise.all([
@@ -277,6 +302,18 @@ export default async function LeadsPage({
   const leads = sortRows(filtered, sortKey, direction, comparators);
   const { page, pageCount, rows: pageRows } = paginate(leads, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
 
+  const selected = pageRows.find((l) => l.id === leadParam) ?? pageRows[0] ?? null;
+  const selectedFacts = selected ? facts.get(selected.id) : undefined;
+  const detailsPrefix = `/leads?${keep.length > 0 ? `${keep.join('&')}&` : ''}`;
+  const createdDelta = countPeriods(allLeads.map((l) => facts.get(l.id)?.createdAt), now);
+  const convertedDelta = countPeriods(allLeads.filter((l) => l.status === 'converted').map((l) => facts.get(l.id)?.createdAt), now);
+  const todayKey = clock.dayKey(now);
+  const followUpToday = allLeads.filter((l) => {
+    const at = facts.get(l.id)?.nextFollowUpAt;
+    return at ? clock.dayKey(new Date(at)) === todayKey : false;
+  }).length;
+  const highValue = allLeads.filter((l) => (facts.get(l.id)?.budgetMinor ?? 0) >= 5_000_000).length;
+  const unassigned = allLeads.filter((l) => l.assigned_to === null).length;
   const monthStart = `${clock.dayKey(now).slice(0, 7)}-01`;
   const newThisMonth = allLeads.filter((l) => (facts.get(l.id)?.createdAt ?? '') >= `${monthStart}T00:00:00`).length;
   const pct = (n: number) => (allLeads.length > 0 ? `${Math.round((n / allLeads.length) * 100)}% of total` : '');
@@ -311,12 +348,23 @@ export default async function LeadsPage({
 
       {allLeads.length > 0 ? (
         <StatGrid cols={5}>
-          <Stat label="Total Leads" value={String(allLeads.length)} caption={`${countByStatus.get('disqualified') ?? 0} disqualified`} tone="brand" icon={<IconLeads size={16} />} />
-          <Stat label="New This Month" value={String(newThisMonth)} caption="Created this month" tone="info" icon={<IconActivity size={16} />} href={`/leads?createdFrom=${monthStart}`} />
+          <Stat label="Total Leads" value={String(allLeads.length)} caption={`${countByStatus.get('disqualified') ?? 0} disqualified`} trend={trendOf(periodDelta(createdDelta))} tone="brand" icon={<IconLeads size={16} />} />
+          <Stat label="New This Month" value={String(newThisMonth)} caption="Created this month" trend={trendOf(periodDelta(createdDelta))} tone="info" icon={<IconActivity size={16} />} href={`/leads?createdFrom=${monthStart}`} />
           <Stat label="Qualifying" value={String(countByStatus.get('qualifying') ?? 0)} caption={pct(countByStatus.get('qualifying') ?? 0)} tone="warning" icon={<IconPhone size={16} />} href="/leads?status=qualifying" />
           <Stat label="Qualified" value={String(countByStatus.get('qualified') ?? 0)} caption={pct(countByStatus.get('qualified') ?? 0)} tone="success" icon={<IconTarget size={16} />} href="/leads?status=qualified" />
-          <Stat label="Converted" value={String(countByStatus.get('converted') ?? 0)} caption={pct(countByStatus.get('converted') ?? 0)} tone="accent" icon={<IconUser size={16} />} href="/leads?status=converted" />
+          <Stat label="Converted" value={String(countByStatus.get('converted') ?? 0)} caption={pct(countByStatus.get('converted') ?? 0)} trend={trendOf(periodDelta(convertedDelta))} tone="accent" icon={<IconUser size={16} />} href="/leads?status=converted" />
         </StatGrid>
+      ) : null}
+
+      <div className="grid items-start gap-4 2xl:grid-cols-[minmax(0,1fr)_15rem]">
+        <div className="flex min-w-0 flex-col gap-4">
+      {allLeads.length > 0 ? (
+        <FilterChips
+          options={[
+            { key: 'all', label: `All Leads (${allLeads.length})`, href: statusHref(null), active: !status },
+            ...LEAD_STATUSES.map((st) => ({ key: st, label: `${humanize(st)} (${countByStatus.get(st) ?? 0})`, href: statusHref(st), active: status === st })),
+          ]}
+        />
       ) : null}
 
       <FilterBar clearHref="/leads" filtered={Boolean(status || q || source || owner || boundedByBudget || createdFrom || createdTo || service)}>
@@ -412,6 +460,7 @@ export default async function LeadsPage({
             sortKey={sortKey}
             sortDirection={direction}
             sortHrefPrefix={`/leads?${keep.length > 0 ? `${keep.join('&')}&` : ''}`}
+            detailsHrefPrefix={detailsPrefix}
           />
           <Pagination
             page={page}
@@ -421,14 +470,18 @@ export default async function LeadsPage({
         </>
       ) : leads.length > 0 ? (
         <>
+          <Card className="px-1 pb-1">
           <DataTable
+            dense
+            tight
             rows={pageRows}
-            columns={columnsFor(clock, scores, services.byLead, (id) => facts.get(id)?.createdAt)}
+            columns={columnsFor(clock, scores, services.byLead, (id) => facts.get(id)?.createdAt, (id) => ({ budget: facts.get(id)?.budgetMinor !== null && facts.get(id)?.budgetMinor !== undefined ? money(facts.get(id)!.budgetMinor as number) : null, tags: facts.get(id)?.tags ?? [] }))}
             getKey={(l) => l.id}
             // Bucket F: the shared per-row overflow menu — the row's secondary
             // destinations, each a page that already exists.
             rowActions={(l) => [
               { key: 'preview', label: 'Preview', node: <LeadPreviewButton leadId={l.id} name={l.contact?.fullName ?? l.title} /> },
+              { key: 'details', label: 'Show details', href: `${detailsPrefix}lead=${l.id}` },
               { key: 'open', label: 'Open lead', href: `/leads/${l.id}` },
               { key: 'meeting', label: 'Request a meeting', href: `/leads/${l.id}#meetings` },
               { key: 'quotation', label: 'Quotations', href: `/leads/${l.id}#quotations` },
@@ -440,6 +493,7 @@ export default async function LeadsPage({
               makeHref: (key, nextDirection) => qs(`sort=${key}&dir=${nextDirection}`),
             }}
           />
+          </Card>
           <Pagination
             page={page}
             pageCount={pageCount}
@@ -460,6 +514,74 @@ export default async function LeadsPage({
           action={status || q || source || owner || boundedByBudget || createdFrom || createdTo || service ? <Link href="/leads" className={buttonClass('secondary', 'sm')}>Clear filters</Link> : <Link href="/import" className={buttonClass('secondary', 'sm')}>Import historical leads</Link>}
         />
       )}
+        </div>
+
+        {allLeads.length > 0 && selected ? (
+          <aside className="flex min-w-0 flex-col gap-4" aria-label="Lead details and quick filters">
+            <DetailPanel
+              title="Lead Details"
+              actions={<Link href={`/leads/${selected.id}`} className="text-xs font-medium text-brand hover:underline">Open</Link>}
+              rows={[
+                { label: 'Lead', value: selected.contact?.fullName ?? selected.title },
+                { label: 'Status', value: <StatusBadge status={selected.status} /> },
+                { label: 'Email', value: selected.contact?.email ?? null },
+                { label: 'Phone', value: selected.contact?.phone ?? null },
+                { label: 'Source', value: <Badge tone="neutral" dot={false}>{humanize(selected.source)}</Badge> },
+                { label: 'Interested in', value: services.byLead.get(selected.id) ?? null },
+                { label: 'Budget', value: selectedFacts && typeof selectedFacts.budgetMinor === 'number' ? money(selectedFacts.budgetMinor) : null },
+                { label: 'Timeline', value: selectedFacts?.timelineNote ?? null },
+                { label: 'Company', value: selected.contact?.company ?? null },
+                { label: 'Team member', value: selected.assignedEmail ? selected.assignedEmail.split('@')[0] : 'Unassigned' },
+              ]}
+            >
+              <div className="border-t border-line px-4 py-3 sm:px-5">
+                <p className="mb-1.5 text-sm font-bold text-foreground">Notes</p>
+                <p className="text-[13px] text-muted">{selectedFacts?.notes ?? 'No notes yet.'}</p>
+              </div>
+              <div className="border-t border-line px-4 py-3 sm:px-5">
+                <p className="mb-1.5 text-sm font-bold text-foreground">Next Follow-up</p>
+                <p className="text-[13px] text-muted">{selectedFacts?.nextFollowUpAt ? clock.dateTime(selectedFacts.nextFollowUpAt) : 'None scheduled.'}</p>
+              </div>
+              <div className="border-t border-line px-4 py-3 sm:px-5">
+                <p className="mb-1.5 text-sm font-bold text-foreground">Tags</p>
+                {(selectedFacts?.tags ?? []).length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {(selectedFacts?.tags ?? []).map((t) => (
+                      <Badge key={t} tone="info" dot={false}>{t}</Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[13px] text-muted">No tags yet.</p>
+                )}
+              </div>
+              <div className="flex flex-col gap-2 border-t border-line px-4 py-3 sm:px-5">
+                <Link href={`/leads/${selected.id}#activity`} className={buttonClass('primary', 'sm')}>Log Activity</Link>
+                <Link href={`/leads/${selected.id}#sales`} className={buttonClass('secondary', 'sm')}>Convert to Client</Link>
+                <Link href={`/leads/${selected.id}#quotations`} className={buttonClass('secondary', 'sm')}>Create Quotation</Link>
+              </div>
+            </DetailPanel>
+            <Card>
+              <CardHeader title="Quick Filters" />
+              <ul className="flex flex-col divide-y divide-line px-4 pb-2 text-[13px] sm:px-5">
+                {[
+                  { label: 'New This Month', href: `/leads?createdFrom=${monthStart}`, n: newThisMonth },
+                  { label: 'Follow-up Today', href: '/leads', n: followUpToday, link: '/follow-ups' },
+                  { label: 'Unassigned', href: '/leads?owner=unassigned', n: unassigned },
+                  { label: 'High Value (₹50K+)', href: '/leads?budgetMin=50000', n: highValue },
+                ].map((f) => (
+                  <li key={f.label}>
+                    <Link href={f.link ?? f.href} className="flex items-center justify-between gap-2 py-2 hover:text-brand">
+                      <span>{f.label}</span>
+                      <span className="tabular rounded-full bg-surface-sunken px-2 py-0.5 text-xs text-muted">{f.n}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          </aside>
+        ) : null}
+      </div>
+
       {/* Doc 09 §31, under ADM-88: a fact-tier order, never a score. At the
           top because at 200-300 leads a month the first question of the day is
           not "what is my pipeline" but "who is waiting for me". */}

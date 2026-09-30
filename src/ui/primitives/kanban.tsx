@@ -43,6 +43,7 @@ export function KanbanBoard<T extends KanbanItem>({
   renderCard,
   onMove,
   disabled = false,
+  isItemLocked,
   renderColumnAction,
   renderColumnFooter,
   emptyLabel = 'No tasks',
@@ -55,6 +56,8 @@ export function KanbanBoard<T extends KanbanItem>({
   onMove?: (itemId: string, toColumnId: string) => void | Promise<void>;
   /** Renders every card as a plain, non-draggable tile — for roles without write permission. */
   disabled?: boolean;
+  /** Renders one card as a plain tile even when the board is writable (a read-only column, e.g. Won / Lost). */
+  isItemLocked?: (item: T) => boolean;
   /** A control in the column header's right corner. */
   renderColumnAction?: (column: KanbanColumn) => React.ReactNode;
   /** A control under the column's cards. */
@@ -118,7 +121,7 @@ export function KanbanBoard<T extends KanbanItem>({
             {items
               .filter((i) => columnIdFor(i) === col.id)
               .map((item) => (
-                <KanbanCard key={item.id} id={item.id} disabled={disabled}>
+                <KanbanCard key={item.id} id={item.id} disabled={disabled || Boolean(isItemLocked?.(item))}>
                   {renderCard(item)}
                 </KanbanCard>
               ))}

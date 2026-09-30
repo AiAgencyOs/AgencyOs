@@ -14,6 +14,9 @@ import { describeCron } from '@/modules/qa/cron';
 import { compareToBudgets, listMetricResults, listPerformanceBudgets, listStabilityIncidents } from '@/modules/qa/performance-queries';
 import { listSuiteSchedules } from '@/modules/qa/schedule-queries';
 import { readClientName } from '@/lib/admin/clients';
+import { deviceTiles, PLATFORMS, type Platform } from '@/modules/qa/device-tiles';
+import { DeviceTestingCard, QaTeamCard } from '@/modules/qa/qa-device-view';
+import { listDeviceRuns, readQaTeam } from '@/modules/qa/qa-team-queries';
 import { Badge, Card, CardHeader, IconAlert, IconCheck as IconOk, IconClock, IconList, Stat, StatGrid } from '@/ui';
 
 import { BudgetForm, CloseRunForm, MetricForm, OpenIncidentForm, OpenRunForm, RerunButton, ResolveIncidentForm, ScheduleSuiteForm } from './run-lifecycle-panel';
@@ -32,10 +35,11 @@ export const metadata: Metadata = { title: 'Test plan' };
  * baseline to point at (Doc 14 §3); if none is active yet, this page sends
  * the reader to the Scope tab rather than rendering a dead end.
  */
-export default async function TestPlanPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ compare?: string; baseline?: string; defects?: string; severity?: string }> }) {
+export default async function TestPlanPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ compare?: string; baseline?: string; defects?: string; severity?: string; platform?: string }> }) {
   const { projectId } = await params;
   // SCR-047: ?defects=open|fixed|reopened and ?severity= filter the bug list — the KPI tiles' own links.
-  const { compare, baseline, defects: defectsFilter, severity: severityFilter } = await searchParams;
+  const { compare, baseline, defects: defectsFilter, severity: severityFilter, platform: platformRaw } = await searchParams;
+  const platform = (PLATFORMS as readonly string[]).includes(platformRaw ?? '') ? (platformRaw as Platform) : null;
 
   const context = await requireInternal(`/projects/${projectId}/qa`);
   if (!can(context, 'project.read')) return <PermissionDenied />;
@@ -75,6 +79,8 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
     compare && /^[0-9a-f-]{36}$/i.test(compare) ? readBaselineComparison(projectId, compare, baseline && /^[0-9a-f-]{36}$/i.test(baseline) ? baseline : undefined) : Promise.resolve(null),
   ]);
   const budgetLines = compareToBudgets(budgets, metrics);
+  const [deviceRuns, qaTeam] = await Promise.all([listDeviceRuns(projectId), readQaTeam(projectId)]);
+  const tiles = deviceTiles(deviceRuns);
 
   return (
     <div className="flex flex-col gap-5">
@@ -114,8 +120,20 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
 
       <TestRunsCard projectId={projectId} runs={runs} builds={builds} editable={canRecordRuns} planItems={plan?.items ?? []} results={caseResults} />
 
+      {/* SCR-044: device tiles (from the runs' own device / evidence) and the QA roster (project role qa). */}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(19rem,1fr)]">
+        <DeviceTestingCard
+          tiles={tiles}
+          active={platform}
+          hrefFor={(p) => (p ? `/projects/${projectId}/qa?platform=${p}#device-testing` : `/projects/${projectId}/qa#device-testing`)}
+          addHref={`/projects/${projectId}/qa#run-lifecycle`}
+          date={(iso) => clock.date(iso)}
+        />
+        <QaTeamCard team={qaTeam} manageHref={`/projects/${projectId}/team`} />
+      </div>
+
       {/* SCR-046 (bucket F): a run has a life — open it, close it once with its counts (blocked is its own column), rerun what failed. */}
-      <Card>
+      <Card id="run-lifecycle">
         <CardHeader title="Run lifecycle" description="Open a run against a build; close it once with passed, failed, skipped and blocked; rerun a closed run's failed cases as a new run that points back at it. A closed run is evidence and never changes." />
         <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
           {canRecordRuns ? <OpenRunForm projectId={projectId} builds={builds} /> : null}

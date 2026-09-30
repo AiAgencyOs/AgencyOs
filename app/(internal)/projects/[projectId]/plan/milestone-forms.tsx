@@ -17,14 +17,14 @@ import { FormMessage, buttonClass } from '@/ui';
  * milestone `listEligibleMilestones` says is next, so the service's refusal
  * — shown verbatim — is the exception, not the rule.
  */
-export function MarkMilestoneMetForm({ projectId, milestoneId }: { projectId: string; milestoneId: string }) {
+export function MarkMilestoneMetForm({ projectId, milestoneId, label = 'Mark met' }: { projectId: string; milestoneId: string; label?: string }) {
   const [state, action, pending] = useActionState(markMilestoneMetAction, IDLE_STATE);
   return (
     <form action={action} className="flex flex-col items-end gap-1">
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="milestoneId" value={milestoneId} />
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
-        {pending ? 'Marking…' : 'Mark met'}
+        {pending ? 'Marking…' : label}
       </button>
       <FormMessage status={state.status} message={state.message} className="text-xs" />
     </form>

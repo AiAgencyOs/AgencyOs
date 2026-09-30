@@ -208,14 +208,21 @@ export function TrendChart({
   height = 220,
   currency,
   className,
+  yDomain,
+  unit,
 }: {
-  data: Record<string, string | number>[];
-  series: { key: string; label: string; color?: string }[];
+  data: Record<string, string | number | null>[];
+  /** `dashed` draws a plan line (the reference's "Planned Progress"); a null value leaves a gap, not a zero. */
+  series: { key: string; label: string; color?: string; dashed?: boolean }[];
   xKey: string;
   height?: number;
   /** Formats every value as this currency (e.g. "INR") — omit for a plain number. */
   currency?: string;
   className?: string;
+  /** Fixes the y axis (e.g. `[0, 100]` for a percentage). */
+  yDomain?: [number, number];
+  /** A suffix on the axis ticks and the tooltip, e.g. `%`. */
+  unit?: string;
 }) {
   return (
     <div className={cx('flex flex-col gap-2', className)}>
@@ -233,10 +240,12 @@ export function TrendChart({
             tick={{ fill: 'var(--muted)', fontSize: 11 }}
             axisLine={false}
             tickLine={false}
-            width={40}
+            width={unit ? 44 : 40}
+            {...(yDomain ? { domain: yDomain } : {})}
+            {...(unit ? { tickFormatter: (v: number) => `${v}${unit}` } : {})}
           />
           <Tooltip
-            formatter={(value) => (typeof value === 'number' ? formatValue(value, currency) : value)}
+            formatter={(value) => (typeof value === 'number' ? `${formatValue(value, currency)}${unit ?? ''}` : value)}
             contentStyle={{
               background: 'var(--surface)',
               border: '1px solid var(--line)',
@@ -253,8 +262,10 @@ export function TrendChart({
               name={s.label}
               stroke={s.color ?? DEFAULT_SERIES_COLORS[i % DEFAULT_SERIES_COLORS.length]}
               strokeWidth={2}
+              {...(s.dashed ? { strokeDasharray: '5 4' } : {})}
               dot={false}
               activeDot={{ r: 4 }}
+              connectNulls={false}
             />
           ))}
         </ReLineChart>

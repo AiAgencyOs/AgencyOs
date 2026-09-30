@@ -46,6 +46,7 @@ import {
   type TimelineStep,
   DonutChart,
   QuickActions,
+  TrendChart,
 } from '@/ui';
 import { readClientName } from '@/lib/admin/clients';
 
@@ -117,6 +118,10 @@ import { ProposeMeetingOnDayForm } from './calendar/propose-meeting-form';
 import { QuickTaskForm } from './create-in-place';
 import { AddProjectFileForm } from './files-panel';
 import { ProjectLinksPanel } from './links-panel';
+import { ProjectNotesPanel } from './project-notes-panel';
+import { listProjectNotes } from '@/modules/projects/project-notes-queries';
+import { progressSeries, topLevelTasks } from '@/modules/projects/project-view-derive';
+import { countPeriods, periodDelta, trendOf } from '@/lib/admin/period-delta';
 import { ProjectUpdatePanel } from './project-update-form';
 import { readMyWatch } from '@/modules/projects/project-defaults-queries';
 import { RecordClaimForm, VerifyClaimForm } from './claims-panel';
@@ -287,7 +292,7 @@ export default async function ProjectPage({
     project.client_account_id ? listClientLeads(project.client_account_id) : Promise.resolve([]),
     getAgencyTimeZone(),
   ]);
-  const [{ tasks, modules }, team, files, roster, clientName, assignedAgents, myWatch] = await Promise.all([
+  const [{ tasks: allTasks, modules }, team, files, roster, clientName, assignedAgents, myWatch, notes] = await Promise.all([
     listDevelopmentBreakdown(projectId),
     listProjectTeam(projectId),
     listProjectFiles(projectId),
@@ -297,7 +302,11 @@ export default async function ProjectPage({
     listAssignedAgents(projectId),
     // SCR-027 — whether this person watches the project's phase changes.
     readMyWatch(projectId, context.userId),
+    // The Project Notes card (20261004100000).
+    listProjectNotes(projectId, 4),
   ]);
+  // A subtask is counted and drawn under its parent (task page), never as a task of its own.
+  const tasks = topLevelTasks(allTasks);
   const nameByUser = new Map(team.map((m) => [m.userId, m.fullName]));
   const todayKey = new Date().toISOString().slice(0, 10);
   const taskCounts = {
@@ -312,6 +321,9 @@ export default async function ProjectPage({
     ? Math.ceil((new Date(`${project.ends_on}T00:00:00Z`).getTime() - new Date(`${todayKey}T00:00:00Z`).getTime()) / 86_400_000)
     : null;
   const overallProgress = plan.length > 0 ? pctOf(summary.milestones_met, summary.milestones_total) : pctOf(taskCounts.done, taskCounts.total);
+  const totalTasksTrend = trendOf(periodDelta(countPeriods(tasks.map((t) => t.createdAt), new Date())));
+  const seriesDay = (key: string) => new Date(`${key}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+  const progressData = progressSeries(tasks, { start: project.starts_on, end: project.ends_on }, todayKey).map((p) => ({ day: seriesDay(p.key), Actual: p.actual, Planned: p.planned }));
   const healthy = quality.open_blockers === 0 && taskCounts.overdue === 0 && status !== 'on_hold';
 
   // The current milestone is the first one not yet met; everything before it
@@ -425,7 +437,7 @@ export default async function ProjectPage({
       <ProjectSubNav projectId={projectId} />
 
       <StatGrid cols={6}>
-        <Stat compact label="Total tasks" href={`/projects/${projectId}/development`} value={String(taskCounts.total)} caption={`${taskCounts.done} completed · ${pctOf(taskCounts.done, taskCounts.total)}%`} tone="brand" icon={<IconList size={16} />} />
+        <Stat compact label="Total tasks" href={`/projects/${projectId}/tasks`} value={String(taskCounts.total)} caption={`${taskCounts.done} completed · ${pctOf(taskCounts.done, taskCounts.total)}%`} tone="brand" icon={<IconList size={16} />} trend={totalTasksTrend} />
         <Stat compact label="In progress" href={`/projects/${projectId}/board`} value={String(taskCounts.inProgress)} caption={`${pctOf(taskCounts.inProgress, taskCounts.total)}%`} tone="info" icon={<IconClock size={16} />} />
         <Stat compact label="Pending" href={`/projects/${projectId}/board`} value={String(taskCounts.pending)} caption={`${pctOf(taskCounts.pending, taskCounts.total)}%`} tone="warning" icon={<IconClock size={16} />} />
         <Stat compact label="Overdue" href={`/projects/${projectId}/board`} value={String(taskCounts.overdue)} caption={`${pctOf(taskCounts.overdue, taskCounts.total)}%`} tone={taskCounts.overdue > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} />
@@ -480,6 +492,28 @@ export default async function ProjectPage({
       </Card>
 
 
+      <div className="grid gap-4 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+      <Card>
+        <CardHeader title="Progress overview" description="Share of the project's tasks completed, against the share due by each day." />
+        <div className="px-4 pb-4 sm:px-5">
+          {progressData.length === 0 ? (
+            <p className="text-[13px] text-muted">No tasks yet, so there is no progress to plot.</p>
+          ) : (
+            <TrendChart
+              data={progressData}
+              xKey="day"
+              height={190}
+              yDomain={[0, 100]}
+              unit="%"
+              series={[
+                { key: 'Actual', label: 'Actual progress', color: 'var(--brand)' },
+                { key: 'Planned', label: 'Planned progress', color: 'var(--faint)', dashed: true },
+              ]}
+            />
+          )}
+        </div>
+      </Card>
+
       <Card>
         <CardHeader title="Task status" actions={<ViewAll href={`/projects/${projectId}/board`} label="Board" />} />
         <div className="px-4 pb-4 sm:px-5">
@@ -499,6 +533,7 @@ export default async function ProjectPage({
           )}
         </div>
       </Card>
+      </div>
 
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
         <Card>
@@ -568,6 +603,15 @@ export default async function ProjectPage({
           )}
         </Card>
       </div>
+
+      <Card>
+        <CardHeader title="Project notes" />
+        <ProjectNotesPanel
+          projectId={projectId}
+          editable={can(context, 'task.write')}
+          notes={notes.map((n) => ({ id: n.id, title: n.title, body: n.body, whenLabel: clock.dateTime(n.createdAt), byName: n.createdByName }))}
+        />
+      </Card>
 
       <div className="grid gap-3 sm:grid-cols-2">
         {[
@@ -1349,7 +1393,7 @@ export default async function ProjectPage({
         </Card>
 
         {/* SCR-019: send a project update — through the client thread chokepoint, or as an internal note. */}
-        <Card>
+        <Card id="project-updates">
           <CardHeader title="Project updates" />
           <ProjectUpdatePanel
             projectId={projectId}

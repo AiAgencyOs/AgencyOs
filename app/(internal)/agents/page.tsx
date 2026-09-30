@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { formatCostMinor, whyNotRun, wouldRun } from '@/lib/admin/agent-eval';
 import { readRunMetrics } from '@/lib/admin/agent-metrics';
 import { aiStatus, listHandoffs, listRecentAgentRuns } from '@/lib/admin/agent-status';
+import { getAgentActivity } from '@/lib/admin/dashboard-deltas';
+import { periodDelta, trendOf } from '@/lib/admin/period-delta';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
 import { getAgentUsage } from '@/lib/admin/usage';
@@ -78,13 +80,14 @@ export default async function AgentsPage() {
   const clock = await agencyClock();
   if (!can(context, 'audit.read')) return <PermissionDenied />;
 
-  const [{ providerConfigured, providers, agents }, settings, usage, recentRuns, metrics, handoffs] = await Promise.all([
+  const [{ providerConfigured, providers, agents }, settings, usage, recentRuns, metrics, handoffs, activity] = await Promise.all([
     aiStatus(),
     readOperationalSettings(),
     getAgentUsage(),
     listRecentAgentRuns(8),
     readRunMetrics(),
     listHandoffs(6),
+    getAgentActivity(new Date()),
   ]);
   const providerVerifiedAt = settingInstant(settings, 'ai_provider_verified_at');
   const providerVerifiedModel = settingText(settings, 'ai_provider_verified_model');
@@ -105,7 +108,7 @@ export default async function AgentsPage() {
   const failedRecent = recentRuns.filter((r) => r.status === 'failed').length;
   const avgSteps = recentRuns.length > 0 ? Math.round(recentRuns.reduce((n, r) => n + r.stepCount, 0) / recentRuns.length) : null;
 
-  const trend = usage.dailyTrend.map((d) => ({ day: clock.date(`${d.day}T12:00:00Z`), runs: d.runs, cost: d.costMinor / 100 }));
+  const trend = usage.dailyTrend.map((d) => ({ day: clock.date(`${d.day}T12:00:00Z`), runs: d.runs, failed: activity.failedByDay[d.day] ?? 0, cost: d.costMinor / 100 }));
 
   const statusData = [
     { label: 'Would run', value: runnable },
@@ -240,9 +243,9 @@ export default async function AgentsPage() {
       ) : null}
       <StatGrid cols={5}>
         <Stat label="Total Agents" value={String(agents.length)} caption={`${enabledCount} enabled · ${runnable} would run`} tone="brand" icon={<IconAgents size={16} />} />
-        <Stat label="Total Tasks Executed" value={compact(totalRuns)} caption={usage.capped ? 'Ledger capped' : 'All time'} tone="accent" icon={<IconSparkle size={16} />} href="/usage" />
-        <Stat label="Total Tokens Used" value={compact(usage.totals.inputTokens + usage.totals.outputTokens)} caption={`${compact(usage.totals.inputTokens)} in · ${compact(usage.totals.outputTokens)} out`} tone="info" icon={<IconUsage size={16} />} href="/usage" />
-        <Stat label="AI Cost" value={`₹${formatCostMinor(usage.totals.costMinor) ?? '0'}`} caption="From the cost ledger" tone="danger" icon={<IconRupee size={16} />} href="/usage" />
+        <Stat label="Total Tasks Executed" value={compact(totalRuns)} caption={usage.capped ? 'Ledger capped' : 'All time'} trend={trendOf(periodDelta(activity.runs))} tone="accent" icon={<IconSparkle size={16} />} href="/usage" />
+        <Stat label="Total Tokens Used" value={compact(usage.totals.inputTokens + usage.totals.outputTokens)} caption={`${compact(usage.totals.inputTokens)} in · ${compact(usage.totals.outputTokens)} out`} trend={trendOf(periodDelta(activity.tokens))} tone="info" icon={<IconUsage size={16} />} href="/usage" />
+        <Stat label="AI Cost" value={`₹${formatCostMinor(usage.totals.costMinor) ?? '0'}`} caption="From the cost ledger" trend={trendOf(periodDelta(activity.cost), true)} tone="danger" icon={<IconRupee size={16} />} href="/usage" />
         <Stat label="Avg. Task Time" value={seconds(metrics.averageSeconds)} caption={metrics.timedRuns > 0 ? `Median ${seconds(metrics.medianSeconds)} · ${metrics.timedRuns} settled runs` : 'No settled run yet'} tone="info" icon={<IconClock size={16} />} />
       </StatGrid>
 
@@ -266,7 +269,7 @@ export default async function AgentsPage() {
             {trend.length === 0 ? (
               <p className="py-6 text-center text-[13px] text-muted">No runs recorded yet.</p>
             ) : (
-              <TrendChart data={trend} xKey="day" series={[{ key: 'runs', label: 'Runs' }]} height={200} />
+              <TrendChart data={trend} xKey="day" series={[{ key: 'runs', label: 'Runs' }, { key: 'failed', label: 'Failed', color: 'var(--danger)' }]} height={200} />
             )}
           </div>
         </Card>

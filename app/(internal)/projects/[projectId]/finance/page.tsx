@@ -7,10 +7,14 @@ import { readClientName } from '@/lib/admin/clients';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { readProjectMargin } from '@/modules/finance/margin-queries';
+import { gstLine, lastPaymentAt, methodsUsed, receivedPayments, transactionStatus } from '@/modules/finance/project-finance';
+import { readProjectPayments } from '@/modules/finance/project-finance-queries';
 import { listProjectInvoices } from '@/modules/finance/queries';
+import { listProjectNotes } from '@/modules/projects/project-notes-queries';
 import { getProject, listPaymentPlan } from '@/modules/projects/queries';
-import { Card, CardHeader, cx, EmptyState, IconCalendar, IconCheck, IconClock, IconFile, IconInvoices, IconRupee, PermissionDenied, ProgressBar, QuickActions, Stat, StatGrid, StatusBadge, ViewAll } from '@/ui';
+import { Badge, Card, CardHeader, cx, EmptyState, IconCalendar, IconCheck, IconClock, IconFile, IconInvoices, IconRupee, PermissionDenied, ProgressBar, QuickActions, Stat, StatGrid, StatusBadge, ViewAll } from '@/ui';
 
+import { ProjectNotesPanel } from '../project-notes-panel';
 import { ProjectSubNav } from '../project-subnav';
 import { WorkspaceHeader } from '../workspace-header';
 
@@ -37,13 +41,17 @@ export default async function ProjectFinancePage({ params }: { params: Promise<{
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const [plan, invoices, clock, clientName, margin] = await Promise.all([
+  const [plan, invoices, clock, clientName, margin, { payments, taxMinor }, notes] = await Promise.all([
     listPaymentPlan(projectId),
     listProjectInvoices(projectId),
     agencyClock(),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
     readProjectMargin(projectId),
+    readProjectPayments(projectId),
+    listProjectNotes(projectId, 4),
   ]);
+  const transactions = receivedPayments(payments).slice(0, 5);
+  const lastPaid = lastPaymentAt(payments);
 
   const currency = project.currency;
   const live = invoices.filter((i) => i.status !== 'void');
@@ -155,15 +163,6 @@ export default async function ProjectFinancePage({ params }: { params: Promise<{
             )}
           </Card>
 
-          <Card>
-            <CardHeader title="Project Profitability (Internal)" description={`Cash-basis estimate: paid − (expenses + AI cost + time cost).`} />
-            <dl className="flex flex-col divide-y divide-line px-4 pb-3 text-[13px] sm:px-5">
-              <div className="flex justify-between py-2"><dt className="text-muted">Total Revenue (received)</dt><dd className="tabular font-medium">{money(margin.paidMinor, currency)}</dd></div>
-              <div className="flex justify-between py-2"><dt className="text-muted">Total Expenses</dt><dd className="tabular font-medium">{money(margin.costMinor, currency)}</dd></div>
-              <div className="flex justify-between py-2"><dt className="text-muted">Estimated Profit</dt><dd className={cx('tabular font-semibold', margin.marginMinor < 0 ? 'text-danger' : 'text-success')}>{money(margin.marginMinor, currency)}</dd></div>
-              <div className="flex justify-between py-2"><dt className="text-muted">Profit Margin</dt><dd className="tabular font-semibold">{margin.marginPercent === null ? '—' : `${margin.marginPercent}%`}</dd></div>
-            </dl>
-          </Card>
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
@@ -191,7 +190,10 @@ export default async function ProjectFinancePage({ params }: { params: Promise<{
               <div className="flex justify-between py-2"><dt className="text-muted">Total Invoiced</dt><dd className="tabular font-medium">{money(invoiced, currency)}</dd></div>
               <div className="flex justify-between py-2"><dt className="text-muted">Total Received</dt><dd className="tabular font-medium text-success">{money(received, currency)}</dd></div>
               <div className="flex justify-between py-2"><dt className="text-muted">Pending Amount</dt><dd className="tabular font-medium text-danger">{money(pending, currency)}</dd></div>
-              <div className="flex justify-between py-2"><dt className="text-muted">Next Payment Due</dt><dd className="font-medium">{nextDue?.due_at ? clock.date(nextDue.due_at) : '—'}</dd></div>
+              <div className="flex justify-between py-2"><dt className="text-muted">Last Payment Date</dt><dd className="font-medium">{lastPaid ? clock.date(lastPaid) : '—'}</dd></div>
+              <div className="flex justify-between py-2"><dt className="text-muted">Next Payment Due</dt><dd className={cx('font-medium', nextDue?.due_at && clock.dayKey(nextDue.due_at) < clock.dayKey(new Date()) ? 'text-danger' : '')}>{nextDue?.due_at ? clock.date(nextDue.due_at) : '—'}</dd></div>
+              <div className="flex justify-between gap-3 py-2"><dt className="text-muted">Payment Method</dt><dd className="text-right font-medium">{methodsUsed(payments)}</dd></div>
+              <div className="flex justify-between gap-3 py-2"><dt className="text-muted">GST</dt><dd className="text-right font-medium">{gstLine(taxMinor, (m) => money(m, currency))}</dd></div>
             </dl>
           </Card>
 
@@ -205,6 +207,61 @@ export default async function ProjectFinancePage({ params }: { params: Promise<{
             ]}
           />
         </div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]">
+    <Card>
+      <CardHeader title="Recent Transactions" actions={<ViewAll href="/finance/payments" />} />
+      {transactions.length === 0 ? (
+        <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No payment has been received against this project.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-[13px]">
+            <thead>
+              <tr className="border-y border-line bg-surface-sunken text-[11px] uppercase tracking-wider text-muted">
+                <th scope="col" className="px-4 py-2 font-semibold sm:px-5">Date</th>
+                <th scope="col" className="py-2 font-semibold">Description</th>
+                <th scope="col" className="py-2 text-right font-semibold">Amount</th>
+                <th scope="col" className="py-2 pl-4 font-semibold">Type</th>
+                <th scope="col" className="px-4 py-2 font-semibold sm:px-5">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {transactions.map((t) => {
+                const st = transactionStatus(t.status);
+                return (
+                  <tr key={t.id}>
+                    <td className="px-4 py-2.5 text-muted sm:px-5">{clock.date(t.capturedAt ?? t.createdAt)}</td>
+                    <td className="py-2.5">Payment received{t.invoiceNumber ? <> · <Link href={`/invoices/${t.invoiceId}`} className="text-brand hover:underline">{t.invoiceNumber}</Link></> : null}</td>
+                    <td className="tabular py-2.5 text-right">{money(t.amountMinor, t.currency)}</td>
+                    <td className="py-2.5 pl-4 text-muted">Credit</td>
+                    <td className="px-4 py-2.5 sm:px-5"><Badge tone={st.tone}>{st.label}</Badge></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+
+    <Card>
+      <CardHeader title="Project Profitability (Internal)" description={`Cash-basis estimate: paid − (expenses + AI cost + time cost).`} />
+      <dl className="flex flex-col divide-y divide-line px-4 pb-3 text-[13px] sm:px-5">
+        <div className="flex justify-between py-2"><dt className="text-muted">Total Revenue (received)</dt><dd className="tabular font-medium">{money(margin.paidMinor, currency)}</dd></div>
+        <div className="flex justify-between py-2"><dt className="text-muted">Total Expenses</dt><dd className="tabular font-medium">{money(margin.costMinor, currency)}</dd></div>
+        <div className="flex justify-between py-2"><dt className="text-muted">Estimated Profit</dt><dd className={cx('tabular font-semibold', margin.marginMinor < 0 ? 'text-danger' : 'text-success')}>{money(margin.marginMinor, currency)}</dd></div>
+        <div className="flex justify-between py-2"><dt className="text-muted">Profit Margin</dt><dd className="tabular font-semibold">{margin.marginPercent === null ? '—' : `${margin.marginPercent}%`}</dd></div>
+      </dl>
+    </Card>
+    <Card>
+      <CardHeader title="Notes" />
+      <ProjectNotesPanel
+        projectId={projectId}
+        editable={can(context, 'task.write')}
+        notes={notes.map((n) => ({ id: n.id, title: n.title, body: n.body, whenLabel: clock.dateTime(n.createdAt), byName: n.createdByName }))}
+      />
+    </Card>
       </div>
     </div>
   );

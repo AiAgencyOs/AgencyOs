@@ -146,7 +146,8 @@ describe('D. it shows the trail and takes no decisions', () => {
     // page reads and decides what to offer; it holds no interactive state.
     for (const page of ALL_PAGES) {
       assert.doesNotMatch(page, /'use client'/);
-      assert.doesNotMatch(page, /useActionState|<form /);
+      // A GET form (the screen search) decides nothing; any other form on these pages would.
+      assert.doesNotMatch(page, /useActionState|<form (?![^>]*method="get")/);
     }
   });
 

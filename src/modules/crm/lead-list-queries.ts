@@ -17,6 +17,11 @@ export type LeadFacts = {
   createdAt: string;
   tags: string[];
   budgetMinor: number | null;
+  /** The lead's own reminder, when a person set one. */
+  nextFollowUpAt: string | null;
+  /** The qualification's free notes, for the Lead Details rail. */
+  notes: string | null;
+  timelineNote: string | null;
 };
 
 export async function readLeadFacts(leadIds: readonly string[]): Promise<Map<string, LeadFacts>> {
@@ -27,7 +32,7 @@ export async function readLeadFacts(leadIds: readonly string[]): Promise<Map<str
   const { data, error } = await supabase
     .schema('crm')
     .from('leads')
-    .select('id, created_at, tags, qualification')
+    .select('id, created_at, tags, qualification, next_follow_up_at')
     .in('id', [...leadIds]);
   if (error) unreadable('readLeadFacts', error);
 
@@ -37,6 +42,9 @@ export async function readLeadFacts(leadIds: readonly string[]): Promise<Map<str
       createdAt: row.created_at,
       tags: row.tags ?? [],
       budgetMinor: qualification.success ? (qualification.data.budgetMinor ?? null) : null,
+      nextFollowUpAt: row.next_follow_up_at,
+      notes: qualification.success ? (qualification.data.notes ?? null) : null,
+      timelineNote: qualification.success ? (qualification.data.timelineNote ?? null) : null,
     });
   }
   return facts;

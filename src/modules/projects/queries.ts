@@ -122,6 +122,14 @@ export type DevelopmentTask = {
   dueOn: string | null;
   completedAt: string | null;
   estimateHours: number | null;
+  /** The payment milestone ("phase") the task is filed under. */
+  milestoneId: string | null;
+  /** Planned first day of work (migration 20261004100000). */
+  startOn: string | null;
+  /** The task this is a subtask of; null for a top-level task. */
+  parentTaskId: string | null;
+  labels: string[];
+  createdAt: string;
 };
 
 /**
@@ -157,7 +165,7 @@ export async function listDevelopmentBreakdown(
       supabase
         .schema('projects')
         .from('tasks')
-        .select('id, module_id, feature_id, title, description, status, priority, assignee_id, due_on, completed_at, estimate_hours')
+        .select('id, module_id, feature_id, title, description, status, priority, assignee_id, due_on, completed_at, estimate_hours, milestone_id, start_on, parent_task_id, labels, created_at')
         .eq('project_id', projectId)
         .order('created_at', { ascending: true }),
     ]);
@@ -196,6 +204,11 @@ export async function listDevelopmentBreakdown(
       dueOn: t.due_on,
       completedAt: t.completed_at,
       estimateHours: t.estimate_hours === null ? null : Number(t.estimate_hours),
+      milestoneId: t.milestone_id,
+      startOn: t.start_on,
+      parentTaskId: t.parent_task_id,
+      labels: t.labels ?? [],
+      createdAt: t.created_at,
     })),
   };
 }

@@ -32,7 +32,13 @@ export type TaskDetail = {
     createdAt: string;
     assignee: { userId: string; fullName: string; email: string } | null;
     requirementVersionId: string | null;
+    startOn: string | null;
+    labels: string[];
+    milestone: { id: string; name: string } | null;
+    parent: { id: string; title: string } | null;
   };
+  /** Subtasks of this task (20261004100000), oldest first. */
+  subtasks: { id: string; title: string; status: string; dueOn: string | null; assigneeId: string | null; assigneeName: string | null }[];
   module: { id: string; name: string; status: string } | null;
   feature: { id: string; name: string; status: string } | null;
   scopeItems: { id: string; title: string; inclusion: string; acceptanceCriteria: string | null; scopeVersion: number; scopeStatus: string }[];
@@ -51,7 +57,7 @@ export async function readTaskDetail(projectId: string, taskId: string): Promise
     .schema('projects')
     .from('tasks')
     .select(
-      'id, project_id, title, description, status, priority, due_on, estimate_hours, completed_at, created_at, assignee_id, module_id, feature_id, requirement_version_id',
+      'id, project_id, title, description, status, priority, due_on, estimate_hours, completed_at, created_at, assignee_id, module_id, feature_id, requirement_version_id, start_on, labels, milestone_id, parent_task_id',
     )
     .eq('id', taskId)
     .eq('project_id', projectId)
@@ -97,6 +103,23 @@ export async function readTaskDetail(projectId: string, taskId: string): Promise
   if (assignee.error) unreadable('readTaskDetail.assignee', assignee.error);
   if (evidence.error) unreadable('readTaskDetail.evidence', evidence.error);
   if (plan.error) unreadable('readTaskDetail.plan', plan.error);
+
+  const [milestoneRes, parentRes, subtaskRes] = await Promise.all([
+    task.milestone_id ? supabase.schema('projects').from('milestones').select('id, name').eq('id', task.milestone_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    task.parent_task_id ? supabase.schema('projects').from('tasks').select('id, title').eq('id', task.parent_task_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    supabase.schema('projects').from('tasks').select('id, title, status, due_on, assignee_id').eq('parent_task_id', taskId).order('created_at', { ascending: true }),
+  ]);
+  if (milestoneRes.error) unreadable('readTaskDetail.milestone', milestoneRes.error);
+  if (parentRes.error) unreadable('readTaskDetail.parent', parentRes.error);
+  if (subtaskRes.error) unreadable('readTaskDetail.subtasks', subtaskRes.error);
+  const subtaskRows = subtaskRes.data ?? [];
+  const subtaskPeople = [...new Set(subtaskRows.map((r) => r.assignee_id).filter((id): id is string => id !== null))];
+  const subtaskNames = new Map<string, string>();
+  if (subtaskPeople.length > 0) {
+    const { data: people, error: peopleError } = await supabase.schema('core').from('users').select('id, full_name, email').in('id', subtaskPeople);
+    if (peopleError) unreadable('readTaskDetail.subtaskPeople', peopleError);
+    for (const u of people ?? []) subtaskNames.set(u.id, u.full_name || u.email);
+  }
 
   let scopeItems: TaskDetail['scopeItems'] = [];
   if (task.feature_id) {
@@ -158,7 +181,12 @@ export async function readTaskDetail(projectId: string, taskId: string): Promise
         ? { userId: assigneeRow.user_id, fullName: assigneeRow.users?.full_name ?? assigneeRow.users?.email ?? 'Unknown', email: assigneeRow.users?.email ?? '' }
         : null,
       requirementVersionId: task.requirement_version_id,
+      startOn: task.start_on,
+      labels: task.labels ?? [],
+      milestone: milestoneRes.data ? { id: milestoneRes.data.id, name: milestoneRes.data.name } : null,
+      parent: parentRes.data ? { id: parentRes.data.id, title: parentRes.data.title } : null,
     },
+    subtasks: subtaskRows.map((r) => ({ id: r.id, title: r.title, status: r.status, dueOn: r.due_on, assigneeId: r.assignee_id, assigneeName: r.assignee_id ? (subtaskNames.get(r.assignee_id) ?? null) : null })),
     module: module.data ? { id: module.data.id, name: module.data.name, status: module.data.status } : null,
     feature: feature.data ? { id: feature.data.id, name: feature.data.name, status: feature.data.status } : null,
     scopeItems,

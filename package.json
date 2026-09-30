@@ -64,6 +64,7 @@
     "db:verify:unreadprice": "node scripts/verify-unread-price.mjs",
     "db:verify:scope": "node scripts/verify-scope-baseline.mjs",
     "db:verify:vault": "node scripts/verify-secret-vault.mjs",
+    "db:verify:taskschedule": "node scripts/verify-task-schedule-and-notes.mjs",
     "db:verify:clauses": "node scripts/verify-quotation-clauses.mjs",
     "db:verify:memory": "node scripts/verify-memory.mjs",
     "db:verify:security": "node scripts/verify-security-posture.mjs",
@@ -116,7 +117,8 @@
     "db:apply:local": "bash scripts/apply-migrations-locally.sh",
     "db:verify:quotedispatch": "node scripts/verify-quotation-dispatch.mjs",
     "db:verify:unannounced": "node scripts/verify-unannounced-approvals.mjs",
-    "db:verify:spend": "node scripts/verify-cost-ledger.mjs"
+    "db:verify:spend": "node scripts/verify-cost-ledger.mjs",
+    "db:verify:reqcomments": "node scripts/verify-requirement-comments.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",

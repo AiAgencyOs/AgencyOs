@@ -1489,11 +1489,13 @@ export async function updateTaskAction(_prev: FormState, formData: FormData): Pr
     description: String(formData.get('description') ?? '').trim() || null,
     priority: String(formData.get('priority') ?? 'p2') as 'p0' | 'p1' | 'p2' | 'p3',
     assigneeId: String(formData.get('assigneeId') ?? '').trim() || null,
+    startOn: String(formData.get('startOn') ?? '').trim() || null,
     dueOn: String(formData.get('dueOn') ?? '').trim() || null,
     estimateHours: estimateRaw ? Number(estimateRaw) : null,
   });
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath(`/projects/${projectId}/board`);
+  revalidatePath(`/projects/${projectId}/timeline`);
   revalidatePath(`/projects/${projectId}/development`);
   revalidatePath(`/projects/${projectId}`);
   revalidatePath('/my-tasks');

@@ -25,7 +25,7 @@ export type PipelineCard = {
 
 /**
  * The interactive half of the Sales Pipeline's open-deal board (SCR-005).
- * Scoped to the three OPEN stages only (discovery/proposal/negotiation) —
+ * Won and Lost are drawn as read-only columns (their cards cannot be dragged and nothing can be dropped on them) —
  * `won` and `lost` are reached through the Lead 360 sales panel's own guarded
  * flow (a mandatory reason+category for lost, the won-gate RPC and a
  * separate `convertToProject` capability/action for won), neither of which a
@@ -51,6 +51,11 @@ export function PipelineBoard({
     setError(null);
     const deal = deals.find((d) => d.id === opportunityId);
     if (!deal) return;
+
+    if (toStage === 'won' || toStage === 'lost') {
+      setError('Won and Lost are recorded from the lead\'s Sales panel, which asks for the reason and runs the won gate. Open the deal to do it.');
+      return;
+    }
 
     const allowed = OPPORTUNITY_TRANSITIONS[deal.columnId] as readonly string[];
     if (!allowed.includes(toStage)) {
@@ -82,11 +87,12 @@ export function PipelineBoard({
         columns={columns}
         items={deals}
         disabled={!canWrite}
+        isItemLocked={(d) => d.columnId === 'won' || d.columnId === 'lost'}
         onMove={handleMove}
         emptyLabel="No deals"
         renderColumnFooter={
           canWrite
-            ? () => (
+            ? (column) => column.id === 'won' || column.id === 'lost' ? null : (
                 <button type="button" onClick={() => openQuickCreate('lead')} className="flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-[13px] font-medium text-brand transition-colors hover:bg-surface-hover">
                   <IconPlus size={14} /> Add Lead
                 </button>

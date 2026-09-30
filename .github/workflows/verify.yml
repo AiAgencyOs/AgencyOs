@@ -391,6 +391,14 @@ jobs:
       - name: A key is kept in one place — the Keys & secrets vault
         run: npm run db:verify:vault
 
+      # UI parity round 2. A task's start never passes its due date, a subtask
+      # is one level deep in its parent's project, labels are bounded and
+      # de-duplicated, and a project note can only be written through its two
+      # audited doors — all database rules (a CHECK, a trigger, a table with
+      # no write grant), none of which reading TypeScript can prove.
+      - name: A task has a start, a parent and labels, and a project keeps notes
+        run: npm run db:verify:taskschedule
+
       # The wording of a quotation's acceptance, cancellation, liability and
       # jurisdiction clauses is the owner's, appended a version at a time and
       # never edited, and a quotation keeps the clause it printed. Who may
@@ -400,6 +408,13 @@ jobs:
       # checked by reading TypeScript.
       - name: The clauses a quotation prints are the owner's, and are kept
         run: npm run db:verify:clauses
+
+      # A requirement is commented on through one audited door, and a comment
+      # on a frozen requirement never reopens the baseline. Who may comment,
+      # that the table has no write grant and that the audit never carries the
+      # words are database rules, none of which reading TypeScript can prove.
+      - name: A requirement can be commented on
+        run: npm run db:verify:reqcomments
 
       # Document 05 is thirteen pages and had no tables. Two rules are
       # structural rather than advisory and both are checked here: a memory

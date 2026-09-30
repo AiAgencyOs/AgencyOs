@@ -13,7 +13,7 @@ import { listPaymentStructures } from '@/modules/sales/queries';
 import { clauseBodies } from '@/modules/sales/quotation-clauses';
 import { commercialTermsFor } from '@/modules/sales/quotation-standards';
 import { isOpenOpportunity, type OpportunityStage } from '@/modules/sales/schema';
-import { PageHeader, PermissionDenied } from '@/ui';
+import { PermissionDenied } from '@/ui';
 
 import { TrailLabel } from '../../trail-label';
 import { QuotationComposer, type ComposerDeal } from './composer';
@@ -79,7 +79,6 @@ export default async function NewQuotationPage({ searchParams }: { searchParams:
   return (
     <div className="flex flex-col gap-5">
       <TrailLabel name="Create quotation" />
-      <PageHeader title="Create Quotation" description="Create a professional quotation for your client" />
       <QuotationComposer deals={deals} defaultValidUntil={defaultValidUntil} validityDays={validityDays} defaultTerms={defaultTerms} taxRatePercent={18} initialOpportunityId={opportunity} charges={charges} structures={structures} roster={mayAssign ? roster : undefined} />
     </div>
   );

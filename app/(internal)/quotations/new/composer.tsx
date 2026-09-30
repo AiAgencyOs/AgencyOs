@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { useActionState, useMemo, useState } from 'react';
 
+import { amountInWords } from '@/lib/money/amount-in-words';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { composeQuotationAction, type ComposeQuotationState } from '@/modules/sales/actions';
-import { Avatar, Badge, buttonClass, Callout, Card, CardHeader, cx, FormMessage, IconAlert, IconCheck, IconPlus, inputClass, labelClass, selectClass, textareaClass } from '@/ui';
+import { Avatar, Badge, buttonClass, Callout, Card, CardHeader, cx, FormMessage, IconAlert, IconCheck, IconFile, IconPlus, IconSend, IconShare, PageHeader, inputClass, labelClass, selectClass, textareaClass } from '@/ui';
 
 export type ComposerDeal = {
   opportunityId: string;
@@ -61,12 +62,20 @@ export function QuotationComposer({
   /** SCR-012 — who may own the deal; present only when the caller may assign (`lead.assign`). */
   roster?: readonly { userId: string; fullName: string; role: string }[];
 }) {
-  const [state, action, pending] = useActionState<ComposeQuotationState, FormData>(composeQuotationAction, IDLE_STATE);
+  // Two submit buttons share this action: "Save as Draft" (intent=draft) keeps the
+  // quotation a draft; "Send to Client" (intent=send) runs the whole governed walk
+  // and submits it for the owner's approval, which is the only way it reaches the client.
+  const [state, action, pending] = useActionState<ComposeQuotationState, FormData>(async (previous, formData) => {
+    const intent = String(formData.get('intent') ?? '');
+    if (intent === 'draft') formData.delete('submit');
+    else if (intent === 'send') formData.set('submit', 'on');
+    return composeQuotationAction(previous, formData);
+  }, IDLE_STATE);
+  const [copied, setCopied] = useState(false);
   const [opportunityId, setOpportunityId] = useState(initialOpportunityId ?? deals[0]?.opportunityId ?? '');
   const [lines, setLines] = useState<Line[]>([{ key: 1, description: '', quantity: '1', unitPrice: '' }]);
   const [discount, setDiscount] = useState('');
   const [tax, setTax] = useState('');
-  const [submit, setSubmit] = useState(true);
   const [structureName, setStructureName] = useState('');
   // SCR-012 — GST toggle. Starts on when the deal's project has a confirmed
   // GST billing mode, off when it is confirmed non-GST, and manual (off)
@@ -114,6 +123,41 @@ export function QuotationComposer({
 
   return (
     <form action={action} className="flex flex-col gap-4">
+      <PageHeader
+        title="Create Quotation"
+        description="Create a professional quotation for your client"
+        actions={
+          <>
+            <button type="submit" name="intent" value="draft" disabled={pending || !deal} className={buttonClass('secondary', 'sm')}>
+              <IconFile size={14} />
+              Save as Draft
+            </button>
+            <button type="submit" formAction="/api/quotations/preview" formMethod="post" formTarget="_blank" disabled={pending || !deal} className={buttonClass('secondary', 'sm')}>
+              Preview
+            </button>
+            <button
+              type="button"
+              disabled={!deal}
+              title="Copies a link that opens this quotation form on this deal"
+              onClick={() => {
+                void navigator.clipboard
+                  ?.writeText(`${window.location.origin}/quotations/new?opportunity=${opportunityId}`)
+                  .then(() => setCopied(true))
+                  .catch(() => setCopied(false));
+              }}
+              className={buttonClass('secondary', 'sm')}
+            >
+              <IconShare size={14} />
+              {copied ? 'Link copied' : 'Share'}
+            </button>
+            <button type="submit" name="intent" value="send" disabled={pending || !deal} title="Prices it and sends it to the owner for approval; it reaches the client once approved" className={buttonClass('primary', 'sm')}>
+              <IconSend size={14} />
+              {pending ? 'Working…' : 'Send to Client'}
+            </button>
+          </>
+        }
+      />
+
       {deal ? <input type="hidden" name="leadId" value={deal.leadId} /> : null}
 
       {state.status === 'error' && state.leadId ? (
@@ -245,6 +289,20 @@ export function QuotationComposer({
         <Card>
           <CardHeader title="Template & Settings" description="Amounts in the deal's currency." />
           <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+            {structures && structures.length > 0 ? (
+              <label className="flex flex-col gap-1">
+                <span className={labelClass}>Quotation template</span>
+                <select value={structureName || suggestedStructure?.name || ''} onChange={(e) => setStructureName(e.target.value)} className={selectClass}>
+                  {structures.map((st) => (
+                    <option key={st.name} value={st.name}>
+                      {st.name}
+                      {st === suggestedStructure ? ' (fits this total)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[11px] text-muted">One of the agency&apos;s payment structures; it sets the payment schedule below.</span>
+              </label>
+            ) : null}
             <label className="flex flex-col gap-1">
               <span className={labelClass}>Discount</span>
               <input name="discount" type="number" min="0" step="0.01" value={discount} onChange={(e) => setDiscount(e.target.value)} className={inputClass} placeholder="0" />
@@ -365,6 +423,12 @@ export function QuotationComposer({
             <div className="flex justify-between"><dt className="text-muted">Tax</dt><dd className="tabular">{money(shownTaxN, currency)}</dd></div>
             <div className="flex justify-between border-t border-line pt-2 text-base font-semibold"><dt>Total</dt><dd className="tabular">{money(total, currency)}</dd></div>
           </dl>
+          {amountInWords(Math.round(total * 100), currency) ? (
+            <div className="mx-4 mb-3 rounded-lg bg-surface-sunken px-3 py-2 sm:mx-5">
+              <p className="text-[12px] font-medium text-muted">Amount in Words</p>
+              <p className="text-[13px] font-medium text-foreground">{amountInWords(Math.round(total * 100), currency)}</p>
+            </div>
+          ) : null}
           <p className="px-4 pb-4 text-[11px] text-muted sm:px-5">Shown as you type. The stored total is computed by the pricing step from the saved lines.</p>
         </Card>
       </div>
@@ -375,14 +439,6 @@ export function QuotationComposer({
           <Card>
             <CardHeader title="Payment Schedule" description="How the total splits under the agency's payment terms. A preview only — the plan is set on the project once the deal is won." />
             <div className="flex flex-col gap-2 px-4 pb-4 sm:px-5">
-              <select value={structureName || suggestedStructure?.name || ''} onChange={(e) => setStructureName(e.target.value)} aria-label="Payment structure" className={selectClass}>
-                {structures.map((st) => (
-                  <option key={st.name} value={st.name}>
-                    {st.name}
-                    {st === suggestedStructure ? ' (fits this total)' : ''}
-                  </option>
-                ))}
-              </select>
               {(() => {
                 const chosen = structure ?? suggestedStructure ?? structures[0] ?? null;
                 if (!chosen) return null;
@@ -404,16 +460,11 @@ export function QuotationComposer({
         <Card>
           <CardHeader title="Approval" description="A quotation reaches the client only after the owner approves it." />
           <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
-            <label className="flex items-center gap-2 text-[13px]">
-              <input type="checkbox" name="submit" checked={submit} onChange={(e) => setSubmit(e.target.checked)} className="h-4 w-4 rounded border-line-strong" />
-              Send to the owner for approval as soon as it is priced
+            <label className="flex flex-col gap-1">
+              <span className={labelClass}>Note for the owner (optional)</span>
+              <input name="summary" maxLength={500} className={inputClass} placeholder="Why this price" />
+              <span className="text-[11px] text-muted">Sent with Send to Client. Save as Draft keeps the quotation a draft and sends nothing.</span>
             </label>
-            {submit ? (
-              <label className="flex flex-col gap-1">
-                <span className={labelClass}>Note for the owner (optional)</span>
-                <input name="summary" maxLength={500} className={inputClass} placeholder="Why this price" />
-              </label>
-            ) : null}
           </div>
         </Card>
         </div>
@@ -427,7 +478,11 @@ export function QuotationComposer({
 
       </div>
 
-      <div className="flex flex-wrap items-center justify-end gap-2 rounded-xl border border-line bg-surface p-3 shadow-xs">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface p-3 shadow-xs">
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-semibold text-foreground">Preview</p>
+          <p className="text-xs text-muted">See how your quotation will look to the client</p>
+        </div>
         <FormMessage status={state.status} message={state.status === 'error' && !state.leadId ? state.message : undefined} />
         <Link href="/quotations" className={buttonClass('ghost', 'md')}>
           Cancel
@@ -435,10 +490,13 @@ export function QuotationComposer({
         {/* SCR-012 — the document as it would render, before anything is
             saved: the same form posts to the preview route in a new tab. */}
         <button type="submit" formAction="/api/quotations/preview" formMethod="post" formTarget="_blank" disabled={pending || !deal} className={buttonClass('secondary', 'md')}>
-          Preview PDF
+          Preview Quotation
         </button>
-        <button type="submit" disabled={pending || !deal} className={buttonClass('primary', 'md')}>
-          {pending ? 'Creating…' : submit ? 'Create and send for approval' : 'Save as draft'}
+        <button type="submit" name="intent" value="draft" disabled={pending || !deal} className={buttonClass('secondary', 'md')}>
+          Save as Draft
+        </button>
+        <button type="submit" name="intent" value="send" disabled={pending || !deal} className={buttonClass('primary', 'md')}>
+          {pending ? 'Working…' : 'Send to Client'}
         </button>
       </div>
     </form>

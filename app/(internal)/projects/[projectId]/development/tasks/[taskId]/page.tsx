@@ -12,12 +12,14 @@ import { listTaskEvidence, readTaskHandoff } from '@/modules/projects/task-evide
 import { readTaskTime } from '@/modules/projects/time-log-queries';
 import { readTaskDetail } from '@/modules/projects/task-queries';
 import { listDefectsForTask } from '@/modules/qa/defect-task-queries';
-import { Badge, buttonClass, Card, CardHeader, DetailPanel, EntityHeader, humanize, IconArrowLeft, IconCalendar, IconEdit, IconList, ProgressBar, statusTone } from '@/ui';
+import { Badge, buttonClass, Card, CardHeader, DetailPanel, EntityHeader, humanize, IconArrowLeft, IconCalendar, IconEdit, IconList, ProgressBar, StatusBadge, statusTone } from '@/ui';
 
 import { ProjectSubNav } from '../../../project-subnav';
 import { TaskCollabPanel } from '../../../../../task-collab-panel';
 import { TimeLogPanel } from '../../../../../time-log-panel';
 import { TaskClarificationForm } from './task-clarification-form';
+import { AddSubtaskForm, LabelsForm } from './task-plan-forms';
+import { listAssigneeCandidates } from '@/modules/projects/project-members-queries';
 import { LinkCommitPanel, ReadyForQaButton, ReopenFromDefectPanel, StartTaskButton, SubmitEvidencePanel } from './task-doors-panel';
 
 export const metadata: Metadata = { title: 'Task' };
@@ -57,7 +59,8 @@ export default async function TaskDetailPage({
   const [collab, defects, time, taskEvidence, handoff, commits] = await Promise.all([readTaskCollab(taskId, clock), listDefectsForTask(taskId), readTaskTime(taskId), listTaskEvidence(taskId), readTaskHandoff(taskId), listCommitLinksForTask(taskId)]);
   const openDefects = defects.filter((d) => d.status === 'open').map((d) => ({ id: d.id, title: d.title, severity: d.severity }));
   const testEvidence = taskEvidence.filter((e) => e.kind === 'test');
-  const { task, module, feature, scopeItems, evidence, plan, dependencies } = detail;
+  const { task, module, feature, scopeItems, evidence, plan, dependencies, subtasks } = detail;
+  const candidates = await listAssigneeCandidates(projectId);
   const mayPlan = can(context, 'project.write');
   const mayWriteTask = can(context, 'task.write');
 
@@ -78,6 +81,9 @@ export default async function TaskDetailPage({
             <Badge tone={statusTone(task.status)}>{humanize(task.status)}</Badge>
             <Badge tone={pr.tone}>{pr.label} priority</Badge>
             {module ? <Badge tone="info">{module.name}</Badge> : null}
+            {task.labels.map((l) => (
+              <Badge key={l} tone="neutral">{l}</Badge>
+            ))}
           </>
         }
         subtitle={
@@ -123,6 +129,43 @@ export default async function TaskDetailPage({
               ) : null}
             </div>
           </Card>
+
+              <Card>
+                <CardHeader title={`Subtasks (${subtasks.filter((x) => x.status === 'done').length}/${subtasks.length})`} description={task.parent ? undefined : 'Work broken out under this task. A subtask keeps its own status on its own page.'} />
+                <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+                  {task.parent ? (
+                    <p className="text-[13px] text-muted">This is itself a subtask, so it has none of its own.</p>
+                  ) : subtasks.length === 0 ? (
+                    <p className="text-[13px] text-muted">No subtasks yet.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[30rem] text-[13px]">
+                        <thead>
+                          <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-wider text-muted">
+                            <th className="w-8 py-2 pr-2">#</th>
+                            <th className="py-2 pr-3">Title</th>
+                            <th className="py-2 pr-3">Assignee</th>
+                            <th className="py-2 pr-3">Due date</th>
+                            <th className="py-2">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-line">
+                          {subtasks.map((x, i) => (
+                            <tr key={x.id}>
+                              <td className="tabular py-2 pr-2 text-muted">{i + 1}</td>
+                              <td className="py-2 pr-3 font-medium"><Link href={`/projects/${projectId}/development/tasks/${x.id}`} className="hover:underline">{x.title}</Link></td>
+                              <td className="py-2 pr-3 text-muted">{x.assigneeName ?? 'Unassigned'}</td>
+                              <td className="whitespace-nowrap py-2 pr-3 text-muted">{x.dueOn ? clock.date(x.dueOn) : '—'}</td>
+                              <td className="py-2"><StatusBadge status={x.status} dot={false} /></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {mayWriteTask && !task.parent ? <AddSubtaskForm projectId={projectId} parentTaskId={task.id} roster={candidates.people} /> : null}
+                </div>
+              </Card>
 
               <Card>
                 <CardHeader
@@ -359,6 +402,7 @@ export default async function TaskDetailPage({
               { label: 'Status', value: <Badge tone={statusTone(task.status)}>{humanize(task.status)}</Badge> },
               { label: 'Priority', value: <Badge tone={pr.tone}>{pr.label}</Badge> },
               { label: 'Assignee', value: task.assignee ? task.assignee.fullName : <span className="font-normal text-muted">Unassigned</span> },
+              { label: 'Start date', value: task.startOn ? clock.date(task.startOn) : <span className="font-normal text-muted">No date</span> },
               { label: 'Due date', value: task.dueOn ? clock.date(task.dueOn) : <span className="font-normal text-muted">No date</span> },
               { label: 'Estimated hours', value: task.estimateHours !== null ? `${task.estimateHours} hours` : <span className="font-normal text-muted">Not estimated</span> },
               { label: 'Logged hours', value: `${time.totalHours} hours${task.estimateHours ? ` (${Math.round((time.totalHours / task.estimateHours) * 100)}%)` : ''}` },
@@ -424,11 +468,24 @@ export default async function TaskDetailPage({
                 </div>
               </Card>
 
+          {mayWriteTask ? (
+            <Card>
+              <CardHeader title="Labels" />
+              <div className="px-4 pb-4 sm:px-5">
+                <LabelsForm key={task.labels.join('|')} projectId={projectId} taskId={task.id} labels={task.labels} />
+              </div>
+            </Card>
+          ) : null}
+
           <Card>
             <CardHeader title="Related" />
             <dl className="grid grid-cols-[minmax(5rem,30%)_1fr] gap-x-3 gap-y-2.5 px-4 pb-4 text-[13px] sm:px-5">
               <dt className="text-muted">Project</dt>
               <dd className="min-w-0 font-medium"><Link href={`/projects/${projectId}`} className="text-brand hover:underline">{project.name}</Link></dd>
+              <dt className="text-muted">Phase</dt>
+              <dd className="min-w-0 font-medium">{task.milestone ? <Link href={`/projects/${projectId}/milestones`} className="text-brand hover:underline">{task.milestone.name}</Link> : <span className="font-normal text-muted">None</span>}</dd>
+              <dt className="text-muted">Parent task</dt>
+              <dd className="min-w-0 font-medium">{task.parent ? <Link href={`/projects/${projectId}/development/tasks/${task.parent.id}`} className="text-brand hover:underline">{task.parent.title}</Link> : <span className="font-normal text-muted">None</span>}</dd>
               <dt className="text-muted">Module</dt>
               <dd className="min-w-0 font-medium">{module ? module.name : <span className="font-normal text-muted">None</span>}</dd>
               <dt className="text-muted">Feature</dt>

@@ -156,16 +156,16 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
   const winRate = decided > 0 ? Math.round((counts.won / decided) * 100) : null;
   const wonValue = valueByStage.get('won') ?? 0;
 
-  const pipelineColumns: KanbanColumn[] = openStages.map((stage) => ({
+  const pipelineColumns: KanbanColumn[] = OPPORTUNITY_STAGES.map((stage) => ({
     id: stage,
     label: STAGE_LABEL[stage],
-    tone: (({ discovery: 'info', proposal: 'success', negotiation: 'warning' }) as Record<string, KanbanColumn['tone']>)[stage] ?? statusTone(stage),
-    subtitle: money(open.filter((o) => o.stage === stage && o.currency === currency).reduce((n, o) => n + o.value_minor, 0), currency),
+    tone: (({ discovery: 'info', proposal: 'success', negotiation: 'warning', won: 'success', lost: 'danger' }) as Record<string, KanbanColumn['tone']>)[stage] ?? statusTone(stage),
+    subtitle: money(opportunities.filter((o) => o.stage === stage && o.currency === currency).reduce((n, o) => n + o.value_minor, 0), currency),
   }));
   // An open opportunity's lead link is expected but the column is nullable
   // in the schema; skip the rare row without one rather than render a card
   // whose "open the lead" click would have nowhere to go.
-  const pipelineDeals: PipelineCard[] = open
+  const pipelineDeals: PipelineCard[] = opportunities
     .filter((o): o is typeof o & { lead_id: string } => o.lead_id !== null)
     .map((o) => ({
       id: o.id,
