@@ -64,6 +64,7 @@
     "db:verify:unreadprice": "node scripts/verify-unread-price.mjs",
     "db:verify:scope": "node scripts/verify-scope-baseline.mjs",
     "db:verify:vault": "node scripts/verify-secret-vault.mjs",
+    "db:verify:clauses": "node scripts/verify-quotation-clauses.mjs",
     "db:verify:memory": "node scripts/verify-memory.mjs",
     "db:verify:security": "node scripts/verify-security-posture.mjs",
     "db:verify:priority": "node scripts/verify-reactivation-priority.mjs",

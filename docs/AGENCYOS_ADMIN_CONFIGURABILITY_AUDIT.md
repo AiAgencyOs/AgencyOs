@@ -46,7 +46,7 @@ place. The gaps below are the residue.
 
 ## Findings
 
-### B — should be configurable (implemented this pass)
+### B — should be configurable (implemented)
 
 | # | Constant | Was | Now | Evidence |
 |---|---|---|---|---|
@@ -54,13 +54,13 @@ place. The gaps below are the residue.
 | B-2 | `WINDOW_START_HOUR = 10` / `WINDOW_END_HOUR = 19` — `src/modules/crm/follow-up-rhythms.ts` (ADM-69 sending window) | code constants | `outreach_window_start_hour` (0–22) / `outreach_window_end_hour` (1–23) via Settings › Communication › *When AgencyOS may send*; the worker reads the pair per organization and passes it to every due-time computation; an inverted or half-set pair reads as the default so nothing sends at 03:00; unset = 10–19 | same files; `follow-up-worker.ts` `agencyOutreachWindow` |
 | B-3 | `DEFAULT_HORIZON_DAYS = 7` — `src/lib/scheduling/booking.ts` (how far ahead *Propose a time* reads the calendar when the lead named no window) | code constant | `meeting_offer_horizon_days` (1–60) via Settings › Communication › *How far ahead a meeting time is offered*; `proposeSlots` reads it through `meetingOfferHorizonDays`; unset = 7 | `20261003100000_two_more_settings_a_horizon_and_a_sample_floor.sql`, `src/lib/admin/operational-defaults.ts`, `tests/a-setting-the-owner-can-set-has-a-history-and-a-default.test.ts` |
 | B-4 | `MIN_LEADS_TO_NAME_A_LEAK = 20` — `src/lib/admin/sales-funnel.ts` (the sample the funnel needs before it names its biggest drop) | code constant | `funnel_min_leads_to_name_leak` (5–500) via Settings › Commercial › *How many leads before the funnel names a leak*; `getSalesFunnel` reads it and returns `minLeadsToNameLeak`, which the page prints; unset = 20 | same files |
+| B-6 | `COMMERCIAL_TERMS` clauses 2–5 (acceptance window "5 working days", cancellation, liability cap, jurisdiction) — `quotation-standards.ts`, printed on every quotation PDF | code constants | versioned rows in `sales.quotation_clauses` (org, key, version, body 10–1200 chars, plain one-line text, effective_from, created_by), appended by `core.publish_quotation_clause` (owner / ops_admin, audited with key, version, body, who; never edits) and read by `core.list_quotation_clauses` (every internal role); Settings › Commercial › *Quotation clauses* shows the current text, version, who/when, a publish form for owner/ops_admin and a version-history disclosure. A quotation keeps what it printed: `sales.clauses_for_proposal` snapshots the versions in force into `sales.proposals.clauses_printed` the first time a non-draft quotation is rendered (drafts read live, store nothing) and every later render reads that snapshot; a clause never published is absent from the snapshot and prints the code constant, so unset = exactly as before | `20261003200000_the_clauses_a_quotation_prints_are_the_owners_and_are_kept.sql`, `src/modules/sales/quotation-clauses.ts`, `clauses-service.ts`, `tests/a-quotation-keeps-the-clause-it-printed.test.ts`, `scripts/verify-quotation-clauses.mjs` (`npm run db:verify:clauses`) |
 
 ### B — should be configurable (recorded, not implemented; each needs a small schema or product step)
 
 | # | Constant | Where | Why B | What it needs |
 |---|---|---|---|---|
 | B-5 | `RHYTHM_OFFSETS` (the follow-up day schedule per rhythm: sales_active, nurture, customer_success, internal_approval) | `src/modules/crm/follow-up-rhythms.ts` | ADM-69 states the days; an owner may want a gentler cadence | a small `crm.follow_up_rhythms` table (rhythm, offsets[]) with versioning so a running sequence keeps the schedule it started on — a real design step, hence not done blind |
-| B-6 | `COMMERCIAL_TERMS` clauses 2–5 (acceptance window "5 working days", cancellation, liability cap, jurisdiction) | `quotation-standards.ts` | legal wording an agency will localise | a versioned `sales.quotation_clauses` table; historical quotations must keep the clause they printed — same shape as B-5 |
 | B-7 | `SUPPORT_STANDARD` (free bug-fix months, response targets printed on quotations) | `quotation-standards.ts` | maintenance policy | pairs with the Maintenance module (Phase 8) which has no admin screen yet |
 
 ### A — must remain code constants

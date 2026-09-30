@@ -391,6 +391,16 @@ jobs:
       - name: A key is kept in one place — the Keys & secrets vault
         run: npm run db:verify:vault
 
+      # The wording of a quotation's acceptance, cancellation, liability and
+      # jurisdiction clauses is the owner's, appended a version at a time and
+      # never edited, and a quotation keeps the clause it printed. Who may
+      # publish, that nothing is edited or deleted, that a draft stores no
+      # snapshot and an issued quotation's cannot be rewritten are database
+      # rules: a trigger, a row lock, a policy with no write grant. None can be
+      # checked by reading TypeScript.
+      - name: The clauses a quotation prints are the owner's, and are kept
+        run: npm run db:verify:clauses
+
       # Document 05 is thirteen pages and had no tables. Two rules are
       # structural rather than advisory and both are checked here: a memory
       # claiming explicit or verified confidence must carry provenance, and an

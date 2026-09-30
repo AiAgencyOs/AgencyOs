@@ -766,8 +766,17 @@ async function renderQuotationDocument(
       ...(Array.isArray(i.serves) ? { serves: i.serves as string[] } : {}),
   }));
   const { quotationValidityDays } = await import('@/lib/admin/operational-defaults');
+  // Audit B-6 — the clause wording this quotation printed: the snapshot it
+  // took when first rendered outside draft, never today's clauses. A failed
+  // read is `unreadable` (worth a retry), not a PDF with the defaults on it.
+  const { clausesForProposal } = await import('@/modules/sales/quotation-clauses');
+  const clauses = await clausesForProposal(admin, proposal.id);
+  if (!clauses.ok) {
+    return { ok: false, kind: 'unreadable', detail: `could not read the quotation's clauses: ${clauses.error.message}` };
+  }
   const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems, {
     validityDays: quotationValidityDays(org.settings as Record<string, unknown> | null),
+    clauses: clauses.data,
   });
 
   try {

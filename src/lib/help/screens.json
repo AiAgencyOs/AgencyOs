@@ -1,6 +1,6 @@
 {
   "source": "docs/AGENCYOS_ADMIN_MASTER_SCREEN_INVENTORY.md",
-  "inventoryHash": "d54cad5b72affdc16e60ba52ddfccc896cbe1a93c1c8e5c73f5159b5a539b391",
+  "inventoryHash": "54be1cb2e783a204c45bd132d2f8c105e291de34bd46f26a0ebfca9a6d61cbee",
   "count": 71,
   "screens": [
     {
@@ -941,7 +941,7 @@
         "/security/keys"
       ],
       "capability": "organization.settings",
-      "reads": "core.organizations.settings through set_organization_setting (whitelist + audit); finance.payment_accounts (Doc 15 §9) through createPaymentAccount / setPaymentAccountStatus; core.secret_credentials (every integration key, encrypted) through core.store_secret / revoke_secret / secret_status / record_secret_check (owner stores and revokes, admin verifies)",
+      "reads": "core.organizations.settings through set_organization_setting (whitelist + audit); finance.payment_accounts (Doc 15 §9) through createPaymentAccount / setPaymentAccountStatus; core.secret_credentials (every integration key, encrypted) through core.store_secret / revoke_secret / secret_status / record_secret_check (owner stores and revokes, admin verifies); sales.quotation_clauses (Commercial › Quotation clauses — the four quotation clauses, versioned, appended and never edited) through core.publish_quotation_clause / list_quotation_clauses (owner / ops admin publish, every internal role reads), each issued quotation keeping the versions it printed in sales.proposals.clauses_printed",
       "live": "—",
       "status": "COMPLETE"
     }

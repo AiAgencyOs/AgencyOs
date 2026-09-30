@@ -3112,6 +3112,27 @@ export type Database = {
           id: string | null
         }[]
       }
+      publish_quotation_clause: {
+        Args: {
+          p_body: string
+          p_key: string
+        }
+        Returns: {
+          outcome: string
+          version: number | null
+        }[]
+      }
+      list_quotation_clauses: {
+        Args: never
+        Returns: {
+          body: string
+          clause_key: string
+          created_by: string
+          created_by_name: string | null
+          effective_from: string
+          version: number
+        }[]
+      }
       store_secret: {
         Args: {
           p_auth_tag: string
@@ -12275,6 +12296,7 @@ export type Database = {
           approved_by_name: string | null
           approved_by_role: string | null
           body: string | null
+          clauses_printed: Json | null
           conversation_id: string | null
           created_at: string
           created_by: string | null
@@ -12309,6 +12331,7 @@ export type Database = {
           approved_by_name?: string | null
           approved_by_role?: string | null
           body?: string | null
+          clauses_printed?: Json | null
           conversation_id?: string | null
           created_at?: string
           created_by?: string | null
@@ -12343,6 +12366,7 @@ export type Database = {
           approved_by_name?: string | null
           approved_by_role?: string | null
           body?: string | null
+          clauses_printed?: Json | null
           conversation_id?: string | null
           created_at?: string
           created_by?: string | null
@@ -12391,6 +12415,44 @@ export type Database = {
             columns: ["plan_set_id"]
             isOneToOne: false
             referencedRelation: "proposal_plan_sets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quotation_clauses: {
+        Row: {
+          body: string
+          clause_key: string
+          created_by: string
+          effective_from: string
+          id: string
+          organization_id: string
+          version: number
+        }
+        Insert: {
+          body: string
+          clause_key: string
+          created_by: string
+          effective_from?: string
+          id?: string
+          organization_id: string
+          version: number
+        }
+        Update: {
+          body?: string
+          clause_key?: string
+          created_by?: string
+          effective_from?: string
+          id?: string
+          organization_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quotation_clauses_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -12677,6 +12739,15 @@ export type Database = {
           outcome: string
           sent_at: string
           status: string
+        }[]
+      }
+      clauses_for_proposal: {
+        Args: {
+          p_proposal_id: string
+        }
+        Returns: {
+          clauses: Json | null
+          outcome: string
         }[]
       }
       send_proposal: {

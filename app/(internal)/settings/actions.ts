@@ -20,6 +20,8 @@ import { setAgencyTimezone, setDefaultDesignReviewer, setOrganizationName, setOr
 } from '@/lib/admin/settings';
 import { verifyWhatsAppConfig } from '@/lib/admin/whatsapp-verify';
 import type { FormState } from '@/modules/identity/types';
+import { publishQuotationClause } from '@/modules/sales/clauses-service';
+import { CLAUSE_LABELS, isClauseKey } from '@/modules/sales/quotation-clauses';
 
 /**
  * Server Actions for the Settings screen. Thin, like the requeue action: they
@@ -973,5 +975,27 @@ export async function setFunnelSampleFloorAction(_prev: FormState, formData: For
       raw === ''
         ? 'Sample floor cleared — the funnel names its biggest drop from 20 leads again.'
         : `Set. The funnel names its biggest drop once a window holds ${raw} leads.`,
+  };
+}
+
+/**
+ * Publish new wording for one quotation clause — configurability audit B-6.
+ *
+ * Appends a version and never edits one: a quotation already issued keeps the
+ * clause it printed, and only quotations first rendered from here on read the
+ * new wording. The database re-checks the role, the length and the shape.
+ */
+export async function publishQuotationClauseAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const key = String(formData.get('clause_key') ?? '');
+  if (!isClauseKey(key)) return { status: 'error', message: 'Choose one of the four clauses.' };
+  const result = await publishQuotationClause({ key, body: String(formData.get('body') ?? '') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings/commercial');
+  revalidatePath('/quotations/new');
+  return {
+    status: 'success',
+    message: result.data.unchanged
+      ? `${CLAUSE_LABELS[key]} already says exactly that (version ${result.data.version}); nothing new was published.`
+      : `${CLAUSE_LABELS[key]} is now version ${result.data.version}. Quotations already issued keep the wording they printed; the next one to be issued prints this.`,
   };
 }

@@ -10,7 +10,7 @@ export const MAX_TERMS = 30;
 
 export const setProposalTermsSchema = z.object({
   proposalId: z.uuid(),
-  terms: z.array(z.string().trim().min(1).max(500)).max(MAX_TERMS),
+  terms: z.array(z.string().trim().min(1).max(1200)).max(MAX_TERMS),
 });
 export type SetProposalTermsInput = z.infer<typeof setProposalTermsSchema>;
 

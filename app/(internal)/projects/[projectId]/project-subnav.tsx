@@ -18,6 +18,8 @@ import {
   TabStrip,
   type TabItem,
 } from '@/ui';
+import { requireInternal } from '@/lib/auth/session';
+import { can } from '@/lib/authz/permissions';
 
 /**
  * The project workspace's tab row — the reference's icon-led underline strip
@@ -26,7 +28,9 @@ import {
  * with no link to them anywhere in the application. The current tab is
  * decided from the URL inside `TabStrip`, so a page cannot light the wrong one.
  */
-export function ProjectSubNav({ projectId }: { projectId: string }) {
+export async function ProjectSubNav({ projectId }: { projectId: string }) {
+  const context = await requireInternal(`/projects/${projectId}`);
+  // The Finance tab is offered only to a role that can open it; the page still checks for itself.
   const base = `/projects/${projectId}`;
   const tabs: TabItem[] = [
     { href: base, label: 'Overview', icon: <IconOverview size={15} />, exact: true },
@@ -44,7 +48,7 @@ export function ProjectSubNav({ projectId }: { projectId: string }) {
     { href: `${base}/files`, label: 'Files', icon: <IconFile size={15} /> },
     { href: `${base}/team`, label: 'Team', icon: <IconUsers size={15} /> },
     { href: `${base}/activity`, label: 'Activity', icon: <IconActivity size={15} /> },
-    { href: `${base}/finance`, label: 'Finance', icon: <IconRupee size={15} /> },
+    ...(can(context, 'invoice.read') ? [{ href: `${base}/finance`, label: 'Finance', icon: <IconRupee size={15} /> }] : []),
     { href: `${base}/reports`, label: 'Reports', icon: <IconTrendUp size={15} /> },
     { href: `${base}/settings`, label: 'Settings', icon: <IconSettings size={15} /> },
   ];

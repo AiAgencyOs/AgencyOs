@@ -29,7 +29,7 @@ function databaseWhitelist(): Set<string> {
   const files = readdirSync(dir)
     .filter((f) => f.endsWith('.sql'))
     .sort();
-  const definers = files.filter((f) => /p_key not in \(/.test(readFileSync(join(dir, f), 'utf8')));
+  const definers = files.filter((f) => { const t = readFileSync(join(dir, f), 'utf8'); return /function core\.set_organization_setting\(/.test(t) && /p_key not in \(/.test(t); });
   const latest = readFileSync(join(dir, definers[definers.length - 1]!), 'utf8');
   const block = /p_key not in \(([\s\S]*?)\)\s*then/.exec(latest);
   assert.ok(block, 'the whitelist is found in the latest migration that defines the door');
