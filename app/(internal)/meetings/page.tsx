@@ -178,7 +178,7 @@ export default async function MeetingsPage({
       )}
 
       <nav aria-label="Window and filters" className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-line bg-surface px-3 py-2">
-        <div className="flex items-center gap-1">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1">
           <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-faint">View</span>
           <Link href={href({ view: '', month: '' })} className={chip(!calendar)} aria-current={!calendar ? 'true' : undefined}>
             List
@@ -188,7 +188,7 @@ export default async function MeetingsPage({
           </Link>
         </div>
         {!calendar ? (
-          <div className="flex items-center gap-1">
+          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1">
             <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-faint">Window</span>
             {MEETING_WINDOWS.map((w) => (
               <Link key={w} href={href({ window: w })} className={chip(window.key === w)} aria-current={window.key === w ? 'true' : undefined}>
@@ -201,7 +201,7 @@ export default async function MeetingsPage({
         {/* Search within domain (bucket G-3): purpose or the lead's title, filtered by the reader. */}
         <DomainSearch action="/meetings" value={q} placeholder="Search lead or purpose…" label="Search meetings" preserve={{ window: calendar ? undefined : window.key, status, mode, owner: params.owner, view: calendar ? 'calendar' : undefined, month: calendar && monthMatch ? monthKey : undefined }} />
         <SearchSummary q={q} count={rows.length} bounded={rows.length >= LIMIT} clearHref={href({ q: '' })} />
-        <div className="flex items-center gap-1">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1">
           <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-faint">Lead owner</span>
           <Link href={href({ owner: '' })} className={chip(!owner)}>Anyone</Link>
           <Link href={href({ owner: 'mine' })} className={chip(params.owner === 'mine')}>Mine</Link>
@@ -211,14 +211,14 @@ export default async function MeetingsPage({
             </Link>
           ))}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1">
           <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-faint">Status</span>
           <Link href={href({ status: '' })} className={chip(!status)}>Any</Link>
           {MEETING_STATUSES.map((s) => (
             <Link key={s} href={href({ status: s })} className={chip(status === s)}>{humanize(s)}</Link>
           ))}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1">
           <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-faint">Mode</span>
           <Link href={href({ mode: '' })} className={chip(!mode)}>Any</Link>
           {MEETING_MODES.map((m) => (

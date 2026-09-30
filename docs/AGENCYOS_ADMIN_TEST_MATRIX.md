@@ -509,6 +509,27 @@ row of `AGENCYOS_ADMIN_PDF_ELEMENT_AUDIT.md` reads BUILT (totals
 recomputed: 979 built). Typecheck and ESLint clean; `build:help --check`
 current; `check:record` agrees on every derived count.
 
+### 9k. Phone-width and member sweeps of the bucket F and G screens (2026-09-30)
+
+Thirty-three routes (every screen bucket F and G added or reshaped, including
+the bug page, a lead's requirement sections, the model and tool pages and the
+searchable lists) were driven at 390 px as the owner and at desktop width as
+`member@local.test`, measuring horizontal overflow, console errors and denied
+pages. The phone sweep found seven pages wider than the viewport, from four
+causes, all fixed: the shared PageHeader and CardHeader action groups were
+`shrink-0 flex-wrap` (a group that cannot shrink cannot wrap), so they now
+take `min-w-0 max-w-full`; a long sentence in a Badge (the profile's
+time-zone line, the help page's status text — which the card was clipping) —
+`Badge` gains `wrap`; a file path in a PageHeader description stretched the
+help header — the description now breaks long tokens; and two toolbars (the
+integrations row actions, the meetings filter groups) did not wrap. All
+thirty-three routes now measure zero overflow with zero console errors. The
+member sweep showed zero console errors; fourteen admin, finance, AI and
+operations pages (tax, payments, expenses, integrations, agents and their
+routing, tool and usage pages, operations, overrides, incidents, settings,
+campaigns) answer the member with the permission-denied card and no data.
+Not done: a screen-reader pass through a harness (matrix §11, item 2).
+
 ## 10. Regression
 
 Unit: the failure set is byte-identical before and after (Node 22, 52
