@@ -329,6 +329,7 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
       ) : null}
 
       <PageHeader
+        as="h2"
         title="Environments"
         description={
           environments.length === 0
@@ -353,6 +354,7 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
 
       <div id="dependencies" className="scroll-mt-4" />
       <PageHeader
+        as="h2"
         title="Dependencies"
         description={
           dependencies.length === 0

@@ -137,17 +137,17 @@ export function SubmitChangeRequestForm({ projectId }: { projectId: string }) {
   return (
     <form action={action} className="flex flex-col gap-2 rounded-lg border border-dashed border-line p-3">
       <input type="hidden" name="projectId" value={projectId} />
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>What was asked for, in their own words</label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>What was asked for, in their own words</span>
         <textarea name="requested" required maxLength={4000} className={textareaClass} rows={2} />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Source</label>
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Source</span>
         <select name="source" defaultValue="internal" className={selectClass}>
           <option value="internal">Internal — raised by staff</option>
           <option value="client">Client — raised on the client's behalf</option>
         </select>
-      </div>
+      </label>
       <button type="submit" disabled={pending} className={`${buttonClass('secondary', 'sm')} self-start`}>
         {pending ? 'Submitting…' : 'Submit a change request'}
       </button>
@@ -164,8 +164,8 @@ function ClassifyForm({ projectId, changeRequestId }: { projectId: string; chang
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="changeRequestId" value={changeRequestId} />
       <div className="flex flex-wrap gap-2">
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Classification</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Classification</span>
           <select name="classification" required defaultValue="" className={selectClass}>
             <option value="" disabled>
               Choose one
@@ -176,20 +176,20 @@ function ClassifyForm({ projectId, changeRequestId }: { projectId: string; chang
               </option>
             ))}
           </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Timeline (days, optional)</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Timeline (days, optional)</span>
           <input name="timelineDays" type="number" min={0} className={inputClass} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Effort (hours, optional)</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Effort (hours, optional)</span>
           <input name="effortHours" type="number" min={0} step="0.5" className={inputClass} />
-        </div>
+        </label>
       </div>
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Impact notes (optional)</label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Impact notes (optional)</span>
         <textarea name="impactNotes" maxLength={4000} className={textareaClass} rows={2} />
-      </div>
+      </label>
       <button type="submit" disabled={pending} className={`${buttonClass('secondary', 'sm')} self-start`}>
         {pending ? 'Classifying…' : 'Classify'}
       </button>
@@ -207,10 +207,10 @@ function DecideForm({ projectId, changeRequestId, classification }: { projectId:
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="changeRequestId" value={changeRequestId} />
       {needsProposal ? (
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Proposal id (required for a paid change — ADM-22)</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Proposal id (required for a paid change — ADM-22)</span>
           <input name="proposalId" className={inputClass} placeholder="uuid" />
-        </div>
+        </label>
       ) : null}
       <div className="flex gap-2">
         <button

@@ -49,8 +49,8 @@ export function UploadDesignAssetPanel({
       {fixedKind ? (
         <input type="hidden" name="kind" value={fixedKind} />
       ) : (
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Kind</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Kind</span>
           <select name="kind" className={selectClass} defaultValue="visual_asset">
             {DESIGN_ASSET_KINDS.map((k) => (
               <option key={k} value={k}>
@@ -58,18 +58,18 @@ export function UploadDesignAssetPanel({
               </option>
             ))}
           </select>
-        </div>
+        </label>
       )}
       {!parentAssetId ? (
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Title</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Title</span>
           <input name="title" maxLength={200} className={inputClass} placeholder="Optional — the file name otherwise" />
-        </div>
+        </label>
       ) : null}
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>{parentAssetId ? 'New version' : 'File'}</label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>{parentAssetId ? 'New version' : 'File'}</span>
         <input name="file" type="file" required accept="image/png,image/jpeg,image/webp,image/svg+xml,application/pdf" className={inputClass} />
-      </div>
+      </label>
       <div className="flex items-center gap-3">
         <button type="submit" disabled={pending} className={buttonClass(parentAssetId ? 'secondary' : 'primary', 'sm')}>
           {pending ? 'Uploading…' : parentAssetId ? 'Replace with a new version' : 'Upload design'}

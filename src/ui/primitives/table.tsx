@@ -61,7 +61,10 @@ export function DataTable<T>({
   stickyHeader,
   dense,
   rowActions,
+  ariaLabel,
 }: {
+  /** What the table lists, for a reader landing on its scrollable frame. */
+  ariaLabel?: string;
   rows: readonly T[];
   columns: ReadonlyArray<Column<T>>;
   getKey: (row: T) => string;
@@ -111,8 +114,12 @@ export function DataTable<T>({
           768px, not by inspection. `lg` (1024px) gives the table a width
           worth switching for. */}
       <div
+        // A wide table scrolls sideways inside its frame, so the frame must take keyboard focus.
+        tabIndex={0}
+        role="region"
+        aria-label={ariaLabel ?? 'Table'}
         className={cx(
-          'hidden overflow-x-auto rounded-xl border border-line bg-surface shadow-xs lg:block',
+          'hidden overflow-x-auto rounded-xl border border-line bg-surface shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand lg:block',
           sticky && 'max-h-[calc(100vh-11rem)] overflow-y-auto',
         )}
       >

@@ -69,18 +69,18 @@ export function UploadFileForm({
       <input type="hidden" name="projectId" value={projectId} />
       {clientId ? <input type="hidden" name="clientId" value={clientId} /> : null}
       {parentFileId ? <input type="hidden" name="parentFileId" value={parentFileId} /> : null}
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>{parentFileId ? 'New version' : 'File'}</label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>{parentFileId ? 'New version' : 'File'}</span>
         <input name="file" type="file" required disabled={disabled} className={inputClass} />
-      </div>
+      </label>
       {parentFileId ? null : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Title (optional)</label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Title (optional)</span>
             <input name="title" maxLength={200} disabled={disabled} className={inputClass} placeholder="Defaults to the file’s name" />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Category</label>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Category</span>
             <select name="category" defaultValue="documents" disabled={disabled} className={selectClass}>
               {PROJECT_FILE_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
@@ -88,14 +88,14 @@ export function UploadFileForm({
                 </option>
               ))}
             </select>
-          </div>
+          </label>
         </div>
       )}
       {compact ? null : (
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Description (optional)</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Description (optional)</span>
           <textarea name="description" maxLength={1000} disabled={disabled} className={textareaClass} rows={2} />
-        </div>
+        </label>
       )}
       <div className="flex flex-wrap items-center gap-3">
         <button type="submit" disabled={disabled} className={buttonClass('primary', 'sm')}>

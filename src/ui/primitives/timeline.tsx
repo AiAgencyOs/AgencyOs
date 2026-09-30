@@ -7,9 +7,10 @@ export type TimelineStep = { label: string; caption?: string; state: 'done' | 'c
  * steps filled, the current one ringed, the rest hollow. Labels sit under
  * the dots. Scrolls sideways on a phone.
  */
-export function Timeline({ steps, className }: { steps: readonly TimelineStep[]; className?: string }) {
+export function Timeline({ steps, className, label = 'Milestone timeline' }: { steps: readonly TimelineStep[]; className?: string; label?: string }) {
   return (
-    <ol className={cx('scrollbar-none flex overflow-x-auto pb-1', className)}>
+    // A region that scrolls sideways must be reachable from the keyboard, and named.
+    <ol tabIndex={0} aria-label={label} className={cx('scrollbar-none flex overflow-x-auto pb-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand', className)}>
       {steps.map((s, i) => {
         const last = i === steps.length - 1;
         const tone: Tone = s.state === 'done' ? 'success' : s.state === 'current' ? 'brand' : 'neutral';

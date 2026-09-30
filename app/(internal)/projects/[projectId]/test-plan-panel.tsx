@@ -56,8 +56,8 @@ function AddItemForm({
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="planId" value={planId} />
       <div className="flex flex-wrap gap-2">
-        <div className="flex min-w-40 flex-1 flex-col gap-1">
-          <label className={labelClass}>Scope item</label>
+        <label className="flex min-w-40 flex-1 flex-col gap-1">
+          <span className={labelClass}>Scope item</span>
           <select name="scopeItemId" required defaultValue="" className={selectClass}>
             <option value="" disabled>
               Choose…
@@ -68,9 +68,9 @@ function AddItemForm({
               </option>
             ))}
           </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Category</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Category</span>
           <select name="category" defaultValue="functional" className={selectClass}>
             {TEST_CATEGORIES.map((c) => (
               <option key={c} value={c}>
@@ -78,12 +78,12 @@ function AddItemForm({
               </option>
             ))}
           </select>
-        </div>
+        </label>
       </div>
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Why this category applies</label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Why this category applies</span>
         <input name="reason" required maxLength={600} className={inputClass} placeholder="Moves money; a bug here costs a client directly." />
-      </div>
+      </label>
       <CaseFieldsInputs />
       <label className="flex items-center gap-2 text-[13px]">
         <input type="checkbox" name="criticalPath" />
@@ -205,8 +205,8 @@ function RecordTestRunForm({
     <form action={action} className="flex flex-col gap-2 rounded-lg border border-dashed border-line p-3">
       <input type="hidden" name="projectId" value={projectId} />
       <div className="flex flex-wrap gap-2">
-        <div className="flex min-w-40 flex-1 flex-col gap-1">
-          <label className={labelClass}>Build</label>
+        <label className="flex min-w-40 flex-1 flex-col gap-1">
+          <span className={labelClass}>Build</span>
           <select name="deliverableId" required defaultValue="" className={selectClass}>
             <option value="" disabled>
               Choose…
@@ -217,9 +217,9 @@ function RecordTestRunForm({
               </option>
             ))}
           </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Suite</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Suite</span>
           <select name="suite" defaultValue="functional" className={selectClass}>
             {TEST_RUN_SUITES.map((s) => (
               <option key={s} value={s}>
@@ -227,30 +227,30 @@ function RecordTestRunForm({
               </option>
             ))}
           </select>
-        </div>
+        </label>
       </div>
       <div className="flex flex-wrap gap-2">
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Total</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Total</span>
           <input name="total" type="number" min={0} required className={`${inputClass} w-24`} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Passed</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Passed</span>
           <input name="passed" type="number" min={0} required className={`${inputClass} w-24`} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Failed</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Failed</span>
           <input name="failed" type="number" min={0} required className={`${inputClass} w-24`} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Skipped</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Skipped</span>
           <input name="skipped" type="number" min={0} defaultValue={0} className={`${inputClass} w-24`} />
-        </div>
+        </label>
       </div>
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Evidence link (optional)</label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Evidence link (optional)</span>
         <input name="evidenceUrl" type="url" className={inputClass} placeholder="https://ci.example.com/run/123" />
-      </div>
+      </label>
       <RunEnvironmentInputs />
       <RunResultsGrid planItems={planItems} />
       <button type="submit" disabled={pending} className={`${buttonClass('secondary', 'sm')} self-start`}>
@@ -281,7 +281,7 @@ export function TestRunsCard({
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
-      <h3 className="text-sm font-semibold">Test runs</h3>
+      <h2 className="text-sm font-semibold">Test runs</h2>
 
       {runs.length > 0 ? (
         <ul className="flex flex-col gap-1">

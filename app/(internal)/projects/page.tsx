@@ -68,7 +68,7 @@ const columnsFor = (clock: AgencyClock, mayArchive: boolean): Column<Row>[] => [
     primary: true,
     cell: (p) => (
       <span className="flex items-center gap-2.5">
-        <Avatar name={p.name} size="md" square tone="neutral" className="bg-sidebar-bg text-sidebar-fg ring-0" />
+        <Avatar name={p.name} size="md" square tone="sidebar" />
         <span className="min-w-0">
           <span className="block truncate">{p.name}</span>
           <span className="block truncate font-mono text-[11px] font-normal text-muted">{p.code}</span>

@@ -257,7 +257,7 @@ export function MapScopeItemForm({ projectId, screenId, options }: { projectId: 
       <input type="hidden" name="screenId" value={screenId} />
       <div className="flex flex-wrap items-end gap-2">
         <Field label="Map a requirement">
-          <select name="scopeItemId" required className={`${selectClass} min-w-[16rem]`}>
+          <select name="scopeItemId" aria-label="Requirement to map" required className={`${selectClass} min-w-[16rem]`}>
             {options.map((o) => (
               <option key={o.id} value={o.id}>
                 {o.title}

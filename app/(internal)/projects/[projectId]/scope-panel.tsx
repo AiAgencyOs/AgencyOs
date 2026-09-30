@@ -50,12 +50,12 @@ function AddItemForm({ projectId, scopeVersionId }: { projectId: string; scopeVe
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="scopeVersionId" value={scopeVersionId} />
       <div className="flex flex-wrap gap-2">
-        <div className="flex min-w-40 flex-1 flex-col gap-1">
-          <label className={labelClass}>Title</label>
+        <label className="flex min-w-40 flex-1 flex-col gap-1">
+          <span className={labelClass}>Title</span>
           <input name="title" required maxLength={200} className={inputClass} placeholder="User login" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Inclusion</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Inclusion</span>
           <select name="inclusion" defaultValue="included" className={selectClass}>
             {SCOPE_ITEM_INCLUSIONS.map((i) => (
               <option key={i} value={i}>
@@ -63,16 +63,16 @@ function AddItemForm({ projectId, scopeVersionId }: { projectId: string; scopeVe
               </option>
             ))}
           </select>
-        </div>
+        </label>
       </div>
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Detail (optional)</label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Detail (optional)</span>
         <input name="detail" maxLength={4000} className={inputClass} />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Acceptance criteria (optional)</label>
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Acceptance criteria (optional)</span>
         <input name="acceptanceCriteria" maxLength={2000} className={inputClass} />
-      </div>
+      </label>
       <button type="submit" disabled={pending} className={`${buttonClass('secondary', 'sm')} self-start`}>
         {pending ? 'Adding…' : 'Add item'}
       </button>

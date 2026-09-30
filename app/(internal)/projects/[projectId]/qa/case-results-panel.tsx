@@ -28,18 +28,18 @@ export function CaseFieldsInputs() {
     <details className="rounded-md border border-line px-3 py-2">
       <summary className="cursor-pointer text-xs text-muted">Preconditions, steps and expected result (optional)</summary>
       <div className="flex flex-col gap-2 pt-2">
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Preconditions</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Preconditions</span>
           <textarea name="preconditions" rows={2} maxLength={2000} className={textarea} placeholder="A signed-in client with one unpaid invoice." />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Steps</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Steps</span>
           <textarea name="steps" rows={3} maxLength={4000} className={textarea} placeholder="1. Open the invoice. 2. Pay by card. 3. Return to the list." />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Expected result</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Expected result</span>
           <textarea name="expectedResult" rows={2} maxLength={2000} className={textarea} placeholder="The invoice reads paid and a receipt number is shown." />
-        </div>
+        </label>
       </div>
     </details>
   );
@@ -99,23 +99,23 @@ export function RunEnvironmentInputs() {
       <summary className="cursor-pointer text-xs text-muted">Device, browser, OS and performance notes (optional — the compatibility matrix reads these)</summary>
       <div className="flex flex-col gap-2 pt-2">
         <div className="flex flex-wrap gap-2">
-          <div className="flex min-w-32 flex-1 flex-col gap-1">
-            <label className={labelClass}>Device</label>
+          <label className="flex min-w-32 flex-1 flex-col gap-1">
+            <span className={labelClass}>Device</span>
             <input name="device" maxLength={120} className={inputClass} placeholder="iPhone 15 / desktop" />
-          </div>
-          <div className="flex min-w-32 flex-1 flex-col gap-1">
-            <label className={labelClass}>Browser</label>
+          </label>
+          <label className="flex min-w-32 flex-1 flex-col gap-1">
+            <span className={labelClass}>Browser</span>
             <input name="browser" maxLength={120} className={inputClass} placeholder="Safari 17" />
-          </div>
-          <div className="flex min-w-32 flex-1 flex-col gap-1">
-            <label className={labelClass}>OS</label>
+          </label>
+          <label className="flex min-w-32 flex-1 flex-col gap-1">
+            <span className={labelClass}>OS</span>
             <input name="os" maxLength={120} className={inputClass} placeholder="iOS 17.4" />
-          </div>
+          </label>
         </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Performance notes</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Performance notes</span>
           <textarea name="perfNotes" rows={2} maxLength={4000} className={textarea} placeholder="p95 checkout 1.4s at 50 concurrent users; no target is set for this project." />
-        </div>
+        </label>
       </div>
     </details>
   );
@@ -152,7 +152,7 @@ export function RunResultsGrid({ planItems }: { planItems: TestPlanItemRow[] }) 
                   </span>
                 </td>
                 <td className="py-1 pr-2">
-                  <select name={`result:${item.id}`} defaultValue="" className={selectClass}>
+                  <select name={`result:${item.id}`} aria-label="Result of this case" defaultValue="" className={selectClass}>
                     <option value="">not marked</option>
                     {TEST_CASE_RESULT_STATUSES.map((s) => (
                       <option key={s} value={s}>

@@ -25,6 +25,7 @@ export function MyTaskStatusSelect({ task }: { task: MyTaskRow }) {
       <input type="hidden" name="taskId" value={task.id} />
       <select
         name="status"
+        aria-label={`Status of ${task.title}`}
         defaultValue={task.status}
         className={`${selectClass} py-1 text-xs`}
         disabled={pending}

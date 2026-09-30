@@ -35,7 +35,7 @@ export function PipelineStrip({ stages, className }: { stages: readonly Pipeline
             style={{ clipPath: shape }}
           >
             <span className="tabular text-lg font-semibold leading-none">{s.count}</span>
-            <span className="mt-1 text-[11px] font-medium opacity-80">{s.label}</span>
+            <span className="mt-1 text-[11px] font-medium">{s.label}</span>
           </span>
         );
         return (

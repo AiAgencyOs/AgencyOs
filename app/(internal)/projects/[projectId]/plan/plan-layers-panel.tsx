@@ -25,24 +25,24 @@ export function PlanLayersPanel({ projectId, planDeliverableId, current }: { pro
             const entry = current?.layers[layer];
             return (
               <div key={layer} className="flex flex-col gap-1 rounded-md border border-line p-2">
-                <label className={labelClass}>{PLAN_LAYER_LABEL[layer]}</label>
-                <select name={`layer.${layer}.status`} defaultValue={entry?.status ?? 'planned'} className={selectClass}>
+                <span className={labelClass}>{PLAN_LAYER_LABEL[layer]}</span>
+                <select name={`layer.${layer}.status`} aria-label={`${PLAN_LAYER_LABEL[layer]} status`} defaultValue={entry?.status ?? 'planned'} className={selectClass}>
                   {LAYER_STATUSES.map((st) => (
                     <option key={st} value={st}>
                       {st.replace('_', ' ')}
                     </option>
                   ))}
                 </select>
-                <input name={`layer.${layer}.note`} maxLength={500} defaultValue={entry?.note ?? ''} className={inputClass} placeholder="What this layer covers (optional)" />
+                <input name={`layer.${layer}.note`} aria-label={`${PLAN_LAYER_LABEL[layer]} note`} maxLength={500} defaultValue={entry?.note ?? ''} className={inputClass} placeholder="What this layer covers (optional)" />
               </div>
             );
           })}
         </div>
         <div className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Execution order</label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Execution order</span>
             <input name="executionOrder" type="number" min={1} max={999} defaultValue={current?.executionOrder ?? ''} className={inputClass} placeholder="1, 2, 3…" />
-          </div>
+          </label>
           <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
             {pending ? 'Saving…' : 'Save layers'}
           </button>

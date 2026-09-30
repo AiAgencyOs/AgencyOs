@@ -157,7 +157,7 @@ export function ProjectAssignments({
         <form action={action} className="flex flex-wrap items-center gap-2 px-4 pb-4 sm:px-5">
           <input type="hidden" name="agentKey" value={agentKey} />
           <input type="hidden" name="active" value="true" />
-          <select name="projectId" required defaultValue="" className={`${selectClass} min-w-48`}>
+          <select name="projectId" aria-label="Project to assign" required defaultValue="" className={`${selectClass} min-w-48`}>
             <option value="" disabled>
               Choose a project…
             </option>

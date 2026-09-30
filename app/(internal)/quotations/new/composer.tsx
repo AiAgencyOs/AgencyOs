@@ -321,6 +321,7 @@ export function QuotationComposer({
               <span className={labelClass}>Discount</span>
               <input name="discount" type="number" min="0" step="0.01" value={discount} onChange={(e) => setDiscount(e.target.value)} className={inputClass} placeholder="0" />
             </label>
+            <div className="flex flex-col gap-1">
             <label className="flex flex-col gap-1">
               <span className={labelClass}>Tax{taxRatePercent !== null ? ` (GST ${taxRatePercent}%)` : ''}</span>
               <input
@@ -336,7 +337,8 @@ export function QuotationComposer({
                 className={inputClass}
                 placeholder="0"
               />
-              <span className="flex items-center gap-2 text-[12px] text-muted">
+            </label>
+              <label className="flex items-center gap-2 text-[12px] text-muted">
                 <input
                   type="checkbox"
                   checked={gstOn}
@@ -352,7 +354,7 @@ export function QuotationComposer({
                   : deal?.billingMode === 'non_gst'
                     ? ' — the project’s confirmed mode is non-GST; left off'
                     : ' — no confirmed billing mode on this deal yet; manual'}
-              </span>
+              </label>
               {!gstOn && suggestedTax !== null && suggestedTax > 0 && Number(tax) !== suggestedTax ? (
                 <button type="button" onClick={() => setTax(String(suggestedTax))} className="self-start text-[11px] font-medium text-brand hover:underline">
                   Apply {taxRatePercent}% → {money(suggestedTax, currency)}
@@ -360,7 +362,7 @@ export function QuotationComposer({
               ) : (
                 <span className="text-[11px] text-muted">Every quotation says GST is extra; enter the tax this one carries.</span>
               )}
-            </label>
+            </div>
           </div>
         </Card>
 

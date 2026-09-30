@@ -23,8 +23,8 @@ export function CreateTaskBranchPanel({ projectId, tasks }: { projectId: string;
   return (
     <form action={action} className="flex flex-col gap-2">
       <input type="hidden" name="projectId" value={projectId} />
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Task</label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Task</span>
         <select name="taskId" className={selectClass} required disabled={tasks.length === 0}>
           {tasks.map((t) => (
             <option key={t.id} value={t.id}>
@@ -32,7 +32,7 @@ export function CreateTaskBranchPanel({ projectId, tasks }: { projectId: string;
             </option>
           ))}
         </select>
-      </div>
+      </label>
       <div className="flex items-center gap-3">
         <button type="submit" disabled={pending || tasks.length === 0} className={buttonClass('primary', 'sm')}>
           {pending ? 'Creating…' : 'Create task branch'}
@@ -53,9 +53,9 @@ export function SubmitReviewPanel({ projectId, pulls }: { projectId: string; pul
       <input type="hidden" name="projectId" value={projectId} />
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_11rem]">
         <div className="flex flex-col gap-1">
-          <label className={labelClass}>Pull request</label>
+          <span className={labelClass}>Pull request</span>
           {pulls.length > 0 ? (
-            <select name="pullNumber" className={selectClass} required>
+            <select name="pullNumber" aria-label="Pull request" className={selectClass} required>
               {pulls.map((p) => (
                 <option key={p.number} value={p.number}>
                   #{p.number} — {p.title}
@@ -63,11 +63,11 @@ export function SubmitReviewPanel({ projectId, pulls }: { projectId: string; pul
               ))}
             </select>
           ) : (
-            <input name="pullNumber" type="number" min={1} required className={inputClass} placeholder="PR number" />
+            <input name="pullNumber" type="number" min={1} required aria-label="Pull request number" className={inputClass} placeholder="PR number" />
           )}
         </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Verdict</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Verdict</span>
           <select name="event" className={selectClass} defaultValue="COMMENT">
             {REVIEW_EVENTS.map((e) => (
               <option key={e} value={e}>
@@ -75,12 +75,12 @@ export function SubmitReviewPanel({ projectId, pulls }: { projectId: string; pul
               </option>
             ))}
           </select>
-        </div>
+        </label>
       </div>
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Review</label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Review</span>
         <textarea name="body" rows={3} maxLength={4000} className={textareaClass} placeholder="What was reviewed and what was found. Required unless approving." />
-      </div>
+      </label>
       <div className="flex items-center gap-3">
         <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
           {pending ? 'Submitting…' : 'Submit review'}
@@ -97,9 +97,9 @@ export function MergePullRequestPanel({ projectId, pulls }: { projectId: string;
     <form action={action} className="flex flex-col gap-2">
       <input type="hidden" name="projectId" value={projectId} />
       <div className="flex flex-col gap-1">
-        <label className={labelClass}>Pull request</label>
+        <span className={labelClass}>Pull request</span>
         {pulls.length > 0 ? (
-          <select name="pullNumber" className={selectClass} required>
+          <select name="pullNumber" aria-label="Pull request" className={selectClass} required>
             {pulls.map((p) => (
               <option key={p.number} value={p.number}>
                 #{p.number} — {p.title}
@@ -107,7 +107,7 @@ export function MergePullRequestPanel({ projectId, pulls }: { projectId: string;
             ))}
           </select>
         ) : (
-          <input name="pullNumber" type="number" min={1} required className={inputClass} placeholder="PR number" />
+          <input name="pullNumber" type="number" min={1} required aria-label="Pull request number" className={inputClass} placeholder="PR number" />
         )}
       </div>
       <div className="flex items-center gap-3">
@@ -126,8 +126,8 @@ export function LinkCommitToTaskPanel({ projectId, tasks, defaultSha }: { projec
   return (
     <form action={action} className="flex flex-wrap items-end gap-2">
       <input type="hidden" name="projectId" value={projectId} />
-      <div className="flex min-w-48 flex-col gap-1">
-        <label className={labelClass}>Task</label>
+      <label className="flex min-w-48 flex-col gap-1">
+        <span className={labelClass}>Task</span>
         <select name="taskId" className={selectClass} required disabled={tasks.length === 0}>
           {tasks.map((t) => (
             <option key={t.id} value={t.id}>
@@ -135,15 +135,15 @@ export function LinkCommitToTaskPanel({ projectId, tasks, defaultSha }: { projec
             </option>
           ))}
         </select>
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Commit sha</label>
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Commit sha</span>
         <input name="sha" required pattern="[0-9a-fA-F]{7,40}" defaultValue={defaultSha ?? ''} className={inputClass} placeholder="abc1234" />
-      </div>
-      <div className="flex min-w-48 flex-col gap-1">
-        <label className={labelClass}>Link</label>
+      </label>
+      <label className="flex min-w-48 flex-col gap-1">
+        <span className={labelClass}>Link</span>
         <input name="url" maxLength={2000} className={inputClass} placeholder="https://github.com/…/commit/… (optional)" />
-      </div>
+      </label>
       <button type="submit" disabled={pending || tasks.length === 0} className={buttonClass('secondary', 'sm')}>
         {pending ? 'Linking…' : 'Link commit'}
       </button>
@@ -157,10 +157,10 @@ export function WorkflowFilePanel({ projectId, current }: { projectId: string; c
   return (
     <form action={action} className="flex flex-wrap items-end gap-2">
       <input type="hidden" name="projectId" value={projectId} />
-      <div className="flex min-w-56 flex-col gap-1">
-        <label className={labelClass}>Build workflow file (.github/workflows/)</label>
+      <label className="flex min-w-56 flex-col gap-1">
+        <span className={labelClass}>Build workflow file (.github/workflows/)</span>
         <input name="workflowFile" maxLength={130} defaultValue={current ?? ''} className={inputClass} placeholder="deploy.yml — blank: record only" />
-      </div>
+      </label>
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
         {pending ? 'Saving…' : 'Set workflow'}
       </button>

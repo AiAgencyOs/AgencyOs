@@ -44,6 +44,7 @@ function StatusForm({
       <input type="hidden" name={hiddenName} value={hiddenValue} />
       <select
         name="status"
+        aria-label="Status"
         defaultValue={status}
         className={`${selectClass} py-1 text-xs`}
         disabled={pending}
@@ -88,13 +89,13 @@ function AddTaskForm({ projectId, moduleId, features }: { projectId: string; mod
     <form action={action} className="flex flex-wrap items-end gap-2 border-t border-line pt-2">
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="moduleId" value={moduleId} />
-      <div className="flex min-w-40 flex-1 flex-col gap-1">
-        <label className={labelClass}>Task</label>
+      <label className="flex min-w-40 flex-1 flex-col gap-1">
+        <span className={labelClass}>Task</span>
         <input name="title" required maxLength={200} className={inputClass} placeholder="Build the login form" />
-      </div>
+      </label>
       {features.length > 0 ? (
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Feature</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Feature</span>
           <select name="featureId" className={selectClass} defaultValue="">
             <option value="">none</option>
             {features.map((f) => (
@@ -103,7 +104,7 @@ function AddTaskForm({ projectId, moduleId, features }: { projectId: string; mod
               </option>
             ))}
           </select>
-        </div>
+        </label>
       ) : null}
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
         {pending ? 'Adding…' : 'Add task'}
@@ -120,10 +121,10 @@ function AddFeatureForm({ projectId, moduleId }: { projectId: string; moduleId: 
     <form action={action} className="flex flex-wrap items-end gap-2">
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="moduleId" value={moduleId} />
-      <div className="flex min-w-40 flex-1 flex-col gap-1">
-        <label className={labelClass}>Feature</label>
+      <label className="flex min-w-40 flex-1 flex-col gap-1">
+        <span className={labelClass}>Feature</span>
         <input name="name" required maxLength={200} className={inputClass} placeholder="OTP login" />
-      </div>
+      </label>
       <button type="submit" disabled={pending} className={buttonClass('ghost', 'sm')}>
         {pending ? 'Adding…' : 'Add feature'}
       </button>
@@ -205,14 +206,14 @@ export function AddModuleForm({ projectId }: { projectId: string }) {
   return (
     <form action={action} className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-line p-4">
       <input type="hidden" name="projectId" value={projectId} />
-      <div className="flex min-w-48 flex-1 flex-col gap-1">
-        <label className={labelClass}>New module</label>
+      <label className="flex min-w-48 flex-1 flex-col gap-1">
+        <span className={labelClass}>New module</span>
         <input name="name" required maxLength={200} className={inputClass} placeholder="Authentication" />
-      </div>
-      <div className="flex min-w-48 flex-[2] flex-col gap-1">
-        <label className={labelClass}>Description (optional)</label>
+      </label>
+      <label className="flex min-w-48 flex-[2] flex-col gap-1">
+        <span className={labelClass}>Description (optional)</span>
         <input name="description" maxLength={4000} className={inputClass} />
-      </div>
+      </label>
       <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
         {pending ? 'Adding…' : 'Add module'}
       </button>
@@ -245,10 +246,10 @@ function AddTaskFormNoModule({ projectId }: { projectId: string }) {
   return (
     <form action={action} className="flex flex-wrap items-end gap-2 border-t border-line pt-2">
       <input type="hidden" name="projectId" value={projectId} />
-      <div className="flex min-w-40 flex-1 flex-col gap-1">
-        <label className={labelClass}>Task</label>
+      <label className="flex min-w-40 flex-1 flex-col gap-1">
+        <span className={labelClass}>Task</span>
         <input name="title" required maxLength={200} className={inputClass} placeholder="Set up CI" />
-      </div>
+      </label>
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
         {pending ? 'Adding…' : 'Add task'}
       </button>

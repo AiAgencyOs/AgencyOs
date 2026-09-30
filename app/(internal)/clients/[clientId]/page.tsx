@@ -209,7 +209,7 @@ export default async function ClientDetailPage({
       primary: true,
       cell: (p) => (
         <span className="flex items-center gap-2.5">
-          <Avatar name={p.name} size="sm" square tone="neutral" className="bg-sidebar-bg text-sidebar-fg ring-0" />
+          <Avatar name={p.name} size="sm" square tone="sidebar" />
           <span className="truncate">{p.name}</span>
         </span>
       ),

@@ -111,7 +111,7 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
             </div>
           ) : null}
           <div className="flex items-center gap-2.5 rounded-lg border border-sidebar-border bg-sidebar-hover px-2 py-2">
-            <Avatar name={organizationName ?? displayName} size="md" square tone="warning" className="bg-accent text-accent-fg" />
+            <Avatar name={organizationName ?? displayName} size="md" square tone="solid" />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[13px] font-semibold text-sidebar-fg">{organizationName ?? 'Organisation'}</span>
               <span className="block truncate text-[11px] text-sidebar-muted">{displayName}</span>

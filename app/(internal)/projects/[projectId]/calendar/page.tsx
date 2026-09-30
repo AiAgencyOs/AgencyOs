@@ -210,7 +210,7 @@ export default async function ProjectCalendarPage({
             <Link
               key={k}
               href={link(view, anchor, toggleKind(k))}
-              aria-pressed={kinds.has(k)}
+              aria-current={kinds.has(k) ? 'true' : undefined}
               className={cx(
                 'rounded-full px-3 py-1.5 text-xs font-medium ring-1 ring-inset transition-colors',
                 kinds.has(k) ? 'bg-surface text-foreground ring-line-strong' : 'bg-surface-sunken text-faint ring-line line-through',

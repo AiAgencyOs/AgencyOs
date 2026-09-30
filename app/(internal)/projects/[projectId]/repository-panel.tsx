@@ -18,12 +18,12 @@ export function AddRepositoryForm({ projectId }: { projectId: string }) {
       <form action={action} className="flex flex-col gap-3">
         <input type="hidden" name="projectId" value={projectId} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Name</label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Name</span>
             <input name="name" required maxLength={200} className={inputClass} placeholder="agencyos-web" />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Platform</label>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Platform</span>
             <select name="platform" defaultValue="github" className={selectClass}>
               {REPOSITORY_PLATFORMS.map((p) => (
                 <option key={p} value={p}>
@@ -31,26 +31,26 @@ export function AddRepositoryForm({ projectId }: { projectId: string }) {
                 </option>
               ))}
             </select>
-          </div>
+          </label>
         </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Repository link</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Repository link</span>
           <input name="url" type="url" required maxLength={2000} className={inputClass} placeholder="https://github.com/…" />
-        </div>
+        </label>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Default branch (optional)</label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Default branch (optional)</span>
             <input name="defaultBranch" maxLength={200} className={inputClass} placeholder="main" />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Code review link (optional)</label>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Code review link (optional)</span>
             <input name="reviewUrl" type="url" maxLength={2000} className={inputClass} placeholder="https://github.com/…/pulls" />
-          </div>
+          </label>
         </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Notes (optional)</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Notes (optional)</span>
           <textarea name="notes" maxLength={1000} className={textareaClass} rows={2} />
-        </div>
+        </label>
         <div className="flex items-center gap-3">
           <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
             {pending ? 'Adding…' : 'Add repository'}

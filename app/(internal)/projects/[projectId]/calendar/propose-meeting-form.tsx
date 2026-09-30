@@ -60,8 +60,8 @@ export function ProposeMeetingOnDayForm({
     <form action={action} className="flex flex-col gap-2 rounded-md border border-line bg-surface p-2 text-left">
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="date" value={date} />
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Meeting on {date} · in {agencyZone}</label>
+      <div role="group" aria-label={`Meeting on ${date} in ${agencyZone}`} className="flex flex-col gap-1">
+        <span className={labelClass}>Meeting on {date} · in {agencyZone}</span>
         <div className="flex flex-wrap items-center gap-2">
           <select name="leadId" aria-label="Lead" defaultValue={leads[0]?.id} className={`${selectClass} w-auto max-w-[14rem]`}>
             {leads.map((l) => (
@@ -80,7 +80,7 @@ export function ProposeMeetingOnDayForm({
           </select>
         </div>
       </div>
-      <input name="purpose" maxLength={2000} placeholder="What it is about (optional)" className={inputClass} />
+      <input name="purpose" maxLength={2000} placeholder="What it is about (optional)" aria-label="What the meeting is about (optional)" className={inputClass} />
       <div className="flex flex-wrap items-center gap-2">
         <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
           {pending ? 'Recording…' : 'Propose the meeting'}

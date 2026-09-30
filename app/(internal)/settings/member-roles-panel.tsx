@@ -46,7 +46,7 @@ function GrantForm({ membershipId, alreadyHeld }: { membershipId: string; alread
   return (
     <form action={action} className="flex items-center gap-1">
       <input type="hidden" name="membershipId" value={membershipId} />
-      <select name="role" className="rounded-md border border-line bg-surface px-2 py-1 text-[13px]" defaultValue="">
+      <select name="role" aria-label="Role to grant" className="rounded-md border border-line bg-surface px-2 py-1 text-[13px]" defaultValue="">
         <option value="" disabled>
           Add a role…
         </option>

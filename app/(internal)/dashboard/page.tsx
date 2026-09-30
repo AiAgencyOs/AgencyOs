@@ -240,7 +240,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
       primary: true,
       cell: (p) => (
         <span className="flex items-center gap-2.5">
-          <Avatar name={p.name} size="sm" square tone="neutral" className="bg-sidebar-bg text-sidebar-fg ring-0" />
+          <Avatar name={p.name} size="sm" square tone="sidebar" />
           <span className="truncate font-medium">{p.name}</span>
         </span>
       ),

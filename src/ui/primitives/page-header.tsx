@@ -12,7 +12,10 @@ export function PageHeader({
   actions,
   meta,
   className,
+  as: Heading = 'h1',
 }: {
+  /** `h2` when a page shows a second header for a section below the first — a page has one h1. */
+  as?: 'h1' | 'h2';
   eyebrow?: React.ReactNode;
   title: React.ReactNode;
   description?: React.ReactNode;
@@ -30,9 +33,9 @@ export function PageHeader({
               {eyebrow}
             </p>
           ) : null}
-          <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+          <Heading className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
             {title}
-          </h1>
+          </Heading>
           {description ? (
             <p className="mt-1.5 max-w-2xl break-words text-[13px] leading-relaxed text-muted sm:text-sm">
               {description}

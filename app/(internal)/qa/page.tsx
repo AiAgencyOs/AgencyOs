@@ -130,7 +130,7 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
       desktopOnly: true,
       cell: (d) => (
         <span className="flex items-center gap-2 text-muted">
-          <Avatar name={d.projectName} size="sm" square tone="neutral" className="bg-sidebar-bg text-sidebar-fg ring-0" />
+          <Avatar name={d.projectName} size="sm" square tone="sidebar" />
           <span className="truncate">{d.projectName}</span>
         </span>
       ),

@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useId } from 'react';
 
 import { setLeadServiceAction } from '@/modules/crm/lead-service-actions';
 import { IDLE_STATE } from '@/modules/identity/types';
@@ -21,6 +21,8 @@ export function LeadServiceForm({
   suggestions: string[];
 }) {
   const [state, action, pending] = useActionState(setLeadServiceAction, IDLE_STATE);
+  // Rendered more than once on a lead page: a fixed id would point every field at the first list.
+  const listId = useId();
 
   return (
     <form action={action} className="flex flex-col gap-1">
@@ -30,12 +32,12 @@ export function LeadServiceForm({
           name="service"
           defaultValue={service ?? ''}
           maxLength={80}
-          list="lead-service-suggestions"
+          list={listId}
           placeholder="e.g. Website redesign"
           aria-label="Service the lead asked about"
           className={cx(inputClass, 'h-8 w-44 text-[13px]')}
         />
-        <datalist id="lead-service-suggestions">
+        <datalist id={listId}>
           {suggestions.map((s) => (
             <option key={s} value={s} />
           ))}

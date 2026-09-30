@@ -345,7 +345,7 @@ export default async function FinanceOverviewPage({
             <ul className="flex flex-col gap-3 p-4 sm:p-5">
               {topProjects.map(([id, minor]) => (
                 <li key={id} className="flex items-center gap-3">
-                  <Avatar name={projectName.get(id) ?? id} size="md" square tone="neutral" className="bg-sidebar-bg text-sidebar-fg ring-0" />
+                  <Avatar name={projectName.get(id) ?? id} size="md" square tone="sidebar" />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline justify-between gap-2">
                       <Link href={`/projects/${id}`} className="truncate text-[13px] font-medium text-foreground hover:text-brand">

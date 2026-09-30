@@ -281,8 +281,8 @@ export default async function ProjectScreensPage({
         {/* SCR-034 — role / device / status filters and grouping, as a GET form. */}
         <form method="get" className="flex flex-wrap items-end gap-2 px-4 pb-3 sm:px-5">
           {showSuperseded ? <input type="hidden" name="superseded" value="1" /> : null}
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Role</label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Role</span>
             <select name="role" defaultValue={roleFilter} className={selectClass}>
               <option value="">All roles</option>
               {roles.map((r) => (
@@ -291,9 +291,9 @@ export default async function ProjectScreensPage({
                 </option>
               ))}
             </select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Device</label>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Device</span>
             <select name="device" defaultValue={deviceFilter} className={selectClass}>
               <option value="">All devices</option>
               {DEVICE_TARGETS.map((d) => (
@@ -302,9 +302,9 @@ export default async function ProjectScreensPage({
                 </option>
               ))}
             </select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Status</label>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Status</span>
             <select name="status" defaultValue={statusFilter} className={selectClass}>
               <option value="">All statuses</option>
               {['draft', 'in_review', 'approved'].map((st) => (
@@ -313,14 +313,14 @@ export default async function ProjectScreensPage({
                 </option>
               ))}
             </select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Group</label>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Group</span>
             <select name="group" defaultValue={grouped ? 'role' : ''} className={selectClass}>
               <option value="">No grouping</option>
               <option value="role">By role</option>
             </select>
-          </div>
+          </label>
           <label className="flex items-center gap-2 pb-2 text-[13px]">
             <input type="checkbox" name="missing" value="1" defaultChecked={missingOnly} /> missing states only
           </label>

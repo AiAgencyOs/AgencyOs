@@ -52,8 +52,8 @@ export function SubmitEvidencePanel({ projectId, taskId }: { projectId: string; 
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="taskId" value={taskId} />
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[8rem_1fr]">
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Kind</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Kind</span>
           <select name="kind" className={selectClass} defaultValue="test">
             {EVIDENCE_KINDS.map((k) => (
               <option key={k} value={k}>
@@ -61,20 +61,20 @@ export function SubmitEvidencePanel({ projectId, taskId }: { projectId: string; 
               </option>
             ))}
           </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Title</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Title</span>
           <input name="title" required maxLength={200} className={inputClass} placeholder="e.g. CI run #412, screenshot of the settled state" />
-        </div>
+        </label>
       </div>
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Link</label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Link</span>
         <input name="url" maxLength={2000} className={inputClass} placeholder="https://… (a link, a note, or both)" />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Note</label>
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Note</span>
         <textarea name="note" rows={2} maxLength={4000} className={textareaClass} placeholder="What it shows." />
-      </div>
+      </label>
       <div className="flex items-center gap-3">
         <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
           {pending ? 'Submitting…' : 'Submit evidence'}
@@ -113,18 +113,18 @@ export function LinkCommitPanel({ projectId, taskId }: { projectId: string; task
     <form action={action} className="flex flex-wrap items-end gap-2">
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="taskId" value={taskId} />
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Commit sha</label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Commit sha</span>
         <input name="sha" required pattern="[0-9a-fA-F]{7,40}" className={inputClass} placeholder="abc1234" />
-      </div>
-      <div className="flex min-w-48 flex-col gap-1">
-        <label className={labelClass}>Link</label>
+      </label>
+      <label className="flex min-w-48 flex-col gap-1">
+        <span className={labelClass}>Link</span>
         <input name="url" maxLength={2000} className={inputClass} placeholder="https://github.com/…/commit/… (optional)" />
-      </div>
-      <div className="flex min-w-48 flex-col gap-1">
-        <label className={labelClass}>Message</label>
+      </label>
+      <label className="flex min-w-48 flex-col gap-1">
+        <span className={labelClass}>Message</span>
         <input name="message" maxLength={500} className={inputClass} placeholder="first line (optional)" />
-      </div>
+      </label>
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
         {pending ? 'Linking…' : 'Link commit'}
       </button>

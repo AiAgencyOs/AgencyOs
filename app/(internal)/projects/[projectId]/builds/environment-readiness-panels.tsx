@@ -46,8 +46,8 @@ export function PromoteBuildPanel({ projectId, environmentId, builds, promotedBu
     <form action={action} className="flex flex-wrap items-end gap-2">
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="environmentId" value={environmentId} />
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Build</label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Build</span>
         <select name="deliverableId" className={selectClass} defaultValue={builds.find((b) => b.id !== promotedBuildId)?.id ?? builds[0]?.id}>
           {builds.map((b) => (
             <option key={b.id} value={b.id}>
@@ -55,7 +55,7 @@ export function PromoteBuildPanel({ projectId, environmentId, builds, promotedBu
             </option>
           ))}
         </select>
-      </div>
+      </label>
       <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
         {pending ? 'Promoting…' : 'Promote build after gates'}
       </button>
@@ -69,10 +69,10 @@ export function TriggerBuildPanel({ projectId, workflowFile, linked }: { project
   return (
     <form action={action} className="flex flex-wrap items-end gap-2">
       <input type="hidden" name="projectId" value={projectId} />
-      <div className="flex min-w-56 flex-col gap-1">
-        <label className={labelClass}>Note</label>
+      <label className="flex min-w-56 flex-col gap-1">
+        <span className={labelClass}>Note</span>
         <input name="note" maxLength={500} className={inputClass} placeholder="why this build (optional)" />
-      </div>
+      </label>
       <button type="submit" disabled={pending || !linked} className={buttonClass('primary', 'sm')} title={linked ? undefined : 'Link a GitHub repository on the Repository tab first'}>
         {pending ? 'Triggering…' : 'Trigger build'}
       </button>
