@@ -110,8 +110,8 @@ export function PipelineBoard({
             </Link>
             {deal.contact ? <p className="truncate text-xs text-muted">{deal.name}</p> : null}
             <p className="tabular mt-2 text-sm font-semibold text-foreground">{deal.valueLabel}</p>
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <span className="text-xs text-muted">{deal.ago}</span>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+              <span className="whitespace-nowrap text-xs text-muted">{deal.ago}</span>
               <StatusBadge status={deal.columnId} dot={false} />
             </div>
           </div>

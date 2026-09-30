@@ -51,9 +51,9 @@ export function Stat({
 
   const figure = (
     <>
-      <p className="text-[13px] font-medium leading-tight text-muted">{label}</p>
+      <p className="text-[12.5px] font-medium leading-tight tracking-tight text-muted sm:text-[13px]">{label}</p>
       <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <p className="tabular max-w-full break-words text-[22px] font-bold leading-none tracking-tight text-foreground sm:text-2xl">{value}</p>
+        <p className="tabular max-w-full break-words text-[22px] font-bold leading-none tracking-tight text-foreground sm:whitespace-nowrap sm:text-xl">{value}</p>
         {trend && trendTone ? (
           <Badge tone={trendTone} className="gap-1">
             <span aria-hidden>{trend.direction === 'up' ? '↑' : '↓'}</span>
@@ -68,11 +68,11 @@ export function Stat({
   // The reference's tile: a soft icon chip on the left, the label, the number
   // (with its delta) and the caption stacked to its right.
   const body = icon ? (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2.5 sm:gap-3">
       <span
         className={cx(
           'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl [&>svg]:h-5 [&>svg]:w-5',
-          compact ? 'sm:h-11 sm:w-11' : 'sm:h-12 sm:w-12 sm:rounded-xl 2xl:h-14 2xl:w-14 2xl:rounded-2xl sm:[&>svg]:h-6 sm:[&>svg]:w-6',
+          compact ? 'sm:h-11 sm:w-11' : 'sm:h-11 sm:w-11 sm:rounded-xl sm:[&>svg]:h-5 sm:[&>svg]:w-5',
           TONE_CHIP[tone],
         )}
       >
@@ -87,7 +87,7 @@ export function Stat({
 
   const skin =
     'rounded-xl border border-line bg-surface p-4 shadow-xs transition-colors';
-  const pad = compact ? 'sm:p-3.5' : 'sm:p-5';
+  const pad = compact ? 'sm:p-3.5' : 'sm:p-4';
 
   return href ? (
     <Link href={href} className={cx(skin, pad, 'block hover:bg-surface-hover', className)}>

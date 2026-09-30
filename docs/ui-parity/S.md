@@ -31,3 +31,14 @@ Reference folder: `admin panel ui single truth/`. Image numbers are the sorted o
 
 ## Tests
 Updated pins: `tests/a-kpi-opens-its-own-list.test.ts` (Title Case KPI labels, health beside stage), `tests/phase-three-in-the-admin-panel.test.ts` (heading match case-insensitive). `tests/read-failure-semantics.test.ts` fails identically with and without these changes when run alone (module-mock load error), not caused here.
+
+## Reference comparison, 2026-10-03 (images 45, 3, 13, 43, 42; 1536x1024, owner)
+
+Independent side-by-side after round 3. Fixed: KPI tiles were taller than the reference (the label wrapped and the delta chip fell under the value; a number such as ₹15,00,000 broke mid-figure) — `Stat` now keeps the value on one line from `sm` up, sizes the chip/padding to the reference, and the label fits on one line; the pipeline deal card's "1 day ago" no longer wraps letter by letter; quick-action labels wrap instead of truncating ("Open in Wh…").
+
+Still different (data or a deliberate difference, not a missing element):
+- Sidebar: the reference lists 17 modules (Approvals, Analytics & Costs, Security & Audit, Organization as their own items); the app follows the 71-screen PDF's grouping (Governance & Security, Settings). Owner decision if the screenshot's list should win.
+- Reference shows photo avatars and mock data; the app shows initials and the real rows.
+- Sales pipeline columns are the real stages (Discovery/Proposal/Negotiation/Won/Lost), not the mock's New Leads/Contacted/Proposal Sent/Negotiation/Closed Won.
+- Reference period control is a date-range dropdown; the app uses 30d/90d/180d/365d pills.
+- Lead 360 conversation pane uses the WhatsApp-style header; the reference uses a plain card header with "View Full History".

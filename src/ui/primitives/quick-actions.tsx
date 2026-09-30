@@ -32,11 +32,11 @@ export function QuickActions({ title = 'Quick actions', actions, className }: { 
                   {a.icon}
                 </span>
               ) : null}
-              <span className="truncate">{a.label}</span>
+              <span className="min-w-0 leading-tight">{a.label}</span>
             </>
           );
           const skin =
-            'flex h-10 min-w-0 items-center gap-2 rounded-lg border border-line bg-surface px-2.5 text-[13px] font-medium text-foreground shadow-xs transition-colors hover:border-line-strong hover:bg-surface-hover';
+            'flex min-h-10 min-w-0 items-center gap-2 rounded-lg py-1.5 border border-line bg-surface px-2.5 text-[13px] font-medium text-foreground shadow-xs transition-colors hover:border-line-strong hover:bg-surface-hover';
           if (a.node) {
             return (
               <div key={a.label} className="min-w-0 [&>form]:contents [&_button]:w-full">
