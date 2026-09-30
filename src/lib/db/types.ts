@@ -1959,6 +1959,51 @@ export type Database = {
           },
         ]
       }
+      secret_credentials: {
+        Row: {
+          auth_tag: string
+          ciphertext: string
+          created_at: string
+          expires_on: string | null
+          hint: string | null
+          iv: string
+          last_verified_at: string | null
+          last_verified_detail: string | null
+          last_verified_ok: boolean | null
+          slot: string
+          updated_at: string
+          updated_by: string
+        }
+        Insert: {
+          auth_tag: string
+          ciphertext: string
+          created_at?: string
+          expires_on?: string | null
+          hint?: string | null
+          iv: string
+          last_verified_at?: string | null
+          last_verified_detail?: string | null
+          last_verified_ok?: boolean | null
+          slot: string
+          updated_at?: string
+          updated_by: string
+        }
+        Update: {
+          auth_tag?: string
+          ciphertext?: string
+          created_at?: string
+          expires_on?: string | null
+          hint?: string | null
+          iv?: string
+          last_verified_at?: string | null
+          last_verified_detail?: string | null
+          last_verified_ok?: boolean | null
+          slot?: string
+          updated_at?: string
+          updated_by?: string
+        }
+        Relationships: []
+      }
       kill_switches: {
         Row: {
           active: boolean
@@ -3065,6 +3110,51 @@ export type Database = {
         Returns: {
           outcome: string
           id: string | null
+        }[]
+      }
+      store_secret: {
+        Args: {
+          p_auth_tag: string
+          p_ciphertext: string
+          p_expires_on?: string | null
+          p_hint?: string | null
+          p_iv: string
+          p_slot: string
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      revoke_secret: {
+        Args: {
+          p_slot: string
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      secret_status: {
+        Args: never
+        Returns: {
+          expires_on: string | null
+          hint: string | null
+          last_verified_at: string | null
+          last_verified_detail: string | null
+          last_verified_ok: boolean | null
+          slot: string
+          updated_at: string
+          updated_by: string
+          updated_by_name: string | null
+        }[]
+      }
+      record_secret_check: {
+        Args: {
+          p_detail?: string | null
+          p_ok: boolean
+          p_slot: string
+        }
+        Returns: {
+          outcome: string
         }[]
       }
       set_kill_switch: {

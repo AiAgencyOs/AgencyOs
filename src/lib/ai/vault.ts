@@ -45,14 +45,14 @@ function encryptionKey(): Buffer {
   return createHash('sha256').update(raw).digest();
 }
 
-function encrypt(plaintext: string): { ciphertext: string; iv: string; authTag: string } {
+export function encrypt(plaintext: string): { ciphertext: string; iv: string; authTag: string } {
   const iv = randomBytes(12);
   const cipher = createCipheriv(ALGORITHM, encryptionKey(), iv);
   const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
   return { ciphertext: ciphertext.toString('base64'), iv: iv.toString('base64'), authTag: cipher.getAuthTag().toString('base64') };
 }
 
-function decrypt(ciphertext: string, iv: string, authTag: string): string {
+export function decrypt(ciphertext: string, iv: string, authTag: string): string {
   const decipher = createDecipheriv(ALGORITHM, encryptionKey(), Buffer.from(iv, 'base64'));
   decipher.setAuthTag(Buffer.from(authTag, 'base64'));
   return Buffer.concat([decipher.update(Buffer.from(ciphertext, 'base64')), decipher.final()]).toString('utf8');
