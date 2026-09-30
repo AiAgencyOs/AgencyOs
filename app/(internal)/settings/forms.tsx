@@ -40,6 +40,7 @@ import {
   setWhatsAppTemplateStatusAction,
   verifyAiProviderAction,
   verifyCalendarAction,
+  verifyFigmaAction,
   verifyWhatsAppAction,
 } from './actions';
 
@@ -1169,6 +1170,23 @@ export function VerifyCalendarForm({ lastVerifiedAt, calendar }: { lastVerifiedA
       ) : (
         <span className="text-xs text-muted">never exercised against Google</span>
       )}
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** SCR-070 — Figma, exercised against the most recent recorded design reference and recorded. */
+export function VerifyFigmaForm({ lastVerifiedAt, references }: { lastVerifiedAt: string | null; references: number }) {
+  const [state, action, pending] = useActionState(verifyFigmaAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Asking Figma…' : 'Verify Figma'}
+      </button>
+      <span className="text-xs text-muted">
+        {lastVerifiedAt ? `a reference was checked ${lastVerifiedAt}` : 'never checked against Figma'} · {references} reference{references === 1 ? '' : 's'} recorded
+      </span>
       <Message status={state.status} message={state.message} />
     </form>
   );

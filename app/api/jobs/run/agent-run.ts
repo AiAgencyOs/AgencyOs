@@ -429,7 +429,7 @@ export async function callModel(
   // and the provider's monthly budget (SCR-065/068/064). Each throws; the
   // tick catches exactly those classes and settles the job.
   await checkRunGates(ctx.admin, { jobId: ctx.job.id, organizationId: ctx.job.organization_id, runId });
-  await refuseIfOverBudget(ctx.admin, { organizationId: ctx.job.organization_id, agentKey: ctx.agent.key, provider: provider.data.id, runId });
+  await refuseIfOverBudget(ctx.admin, { organizationId: ctx.job.organization_id, agentKey: ctx.agent.key, provider: provider.data.id, runId, model: routed ?? ctx.agent.default_model });
 
   const request = {
     model: routed ?? ctx.agent.default_model,
@@ -610,7 +610,7 @@ export async function callModelWithTools(
     // Between steps, before each model turn: the cancel flag, the pause
     // switch and the provider budget (SCR-065/068/064).
     await checkRunGates(ctx.admin, { jobId: ctx.job.id, organizationId: ctx.job.organization_id, runId });
-    await refuseIfOverBudget(ctx.admin, { organizationId: ctx.job.organization_id, agentKey: ctx.agent.key, provider: provider.data.id, runId });
+    await refuseIfOverBudget(ctx.admin, { organizationId: ctx.job.organization_id, agentKey: ctx.agent.key, provider: provider.data.id, runId, model: routed ?? ctx.agent.default_model });
 
     const request = {
       model: routed ?? ctx.agent.default_model,

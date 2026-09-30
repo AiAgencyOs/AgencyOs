@@ -17,7 +17,6 @@ import { OVERVIEW_WINDOWS, overviewWindow } from '@/lib/admin/dashboard-window';
 import { listUnpaidMilestoneInvoices } from '@/lib/admin/finance-gate';
 import { getOverview } from '@/lib/admin/overview';
 import { isAvailable, levelLabel, overallStatus, type Avail } from '@/lib/admin/overview-eval';
-import { PROJECT_HEALTH_LABEL, PROJECT_HEALTH_TONE, projectHealth, projectHealthReason } from '@/lib/admin/project-health';
 import { getSalesFunnel } from '@/lib/admin/sales-funnel';
 import { getAgentUsage } from '@/lib/admin/usage';
 import { requireInternal } from '@/lib/auth/session';
@@ -65,10 +64,14 @@ import {
 } from '@/ui';
 
 import { listPendingPaymentClaims } from '@/modules/finance/queries';
-import { listMyTasks, listPhaseFourEscalations } from '@/modules/projects/queries';
+import { healthOfProject } from '@/modules/projects/project-health';
+import { LIFECYCLE_PHASE_LABEL, LIFECYCLE_PHASES, type LifecyclePhase } from '@/modules/projects/project-archive-schema';
+import { readProjectLifecycles } from '@/modules/projects/project-lifecycle-queries';
+import { listMyTasks, listPhaseFourEscalations, listProjectsForTable } from '@/modules/projects/queries';
 
 import { categoryOf } from '../notifications/action-items';
 import { listAnnotatedActionItems } from '../notifications/annotated-items';
+import { AcknowledgeButton } from '../notifications/acknowledge-button';
 import { EscalateControl } from '../notifications/escalate-form';
 import { TodayCard } from '../today-card';
 import { QuickActionsRow } from './quick-actions-row';
@@ -163,7 +166,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
   const canVerifyClaims = show('invoice.issue');
   const todayWindow = clock.today();
 
-  const [recentLeads, activeProjects, revenue, messagesSent, totalLeads, usage, funnel, projectCounts, actionItems, escalations, myTasks, reminders, gateInvoices, gateClaims, deltas] =
+  const [recentLeads, activeProjects, revenue, messagesSent, totalLeads, usage, funnel, projectCounts, actionItems, escalations, myTasks, reminders, gateInvoices, gateClaims, deltas, projectRows, lifecycles] =
     await Promise.all([
       canSeeLeads ? getRecentLeads(5) : Promise.resolve([]),
       canSeeProjects ? getActiveProjectsSummary(5) : Promise.resolve([]),
@@ -180,6 +183,8 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
       canSeeRevenue ? listUnpaidMilestoneInvoices() : Promise.resolve([]),
       canVerifyClaims ? listPendingPaymentClaims() : Promise.resolve([]),
       getDashboardDeltas(new Date(), { leads: canSeeLeads, projects: canSeeProjects, revenue: canSeeRevenue, usage: canSeeUsage }),
+      canSeeProjects ? listProjectsForTable(200) : Promise.resolve([]),
+      canSeeProjects ? readProjectLifecycles(todayWindow ? clock.dayKey(new Date()) : undefined) : Promise.resolve(new Map()),
     ]);
 
   const now = new Date();
@@ -192,6 +197,21 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
   const escalatedProjectIds = new Set(escalations.map((e) => e.projectId));
   const openProjects = projectCounts ? ['planning', 'onboarding', 'active', 'on_hold'].reduce((n, st) => n + (projectCounts[st] ?? 0), 0) : null;
   const canAnswerEscalations = show('audit.read');
+
+  // ONE health rule — the projects list's (`healthOfProject`) — for the
+  // Blocked Projects tile, the phase distribution and the health column, so
+  // the Command Center cannot say On track where /projects says Blocked.
+  const claimsByProject = new Map<string, number>();
+  for (const c of gateClaims) if (c.projectId) claimsByProject.set(c.projectId, (claimsByProject.get(c.projectId) ?? 0) + 1);
+  const EMPTY_FACTS = { blockedTasks: 0, unmetDependencies: 0, overdueTasks: 0, overdueMilestones: 0, blockingDefects: 0 };
+  const healthOf = (p: { id: string; status: string; endsOn: string | null }) =>
+    healthOfProject(p, lifecycles.get(p.id) ?? EMPTY_FACTS, { escalated: escalatedProjectIds.has(p.id), pendingClaims: claimsByProject.get(p.id) ?? 0, todayKey });
+  const liveProjects = projectRows.filter((p) => !lifecycles.get(p.id)?.archivedAt);
+  const phaseOf = (p: { id: string; status: string }): LifecyclePhase => lifecycles.get(p.id)?.phase ?? (p.status === 'completed' ? 'completed' : 'onboarding');
+  const phaseCounts = new Map<LifecyclePhase, number>();
+  for (const p of liveProjects) phaseCounts.set(phaseOf(p), (phaseCounts.get(phaseOf(p)) ?? 0) + 1);
+  const blockedProjectCount = liveProjects.filter((p) => healthOf(p).level === 'blocked').length;
+  const needsActionCount = actionItems.filter((i) => i.attention).length;
 
   const pipeline: PipelineStage[] = [
     ...(funnel
@@ -247,23 +267,24 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
     },
     { key: 'client', header: 'Client', desktopOnly: true, cellClassName: 'text-muted', cell: (p) => p.clientName ?? 'Internal' },
     {
-      // The stage word, with the projects list's own at-risk rule beneath it
-      // when a project is not on track (SCR-001 "Project health").
       key: 'status',
       header: 'Stage',
       badge: true,
+      cell: (p) => (p.inQa ? <Badge tone="info" dot={false}>In QA</Badge> : <StatusBadge status={p.status} dot={false} />),
+    },
+    {
+      // SCR-001 "Project health table": the projects list's own rule, with
+      // the reasons it gives there.
+      key: 'health',
+      header: 'Health',
+      badge: true,
       cell: (p) => {
-        const input = { status: p.status, endsOn: p.endsOn, escalated: escalatedProjectIds.has(p.id), todayKey };
-        const health = projectHealth(input);
-        const reason = projectHealthReason(input);
+        const h = healthOf({ id: p.id, status: p.status, endsOn: p.endsOn });
+        const tone = h.level === 'healthy' ? 'success' : h.level === 'blocked' ? 'danger' : 'warning';
         return (
-          <span className="flex flex-col items-start gap-1">
-            {p.inQa ? <Badge tone="info" dot={false}>In QA</Badge> : <StatusBadge status={p.status} dot={false} />}
-            {reason ? (
-              <Badge tone={PROJECT_HEALTH_TONE[health]} dot>
-                {PROJECT_HEALTH_LABEL[health]} · {reason}
-              </Badge>
-            ) : null}
+          <span className="flex flex-col items-start gap-0.5">
+            <Badge tone={tone} dot>{h.label}</Badge>
+            {h.reasons[0] ? <span className="max-w-[10rem] truncate text-[11px] text-muted" title={h.reasons.join('; ')}>{h.reasons[0]}</span> : null}
           </span>
         );
       },
@@ -368,9 +389,38 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
 
       {status.level !== 'operational' ? (
         <Callout tone={label.tone === 'bad' ? 'danger' : 'warning'} icon={<IconAlert size={16} />}>
-          {status.reason}
+          <span className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+            <span>{status.reason}</span>
+            {show('audit.read') ? (
+              <Link href="/operations" className="font-semibold underline underline-offset-2">Open Operations to retry or review</Link>
+            ) : (
+              <Link href="/notifications" className="font-semibold underline underline-offset-2">Open your inbox</Link>
+            )}
+          </span>
         </Callout>
       ) : null}
+
+      {/* ── Needs attention — SCR-001's five named header counters ───────── */}
+      <StatGrid cols={5}>
+        <Stat label="Needs Action" href="/notifications" value={String(needsActionCount)} caption={urgentCount > 0 ? `${urgentCount} urgent` : 'Open inbox items'} tone={urgentCount > 0 ? 'danger' : needsActionCount > 0 ? 'warning' : 'neutral'} icon={<IconInbox size={16} />} />
+        <Stat
+          label="Pending Approvals"
+          href="/approvals"
+          value={<Value value={num(o.approvals, (a) => String(a.pending))} />}
+          caption={isAvailable(o.approvals) && o.approvals.value.overdue > 0 ? `${o.approvals.value.overdue} overdue` : undefined}
+          tone={isAvailable(o.approvals) && o.approvals.value.overdue > 0 ? 'warning' : 'neutral'}
+          icon={<IconApprovals size={16} />}
+        />
+        {show('invoice.read') ? (
+          <Stat label="Payment Verification" href="/invoices/verify" value={<Value value={num(o.paymentsPendingVerification, String)} />} caption="Claims awaiting a decision" tone={isAvailable(o.paymentsPendingVerification) && o.paymentsPendingVerification.value > 0 ? 'warning' : 'neutral'} icon={<IconInvoices size={16} />} />
+        ) : null}
+        {canSeeProjects ? (
+          <Stat label="Blocked Projects" href="/projects?health=blocked" value={String(blockedProjectCount)} caption="Same rule as the projects list" tone={blockedProjectCount > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} />
+        ) : null}
+        {show('audit.read') ? (
+          <Stat label="Failed Deliveries" href="/operations#failed-deliveries" value={<Value value={num(o.failedDeliveries, String)} />} tone={isAvailable(o.failedDeliveries) && o.failedDeliveries.value > 0 ? 'danger' : 'neutral'} icon={<IconMessage size={16} />} />
+        ) : null}
+      </StatGrid>
 
       {/* ── Business snapshot ─────────────────────────────────────────── */}
       {canSeeLeads || canSeeProjects || canSeeRevenue || canSeeUsage ? (
@@ -447,6 +497,34 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
             </Card>
           ) : null}
 
+          {canSeeProjects ? (
+            <Card>
+              <CardHeader title="Project Phases" description="Active projects by delivery phase." actions={<ViewAll href="/projects" />} />
+              <div className="px-4 pb-4 sm:px-5">
+                {liveProjects.length === 0 ? (
+                  <p className="text-[13px] text-muted">No projects yet.</p>
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {LIFECYCLE_PHASES.filter((ph) => ph !== 'archived').map((ph) => {
+                      const n = phaseCounts.get(ph) ?? 0;
+                      return (
+                        <li key={ph}>
+                          <Link href={`/projects?phase=${ph}`} className="flex items-center gap-3 text-[13px] hover:text-brand">
+                            <span className="w-28 shrink-0 text-muted">{LIFECYCLE_PHASE_LABEL[ph]}</span>
+                            <span className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-hover" aria-hidden>
+                              <span className="block h-full rounded-full bg-brand" style={{ width: `${(n / liveProjects.length) * 100}%` }} />
+                            </span>
+                            <span className="tabular w-6 shrink-0 text-right font-medium">{n}</span>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </Card>
+          ) : null}
+
           {canSeeLeads ? (
             <Card>
               <CardHeader title="Recent Leads" actions={<ViewAll href="/leads" />} />
@@ -501,6 +579,8 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
                 // SCR-001 "Acknowledge / escalate an operational item" — the
                 // same recorded door the inbox uses (core.escalations).
                 action: (
+                  <div className="flex flex-wrap items-start gap-1.5">
+                  <AcknowledgeButton itemKey={i.key} />
                   <EscalateControl
                     subjectType={categoryOf(i)}
                     subjectKey={i.key}
@@ -521,6 +601,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
                     canAnswer={canAnswerEscalations}
                     compact
                   />
+                  </div>
                 ),
               }))}
             emptyTitle="Nothing needs you"
@@ -673,25 +754,8 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
         </div>
           {/* Operational KPI tiles — real reads only, each linking to its detail page. */}
         <StatGrid cols={4}>
-            {canSeeProjects ? (
-              <Stat label="Blocked projects" href="/projects/escalations" value={String(escalations.length)} caption="Phase 4 escalations" tone={escalations.length > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} />
-            ) : null}
-            {show('audit.read') ? (
-              <Stat label="Failed deliveries" href="/operations#failed-deliveries" value={<Value value={num(o.failedDeliveries, String)} />} tone={isAvailable(o.failedDeliveries) && o.failedDeliveries.value > 0 ? 'danger' : 'neutral'} icon={<IconMessage size={16} />} />
-            ) : null}
             {show('audit.read') ? (
               <Stat label="Dead jobs" href="/operations#dead-letters" value={<Value value={num(o.backlog, (b) => String(b.dead_jobs))} />} tone={isAvailable(o.backlog) && o.backlog.value.dead_jobs > 0 ? 'danger' : 'neutral'} icon={<IconOperations size={16} />} />
-            ) : null}
-            <Stat
-              label="Pending approvals"
-              href="/approvals"
-              value={<Value value={num(o.approvals, (a) => String(a.pending))} />}
-              caption={isAvailable(o.approvals) && o.approvals.value.overdue > 0 ? `${o.approvals.value.overdue} overdue` : undefined}
-              tone={isAvailable(o.approvals) && o.approvals.value.overdue > 0 ? 'warning' : 'neutral'}
-              icon={<IconApprovals size={16} />}
-            />
-            {show('invoice.read') ? (
-              <Stat label="Payments to verify" href="/invoices/verify" value={<Value value={num(o.paymentsPendingVerification, String)} />} tone={isAvailable(o.paymentsPendingVerification) && o.paymentsPendingVerification.value > 0 ? 'warning' : 'neutral'} icon={<IconInvoices size={16} />} />
             ) : null}
             {show('project.read') ? (
               <Stat label="Projects on hold" href="/projects?status=on_hold" value={<Value value={num(o.projectsOnHold, String)} />} tone={isAvailable(o.projectsOnHold) && o.projectsOnHold.value > 0 ? 'warning' : 'neutral'} icon={<IconProjects size={16} />} />

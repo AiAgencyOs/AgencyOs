@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { fileCredentialProblem } from './file-secrets-guard';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
@@ -162,6 +163,8 @@ export async function addTaskAttachment(input: AddTaskAttachmentInput): Promise<
   const context = await requireInternal();
   if (!can(context, 'task.write')) return refused('attach a link to a task');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+  const credential = fileCredentialProblem({ title: parsed.data.title, url: parsed.data.url });
+  if (credential) return err('VALIDATION', credential);
 
   const supabase = await createClient();
   const { data, error } = await supabase

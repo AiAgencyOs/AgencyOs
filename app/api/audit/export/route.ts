@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
-import { readAuditLog } from '@/lib/audit/queries';
+import { readAuditPage } from '@/lib/audit/queries';
+import { normaliseSearch } from '@/lib/db/search';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 
@@ -20,14 +21,22 @@ export async function GET(request: Request) {
   }
 
   const p = new URL(request.url).searchParams;
-  const entries = await readAuditLog({
-    actionPrefix: p.get('action') ?? undefined,
-    subjectType: p.get('subject') ?? undefined,
-    actorType: p.get('actor') ?? undefined,
-    from: p.get('from') ? `${p.get('from')}T00:00:00Z` : undefined,
-    to: p.get('to') ? `${p.get('to')}T23:59:59.999Z` : undefined,
-    limit: 500,
-  });
+  // Every matching entry, page by page (bounded at 10,000 rows so one click cannot stall the server).
+  const entries: Awaited<ReturnType<typeof readAuditPage>>['entries'] = [];
+  for (let page = 1; page <= 50; page += 1) {
+    const chunk = await readAuditPage({
+      page,
+      pageSize: 200,
+      q: normaliseSearch(p.get('q') ?? undefined) || undefined,
+      actionPrefix: p.get('action') ?? undefined,
+      subjectType: p.get('subject') ?? undefined,
+      actorType: p.get('actor') ?? undefined,
+      from: p.get('from') ? `${p.get('from')}T00:00:00Z` : undefined,
+      to: p.get('to') ? `${p.get('to')}T23:59:59.999Z` : undefined,
+    });
+    entries.push(...chunk.entries);
+    if (page >= chunk.pageCount) break;
+  }
 
   const header = ['Id', 'At', 'Action', 'Subject type', 'Subject id', 'Actor type', 'Actor id', 'Correlation', 'Before', 'After'];
   const lines = entries.map((e) =>

@@ -56,3 +56,29 @@ export async function listProviderBudgets(): Promise<ProviderBudgetRow[]> {
     };
   });
 }
+
+export type ModelBudgetRow = {
+  modelId: string;
+  /** Null when the owner has set no cap on this model. */
+  monthlyCapMinor: number | null;
+  spentMinor: number | null;
+  updatedAt: string | null;
+};
+
+/** One row per model of the registry, the cap beside this month's spend where one is set. */
+export async function listModelBudgets(modelIds: readonly string[]): Promise<ModelBudgetRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('ai').from('model_budget_status').select('model_id, monthly_cap_minor, spent_minor, updated_at');
+  if (error) unreadable('listModelBudgets', error);
+
+  const byModel = new Map((data ?? []).map((r) => [r.model_id, r]));
+  return modelIds.map((modelId) => {
+    const row = byModel.get(modelId);
+    return {
+      modelId,
+      monthlyCapMinor: row?.monthly_cap_minor === null || row?.monthly_cap_minor === undefined ? null : Number(row.monthly_cap_minor),
+      spentMinor: row?.spent_minor === null || row?.spent_minor === undefined ? null : Number(row.spent_minor),
+      updatedAt: row?.updated_at ?? null,
+    };
+  });
+}

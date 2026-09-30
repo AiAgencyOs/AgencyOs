@@ -150,7 +150,7 @@ export async function renderTaxReportPdf(input: TaxReportPdfInput): Promise<{ by
     heading(`Profit & loss, cash basis (${row.currency})`);
     const entries: [string, number, boolean][] = [
       ['Invoiced', row.invoiced, false],
-      ['Received (receipts)', row.received, false],
+      ['Received (verified payments)', row.received, false],
       ['Expenses', row.expenses, false],
       ['Net (received − expenses)', row.net, true],
     ];
@@ -176,7 +176,7 @@ export async function renderTaxReportPdf(input: TaxReportPdfInput): Promise<{ by
   // ── register ────────────────────────────────────────────────────────────
   heading(`Invoice register (${input.register.length})`);
   const rcols = [MARGIN, 120, 170, 225, 310, 380, 440, 500];
-  const rhead = ['Invoice', 'Status', 'Issued', 'Mode / GSTIN', 'Subtotal', 'Tax', 'Total', 'Paid'];
+  const rhead = ['Invoice', 'Status', 'Issued', 'Mode / GSTIN', 'Subtotal', 'Tax', 'Total', 'Verified'];
   const drawRegisterHead = () => {
     rhead.forEach((h, i) => text(h, { x: rcols[i], size: 8, font: bold, color: MUTED }));
     line(12);

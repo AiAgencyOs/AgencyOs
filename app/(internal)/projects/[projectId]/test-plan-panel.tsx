@@ -1,6 +1,7 @@
 'use client';
 
-import { useActionState } from 'react';
+import Link from 'next/link';
+import { useActionState, useId, useState } from 'react';
 
 import {
   addTestPlanItemAction,
@@ -17,6 +18,9 @@ import { Badge, FormMessage, buttonClass, inputClass, labelClass, selectClass } 
 
 import { ApproveTestPlanForm, CaseDetails, CaseFieldsInputs, RunEnvironmentInputs, RunResultsGrid, RunResultsList } from './qa/case-results-panel';
 import { ImportTestCasesForm, LinkedTask, LinkTaskForm } from './qa/test-case-import-panel';
+import { RunWhereAndWhoInputs, type TesterOption } from './qa/run-who-where';
+import { EditCaseForm, RequirementCoverageList } from './qa/case-edit-panel';
+import type { RequirementCoverage } from '@/modules/qa/coverage-queries';
 
 /**
  * SCR-045's Test Plan screen. `qa.draft_test_plan` / `.add_test_plan_item` /
@@ -112,6 +116,11 @@ function RemoveItemButton({ projectId, itemId }: { projectId: string; itemId: st
   );
 }
 
+function filteredCount(items: TestPlanItemRow[], search: string, category: string): number {
+  const q = search.trim().toLowerCase();
+  return items.filter((item) => (!category || item.category === category) && (!q || `${item.scopeItemTitle} ${item.reason} ${item.steps ?? ''} ${item.preconditions ?? ''} ${item.expectedResult ?? ''}`.toLowerCase().includes(q))).length;
+}
+
 export function TestPlanCard({
   projectId,
   plan,
@@ -119,6 +128,7 @@ export function TestPlanCard({
   editable,
   canApprove = false,
   tasks,
+  coverage,
 }: {
   projectId: string;
   plan: TestPlanRow;
@@ -128,7 +138,12 @@ export function TestPlanCard({
   canApprove?: boolean;
   /** SCR-045: the project's tasks, for the linked-task label and picker (`qa.link_test_case_task`). Omitted by callers that have not read them. */
   tasks?: { id: string; title: string; status: string }[];
+  /** SCR-045: every requirement of the baseline with its cases and rationale — `readRequirementCoverage`. */
+  coverage?: RequirementCoverage[];
 }) {
+  const [search, setSearch] = useState('');
+  const [category, setCategory] = useState('');
+  const filterId = useId();
   // An approved plan accepts no new item and loses none (qa.add_test_plan_item
   // / remove_test_plan_item refuse plan_approved); a control whose only
   // outcome is a refusal is a form built to fail, so none is offered.
@@ -146,8 +161,26 @@ export function TestPlanCard({
       </div>
 
       {plan.items.length > 0 ? (
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex min-w-48 flex-1 flex-col gap-1">
+            <label htmlFor={`${filterId}-q`} className={labelClass}>Search cases</label>
+            <input id={`${filterId}-q`} type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Requirement, reason or steps…" className={inputClass} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label htmlFor={`${filterId}-cat`} className={labelClass}>Category</label>
+            <select id={`${filterId}-cat`} value={category} onChange={(e) => setCategory(e.target.value)} className={selectClass}>
+              <option value="">All categories</option>
+              {TEST_CATEGORIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      ) : null}
+
+      {plan.items.length > 0 ? (
         <ul className="flex flex-col gap-1">
-          {plan.items.map((item) => (
+          {plan.items.filter((item) => (!category || item.category === category) && (!search.trim() || `${item.scopeItemTitle} ${item.reason} ${item.steps ?? ''} ${item.preconditions ?? ''} ${item.expectedResult ?? ''}`.toLowerCase().includes(search.trim().toLowerCase()))).map((item) => (
             <li key={item.id} className="flex flex-wrap items-start justify-between gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
               <span className="flex flex-col gap-0.5">
                 <span className="flex items-center gap-2">
@@ -158,6 +191,7 @@ export function TestPlanCard({
                 <span className="text-muted">{item.reason}</span>
                 <LinkedTask projectId={projectId} task={tasks?.find((t) => t.id === item.taskId)} />
                 <CaseDetails item={item} />
+                {mayEdit ? <EditCaseForm projectId={projectId} item={item} /> : null}
               </span>
               <span className="flex flex-wrap items-center gap-2">
                 {/* Linking a task is allowed on an approved plan: who builds the case is not what is tested. */}
@@ -170,6 +204,10 @@ export function TestPlanCard({
       ) : (
         <p className="text-[13px] text-muted">Nothing planned yet.</p>
       )}
+
+      {plan.items.length > 0 && filteredCount(plan.items, search, category) === 0 ? <p className="text-[13px] text-muted">No case matches that search. Clear it to see all {plan.items.length}.</p> : null}
+
+      {coverage ? <RequirementCoverageList projectId={projectId} planId={plan.id} coverage={coverage} editable={mayEdit} /> : null}
 
       {mayEdit ? <AddItemForm projectId={projectId} planId={plan.id} scopeItems={scopeItems} /> : null}
       {mayEdit ? <ImportTestCasesForm projectId={projectId} planId={plan.id} /> : null}
@@ -188,10 +226,12 @@ function RecordTestRunForm({
   projectId,
   builds,
   planItems,
+  testers,
 }: {
   projectId: string;
   builds: { id: string; title: string; version: number }[];
   planItems: TestPlanItemRow[];
+  testers: readonly TesterOption[];
 }) {
   // The existing recordTestRun door first, then recordTestCaseResults
   // beside it — the run's totals stay the source of total/passed/failed.
@@ -251,6 +291,9 @@ function RecordTestRunForm({
         <span className={labelClass}>Evidence link (optional)</span>
         <input name="evidenceUrl" type="url" className={inputClass} placeholder="https://ci.example.com/run/123" />
       </label>
+      <div className="flex flex-wrap gap-2 [&>div]:min-w-40 [&>div]:flex-1">
+        <RunWhereAndWhoInputs testers={testers} />
+      </div>
       <RunEnvironmentInputs />
       <RunResultsGrid planItems={planItems} />
       <button type="submit" disabled={pending} className={`${buttonClass('secondary', 'sm')} self-start`}>
@@ -268,6 +311,7 @@ export function TestRunsCard({
   editable,
   planItems = [],
   results,
+  testers = [],
 }: {
   projectId: string;
   runs: TestRunRow[];
@@ -276,6 +320,8 @@ export function TestRunsCard({
   planItems?: TestPlanItemRow[];
   /** Per-case results by run id — `listTestCaseResults`. */
   results?: Map<string, TestCaseResultRow[]>;
+  /** SCR-046: the people who can be named as a run's tester. */
+  testers?: readonly TesterOption[];
 }) {
   const buildLabel = new Map(builds.map((b) => [b.id, `v${b.version}`]));
 
@@ -297,7 +343,10 @@ export function TestRunsCard({
                 {run.device || run.browser || run.os ? (
                   <span className="text-xs text-muted">{[run.device, run.browser, run.os].filter(Boolean).join(' · ')}</span>
                 ) : null}
+                {run.environment ? <Badge tone="neutral">{run.environment}</Badge> : null}
+                {run.testerId ? <span className="text-xs text-muted">tester {testers.find((t) => t.userId === run.testerId)?.fullName ?? 'on the team'}</span> : null}
               </span>
+              <Link href={`/projects/${projectId}/qa/runs/${run.id}`} className="text-xs text-brand hover:underline">Open run</Link>
               {run.evidenceUrl ? (
                 <a href={run.evidenceUrl} target="_blank" rel="noreferrer" className="text-xs underline underline-offset-2">
                   evidence
@@ -312,7 +361,7 @@ export function TestRunsCard({
         <p className="text-[13px] text-muted">No test runs recorded yet.</p>
       )}
 
-      {editable ? <RecordTestRunForm projectId={projectId} builds={builds} planItems={planItems} /> : null}
+      {editable ? <RecordTestRunForm projectId={projectId} builds={builds} planItems={planItems} testers={testers} /> : null}
     </div>
   );
 }

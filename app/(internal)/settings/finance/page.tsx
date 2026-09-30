@@ -9,11 +9,15 @@ import { readGstIdentity } from '@/modules/finance/gstr-queries';
 import { describeStateCode, gstIdentityIssues } from '@/modules/finance/gstr';
 import { SUGGESTED_SAC } from '@/modules/finance/gst-identity-schema';
 import { PAYMENT_ACCOUNT_FIELDS, PAYMENT_ACCOUNT_KIND_LABEL } from '@/modules/finance/schema';
+import { readOrganizationSettingsRow, numberingFrom } from '@/modules/finance/numbering';
+import { createClient } from '@/lib/db/server';
+import { formatInvoiceNumber } from '@/modules/finance/schema';
 import { Badge, Callout, EmptyState, IconRupee, StatusBadge } from '@/ui';
 
 import { AddPaymentAccountForm, PaymentAccountStatusButton } from './payment-accounts-panel';
 import { InvoiceReminderPolicyForm } from './reminder-policy-form';
 import { GstIdentityForm } from './gst-identity-form';
+import { InvoiceNumberingForm, WonGateForm } from './numbering-form';
 
 export const metadata: Metadata = { title: 'Settings — Finance' };
 
@@ -41,6 +45,11 @@ export default async function SettingsFinancePage() {
   const gstIdentity = await readGstIdentity();
   const gstIssues = gstIdentityIssues(gstIdentity);
   const maySetIdentity = hasRole(context, 'owner');
+
+  // PDF §7: invoice numbering / terms, and the won-gate switch.
+  const orgSettings = await readOrganizationSettingsRow(await createClient());
+  const numbering = numberingFrom(orgSettings);
+  const wonGateOn = orgSettings.won_requires_payment_evidence === 'on';
 
   const active = accounts.filter((a) => a.status === 'active');
   const inactive = accounts.filter((a) => a.status === 'inactive');
@@ -154,6 +163,43 @@ export default async function SettingsFinancePage() {
         exported line) and the SAC its lines are classified under. Owner
         only, audited with old and new values by core.set_gst_identity.
       */}
+      {/* PDF §7 "Invoice numbering/terms": the prefix, default terms and the note an invoice prints. */}
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 id="invoice-numbering" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Invoice numbering and terms</h2>
+          <Badge tone={orgSettings.invoice_number_prefix || orgSettings.invoice_terms_days ? 'success' : 'neutral'} dot>
+            {orgSettings.invoice_number_prefix || orgSettings.invoice_terms_days ? 'set' : 'defaults'}
+          </Badge>
+        </div>
+        <p className="text-xs text-muted">
+          Numbers run per year as PREFIX-YEAR-0001. A new prefix starts its own series at 1; invoices already raised keep their numbers.
+          Default terms set the due date when a milestone carries none and the person raising the invoice names none; the note is printed on the invoice.
+        </p>
+        {maySetPolicy ? (
+          <InvoiceNumberingForm
+            prefix={typeof orgSettings.invoice_number_prefix === 'string' ? orgSettings.invoice_number_prefix : null}
+            termsDays={typeof orgSettings.invoice_terms_days === 'string' ? orgSettings.invoice_terms_days : null}
+            termsNote={numbering.termsNote}
+            example={formatInvoiceNumber(new Date().getUTCFullYear(), 1, numbering.prefix)}
+          />
+        ) : (
+          <Callout tone="info">Only an owner or ops admin can change numbering and terms. Current prefix: {numbering.prefix}.</Callout>
+        )}
+      </div>
+
+      {/* PDF §7 "Milestone rules where user explicitly changes policy": the won-gate switch. */}
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 id="won-gate" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Payment evidence before a deal is won</h2>
+          <Badge tone={wonGateOn ? 'success' : 'neutral'} dot>{wonGateOn ? 'required' : 'not required'}</Badge>
+        </div>
+        <p className="text-xs text-muted">
+          A deal always needs its accepted quotation. Switched on, it also needs a captured payment for the client, or an approved no-advance
+          exception, before it can be marked won. The gate is enforced in the database; this is its switch.
+        </p>
+        {maySetPolicy ? <WonGateForm on={wonGateOn} /> : <Callout tone="info">Only an owner or ops admin can change this policy.</Callout>}
+      </div>
+
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 id="gst-identity" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">GST identity</h2>

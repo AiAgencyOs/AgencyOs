@@ -66,7 +66,7 @@ describe('the service and the screen say what the door decides', () => {
     assert.match(SERVICE, /readBillingReadiness\(cr\.project_id, supabase\)/);
     assert.match(SERVICE, /Confirm whether this project is billed with GST or without it/);
     assert.match(SERVICE, /if \(!cr\.proposal_id\) return err\('CONFLICT'/);
-    assert.match(SERVICE, /nextInvoiceNumber\(year, highest, attempt\)/);
+    assert.match(SERVICE, /nextInvoiceNumber\(year, highest, attempt/);
     assert.match(SERVICE, /rpc\('create_change_request_invoice', \{/);
     assert.ok(SERVICE.indexOf('readBillingReadiness(') < SERVICE.indexOf("rpc('create_change_request_invoice'"));
   });

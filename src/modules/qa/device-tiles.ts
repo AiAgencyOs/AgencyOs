@@ -31,8 +31,15 @@ export type DeviceTile = {
   os: string | null;
   platform: Platform;
   runs: number;
-  /** 'tested' = the newest run closed with nothing failed or blocked. */
-  state: 'tested' | 'failed' | 'in_progress';
+  /**
+   * 'tested' = the newest run closed with nothing failed or blocked. 'untested' is a registered device no run has
+   * touched; 'unsupported' is a device or configuration the agency explicitly does not test, with `reason`.
+   */
+  state: 'tested' | 'failed' | 'in_progress' | 'untested' | 'unsupported';
+  /** The written reason when `state` is 'unsupported'. */
+  reason?: string | null;
+  /** The registered configuration this tile belongs to, when there is one (`qa.device_configurations`). */
+  configId?: string | null;
   lastAt: string;
   thumbnailUrl: string | null;
   evidenceUrl: string | null;

@@ -13,6 +13,8 @@ import { readLeadFacts } from '@/modules/crm/lead-list-queries';
 import { isQuickFilterKey, matchesQuickFilter } from '@/modules/crm/lead-quick-filters';
 import { readLeadScores, type LeadScoreSummary } from '@/modules/crm/lead-score-queries';
 import { readLeadServices } from '@/modules/crm/lead-service-queries';
+import { readLeadIndicators } from '@/modules/crm/lead-indicators-queries';
+import { LeadFlags, type LeadFlagsData } from './lead-flags';
 import { listInternalRoster } from '@/modules/projects/queries';
 import {
   Avatar,
@@ -93,7 +95,7 @@ function waitedFor(iso: string, now: Date): string {
 
 type Row = Awaited<ReturnType<typeof listLeadsForTable>>[number];
 
-const columnsFor = (clock: AgencyClock, scores: Map<string, LeadScoreSummary>, services: Map<string, string | null>, createdOf: (id: string) => string | undefined, factsOf: (id: string) => { budget: string | null; tags: string[] }): Column<Row>[] => [
+const columnsFor = (clock: AgencyClock, scores: Map<string, LeadScoreSummary>, services: Map<string, string | null>, flagsOf: (id: string) => LeadFlagsData, createdOf: (id: string) => string | undefined, factsOf: (id: string) => { budget: string | null; tags: string[] }): Column<Row>[] => [
   {
     key: 'title',
     header: 'Name',
@@ -134,6 +136,7 @@ const columnsFor = (clock: AgencyClock, scores: Map<string, LeadScoreSummary>, s
       </span>
     ),
   },
+  { key: 'flags', header: 'Flags', desktopOnly: true, cell: (l) => <LeadFlags flags={flagsOf(l.id)} /> },
   { key: 'interest', header: 'Interested In', desktopOnly: true, cellClassName: 'text-muted', cell: (l) => <span className="block max-w-[5.5rem] truncate">{services.get(l.id) ?? '—'}</span> },
   { key: 'budget', header: 'Budget', desktopOnly: true, cellClassName: 'tabular whitespace-nowrap text-muted', cell: (l) => factsOf(l.id).budget ?? '—' },
   {
@@ -264,7 +267,7 @@ export default async function LeadsPage({
 
   const [allLeads, waiting, clock, savedViews] = await Promise.all([
     listLeadsForTable(),
-    listLeadsNeedingAttention(),
+    listLeadsNeedingAttention(200),
     agencyClock(),
     listSavedViews('/leads'),
   ]);
@@ -274,6 +277,9 @@ export default async function LeadsPage({
   // ADM-88 (reversed 2026-09-29): the stored score per lead, with its reasons.
   const scores = await readLeadScores(allLeads.map((l) => l.id));
   const services = await readLeadServices(allLeads.map((l) => l.id));
+  const indicators = await readLeadIndicators(allLeads.map((l) => l.id));
+  const replyBy = new Map(waiting.map((w) => [w.lead_id, ATTENTION[w.reason]?.label ?? null]));
+  const flagsOf = (id: string): LeadFlagsData => ({ consent: indicators.get(id)?.consent ?? 'none', handoff: indicators.get(id)?.handoff ?? false, reply: replyBy.get(id) ?? null, duplicateCount: indicators.get(id)?.duplicates.length ?? 0 });
   const canWriteLeads = can(context, 'lead.write');
   const roster = canWriteLeads ? await listInternalRoster() : [];
   const boundedByBudget = budgetMinMinor !== undefined || budgetMaxMinor !== undefined;
@@ -462,6 +468,8 @@ export default async function LeadsPage({
                 budget: facts.get(l.id)?.budgetMinor !== null && facts.get(l.id)?.budgetMinor !== undefined ? money(facts.get(l.id)!.budgetMinor as number) : null,
                 tags: facts.get(l.id)?.tags ?? [],
                 score: scores.get(l.id)?.score ?? null,
+                flags: flagsOf(l.id),
+                duplicates: indicators.get(l.id)?.duplicates ?? [],
               }),
             )}
             roster={roster.map((m) => ({ userId: m.userId, fullName: m.fullName }))}
@@ -469,6 +477,7 @@ export default async function LeadsPage({
             nurtureReasons={NURTURE_REASONS}
             canAssign={canWriteLeads}
             canWrite={canWriteLeads}
+            canMerge={can(context, 'organization.settings')}
             sortKey={sortKey}
             sortDirection={direction}
             sortHrefPrefix={`/leads?${keep.length > 0 ? `${keep.join('&')}&` : ''}`}
@@ -487,7 +496,7 @@ export default async function LeadsPage({
             dense
             tight
             rows={pageRows}
-            columns={columnsFor(clock, scores, services.byLead, (id) => facts.get(id)?.createdAt, (id) => ({ budget: facts.get(id)?.budgetMinor !== null && facts.get(id)?.budgetMinor !== undefined ? money(facts.get(id)!.budgetMinor as number) : null, tags: facts.get(id)?.tags ?? [] }))}
+            columns={columnsFor(clock, scores, services.byLead, flagsOf, (id) => facts.get(id)?.createdAt, (id) => ({ budget: facts.get(id)?.budgetMinor !== null && facts.get(id)?.budgetMinor !== undefined ? money(facts.get(id)!.budgetMinor as number) : null, tags: facts.get(id)?.tags ?? [] }))}
             getKey={(l) => l.id}
             // Bucket F: the shared per-row overflow menu — the row's secondary
             // destinations, each a page that already exists.
@@ -495,6 +504,7 @@ export default async function LeadsPage({
               { key: 'preview', label: 'Preview', node: <LeadPreviewButton leadId={l.id} name={l.contact?.fullName ?? l.title} /> },
               { key: 'details', label: 'Show details', href: `${detailsPrefix}lead=${l.id}` },
               { key: 'open', label: 'Open lead', href: `/leads/${l.id}` },
+              { key: 'conversation', label: 'Open conversation', href: `/leads/${l.id}?tab=conversation` },
               { key: 'meeting', label: 'Request a meeting', href: `/leads/${l.id}#meetings` },
               { key: 'quotation', label: 'Quotations', href: `/leads/${l.id}#quotations` },
               { key: 'search', label: 'Find related records', href: `/search?q=${encodeURIComponent(l.title)}` },
@@ -603,7 +613,7 @@ export default async function LeadsPage({
         <section className="rounded-lg border border-line bg-surface p-4">
           <p className="mb-2 text-[12.5px] text-muted">Who needs you first</p>
           <div className="flex flex-col divide-y divide-line">
-            {waiting.map((lead) => (
+            {waiting.slice(0, 8).map((lead) => (
               <Link
                 key={lead.lead_id}
                 href={`/leads/${lead.lead_id}`}

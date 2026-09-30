@@ -9,13 +9,13 @@ import { getBillableMilestone } from '@/modules/projects/service';
 import { toLadderProgress } from './ladder';
 
 import { billingReadiness, checkGstin, taxRateBpForMode, type BillingReadiness } from './gstin';
+import { highestInvoiceSequenceFor, readInvoiceNumbering } from './numbering';
 import { lockedPeriodRefusal } from './tax-lock-schema';
 import { activeTaxLockCovering } from './tax-lock-service';
 
 import {
   applyPayment,
   generateMilestoneInvoiceSchema,
-  invoiceNumberPrefix,
   invoiceTotals,
   issueInvoiceSchema,
   manualPaymentKey,
@@ -23,7 +23,6 @@ import {
   milestoneInvoiceLines,
   nextInvoiceNumber,
   nextUnlockedMilestone,
-  parseInvoiceSequence,
   recordManualPaymentSchema,
   recordPaymentSubmissionSchema,
   createPaymentAccountSchema,
@@ -55,7 +54,12 @@ import {
   type RecordBillingDetailsInput,
   recordExpenseSchema,
   type RecordExpenseInput,
+  composeInvoiceSchema,
+  type ComposeInvoiceInput,
+  requestPaymentEvidenceSchema,
+  type RequestPaymentEvidenceInput,
 } from './schema';
+import { composeLines } from './invoice-composer';
 
 /**
  * Writes for the finance module — its only public surface.
@@ -214,7 +218,8 @@ export async function generateInvoiceFromMilestone(
   const totals = invoiceTotals(lines);
 
   const year = new Date().getUTCFullYear();
-  const highest = await highestInvoiceSequence(supabase, year);
+  const numbering = await readInvoiceNumbering(supabase);
+  const highest = await highestInvoiceSequence(supabase, year, numbering.prefix);
 
   const payload = lines.map((line) => ({
     position: line.position,
@@ -225,12 +230,14 @@ export async function generateInvoiceFromMilestone(
     tax_rate_bp: line.taxRateBp,
   }));
 
-  const due = dueAt(milestone.dueOn, parsed.data.dueInDays);
+  // The milestone's own date wins; else the days the caller named; else the
+  // owner's default terms (Settings > Finance); else no due date at all.
+  const due = dueAt(milestone.dueOn, parsed.data.dueInDays ?? numbering.termsDays ?? undefined);
 
   // The loop is only about the *number* now. Everything the winner writes —
   // invoice, lines, audit, event — commits or does not, together.
   for (let attempt = 0; attempt < NUMBER_ATTEMPTS; attempt += 1) {
-    const number = nextInvoiceNumber(year, highest, attempt);
+    const number = nextInvoiceNumber(year, highest, attempt, numbering.prefix);
 
     const { data, error } = await supabase.schema('finance').rpc('create_milestone_invoice', {
       // G-260, Finance §5: which profile version decided this invoice's tax.
@@ -454,15 +461,8 @@ export async function generateFirstMilestoneInvoice(
   const totals = invoiceTotals(lines);
 
   const year = new Date().getUTCFullYear();
-  const { data: latest } = await admin
-    .schema('finance')
-    .from('invoices')
-    .select('number')
-    .like('number', `${invoiceNumberPrefix(year)}%`)
-    .order('number', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const highest = parseInvoiceSequence(latest?.number, year);
+  const numbering = await readInvoiceNumbering(admin);
+  const highest = await highestInvoiceSequenceFor(admin, year, numbering.prefix);
 
   const payload = lines.map((line) => ({
     position: line.position,
@@ -474,7 +474,7 @@ export async function generateFirstMilestoneInvoice(
   }));
 
   for (let attempt = 0; attempt < NUMBER_ATTEMPTS; attempt += 1) {
-    const number = nextInvoiceNumber(year, highest, attempt);
+    const number = nextInvoiceNumber(year, highest, attempt, numbering.prefix);
 
     const { data, error } = await admin.schema('finance').rpc('create_milestone_invoice', {
       p_billing_profile_id: profile?.id ?? undefined,
@@ -675,15 +675,8 @@ export async function generateM2Invoice(
   const totals = invoiceTotals(lines);
 
   const year = new Date().getUTCFullYear();
-  const { data: latest } = await admin
-    .schema('finance')
-    .from('invoices')
-    .select('number')
-    .like('number', `${invoiceNumberPrefix(year)}%`)
-    .order('number', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const highest = parseInvoiceSequence(latest?.number, year);
+  const numbering = await readInvoiceNumbering(admin);
+  const highest = await highestInvoiceSequenceFor(admin, year, numbering.prefix);
 
   const payload = lines.map((line) => ({
     position: line.position,
@@ -695,7 +688,7 @@ export async function generateM2Invoice(
   }));
 
   for (let attempt = 0; attempt < NUMBER_ATTEMPTS; attempt += 1) {
-    const number = nextInvoiceNumber(year, highest, attempt);
+    const number = nextInvoiceNumber(year, highest, attempt, numbering.prefix);
 
     const { data, error } = await admin.schema('finance').rpc('create_milestone_invoice', {
       p_billing_profile_id: profile?.id ?? undefined,
@@ -1307,17 +1300,8 @@ async function findLiveInvoiceForMilestone(supabase: SupabaseClient, milestoneId
  * predicate — the same reasoning as every other read in this codebase. Zero
  * padding is what makes the descending text sort agree with numeric order.
  */
-async function highestInvoiceSequence(supabase: SupabaseClient, year: number): Promise<number> {
-  const { data } = await supabase
-    .schema('finance')
-    .from('invoices')
-    .select('number')
-    .like('number', `${invoiceNumberPrefix(year)}%`)
-    .order('number', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  return parseInvoiceSequence(data?.number, year);
+async function highestInvoiceSequence(supabase: SupabaseClient, year: number, prefix?: string): Promise<number> {
+  return highestInvoiceSequenceFor(supabase, year, prefix ?? 'INV');
 }
 
 /**
@@ -2158,10 +2142,11 @@ export async function issueFreeMaintenanceInvoice(
 
   const supabase = await createClient();
   const year = new Date().getUTCFullYear();
-  const highest = await highestInvoiceSequence(supabase, year);
+  const numbering = await readInvoiceNumbering(supabase);
+  const highest = await highestInvoiceSequence(supabase, year, numbering.prefix);
 
   for (let attempt = 0; attempt < NUMBER_ATTEMPTS; attempt += 1) {
-    const number = nextInvoiceNumber(year, highest, attempt);
+    const number = nextInvoiceNumber(year, highest, attempt, numbering.prefix);
 
     const { data, error } = await supabase
       .schema('finance')
@@ -2393,4 +2378,178 @@ export async function updateExpense(input: UpdateExpenseInput): Promise<Result<{
   if (!data) return err('NOT_FOUND', 'That expense is not visible to you.');
 
   return ok({ expenseId: data.id });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// The composer — PDF SCR-052 "Generate"
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Composes a DRAFT invoice by hand: a project, lines, a due date.
+ *
+ * The same gates a milestone invoice passes, in the same order — because a
+ * hand-built bill is still a bill: the project must have a CONFIRMED billing
+ * mode and complete billing details (Finance §16; the tax mode is never
+ * inferred and never chosen on this form, it is the profile's), and the tax
+ * rate follows that mode (18% GST / 0 non-GST, `taxRateBpForMode`). Amounts
+ * are recomputed here from the typed text; the door re-checks that the lines
+ * add up. It stops at draft: issuing is the separate, audited step on the
+ * invoice itself, so the review screen and this door can never send a bill.
+ */
+export async function composeInvoice(input: ComposeInvoiceInput): Promise<Result<InvoiceRef>> {
+  const parsed = composeInvoiceSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid invoice.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context, 'invoice.create')) {
+    return err('FORBIDDEN', 'You do not have permission to raise invoices.');
+  }
+
+  const supabase = await createClient();
+
+  const { data: project, error: projectError } = await supabase
+    .schema('projects')
+    .from('projects')
+    .select('id, name, currency')
+    .eq('id', parsed.data.projectId)
+    .maybeSingle();
+  if (projectError) {
+    console.error(JSON.stringify({ level: 'error', scope: 'composeInvoice', detail: projectError.message }));
+    return err('INTERNAL', 'Could not read the project.');
+  }
+  if (!project) return err('NOT_FOUND', 'That project is not visible to you.');
+
+  const readiness = await readBillingReadiness(project.id, supabase);
+  if (!readiness.ok) return readiness;
+  if (readiness.data.mode === null) {
+    return err('CONFLICT', 'Confirm whether this project is billed with GST or without it before raising an invoice.');
+  }
+  if (!readiness.data.complete) {
+    const missing = readiness.data.missing.join(', ');
+    const invalid = readiness.data.invalid.map((i) => `${i.field} (${i.reason})`).join(', ');
+    return err(
+      'CONFLICT',
+      `The billing details are not complete yet${missing ? ` — missing: ${missing}` : ''}${invalid ? ` — invalid: ${invalid}` : ''}.`,
+    );
+  }
+  const taxRateBp = taxRateBpForMode(readiness.data.mode);
+  if (taxRateBp === null) return err('INTERNAL', 'The billing mode could not be resolved into a tax rate.');
+
+  const composed = composeLines(parsed.data.lines, taxRateBp);
+  if (!composed.ok) return err('VALIDATION', composed.errors[0] ?? 'Check the lines.', { details: { lines: composed.errors } });
+
+  const year = new Date().getUTCFullYear();
+  const numbering = await readInvoiceNumbering(supabase);
+  const highest = await highestInvoiceSequence(supabase, year, numbering.prefix);
+  const dueDays = numbering.termsDays ?? undefined;
+  const due = parsed.data.dueOn
+    ? `${parsed.data.dueOn}T00:00:00.000Z`
+    : dueDays === undefined
+      ? null
+      : new Date(Date.now() + dueDays * 86_400_000).toISOString();
+  // The owner's terms note is printed by the PDF on every invoice; it is not copied into the notes here.
+  const notes = parsed.data.notes ?? '';
+
+  const payload = composed.lines.map((line) => ({
+    position: line.position,
+    description: line.description,
+    quantity: line.quantity,
+    unit_price_minor: line.unitPriceMinor,
+    amount_minor: line.amountMinor,
+    tax_rate_bp: line.taxRateBp,
+  }));
+
+  for (let attempt = 0; attempt < NUMBER_ATTEMPTS; attempt += 1) {
+    const number = nextInvoiceNumber(year, highest, attempt, numbering.prefix);
+    const { data, error } = await supabase.schema('finance').rpc('create_composed_invoice', {
+      p_project_id: project.id,
+      p_number: number,
+      p_currency: project.currency,
+      p_subtotal_minor: composed.totals.subtotalMinor,
+      p_tax_minor: composed.totals.taxMinor,
+      p_total_minor: composed.totals.totalMinor,
+      p_lines: payload,
+      ...(readiness.data.profileId ? { p_billing_profile_id: readiness.data.profileId } : {}),
+      ...(due ? { p_due_at: due } : {}),
+      ...(notes ? { p_notes: notes } : {}),
+    });
+
+    if (error) {
+      console.error(JSON.stringify({ level: 'error', scope: 'composeInvoice', detail: error.message }));
+      return err('INTERNAL', 'Could not create the invoice.');
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return err('INTERNAL', 'Could not create the invoice.');
+
+    switch (row.outcome) {
+      case 'created':
+        return ok({ invoiceId: row.invoice_id as string, number: row.number as string, created: true });
+      case 'number_taken':
+        continue;
+      case 'not_authorized':
+        return err('FORBIDDEN', 'Only an owner or an ops admin may raise invoices.');
+      case 'not_found':
+        return err('NOT_FOUND', 'That project is not visible to you.');
+      case 'no_lines':
+        return err('VALIDATION', 'Add at least one line.');
+      case 'totals_mismatch':
+        return err('INTERNAL', 'The lines did not add up to the total, so nothing was written.');
+      default:
+        console.error(JSON.stringify({ level: 'error', scope: 'composeInvoice', detail: `unrecognised outcome "${String(row.outcome)}"` }));
+        return err('INTERNAL', 'Could not create the invoice.');
+    }
+  }
+
+  return err('CONFLICT', 'Could not allocate an invoice number. Please try again.');
+}
+
+/**
+ * Sends a payment claim back for more evidence — PDF SCR-054 "NEED MORE
+ * EVIDENCE". Not a decision: the claim stays in the queue (status
+ * `evidence_requested`) and can still be confirmed, rejected or flagged. The
+ * door requires the role, a note saying what is missing, and audits it.
+ */
+export async function requestPaymentEvidence(input: RequestPaymentEvidenceInput): Promise<Result<{ status: string }>> {
+  const parsed = requestPaymentEvidenceSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid request.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context, 'invoice.issue')) {
+    return err('FORBIDDEN', 'You do not have permission to review a payment claim.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('finance').rpc('request_payment_evidence', {
+    p_submission_id: parsed.data.submissionId,
+    p_note: parsed.data.note,
+  });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'requestPaymentEvidence', detail: error.message }));
+    return err('INTERNAL', 'Could not send the claim back.');
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return err('INTERNAL', 'Could not send the claim back.');
+
+  switch (row.outcome) {
+    case 'requested':
+      return ok({ status: row.status ?? 'evidence_requested' });
+    case 'forbidden':
+      return err('FORBIDDEN', 'Only an owner or an ops admin may review a payment claim.');
+    case 'not_found':
+      return err('NOT_FOUND', 'That claim is not in this organization.');
+    case 'settled':
+      return err('CONFLICT', 'That claim has already been answered.');
+    case 'no_note':
+      return err('VALIDATION', 'Say what evidence is missing.');
+    default:
+      return err('INTERNAL', 'Could not send the claim back.');
+  }
 }

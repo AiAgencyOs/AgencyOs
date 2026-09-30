@@ -96,6 +96,11 @@ export default async function OperationsPage({
   const canRequeue = can(context, 'job.requeue');
 
   const [openAlerts, acknowledgedAlerts, switches, escalationsByKey] = await Promise.all([listOpenAlerts(100), listAcknowledgedAlerts(10), listKillSwitches(), readEscalationsByKey()]);
+  // SCR-066 "Escalate operational failure": the same escalation, on every kind of row that can be stuck.
+  const escalationView = (key: string) => {
+    const e = escalationsByKey.get(key);
+    return e ? { id: e.id, toRole: e.toRole, reason: e.reason, state: e.state, fromUserName: e.fromUserName, acknowledgedByName: e.acknowledgedByName, createdAtLabel: clock.dateTime(e.createdAt) } : null;
+  };
   const engaged = switches.filter((s) => s.active);
   const alertView = (a: (typeof openAlerts)[number]) => ({ ...a, firstSeenLabel: clock.dateTime(a.firstSeenAt), lastSeenLabel: clock.dateTime(a.lastSeenAt), acknowledgedLabel: a.acknowledgedAt ? clock.dateTime(a.acknowledgedAt) : null });
   const criticalOpen = openAlerts.filter((a) => a.severity === 'critical').length;
@@ -301,9 +306,10 @@ export default async function OperationsPage({
                 <span className="font-medium tabular">
                   {w.wedged} <span className="font-normal text-muted">{w.reason}</span>
                 </span>
-                {w.oldest_due_at ? (
-                  <span className="text-xs text-muted">oldest due {clock.dateTime(w.oldest_due_at)}</span>
-                ) : null}
+                <span className="flex flex-wrap items-center gap-3">
+                  {w.oldest_due_at ? <span className="text-xs text-muted">oldest due {clock.dateTime(w.oldest_due_at)}</span> : null}
+                  <EscalateControl subjectType="stalled_work" subjectKey={`wedged-${w.reason}`} title={`${w.wedged} follow-up sequence${w.wedged === 1 ? '' : 's'} wedged: ${w.reason}`} escalation={escalationView(`wedged-${w.reason}`)} canAnswer={canAnswerEscalation} compact />
+                </span>
               </li>
             ))}
           </ul>
@@ -422,6 +428,10 @@ export default async function OperationsPage({
                         const last = m.id ? retryHistory.get(m.id)?.last : undefined;
                         return last ? ` · last attempt ${last.delivery ?? 'unrecorded'} ${clock.dateTime(last.at)}${last.error ? ` — ${last.error}` : ''}` : '';
                       })()}`}
+                  {(() => {
+                    const reason = m.id ? retryHistory.get(m.id)?.lastReason : null;
+                    return reason ? ` · reason given: ${reason}` : '';
+                  })()}
                   {m.retryOf ? ' · itself a retry' : ''}
                 </p>
                 {/* SCR-057 — a retry is a new send through the same door; the
@@ -485,14 +495,14 @@ export default async function OperationsPage({
       {/*
         SCR-066 — workflow runs by correlation id: the runs and the jobs one
         piece of work produced, and a drawer that shows the whole event chain
-        (jobs, runs, audit rows) for one id. No "cancel a workflow": nothing
-        in observability or the orchestrator exposes a cancel door, so the one
-        human act stays the requeue above.
+        (jobs, runs, audit rows) for one id. "Cancel workflow" stops every
+        unsettled job of the chain through the same audited job doors, with
+        one reason.
       */}
       <div className="flex flex-col gap-2">
         <h2 className="text-[13px] font-semibold tracking-tight">Workflow runs <span className="text-muted">({workflows.length})</span></h2>
         <p className="text-xs text-muted">Recent agent runs grouped by correlation id, with the jobs that share it. Inspect one to see its event chain.</p>
-        <WorkflowList workflows={workflows} />
+        <WorkflowList workflows={workflows} canCancel={can(context, 'job.requeue')} canAnswerEscalation={canAnswerEscalation} escalations={Object.fromEntries(workflows.map((w) => [`workflow-${w.correlationId}`, escalationView(`workflow-${w.correlationId}`)]))} />
       </div>
 
       {/*
@@ -545,7 +555,7 @@ export default async function OperationsPage({
               <dd className={`text-xl font-semibold tabular ${backlog.dead_events > 0 ? 'text-danger' : ''}`}>{backlog.dead_events}</dd>
             </div>
           </dl>
-          <OutboxList page={outbox} dateTime={(iso) => clock.dateTime(iso)} />
+          <OutboxList page={outbox} dateTime={(iso) => clock.dateTime(iso)} canAnswerEscalation={canAnswerEscalation} escalations={Object.fromEntries(outbox.rows.map((e) => [`outbox-${e.id}`, escalationView(`outbox-${e.id}`)]))} />
         </div>
       </div>
 

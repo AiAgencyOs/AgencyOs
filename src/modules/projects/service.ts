@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { blockerProblem } from './task-blocker';
+import { fileCredentialProblem } from './file-secrets-guard';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
@@ -753,6 +755,9 @@ export async function addProjectFile(input: AddProjectFileInput): Promise<Result
     return err('FORBIDDEN', 'You do not have permission to add a file.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+  // SCR-024: a credential is not a project file.
+  const credential = fileCredentialProblem({ title: parsed.data.title, url: parsed.data.url, description: parsed.data.description });
+  if (credential) return err('VALIDATION', credential);
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -1046,6 +1051,12 @@ export async function submitDeliverable(
 
     case 'settled':
       return err('CONFLICT', `This version is already ${settled.status}.`);
+
+    case 'not_qa_passed':
+      return err('CONFLICT', 'A prototype goes to the client only after QA passed it. Use the build page to send it through the gate.');
+
+    case 'not_admin_approved':
+      return err('CONFLICT', 'A prototype goes to the client only after Admin approved it. Use the build page to send it through the gate.');
 
     case 'no_policy':
       return err(
@@ -1914,8 +1925,10 @@ export async function setTaskStatus(input: SetTaskStatusInput): Promise<Result<{
   // way out — by the `tasks_stamp_blocked` trigger, so no caller has to
   // remember to.
   const reason = parsed.data.reason?.trim() || null;
-  if (parsed.data.status === 'blocked' && !reason) {
-    return err('VALIDATION', 'Say what the task is blocked on before marking it blocked.');
+  if (parsed.data.status === 'blocked') {
+    // SCR-020: a blocker is a type, an owner and a next action as well as a reason.
+    const problem = blockerProblem({ reason, blockerType: parsed.data.blockerType, blockerOwner: parsed.data.blockerOwner, nextAction: parsed.data.nextAction });
+    if (problem) return err('VALIDATION', problem);
   }
 
   const supabase = await createClient();
@@ -1926,13 +1939,19 @@ export async function setTaskStatus(input: SetTaskStatusInput): Promise<Result<{
       {
         status: parsed.data.status,
         completed_at: parsed.data.status === 'done' ? new Date().toISOString() : null,
-        ...(parsed.data.status === 'blocked' ? { blocked_reason: reason } : {}),
+        ...(parsed.data.status === 'blocked'
+          ? { blocked_reason: reason, blocker_type: parsed.data.blockerType ?? null, blocker_owner: parsed.data.blockerOwner ?? null, blocker_next_action: parsed.data.nextAction ?? null }
+          : {}),
       },
       { count: 'exact' },
     )
     .eq('id', parsed.data.taskId);
 
   if (error) {
+    // SCR-020: the verification gate (trigger projects.refuse_unverified_agent_done) refuses an unverified agent task.
+    if (error.message.includes('agent_task_unverified')) {
+      return err('CONFLICT', 'This task was produced by an agent. It is not done until somebody has verified it — verify it from the task drawer first.');
+    }
     console.error(JSON.stringify({ level: 'error', scope: 'setTaskStatus', detail: error.message }));
     return err('INTERNAL', 'Could not change the task’s status.');
   }

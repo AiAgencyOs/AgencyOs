@@ -17,14 +17,15 @@ import {
   type RequirementRow,
   type RequirementStatus,
 } from '@/modules/projects/requirements-tab';
-import { readAttachableFiles, readProjectRequirements, readRequirementComments } from '@/modules/projects/requirements-tab-queries';
+import { readAttachableFiles, readProjectRequirements, readRequirementComments, readScopeSourceSet } from '@/modules/projects/requirements-tab-queries';
 import { PRIORITY_LABEL, PRIORITY_TONE } from '@/modules/projects/requirement-plan-schema';
 import { listInternalRoster } from '@/modules/projects/queries';
-import { Badge, buttonClass, Card, CardHeader, cx, DomainSearch, EmptyState, IconAttach, IconCheck, IconClock, IconFile, IconList, IconPlus, IconRefresh, IconTarget, PermissionDenied, Stat, StatGrid, type Tone, ViewAll } from '@/ui';
+import { Badge, buttonClass, Card, CardHeader, cx, DomainSearch, EmptyState, humanize, IconAttach, IconCheck, IconClock, IconFile, IconList, IconPlus, IconRefresh, IconTarget, PermissionDenied, Stat, StatGrid, type Tone, ViewAll } from '@/ui';
 
 import { ProjectSubNav } from '../project-subnav';
 import { WorkspaceHeader } from '../workspace-header';
 import { RequirementCommentForm } from './requirement-comment-form';
+import { AnswerClarificationForm, RaiseClarificationForm } from './requirement-clarification-forms';
 import { AttachFileForm, DetachFileButton, RequirementPlanForm } from './requirement-plan-forms';
 
 export const metadata: Metadata = { title: 'Project requirements' };
@@ -58,10 +59,11 @@ export default async function ProjectRequirementsPage({ params, searchParams }: 
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const [{ rows, openChangeRequests, activeVersion, draftVersion }, clock, clientName] = await Promise.all([
+  const [{ rows, openChangeRequests, activeVersion, draftVersion }, clock, clientName, sourceSet] = await Promise.all([
     readProjectRequirements(projectId),
     agencyClock(),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
+    readScopeSourceSet(projectId),
   ]);
 
   const q = (qRaw ?? '').trim().slice(0, 120);
@@ -179,6 +181,7 @@ export default async function ProjectRequirementsPage({ params, searchParams }: 
                           <span className="w-16 shrink-0 font-mono text-xs text-brand">{r.code}</span>
                           <span className="min-w-0 flex-1 basis-40 font-medium text-foreground">{r.title}</span>
                           <Badge tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</Badge>
+                          {r.clarifications.some((c) => c.status === 'open') ? <Badge tone="warning">Question open</Badge> : null}
                           <span className="w-16">{r.priority ? <Badge tone={PRIORITY_TONE[r.priority]}>{PRIORITY_LABEL[r.priority]}</Badge> : <span className="text-xs text-muted">—</span>}</span>
                           <span className="w-28 truncate text-xs text-muted" title={r.assignee?.name}>{r.assignee?.name ?? 'Unassigned'}</span>
                           <span className="inline-flex w-10 items-center justify-end gap-0.5 text-xs text-muted" title={`${r.files.length} attached file${r.files.length === 1 ? '' : 's'}`}>{r.files.length > 0 ? <><IconAttach size={12} />{r.files.length}</> : null}</span>
@@ -195,6 +198,47 @@ export default async function ProjectRequirementsPage({ params, searchParams }: 
         </Card>
 
         <div className="flex min-w-0 flex-col gap-4">
+          {sourceSet ? (
+            <Card>
+              <CardHeader title="Source Requirement Set" description="The requirement set this scope descends from. The lead holds the conversation and the versions; this list is what was frozen from them." />
+              <dl className="flex flex-col divide-y divide-line px-4 pb-3 text-[13px] sm:px-5">
+                <div className="flex items-baseline justify-between gap-3 py-2">
+                  <dt className="text-muted">Requirement version</dt>
+                  <dd className="font-medium">v{sourceSet.requirementVersion} · {humanize(sourceSet.requirementStatus)}</dd>
+                </div>
+                <div className="flex items-baseline justify-between gap-3 py-2">
+                  <dt className="text-muted">Scope version</dt>
+                  <dd className="font-medium">v{sourceSet.scopeVersion} · {humanize(sourceSet.scopeStatus)}</dd>
+                </div>
+                <div className="flex items-baseline justify-between gap-3 py-2">
+                  <dt className="text-muted">Lead</dt>
+                  <dd className="font-medium">{sourceSet.leadId ? <Link href={`/leads/${sourceSet.leadId}#requirements`} className="text-brand hover:underline">{sourceSet.leadTitle ?? 'Open the lead'}</Link> : <span className="font-normal text-muted">No lead on the conversation</span>}</dd>
+                </div>
+                <div className="flex items-baseline justify-between gap-3 py-2">
+                  <dt className="text-muted">Declared links</dt>
+                  <dd className="flex flex-col items-end gap-0.5 text-right font-medium">
+                    {sourceSet.links.length === 0 ? (
+                      <span className="font-normal text-muted">None made from the lead</span>
+                    ) : (
+                      sourceSet.links.map((l) => (
+                        <span key={l.id}>
+                          {l.targetType === 'quotation' ? (
+                            <Link href={`/quotations?q=${encodeURIComponent(l.title ?? '')}`} className="text-brand hover:underline">Quotation: {l.title ?? 'removed'}</Link>
+                          ) : l.targetType === 'task' && l.projectId ? (
+                            <Link href={`/projects/${l.projectId}/development/tasks/${l.targetId}`} className="text-brand hover:underline">Task: {l.title ?? 'removed'}</Link>
+                          ) : l.projectId ? (
+                            <Link href={`/projects/${l.projectId}/design`} className="text-brand hover:underline">Design: {l.title ?? 'removed'}</Link>
+                          ) : (
+                            <span>{humanize(l.targetType)}: {l.title ?? 'removed'}</span>
+                          )}
+                        </span>
+                      ))
+                    )}
+                  </dd>
+                </div>
+              </dl>
+            </Card>
+          ) : null}
           {selected ? (
             <>
               <Card>
@@ -297,7 +341,61 @@ export default async function ProjectRequirementsPage({ params, searchParams }: 
                     <span className="text-muted">Plan Deliverables</span>
                     <span className="text-right font-medium">{selected.deliverables.length === 0 ? '—' : selected.deliverables.map((d) => d.name).join(', ')}</span>
                   </li>
+                  <li className="flex items-baseline justify-between gap-3 py-2">
+                    <span className="text-muted">Quotation</span>
+                    <span className="flex flex-col items-end gap-0.5 text-right font-medium">
+                      {selected.quotations.length === 0 ? (
+                        <span className="font-normal text-muted">{selected.versionStatus === 'draft' ? 'Priced once the scope is frozen' : 'None priced from this scope'}</span>
+                      ) : (
+                        selected.quotations.map((qt) => (
+                          <Link key={qt.id} href={`/quotations?q=${encodeURIComponent(qt.title)}`} className="text-brand hover:underline">
+                            {qt.title} v{qt.version} · {humanize(qt.status)}
+                          </Link>
+                        ))
+                      )}
+                    </span>
+                  </li>
+                  <li className="flex items-baseline justify-between gap-3 py-2">
+                    <span className="text-muted">Development Tasks</span>
+                    <span className="flex flex-col items-end gap-0.5 text-right font-medium">
+                      {selected.tasks.length === 0 ? (
+                        <span className="font-normal text-muted">{selected.featureId ? 'No task under its feature yet' : 'Not planned under a feature'}</span>
+                      ) : (
+                        selected.tasks.slice(0, 6).map((t) => (
+                          <Link key={t.id} href={`/projects/${projectId}/development/tasks/${t.id}`} className="text-brand hover:underline">
+                            {t.title} · {humanize(t.status)}
+                          </Link>
+                        ))
+                      )}
+                      {selected.tasks.length > 6 ? <span className="text-xs font-normal text-muted">and {selected.tasks.length - 6} more</span> : null}
+                    </span>
+                  </li>
                 </ul>
+              </Card>
+
+              <Card>
+                <CardHeader title={`Clarifications (${selected.clarifications.filter((c) => c.status === 'open').length} open)`} description="Questions asked of this requirement. An open question means the wording is not settled." />
+                <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+                  {selected.clarifications.length === 0 ? (
+                    <p className="text-[13px] text-muted">Nothing has been asked of this requirement.</p>
+                  ) : (
+                    <ul className="flex flex-col gap-2">
+                      {selected.clarifications.map((c) => (
+                        <li key={c.id} className="flex flex-col gap-1.5 rounded-lg border border-line px-3 py-2 text-[13px]">
+                          <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                            <Badge tone={c.status === 'open' ? 'warning' : 'success'}>{c.status === 'open' ? 'Open' : 'Answered'}</Badge>
+                            <span>{c.raisedByName ? `${c.raisedByName} · ` : ''}{clock.dateTime(c.raisedAt)}</span>
+                          </p>
+                          <p className="font-medium">{c.question}</p>
+                          <p className="text-xs text-muted">Changes: {c.impact}</p>
+                          {c.answer ? <p className="rounded-md bg-surface-sunken px-2 py-1.5">“{c.answer}”{c.answeredAt ? <span className="block text-xs text-muted">{clock.dateTime(c.answeredAt)}</span> : null}</p> : null}
+                          {c.status === 'open' && mayComment ? <AnswerClarificationForm projectId={projectId} clarificationId={c.id} /> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {mayComment ? <RaiseClarificationForm projectId={projectId} scopeItemId={selected.id} /> : <p className="text-xs text-muted">Asking a clarification takes the task.write permission.</p>}
+                </div>
               </Card>
 
               <Card>

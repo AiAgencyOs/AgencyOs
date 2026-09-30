@@ -140,7 +140,8 @@ describe('4. FilterBar, DataTable and the approvals drawer', () => {
 
   it('Leads and Invoices use the overflow menu', () => {
     assert.match(read(`${INTERNAL}/leads/page.tsx`), /rowActions=\{\(l\) => \[/);
-    assert.match(read(`${INTERNAL}/invoices/page.tsx`), /rowActions=\{\(i\) => \[/);
+    // W1: the registry table (list + bulk select) carries the menu
+    assert.match(read(`${INTERNAL}/invoices/invoice-registry-table.tsx`), /rowActions=\{actionsFor\}/);
   });
 
   it('approval decisions open in the drawer, through the same ApprovalDecisionForm', () => {

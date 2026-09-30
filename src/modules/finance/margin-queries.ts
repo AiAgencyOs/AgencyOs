@@ -3,6 +3,7 @@ import 'server-only';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
+import { readAiCostBuckets } from './ai-cost-queries';
 import { computeMargin, type Margin } from './margin';
 
 export { computeMargin, MARGIN_LABEL, type Margin, type MarginInputs } from './margin';
@@ -38,20 +39,20 @@ export async function readProjectMargin(projectId: string): Promise<Margin> {
   const supabase = await createClient();
 
   const [paidRes, expensesRes, runsRes, timeRes] = await Promise.all([
-    supabase.schema('finance').from('invoices').select('paid_minor, status').eq('project_id', projectId),
+    supabase.schema('finance').from('invoices').select('verified_minor, status').eq('project_id', projectId),
     supabase.schema('finance').from('expenses').select('amount_minor').eq('project_id', projectId),
-    // `project_id` postdates the generated types (see ai-cost-queries.ts), hence the casts.
-    supabase.schema('ai').from('agent_runs').select('cost_minor').eq('project_id' as never, projectId),
+    // The totals function, not the runs table (see ai-cost-queries.ts): the same margin for every role that may read it.
+    readAiCostBuckets().then((data) => ({ data: data.filter((b) => b.project_id === projectId), error: null as null })),
     supabase.schema('projects').from('time_log_totals_by_project').select('cost_minor, uncosted_hours').eq('project_id', projectId),
   ]);
   if (paidRes.error) unreadable('readProjectMargin.invoices', paidRes.error);
   if (expensesRes.error) unreadable('readProjectMargin.expenses', expensesRes.error);
-  if (runsRes.error) unreadable('readProjectMargin.aiRuns', runsRes.error);
   if (timeRes.error) unreadable('readProjectMargin.timeCost', timeRes.error);
 
-  const paidMinor = (paidRes.data ?? []).reduce((n, i) => n + (i.status === 'void' ? 0 : i.paid_minor), 0);
+  // Cash basis on the ONE verified basis (verified-basis.ts): what a person confirmed, not what was recorded.
+  const paidMinor = (paidRes.data ?? []).reduce((n, i) => n + (i.status === 'void' ? 0 : i.verified_minor), 0);
   const expensesMinor = (expensesRes.data ?? []).reduce((n, e) => n + e.amount_minor, 0);
-  const aiCostMinor = ((runsRes.data ?? []) as { cost_minor: number | null }[]).reduce((n, r) => n + (r.cost_minor ?? 0), 0);
+  const aiCostMinor = (runsRes.data ?? []).reduce((n, r) => n + r.cost_minor, 0);
   const timeCostMinor = (timeRes.data ?? []).reduce((n, t) => n + Number(t.cost_minor ?? 0), 0);
   const uncostedHours = Math.round((timeRes.data ?? []).reduce((n, t) => n + Number(t.uncosted_hours ?? 0), 0) * 100) / 100;
 

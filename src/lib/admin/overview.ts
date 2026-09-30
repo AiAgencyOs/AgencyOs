@@ -101,7 +101,7 @@ async function paymentsPendingVerification(): Promise<number> {
     .schema('finance')
     .from('payment_submissions')
     .select('id', { count: 'exact', head: true })
-    .in('status', ['pending_verification', 'mismatch']);
+    .in('status', ['pending_verification', 'mismatch', 'evidence_requested']);
   if (error) throw error;
   return count ?? 0;
 }

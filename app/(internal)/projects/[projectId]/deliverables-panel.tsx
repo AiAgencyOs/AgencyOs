@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { addDeliverableAction, submitDeliverableAction } from '@/modules/projects/actions';
+import { PROTOTYPE_PLATFORMS } from '@/modules/projects/prototype-schema';
 import { DELIVERABLE_KINDS } from '@/modules/projects/schema';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { buttonClass, inputClass, selectClass } from '@/ui';
@@ -123,6 +124,18 @@ export function AddPrototypeForm({ projectId }: { projectId: string }) {
         aria-label="What changed since the last build"
       />
 
+      <div className="flex flex-wrap gap-2">
+        <select name="platform" defaultValue="" className={selectClass} aria-label="Platform">
+          <option value="">Platform (optional)</option>
+          {PROTOTYPE_PLATFORMS.map((pl) => (
+            <option key={pl} value={pl}>
+              {pl.replace('_', ' ')}
+            </option>
+          ))}
+        </select>
+        <input name="commitRef" maxLength={200} placeholder="Commit or ref (optional)" className={inputClass} aria-label="Commit or ref built from" />
+      </div>
+
       <div className="flex items-center gap-3">
         <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm', 'self-start')}>
           {pending ? 'Adding…' : 'Add build'}
@@ -138,7 +151,7 @@ export function AddPrototypeForm({ projectId }: { projectId: string }) {
 }
 
 /** The same scoped form as `AddPrototypeForm`, for `kind = 'build'` — SCR-043's Builds half. */
-export function AddBuildForm({ projectId }: { projectId: string }) {
+export function AddBuildForm({ projectId, rollbackChoices }: { projectId: string; rollbackChoices?: { id: string; label: string }[] }) {
   const [state, action, pending] = useActionState(addDeliverableAction, IDLE_STATE);
 
   return (
@@ -169,6 +182,20 @@ export function AddBuildForm({ projectId }: { projectId: string }) {
         className={inputClass}
         aria-label="What changed since the last build"
       />
+
+      <div className="flex flex-wrap gap-2">
+        <input name="commitRef" maxLength={200} placeholder="Commit or ref built from" className={inputClass} aria-label="Commit or ref built from" />
+        <input name="buildNumber" maxLength={60} placeholder="Build number" className={inputClass} aria-label="Build number" />
+      </div>
+      <select name="rollbackTargetId" defaultValue="" className={selectClass} aria-label="Roll back to">
+        <option value="">No rollback target yet</option>
+        {(rollbackChoices ?? []).map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.label}
+          </option>
+        ))}
+      </select>
+      <input name="rollbackNote" maxLength={1000} placeholder="How to roll back (optional)" className={inputClass} aria-label="How to roll back" />
 
       <div className="flex items-center gap-3">
         <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm', 'self-start')}>

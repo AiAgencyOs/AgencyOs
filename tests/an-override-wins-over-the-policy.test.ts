@@ -109,7 +109,8 @@ describe('B. the runner consults the override before it resolves a provider', ()
     // fallback chain for that class is consulted after the override and policy.
     const routed = agentRun.match(/routedModelFor\(ctx\.admin, ctx\.job\.organization_id, ctx\.agent\.key(?:, ctx\.workClass)?\)/g) ?? [];
     assert.equal(routed.length, 2, 'callModel and callModelWithTools both route');
-    const requests = agentRun.match(/model: routed \?\? ctx\.agent\.default_model/g) ?? [];
+    // anchored at the start of a line: the request body, not the per-model budget argument that also names the routed model
+    const requests = agentRun.match(/^\s+model: routed \?\? ctx\.agent\.default_model,/gm) ?? [];
     assert.equal(requests.length, 2, 'both requests carry the routed model, or the default');
     // The default path is untouched: a tenant that set nothing resolves the
     // default exactly as before, and the dispatch tests still find it.

@@ -310,6 +310,13 @@ jobs:
       - name: A won deal has a contract and a lead keeps its files (decisions 10, 11, 14)
         run: npm run db:verify:contracts
 
+      # W2 (20261006200000): a blocked task keeps its type, owner and next action; an agent task
+      # cannot be completed until verified; the Meetings folder; template clone; the organisation's
+      # project defaults (and the standard folders a new project gets); the audit-trail activity
+      # feed; a meeting attached to the project its client owns.
+      - name: Projects, tasks and plan (W2)
+        run: npm run db:verify:w2-projects
+
       # G-227, P0. Idempotency cannot be proved by reading a migration: an
       # index that refuses a duplicate and an index that was never created look
       # identical in source until two callers arrive at once. This fires EIGHT
@@ -398,6 +405,21 @@ jobs:
       - name: A key is kept in one place — the Keys & secrets vault
         run: npm run db:verify:vault
 
+      # W6 / SCR-064. A model has a monthly budget of its own: only the owner
+      # sets it, the model must be in the registry, no role writes the table
+      # directly and the audit names the model. All database rules.
+      - name: A model has a monthly budget of its own
+        run: npm run db:verify:modelbudget
+
+      # Theme W5 — QA, release, communication. A run's tester and environment,
+      # append-only run evidence, editable cases and coverage waivers, an
+      # unsupported device that must say why, a release recorded with no
+      # handover, an announcement tied to its project and drafted by a met
+      # milestone, a retry that says why, and the email lane: all database
+      # rules, none of which reading TypeScript can prove.
+      - name: A run names its tester, a release needs no handover, an announcement has a project
+        run: npm run db:verify:w5
+
       # UI parity round 2. A task's start never passes its due date, a subtask
       # is one level deep in its parent's project, labels are bounded and
       # de-duplicated, and a project note can only be written through its two
@@ -426,6 +448,8 @@ jobs:
         run: npm run db:verify:requirementplan
       - name: A project has folders that exist before a file is in them
         run: npm run db:verify:folders
+      - name: Requirements, design, prototype and development doors
+        run: npm run db:verify:w4
 
       # The wording of a quotation's acceptance, cancellation, liability and
       # jurisdiction clauses is the owner's, appended a version at a time and
@@ -841,6 +865,12 @@ jobs:
           # returns the agency timezone to unset — which `db:verify:followup`
           # asserts this deployment ships without.
           npm run db:verify:spend
+
+          # PDF gap W1. The finance role reads what it was given, the composer
+          # and need-more-evidence doors, the immutable verification, numbering
+          # and the export log. Plants a client and project under a marker and
+          # removes them in a `finally`; restores the numbering settings.
+          npm run db:verify:finance-w1
 
           # Last, and deliberately so: the deploy smoke runs against the app
           # in its most-exercised state, and a tick it fires cannot disturb

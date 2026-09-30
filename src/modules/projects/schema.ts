@@ -361,6 +361,7 @@ export const PROJECT_FILE_CATEGORIES = [
   'deployment',
   'marketing',
   'documents',
+  'meetings',
   'assets',
   'builds',
   'other',
@@ -1138,6 +1139,10 @@ export const setTaskStatusSchema = z.object({
   status: z.enum(TASK_STATUSES),
   /** Why the task is blocked — SCR-020/021. The service requires it when status is `blocked`. */
   reason: z.string().trim().max(1000).optional(),
+  /** SCR-020: what kind of blocker, who must act, and the next action. Required with `blocked` (task-blocker.ts). */
+  blockerType: z.string().trim().max(40).optional(),
+  blockerOwner: z.string().trim().max(120).optional(),
+  nextAction: z.string().trim().max(500).optional(),
 });
 
 export type CreateModuleInput = z.infer<typeof createModuleSchema>;

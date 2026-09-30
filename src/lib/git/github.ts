@@ -502,3 +502,21 @@ export async function readGithubPullRequest(
     },
   };
 }
+
+/**
+ * The reviews on a pull request, for the merge policy: how many reviewers'
+ * latest word is APPROVED. A GET like every read in this file — nothing here
+ * writes to GitHub.
+ */
+export async function readGithubPullReviews(
+  link: { owner: string; repo: string },
+  pullNumber: number,
+): Promise<{ ok: true; data: { user: string | null; state: string }[] } | { ok: false; reason: GithubReadReason; detail: string }> {
+  const token = await githubToken();
+  if (!token) return { ok: false, reason: 'not_configured', detail: 'GITHUB_TOKEN is unset' };
+  const base = `/repos/${encodeURIComponent(link.owner)}/${encodeURIComponent(link.repo)}`;
+  const reviews = await githubGet<{ user: { login: string } | null; state: string }[]>(token, `${base}/pulls/${pullNumber}/reviews?per_page=100`);
+  if (!reviews.ok) return reviews;
+  if (!Array.isArray(reviews.body)) return { ok: false, reason: 'unexpected', detail: 'reviews did not answer with a list' };
+  return { ok: true, data: reviews.body.map((r) => ({ user: r.user?.login ?? null, state: r.state })) };
+}

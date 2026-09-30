@@ -1,14 +1,17 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useId } from 'react';
 
 import { openIncidentAction, recordMetricResultAction, resolveIncidentAction, setPerformanceBudgetAction } from '@/modules/qa/performance-actions';
 import { INCIDENT_SEVERITIES } from '@/modules/qa/performance-schema';
-import { closeTestRunAction, openTestRunAction, rerunTestRunAction } from '@/modules/qa/run-lifecycle-actions';
+import { addRunEvidenceAction, closeTestRunAction, openTestRunAction, rerunTestRunAction } from '@/modules/qa/run-lifecycle-actions';
+import { RUN_EVIDENCE_KINDS } from '@/modules/qa/run-lifecycle-schema';
 import { setSuiteScheduleAction } from '@/modules/qa/schedule-actions';
 import { TEST_RUN_SUITES } from '@/modules/qa/schema';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { buttonClass, FormMessage, inputClass, labelClass, selectClass } from '@/ui';
+
+import { RunWhereAndWhoInputs, type TesterOption } from './run-who-where';
 
 /**
  * SCR-046 / SCR-048 — the forms behind a run's life and the performance
@@ -19,7 +22,7 @@ import { buttonClass, FormMessage, inputClass, labelClass, selectClass } from '@
 
 type Build = { id: string; title: string; version: number };
 
-export function OpenRunForm({ projectId, builds }: { projectId: string; builds: Build[] }) {
+export function OpenRunForm({ projectId, builds, testers = [] }: { projectId: string; builds: Build[]; testers?: readonly TesterOption[] }) {
   const [state, action, pending] = useActionState(openTestRunAction, IDLE_STATE);
   if (builds.length === 0) return <p className="text-xs text-muted">No build to run against yet.</p>;
   return (
@@ -44,6 +47,7 @@ export function OpenRunForm({ projectId, builds }: { projectId: string; builds: 
       <input name="device" maxLength={120} placeholder="Device" aria-label="Device" className={`${inputClass} w-28`} />
       <input name="browser" maxLength={120} placeholder="Browser" aria-label="Browser" className={`${inputClass} w-28`} />
       <input name="os" maxLength={120} placeholder="OS" aria-label="OS" className={`${inputClass} w-24`} />
+      <RunWhereAndWhoInputs testers={testers} compact />
       <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
         {pending ? 'Opening…' : 'Open a run'}
       </button>
@@ -195,6 +199,44 @@ export function ScheduleSuiteForm({ projectId, builds, existing }: { projectId: 
           Remove
         </button>
       ) : null}
+      <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+const KIND_LABEL: Record<(typeof RUN_EVIDENCE_KINDS)[number], string> = { screenshot: 'Screenshot', log: 'Log', report: 'Report', recording: 'Recording', note: 'Note' };
+
+/**
+ * SCR-046 "Screenshots/logs": one more piece of evidence on a run, open or
+ * closed (`qa.add_run_evidence`). A link for everything but a note. Adding
+ * evidence never changes the run's counts or status.
+ */
+export function AddEvidenceForm({ projectId, runId }: { projectId: string; runId: string }) {
+  const [state, action, pending] = useActionState(addRunEvidenceAction, IDLE_STATE);
+  const id = useId();
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="runId" value={runId} />
+      <div className="flex flex-col gap-1">
+        <label htmlFor={`${id}-kind`} className={labelClass}>Kind</label>
+        <select id={`${id}-kind`} name="kind" defaultValue="screenshot" className={selectClass}>
+          {RUN_EVIDENCE_KINDS.map((k) => (
+            <option key={k} value={k}>{KIND_LABEL[k]}</option>
+          ))}
+        </select>
+      </div>
+      <div className="flex min-w-48 flex-1 flex-col gap-1">
+        <label htmlFor={`${id}-value`} className={labelClass}>Link, or the words for a note</label>
+        <input id={`${id}-value`} name="value" required maxLength={2000} placeholder="https://files.example/failure.png" className={inputClass} />
+      </div>
+      <div className="flex min-w-36 flex-col gap-1">
+        <label htmlFor={`${id}-label`} className={labelClass}>Label (optional)</label>
+        <input id={`${id}-label`} name="label" maxLength={160} placeholder="Login error" className={inputClass} />
+      </div>
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Adding…' : 'Add evidence'}
+      </button>
       <FormMessage status={state.status} message={state.message} />
     </form>
   );

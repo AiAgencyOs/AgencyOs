@@ -86,11 +86,13 @@ const WINDOWS = [30, 90, 180, 365] as const;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export default async function SalesFunnelPage({ searchParams }: { searchParams: Promise<{ days?: string; source?: string; owner?: string }> }) {
+export default async function SalesFunnelPage({ searchParams }: { searchParams: Promise<{ days?: string; source?: string; owner?: string; view?: string }> }) {
   const context = await requireInternal('/sales-funnel');
   if (!can(context, 'lead.read')) return <PermissionDenied />;
 
-  const { days: daysParam, source: sourceParam, owner: ownerParam } = await searchParams;
+  const { days: daysParam, source: sourceParam, owner: ownerParam, view: viewParam } = await searchParams;
+  // SCR-005: the board can show deal stages (default) or the lead statuses New → Nurture.
+  const leadView = viewParam === 'leads';
   const days = (WINDOWS as readonly number[]).includes(Number(daysParam)) ? Number(daysParam) : 90;
 
   const canWritePipeline = can(context, 'lead.write');
@@ -113,8 +115,8 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
   const nameOf = (id: string) => roster.find((m) => m.userId === id)?.fullName ?? id.slice(0, 8);
   const filtering = Boolean(source || owner);
   const opportunities = allOpportunities.filter((o) => (!source || o.lead?.source === source) && (!owner || o.ownerId === owner));
-  const filterHref = (over: Partial<{ source: string; owner: string }>) => {
-    const next = { days: String(days), source: source ?? '', owner: ownerParam === 'mine' ? 'mine' : (owner ?? ''), ...over };
+  const filterHref = (over: Partial<{ source: string; owner: string; view: string }>) => {
+    const next = { days: String(days), source: source ?? '', owner: ownerParam === 'mine' ? 'mine' : (owner ?? ''), view: leadView ? 'leads' : '', ...over } as Record<string, string>;
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(next)) if (v && !(k === 'days' && v === '90')) q.set(k, v);
     const qs = q.toString();
@@ -136,7 +138,7 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
     listMyTasks(context.userId),
     listUpcomingMeetings(now),
     listRecentSalesActivity(10),
-    canWritePipeline ? listLeadsForTable(200) : Promise.resolve([]),
+    canWritePipeline || leadView ? listLeadsForTable(200) : Promise.resolve([]),
   ]);
   const dueToday = myTasks.filter((t) => t.dueOn === todayKey);
   const overdueMine = myTasks.filter((t) => t.dueOn !== null && t.dueOn < todayKey).length;
@@ -195,15 +197,21 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
       />
 
       <StatGrid cols={5}>
-        <Stat label="Total Leads" value={String(counts.leads)} caption={`${counts.qualified} qualified · ${counts.quoted} quoted`} tone="brand" icon={<IconUsers size={16} />} href="/leads" />
-        <Stat label="Open Deals" value={String(open.length)} caption={`${openStages.map((st) => `${valueByStage.has(st) ? money(valueByStage.get(st) ?? 0, currency) : '₹0'} ${STAGE_LABEL[st].toLowerCase()}`).join(' · ')}${filtering ? ' · filtered' : ''}`} tone="info" icon={<IconTarget size={16} />} />
-        <Stat label="Pipeline Value" value={money(openValue, currency)} caption={filtering ? 'Sum of open deal values matching the filters' : 'Sum of open deal values'} tone="accent" icon={<IconRupee size={16} />} />
-        <Stat label="Deals Won" value={String(counts.won)} caption={wonValue > 0 ? `${money(wonValue, currency)} across all won deals` : `${counts.lost} lost`} tone="success" icon={<IconCheck size={16} />} />
-        <Stat label="Win Rate" value={winRate === null ? '—' : `${winRate}%`} caption={decided > 0 ? `${counts.won} won of ${decided} decided` : 'Nothing decided in the window'} tone={winRate !== null && winRate >= 50 ? 'success' : 'neutral'} icon={<IconTrendUp size={16} />} />
+        <Stat label="Qualified Leads" value={String(counts.qualified)} caption={`${counts.leads} leads in the window`} tone="brand" icon={<IconUsers size={16} />} href="/leads?status=qualified" />
+        <Stat label="Proposals Sent" value={String(counts.quoted)} caption={`${open.length} open deal${open.length === 1 ? '' : 's'}${filtering ? ' · filtered' : ''}`} tone="info" icon={<IconTarget size={16} />} href="/quotations?status=sent" />
+        <Stat label="Pipeline Value" value={money(openValue, currency)} caption={filtering ? 'Sum of open deal values matching the filters' : `Sum of open deal values · ${openStages.map((st) => `${money(valueByStage.get(st) ?? 0, currency)} ${STAGE_LABEL[st].toLowerCase()}`).join(' · ')}`} tone="accent" icon={<IconRupee size={16} />} />
+        <Stat label="Deals Closed" value={String(counts.won)} caption={decided > 0 ? `${counts.lost} lost · win rate ${winRate}%` : `${counts.lost} lost · nothing decided in the window`} tone="success" icon={<IconCheck size={16} />} />
+        <Stat label="Closed Revenue" value={money(wonValue, currency)} caption={wonValue > 0 ? 'Across all won deals' : 'No won deal yet'} tone="success" icon={<IconTrendUp size={16} />} />
       </StatGrid>
 
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
-        <SalesTabs />
+        <div className="flex flex-wrap items-center gap-3">
+          <SalesTabs />
+          <div className="flex gap-1 rounded-lg border border-line bg-surface p-0.5" role="group" aria-label="Board shows">
+            <Link href={filterHref({ view: '' })} className={buttonClass(leadView ? 'ghost' : 'primary', 'sm')} aria-current={leadView ? undefined : 'page'}>Deal stages</Link>
+            <Link href={filterHref({ view: 'leads' })} className={buttonClass(leadView ? 'primary' : 'ghost', 'sm')} aria-current={leadView ? 'page' : undefined}>Lead status</Link>
+          </div>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <a href={exportHref} className={buttonClass('secondary', 'sm')}>
             <IconDownload size={14} /> Export CSV{filtering ? ' (filtered)' : ''}
@@ -241,7 +249,35 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="flex min-w-0 flex-col gap-4">
-          {open.length === 0 ? (
+          {leadView ? (
+            <Card>
+              <CardHeader title="Lead status" description="Where each lead stands before it becomes a deal. A status moves on the lead, with its reason." />
+              <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2 sm:px-5 2xl:grid-cols-4">
+                {(['new', 'qualifying', 'qualified', 'nurture'] as const).map((st) => {
+                  const inColumn = leadsForActions.filter((l) => l.status === st && (!source || l.source === source) && (!owner || l.assigned_to === owner));
+                  return (
+                    <section key={st} aria-label={`${humanize(st)} leads`} className="flex min-w-0 flex-col gap-2 rounded-xl border border-line bg-surface-sunken p-2">
+                      <h3 className="flex items-center justify-between px-1 text-[13px] font-semibold">
+                        <Link href={`/leads?status=${st}`} className="hover:text-brand">{humanize(st)}</Link>
+                        <span className="tabular text-xs text-muted">{inColumn.length}</span>
+                      </h3>
+                      {inColumn.length === 0 ? (
+                        <p className="px-1 py-2 text-xs text-muted">No leads</p>
+                      ) : (
+                        inColumn.slice(0, 12).map((l) => (
+                          <Link key={l.id} href={`/leads/${l.id}`} className="rounded-lg border border-line bg-surface p-2.5 text-[13px] shadow-xs hover:border-brand/40">
+                            <span className="block truncate font-medium">{l.contact?.fullName ?? l.title}</span>
+                            <span className="block truncate text-xs text-muted">{humanize(l.source)}{l.assignedEmail ? ` · ${l.assignedEmail.split('@')[0]}` : ''}</span>
+                          </Link>
+                        ))
+                      )}
+                      {inColumn.length > 12 ? <Link href={`/leads?status=${st}`} className="px-1 text-xs font-medium text-brand hover:underline">All {inColumn.length} →</Link> : null}
+                    </section>
+                  );
+                })}
+              </div>
+            </Card>
+          ) : open.length === 0 ? (
             <Card>
               <CardHeader title="Open pipeline" />
               <EmptyState title="No open deals right now" description="A deal appears here when a lead is quoted or moved into a stage." action={<Link href="/leads" className={buttonClass('secondary', 'sm')}>Open leads</Link>} />

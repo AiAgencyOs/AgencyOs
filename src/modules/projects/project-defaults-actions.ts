@@ -31,8 +31,8 @@ export async function watchProjectAction(_prev: FormState, formData: FormData): 
   const projectId = String(formData.get('projectId') ?? '');
   const userId = String(formData.get('userId') ?? '').trim() || undefined;
   const chosen = formData.getAll('phases').map(String).filter((p): p is WatchPhase => (WATCH_PHASES as readonly string[]).includes(p));
-  // No box on the form at all (the header's one-click control) means every phase.
-  const phases = formData.has('phasesForm') ? chosen : [...WATCH_PHASES];
+  // No box on the form at all (the header's one-click control) means the organisation's default phases (Settings › Project defaults).
+  const phases = formData.has('phasesForm') ? chosen : undefined;
 
   const result = await watchProject({ projectId, userId, phases });
   if (!result.ok) return { status: 'error', message: result.error.message };

@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { finalDelivery } from '@/modules/projects/project-health';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { readClientName } from '@/lib/admin/clients';
 import { listEligibleMilestones } from '@/modules/finance/eligible-milestones-queries';
@@ -12,7 +13,7 @@ import { PLAN_LAYER_LABEL, PLAN_LAYERS } from '@/modules/projects/plan-layers-ty
 import { listTasksByMilestone } from '@/modules/projects/milestone-tasks-queries';
 import { listPlanVersions } from '@/modules/projects/plan-versions-queries';
 import { getProject, listDevelopmentBreakdown, listMilestoneTaskCounts, listPaymentPlan, readPlanBoard } from '@/modules/projects/queries';
-import { Badge, Card, CardHeader, cx, Gantt, IconCalendar, IconCheck, IconClock, IconFlag, PermissionDenied, ProgressBar, Stat, StatGrid, StatusBadge, ViewAll, type GanttRow, type Tone } from '@/ui';
+import { Badge, Card, CardHeader, cx, DomainSearch, Gantt, IconCalendar, IconCheck, IconClock, IconFlag, PermissionDenied, ProgressBar, Stat, StatGrid, StatusBadge, ViewAll, type GanttRow, type Tone } from '@/ui';
 
 import { MilestoneDueForm } from '../milestone-controls';
 import { MarkMilestoneMetForm, TriggerFinanceMilestoneForm } from './milestone-forms';
@@ -25,6 +26,7 @@ import { PlanLayersPanel } from './plan-layers-panel';
 
 import {
   ActivatePlanForm,
+  ApprovePlanForm,
   AddDependencyForm,
   AddDeliverableForm,
   AddMilestoneForm,
@@ -77,11 +79,12 @@ export default async function ProjectPlanPage({
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ milestone?: string }>;
+  searchParams: Promise<{ milestone?: string; q?: string }>;
 }) {
   const { projectId } = await params;
   // SCR-023: `?milestone=` picks the milestone the detail panel and its task list show.
-  const { milestone: pickedMilestoneId } = await searchParams;
+  const { milestone: pickedMilestoneId, q: qRaw } = await searchParams;
+  const planQuery = (qRaw ?? '').trim().slice(0, 120).toLowerCase();
 
   const context = await requireInternal(`/projects/${projectId}/plan`);
   if (!can(context, 'project.read')) return <PermissionDenied />;
@@ -102,7 +105,7 @@ export default async function ProjectPlanPage({
   ]);
   const [layersByDeliverable, breakdown] = await Promise.all([listPlanLayers(board.deliverables.map((d) => d.id)), listDevelopmentBreakdown(projectId)]);
   // SCR-040 — execution order first, then the plan's own position.
-  const orderedDeliverables = [...board.deliverables].sort((a, b) => {
+  const orderedDeliverables = [...board.deliverables].filter((d) => !planQuery || `${d.name} ${d.readinessCriteria} ${d.ownerRole ?? ''}`.toLowerCase().includes(planQuery)).sort((a, b) => {
     const oa = layersByDeliverable.get(a.id)?.executionOrder ?? Number.MAX_SAFE_INTEGER;
     const ob = layersByDeliverable.get(b.id)?.executionOrder ?? Number.MAX_SAFE_INTEGER;
     return oa - ob;
@@ -153,8 +156,8 @@ export default async function ProjectPlanPage({
   const met = milestones.filter((m) => m.met_at).length;
   const late = gantt.filter((g) => g.state === 'late').length;
   const next = milestones.find((m) => !m.met_at) ?? null;
-  const finalDue = milestones.length > 0 ? (milestones[milestones.length - 1]?.due_on ?? null) : null;
-  const daysLeft = finalDue ? Math.ceil((Date.parse(`${finalDue}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000) : null;
+  // One definition of "final delivery" shared with the Milestones page.
+  const { date: finalDue, daysLeft } = finalDelivery(milestones.map((m) => m.due_on), project.ends_on, today);
   const upcoming = milestones.filter((m) => !m.met_at && m.due_on).slice(0, 5);
   // Planning is project work, so it takes the same capability that changes a
   // project. The doors check it again — this only decides what to render.
@@ -320,8 +323,9 @@ export default async function ProjectPlanPage({
           <div className="flex flex-col gap-6 [&>section]:rounded-xl [&>section]:border [&>section]:border-line [&>section]:bg-surface [&>section]:p-4 [&>section]:shadow-xs sm:[&>section]:p-5">
 
       <p className="max-w-2xl text-[13px] text-muted">
-        Operational, never technical. Tables, APIs, coding tasks and UI belong to the Phase 5
-        Development Planning Agent, and there is nowhere here to put them (Project Planning §5, §6).{' '}
+        The plan for this project: what is delivered, in which order, what it waits on and what could go wrong, drafted from the approved scope (Project Planning §5, §6).
+        Tables, APIs, coding tasks and UI belong to the Phase 5 Development Planning Agent; here each deliverable only carries the status of its seven layers and its
+        execution order, recorded once the plan is active.{' '}
         <Link href={`/projects/${projectId}`} className="underline hover:text-foreground">
           Back to the project
         </Link>
@@ -343,7 +347,7 @@ export default async function ProjectPlanPage({
         </section>
       ) : (
         <>
-          <StatGrid cols={4}>
+          <StatGrid cols={6}>
             <Stat
               label="Approved scope covered"
               value={coveragePercent === null ? '—' : `${coveragePercent}%`}
@@ -362,6 +366,8 @@ export default async function ProjectPlanPage({
             />
             <Stat label="Plan versions" value={String(versions.length)} caption={`v${plan.version} is ${plan.status}`} />
             <Stat label="Open questions" value={String(openQuestions.length)} tone={openQuestions.length > 0 ? 'warning' : 'success'} />
+            <Stat label="Client Dependencies Outstanding" value={String(clientOutstanding.length)} caption={`of ${clientDependencies.length} the client owes`} tone={clientOutstanding.length > 0 ? 'warning' : 'success'} />
+            <Stat label="Risks" value={String(board.notes.filter((n) => n.kind === 'risk').length)} caption={`${board.notes.filter((n) => n.kind === 'assumption').length} assumptions recorded`} tone="neutral" />
           </StatGrid>
 
           <section className="flex flex-col gap-2">
@@ -376,8 +382,17 @@ export default async function ProjectPlanPage({
             ) : (
               <p className="max-w-2xl text-[13px] text-muted">No objective recorded.</p>
             )}
-            {plan.status === 'draft' && mayPlan ? (
-              <ActivatePlanForm projectId={projectId} planId={plan.id} />
+            {/* SCR-040 — internal approval comes before activation; the validator still runs at activation. */}
+            {plan.status === 'draft' ? (
+              <div className="flex flex-col gap-2 rounded-md border border-line bg-surface-sunken p-3">
+                <span className="text-[13px] font-medium">
+                  {plan.approvedAt ? `Approved internally ${clock.dateTime(plan.approvedAt)}` : 'Not yet approved internally'}
+                </span>
+                {plan.approvalNote ? <span className="text-[13px] text-muted">“{plan.approvalNote}”</span> : null}
+                {!plan.approvedAt && mayPlan ? <ApprovePlanForm projectId={projectId} planId={plan.id} /> : null}
+                {plan.approvedAt && mayPlan ? <ActivatePlanForm projectId={projectId} planId={plan.id} /> : null}
+                {!plan.approvedAt && !mayPlan ? <span className="text-xs text-muted">Approving a plan takes the milestone.write permission.</span> : null}
+              </div>
             ) : null}
             {plan.status === 'active' && mayPlan ? (
               <details className="text-[13px]">
@@ -393,10 +408,13 @@ export default async function ProjectPlanPage({
             <h2 className="text-[13px] font-semibold tracking-tight">
               Deliverables <span className="text-muted">({board.deliverables.length})</span>
             </h2>
+            {board.deliverables.length > 0 ? <DomainSearch action={`/projects/${projectId}/plan`} value={qRaw ?? ''} placeholder="Filter deliverables…" label="Filter deliverables" /> : null}
             {board.deliverables.length === 0 ? (
               <p className="text-[13px] text-muted">
                 None yet. A plan with no deliverables cannot go live.
               </p>
+            ) : orderedDeliverables.length === 0 ? (
+              <p className="text-[13px] text-muted">No deliverable matches that filter.</p>
             ) : (
               <ul className="flex flex-col gap-1">
                 {orderedDeliverables.map((d) => {

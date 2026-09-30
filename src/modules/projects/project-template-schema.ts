@@ -71,3 +71,15 @@ export type DeleteProjectTemplateInput = z.input<typeof deleteProjectTemplateSch
 export function milestonePercentTotal(items: Pick<TemplateItems, 'milestones'>): number {
   return Math.round(items.milestones.reduce((sum, m) => sum + m.percent, 0) * 100) / 100;
 }
+
+export const cloneProjectTemplateSchema = z.object({
+  templateId: z.uuid(),
+  name: z.string().trim().min(1, 'Give the copy a name.').max(200),
+});
+export type CloneProjectTemplateInput = z.input<typeof cloneProjectTemplateSchema>;
+
+/** "Copy of X", trimmed to the 200-character limit — the name a clone starts with. */
+export function cloneName(name: string): string {
+  const prefixed = `Copy of ${name.trim()}`;
+  return prefixed.length > 200 ? prefixed.slice(0, 200).trimEnd() : prefixed;
+}

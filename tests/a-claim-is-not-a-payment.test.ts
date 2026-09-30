@@ -121,7 +121,7 @@ describe('C. §12’s rules are carried, not re-decided', () => {
 describe('D. a mismatch is not a rejection', () => {
   test('the control stays available on a mismatched claim', () => {
     // §6 calls it "requires resolution", and the guard lets it move again.
-    assert.match(verifyForm, /if \(claim\.status !== 'pending_verification' && claim\.status !== 'mismatch'\) return null;/);
+    assert.match(verifyForm, /if \(!isClaimAwaiting\(claim\.status\)\) return null;/);
   });
 
   test('and the panel says why it does not stamp a verifier', () => {

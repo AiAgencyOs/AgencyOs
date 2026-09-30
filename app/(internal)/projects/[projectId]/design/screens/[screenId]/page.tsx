@@ -20,6 +20,7 @@ import { LinkAssetForm, UnlinkAssetForm } from '../../asset-link-forms';
 import { DesignSubNav } from '../../design-subnav';
 import { DESIGN_STATE_LABEL, DesignStateForm, FigmaUrlForm, MapScopeItemForm, SubmitForQaForm, UnmapScopeItemForm } from '../screen-forms';
 import { ScreenStatesPanel } from '../screen-states-panel';
+import { ApproveScreenButton, CategoryForm, ConfirmQaButton } from '../screen-approval-forms';
 
 export const metadata: Metadata = { title: 'Screen' };
 
@@ -69,6 +70,14 @@ export default async function ProjectScreenPage({ params }: { params: Promise<{ 
   // Design state, Figma link and QA hand-off happen after the list is agreed.
   const editable = mayEdit && listState.open && !superseded;
   const drawable = mayEdit && !superseded;
+  const mayConfirmQa = can(context, 'project.sign_off');
+  const missingStates = [
+    screen.has_empty_state ? null : 'empty',
+    screen.has_loading_state ? null : 'loading',
+    screen.has_error_state ? null : 'error',
+    screen.has_success_state ? null : 'success',
+  ].filter((x): x is string => x !== null);
+  const categories = [...new Set(allScreens.map((s) => s.category).filter((c): c is string => Boolean(c)))].sort();
   const replacement = screen.superseded_by ? allScreens.find((s) => s.id === screen.superseded_by) : null;
 
   const mappedIds = new Set(scopeItems.map((s) => s.id));
@@ -255,6 +264,41 @@ export default async function ProjectScreenPage({ params }: { params: Promise<{ 
             </Card>
           ) : null}
 
+          <Card>
+            <CardHeader title="Design Approval" description="A screen is approved only when every state is drawn and QA has confirmed its sections, buttons, components and navigation." />
+            <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+              <ul className="flex flex-col gap-1.5 text-[13px]">
+                <li className="flex items-center justify-between gap-2">
+                  <span>Empty, loading, error and success states</span>
+                  {missingStates.length === 0 ? <Badge tone="success">All four drawn</Badge> : <Badge tone="warning">Missing {missingStates.join(', ')}</Badge>}
+                </li>
+                <li className="flex items-center justify-between gap-2">
+                  <span>Submitted for QA</span>
+                  {screen.qa_status === 'submitted' ? <Badge tone="success">Submitted</Badge> : <Badge tone="warning">Not submitted</Badge>}
+                </li>
+                <li className="flex items-center justify-between gap-2">
+                  <span>QA confirmed the required sections and navigation</span>
+                  {screen.qa_confirmed_at ? <Badge tone="success">Confirmed {clock.date(screen.qa_confirmed_at)}</Badge> : <Badge tone="warning">Not confirmed</Badge>}
+                </li>
+                <li className="flex items-center justify-between gap-2">
+                  <span>Status</span>
+                  <StatusBadge status={screen.status} dot={false} />
+                </li>
+              </ul>
+              {drawable && screen.status !== 'approved' ? (
+                <div className="flex flex-col gap-2">
+                  {mayConfirmQa && screen.qa_status === 'submitted' && !screen.qa_confirmed_at ? <ConfirmQaButton projectId={projectId} screenId={screen.id} /> : null}
+                  {!mayConfirmQa && screen.qa_status === 'submitted' && !screen.qa_confirmed_at ? <p className="text-xs text-muted">Only an owner or ops admin confirms the QA check.</p> : null}
+                  {missingStates.length > 0 || !screen.qa_confirmed_at ? (
+                    <p className="text-xs text-warning">Approval is refused until {[missingStates.length > 0 ? 'the missing states are drawn' : null, !screen.qa_confirmed_at ? 'QA confirms' : null].filter(Boolean).join(' and ')}.</p>
+                  ) : null}
+                  <ApproveScreenButton projectId={projectId} screenId={screen.id} />
+                </div>
+              ) : null}
+              {drawable ? <CategoryForm projectId={projectId} screenId={screen.id} current={screen.category} suggestions={categories} /> : screen.category ? <p className="text-[13px]">Category: {screen.category}</p> : null}
+            </div>
+          </Card>
+
           {drawable ? (
             <Card>
               <CardHeader title="States and fields" description="Add or remove a state after creation, and keep the role, device targets, components and responsive coverage current (SCR-035). Audited with before and after." />
@@ -292,6 +336,7 @@ export default async function ProjectScreenPage({ params }: { params: Promise<{ 
               { label: 'Screen', value: screen.name },
               { label: 'Key', value: <span className="font-mono text-xs">{screen.screen_key}</span> },
               { label: 'Status', value: <StatusBadge status={screen.status} dot={false} /> },
+              { label: 'Category', value: screen.category ?? <span className="text-muted">None</span> },
               { label: 'Design state', value: DESIGN_STATE_LABEL[screen.design_state] ?? humanize(screen.design_state) },
               {
                 label: 'Figma',

@@ -8,18 +8,17 @@ import { IDLE_STATE } from '@/modules/identity/types';
 import { Badge, buttonClass, FormMessage, inputClass } from '@/ui';
 
 /**
- * SCR-049 — deployment dependencies on the release candidate's handover
- * (`projects.set_deployment_dependency`). A report beside the gate: the
- * sign-off door does not read it, and the card says so.
+ * SCR-049 — deployment dependencies on the project's release record
+ * (`projects.set_release_dependency`), recordable before any handover. A
+ * report beside the gate: the sign-off door does not read it, and the card
+ * says so.
  */
 export function DeploymentDependencies({
   projectId,
-  handoverId,
   dependencies,
   editable,
 }: {
   projectId: string;
-  handoverId: string;
   dependencies: DeploymentDependency[];
   editable: boolean;
 }) {
@@ -35,22 +34,21 @@ export function DeploymentDependencies({
                 <Badge tone={d.status === 'ready' ? 'success' : 'warning'}>{d.status}</Badge>
                 <span>{d.label}</span>
               </span>
-              {editable ? <DependencyRow projectId={projectId} handoverId={handoverId} label={d.label} status={d.status} /> : null}
+              {editable ? <DependencyRow projectId={projectId} label={d.label} status={d.status} /> : null}
             </li>
           ))}
         </ul>
       )}
-      {editable ? <DependencyRow projectId={projectId} handoverId={handoverId} label="" status="pending" isNew /> : null}
+      {editable ? <DependencyRow projectId={projectId} label="" status="pending" isNew /> : null}
     </div>
   );
 }
 
-function DependencyRow({ projectId, handoverId, label, status, isNew }: { projectId: string; handoverId: string; label: string; status: 'pending' | 'ready'; isNew?: boolean }) {
+function DependencyRow({ projectId, label, status, isNew }: { projectId: string; label: string; status: 'pending' | 'ready'; isNew?: boolean }) {
   const [state, action, pending] = useActionState(setDeploymentDependencyAction, IDLE_STATE);
   return (
     <form action={action} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="projectId" value={projectId} />
-      <input type="hidden" name="handoverId" value={handoverId} />
       {isNew ? (
         <input name="label" required maxLength={200} placeholder="DNS cutover, vendor API key, client sign-off…" aria-label="Dependency" className={`${inputClass} h-8 min-w-56 flex-1 text-xs`} />
       ) : (

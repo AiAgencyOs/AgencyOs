@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { readRequirementLinks, type RequirementLink } from '@/lib/admin/requirement-links';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -19,7 +20,7 @@ export async function readProjectRequirements(projectId: string): Promise<{ rows
   const { data: versions, error: versionsError } = await supabase
     .schema('projects')
     .from('scope_versions')
-    .select('id, version, status')
+    .select('id, version, status, requirement_version_id')
     .eq('project_id', projectId)
     .in('status', ['active', 'draft']);
   if (versionsError) unreadable('readProjectRequirements.versions', versionsError);
@@ -51,7 +52,8 @@ export async function readProjectRequirements(projectId: string): Promise<{ rows
   const itemIds = scopeItems.map((i) => i.id);
   const featureIds = [...new Set(scopeItems.map((i) => i.feature_id).filter((id): id is string => id !== null))];
 
-  const [features, screenLinks, testCases, deliverables, comments, plans, fileLinks] = await Promise.all([
+  const requirementVersionIds = [...new Set(live.map((v) => v.requirement_version_id).filter((id): id is string => id !== null))];
+  const [features, screenLinks, testCases, deliverables, comments, plans, fileLinks, clarificationRows, proposalRows] = await Promise.all([
     featureIds.length > 0 ? supabase.schema('projects').from('features').select('id, status, module_id').in('id', featureIds) : Promise.resolve({ data: [], error: null }),
     supabase.schema('projects').from('screen_scope_items').select('scope_item_id, screen_id').in('scope_item_id', itemIds),
     supabase.schema('qa').from('test_plan_items').select('scope_item_id').in('scope_item_id', itemIds),
@@ -59,7 +61,18 @@ export async function readProjectRequirements(projectId: string): Promise<{ rows
     supabase.schema('projects').from('scope_item_comments').select('scope_item_id').in('scope_item_id', itemIds),
     supabase.schema('projects').from('scope_item_plans').select('scope_item_id, priority, assignee_id').in('scope_item_id', itemIds),
     supabase.schema('projects').from('scope_item_files').select('scope_item_id, file_id, created_at').in('scope_item_id', itemIds).order('created_at', { ascending: true }),
+    supabase
+      .schema('projects')
+      .from('requirement_clarifications')
+      .select('id, scope_item_id, question, impact, status, raised_by, raised_at, answer, answered_at')
+      .in('scope_item_id', itemIds)
+      .order('raised_at', { ascending: false }),
+    requirementVersionIds.length > 0
+      ? supabase.schema('sales').from('proposals').select('id, title, version, status, requirement_version_id').in('requirement_version_id', requirementVersionIds).order('version', { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
   ]);
+  if (clarificationRows.error) unreadable('readProjectRequirements.clarifications', clarificationRows.error);
+  if (proposalRows.error) unreadable('readProjectRequirements.proposals', proposalRows.error);
   if (features.error) unreadable('readProjectRequirements.features', features.error);
   if (screenLinks.error) unreadable('readProjectRequirements.screenLinks', screenLinks.error);
   if (testCases.error) unreadable('readProjectRequirements.testCases', testCases.error);
@@ -68,6 +81,12 @@ export async function readProjectRequirements(projectId: string): Promise<{ rows
   if (plans.error) unreadable('readProjectRequirements.plans', plans.error);
   if (fileLinks.error) unreadable('readProjectRequirements.fileLinks', fileLinks.error);
 
+  const raiserIds = [...new Set((clarificationRows.data ?? []).map((c) => c.raised_by).filter((id): id is string => id !== null))];
+  const tasksRes = featureIds.length > 0 ? await supabase.schema('projects').from('tasks').select('id, title, status, feature_id').in('feature_id', featureIds).order('created_at', { ascending: true }).limit(500) : { data: [], error: null };
+  if (tasksRes.error) unreadable('readProjectRequirements.tasks', tasksRes.error);
+  const raiserRes = raiserIds.length > 0 ? await supabase.schema('core').from('users').select('id, full_name, email').in('id', raiserIds) : { data: [], error: null };
+  if (raiserRes.error) unreadable('readProjectRequirements.raisers', raiserRes.error);
+  const raiserName = new Map((raiserRes.data ?? []).map((u) => [u.id, u.full_name || u.email]));
   const moduleIds = [...new Set((features.data ?? []).map((f) => f.module_id))];
   const screenIds = [...new Set((screenLinks.data ?? []).map((s) => s.screen_id))];
   const assigneeIds = [...new Set((plans.data ?? []).map((p) => p.assignee_id).filter((id): id is string => id !== null))];
@@ -125,6 +144,23 @@ export async function readProjectRequirements(projectId: string): Promise<{ rows
       priority: priorityOf(planById.get(i.id)?.priority),
       assignee: planById.get(i.id)?.assignee_id ? { userId: planById.get(i.id)?.assignee_id as string, name: personName.get(planById.get(i.id)?.assignee_id as string) ?? 'Former member' } : null,
       files: (fileLinks.data ?? []).filter((l) => l.scope_item_id === i.id && fileById.has(l.file_id)).map((l) => ({ fileId: l.file_id, title: fileById.get(l.file_id)?.title ?? 'File', url: fileById.get(l.file_id)?.url ?? null })),
+      featureId: i.feature_id,
+      tasks: i.feature_id ? (tasksRes.data ?? []).filter((t) => t.feature_id === i.feature_id).map((t) => ({ id: t.id, title: t.title, status: t.status })) : [],
+      quotations: (proposalRows.data ?? [])
+        .filter((p) => p.requirement_version_id !== null && p.requirement_version_id === versionById.get(i.scope_version_id)?.requirement_version_id)
+        .map((p) => ({ id: p.id, title: p.title, version: p.version, status: p.status })),
+      clarifications: (clarificationRows.data ?? [])
+        .filter((c) => c.scope_item_id === i.id)
+        .map((c) => ({
+          id: c.id,
+          question: c.question,
+          impact: c.impact,
+          status: (c.status === 'answered' ? 'answered' : 'open') as 'open' | 'answered',
+          raisedAt: c.raised_at,
+          raisedByName: c.raised_by ? (raiserName.get(c.raised_by) ?? 'Former member') : null,
+          answer: c.answer,
+          answeredAt: c.answered_at,
+        })),
     };
   });
   return { rows, openChangeRequests, activeVersion: active?.version ?? null, draftVersion: draft?.version ?? null };
@@ -170,4 +206,81 @@ export async function readAttachableFiles(projectId: string): Promise<{ id: stri
     .limit(300);
   if (error) unreadable('readAttachableFiles', error);
   return data ?? [];
+}
+
+export type ScopeSourceSet = {
+  scopeVersion: number;
+  scopeStatus: string;
+  requirementVersion: number;
+  requirementStatus: string;
+  leadId: string | null;
+  leadTitle: string | null;
+  links: RequirementLink[];
+};
+
+/**
+ * SCR-029 — the requirement set a project's scope descends from: the version
+ * the lead's conversation produced (`scope_versions.requirement_version_id`),
+ * the lead it belongs to and the links a person declared from it to
+ * quotations, designs and tasks. This is what makes the lead tab and the
+ * project list one set: the project page says where it came from and the lead
+ * page links back here.
+ */
+export async function readScopeSourceSet(projectId: string): Promise<ScopeSourceSet | null> {
+  const supabase = await createClient();
+  const { data: versions, error } = await supabase
+    .schema('projects')
+    .from('scope_versions')
+    .select('version, status, requirement_version_id')
+    .eq('project_id', projectId)
+    .not('requirement_version_id', 'is', null)
+    .in('status', ['active', 'draft'])
+    .order('version', { ascending: false });
+  if (error) unreadable('readScopeSourceSet.versions', error);
+  const scope = (versions ?? []).find((v) => v.status === 'active') ?? (versions ?? [])[0];
+  if (!scope?.requirement_version_id) return null;
+
+  const { data: rv, error: rvError } = await supabase.schema('crm').from('requirement_versions').select('id, version, status, conversation_id').eq('id', scope.requirement_version_id).maybeSingle();
+  if (rvError) unreadable('readScopeSourceSet.requirementVersion', rvError);
+  if (!rv) return null;
+  const { data: conversation, error: cError } = await supabase.schema('crm').from('conversations').select('lead_id').eq('id', rv.conversation_id).maybeSingle();
+  if (cError) unreadable('readScopeSourceSet.conversation', cError);
+  let leadTitle: string | null = null;
+  if (conversation?.lead_id) {
+    const { data: lead, error: lError } = await supabase.schema('crm').from('leads').select('title').eq('id', conversation.lead_id).maybeSingle();
+    if (lError) unreadable('readScopeSourceSet.lead', lError);
+    leadTitle = lead?.title ?? null;
+  }
+  const links = (await readRequirementLinks([rv.id])).get(rv.id) ?? [];
+  return {
+    scopeVersion: scope.version,
+    scopeStatus: scope.status,
+    requirementVersion: rv.version,
+    requirementStatus: rv.status,
+    leadId: conversation?.lead_id ?? null,
+    leadTitle,
+    links,
+  };
+}
+
+/** The projects whose scope descends from any of these requirement versions — the lead page's way back. */
+export async function readProjectsForRequirementVersions(versionIds: readonly string[]): Promise<{ projectId: string; projectName: string; scopeVersion: number }[]> {
+  if (versionIds.length === 0) return [];
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('scope_versions')
+    .select('project_id, version, status, projects:project_id(name)')
+    .in('requirement_version_id', [...versionIds])
+    .in('status', ['active', 'draft']);
+  if (error) unreadable('readProjectsForRequirementVersions', error);
+  const seen = new Set<string>();
+  const out: { projectId: string; projectName: string; scopeVersion: number }[] = [];
+  for (const r of data ?? []) {
+    if (seen.has(r.project_id)) continue;
+    seen.add(r.project_id);
+    const p = r.projects as unknown as { name: string } | { name: string }[] | null;
+    out.push({ projectId: r.project_id, projectName: (Array.isArray(p) ? p[0]?.name : p?.name) ?? 'Project', scopeVersion: r.version });
+  }
+  return out;
 }

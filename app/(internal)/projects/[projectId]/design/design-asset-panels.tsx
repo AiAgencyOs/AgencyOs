@@ -23,6 +23,7 @@ export function UploadDesignAssetPanel({
   fixedKind,
   parentAssetId,
   compact,
+  kinds,
 }: {
   projectId: string;
   storage: { reachable: boolean; reason: string | null };
@@ -31,6 +32,8 @@ export function UploadDesignAssetPanel({
   /** When set, this upload replaces that first version with a new version. */
   parentAssetId?: string;
   compact?: boolean;
+  /** Restrict the kind picker (the Brand Kit offers logo, icon and font only). */
+  kinds?: readonly (typeof DESIGN_ASSET_KINDS)[number][];
 }) {
   const [state, action, pending] = useActionState(uploadDesignAssetAction, IDLE_STATE);
 
@@ -51,8 +54,8 @@ export function UploadDesignAssetPanel({
       ) : (
         <label className="flex flex-col gap-1">
           <span className={labelClass}>Kind</span>
-          <select name="kind" className={selectClass} defaultValue="visual_asset">
-            {DESIGN_ASSET_KINDS.map((k) => (
+          <select name="kind" className={selectClass} defaultValue={kinds?.[0] ?? 'visual_asset'}>
+            {(kinds ?? DESIGN_ASSET_KINDS).map((k) => (
               <option key={k} value={k}>
                 {k.replace(/_/g, ' ')}
               </option>
@@ -66,9 +69,15 @@ export function UploadDesignAssetPanel({
           <input name="title" maxLength={200} className={inputClass} placeholder="Optional — the file name otherwise" />
         </label>
       ) : null}
+      {!compact ? (
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Licence or rights</span>
+          <input name="licence" maxLength={500} className={inputClass} placeholder="Who owns it and what the client may do with it — e.g. client-owned, or Font Co. web licence" />
+        </label>
+      ) : null}
       <label className="flex flex-col gap-1">
         <span className={labelClass}>{parentAssetId ? 'New version' : 'File'}</span>
-        <input name="file" type="file" required accept="image/png,image/jpeg,image/webp,image/svg+xml,application/pdf" className={inputClass} />
+        <input name="file" type="file" required accept="image/png,image/jpeg,image/webp,image/svg+xml,application/pdf,font/woff2,font/woff,font/ttf,font/otf,.woff2,.woff,.ttf,.otf" className={inputClass} />
       </label>
       <div className="flex items-center gap-3">
         <button type="submit" disabled={pending} className={buttonClass(parentAssetId ? 'secondary' : 'primary', 'sm')}>
@@ -76,7 +85,7 @@ export function UploadDesignAssetPanel({
         </button>
         <FormMessage status={state.status} message={state.message} />
       </div>
-      {!compact ? <p className="text-xs text-muted">PNG, JPEG, WebP, SVG or PDF up to 50 MB, into the project-files bucket. Uploaded as a draft; approve it below once reviewed.</p> : null}
+      {!compact ? <p className="text-xs text-muted">PNG, JPEG, WebP, SVG, PDF or a WOFF/TTF/OTF font up to 50 MB, into the project-files bucket. Uploaded as a draft; approve it below once reviewed.</p> : null}
     </form>
   );
 }

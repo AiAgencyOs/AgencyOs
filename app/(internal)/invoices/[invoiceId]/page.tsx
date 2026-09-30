@@ -33,6 +33,12 @@ import { listInvoiceReminders, readInvoiceReminderPolicy } from '@/modules/finan
 import { listInvoiceThreads } from '@/lib/admin/invoice-threads';
 import { readWhatsAppReadiness } from '@/lib/admin/whatsapp-readiness';
 import { buttonClass } from '@/ui';
+import { readGstIdentity } from '@/modules/finance/gstr-queries';
+import { invoiceKindLabel } from '@/modules/finance/invoice-kind';
+import { displayInstruction, invoiceReviewChecklist, taxBreakdown } from '@/modules/finance/invoice-presentation';
+import { GST_RATE_BP } from '@/modules/finance/gstin';
+import { stateCodeForName } from '@/modules/finance/gst-states';
+import { owedOn, verifiedOn } from '@/modules/finance/verified-basis';
 
 import { RecordRefundForm, RequestRefundForm } from './refund-panel';
 import { RecordInvoiceSendForm } from './send-panel';
@@ -85,7 +91,7 @@ export default async function InvoicePage({
   const invoice = await getInvoice(invoiceId);
   if (!invoice) notFound();
 
-  const [items, payments, receipts, clientName, project, billing, claims, accounts, sends] = await Promise.all([
+  const [items, payments, receipts, clientName, project, billing, claims, accounts, sends, gstIdentity] = await Promise.all([
     listInvoiceItems(invoiceId),
     listInvoicePayments(invoiceId),
     listInvoiceReceipts(invoiceId),
@@ -95,6 +101,7 @@ export default async function InvoicePage({
     listInvoicePaymentClaims(invoiceId),
     listPaymentAccounts(),
     listInvoiceSends(invoiceId),
+    readGstIdentity(),
   ]);
   const lastReminderAt = sends.find((s) => s.kind === 'reminder')?.sentAt ?? null;
   const reminderDue = needsReminder(invoice, lastReminderAt, new Date());
@@ -115,7 +122,6 @@ export default async function InvoicePage({
   const transportState = mayIssueInvoice ? await emailTransportState() : null;
   const emailTransport = transportState === null ? null : transportState.configured ? { configured: true as const, label: transportState.label } : { configured: false as const, reason: transportState.reason };
   const billingEmail = mayIssueInvoice ? await readClientBillingEmail(invoice.client_account_id) : null;
-  const taxRatePct = invoice.subtotal_minor > 0 ? Math.round((invoice.tax_minor / invoice.subtotal_minor) * 1000) / 10 : 0;
 
   // The milestone name comes from the plan the project page already renders,
   // so the two screens agree on what a milestone is called.
@@ -124,7 +130,20 @@ export default async function InvoicePage({
     : undefined;
 
   const status = invoice.status as InvoiceStatus;
-  const outstanding = invoice.total_minor - invoice.paid_minor;
+  // What a payment may still be recorded against (the engine refuses an
+  // overpayment of the RECORDED amount) is one number; what is still owed on the
+  // verified basis every finance total uses is another.
+  const recordable = invoice.total_minor - invoice.paid_minor;
+  const verified = verifiedOn(invoice);
+  const outstanding = owedOn(invoice);
+  const billingPlaceCode = billing?.billingStateCode ?? stateCodeForName(billing?.billingState);
+  const tax = taxBreakdown({
+    mode: billing?.mode ?? null,
+    subtotalMinor: invoice.subtotal_minor,
+    taxMinor: invoice.tax_minor,
+    supplierStateCode: gstIdentity.stateCode,
+    placeOfSupplyCode: billingPlaceCode,
+  });
 
   const mayIssue = can(context, 'invoice.issue');
   // Owner-only, and has been since the capability matrix was written. This is
@@ -147,6 +166,7 @@ export default async function InvoicePage({
             {invoice.number}
           </h1>
           <StatusBadge status={status} />
+          <Badge tone="neutral">{invoiceKindLabel(invoice.kind)}</Badge>
           {reminderDue ? <Badge tone="warning">needs a reminder</Badge> : null}
           <a
             href={`/api/invoices/${invoice.id}/pdf`}
@@ -171,11 +191,12 @@ export default async function InvoicePage({
         </p>
       </header>
 
-      <section className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <section className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         {[
           ['Total', money(invoice.total_minor, invoice.currency)],
-          ['Paid', money(invoice.paid_minor, invoice.currency)],
+          ['Verified', money(verified, invoice.currency)],
           ['Outstanding', money(outstanding, invoice.currency)],
+          ['Issued', when(clock, invoice.issued_at)],
           ['Due', when(clock, invoice.due_at)],
         ].map(([label, value]) => (
           <div
@@ -240,6 +261,16 @@ export default async function InvoicePage({
                 { label: 'State', value: billing?.billingState ?? '—' },
                 { label: 'Address', value: billing?.billingAddress ? <span className="whitespace-pre-line">{billing.billingAddress}</span> : '—' },
                 { label: 'Confirmed', value: billing ? when(clock, billing.confirmedAt) : '—' },
+                {
+                  label: 'Change',
+                  value: invoice.project_id ? (
+                    <Link href={`/projects/${invoice.project_id}#billing`} className="text-brand hover:underline">
+                      Change billing details (a new confirmed version)
+                    </Link>
+                  ) : (
+                    '—'
+                  ),
+                },
               ]}
             />
             {milestone && project ? (
@@ -263,10 +294,13 @@ export default async function InvoicePage({
                   label="Subtotal"
                   value={<span className="tabular">{money(invoice.subtotal_minor, invoice.currency)}</span>}
                 />
-                <DetailRow
-                  label={billing?.mode === 'gst' ? `GST${taxRatePct ? ` @ ${taxRatePct}%` : ''}` : 'Tax'}
-                  value={<span className="tabular">{money(invoice.tax_minor, invoice.currency)}</span>}
-                />
+                {tax.rows.length > 0 ? (
+                  tax.rows.map((r) => (
+                    <DetailRow key={r.label} label={r.label} value={<span className="tabular">{money(r.amountMinor, invoice.currency)}</span>} />
+                  ))
+                ) : (
+                  <DetailRow label="Tax" value={<span className="tabular">{money(0, invoice.currency)}</span>} />
+                )}
                 <DetailRow
                   label={<span className="font-semibold text-foreground">Total</span>}
                   value={
@@ -276,14 +310,21 @@ export default async function InvoicePage({
                   }
                 />
                 <DetailRow
-                  label="Paid"
-                  value={<span className="tabular text-success">{money(invoice.paid_minor, invoice.currency)}</span>}
+                  label="Verified"
+                  value={<span className="tabular text-success">{money(verified, invoice.currency)}</span>}
                 />
+                {invoice.paid_minor > verified ? (
+                  <DetailRow
+                    label="Recorded, not verified"
+                    value={<span className="tabular text-warning">{money(invoice.paid_minor - verified, invoice.currency)}</span>}
+                  />
+                ) : null}
                 <DetailRow
                   label="Outstanding"
                   value={<span className={`tabular ${outstanding > 0 ? 'text-warning' : ''}`}>{money(outstanding, invoice.currency)}</span>}
                 />
               </DetailList>
+              <p className="pb-3 text-xs text-muted">{tax.reason}</p>
             </div>
 
             <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4 shadow-xs">
@@ -307,7 +348,15 @@ export default async function InvoicePage({
                           .map((f) => (
                             <div key={f.key} className="contents">
                               <dt className="text-muted">{f.label}</dt>
-                              <dd className="font-mono">{a.instructions[f.key]}</dd>
+                              <dd className="font-mono">
+                                {displayInstruction(f.key, a.instructions[f.key] ?? '')}
+                                {f.key === 'account_number' && mayIssue ? (
+                                  <details className="mt-0.5 font-sans text-[11px] text-muted">
+                                    <summary className="cursor-pointer text-brand">Show full number</summary>
+                                    <span className="font-mono text-xs text-foreground">{a.instructions[f.key]}</span>
+                                  </details>
+                                ) : null}
+                              </dd>
                             </div>
                           ))}
                       </dl>
@@ -321,6 +370,26 @@ export default async function InvoicePage({
         {invoice.notes ? (
           <p className="whitespace-pre-line text-sm text-muted">{invoice.notes}</p>
         ) : null}
+      </section>
+
+      <section id="pdf-preview" className="flex flex-col gap-3">
+        <details className="rounded-lg border border-line bg-surface px-3 py-2">
+          <summary className="cursor-pointer text-sm font-medium">PDF preview{isDraft ? ' (draft)' : ''}</summary>
+          <div className="pt-3">
+            <iframe
+              title={`PDF preview of ${invoice.number}`}
+              src={`/api/invoices/${invoice.id}/pdf`}
+              loading="lazy"
+              className="h-[32rem] w-full rounded-md border border-line bg-canvas"
+            />
+            <p className="mt-2 text-xs text-muted">
+              Exactly the file a client receives.{' '}
+              <a href={`/api/invoices/${invoice.id}/pdf`} target="_blank" rel="noreferrer" className="text-brand hover:underline">
+                Open in a new tab
+              </a>
+            </p>
+          </div>
+        </details>
       </section>
 
       <section className="flex flex-col gap-3">
@@ -358,7 +427,11 @@ export default async function InvoicePage({
                 header: 'Reference',
                 align: 'right',
                 cellClassName: 'font-mono text-xs text-muted',
-                cell: (p) => displayPaymentReference(p.provider_payment_id),
+                cell: (p) => (
+                  <Link href={`/finance/payments/${p.id}`} className="text-brand hover:underline">
+                    {displayPaymentReference(p.provider_payment_id)}
+                  </Link>
+                ),
               },
               {
                 /*
@@ -452,7 +525,7 @@ export default async function InvoicePage({
         Sent / reminders — SCR-051. The record of somebody sending this bill
         and chasing it. Records only: the PDF above is what they send.
       */}
-      <section className="flex flex-col gap-3">
+      <section id="send" className="flex flex-col gap-3">
         <h2 className="text-[13px] font-semibold tracking-tight">
           Sent / reminders <span className="text-muted">({sends.length})</span>
         </h2>
@@ -497,7 +570,7 @@ export default async function InvoicePage({
         automatic or by hand, with the delivery state of the message it became.
         An automatic reminder that could not go says why, in its note.
       */}
-      <section className="flex flex-col gap-3">
+      <section id="reminders" className="flex flex-col gap-3">
         <h2 className="text-[13px] font-semibold tracking-tight">
           Reminders <span className="text-muted">({reminders.length})</span>
         </h2>
@@ -651,6 +724,31 @@ export default async function InvoicePage({
           <h2 className="text-[13px] font-semibold tracking-tight">Actions</h2>
 
           {isDraft ? (
+            <div className="rounded-xl border border-line bg-surface p-4">
+              <h3 className="text-[13px] font-semibold tracking-tight">Review before issuing</h3>
+              <ul className="mt-2 flex flex-col gap-1.5 text-[13px]">
+                {invoiceReviewChecklist({
+                  lineCount: items.length,
+                  totalMinor: invoice.total_minor,
+                  subtotalMinor: invoice.subtotal_minor,
+                  taxMinor: invoice.tax_minor,
+                  mode: billing?.mode ?? null,
+                  billingComplete: Boolean(billing?.legalName && billing?.billingAddress && billing?.billingState && (billing.mode !== 'gst' || billing.gstin)),
+                  dueOn: invoice.due_at ? invoice.due_at.slice(0, 10) : null,
+                  payIntoAccounts: receivingAccounts.length,
+                  gstRateBp: GST_RATE_BP,
+                }).map((c) => (
+                  <li key={c.key} className="flex items-baseline gap-2">
+                    <span aria-hidden className={c.ok ? 'text-success' : 'text-warning'}>{c.ok ? '✓' : '!'}</span>
+                    <span className="font-medium">{c.label}</span>
+                    <span className="text-muted">{c.ok ? '' : 'Needs a look: '}{c.detail}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {isDraft ? (
             <IssueInvoiceForm
               invoiceId={invoice.id}
               projectId={invoice.project_id}
@@ -662,14 +760,14 @@ export default async function InvoicePage({
             <RecordPaymentForm
               invoiceId={invoice.id}
               projectId={invoice.project_id}
-              outstandingMajor={majorUnits(outstanding)}
+              outstandingMajor={majorUnits(recordable)}
               currency={invoice.currency}
               methods={PAYMENT_METHODS}
             />
           ) : null}
 
           {mayVoid ? (
-            <details className="rounded-lg border border-line bg-surface px-3 py-2">
+            <details id="void" className="rounded-lg border border-line bg-surface px-3 py-2">
               <summary className="cursor-pointer text-sm font-medium">Void this invoice</summary>
               <div className="pt-3">
                 <VoidInvoiceForm invoiceId={invoice.id} projectId={invoice.project_id} />

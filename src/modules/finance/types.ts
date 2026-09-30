@@ -18,6 +18,8 @@ export type InvoiceListItem = Pick<
   | 'currency'
   | 'total_minor'
   | 'paid_minor'
+  | 'verified_minor'
+  | 'kind'
   | 'due_at'
   | 'issued_at'
   | 'project_id'

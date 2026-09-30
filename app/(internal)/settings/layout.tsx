@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 
+import { readSettingsAreaSummaries } from '@/lib/admin/settings-summary';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { PageHeader, PermissionDenied } from '@/ui';
+import { PageHeader, PermissionDenied, Stat, StatGrid } from '@/ui';
 
 import { SettingsTabs } from './settings-tabs';
 
@@ -17,6 +18,7 @@ const TABS = [
   { href: '/settings/finance', label: 'Finance' },
   // Decision: reversed by the owner on 2026-09-29 — project templates.
   { href: '/settings/templates', label: 'Templates' },
+  { href: '/settings/project-defaults', label: 'Project defaults' },
 ] as const;
 
 /**
@@ -29,6 +31,8 @@ const TABS = [
 export default async function SettingsLayout({ children }: { children: React.ReactNode }) {
   const context = await requireInternal('/settings');
   if (!can(context, 'organization.settings')) return <PermissionDenied />;
+  // SCR-071: one status tile per area, so the page does not open on an environment list.
+  const areas = await readSettingsAreaSummaries();
 
   return (
     <div className="flex flex-col gap-5">
@@ -42,6 +46,11 @@ export default async function SettingsLayout({ children }: { children: React.Rea
           </>
         }
       />
+      <StatGrid>
+        {areas.map((a) => (
+          <Stat key={a.key} label={a.label} value={a.value} caption={a.caption} tone={a.tone === 'success' ? 'success' : a.tone === 'warning' ? 'warning' : 'neutral'} href={a.href} compact />
+        ))}
+      </StatGrid>
       <SettingsTabs tabs={TABS} />
       {/* A bounded column: a form field the full width of a 1400px canvas
           reads as a text area, not a setting. Each page's sections are

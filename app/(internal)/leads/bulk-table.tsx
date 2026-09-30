@@ -7,6 +7,8 @@ import { Avatar, Badge, Card, DataTable, StatusBadge, humanize, type Column, typ
 
 import { LeadPreviewButton } from './preview-drawer';
 import { BulkActionsBar, type BulkRoster } from './bulk-actions-bar';
+import { LeadFlags, type LeadFlagsData } from './lead-flags';
+import { MergeDuplicateButton } from './merge-duplicate-button';
 
 /**
  * The leads table with a selection column — SCR-006's multi-select.
@@ -36,6 +38,10 @@ export type BulkLeadRow = {
   tags: string[];
   /** ADM-88 (reversed 2026-09-29): the stored score, or null when unscored. */
   score: number | null;
+  /** SCR-006: consent, handoff, reply-waiting and duplicate indicators. */
+  flags: LeadFlagsData;
+  /** The other live leads on the same contact, for the row's merge entry. */
+  duplicates: { id: string; title: string }[];
 };
 
 export function LeadBulkTable({
@@ -45,6 +51,7 @@ export function LeadBulkTable({
   nurtureReasons,
   canAssign,
   canWrite,
+  canMerge,
   sortKey,
   sortDirection,
   sortHrefPrefix,
@@ -56,6 +63,8 @@ export function LeadBulkTable({
   nurtureReasons: readonly string[];
   canAssign: boolean;
   canWrite: boolean;
+  /** `organization.settings` — the owner-only merge door. */
+  canMerge: boolean;
   sortKey?: string;
   sortDirection: SortDirection;
   /** The list URL with the kept filters and a trailing `?` or `&`, so `sort=…&dir=…` can be appended. */
@@ -135,6 +144,7 @@ export function LeadBulkTable({
         </span>
       ),
     },
+    { key: 'flags', header: 'Flags', desktopOnly: true, cell: (l) => <LeadFlags flags={l.flags} /> },
     {
       key: 'interest',
       header: 'Interested In',
@@ -218,6 +228,8 @@ export function LeadBulkTable({
           { key: 'preview', label: 'Preview', node: <LeadPreviewButton leadId={l.id} name={l.name} /> },
           { key: 'details', label: 'Show details', href: `${detailsHrefPrefix}lead=${l.id}` },
           { key: 'open', label: 'Open lead', href: `/leads/${l.id}` },
+          { key: 'conversation', label: 'Open conversation', href: `/leads/${l.id}?tab=conversation` },
+          ...(canMerge && l.duplicates.length > 0 ? [{ key: 'merge', label: 'Merge duplicate', node: <MergeDuplicateButton leadId={l.id} name={l.name} duplicates={l.duplicates} /> }] : []),
           { key: 'meeting', label: 'Request a meeting', href: `/leads/${l.id}#meetings` },
           { key: 'quotation', label: 'Quotations', href: `/leads/${l.id}#quotations` },
         ]}

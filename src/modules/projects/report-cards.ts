@@ -8,7 +8,7 @@
  * busiest person; nothing is stored or estimated.
  */
 
-export type ActivityEvent = { key: string; at: string; who: string | null; verb: string; subject: string; tone: 'success' | 'info' | 'warning' | 'brand' };
+export type ActivityEvent = { key: string; at: string; who: string | null; verb: string; subject: string; tone: 'success' | 'info' | 'warning' | 'brand'; /** The record the event is about (SCR-026 "open underlying record"). */ href?: string };
 
 export function composeRecentActivity(
   input: {
@@ -18,12 +18,14 @@ export function composeRecentActivity(
     files: readonly { id: string; title: string; createdAt: string; uploadedByName: string | null }[];
   },
   limit = 5,
+  projectId?: string,
 ): ActivityEvent[] {
+  const at = (path: string) => (projectId ? { href: `/projects/${projectId}${path}` } : {});
   const events: ActivityEvent[] = [
-    ...input.tasks.flatMap((t) => (t.completedAt ? [{ key: `t-${t.id}`, at: t.completedAt, who: t.assigneeName ?? null, verb: 'completed', subject: t.title, tone: 'success' as const }] : [])),
-    ...input.milestones.flatMap((m) => (m.met_at ? [{ key: `m-${m.id}`, at: m.met_at, who: null, verb: 'Milestone met:', subject: m.name, tone: 'brand' as const }] : [])),
-    ...input.defects.map((d) => ({ key: `d-${d.id}`, at: d.created_at, who: null, verb: 'Defect raised:', subject: d.title, tone: 'warning' as const })),
-    ...input.files.map((f) => ({ key: `f-${f.id}`, at: f.createdAt, who: f.uploadedByName, verb: 'uploaded', subject: f.title, tone: 'info' as const })),
+    ...input.tasks.flatMap((t) => (t.completedAt ? [{ key: `t-${t.id}`, at: t.completedAt, who: t.assigneeName ?? null, verb: 'completed', subject: t.title, tone: 'success' as const, ...at(`/development/tasks/${t.id}`) }] : [])),
+    ...input.milestones.flatMap((m) => (m.met_at ? [{ key: `m-${m.id}`, at: m.met_at, who: null, verb: 'Milestone met:', subject: m.name, tone: 'brand' as const, ...at(`/milestones?milestone=${m.id}`) }] : [])),
+    ...input.defects.map((d) => ({ key: `d-${d.id}`, at: d.created_at, who: null, verb: 'Defect raised:', subject: d.title, tone: 'warning' as const, ...at('/qa') })),
+    ...input.files.map((f) => ({ key: `f-${f.id}`, at: f.createdAt, who: f.uploadedByName, verb: 'uploaded', subject: f.title, tone: 'info' as const, ...at('/files') })),
   ];
   return events.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
 }

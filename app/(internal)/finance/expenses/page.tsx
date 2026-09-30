@@ -6,7 +6,10 @@ import { requireInternal } from '@/lib/auth/session';
 import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
 import { listExpenses, listInvoices } from '@/modules/finance/queries';
-import { readAiCostByProject } from '@/modules/finance/ai-cost-queries';
+import { readAiCostByAgent } from '@/modules/finance/ai-cost-queries';
+import { filterExpenses, projectProfitability, type ProjectCosts } from '@/modules/finance/project-profitability';
+import { EXPENSE_CATEGORIES } from '@/modules/finance/schema';
+import { financeBasis, principalCurrency } from '@/modules/finance/verified-basis';
 import { readBudgetVarianceByProject } from '@/modules/finance/budget-variance-queries';
 import { rollupByVendor } from '@/modules/finance/vendor-rollup';
 import { listProjects } from '@/modules/projects/queries';
@@ -15,6 +18,11 @@ import {
   Card,
   CardHeader,
   DataTable,
+  FilterBar,
+  humanize,
+  inputClass,
+  labelClass,
+  selectClass,
   DEFAULT_PAGE_SIZE,
   EmptyState,
   IconInvoices,
@@ -114,35 +122,42 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
 export default async function ExpensesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; sort?: string; dir?: string; q?: string }>;
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string; q?: string; category?: string; project?: string; vendor?: string; from?: string; to?: string }>;
 }) {
   const context = await requireInternal('/finance/expenses');
   const clock = await agencyClock();
   if (!can(context, 'invoice.read')) return <PermissionDenied />;
 
-  const { page: pageParam, sort: sortKey, dir, q: qRaw } = await searchParams;
+  const raw = await searchParams;
+  const { page: pageParam, sort: sortKey, dir, q: qRaw } = raw;
+  // SCR-055 filters: category, project (or overhead), vendor, date range — from the URL, like every list here.
+  const dayShape = /^\d{4}-\d{2}-\d{2}$/;
+  const expenseFilter = {
+    category: (EXPENSE_CATEGORIES as readonly string[]).includes(raw.category ?? '') ? raw.category : undefined,
+    project: raw.project === 'none' || /^[0-9a-f-]{36}$/i.test(raw.project ?? '') ? raw.project : undefined,
+    vendor: raw.vendor?.trim() || undefined,
+    from: raw.from && dayShape.test(raw.from) ? raw.from : undefined,
+    to: raw.to && dayShape.test(raw.to) ? raw.to : undefined,
+  };
+  const filterActive = Boolean(expenseFilter.category || expenseFilter.project || expenseFilter.vendor || expenseFilter.from || expenseFilter.to);
+  const filterQuery = Object.entries(expenseFilter).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join('&');
   // Search within domain (bucket G-3): vendor, description or category, filtered by the reader.
   const q = normaliseSearch(qRaw);
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
-  const currentQuery = [q ? `q=${encodeURIComponent(q)}` : '', sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
-  const [rawExpenses, projects, invoices, savedViews, aiCosts, budgetVariance] = await Promise.all([
+  const currentQuery = [q ? `q=${encodeURIComponent(q)}` : '', filterQuery, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
+  const [everyExpense, projects, invoices, savedViews, budgetVariance, aiByAgent] = await Promise.all([
     listExpenses(500, q || undefined),
     listProjects(500),
     listInvoices(500),
     listSavedViews('/finance/expenses'),
-    readAiCostByProject(),
     // Budget vs actual — decision F5 of 2026-09-30 (reopened). One pure
     // function (computeBudgetVariance) serves this table and the project report.
     readBudgetVarianceByProject(),
+    readAiCostByAgent(),
   ]);
+  const rawExpenses = filterExpenses(everyExpense, expenseFilter);
   // SCR-055: vendor / tool rollup — one line per vendor per currency.
   const vendors = rollupByVendor(rawExpenses);
-  // AI / tooling cost — what the runtime recorded against each project
-  // (`ai.agent_runs.cost_minor`, attributed by project). Shown beside the
-  // recorded expenses, not added to them: an `ai` expense somebody typed in
-  // and a run the runtime priced may be the same rupee twice, and only a
-  // person can say which.
-  const aiByProject = new Map(aiCosts.map((c) => [c.projectId, c]));
   const expenses = sortRows(rawExpenses, sortKey, direction, COMPARATORS);
   const canRecord = can(context, 'invoice.issue');
   const { page, pageCount, rows: pageRows } = paginate(expenses, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
@@ -164,7 +179,8 @@ export default async function ExpensesPage({
   for (const i of invoices) {
     if (!i.project_id) continue;
     invoicedByProject.set(i.project_id, (invoicedByProject.get(i.project_id) ?? 0) + i.total_minor);
-    paidByProject.set(i.project_id, (paidByProject.get(i.project_id) ?? 0) + i.paid_minor);
+    // verified, not recorded: the one basis every finance total uses (verified-basis.ts)
+    paidByProject.set(i.project_id, (paidByProject.get(i.project_id) ?? 0) + (['issued', 'partially_paid', 'paid', 'overdue'].includes(i.status) ? Math.min(i.verified_minor, i.total_minor) : 0));
   }
 
   // Monthly trend, last twelve months with activity, in the currency most
@@ -187,19 +203,33 @@ export default async function ExpensesPage({
       expenses: minor / 100,
     }));
 
-  const projectIdsWithActivity = new Set([...expensesByProject.keys(), ...invoicedByProject.keys(), ...aiByProject.keys()]);
-  const byProject = projects
-    .filter((p) => projectIdsWithActivity.has(p.id))
-    .map((p) => ({
-      id: p.id,
-      name: p.name,
-      currency: p.currency,
-      invoicedMinor: invoicedByProject.get(p.id) ?? 0,
-      paidMinor: paidByProject.get(p.id) ?? 0,
-      expensesMinor: expensesByProject.get(p.id) ?? 0,
-      aiCostMinor: aiByProject.get(p.id)?.costMinor ?? 0,
-      aiRuns: aiByProject.get(p.id)?.runs ?? 0,
-    }));
+  // ONE margin definition (project-profitability.ts): verified revenue less
+  // expenses, AI cost and time cost — whole books, not narrowed by the filters
+  // below, so the same project reads the same here, in the project report and
+  // (one level up, without the AI and time terms) in Net Profit on the overview.
+  const costsByProject = new Map<string, ProjectCosts>(
+    budgetVariance.map((v) => [v.projectId, { expensesMinor: v.expensesMinor, aiCostMinor: v.aiCostMinor, timeCostMinor: v.timeCostMinor, uncostedHours: v.uncostedHours }]),
+  );
+  const profitability = projectProfitability({
+    projects: projects.map((p) => ({ id: p.id, name: p.name, currency: p.currency })),
+    invoices: invoices.map((i) => ({ id: i.id, status: i.status, currency: i.currency, total_minor: i.total_minor, paid_minor: i.paid_minor, verified_minor: i.verified_minor, project_id: i.project_id })),
+    costs: costsByProject,
+  });
+  const basisCurrency = principalCurrency(invoices.map((i) => ({ id: i.id, status: i.status, currency: i.currency, total_minor: i.total_minor, paid_minor: i.paid_minor, verified_minor: i.verified_minor, project_id: i.project_id })), trendCurrency ?? 'INR');
+  const basis = financeBasis({
+    invoices: invoices.map((i) => ({ id: i.id, status: i.status, currency: i.currency, total_minor: i.total_minor, paid_minor: i.paid_minor, verified_minor: i.verified_minor, project_id: i.project_id })),
+    expenses: everyExpense,
+    currency: basisCurrency,
+  });
+  const marginTotal = profitability.filter((r) => r.currency === basisCurrency).reduce((n, r) => n + r.margin.marginMinor, 0);
+  const withBudget = budgetVariance.filter((v) => v.budgetMinor !== null && v.currency === basisCurrency);
+  const budgetTotal = withBudget.reduce((n, v) => n + (v.budgetMinor ?? 0), 0);
+  const budgetActual = withBudget.reduce((n, v) => n + v.actualMinor, 0);
+  const categoryTotals = new Map<string, number>();
+  for (const e of expenses) if (e.currency === basisCurrency) categoryTotals.set(e.category, (categoryTotals.get(e.category) ?? 0) + e.amountMinor);
+  const topCategory = [...categoryTotals.entries()].sort((a, b) => b[1] - a[1])[0];
+  const exportHref = `/api/finance/expenses/export${filterQuery ? `?${filterQuery}` : ''}`;
+  const keepForLinks = [q ? `q=${encodeURIComponent(q)}` : '', filterQuery].filter(Boolean).join('&');
 
   return (
     <div className="flex flex-col gap-5">
@@ -211,7 +241,7 @@ export default async function ExpensesPage({
             : `${expenses.length} expense${expenses.length === 1 ? '' : 's'} recorded.`
         }
         actions={
-          <a href="/api/finance/expenses/export" className={buttonClass('secondary', 'sm')}>
+          <a href={exportHref} className={buttonClass('secondary', 'sm')}>
             Download CSV
           </a>
         }
@@ -228,49 +258,93 @@ export default async function ExpensesPage({
         </Card>
       ) : null}
 
-      {byCurrency.size > 0 ? (
-        <StatGrid>
-          {[...byCurrency.entries()].map(([currency, total]) => (
-            <Stat key={currency} label={`Total (${currency})`} value={money(total, currency)} icon={<IconInvoices size={16} />} />
-          ))}
-        </StatGrid>
-      ) : null}
+      {/* SCR-055's header: total expenses, project margin, cost categories, budget vs actual — one row, each a number from stored rows. */}
+      <StatGrid cols={4}>
+        <Stat label="Total Expenses" value={money(expenses.filter((e) => e.currency === basisCurrency).reduce((n, e) => n + e.amountMinor, 0), basisCurrency)} caption={`${expenses.length} recorded${filterActive || q ? ' in this filter' : ''}${byCurrency.size > 1 ? ` · other currencies: ${[...byCurrency.keys()].filter((c) => c !== basisCurrency).join(', ')}` : ''}`} tone="danger" icon={<IconInvoices size={16} />} />
+        <Stat label="Project Margin" value={money(marginTotal, basisCurrency)} caption={`verified revenue less expenses, AI and time cost · net profit before AI and time ${money(basis.netMinor, basisCurrency)}`} tone={marginTotal >= 0 ? 'success' : 'danger'} icon={<IconInvoices size={16} />} href="#profitability" />
+        <Stat label="Cost Categories" value={String(categoryTotals.size)} caption={topCategory ? `largest: ${humanize(topCategory[0])} ${money(topCategory[1], basisCurrency)}` : 'nothing recorded'} tone="info" icon={<IconInvoices size={16} />} href="#expense-list" />
+        <Stat label="Budget vs Actual" value={budgetTotal > 0 ? `${Math.round((budgetActual / budgetTotal) * 1000) / 10}%` : '—'} caption={budgetTotal > 0 ? `${money(budgetActual, basisCurrency)} of ${money(budgetTotal, basisCurrency)} budgeted (${withBudget.length} project${withBudget.length === 1 ? '' : 's'})` : 'no project has a budget recorded'} tone={budgetTotal > 0 && budgetActual > budgetTotal ? 'danger' : 'neutral'} icon={<IconInvoices size={16} />} href="#budget-vs-actual" />
+      </StatGrid>
 
-      {byProject.length > 0 ? (
-        <Card>
-          <CardHeader
-            title="By project"
-            description="Invoiced, paid, recorded expenses and what the AI runtime recorded, side by side. Not a margin — see this page's own note for why."
-          />
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="border-b border-line text-left text-xs text-muted">
-                <th className="px-4 py-2 font-normal sm:px-5">Project</th>
-                <th className="px-4 py-2 text-right font-normal">Invoiced</th>
-                <th className="px-4 py-2 text-right font-normal">Paid</th>
-                <th className="px-4 py-2 text-right font-normal">Expenses</th>
-                <th className="px-4 py-2 text-right font-normal sm:pr-5">AI / tooling (recorded runs)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {byProject.map((p) => (
-                <tr key={p.id} className="border-b border-line">
-                  <td className="px-4 py-2 font-medium sm:px-5">{p.name}</td>
-                  <td className="px-4 py-2 text-right tabular">{money(p.invoicedMinor, p.currency)}</td>
-                  <td className="px-4 py-2 text-right tabular">{money(p.paidMinor, p.currency)}</td>
-                  <td className="px-4 py-2 text-right tabular">{money(p.expensesMinor, p.currency)}</td>
-                  <td className="px-4 py-2 text-right tabular text-muted sm:pr-5">
-                    {p.aiRuns > 0 ? `${money(p.aiCostMinor, 'INR')} · ${p.aiRuns} run${p.aiRuns === 1 ? '' : 's'}` : '—'}
-                  </td>
+      {/* Project profitability — the single margin definition, per project. */}
+      <Card id="profitability">
+        <CardHeader
+          title="Project Profitability"
+          description="Verified revenue less recorded expenses, AI cost and time cost, per project — the same margin the project report shows, on the same verified basis as Finance Overview. Whole books: not narrowed by the filters below."
+        />
+        {profitability.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-line text-left text-xs text-muted">
+                  <th className="px-4 py-2 font-normal sm:px-5">Project</th>
+                  <th className="px-4 py-2 text-right font-normal">Invoiced</th>
+                  <th className="px-4 py-2 text-right font-normal">Verified revenue</th>
+                  <th className="px-4 py-2 text-right font-normal">Expenses</th>
+                  <th className="px-4 py-2 text-right font-normal">AI</th>
+                  <th className="px-4 py-2 text-right font-normal">Time</th>
+                  <th className="px-4 py-2 text-right font-normal sm:pr-5">Margin</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {profitability.map((r) => (
+                  <tr key={r.projectId} className="border-b border-line">
+                    <td className="px-4 py-2 font-medium sm:px-5">
+                      <a href={`/projects/${r.projectId}/reports`} className="hover:underline">{r.name}</a>
+                      {r.margin.uncostedHours > 0 ? <span className="ml-2 text-xs text-warning">{r.margin.uncostedHours} h uncosted</span> : null}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular">{money(r.invoicedMinor, r.currency)}</td>
+                    <td className="px-4 py-2 text-right tabular">{money(r.margin.paidMinor, r.currency)}</td>
+                    <td className="px-4 py-2 text-right tabular">{money(r.margin.expensesMinor, r.currency)}</td>
+                    <td className="px-4 py-2 text-right tabular">{money(r.margin.aiCostMinor, 'INR')}</td>
+                    <td className="px-4 py-2 text-right tabular">{money(r.margin.timeCostMinor, 'INR')}</td>
+                    <td className={`px-4 py-2 text-right tabular font-medium sm:pr-5 ${r.margin.marginMinor < 0 ? 'text-danger' : ''}`}>
+                      {money(r.margin.marginMinor, r.currency)}
+                      {r.margin.marginPercent !== null ? <span className="ml-1 text-xs text-muted">({r.margin.marginPercent}%)</span> : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No project has verified revenue or recorded cost yet.</p>
+        )}
+      </Card>
+
+      {/* AI / tooling costs — what the runtime recorded, by agent. Totals only: no model, prompt or output. */}
+      {aiByAgent.length > 0 ? (
+        <Card id="ai-costs">
+          <CardHeader title="AI / Tooling Costs" description="What the AI runtime recorded, by agent — runs, tokens and cost. Shown beside expenses, never added to them: an AI expense somebody typed in and a run the runtime priced may be the same rupee." />
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-line text-left text-xs text-muted">
+                  <th className="px-4 py-2 font-normal sm:px-5">Agent</th>
+                  <th className="px-4 py-2 text-right font-normal">Runs</th>
+                  <th className="px-4 py-2 text-right font-normal">Projects</th>
+                  <th className="px-4 py-2 text-right font-normal">Tokens (in / out)</th>
+                  <th className="px-4 py-2 text-right font-normal sm:pr-5">Recorded cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {aiByAgent.map((a) => (
+                  <tr key={a.agentKey} className="border-b border-line">
+                    <td className="px-4 py-2 font-medium sm:px-5">{humanize(a.agentKey)}</td>
+                    <td className="px-4 py-2 text-right tabular text-muted">{a.runs}</td>
+                    <td className="px-4 py-2 text-right tabular text-muted">{a.projects}</td>
+                    <td className="px-4 py-2 text-right tabular text-muted">{a.inputTokens.toLocaleString('en-IN')} / {a.outputTokens.toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-2 text-right tabular font-medium sm:pr-5">{money(a.costMinor, 'INR')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       ) : null}
 
       {budgetVariance.length > 0 ? (
-        <Card>
+        <Card id="budget-vs-actual">
           <CardHeader
             title="Budget vs actual"
             description="Decision F5 (2026-09-30): each project's budget against expenses + AI cost + time cost, the variance, and the average monthly burn over months with any cost. Time is costed at each person's day-of-log rate; uncosted hours are said, not zeroed."
@@ -284,7 +358,7 @@ export default async function ExpensesPage({
                   <th className="px-4 py-2 text-right font-normal">Actual</th>
                   <th className="px-4 py-2 text-right font-normal">Variance</th>
                   <th className="px-4 py-2 text-right font-normal">Consumed</th>
-                  <th className="px-4 py-2 text-right font-normal">Margin (cash-basis estimate)</th>
+                  <th className="px-4 py-2 text-right font-normal">Margin (verified, cash basis)</th>
                   <th className="px-4 py-2 text-right font-normal sm:pr-5">Monthly burn</th>
                 </tr>
               </thead>
@@ -348,14 +422,49 @@ export default async function ExpensesPage({
 
       {canRecord ? <RecordExpenseForm projects={projects.map((p) => ({ id: p.id, name: p.name }))} /> : null}
 
-      {/* Search within domain (bucket G-3): vendor, description or category, filtered by the reader. */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-        <DomainSearch action="/finance/expenses" value={q} placeholder="Search vendor, description or category…" label="Search expenses" preserve={{ sort: sortKey, dir }} />
+      {/* Search within domain (bucket G-3) plus SCR-055's filters: category, project, vendor, date range. */}
+      <FilterBar clearHref="/finance/expenses" filtered={filterActive || Boolean(q)}>
+        <DomainSearch action="/finance/expenses" value={q} placeholder="Search vendor, description or category…" label="Search expenses" preserve={{ sort: sortKey, dir, category: expenseFilter.category, project: expenseFilter.project, vendor: expenseFilter.vendor, from: expenseFilter.from, to: expenseFilter.to }} />
         <SearchSummary q={q} count={expenses.length} clearHref={sortKey ? `/finance/expenses?sort=${sortKey}&dir=${direction}` : '/finance/expenses'} />
-      </div>
+        <form method="get" action="/finance/expenses" className="flex flex-wrap items-end gap-2">
+          {q ? <input type="hidden" name="q" value={q} /> : null}
+          <div className="flex flex-col gap-1">
+            <label className={labelClass} htmlFor="exp-category">Category</label>
+            <select id="exp-category" name="category" defaultValue={expenseFilter.category ?? ''} className={`${selectClass} sm:w-40`}>
+              <option value="">Every category</option>
+              {EXPENSE_CATEGORIES.map((c) => (
+                <option key={c} value={c}>{humanize(c)}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className={labelClass} htmlFor="exp-project">Project</label>
+            <select id="exp-project" name="project" defaultValue={expenseFilter.project ?? ''} className={`${selectClass} sm:w-44`}>
+              <option value="">Every project</option>
+              <option value="none">Overhead — no project</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className={labelClass} htmlFor="exp-vendor">Vendor</label>
+            <input id="exp-vendor" name="vendor" defaultValue={expenseFilter.vendor ?? ''} placeholder="Vendor name" className={`${inputClass} sm:w-36`} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className={labelClass} htmlFor="exp-from">From</label>
+            <input id="exp-from" type="date" name="from" defaultValue={expenseFilter.from ?? ''} className={`${inputClass} sm:w-36`} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className={labelClass} htmlFor="exp-to">To</label>
+            <input id="exp-to" type="date" name="to" defaultValue={expenseFilter.to ?? ''} className={`${inputClass} sm:w-36`} />
+          </div>
+          <button type="submit" className={buttonClass('secondary', 'sm')}>Apply</button>
+        </form>
+      </FilterBar>
 
       {expenses.length > 0 ? (
-        <>
+        <div id="expense-list" className="flex flex-col gap-5">
           <DataTable
             rows={pageRows}
             columns={columnsFor(clock, projectName, canRecord, projects.map((p) => ({ id: p.id, name: p.name })))}
@@ -363,21 +472,21 @@ export default async function ExpensesPage({
             sort={{
               key: sortKey,
               direction,
-              makeHref: (key, nextDirection) => `/finance/expenses?sort=${key}&dir=${nextDirection}`,
+              makeHref: (key, nextDirection) => `/finance/expenses?${keepForLinks ? `${keepForLinks}&` : ''}sort=${key}&dir=${nextDirection}`,
             }}
           />
           <Pagination
             page={page}
             pageCount={pageCount}
-            makeHref={(p) => `/finance/expenses?${sortKey ? `sort=${sortKey}&dir=${direction}&` : ''}page=${p}`}
+            makeHref={(p) => `/finance/expenses?${keepForLinks ? `${keepForLinks}&` : ''}${sortKey ? `sort=${sortKey}&dir=${direction}&` : ''}page=${p}`}
           />
-        </>
+        </div>
       ) : (
         <EmptyState
           icon={<IconInvoices size={22} />}
-          title={q ? 'No matching expenses' : 'No expenses yet'}
-          description={q ? `No expense matches ‘${q}’ on vendor, description or category.` : 'Infrastructure, AI, tooling, vendor and contractor costs recorded here.'}
-          action={q ? <a href="/finance/expenses" className={buttonClass('secondary', 'sm')}>Clear search</a> : canRecord ? <a href="#record-expense" className={buttonClass('secondary', 'sm')}>Record an expense</a> : <a href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</a>}
+          title={q || filterActive ? 'No matching expenses' : 'No expenses yet'}
+          description={q || filterActive ? 'No expense matches these filters.' : 'Infrastructure, AI, tooling, vendor and contractor costs recorded here.'}
+          action={q || filterActive ? <a href="/finance/expenses" className={buttonClass('secondary', 'sm')}>Clear search and filters</a> : canRecord ? <a href="#record-expense" className={buttonClass('secondary', 'sm')}>Record an expense</a> : <a href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</a>}
         />
       )}
     </div>

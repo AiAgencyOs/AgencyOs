@@ -8,7 +8,7 @@ import { can } from '@/lib/authz/permissions';
 import { listProjectTemplates } from '@/modules/projects/project-template-queries';
 import { Badge, buttonClass, Card, CardHeader, DomainSearch, EmptyState, IconPortfolio, SearchSummary } from '@/ui';
 
-import { DeleteTemplateButton } from './templates-panel';
+import { CloneTemplateButton, DeleteTemplateButton } from './templates-panel';
 
 export const metadata: Metadata = { title: 'Templates' };
 
@@ -26,6 +26,7 @@ export default async function SettingsTemplatesPage({ searchParams }: { searchPa
   const q = normaliseSearch(qRaw);
   const [templates, clock] = await Promise.all([listProjectTemplates(q || undefined), agencyClock()]);
   const mayDelete = can(context, 'organization.settings');
+  const mayClone = can(context, 'project.write');
 
   return (
     <div className="flex flex-col gap-5">
@@ -53,7 +54,7 @@ export default async function SettingsTemplatesPage({ searchParams }: { searchPa
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <span className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium">{t.name}</span>
+                      <Link href={`/settings/templates/${t.id}`} className="truncate text-sm font-medium hover:underline">{t.name}</Link>
                       {!t.valid ? <Badge tone="danger">unreadable</Badge> : null}
                       {t.counts.milestones > 0 && t.milestonePercent !== 100 ? <Badge tone="warning">milestones {t.milestonePercent}%</Badge> : null}
                     </span>
@@ -74,7 +75,11 @@ export default async function SettingsTemplatesPage({ searchParams }: { searchPa
                     </span>
                     {t.description ? <p className="mt-1 text-[13px]">{t.description}</p> : null}
                   </div>
-                  {mayDelete ? <DeleteTemplateButton templateId={t.id} /> : null}
+                  <span className="flex flex-wrap items-center gap-3">
+                    <Link href={`/settings/templates/${t.id}`} className="text-xs text-brand hover:underline">Details</Link>
+                    {mayClone ? <CloneTemplateButton templateId={t.id} templateName={t.name} /> : null}
+                    {mayDelete ? <DeleteTemplateButton templateId={t.id} /> : null}
+                  </span>
                 </div>
               </li>
             ))}

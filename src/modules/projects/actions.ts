@@ -83,6 +83,8 @@ import {
   recordUiVersionClientDecision,
   lockUiVersion,
 } from './service';
+import { setDeliverableDetails } from './build-details-service';
+import { PROTOTYPE_PLATFORMS, type PrototypePlatform } from './prototype-schema';
 
 /** Server Actions for delivery — thin wrappers over service.ts. */
 
@@ -209,7 +211,34 @@ export async function addDeliverableAction(
 
   if (!result.ok) return { status: 'error', message: result.error.message };
 
+  // W4 (SCR-037/043): a prototype or build may be added with its platform,
+  // commit ref, build number and rollback target; they go through their own door.
+  const platform = String(formData.get('platform') ?? '').trim();
+  const commitRef = String(formData.get('commitRef') ?? '').trim();
+  const buildNumber = String(formData.get('buildNumber') ?? '').trim();
+  const rollbackTargetId = String(formData.get('rollbackTargetId') ?? '').trim();
+  const rollbackNote = String(formData.get('rollbackNote') ?? '').trim();
+  if (platform || commitRef || buildNumber || rollbackTargetId || rollbackNote) {
+    const details = await setDeliverableDetails({
+      projectId,
+      deliverableId: result.data.deliverableId,
+      platform: (PROTOTYPE_PLATFORMS as readonly string[]).includes(platform) ? (platform as PrototypePlatform) : undefined,
+      commitRef,
+      buildNumber,
+      rollbackTargetId: rollbackTargetId || undefined,
+      rollbackNote,
+    });
+    if (!details.ok) {
+      revalidatePath(`/projects/${projectId}`);
+      revalidatePath(`/projects/${projectId}/builds`);
+      revalidatePath(`/projects/${projectId}/prototype`);
+      return { status: 'error', message: `Version ${result.data.version} was added, but its details were not saved: ${details.error.message}` };
+    }
+  }
+
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}/builds`);
+  revalidatePath(`/projects/${projectId}/prototype`);
   return { status: 'success', message: `Version ${result.data.version} added.` };
 }
 
@@ -1158,6 +1187,16 @@ export async function setFeatureStatusAction(_prev: FormState, formData: FormDat
   return { status: 'success', message: 'Updated.' };
 }
 
+/** The blocker's type, owner and next action, when the form carries them (SCR-020). */
+function blockerFields(formData: FormData) {
+  const pick = (key: string) => String(formData.get(key) ?? '').trim();
+  const out: { blockerType?: string; blockerOwner?: string; nextAction?: string } = {};
+  if (pick('blockerType')) out.blockerType = pick('blockerType');
+  if (pick('blockerOwner')) out.blockerOwner = pick('blockerOwner');
+  if (pick('nextAction')) out.nextAction = pick('nextAction');
+  return out;
+}
+
 export async function setTaskStatusAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const projectId = String(formData.get('projectId') ?? '');
 
@@ -1166,6 +1205,7 @@ export async function setTaskStatusAction(_prev: FormState, formData: FormData):
     taskId: String(formData.get('taskId') ?? ''),
     status: String(formData.get('status') ?? '') as never,
     ...(reason ? { reason } : {}),
+    ...blockerFields(formData),
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };

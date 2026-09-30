@@ -44,7 +44,7 @@ function GrantForm({ membershipId, alreadyHeld }: { membershipId: string; alread
   }
 
   return (
-    <form action={action} className="flex items-center gap-1">
+    <form action={action} className="flex flex-wrap items-center gap-1">
       <input type="hidden" name="membershipId" value={membershipId} />
       <select name="role" aria-label="Role to grant" className="rounded-md border border-line bg-surface px-2 py-1 text-[13px]" defaultValue="">
         <option value="" disabled>
@@ -56,6 +56,7 @@ function GrantForm({ membershipId, alreadyHeld }: { membershipId: string; alread
           </option>
         ))}
       </select>
+      <input name="reason" required minLength={3} maxLength={500} placeholder="why" aria-label="Reason for granting the role" className="w-28 rounded-md border border-line bg-surface px-2 py-1 text-[13px]" />
       <button type="submit" className={buttonClass('secondary', 'sm')} disabled={pending}>
         {pending ? 'Granting…' : 'Grant'}
       </button>
@@ -71,6 +72,7 @@ function RevokeButton({ membershipId, role }: { membershipId: string; role: stri
     <form action={action} className="inline-flex items-center gap-1">
       <input type="hidden" name="membershipId" value={membershipId} />
       <input type="hidden" name="role" value={role} />
+      <input name="reason" required minLength={3} maxLength={500} placeholder="why revoke" aria-label={`Reason for revoking ${role}`} className="w-24 rounded-md border border-line bg-surface px-2 py-1 text-xs" />
       <Badge tone="neutral">
         {role}
         <button
@@ -95,6 +97,7 @@ function StatusToggle({ membershipId, status }: { membershipId: string; status: 
     <form action={action} className="inline-flex items-center gap-1">
       <input type="hidden" name="membershipId" value={membershipId} />
       <input type="hidden" name="status" value={next} />
+      <input name="reason" required minLength={3} maxLength={500} placeholder={status === 'active' ? 'why suspend' : 'why reactivate'} aria-label={status === 'active' ? 'Reason for suspending' : 'Reason for reactivating'} className="w-28 rounded-md border border-line bg-surface px-2 py-1 text-xs" />
       <button
         type="submit"
         className={buttonClass(status === 'active' ? 'ghost' : 'secondary', 'sm')}

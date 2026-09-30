@@ -15,7 +15,7 @@ import { LiveRefresh } from '@/lib/realtime';
 import { secretSource } from '@/lib/secrets/resolve';
 import { IntegrationState, PageHeader, PermissionDenied, buttonClass, labelClass } from '@/ui';
 
-import { TestRecipientForm, VerifyAiProviderForm, VerifyCalendarForm, VerifyWhatsAppButton, WhatsAppNumberForm } from '../settings/forms';
+import { TestRecipientForm, VerifyAiProviderForm, VerifyCalendarForm, VerifyFigmaForm, VerifyWhatsAppButton, WhatsAppNumberForm } from '../settings/forms';
 import { SettingHistory, type SettingHistoryEntry } from '../settings/setting-history';
 import { IntegrationsList, type IntegrationIdentifier, type SecureStorage } from './integrations-list';
 
@@ -43,7 +43,7 @@ export default async function IntegrationsPage() {
   const context = await requireInternal('/integrations');
   if (!can(context, 'organization.settings')) return <PermissionDenied />;
 
-  const [{ integrations, summary }, settings, githubScopes, history, clock] = await Promise.all([
+  const [{ integrations, summary, lastVerifiedAt }, settings, githubScopes, history, clock] = await Promise.all([
     getIntegrations(),
     readOperationalSettings(),
     githubConfigured().then((on) => (on ? readGithubTokenScopes() : null)),
@@ -74,6 +74,7 @@ export default async function IntegrationsPage() {
   const providerVerifiedModel = settingText(settings, 'ai_provider_verified_model');
   const calendarVerifiedAt = settingInstant(settings, 'calendar_verified_at');
   const calendarVerifiedName = settingText(settings, 'calendar_verified_calendar');
+  const figmaRow = integrations.find((i) => i.id === 'figma');
   const verify: Record<string, React.ReactNode> = {
     whatsapp: (
       <span className="flex flex-wrap items-center gap-2">
@@ -82,12 +83,23 @@ export default async function IntegrationsPage() {
       </span>
     ),
     'ai-provider': <VerifyAiProviderForm lastVerifiedAt={providerVerifiedAt} model={providerVerifiedModel} />,
+    // SCR-070: Figma and Google Calendar are first-class rows, each with its own check.
+    figma: <VerifyFigmaForm lastVerifiedAt={figmaRow?.lastVerifiedAt ?? null} references={figmaRow?.count?.value ?? 0} />,
+    calendar: <VerifyCalendarForm lastVerifiedAt={calendarVerifiedAt} calendar={calendarVerifiedName} />,
   };
   const identifiers: Record<string, IntegrationIdentifier[]> = {
     whatsapp: [
       { label: 'Phone number id', value: whatsappNumberId ?? 'not set', effective: effectiveOf('whatsapp_phone_number_id') },
       { label: 'Internal test recipient', value: whatsappTestRecipient ?? 'not set', effective: effectiveOf('whatsapp_test_recipient') },
       ...(whatsappVerifiedNumber ? [{ label: 'Verified number', value: whatsappVerifiedNumber, effective: effectiveOf('whatsapp_verified_number') }] : []),
+    ],
+    figma: [
+      { label: 'Token (FIGMA_ACCESS_TOKEN)', value: envPresent('FIGMA_ACCESS_TOKEN') ? 'set in the deployment environment' : 'not in the environment — the key vault may hold it' },
+      { label: 'Design references recorded', value: String(figmaRow?.count?.value ?? 0) },
+    ],
+    calendar: [
+      { label: 'Calendar id (GOOGLE_CALENDAR_ID)', value: envPresent('GOOGLE_CALENDAR_ID') ? 'set in the deployment environment' : 'unset' },
+      ...(calendarVerifiedName ? [{ label: 'Verified calendar', value: calendarVerifiedName, effective: effectiveOf('calendar_verified_calendar') }] : []),
     ],
     'ai-provider': providerVerifiedModel ? [{ label: 'Verified model', value: providerVerifiedModel, effective: effectiveOf('ai_provider_verified_model') }] : [],
     // The webhook URL is read from the environment and may embed a token, so only its presence is stated.
@@ -132,6 +144,8 @@ export default async function IntegrationsPage() {
     transcriber: { href: '/agents#vault', note: 'The transcription key is kept encrypted in the provider vault, or read from the environment when the vault has none.' },
     'image-generator': { href: '/agents#vault', note: 'The image-generation key is kept encrypted in the provider vault, or read from the environment when the vault has none.' },
     github: { href: '/security/keys', note: keyed('GITHUB_TOKEN') },
+    figma: { href: '/security/keys', note: keyed('FIGMA_ACCESS_TOKEN') },
+    calendar: { href: '/security/keys', note: keyed('GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_KEY and GOOGLE_CALENDAR_ID') },
     alerts: { href: '/security/keys', note: keyed('ALERT_WEBHOOK_URL') },
   };
   const verifiedCount = summary.VERIFIED ?? 0;
@@ -144,8 +158,8 @@ export default async function IntegrationsPage() {
         description={
           <>
         Every external dependency and its real lifecycle. <span className="font-medium">Configured is not verified</span> —
-        only the database and scheduler, which a live signal exercised, read VERIFIED; WhatsApp and the AI provider are
-        configured at most until a person verifies them.
+        the database and scheduler read VERIFIED from a live signal; Figma and Google Calendar read VERIFIED only once a real
+        check answered; WhatsApp and the AI provider are configured at most until a person verifies them.
           </>
         }
         actions={
@@ -162,7 +176,8 @@ export default async function IntegrationsPage() {
       />
 
       <p className="text-[13px] text-muted">
-        {verifiedCount} verified · {configuredCount} configured but unproven · {integrations.length - verifiedCount - configuredCount} not configured, degraded or failed.
+        {verifiedCount} verified · {configuredCount} configured but unproven · {integrations.length - verifiedCount - configuredCount} not configured, degraded or failed.{' '}
+        <span className="font-medium text-foreground">{lastVerifiedAt ? `Last verified ${clock.dateTime(lastVerifiedAt)}.` : 'Nothing has a recorded verification yet.'}</span>
       </p>
 
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
@@ -187,19 +202,7 @@ export default async function IntegrationsPage() {
         </div>
       ) : null}
 
-      <IntegrationsList integrations={integrations} verify={verify} identifiers={identifiers} editors={editors} secrets={secrets} vaultHref="/agents#vault" />
-
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface px-4 py-3 text-[13px]">
-        <span className="font-medium">Google Calendar</span>
-        <span className="text-muted">— not in the lifecycle registry; verified on demand against Google (ADM-102).</span>
-        <VerifyCalendarForm lastVerifiedAt={calendarVerifiedAt} calendar={calendarVerifiedName} />
-        {/* SCR-070: the calendar's non-secret identifiers — the id is GOOGLE_CALENDAR_ID in the deployment
-            environment (presence only; not editable from the panel), the name is what Google answered. */}
-        <span className="basis-full text-xs text-muted">
-          Calendar id (GOOGLE_CALENDAR_ID): {envPresent('GOOGLE_CALENDAR_ID') ? 'set in the deployment environment' : 'unset'} — not editable from the panel.
-          {calendarVerifiedName ? ` Verified calendar: ${calendarVerifiedName}${effectiveOf('calendar_verified_calendar') ? ` (${effectiveOf('calendar_verified_calendar')})` : ''}.` : ''}
-        </span>
-      </div>
+      <IntegrationsList integrations={integrations} verifiedLabels={Object.fromEntries(integrations.filter((i) => i.lastVerifiedAt).map((i) => [i.id, clock.dateTime(i.lastVerifiedAt as string)]))} verify={verify} identifiers={identifiers} editors={editors} secrets={secrets} vaultHref="/agents#vault" />
 
       <p className="text-xs text-muted">
         A failed row means a live read did not succeed (DATA UNAVAILABLE) — not that the integration is definitely broken,

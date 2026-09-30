@@ -12,7 +12,10 @@ import { can } from '@/lib/authz/permissions';
 import { SavedViewsBar } from '../saved-views-bar';
 import { CreateLeadButton } from '../leads/create-lead-button';
 import { ClientEditButton } from './client-edit-form';
+import { duplicateCounts } from '@/lib/admin/duplicate-clients';
+import { ClientBulkBar, CLIENT_BULK_FORM } from './bulk-bar';
 import { ClientPreviewButton } from './preview-drawer';
+import { listInternalRoster } from '@/modules/projects/queries';
 import {
   Avatar,
   Badge,
@@ -55,7 +58,10 @@ function money(minor: number, currency: string): string {
 
 type Row = Awaited<ReturnType<typeof listClients>>[number];
 
-const columnsFor = (clock: AgencyClock, indexOf: (id: string) => number, phoneOf: (id: string) => string | undefined): Column<Row>[] => [
+const columnsFor = (clock: AgencyClock, indexOf: (id: string) => number, phoneOf: (id: string) => string | undefined, selectable: boolean, dupOf: (id: string) => number): Column<Row>[] => [
+  ...(selectable
+    ? ([{ key: 'select', header: '', width: 'w-8', cell: (c: Row) => <input type="checkbox" name="id" value={c.id} form={CLIENT_BULK_FORM} aria-label={`Select ${c.name}`} /> }] as Column<Row>[])
+    : []),
   { key: 'n', header: '#', desktopOnly: true, cellClassName: 'tabular text-muted', cell: (c) => indexOf(c.id) },
   {
     key: 'name',
@@ -64,7 +70,10 @@ const columnsFor = (clock: AgencyClock, indexOf: (id: string) => number, phoneOf
     cell: (c) => (
       <span className="flex items-center gap-2.5">
         <Avatar name={c.name} size="md" />
-        <span className="block max-w-[9rem] truncate">{c.name}</span>
+        <span className="min-w-0">
+          <span className="block max-w-[9rem] truncate">{c.name}</span>
+          {dupOf(c.id) > 0 ? <Badge tone="warning" dot={false}>Possible duplicate ×{dupOf(c.id) + 1}</Badge> : null}
+        </span>
       </span>
     ),
   },
@@ -136,7 +145,6 @@ export default async function ClientsPage({
   // SCR-014 — completed and pending, counted from the projects table.
   const projectCounts = await listClientProjectStatusCounts(allClients.map((c) => c.id));
   const mayEditClients = can(context, 'project.write');
-  const overview = await getClientsOverview({ leads: can(context, 'lead.read'), invoices: can(context, 'invoice.read') });
 
   const active = allClients.filter((c) => c.status === 'active');
   const archived = allClients.filter((c) => c.status !== 'active');
@@ -157,8 +165,13 @@ export default async function ClientsPage({
   const clients = sortRows(filtered, sortKey, direction, COMPARATORS);
   const { page, pageCount, rows: pageRows } = paginate(clients, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
   const selected = pageRows.find((c) => c.id === clientParam) ?? pageRows[0] ?? null;
+  // The three panels under the table describe the client in the Details rail,
+  // not the whole portfolio.
+  const overview = await getClientsOverview({ leads: can(context, 'lead.read'), invoices: can(context, 'invoice.read'), scopeClientId: selected?.id ?? null });
   const selectedProjects = selected ? await listClientProjectsBrief(selected.id) : [];
   const clientName = new Map(allClients.map((c) => [c.id, c.name]));
+  const dupCount = duplicateCounts(allClients);
+  const bulkRoster = mayEditClients ? (await listInternalRoster()).map((m) => ({ userId: m.userId, fullName: m.fullName || m.email })) : [];
   const chipNow = new Date();
   const joined = countPeriods(allClients.map((c) => c.createdAt), chipNow);
   const activeJoined = countPeriods(active.map((c) => c.createdAt), chipNow);
@@ -216,7 +229,7 @@ export default async function ClientsPage({
       ) : null}
 
       {allClients.length > 0 ? (
-        <FilterBar>
+        <FilterBar clearHref="/clients" filtered={Boolean(status || q || tag || owner)}>
           <FilterChips
             options={[
               { key: 'all', label: `All Clients (${allClients.length})`, href: chip(null), active: !status },
@@ -261,11 +274,12 @@ export default async function ClientsPage({
       {clients.length > 0 ? (
         <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="flex min-w-0 flex-col gap-3">
+          {mayEditClients ? <ClientBulkBar roster={bulkRoster} /> : null}
           <Card className="px-1 pb-1">
           <DataTable
             dense
             rows={pageRows}
-            columns={columnsFor(clock, (id) => clients.findIndex((x) => x.id === id) + 1, (id) => overview.phoneByClient.get(id))}
+            columns={columnsFor(clock, (id) => clients.findIndex((x) => x.id === id) + 1, (id) => overview.phoneByClient.get(id), mayEditClients, (id) => dupCount.get(id) ?? 0)}
             getKey={(c) => c.id}
             rowActions={(c) => [
               { key: 'open', label: 'Open client', href: `/clients/${c.id}` },
@@ -336,7 +350,7 @@ export default async function ClientsPage({
       {allClients.length > 0 ? (
         <div className="grid items-start gap-4 lg:grid-cols-3">
           <Card>
-            <CardHeader title="Recent Communication" actions={<ViewAll href="/communication" />} />
+            <CardHeader title="Recent Communication" description={selected ? `For ${selected.name}` : undefined} actions={<ViewAll href="/communication" />} />
             {overview.recentMessages.length === 0 ? (
               <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No client messages yet.</p>
             ) : (
@@ -354,7 +368,7 @@ export default async function ClientsPage({
             )}
           </Card>
           <Card>
-            <CardHeader title="Upcoming Follow-ups" actions={<ViewAll href="/leads" />} />
+            <CardHeader title="Upcoming Follow-ups" description={selected ? `For ${selected.name}` : undefined} actions={<ViewAll href="/leads" />} />
             {overview.followUps.length === 0 ? (
               <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No follow-up is scheduled for a client&apos;s lead.</p>
             ) : (
@@ -372,7 +386,7 @@ export default async function ClientsPage({
             )}
           </Card>
           <Card>
-            <CardHeader title="Pending Invoices" actions={<ViewAll href="/invoices" />} />
+            <CardHeader title="Pending Invoices" description={selected ? `For ${selected.name}` : undefined} actions={<ViewAll href="/invoices" />} />
             {overview.pendingInvoices.length === 0 ? (
               <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No invoice is waiting for payment.</p>
             ) : (

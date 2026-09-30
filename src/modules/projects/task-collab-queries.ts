@@ -33,8 +33,8 @@ export async function readTaskCollabFor(taskIds: readonly string[], clock: Agenc
 
   const supabase = await createClient();
 
-  const [tasks, comments, checklist, attachments] = await Promise.all([
-    supabase.schema('projects').from('tasks').select('id, blocked_reason, blocked_at').in('id', ids),
+  const [tasks, comments, checklist, attachments, evidence] = await Promise.all([
+    supabase.schema('projects').from('tasks').select('id, blocked_reason, blocked_at, blocker_type, blocker_owner, blocker_next_action, origin, verified_at, verified_by, verification_note').in('id', ids),
     supabase
       .schema('projects')
       .from('task_comments')
@@ -54,7 +54,9 @@ export async function readTaskCollabFor(taskIds: readonly string[], clock: Agenc
       .select('id, task_id, title, url, kind, added_by, created_at')
       .in('task_id', ids)
       .order('created_at', { ascending: true }),
+    supabase.schema('projects').from('task_evidence').select('task_id').in('task_id', ids),
   ]);
+  if (evidence.error) unreadable('readTaskCollabFor.evidence', evidence.error);
   if (tasks.error) unreadable('readTaskCollabFor.tasks', tasks.error);
   if (comments.error) unreadable('readTaskCollabFor.comments', comments.error);
   if (checklist.error) unreadable('readTaskCollabFor.checklist', checklist.error);
@@ -66,6 +68,7 @@ export async function readTaskCollabFor(taskIds: readonly string[], clock: Agenc
         ...(comments.data ?? []).map((c) => c.author_id),
         ...(checklist.data ?? []).map((c) => c.done_by),
         ...(attachments.data ?? []).map((a) => a.added_by),
+        ...(tasks.data ?? []).map((t) => t.verified_by),
       ].filter((id): id is string => id !== null),
     ),
   ];
@@ -88,7 +91,14 @@ export async function readTaskCollabFor(taskIds: readonly string[], clock: Agenc
 
   for (const t of tasks.data ?? []) {
     const entry = out[t.id];
-    if (entry) entry.blocked = { reason: t.blocked_reason, at: t.blocked_at, sinceLabel: t.blocked_at ? clock.dateTime(t.blocked_at) : null };
+    if (entry) {
+      entry.blocked = { reason: t.blocked_reason, at: t.blocked_at, sinceLabel: t.blocked_at ? clock.dateTime(t.blocked_at) : null, type: t.blocker_type, owner: t.blocker_owner, nextAction: t.blocker_next_action };
+      entry.origin = { kind: t.origin === 'agent' ? 'agent' : 'human', verifiedAt: t.verified_at, verifiedLabel: t.verified_at ? clock.dateTime(t.verified_at) : null, verifiedByName: nameOf(t.verified_by), note: t.verification_note };
+    }
+  }
+  for (const e of evidence.data ?? []) {
+    const entry = out[e.task_id];
+    if (entry) entry.evidenceCount += 1;
   }
   for (const c of comments.data ?? []) {
     out[c.task_id]?.comments.push({ id: c.id, body: c.body, authorId: c.author_id, authorName: nameOf(c.author_id) ?? 'Unknown', createdAt: c.created_at, createdLabel: clock.dateTime(c.created_at) });

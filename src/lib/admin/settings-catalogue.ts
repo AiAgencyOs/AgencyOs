@@ -115,6 +115,8 @@ export const SETTINGS_ENTRIES: readonly SettingsEntry[] = [
   section('receiving_accounts', 'Receiving accounts', '/settings/finance#receiving-accounts', ['bank', 'upi', 'payment account', 'invoice', 'ifsc']),
   section('past_due_reminders', 'Past-due invoice reminders', '/settings/finance#past-due-reminders', ['reminder', 'overdue', 'invoice', 'interval', 'dunning']),
   section('gst_identity', 'GST identity', '/settings/finance#gst-identity', ['gst', 'gstin', 'tax', 'sac', 'state code', 'invoice']),
+  section('invoice_numbering', 'Invoice numbering and terms', '/settings/finance#invoice-numbering', ['invoice', 'number', 'prefix', 'terms', 'due', 'net days', 'payment terms']),
+  setting('won_requires_payment_evidence', 'Payment evidence before a deal is won', '/settings/finance#won-gate', ['won', 'deal', 'payment', 'gate', 'evidence', 'advance']),
 ];
 
 /** The Keys & secrets slots, one entry each, generated from the registry so it cannot drift from the screen. */

@@ -4,10 +4,13 @@ import Link from 'next/link';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { isPreviewGroup } from '@/lib/admin/entity-preview-types';
 import {
+  conditionToParam,
+  groupLabel,
   groupResults,
   isSearchGroup,
   MIN_SEARCH_LENGTH,
   OWNER_COLUMN,
+  parseConditions,
   SEARCH_GROUPS,
   SEARCH_SINCE,
   searchRecords,
@@ -15,6 +18,7 @@ import {
 } from '@/lib/admin/global-search-page';
 import { listMySearches, normalizeFilters } from '@/lib/admin/saved-searches';
 import { requireInternal } from '@/lib/auth/session';
+import { AGENT_DEFINITIONS } from '@/modules/agents/registry';
 import { listInternalRoster } from '@/modules/projects/queries';
 import {
   Badge,
@@ -61,7 +65,7 @@ export const metadata: Metadata = { title: 'Search' };
 export default async function SearchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; type?: string; since?: string; owner?: string; status?: string }>;
+  searchParams: Promise<{ q?: string; type?: string; since?: string; owner?: string; status?: string; f?: string | string[] }>;
 }) {
   await requireInternal('/search');
   const params = await searchParams;
@@ -73,23 +77,33 @@ export default async function SearchPage({
   const owner = /^[0-9a-f-]{36}$/.test(params.owner ?? '') ? params.owner : undefined;
   const status = (params.status ?? '').trim().slice(0, 40) || undefined;
 
+  // The builder's conditions; the older single `owner=` / `status=` links still
+  // work and are folded in as the first conditions.
+  const conditions = [
+    ...(owner ? [{ field: 'owner' as const, op: 'is', value: owner }] : []),
+    ...(status ? [{ field: 'status' as const, op: 'is', value: status }] : []),
+    ...parseConditions(params.f),
+  ];
+  const conditionParams = conditions.map(conditionToParam);
   const [results, mine, roster] = await Promise.all([
-    searchRecords({ q, group, sinceDays: since?.days, ownerId: owner, status }),
+    searchRecords({ q, group, sinceDays: since?.days, conditions, agents: AGENT_DEFINITIONS }),
     listMySearches(),
     listInternalRoster().catch(() => []),
   ]);
-  const currentFilters = normalizeFilters({ type: group, since: since?.key });
+  const currentFilters = normalizeFilters({ type: group, since: since?.key, f: conditionParams });
   const alreadyNamed =
     q.length >= MIN_SEARCH_LENGTH
-      ? (mine.saved.find((e) => e.query === q && e.filters.type === currentFilters.type && e.filters.since === currentFilters.since)?.name ?? null)
+      ? (mine.saved.find((e) => e.query === q && e.filters.type === currentFilters.type && e.filters.since === currentFilters.since && (e.filters.f ?? []).join('|') === (currentFilters.f ?? []).join('|'))?.name ?? null)
       : null;
-  const filtered = Boolean(group || since || owner || status);
+  const filtered = Boolean(group || since || conditions.length > 0);
   const sections = groupResults(results);
 
   const href = (over: Partial<{ type: string; since: string; owner: string; status: string }>) => {
-    const next = { q, type: group ?? '', since: since?.key ?? '', owner: owner ?? '', status: status ?? '', ...over };
+    const next = { q, type: group ?? '', since: since?.key ?? '', ...over };
     const query = new URLSearchParams();
     for (const [k, v] of Object.entries(next)) if (v) query.set(k, v);
+    // Conditions ride along unless the caller clears them (owner/status '' = clear all).
+    if (!('owner' in over) && !('status' in over)) for (const c of conditionParams) query.append('f', c);
     const s = query.toString();
     return `/search${s ? `?${s}` : ''}`;
   };
@@ -113,7 +127,7 @@ export default async function SearchPage({
       header: 'Created',
       align: 'right',
       cellClassName: 'text-muted',
-      cell: (r) => clock.date(r.createdAt),
+      cell: (r) => (r.createdAt ? clock.date(r.createdAt) : 'Defined in code'),
     },
     {
       key: 'id',
@@ -136,7 +150,7 @@ export default async function SearchPage({
         title="Search"
         description={
           q.length < MIN_SEARCH_LENGTH
-            ? 'Leads, clients, projects, invoices, quotations, meetings and tasks — the same records the ⌘K palette matches, all of them.'
+            ? 'Leads, clients, projects, invoices, quotations, meetings, tasks, requirements, files, agents and audit events — the records your role may already open.'
             : `${results.length} result${results.length === 1 ? '' : 's'} for “${q}”${sections.length > 1 ? ` across ${sections.length} types` : ''}.`
         }
       />
@@ -145,13 +159,13 @@ export default async function SearchPage({
         <FilterSearch
           action="/search"
           defaultValue={q}
-          placeholder="Search by lead title, client or project name, invoice number, quotation, meeting or task…"
-          preserve={{ type: group, since: since?.key, owner, status }}
+          placeholder="Search by name, number, title, file, agent or audit action…"
+          preserve={{ type: group, since: since?.key }}
         />
         <FilterChips
           options={[
             { key: 'all', label: 'All types', href: href({ type: '' }), active: !group },
-            ...SEARCH_GROUPS.map((g) => ({ key: g, label: `${g}s`, href: href({ type: g }), active: group === g })),
+            ...SEARCH_GROUPS.map((g) => ({ key: g, label: groupLabel(g), href: href({ type: g }), active: group === g })),
           ]}
         />
         <FilterChips
@@ -168,16 +182,15 @@ export default async function SearchPage({
         q={q}
         type={group}
         since={since?.key}
-        owner={owner}
-        status={status}
+        conditions={conditionParams}
         roster={roster.map((m) => ({ userId: m.userId, label: m.fullName || m.email }))}
         ownerApplies={group === undefined || OWNER_COLUMN[group] !== undefined}
       />
 
       {q.length >= MIN_SEARCH_LENGTH ? (
         <div className="flex flex-wrap items-center gap-2">
-          <RecordSearch q={q} type={group} since={since?.key} />
-          <SaveSearchForm q={q} type={group} since={since?.key} alreadyNamed={alreadyNamed} />
+          <RecordSearch q={q} type={group} since={since?.key} f={conditionParams} />
+          <SaveSearchForm q={q} type={group} since={since?.key} f={conditionParams} alreadyNamed={alreadyNamed} />
         </div>
       ) : null}
 
@@ -221,7 +234,7 @@ export default async function SearchPage({
         <EmptyState
           icon={<IconSearch size={22} />}
           title="No matches"
-          description={`Nothing named like “${q}”${group ? ` among ${group.toLowerCase()}s` : ''}${since ? ` created in the ${since.label.toLowerCase()}` : ''}${status ? ` in status “${status}”` : ''}${owner ? ' owned by that person' : ''}.`}
+          description={`Nothing named like “${q}”${group ? ` among ${groupLabel(group).toLowerCase()}` : ''}${since ? ` created in the ${since.label.toLowerCase()}` : ''}${conditions.length > 0 ? ` matching ${conditions.length} filter condition${conditions.length === 1 ? '' : 's'}` : ''}.`}
           action={
             filtered ? (
               <Link href={href({ type: '', since: '', owner: '', status: '' })} className={buttonClass('secondary', 'sm')}>
@@ -242,14 +255,14 @@ export default async function SearchPage({
             <CardHeader
               title={
                 <span className="flex items-center gap-2">
-                  {section.group}s
+                  {groupLabel(section.group)}
                   <Badge tone="neutral">{section.rows.length}</Badge>
                 </span>
               }
               actions={
                 group ? undefined : (
                   <Link href={href({ type: section.group })} className="text-xs font-medium text-brand hover:underline">
-                    Only {section.group.toLowerCase()}s
+                    Only {groupLabel(section.group).toLowerCase()}
                   </Link>
                 )
               }

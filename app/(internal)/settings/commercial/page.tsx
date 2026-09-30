@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 
+import { readSettingImpact } from '@/lib/admin/settings-impact';
+import { impactEffects } from '@/lib/admin/settings-impact-copy';
 import { requireInternal } from '@/lib/auth/session';
 import { hasRole } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
@@ -13,6 +15,7 @@ import {
   PricingModelForm,
   ThirdPartyChargesForm,
 } from '../forms';
+import { ImpactGate } from '../impact-gate';
 import { SettingHistory } from '../setting-history';
 import { loadSettingHistory } from '../setting-history-entries';
 import { QuotationClausesPanel, type ClauseCard } from './clauses-panel';
@@ -22,7 +25,7 @@ export const metadata: Metadata = { title: 'Settings — Commercial' };
 export default async function SettingsCommercialPage() {
   const context = await requireInternal('/settings');
 
-  const historyOf = await loadSettingHistory();
+  const [historyOf, impact] = await Promise.all([loadSettingHistory(), readSettingImpact()]);
   const supabase = await createClient();
   const { data: orgRows } = await supabase.schema('core').from('organizations').select('settings').limit(1);
   const orgSettings = (orgRows?.[0]?.settings ?? {}) as Record<string, unknown>;
@@ -126,13 +129,15 @@ export default async function SettingsCommercialPage() {
             {spendSentence}
           </p>
         ) : null}
-        <PricingModelForm
+        <ImpactGate title="Changing the pricing model affects" effects={impactEffects('pricing', impact)}>
+          <PricingModelForm
           dayRate={dayRate}
           aiDayRate={aiDayRate}
           multiplierMin={multiplierMin}
           multiplierTarget={multiplierTarget}
           multiplierMax={multiplierMax}
         />
+        </ImpactGate>
         <SettingHistory
           label="Pricing model"
           entries={historyOf('pricing_day_rate_rupees', 'pricing_ai_day_rate_rupees', 'pricing_multiplier_min', 'pricing_multiplier_target', 'pricing_multiplier_max')}
@@ -151,7 +156,9 @@ export default async function SettingsCommercialPage() {
           than when it falls due — a demo is a promise about work, a date is a promise about a
           calendar.
         </p>
-        <PaymentTermsForm structure={paymentTerms} />
+        <ImpactGate title="Changing the payment terms affects" effects={impactEffects('terms', impact)}>
+          <PaymentTermsForm structure={paymentTerms} />
+        </ImpactGate>
 
         <h3 id="quotation-validity" className="mt-6 scroll-mt-24 text-sm font-medium">How long a quotation stands</h3>
         <p className="text-xs text-muted">
@@ -159,7 +166,9 @@ export default async function SettingsCommercialPage() {
             ? `Set — every new quotation says it is valid for ${setting('quotation_validity_days')} days from its date.`
             : 'Not set — quotations say 15 days, the figure most of the agency’s own past quotations used. Whole days, 1 to 90.'}
         </p>
-        <QuotationValidityForm current={setting('quotation_validity_days')} />
+        <ImpactGate title="Changing how long a quotation stands affects" effects={impactEffects('validity', impact)}>
+          <QuotationValidityForm current={setting('quotation_validity_days')} />
+        </ImpactGate>
         <SettingHistory label="Quotation validity" entries={historyOf('quotation_validity_days')} />
 
         <h3 className="mt-6 text-sm font-medium">Quotation clauses</h3>
@@ -185,12 +194,14 @@ export default async function SettingsCommercialPage() {
             ? 'Set. These bound what happens with nobody looking. None of them can refuse a decision you make yourself.'
             : 'None set — nothing bounds the agent beyond the rules already built in. Every box is optional; fill in the ones you have a number for.'}
         </p>
-        <NegotiationLimitsForm
+        <ImpactGate title="Changing the negotiation limits affects" effects={impactEffects('limits', impact)}>
+          <NegotiationLimitsForm
           maxRounds={maxRounds}
           minPrice={minPrice}
           maxDiscount={maxDiscount}
           maxAutonomous={maxAutonomous}
         />
+        </ImpactGate>
         <SettingHistory
           label="Negotiation limits"
           entries={historyOf('negotiation_max_rounds', 'negotiation_min_price_rupees', 'negotiation_max_discount_pct', 'negotiation_max_autonomous_quote_rupees')}
@@ -227,12 +238,14 @@ export default async function SettingsCommercialPage() {
           once per deal, never below your own minimum band, and never past its date — without the
           agent coming back to you. You are told each time. Clear all three fields to withdraw it.
         </p>
-        <ApprovedOfferForm
+        <ImpactGate title="Changing the standing offer affects" effects={impactEffects('offer', impact)}>
+          <ApprovedOfferForm
           label={offer?.label ?? null}
           condition={offer?.condition ?? null}
           discountPct={offer?.discountPct ?? null}
           validUntil={offer?.validUntil ?? null}
         />
+        </ImpactGate>
       </div>
     </div>
   );

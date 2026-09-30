@@ -11,13 +11,18 @@ import { RetryDeliveryForm } from '../operations/retry-delivery-form';
 import { EscalateControl } from '../notifications/escalate-form';
 import { AnnouncementsPanel } from '../settings/communication/announcements-panel';
 import { readEscalationsByKey } from '@/lib/admin/escalations';
-import { listAnnouncements } from '@/modules/crm/announcements-queries';
+import { listAnnouncementTargets, listAnnouncements } from '@/modules/crm/announcements-queries';
+import { listAnnouncementTemplates } from '@/modules/crm/announcement-templates-queries';
+import { listOutboundEmails } from '@/modules/crm/email-queries';
+import { emailTransportState } from '@/lib/email/transport';
 import { listUnansweredConversations } from '@/modules/crm/unread-queries';
 import { listLeadAssignees } from '@/modules/crm/escalation-queries';
 import { listActiveConversations } from '@/modules/crm/queries';
+import { conversationHref } from '@/modules/crm/conversation-href';
 import { listWhatsAppTemplates } from '@/modules/crm/template-queries';
 import { listInternalRoster } from '@/modules/projects/queries';
 
+import { EmailLane } from './email-panel';
 import { HandoffForm } from './handoff-form';
 import {
   buttonClass,
@@ -45,6 +50,12 @@ import {
 } from '@/ui';
 
 export const metadata: Metadata = { title: 'Communication' };
+
+/** A thread opens its lead or project; a group with no page is a plain row, never a dead link. */
+function ConversationRow({ href, className, children }: { href: string | null; className: string; children: React.ReactNode }) {
+  if (!href) return <div className={className}>{children}</div>;
+  return <Link href={href} className={cx(className, 'hover:bg-surface-hover')}>{children}</Link>;
+}
 
 function waitingFor(since: string, now: number): string {
   const minutes = Math.max(0, Math.floor((now - new Date(since).getTime()) / 60_000));
@@ -75,7 +86,7 @@ export default async function CommunicationCenterPage({ searchParams }: { search
 
   const mayAssign = can(context, 'lead.assign');
   const canManage = can(context, 'organization.settings');
-  const [conversations, failedDeliveries, deferred, templates, roster, announcements, unanswered, draftAnnouncements] = await Promise.all([
+  const [conversations, failedDeliveries, deferred, templates, roster, announcements, unanswered, draftAnnouncements, announcementTargets, announcementTemplates, emails, transport] = await Promise.all([
     listActiveConversations(),
     listFailedDeliveries(20),
     listDeferredSends(20),
@@ -86,6 +97,12 @@ export default async function CommunicationCenterPage({ searchParams }: { search
     listUnansweredConversations(),
     // SCR-057/059 (bucket F): drafts, including the scheduled ones, for the create/schedule panel and the due tile.
     listAnnouncements({ status: 'draft', limit: 50 }),
+    // SCR-059: the project/client pickers and the reusable formats the composer offers.
+    listAnnouncementTargets(),
+    listAnnouncementTemplates(),
+    // SCR-057: the email and client-update lane.
+    listOutboundEmails(30),
+    emailTransportState(),
   ]);
   // SCR-060 (bucket F): retries are a count — total attempts across the failed deliveries shown.
   const retryTotal = failedDeliveries.reduce((n, f) => n + (f.retryCount ?? 0), 0);
@@ -93,7 +110,7 @@ export default async function CommunicationCenterPage({ searchParams }: { search
   const escalationsByKey = await readEscalationsByKey();
   const canAnswerEscalation = can(context, 'audit.read');
   const dueAnnouncements = draftAnnouncements.filter((a) => a.scheduledFor !== null);
-  const assignees = await listLeadAssignees(conversations.map((c) => c.leadId));
+  const assignees = await listLeadAssignees(conversations.map((c) => c.leadId).filter((id): id is string => id !== null));
   const rosterOptions = roster.map((m) => ({ userId: m.userId, fullName: m.fullName || m.email }));
   const now = Date.now();
 
@@ -106,6 +123,7 @@ export default async function CommunicationCenterPage({ searchParams }: { search
   // SCR-057: the escalation queue — longest wait first.
   const waiting = [...paused].sort((a, b) => new Date(a.agentPausedAt!).getTime() - new Date(b.agentPausedAt!).getTime());
   const approvedTemplates = templates.filter((t) => t.active && t.status === 'approved').length;
+  const submittedTemplates = templates.filter((t) => t.status === 'submitted').length;
   const channels = new Map<string, number>();
   for (const c of conversations) channels.set(c.channel, (channels.get(c.channel) ?? 0) + 1);
   const unansweredIds = new Set(unanswered.map((u) => u.conversationId));
@@ -117,7 +135,7 @@ export default async function CommunicationCenterPage({ searchParams }: { search
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Communication"
-        description="Every open client conversation, what is waiting on a person, and what did not get through."
+        description="Every open client conversation, what is waiting on a person, and what did not get through — WhatsApp, email, announcements and client updates."
         actions={
           <>
             <LiveRefresh topics={['conversations', 'jobs']} />
@@ -131,12 +149,14 @@ export default async function CommunicationCenterPage({ searchParams }: { search
         }
       />
 
-      <StatGrid cols={5}>
+      <StatGrid cols={6}>
         <Stat label="Active conversations" value={String(conversations.length)} caption="Open client threads" tone="brand" icon={<IconMessage size={16} />} />
         {/* SCR-057 (bucket F): unread, honestly — no per-person receipt exists, so this counts threads whose newest message is the client's. */}
         <Stat label="Unread" value={String(unanswered.length)} caption="Threads the client wrote to last" tone={unanswered.length > 0 ? 'warning' : 'success'} icon={<IconInbox size={16} />} href="/communication?unread=1#conversations" />
         <Stat label="Waiting on a person" value={String(paused.length)} caption="Agent paused" tone={paused.length > 0 ? 'warning' : 'success'} icon={<IconUser size={16} />} href="#escalations" />
         <Stat label="Failed deliveries" value={String(failedDeliveries.length)} caption={retryTotal > 0 ? `${retryTotal} retr${retryTotal === 1 ? 'y' : 'ies'} so far` : 'Most recent 20'} tone={failedDeliveries.length > 0 ? 'danger' : 'success'} icon={<IconAlert size={16} />} href="/operations" />
+        {/* SCR-057: messages waiting on a template — sends deferred because the 24-hour window is closed, which only an approved template can reopen. */}
+        <Stat label="Waiting on a template" value={String(deferred.length)} caption={submittedTemplates > 0 ? `${submittedTemplates} template${submittedTemplates === 1 ? '' : 's'} with Meta awaiting approval` : approvedTemplates > 0 ? 'Window closed — send an approved template' : 'No approved template registered'} tone={deferred.length > 0 ? 'warning' : 'success'} icon={<IconClock size={16} />} href="#deferred" />
         {/* SCR-057 (bucket F): announcements due — drafts with a scheduled moment. */}
         <Stat label="Announcements due" value={String(dueAnnouncements.length)} caption={dueAnnouncements[0]?.scheduledFor ? `Next ${clock.dateTime(dueAnnouncements[0].scheduledFor)}` : 'None scheduled'} tone={dueAnnouncements.length > 0 ? 'info' : 'neutral'} icon={<IconSettings size={16} />} href="#announcements" />
       </StatGrid>
@@ -171,7 +191,7 @@ export default async function CommunicationCenterPage({ searchParams }: { search
             <ul className="divide-y divide-line">
               {sorted.map((c) => (
                 <li key={c.id}>
-                  <Link href={`/leads/${c.leadId}`} className={cx('flex items-start gap-3 px-4 py-3 transition-colors hover:bg-surface-hover sm:px-5', c.agentPausedAt && 'bg-warning-soft/40')}>
+                  <ConversationRow href={conversationHref(c)} className={cx('flex items-start gap-3 px-4 py-3 transition-colors sm:px-5', c.agentPausedAt && 'bg-warning-soft/40')}>
                     <Avatar name={c.leadTitle} size="lg" />
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2">
@@ -181,11 +201,12 @@ export default async function CommunicationCenterPage({ searchParams }: { search
                       <span className="block truncate text-[13px] text-muted">{c.lastMessagePreview ?? 'No message yet'}</span>
                       <span className="mt-1 flex flex-wrap items-center gap-1.5">
                         <Badge tone="neutral">{humanize(c.channel)}</Badge>
+                        {c.kind !== 'direct' ? <Badge tone="info">{c.kind === 'project_group' ? 'Project group' : 'Internal group'}</Badge> : null}
                         {unansweredIds.has(c.id) ? <Badge tone="info">Unread</Badge> : null}
                         {c.agentPausedAt ? <Badge tone="warning" dot>Waiting on you{c.agentPausedReason ? ` · ${c.agentPausedReason}` : ''}</Badge> : null}
                       </span>
                     </span>
-                  </Link>
+                  </ConversationRow>
                 </li>
               ))}
             </ul>
@@ -233,7 +254,8 @@ export default async function CommunicationCenterPage({ searchParams }: { search
                           ? 'not retried'
                           : `retried ${f.retryCount} time${f.retryCount === 1 ? '' : 's'}${(() => {
                               const last = f.id ? retryHistory.get(f.id)?.last : undefined;
-                              return last ? `, last ${last.delivery ?? 'unrecorded'}${last.error ? ` — ${last.error}` : ''}` : '';
+                              const reason = f.id ? retryHistory.get(f.id)?.lastReason : null;
+                              return `${last ? `, last ${last.delivery ?? 'unrecorded'}${last.error ? ` — ${last.error}` : ''}` : ''}${reason ? ` · reason: ${reason}` : ''}`;
                             })()}`}
                       </span>
                       {mayRetry && f.id ? (
@@ -259,7 +281,7 @@ export default async function CommunicationCenterPage({ searchParams }: { search
             ) : null}
           </Card>
 
-          <Card>
+          <Card id="deferred">
             <CardHeader title="Deferred sends" description={deferred.length === 0 ? 'Nothing deferred.' : 'Waiting for the 24-hour window to reopen.'} />
             {deferred.length > 0 ? (
               <ul className="divide-y divide-line">
@@ -274,6 +296,17 @@ export default async function CommunicationCenterPage({ searchParams }: { search
                 ))}
               </ul>
             ) : null}
+          </Card>
+
+          {/* SCR-057: the email and client-update lane — one more channel of the Center, through the invoice email's transport. */}
+          <Card id="email">
+            <CardHeader title="Email and client updates" description="Written here, sent through the configured email transport, recorded with the provider's answer. A failed send can be sent again with a reason." />
+            <EmailLane
+              rows={emails.map((e) => ({ id: e.id, kind: e.kind, to: e.to, subject: e.subject, body: e.body, status: e.status, transport: e.transport, error: e.error, projectName: e.projectName, retryReason: e.retryReason, isRetry: e.retryOf !== null, resends: e.resends, when: clock.dateTime(e.createdAt) }))}
+              targets={announcementTargets}
+              canSend={can(context, 'lead.write')}
+              transport={transport.configured ? { configured: true, label: transport.label } : { configured: false, reason: transport.reason }}
+            />
           </Card>
 
           <Card>
@@ -315,12 +348,17 @@ export default async function CommunicationCenterPage({ searchParams }: { search
             <div className="px-4 pb-4 sm:px-5">
               <AnnouncementsPanel
                 canWrite={canManage}
+                targets={announcementTargets}
+                templates={announcementTemplates}
                 announcements={draftAnnouncements.map((a) => ({
                   id: a.id,
                   title: a.title,
                   body: a.body,
                   audience: a.audience,
                   status: a.status,
+                  projectName: a.projectName,
+                  clientName: a.clientName,
+                  fromMilestone: a.source === 'milestone',
                   when: a.scheduledFor ? `scheduled ${clock.dateTime(a.scheduledFor)}` : `drafted ${clock.dateTime(a.createdAt)}`,
                   scheduledFor: a.scheduledFor,
                 }))}
@@ -341,6 +379,9 @@ export default async function CommunicationCenterPage({ searchParams }: { search
                     <span className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-foreground">{a.title}</span>
                       <Badge tone={a.audience === 'clients' ? 'info' : 'neutral'}>{a.audience === 'clients' ? 'For clients' : 'Internal'}</Badge>
+                      {a.projectName ? <Badge tone="brand">Project: {a.projectName}</Badge> : null}
+                      {a.clientName && !a.projectName ? <Badge tone="neutral">Client: {a.clientName}</Badge> : null}
+                      {a.source === 'milestone' ? <Badge tone="info">From a milestone</Badge> : null}
                     </span>
                     <span className="line-clamp-2 text-muted">{a.body}</span>
                     <span className="text-[11px] text-faint">{a.publishedAt ? clock.dateTime(a.publishedAt) : ''}</span>
@@ -374,14 +415,14 @@ export default async function CommunicationCenterPage({ searchParams }: { search
                 <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                   <span className="flex min-w-0 flex-col gap-0.5">
                     <span className="flex items-center gap-2">
-                      <Link href={`/leads/${c.leadId}`} className="font-medium underline-offset-2 hover:underline">{c.leadTitle}</Link>
+                      {conversationHref(c) ? <Link href={conversationHref(c)!} className="font-medium underline-offset-2 hover:underline">{c.leadTitle}</Link> : <span className="font-medium">{c.leadTitle}</span>}
                       <Badge tone="warning" dot>waiting {waitingFor(c.agentPausedAt!, now)}</Badge>
                     </span>
                     <span className="text-xs text-muted">{c.agentPausedReason ?? 'No reason recorded.'}</span>
                   </span>
                   <span className="text-xs text-muted">since {clock.dateTime(c.agentPausedAt!)}</span>
                 </div>
-                {mayAssign ? <HandoffForm leadId={c.leadId} current={assignees.get(c.leadId) ?? null} roster={rosterOptions} /> : null}
+                {mayAssign && c.leadId ? <HandoffForm leadId={c.leadId} current={assignees.get(c.leadId) ?? null} roster={rosterOptions} /> : null}
               </li>
             ))}
           </ul>

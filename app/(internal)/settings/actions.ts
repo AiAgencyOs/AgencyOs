@@ -16,6 +16,8 @@ import { setAgencyTimezone, setDefaultDesignReviewer, setOrganizationName, setOr
   revokeSecondaryRole,
   setMembershipStatus,
   readOperationalSettings,
+  recordPrivilegeReason,
+  privilegeReasonIssue,
   settingText,
 } from '@/lib/admin/settings';
 import { verifyWhatsAppConfig } from '@/lib/admin/whatsapp-verify';
@@ -803,10 +805,16 @@ export async function grantSecondaryRoleAction(_prev: FormState, formData: FormD
     return { status: 'error', message: 'Choose a person and a role.' };
   }
 
+  const reason = String(formData.get('reason') ?? '');
+  const issue = privilegeReasonIssue(reason);
+  if (issue) return { status: 'error', message: issue };
+
   const result = await grantSecondaryRole(membershipId, role);
   if (!result.ok) return { status: 'error', message: result.error.message };
 
+  await recordPrivilegeReason(membershipId, 'secondary_role_granted', reason, { role });
   revalidatePath('/settings');
+  revalidatePath('/security');
   return { status: 'success', message: `Granted.` };
 }
 
@@ -817,10 +825,16 @@ export async function revokeSecondaryRoleAction(_prev: FormState, formData: Form
     return { status: 'error', message: 'Choose a person and a role.' };
   }
 
+  const reason = String(formData.get('reason') ?? '');
+  const issue = privilegeReasonIssue(reason);
+  if (issue) return { status: 'error', message: issue };
+
   const result = await revokeSecondaryRole(membershipId, role);
   if (!result.ok) return { status: 'error', message: result.error.message };
 
+  if (result.data.revoked) await recordPrivilegeReason(membershipId, 'secondary_role_revoked', reason, { role });
   revalidatePath('/settings');
+  revalidatePath('/security');
   return {
     status: 'success',
     message: result.data.revoked ? 'Revoked.' : 'That role was not granted, so there was nothing to revoke.',
@@ -838,10 +852,16 @@ export async function setMembershipStatusAction(_prev: FormState, formData: Form
     return { status: 'error', message: 'Choose a person and a status.' };
   }
 
+  const reason = String(formData.get('reason') ?? '');
+  const issue = privilegeReasonIssue(reason);
+  if (issue) return { status: 'error', message: issue };
+
   const result = await setMembershipStatus(membershipId, status);
   if (!result.ok) return { status: 'error', message: result.error.message };
 
+  if (result.data.updated) await recordPrivilegeReason(membershipId, 'status_changed', reason, { status });
   revalidatePath('/settings');
+  revalidatePath('/security');
   revalidatePath('/security/users');
   return {
     status: 'success',
@@ -997,5 +1017,82 @@ export async function publishQuotationClauseAction(_prev: FormState, formData: F
     message: result.data.unchanged
       ? `${CLAUSE_LABELS[key]} already says exactly that (version ${result.data.version}); nothing new was published.`
       : `${CLAUSE_LABELS[key]} is now version ${result.data.version}. Quotations already issued keep the wording they printed; the next one to be issued prints this.`,
+  };
+}
+
+/**
+ * SCR-070 — verify Figma. Figma's API reads FILES, so the honest check is to
+ * ask it for the most recently recorded design reference: if the token can
+ * read that node, the reference is re-recorded as checked (the same door
+ * linking uses, carrying its preview and page along so nothing is erased) and
+ * its `figma_verified_at` becomes the registry's "last verified". With no
+ * reference recorded there is nothing to check the token against, and the
+ * message says so rather than claiming a pass.
+ */
+export async function verifyFigmaAction(_prev: FormState, _formData: FormData): Promise<FormState> {
+  const context = await requireInternal();
+  if (!can(context, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify Figma.' };
+
+  const { figmaConfigured, lookupNode } = await import('@/lib/figma/client');
+  if (!(await figmaConfigured())) return { status: 'error', message: 'No Figma token is configured: store FIGMA_ACCESS_TOKEN under Security › Keys & secrets, then verify.' };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('theme_options')
+    .select('id, figma_file_key, figma_node_id, figma_page_id, preview_asset_url')
+    .not('figma_file_key', 'is', null)
+    .not('figma_node_id', 'is', null)
+    .order('figma_linked_at', { ascending: false })
+    .limit(1);
+  if (error) return { status: 'error', message: 'The recorded Figma references could not be read, so nothing was verified.' };
+  const ref = data?.[0];
+  if (!ref?.figma_file_key || !ref.figma_node_id) return { status: 'error', message: 'No design reference is recorded yet, so there is nothing to check the token against. Link a Figma frame on a project’s Design tab, then verify.' };
+
+  const lookup = await lookupNode(ref.figma_file_key, ref.figma_node_id);
+  if (!lookup.ok) {
+    const said = {
+      not_configured: 'No Figma token is configured.',
+      unauthorized: 'Figma rejected the token — it has probably been revoked and needs reissuing.',
+      forbidden: 'The token is accepted but cannot see the most recent reference’s file. Share the file with the token’s account.',
+      not_found: 'Figma no longer has the most recent reference’s file or node.',
+      unreachable: 'Figma did not answer. Nothing was changed; try again later.',
+    }[lookup.reason];
+    return { status: 'error', message: said };
+  }
+
+  const { linkThemeFigma } = await import('@/modules/projects/design');
+  const recorded = await linkThemeFigma({
+    themeOptionId: ref.id,
+    fileKey: ref.figma_file_key,
+    nodeId: ref.figma_node_id,
+    ...(ref.figma_page_id ? { pageId: ref.figma_page_id } : {}),
+    ...(ref.preview_asset_url ? { previewUrl: ref.preview_asset_url } : {}),
+  });
+  if (!recorded.ok) return { status: 'error', message: `Figma answered, but the check could not be recorded: ${recorded.error.message}` };
+
+  revalidatePath('/integrations');
+  revalidatePath('/production-readiness');
+  return { status: 'success', message: `Reachable — Figma answered for “${lookup.nodeName}” (version ${lookup.version}). Recorded as checked.` };
+}
+
+/**
+ * A single on/off organization switch — today the payment half of the WON gate
+ * (`won_requires_payment_evidence`). The key is checked against an allow-list
+ * here and again by the database whitelist; checked = 'on', unchecked clears
+ * the key (the gate then enforces only the accepted quotation, as before).
+ */
+export async function setOrganizationSettingAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const key = String(formData.get('key') ?? '');
+  if (key !== 'won_requires_payment_evidence') return { status: 'error', message: 'That setting cannot be changed here.' };
+  const on = formData.get('on') === 'on';
+  const result = await setOrganizationSetting('won_requires_payment_evidence', on ? 'on' : '');
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings/finance');
+  return {
+    status: 'success',
+    message: on
+      ? 'On. A deal cannot be marked won until a payment, or an approved no-advance exception, is on record.'
+      : 'Off. A deal needs only its accepted quotation to be marked won.',
   };
 }

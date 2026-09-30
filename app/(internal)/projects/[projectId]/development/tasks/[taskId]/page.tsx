@@ -17,6 +17,7 @@ import { Badge, buttonClass, Card, CardHeader, DetailPanel, EntityHeader, humani
 import { ProjectSubNav } from '../../../project-subnav';
 import { TaskCollabPanel } from '../../../../../task-collab-panel';
 import { TimeLogPanel } from '../../../../../time-log-panel';
+import { TaskRequirementClarificationForm } from './task-requirement-clarification';
 import { TaskClarificationForm } from './task-clarification-form';
 import { AddSubtaskForm, LabelsForm } from './task-plan-forms';
 import { listProjectSprints } from '@/modules/projects/sprint-queries';
@@ -182,6 +183,23 @@ export default async function TaskDetailPage({
                 />
                 <div className="px-4 pb-4 sm:px-5">
                   <TaskCollabPanel projectId={projectId} taskId={task.id} status={task.status} collab={collab} canWrite={mayWriteTask} />
+                </div>
+              </Card>
+
+              <Card>
+                <CardHeader title="Implementation Notes" description="How the task is to be built — the approach, constraints and decisions a developer needs. Kept with the task; edit it from the Board." />
+                <div className="px-4 pb-4 sm:px-5">
+                  {task.description?.trim() ? (
+                    <p className="whitespace-pre-wrap text-[13px]">{task.description}</p>
+                  ) : (
+                    <p className="text-[13px] text-muted">
+                      No implementation note is written.{' '}
+                      <Link href={`/projects/${projectId}/board`} className="underline underline-offset-2">
+                        Open the Board
+                      </Link>{' '}
+                      to add one to the task.
+                    </p>
+                  )}
                 </div>
               </Card>
 
@@ -374,26 +392,43 @@ export default async function TaskDetailPage({
                   description="A question the task cannot answer for itself goes on the plan, where it stops a guess from being built (Project Planning §10)."
                 />
                 <div className="px-4 pb-4 sm:px-5">
-                  {!mayPlan ? (
-                    <p className="text-[13px] text-muted">You do not have permission to raise a question on this project's plan.</p>
-                  ) : !plan ? (
-                    <p className="text-[13px] text-muted">
-                      There is no plan to raise it on.{' '}
-                      <Link href={`/projects/${projectId}/plan`} className="underline underline-offset-2">
-                        Draft one
-                      </Link>
-                      .
-                    </p>
-                  ) : plan.status !== 'draft' ? (
-                    <p className="text-[13px] text-muted">
-                      Plan v{plan.version} is {plan.status}; a question is raised on the next draft.{' '}
-                      <Link href={`/projects/${projectId}/plan`} className="underline underline-offset-2">
-                        Open the next version on the plan tab
-                      </Link>
-                      .
-                    </p>
-                  ) : (
+                  {plan && plan.status === 'draft' && mayPlan ? (
                     <TaskClarificationForm projectId={projectId} planId={plan.id} taskTitle={task.title} />
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {!plan ? (
+                        <p className="text-[13px] text-muted">
+                          There is no plan to raise it on, so the question goes to a requirement this task delivers.{' '}
+                          <Link href={`/projects/${projectId}/plan`} className="underline underline-offset-2">
+                            Draft a plan
+                          </Link>{' '}
+                          to raise a plan question instead.
+                        </p>
+                      ) : plan.status !== 'draft' ? (
+                        <p className="text-[13px] text-muted">
+                          Plan v{plan.version} is {plan.status}, so the question goes to a requirement this task delivers.{' '}
+                          <Link href={`/projects/${projectId}/plan`} className="underline underline-offset-2">
+                            Open the next plan version
+                          </Link>{' '}
+                          to raise a plan question instead.
+                        </p>
+                      ) : (
+                        <p className="text-[13px] text-muted">Raising a plan question takes the project.write permission; the question can go to a requirement instead.</p>
+                      )}
+                      {!mayWriteTask ? (
+                        <p className="text-[13px] text-muted">You do not have permission to raise a question on this project.</p>
+                      ) : scopeItems.length === 0 ? (
+                        <p className="text-[13px] text-muted">
+                          The task delivers no scope item, so there is no requirement to ask about. Ask it on the{' '}
+                          <Link href={`/projects/${projectId}/requirements`} className="underline underline-offset-2">
+                            Requirements tab
+                          </Link>
+                          .
+                        </p>
+                      ) : (
+                        <TaskRequirementClarificationForm projectId={projectId} taskTitle={task.title} items={scopeItems.map((s) => ({ id: s.id, title: s.title }))} />
+                      )}
+                    </div>
                   )}
                 </div>
               </Card>

@@ -22,8 +22,9 @@ export type Retried = { messageId: string; attempt: number; delivered: boolean }
  * so a double click cannot send twice and a retry whose link was lost can be
  * found again by its key. After the send — whatever it answered — the new
  * row is looked up by that key and linked to the original through
- * `crm.record_delivery_retry`, which sets `retry_of` and bumps the
- * original's `retry_count` in one audited transaction. A retry that itself
+ * `crm.requeue_failed_delivery`, which sets `retry_of`, bumps the
+ * original's `retry_count` and keeps the reason the person gave, in one
+ * audited transaction. A retry that itself
  * failed is therefore still on record as an attempt, with its reason.
  *
  * Gated on `lead.write`, as sending is. The link door re-checks owner or
@@ -31,7 +32,7 @@ export type Retried = { messageId: string; attempt: number; delivered: boolean }
  */
 export async function retryFailedDelivery(input: RetryFailedDeliveryInput): Promise<Result<Retried>> {
   const parsed = retryFailedDeliverySchema.safeParse(input);
-  if (!parsed.success) return err('VALIDATION', 'That is not a message id.');
+  if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'That is not a message id.');
 
   const context = await requireInternal();
   if (!can(context, 'lead.write')) {
@@ -76,9 +77,10 @@ export async function retryFailedDelivery(input: RetryFailedDeliveryInput): Prom
     .maybeSingle();
 
   if (retryRow) {
-    const { error: linkError } = await supabase.schema('crm').rpc('record_delivery_retry', {
+    const { error: linkError } = await supabase.schema('crm').rpc('requeue_failed_delivery', {
       p_original_id: original.id,
       p_retry_id: retryRow.id,
+      p_reason: parsed.data.reason,
     });
     if (linkError) {
       console.error(JSON.stringify({ level: 'error', scope: 'retryFailedDelivery.link', detail: linkError.message }));

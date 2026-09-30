@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
+import { overallProgress, overallProgressLabel } from '@/modules/projects/project-health';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { readClientName } from '@/lib/admin/clients';
 import { requireInternal } from '@/lib/auth/session';
@@ -134,7 +135,8 @@ export default async function ProjectBoardPage({ params, searchParams }: { param
   const daysLeft = project.ends_on
     ? Math.ceil((new Date(`${project.ends_on}T00:00:00Z`).getTime() - new Date(`${todayKey}T00:00:00Z`).getTime()) / 86_400_000)
     : null;
-  const overall = pctOf(count('done'));
+  // One progress figure on every project screen (milestones met, else tasks done).
+  const overall = overallProgress({ milestonesTotal: milestones.length, milestonesMet: milestones.filter((m) => m.met_at).length, tasksTotal: tasks.length, tasksDone: count('done') });
 
   let currentSeen = false;
   const steps: TimelineStep[] = milestones.map((m) => {
@@ -165,7 +167,7 @@ export default async function ProjectBoardPage({ params, searchParams }: { param
         clientName={clientName}
         canEdit={can(context, 'project.write')}
         aside={
-          <HeaderFigure value={`${overall}%`} label="Overall progress">
+          <HeaderFigure value={`${overall}%`} label={overallProgressLabel({ milestonesTotal: milestones.length, tasksTotal: tasks.length })}>
             <ProgressBar value={overall} showValue={false} label="Overall progress" tone="brand" />
           </HeaderFigure>
         }

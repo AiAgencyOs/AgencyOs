@@ -28,7 +28,8 @@ export const watchProjectSchema = z.object({
   projectId: z.uuid(),
   /** Omitted means the caller themself. Naming somebody else is owner/ops_admin only. */
   userId: z.uuid().optional(),
-  phases: z.array(z.enum(WATCH_PHASES)).max(WATCH_PHASES.length).default([...WATCH_PHASES]),
+  /** Omitted means the organisation's default phases (Settings › Project defaults), else all four. */
+  phases: z.array(z.enum(WATCH_PHASES)).max(WATCH_PHASES.length).optional(),
 });
 export type WatchProjectInput = z.infer<typeof watchProjectSchema>;
 

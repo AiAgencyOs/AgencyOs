@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 
 import { Avatar, Badge, buttonClass, Card, CardHeader, EmptyState, IconList, IconUsers, ViewAll } from '@/ui';
 import { cx } from '@/ui';
@@ -18,6 +19,8 @@ export function DeviceTestingCard({
   hrefFor,
   addHref,
   date,
+  addForm,
+  renderSupport,
 }: {
   tiles: readonly DeviceTile[];
   active: Platform | null;
@@ -25,23 +28,30 @@ export function DeviceTestingCard({
   /** Where a device is added: a run is recorded with its device on the project's QA tab. */
   addHref: string;
   date: (iso: string) => string;
+  /** SCR-044 "Add Device": the form, drawn only for whoever may register a device. Omitted, no control is shown. */
+  addForm?: ReactNode;
+  /** The supported / unsupported control for a registered device's tile. */
+  renderSupport?: (tile: DeviceTile) => ReactNode;
 }) {
   const summary = platformSummary(tiles);
   const current = active && summary.some((s) => s.platform === active) ? active : (summary[0]?.platform ?? null);
   const shown = tiles.filter((t) => t.platform === current);
-  const tested = shown.filter((t) => t.state === 'tested').length;
+  // An unsupported device is not meant to be tested, so it is not in the "Tested" denominator.
+  const testable = shown.filter((t) => t.state !== 'unsupported');
+  const tested = testable.filter((t) => t.state === 'tested').length;
 
   return (
     <Card id="device-testing">
       <CardHeader
         title="Device Testing"
-        description="Test across multiple devices and platforms — a tile is a device a test run recorded in the last 90 days."
-        actions={
-          <Link href={addHref} className={buttonClass('secondary', 'sm')}>
-            Add Device
-          </Link>
-        }
+        description="Test across multiple devices and platforms — a tile is a device a test run recorded in the last 90 days, or one the agency registered. A configuration the agency does not test is recorded as unsupported, with its reason."
       />
+      {addForm ? (
+        <details open={tiles.length === 0} className="px-4 pb-3 sm:px-5">
+          <summary className={`${buttonClass('secondary', 'sm')} cursor-pointer list-none`}>Add Device</summary>
+          <div className="pt-3">{addForm}</div>
+        </details>
+      ) : null}
       {tiles.length === 0 ? (
         <EmptyState
           icon={<IconList size={22} />}
@@ -71,8 +81,8 @@ export function DeviceTestingCard({
                 </Link>
               ))}
             </nav>
-            <Badge tone={tested === shown.length ? 'success' : 'warning'} dot>
-              {tested}/{shown.length} Tested
+            <Badge tone={tested === testable.length ? 'success' : 'warning'} dot>
+              {tested}/{testable.length} Tested
             </Badge>
           </div>
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))]">
@@ -89,9 +99,10 @@ export function DeviceTestingCard({
                 </div>
                 <p className="truncate text-[13px] font-semibold" title={t.name}>{t.name}</p>
                 <p className="truncate text-xs text-muted">{t.os ?? PLATFORM_LABEL[t.platform]} · {date(t.lastAt)}</p>
+                {t.state === 'unsupported' && t.reason ? <p className="line-clamp-3 text-xs text-muted">Unsupported: {t.reason}</p> : null}
                 <div className="flex items-center justify-between gap-1">
-                  <Badge tone={t.state === 'tested' ? 'success' : t.state === 'failed' ? 'danger' : 'warning'} dot>
-                    {t.state === 'tested' ? 'Tested' : t.state === 'failed' ? 'Failed' : 'In progress'}
+                  <Badge tone={t.state === 'tested' ? 'success' : t.state === 'failed' ? 'danger' : t.state === 'unsupported' ? 'neutral' : 'warning'} dot>
+                    {t.state === 'tested' ? 'Tested' : t.state === 'failed' ? 'Failed' : t.state === 'unsupported' ? 'Unsupported' : t.state === 'untested' ? 'Not tested yet' : 'In progress'}
                   </Badge>
                   {t.evidenceUrl ? (
                     <a href={t.evidenceUrl} target="_blank" rel="noreferrer" className="text-xs text-brand hover:underline">
@@ -101,6 +112,7 @@ export function DeviceTestingCard({
                     <span className="whitespace-nowrap text-xs text-faint">{t.runs} run{t.runs === 1 ? '' : 's'}</span>
                   )}
                 </div>
+                {renderSupport && t.configId ? renderSupport(t) : null}
               </li>
             ))}
           </ul>

@@ -108,7 +108,7 @@ describe('the surfaces read the same pure function', () => {
   test('the reader gathers the three streams and calls computeBudgetVariance; it never prices an uncosted hour', () => {
     const reader = read('src/modules/finance/budget-variance-queries.ts');
     assert.match(reader, /from\('expenses'\)/);
-    assert.match(reader, /from\('agent_runs'\)/);
+    assert.match(reader, /readAiCostBuckets\(\)/);
     assert.match(reader, /from\('time_log_costs'\)/);
     assert.match(reader, /l\.rate_missing \? 0 : Number\(l\.cost_minor \?\? 0\)/);
     assert.match(reader, /return computeBudgetVariance\(\{ budgetMinor, expensesMinor, aiCostMinor, timeCostMinor, uncostedHours, monthly \}\);/);

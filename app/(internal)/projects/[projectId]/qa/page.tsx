@@ -14,6 +14,9 @@ import { describeCron } from '@/modules/qa/cron';
 import { compareToBudgets, listMetricResults, listPerformanceBudgets, listStabilityIncidents } from '@/modules/qa/performance-queries';
 import { listSuiteSchedules } from '@/modules/qa/schedule-queries';
 import { readClientName } from '@/lib/admin/clients';
+import { mergeDeviceCards } from '@/modules/qa/device-config';
+import { listDeviceConfigurations } from '@/modules/qa/device-queries';
+import { readRequirementCoverage } from '@/modules/qa/coverage-queries';
 import { deviceTiles, PLATFORMS, type Platform } from '@/modules/qa/device-tiles';
 import { DeviceTestingCard, QaTeamCard } from '@/modules/qa/qa-device-view';
 import { listDeviceRuns, readQaTeam } from '@/modules/qa/qa-team-queries';
@@ -27,6 +30,7 @@ import { WorkspaceHeader } from '../workspace-header';
 import { RaiseDefectForm } from '../qa-panel';
 import { DraftTestPlanForm, TestPlanCard, TestRunsCard } from '../test-plan-panel';
 import { QaInsights } from './qa-insights';
+import { AddDeviceForm, DeviceSupportForm } from '../../../qa/device-forms';
 
 export const metadata: Metadata = { title: 'Test plan' };
 
@@ -35,10 +39,10 @@ export const metadata: Metadata = { title: 'Test plan' };
  * baseline to point at (Doc 14 §3); if none is active yet, this page sends
  * the reader to the Scope tab rather than rendering a dead end.
  */
-export default async function TestPlanPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ compare?: string; baseline?: string; defects?: string; severity?: string; platform?: string }> }) {
+export default async function TestPlanPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ compare?: string; baseline?: string; defects?: string; severity?: string; platform?: string; runs?: string; suite?: string }> }) {
   const { projectId } = await params;
   // SCR-047: ?defects=open|fixed|reopened and ?severity= filter the bug list — the KPI tiles' own links.
-  const { compare, baseline, defects: defectsFilter, severity: severityFilter, platform: platformRaw } = await searchParams;
+  const { compare, baseline, defects: defectsFilter, severity: severityFilter, platform: platformRaw, runs: runsFilter, suite: suiteFilter } = await searchParams;
   const platform = (PLATFORMS as readonly string[]).includes(platformRaw ?? '') ? (platformRaw as Platform) : null;
 
   const context = await requireInternal(`/projects/${projectId}/qa`);
@@ -79,8 +83,26 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
     compare && /^[0-9a-f-]{36}$/i.test(compare) ? readBaselineComparison(projectId, compare, baseline && /^[0-9a-f-]{36}$/i.test(baseline) ? baseline : undefined) : Promise.resolve(null),
   ]);
   const budgetLines = compareToBudgets(budgets, metrics);
-  const [deviceRuns, qaTeam] = await Promise.all([listDeviceRuns(projectId), readQaTeam(projectId)]);
-  const tiles = deviceTiles(deviceRuns);
+  const [deviceRuns, qaTeam, deviceConfigs, coverage] = await Promise.all([
+    listDeviceRuns(projectId),
+    readQaTeam(projectId),
+    listDeviceConfigurations(),
+    // SCR-045: every requirement of the baseline, with its cases or the reason it has none.
+    plan && active ? readRequirementCoverage(plan.id, plan.scopeVersionId) : Promise.resolve(undefined),
+  ]);
+  const tiles = mergeDeviceCards(deviceTiles(deviceRuns), deviceConfigs);
+  const testers = roster.map((m) => ({ userId: m.userId, fullName: m.fullName }));
+  // SCR-046: the run list is filterable by status and suite (links, so a filter is a URL).
+  const shownRuns = runs.filter((r) => (!runsFilter || (runsFilter === 'open' ? r.status === 'open' : runsFilter === 'failed' ? r.failed > 0 || r.blocked > 0 : runsFilter === 'closed' ? r.status === 'closed' : true)) && (!suiteFilter || r.suite === suiteFilter));
+  const runFilterHref = (over: { runs?: string | null; suite?: string | null }) => {
+    const next = new URLSearchParams();
+    const r = over.runs === undefined ? runsFilter : over.runs;
+    const su = over.suite === undefined ? suiteFilter : over.suite;
+    if (r) next.set('runs', r);
+    if (su) next.set('suite', su);
+    const q = next.toString();
+    return `/projects/${projectId}/qa${q ? `?${q}` : ''}#run-lifecycle`;
+  };
 
   return (
     <div className="flex flex-col gap-5">
@@ -110,7 +132,7 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
           }
         />
       ) : plan ? (
-        <TestPlanCard projectId={projectId} plan={plan} scopeItems={active.items} editable={canWrite} canApprove={canApprove} tasks={tasks.map((t) => ({ id: t.id, title: t.title, status: t.status }))} />
+        <TestPlanCard projectId={projectId} plan={plan} scopeItems={active.items} editable={canWrite} canApprove={canApprove} tasks={tasks.map((t) => ({ id: t.id, title: t.title, status: t.status }))} coverage={coverage} />
       ) : (
         <>
           <EmptyState icon={<IconCheck size={22} />} title="No test plan yet" description={`Baseline v${active.version} is frozen and ready to plan against.`} />
@@ -118,7 +140,7 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
         </>
       )}
 
-      <TestRunsCard projectId={projectId} runs={runs} builds={builds} editable={canRecordRuns} planItems={plan?.items ?? []} results={caseResults} />
+      <TestRunsCard projectId={projectId} runs={runs} builds={builds} editable={canRecordRuns} planItems={plan?.items ?? []} results={caseResults} testers={testers} />
 
       {/* SCR-044: device tiles (from the runs' own device / evidence) and the QA roster (project role qa). */}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(19rem,1fr)]">
@@ -128,6 +150,8 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
           hrefFor={(p) => (p ? `/projects/${projectId}/qa?platform=${p}#device-testing` : `/projects/${projectId}/qa#device-testing`)}
           addHref={`/projects/${projectId}/qa#run-lifecycle`}
           date={(iso) => clock.date(iso)}
+          addForm={canWrite ? <AddDeviceForm /> : undefined}
+          renderSupport={canWrite ? (t) => (t.configId ? <DeviceSupportForm deviceId={t.configId} status={t.state === 'unsupported' ? 'unsupported' : 'supported'} name={t.name} /> : null) : undefined}
         />
         <QaTeamCard team={qaTeam} manageHref={`/projects/${projectId}/team`} />
       </div>
@@ -136,19 +160,43 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
       <Card id="run-lifecycle">
         <CardHeader title="Run lifecycle" description="Open a run against a build; close it once with passed, failed, skipped and blocked; rerun a closed run's failed cases as a new run that points back at it. A closed run is evidence and never changes." />
         <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
-          {canRecordRuns ? <OpenRunForm projectId={projectId} builds={builds} /> : null}
+          {canRecordRuns ? <OpenRunForm projectId={projectId} builds={builds} testers={testers} /> : null}
+          {runs.length > 0 ? (
+            <nav aria-label="Filter runs" className="flex flex-wrap items-center gap-2 text-[13px]">
+              {[
+                { label: 'All', key: null },
+                { label: 'Open', key: 'open' },
+                { label: 'Closed', key: 'closed' },
+                { label: 'Failed or blocked', key: 'failed' },
+              ].map((f) => (
+                <Link key={f.label} href={runFilterHref({ runs: f.key })} aria-current={(runsFilter ?? null) === f.key ? 'true' : undefined} className={`rounded-lg border px-3 py-1 ${(runsFilter ?? null) === f.key ? 'border-brand/40 bg-brand-soft text-brand' : 'border-line bg-surface text-muted hover:bg-surface-hover'}`}>
+                  {f.label}
+                </Link>
+              ))}
+              <span aria-hidden className="text-faint">·</span>
+              {[null, ...[...new Set(runs.map((r) => r.suite))].sort()].map((su) => (
+                <Link key={su ?? 'all-suites'} href={runFilterHref({ suite: su })} aria-current={(suiteFilter ?? null) === su ? 'true' : undefined} className={`rounded-lg border px-3 py-1 ${(suiteFilter ?? null) === su ? 'border-brand/40 bg-brand-soft text-brand' : 'border-line bg-surface text-muted hover:bg-surface-hover'}`}>
+                  {su ?? 'Every suite'}
+                </Link>
+              ))}
+            </nav>
+          ) : null}
           {runs.length === 0 ? (
             <p className="text-[13px] text-muted">No run yet.</p>
+          ) : shownRuns.length === 0 ? (
+            <p className="text-[13px] text-muted">No run matches that filter. <Link href={`/projects/${projectId}/qa#run-lifecycle`} className="text-brand hover:underline">Show every run</Link></p>
           ) : (
             <ul className="flex flex-col gap-2">
-              {runs.slice(0, 30).map((run) => (
+              {shownRuns.slice(0, 30).map((run) => (
                 <li key={run.id} id={`run-${run.id}`} className="flex flex-col gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="flex flex-wrap items-center gap-2">
                       <Badge tone={run.status === 'open' ? 'warning' : run.failed > 0 || run.blocked > 0 ? 'danger' : 'success'}>{run.status}</Badge>
                       <span className="font-medium">{run.suite}</span>
                       <span className="text-muted">v{builds.find((b) => b.id === run.deliverableId)?.version ?? '?'}</span>
-                      {run.rerunOf ? <span className="text-xs text-muted">rerun of an earlier run</span> : null}
+                      {run.environment ? <Badge tone="neutral">{run.environment}</Badge> : null}
+                      {run.testerId ? <span className="text-xs text-muted">tester {testers.find((t) => t.userId === run.testerId)?.fullName ?? 'on the team'}</span> : null}
+                      {run.rerunOf ? <Link href={`/projects/${projectId}/qa/runs/${run.rerunOf}`} className="text-xs text-brand hover:underline">rerun of an earlier run</Link> : null}
                     </span>
                     <span className="text-xs text-muted">
                       {run.startedAt ? `started ${clock.dateTime(run.startedAt)}` : `recorded ${clock.dateTime(run.executedAt)}`}
@@ -164,6 +212,7 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
                     {canRecordRuns && run.status === 'closed' && (run.failed > 0 || run.blocked > 0) ? <RerunButton projectId={projectId} runId={run.id} /> : null}
                     {canRecordRuns ? <MetricForm projectId={projectId} runId={run.id} /> : null}
                     {run.status === 'closed' ? <Link href={`/projects/${projectId}/qa?compare=${run.id}#baseline`} className="text-xs text-brand hover:underline">Compare against baseline</Link> : null}
+                    <Link href={`/projects/${projectId}/qa/runs/${run.id}`} className="text-xs font-medium text-brand hover:underline">Open run</Link>
                     <span className="text-xs text-muted">{defects.filter((d) => d.run_id === run.id).length} defect{defects.filter((d) => d.run_id === run.id).length === 1 ? '' : 's'} from this run</span>
                   </div>
                   {canWrite ? (

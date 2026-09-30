@@ -6,7 +6,7 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { getApproval } from '@/modules/approvals/queries';
 import { isOverdue, type ApprovalState } from '@/modules/approvals/schema';
-import { Badge, Card, DetailList, DetailRow, PageHeader, humanize } from '@/ui';
+import { ApprovalBanner, Badge, Card, DetailList, DetailRow, PageHeader, humanize, type ApprovalBannerState } from '@/ui';
 
 import { ApprovalDecisionForm } from '../approval-decision-form';
 
@@ -81,6 +81,15 @@ export default async function ApprovalDetailPage({
             ) : null}
           </>
         }
+      />
+
+      <ApprovalBanner
+        state={request.state as ApprovalBannerState}
+        requiredRole={humanize(request.required_role)}
+        dueLabel={clock.dateTime(request.sla_due_at)}
+        overdue={request.state === 'pending' && overdue}
+        decidedLabel={request.decided_at ? clock.dateTime(request.decided_at) : undefined}
+        note={request.decision_note}
       />
 
       <p className="text-xs text-muted">

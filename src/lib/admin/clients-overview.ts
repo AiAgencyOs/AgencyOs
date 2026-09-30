@@ -20,7 +20,7 @@ export type ClientsOverview = {
   pendingInvoices: { id: string; number: string; clientId: string; dueAt: string | null; owedMinor: number; currency: string; status: string }[];
 };
 
-export async function getClientsOverview(want: { leads: boolean; invoices: boolean }): Promise<ClientsOverview> {
+export async function getClientsOverview(want: { leads: boolean; invoices: boolean; scopeClientId?: string | null }): Promise<ClientsOverview> {
   const supabase = await createClient();
 
   const contactsRes = await supabase
@@ -41,10 +41,16 @@ export async function getClientsOverview(want: { leads: boolean; invoices: boole
     if (c.phone && !phoneByClient.has(c.client_account_id)) phoneByClient.set(c.client_account_id, c.phone);
   }
 
-  const contactIds = [...clientOfContact.keys()];
+  // The three bottom panels follow the selected client when one is given;
+  // the phone map above stays portfolio-wide because the table needs it.
+  const scope = want.scopeClientId ?? null;
+  const contactIds = [...clientOfContact.entries()].filter(([, client]) => scope === null || client === scope).map(([id]) => id);
   const [convRes, leadRes, invRes] = await Promise.all([
     want.leads
-      ? supabase.schema('crm').from('conversations').select('id, client_account_id').not('client_account_id', 'is', null).limit(500)
+      ? (() => {
+          const q = supabase.schema('crm').from('conversations').select('id, client_account_id').not('client_account_id', 'is', null);
+          return (scope ? q.eq('client_account_id', scope) : q).limit(500);
+        })()
       : Promise.resolve({ data: [], error: null }),
     want.leads && contactIds.length > 0
       ? supabase
@@ -59,13 +65,14 @@ export async function getClientsOverview(want: { leads: boolean; invoices: boole
           .limit(5)
       : Promise.resolve({ data: [], error: null }),
     want.invoices
-      ? supabase
-          .schema('finance')
-          .from('invoices')
-          .select('id, number, client_account_id, due_at, total_minor, paid_minor, currency, status')
-          .in('status', ['issued', 'partially_paid', 'overdue'])
-          .order('due_at', { ascending: true, nullsFirst: false })
-          .limit(5)
+      ? (() => {
+          const q = supabase
+            .schema('finance')
+            .from('invoices')
+            .select('id, number, client_account_id, due_at, total_minor, paid_minor, currency, status')
+            .in('status', ['issued', 'partially_paid', 'overdue']);
+          return (scope ? q.eq('client_account_id', scope) : q).order('due_at', { ascending: true, nullsFirst: false }).limit(5);
+        })()
       : Promise.resolve({ data: [], error: null }),
   ]);
   if (convRes.error) unreadable('getClientsOverview.conversations', convRes.error);

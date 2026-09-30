@@ -179,3 +179,64 @@ export async function listClientMeetingNotes(leadIds: string[], limit = 50): Pro
     };
   });
 }
+
+export type UnansweredReply = {
+  conversationId: string;
+  title: string | null;
+  kind: string;
+  unread: number;
+  latestAt: string;
+  latestBody: string | null;
+  projectId: string | null;
+  leadId: string | null;
+};
+
+/**
+ * SCR-003's "client responses": every conversation whose newest messages are
+ * inbound (the same derivation as `readClientUnreadReplies`, portfolio-wide
+ * rather than per client). Reads the newest messages RLS lets the caller see;
+ * a failed read throws, it never renders as "no replies".
+ */
+export async function listUnansweredClientReplies(limit = 20): Promise<UnansweredReply[]> {
+  const supabase = await createClient();
+  const { data: messages, error } = await supabase
+    .schema('crm')
+    .from('conversation_messages')
+    .select('conversation_id, body, occurred_at, metadata')
+    .order('occurred_at', { ascending: false })
+    .limit(UNREAD_SCAN_LIMIT);
+  if (error) unreadable('listUnansweredClientReplies.messages', error);
+
+  const state = new Map<string, { unread: number; closed: boolean; latestAt: string; latestBody: string | null }>();
+  for (const m of messages ?? []) {
+    const entry = state.get(m.conversation_id) ?? { unread: 0, closed: false, latestAt: m.occurred_at, latestBody: m.body };
+    if (!entry.closed) {
+      const direction = directionOf(m.metadata);
+      if (direction === 'outbound') entry.closed = true;
+      else if (direction === 'inbound') {
+        entry.unread += 1;
+        if (entry.unread === 1) {
+          entry.latestAt = m.occurred_at;
+          entry.latestBody = m.body;
+        }
+      }
+    }
+    state.set(m.conversation_id, entry);
+  }
+  const open = [...state.entries()].filter(([, e]) => e.unread > 0).sort((a, b) => b[1].latestAt.localeCompare(a[1].latestAt)).slice(0, limit);
+  if (open.length === 0) return [];
+
+  const { data: conversations, error: convError } = await supabase
+    .schema('crm')
+    .from('conversations')
+    .select('id, title, kind, project_id, lead_id, status')
+    .in('id', open.map(([id]) => id))
+    .neq('status', 'abandoned');
+  if (convError) unreadable('listUnansweredClientReplies.conversations', convError);
+  const byId = new Map((conversations ?? []).map((c) => [c.id, c]));
+  return open.flatMap(([id, e]) => {
+    const c = byId.get(id);
+    if (!c) return [];
+    return [{ conversationId: id, title: c.title, kind: c.kind, unread: e.unread, latestAt: e.latestAt, latestBody: e.latestBody, projectId: c.project_id ?? null, leadId: c.lead_id ?? null }];
+  });
+}

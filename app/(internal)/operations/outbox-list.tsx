@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { OUTBOX_STATUSES, type OutboxPage } from '@/lib/observability/queries';
 import { Badge, buttonClass, selectClass } from '@/ui';
 
+import { EscalateControl, type EscalationView } from '../notifications/escalate-form';
+
 /**
  * The outbox rows — D17, reversed by the owner on 2026-09-29. Read-only: a
  * status filter (GET form, so the URL is the state) and a page at a time.
@@ -17,9 +19,14 @@ import { Badge, buttonClass, selectClass } from '@/ui';
 export function OutboxList({
   page,
   dateTime,
+  canAnswerEscalation = false,
+  escalations = {},
 }: {
   page: OutboxPage;
   dateTime: (iso: string) => string;
+  canAnswerEscalation?: boolean;
+  /** The escalation on a parked-dead event, by `outbox-<id>`, when a person raised one. */
+  escalations?: Record<string, EscalationView | null>;
 }) {
   const pages = Math.max(1, Math.ceil(page.total / page.pageSize));
   const href = (n: number) => `/operations?outbox=${page.status}&outboxPage=${n}#outbox`;
@@ -83,6 +90,12 @@ export function OutboxList({
                   <span>none</span>
                 )}
               </span>
+              {/* SCR-066: an event the dispatcher parked dead has no retry door; a person can hand it to the owner. */}
+              {e.status === 'dead' ? (
+                <span className="w-full">
+                  <EscalateControl subjectType="outbox" subjectKey={`outbox-${e.id}`} title={`Dead event #${e.id} ${e.kind}`} escalation={escalations[`outbox-${e.id}`] ?? null} canAnswer={canAnswerEscalation} compact />
+                </span>
+              ) : null}
             </li>
           ))}
         </ul>

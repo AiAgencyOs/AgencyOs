@@ -83,7 +83,7 @@ import {
   type InvoiceStatus,
   type MilestoneBillingEntry,
 } from '@/modules/finance/schema';
-import { getProject, listPaymentPlan, readGroupSetup, readPhaseTwo, readPhaseFourOverview, readProjectGroupName } from '@/modules/projects/queries';
+import { listPhaseFourEscalations, getProject, listPaymentPlan, readGroupSetup, readPhaseTwo, readPhaseFourOverview, readProjectGroupName } from '@/modules/projects/queries';
 import { listApprovalsForSubject } from '@/modules/approvals/queries';
 import { listDefects, readProjectQuality } from '@/modules/qa/queries';
 import { blocksDelivery, type DefectSeverity, type DefectStatus } from '@/modules/qa/schema';
@@ -121,6 +121,8 @@ import { ProjectLinksPanel } from './links-panel';
 import { ProjectNotesPanel } from './project-notes-panel';
 import { listProjectNotes } from '@/modules/projects/project-notes-queries';
 import { progressSeries, topLevelTasks } from '@/modules/projects/project-view-derive';
+import { healthOfProject, overallProgress, overallProgressLabel } from '@/modules/projects/project-health';
+import { readProjectLifecycles } from '@/modules/projects/project-lifecycle-queries';
 import { countPeriods, periodDelta, trendOf } from '@/lib/admin/period-delta';
 import { ProjectUpdatePanel } from './project-update-form';
 import { readMyWatch } from '@/modules/projects/project-defaults-queries';
@@ -320,11 +322,20 @@ export default async function ProjectPage({
   const daysLeft = project.ends_on
     ? Math.ceil((new Date(`${project.ends_on}T00:00:00Z`).getTime() - new Date(`${todayKey}T00:00:00Z`).getTime()) / 86_400_000)
     : null;
-  const overallProgress = plan.length > 0 ? pctOf(summary.milestones_met, summary.milestones_total) : pctOf(taskCounts.done, taskCounts.total);
+  // One progress figure for every project screen (milestones met, else tasks done).
+  const overall = overallProgress({ milestonesTotal: plan.length, milestonesMet: plan.filter((m) => m.met_at).length, tasksTotal: taskCounts.total, tasksDone: taskCounts.done });
   const totalTasksTrend = trendOf(periodDelta(countPeriods(tasks.map((t) => t.createdAt), new Date())));
   const seriesDay = (key: string) => new Date(`${key}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' });
   const progressData = progressSeries(tasks, { start: project.starts_on, end: project.ends_on }, todayKey).map((p) => ({ day: seriesDay(p.key), Actual: p.actual, Planned: p.planned }));
-  const healthy = quality.open_blockers === 0 && taskCounts.overdue === 0 && status !== 'on_hold';
+  // One health rule: the same facts and the same function as the projects list and Reports.
+  const [lifecycles, escalationRows] = await Promise.all([readProjectLifecycles(todayKey), listPhaseFourEscalations()]);
+  const life = lifecycles.get(projectId);
+  const health = healthOfProject(
+    { status: project.status, endsOn: project.ends_on },
+    life ?? { blockedTasks: 0, unmetDependencies: 0, overdueTasks: taskCounts.overdue, overdueMilestones: 0, blockingDefects: quality.open_blockers },
+    { escalated: escalationRows.some((e) => e.projectId === projectId), pendingClaims: claims.filter((c) => c.status === 'pending').length, todayKey },
+  );
+  const healthy = health.level === 'healthy';
 
   // The current milestone is the first one not yet met; everything before it
   // is done, everything after it is upcoming. `met_at` is the only fact read.
@@ -427,8 +438,8 @@ export default async function ProjectPage({
           </>
         }
         aside={
-          <HeaderFigure value={`${overallProgress}%`} label="Overall progress">
-            <ProgressBar value={overallProgress} showValue={false} label="Overall progress" tone="brand" />
+          <HeaderFigure value={`${overall}%`} label={overallProgressLabel({ milestonesTotal: plan.length, tasksTotal: taskCounts.total })}>
+            <ProgressBar value={overall} showValue={false} label="Overall progress" tone="brand" />
           </HeaderFigure>
         }
       >
@@ -445,14 +456,10 @@ export default async function ProjectPage({
         <Stat
           compact
           label="Project health"
-          href={`/projects/${projectId}/qa`}
-          value={healthy ? 'On track' : 'At risk'}
-          caption={
-            healthy
-              ? 'No blockers, nothing overdue'
-              : [quality.open_blockers > 0 ? `${quality.open_blockers} blocker${quality.open_blockers === 1 ? '' : 's'}` : null, taskCounts.overdue > 0 ? `${taskCounts.overdue} overdue` : null, status === 'on_hold' ? 'on hold' : null].filter(Boolean).join(' · ')
-          }
-          tone={healthy ? 'success' : 'danger'}
+          href={`/projects/${projectId}/reports`}
+          value={health.label}
+          caption={healthy ? 'No blocked work, nothing overdue' : health.reasons.join(' · ')}
+          tone={health.level === 'healthy' ? 'success' : health.level === 'at_risk' ? 'warning' : 'danger'}
           icon={<IconCheck size={16} />}
         />
       </StatGrid>
@@ -613,8 +620,24 @@ export default async function ProjectPage({
         />
       </Card>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
+          {
+            label: 'Phase 1 · Lead to Close',
+            href: project.opportunity_id ? `/handoffs/${project.opportunity_id}` : `/projects/${projectId}`,
+            value: project.opportunity_id ? 'Won deal' : 'No deal',
+            caption: project.opportunity_id ? (quotation ? `Accepted quotation · ${quotation.title} v${quotation.version}` : 'Handoff packet on file') : 'Created without a lead or a won deal',
+            tone: project.opportunity_id ? 'success' : 'neutral',
+          },
+          {
+            label: 'Phase 2 · Onboarding',
+            href: `/projects/${projectId}`,
+            value: phaseTwo.phase ? humanize(phaseTwo.phase.state) : 'Not started',
+            caption: phaseTwo.phase
+              ? `${phaseTwo.readiness?.ready ? 'Ready to kick off' : `${phaseTwo.readiness?.unmet.length ?? 0} gate${phaseTwo.readiness?.unmet.length === 1 ? '' : 's'} unmet`}${phaseTwo.phase.kickoffAt ? ` · kicked off ${clock.date(phaseTwo.phase.kickoffAt)}` : ''} · ${onboarding.filter((i) => i.status !== 'pending').length}/${onboarding.length} checklist items`
+              : 'Phase 2 has not opened',
+            tone: phaseTwo.phase ? statusTone(phaseTwo.phase.state) : 'neutral',
+          },
           {
             label: 'Phase 3 · Design',
             href: `/projects/${projectId}/design`,
@@ -625,10 +648,19 @@ export default async function ProjectPage({
             tone: designTrail.phase ? statusTone(designTrail.phase.state) : 'neutral',
           },
           {
-            label: 'Phase 5 · Plan',
+            label: 'Phase 4 · UI and Prototype',
+            href: `/projects/${projectId}/ui-versions`,
+            value: phaseFour.workspace ? humanize(phaseFour.workspace.state) : 'Not started',
+            caption: phaseFour.workspace
+              ? `${phaseFour.uiVersion ? `UI v${phaseFour.uiVersion.version} ${humanize(phaseFour.uiVersion.status)}` : 'No UI version yet'} · ${phaseFour.workspace.uiRevisionCount} of ${phaseFour.workspace.uiRevisionLimit} UI rounds${phaseFour.prototype ? ' · prototype built' : ''}`
+              : 'No UI or prototype phase opened',
+            tone: phaseFour.workspace ? statusTone(phaseFour.workspace.state) : 'neutral',
+          },
+          {
+            label: 'Phase 5 · Development',
             href: `/projects/${projectId}/plan`,
             value: planBoard.plan ? `v${planBoard.plan.version} ${humanize(planBoard.plan.status)}` : 'No plan',
-            caption: planBoard.plan ? `${planBoard.deliverables.length} deliverables · ${planBoard.milestones.length} milestones` : 'The kickoff gate waits on one',
+            caption: planBoard.plan ? `${planBoard.deliverables.length} deliverables · ${planBoard.milestones.length} milestones · ${taskCounts.done}/${taskCounts.total} tasks done` : 'The kickoff gate waits on one',
             tone: planBoard.plan ? statusTone(planBoard.plan.status) : 'neutral',
           },
           {
@@ -639,11 +671,18 @@ export default async function ProjectPage({
             tone: latestRun ? (latestRun.failed > 0 ? 'warning' : 'success') : 'neutral',
           },
           {
-            label: 'Phase 7 · Handover',
+            label: 'Phase 7 · Handover and Deployment',
             href: `/projects/${projectId}/release`,
             value: handover ? humanize(handover.status) : 'Not prepared',
-            caption: handover ? `${handover.items.length} package item${handover.items.length === 1 ? '' : 's'}${handover.accepted_at ? ` · accepted ${clock.date(handover.accepted_at)}` : handover.delivered_at ? ` · delivered ${clock.date(handover.delivered_at)}` : ''}` : 'Prepared on the Release tab',
+            caption: handover ? `${handover.items.length} package item${handover.items.length === 1 ? '' : 's'}${handover.accepted_at ? ` · accepted ${clock.date(handover.accepted_at)}` : handover.delivered_at ? ` · delivered ${clock.date(handover.delivered_at)}` : ''}` : 'Deployment readiness and handover are prepared on the Release tab',
             tone: handover ? statusTone(handover.status) : 'neutral',
+          },
+          {
+            label: 'Phase 8 · Customer Success',
+            href: project.client_account_id ? `/clients/${project.client_account_id}` : `/projects/${projectId}`,
+            value: freeMaintenance.length > 0 ? `${freeMaintenance.length} maintenance item${freeMaintenance.length === 1 ? '' : 's'}` : project.status === 'completed' ? 'Completed' : 'Not started',
+            caption: freeMaintenance.length > 0 ? 'Maintenance that came with the project' : 'Begins once the project is handed over',
+            tone: freeMaintenance.length > 0 ? 'info' : 'neutral',
           },
         ].map((tile) => (
           <Link key={tile.label} href={tile.href} className="flex flex-col gap-1 rounded-xl border border-line bg-surface p-4 shadow-xs transition-colors hover:bg-surface-hover">

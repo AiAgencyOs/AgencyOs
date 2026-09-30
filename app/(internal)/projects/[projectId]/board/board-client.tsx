@@ -9,7 +9,9 @@ import { createTaskAction, setTaskStatusAction, updateTaskAction } from '@/modul
 import type { TaskCollab } from '@/modules/projects/task-collab-queries';
 import { GROUP_BY_OPTIONS, groupKeyOf, groupsFor, type GroupBy } from '@/modules/projects/project-view-derive';
 
-import { BlockReasonField, TaskCollabPanel } from '../../../task-collab-panel';
+import { BlockReasonField, readBlocker, TaskCollabPanel } from '../../../task-collab-panel';
+import type { Blocker } from './board-blocker';
+import { BLOCKER_TYPE_LABEL, type BlockerType } from '@/modules/projects/task-blocker';
 import {
   Avatar,
   Badge,
@@ -165,7 +167,7 @@ export function ProjectBoard({
   const groupId = useId();
   // A card dropped on Blocked waits here for its reason — the drop's promise
   // stays pending (so the optimistic move holds) until the prompt answers.
-  const [blockPrompt, setBlockPrompt] = useState<{ task: BoardTask; resolve: (reason: string | null) => void } | null>(null);
+  const [blockPrompt, setBlockPrompt] = useState<{ task: BoardTask; resolve: (blocker: Blocker | null) => void } | null>(null);
   const openTask = tasks.find((t) => t.id === openTaskId) ?? null;
 
   function select(task: BoardTask) {
@@ -174,22 +176,34 @@ export function ProjectBoard({
     if (typeof window !== 'undefined' && window.innerWidth < 1280) railRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  async function handleMove(taskId: string, toStatus: string, reason?: string) {
+  async function handleMove(taskId: string, toStatus: string, blocker?: Blocker) {
     setError(null);
-    let why = reason ?? '';
+    let why: Blocker | null = blocker ?? null;
+    // SCR-020 "valid transitions": review is entered through the evidence-gated hand-off in the task drawer.
+    const from = tasks.find((t) => t.id === taskId);
+    if (toStatus === 'in_review' && from && (from.status === 'todo' || from.status === 'in_progress')) {
+      const message = 'A task goes to review through its hand-off: open it, submit evidence, then mark it ready for QA.';
+      setError(message);
+      throw new Error(message);
+    }
     if (toStatus === 'blocked' && !why) {
       const task = tasks.find((t) => t.id === taskId);
       if (!task) return;
-      const answer = await new Promise<string | null>((resolve) => setBlockPrompt({ task, resolve }));
+      const answer = await new Promise<Blocker | null>((resolve) => setBlockPrompt({ task, resolve }));
       setBlockPrompt(null);
-      if (!answer) throw new Error('A reason is required to block a task.');
+      if (!answer) throw new Error('A reason, a kind, an owner and a next action are required to block a task.');
       why = answer;
     }
     const formData = new FormData();
     formData.set('taskId', taskId);
     formData.set('status', toStatus);
     formData.set('projectId', projectId);
-    if (why) formData.set('reason', why);
+    if (why) {
+      formData.set('reason', why.reason);
+      formData.set('blockerType', why.blockerType);
+      formData.set('blockerOwner', why.blockerOwner);
+      formData.set('nextAction', why.nextAction);
+    }
 
     const result = await setTaskStatusAction(IDLE_STATE, formData);
     if (result.status === 'error') {
@@ -448,7 +462,7 @@ export function ProjectBoard({
 
       <BlockReasonPrompt
         task={blockPrompt?.task ?? null}
-        onAnswer={(reason) => blockPrompt?.resolve(reason)}
+        onAnswer={(blocker) => blockPrompt?.resolve(blocker)}
       />
 
       {canWrite ? (
@@ -485,8 +499,8 @@ export function ProjectBoard({
               columns={columns}
               roster={roster}
               canWrite={canWrite}
-              onMoved={(taskId, toStatus, reason) => {
-                handleMove(taskId, toStatus, reason).catch(() => undefined);
+              onMoved={(taskId, toStatus, blocker) => {
+                handleMove(taskId, toStatus, blocker).catch(() => undefined);
               }}
               onSaved={() => setOpenTaskId(null)}
             />
@@ -607,12 +621,23 @@ function TaskCard({ task, selected, collab, onOpen }: { task: BoardTask; selecte
           <Badge key={l} tone="neutral">{l}</Badge>
         ))}
         <Badge tone={p.tone}>{p.label}</Badge>
+        {collab?.origin.kind === 'agent' ? <Badge tone={collab.origin.verifiedAt ? 'success' : 'warning'}>{collab.origin.verifiedAt ? 'Agent · verified' : 'Agent · unverified'}</Badge> : null}
       </div>
       {task.status === 'blocked' && collab?.blocked.reason ? (
-        <p className="mt-2 flex items-start gap-1 text-[11px] text-danger" title={collab.blocked.reason}>
-          <IconAlert size={11} className="mt-0.5 shrink-0" />
-          <span className="line-clamp-2">{collab.blocked.reason}</span>
-        </p>
+        <div className="mt-2 flex flex-col gap-0.5 text-[11px] text-danger" title={collab.blocked.reason}>
+          <p className="flex items-start gap-1">
+            <IconAlert size={11} className="mt-0.5 shrink-0" />
+            <span className="line-clamp-2">{collab.blocked.reason}</span>
+          </p>
+          {collab.blocked.type || collab.blocked.owner ? (
+            <p className="pl-4 text-muted">
+              {collab.blocked.type ? (BLOCKER_TYPE_LABEL[collab.blocked.type as BlockerType] ?? collab.blocked.type) : ''}
+              {collab.blocked.type && collab.blocked.owner ? ' · ' : ''}
+              {collab.blocked.owner ? `owner ${collab.blocked.owner}` : ''}
+            </p>
+          ) : null}
+          {collab.blocked.nextAction ? <p className="line-clamp-2 pl-4 text-muted">Next: {collab.blocked.nextAction}</p> : null}
+        </div>
       ) : null}
       {progress && progress.total > 0 ? (
         <div className="mt-2" title={`${progress.done} of ${progress.total} checklist items done`}>
@@ -661,15 +686,15 @@ function TaskCard({ task, selected, collab, onOpen }: { task: BoardTask; selecte
  * The question a drop on Blocked asks — SCR-020's blocker field. Cancelling
  * answers `null`, and the card snaps back to where it was.
  */
-function BlockReasonPrompt({ task, onAnswer }: { task: BoardTask | null; onAnswer: (reason: string | null) => void }) {
+function BlockReasonPrompt({ task, onAnswer }: { task: BoardTask | null; onAnswer: (blocker: Blocker | null) => void }) {
   return (
     <Drawer open={task !== null} onClose={() => onAnswer(null)} title="Block this task" description={task?.title}>
       {task ? (
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            const reason = String(new FormData(e.currentTarget).get('reason') ?? '').trim();
-            if (reason) onAnswer(reason);
+            const blocker = readBlocker(e.currentTarget);
+            if (blocker) onAnswer(blocker);
           }}
           className="flex flex-col gap-3"
         >
@@ -703,7 +728,9 @@ const EMPTY_COLLAB = (taskId: string): TaskCollab => ({
   checklist: [],
   progress: { done: 0, total: 0, percent: 0 },
   attachments: [],
-  blocked: { reason: null, at: null, sinceLabel: null },
+  blocked: { reason: null, at: null, sinceLabel: null, type: null, owner: null, nextAction: null },
+  evidenceCount: 0,
+  origin: { kind: 'human', verifiedAt: null, verifiedLabel: null, verifiedByName: null, note: null },
 });
 function TaskDetails({
   task,
@@ -722,7 +749,7 @@ function TaskDetails({
   roster: BoardPerson[];
   canWrite: boolean;
   onSaved: () => void;
-  onMoved: (taskId: string, toStatus: string, reason?: string) => void;
+  onMoved: (taskId: string, toStatus: string, blocker?: Blocker) => void;
 }) {
   const p = PRIORITY[task.priority] ?? { label: task.priority.toUpperCase(), tone: 'neutral' as const };
   // Choosing Blocked in the select does not move the task by itself: the
@@ -760,7 +787,8 @@ function TaskDetails({
                   }}
                   className={cx(selectClass, 'mt-1')}
                 >
-                  {columns.map((c) => (
+                  {/* SCR-020: "In review" is entered through the evidence-gated hand-off below, not picked here. */}
+                  {columns.filter((c) => c.id !== 'in_review' || task.status === 'in_review').map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.label}
                     </option>
@@ -769,6 +797,7 @@ function TaskDetails({
               ) : (
                 <p className="mt-1"><StatusBadge status={task.status} /></p>
               )}
+              {canWrite && (task.status === 'todo' || task.status === 'in_progress') ? <p className="mt-1 text-[11px] text-muted">To send it to review, submit evidence and hand it off below.</p> : null}
             </div>
             <div className="rounded-lg border border-line p-3">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Priority</p>
@@ -792,8 +821,8 @@ function TaskDetails({
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                const reason = String(new FormData(e.currentTarget).get('reason') ?? '').trim();
-                if (reason) onMoved(task.id, 'blocked', reason);
+                const blocker = readBlocker(e.currentTarget);
+                if (blocker) onMoved(task.id, 'blocked', blocker);
               }}
               className="flex flex-col gap-2"
             >

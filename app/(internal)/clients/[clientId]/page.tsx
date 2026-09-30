@@ -185,7 +185,8 @@ export default async function ClientDetailPage({
   // SCR-014 (owner select) and SCR-017 (announcements addressed to clients).
   const [roster, clientAnnouncements] = await Promise.all([
     mayEditClient ? listInternalRoster() : Promise.resolve([]),
-    listAnnouncements({ audience: 'clients', status: 'published', limit: 10 }),
+    // SCR-059: what is recorded against THIS client (or a project of theirs), plus the agency-wide ones — never another client's.
+    listAnnouncements({ audience: 'clients', status: 'published', limit: 10, clientAccountId: clientId }),
   ]);
   const rosterOptions = roster.map((m) => ({ userId: m.userId, fullName: m.fullName || m.email }));
   // SCR-015/016/017 (bucket F-B): the identity the edit door writes, the
@@ -241,6 +242,10 @@ export default async function ClientDetailPage({
       cellClassName: 'tabular',
       cell: (p) => (p.budgetMinor === null ? '—' : money(p.budgetMinor, p.currency)),
     },
+    // SCR-016 "Open project finance" — the project's own finance view.
+    ...(canSeeMoney
+      ? ([{ key: 'finance', header: 'Finance', align: 'right', desktopOnly: true, cell: (p: ProjectRow) => <Link href={`/projects/${p.id}/finance`} className="text-xs font-medium text-brand hover:underline">Open finance</Link> }] as Column<ProjectRow>[])
+      : []),
   ];
 
   type InvoiceRow = (typeof client.invoices)[number];
@@ -388,9 +393,10 @@ export default async function ClientDetailPage({
               {mayEditClient && identity ? <ClientEditForm client={identity} /> : (
                 <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[13px]">
                   <dt className="text-muted">Legal name</dt><dd>{client.legalName ?? '—'}</dd>
-                  <dt className="text-muted">GSTIN</dt><dd className="font-mono">{client.gstin ?? '—'}</dd>
-                  <dt className="text-muted">PAN</dt><dd className="font-mono">{client.pan ?? '—'}</dd>
-                  <dt className="text-muted">Billing address</dt><dd className="whitespace-pre-wrap">{client.billingAddress ?? '—'}</dd>
+                  {/* SCR-015: GST/PAN and billing data need the finance capability, not just the right to see the client. */}
+                  <dt className="text-muted">GSTIN</dt><dd className="font-mono">{canSeeMoney ? (client.gstin ?? '—') : 'Restricted'}</dd>
+                  <dt className="text-muted">PAN</dt><dd className="font-mono">{canSeeMoney ? (client.pan ?? '—') : 'Restricted'}</dd>
+                  <dt className="text-muted">Billing address</dt><dd className="whitespace-pre-wrap">{canSeeMoney ? (client.billingAddress ?? '—') : 'Restricted'}</dd>
                 </dl>
               )}
             </div>
@@ -620,7 +626,10 @@ export default async function ClientDetailPage({
               <ul className="divide-y divide-line">
                 {clientAnnouncements.map((a) => (
                   <li key={a.id} className="flex flex-col gap-0.5 px-4 py-2.5 text-[13px] sm:px-5">
-                    <span className="font-medium text-foreground">{a.title}</span>
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-foreground">{a.title}</span>
+                      {a.projectName ? <Badge tone="brand">Project: {a.projectName}</Badge> : a.clientName ? <Badge tone="neutral">For this client</Badge> : <Badge tone="neutral">Agency-wide</Badge>}
+                    </span>
                     <span className="whitespace-pre-wrap text-muted">{a.body}</span>
                     <span className="text-xs text-faint">Published {a.publishedAt ? clock.dateTime(a.publishedAt) : '—'}</span>
                   </li>
@@ -982,8 +991,8 @@ export default async function ClientDetailPage({
             rows={[
               { label: 'Company name', value: client.name },
               ...(client.legalName ? [{ label: 'Legal name', value: client.legalName }] : []),
-              ...(client.gstin ? [{ label: 'GSTIN', value: <span className="font-mono">{client.gstin}</span> }] : []),
-              ...(client.pan ? [{ label: 'PAN', value: <span className="font-mono">{client.pan}</span> }] : []),
+              ...(client.gstin && canSeeMoney ? [{ label: 'GSTIN', value: <span className="font-mono">{client.gstin}</span> }] : []),
+              ...(client.pan && canSeeMoney ? [{ label: 'PAN', value: <span className="font-mono">{client.pan}</span> }] : []),
               { label: 'Billing email', value: client.billingEmail ?? 'Not set' },
               { label: 'Currency', value: client.currency },
               { label: 'Status', value: <Badge tone={client.status === 'active' ? 'success' : 'neutral'}>{humanize(client.status)}</Badge> },

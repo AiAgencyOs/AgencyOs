@@ -51,7 +51,9 @@ import { ProjectSubNav } from '../project-subnav';
 import { WorkspaceHeader } from '../workspace-header';
 import { LinkAssetForm, UnlinkAssetForm } from './asset-link-forms';
 import { ApproveAssetButton, SubmitDesignReviewPanel, UploadDesignAssetPanel } from './design-asset-panels';
+import { DesignCommentThread } from './design-comment-thread';
 import { DesignSubNav } from './design-subnav';
+import { readDesignReviewComments, type DesignReviewComment } from '@/modules/projects/design-review-comments-queries';
 import { AssignReviewerForm } from './design-forms';
 import { Nothing, PHASE_TONE, Section, when } from './design-shared';
 
@@ -78,6 +80,88 @@ export const metadata: Metadata = { title: 'Design direction' };
  * loop and the final lock) stays on the tabs below; every write still goes
  * through `design-forms.tsx` or the new asset panels.
  */
+type DeliverableRow = Awaited<ReturnType<typeof listDeliverables>>[number];
+type UiVersionOption = Awaited<ReturnType<typeof listUiVersionOptions>>[number];
+
+function DesignVersionsCard({ projectId, designVersions, draftDesign, mayDecide, clock, comments }: { projectId: string; designVersions: DeliverableRow[]; draftDesign: DeliverableRow | null; mayDecide: boolean; clock: Awaited<ReturnType<typeof agencyClock>>; comments: Map<string, DesignReviewComment[]> }) {
+  return (
+      <Card id="design-versions" className="scroll-mt-4">
+        <CardHeader title={`Design Versions (${designVersions.length})`} description="Every design deliverable recorded, newest first, with its review state." actions={<ViewAll href={`/projects/${projectId}`} label="Overview" />} />
+        <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+          {designVersions.length === 0 ? (
+            <Nothing>No design version has been recorded as a deliverable yet.</Nothing>
+          ) : (
+            <ul className="flex flex-col gap-1">
+              {designVersions.map((d) => (
+                <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="font-medium">v{d.version}</span>
+                    <span className="truncate">{d.title}</span>
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <Badge tone={statusTone(d.status)}>{humanize(d.status)}</Badge>
+                    {d.artifact_url ? (
+                      <a href={d.artifact_url} target="_blank" rel="noreferrer noopener" className="text-xs underline underline-offset-2">
+                        open
+                      </a>
+                    ) : null}
+                    <span className="text-xs text-muted">{clock.date(d.created_at)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {designVersions.filter((d) => d.status === 'in_review' || (comments.get(d.id)?.length ?? 0) > 0).map((d) => (
+            <div key={`thread-${d.id}`} className="flex flex-col gap-1">
+              <span className="text-[13px] font-medium">Review of v{d.version} — {d.title}</span>
+              <DesignCommentThread projectId={projectId} subjectType="deliverable" subjectId={d.id} comments={comments.get(d.id) ?? []} canComment={mayDecide} formatDateTime={(iso) => clock.dateTime(iso)} />
+            </div>
+          ))}
+          {mayDecide ? <SubmitDesignReviewPanel projectId={projectId} deliverable={draftDesign ? { id: draftDesign.id, version: draftDesign.version, title: draftDesign.title } : null} /> : null}
+        </div>
+      </Card>
+  );
+}
+
+function PrototypeLinksCard({ projectId, prototypeVersions, uiVersions }: { projectId: string; prototypeVersions: DeliverableRow[]; uiVersions: UiVersionOption[] }) {
+  return (
+      <Card>
+        <CardHeader title={`Prototype Links (${prototypeVersions.length})`} description="The prototype builds and the UI versions they were built from." actions={<ViewAll href={`/projects/${projectId}/prototype`} label="Prototype" />} />
+        <div className="flex flex-col gap-2 px-4 pb-4 sm:px-5">
+          {prototypeVersions.length === 0 && uiVersions.length === 0 ? (
+            <Nothing>No prototype build or UI version yet. They appear once Phase 4 drafts one.</Nothing>
+          ) : (
+            <ul className="flex flex-col gap-1">
+              {prototypeVersions.map((d) => (
+                <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
+                  <Link href={`/projects/${projectId}/prototype`} className="font-medium underline-offset-2 hover:underline">
+                    Prototype v{d.version} — {d.title}
+                  </Link>
+                  <span className="flex items-center gap-2">
+                    <Badge tone={statusTone(d.status)}>{humanize(d.status)}</Badge>
+                    {d.artifact_url ? (
+                      <a href={d.artifact_url} target="_blank" rel="noreferrer noopener" className="text-xs underline underline-offset-2">
+                        open
+                      </a>
+                    ) : null}
+                  </span>
+                </li>
+              ))}
+              {uiVersions.map((v) => (
+                <li key={v.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
+                  <Link href={`/projects/${projectId}/prototype/preview/${v.id}`} className="underline-offset-2 hover:underline">
+                    UI version {v.version} preview
+                  </Link>
+                  <Badge tone={statusTone(v.status)}>{humanize(v.status)}</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </Card>
+  );
+}
+
 export default async function ProjectDesignPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ q?: string; view?: string; layout?: string }> }) {
   const { projectId } = await params;
   const { q: qRaw, view: viewRaw, layout: layoutRaw } = await searchParams;
@@ -95,25 +179,39 @@ export default async function ProjectDesignPage({ params, searchParams }: { para
   const mayDecide = can(context, 'project.write');
 
   if (!phase) {
+    // Phase 3 has no record for this project — it may not have started, or the project may have been built without it
+    // and be in a later phase. The design deliverables and prototype builds the project does have must stay reachable.
+    const [deliverablesNoPhase, uiVersionsNoPhase, deliverableCommentsNoPhase] = await Promise.all([listDeliverables(projectId), listUiVersionOptions(projectId), readDesignReviewComments(projectId)]);
+    const designs = deliverablesNoPhase.filter((d) => d.kind === 'design');
+    const prototypes = deliverablesNoPhase.filter((d) => d.kind === 'prototype');
+    const laterPhase = designs.length > 0 || prototypes.length > 0 || uiVersionsNoPhase.length > 0;
     return (
       <div className="flex flex-col gap-5">
         <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={mayDecide} />
         <ProjectSubNav projectId={projectId} />
         <DesignSubNav projectId={projectId} />
         <Nothing>
-          Phase 3 has not started for this project. It opens when Phase 2 completes and the plan is active.{' '}
+          {laterPhase
+            ? 'This project has no Phase 3 record (no theme options, baseline or asset library), but it already has design or prototype work, shown below.'
+            : 'Phase 3 has not started for this project. It opens when Phase 2 completes and the plan is active.'}{' '}
           <Link href={`/projects/${projectId}/plan`} className="underline hover:text-foreground">
             Open the plan
           </Link>
           .
         </Nothing>
+        {laterPhase ? (
+          <div className="grid items-start gap-4 lg:grid-cols-2">
+            <DesignVersionsCard projectId={projectId} designVersions={designs} draftDesign={designs.find((d) => d.status === 'draft') ?? null} mayDecide={mayDecide} clock={clock} comments={deliverableCommentsNoPhase} />
+            <PrototypeLinksCard projectId={projectId} prototypeVersions={prototypes} uiVersions={uiVersionsNoPhase} />
+          </div>
+        ) : null}
       </div>
     );
   }
 
   const spend = await readProjectSpend(projectId);
   const screenCoverage = await readUiCoverage(projectId);
-  const [assetLibrary, sampleScreens, assetLinks, uiVersions, inventory, deliverables, activity] = await Promise.all([
+  const [assetLibrary, sampleScreens, assetLinks, uiVersions, inventory, deliverables, activity, deliverableComments] = await Promise.all([
     readDesignAssetVersions(projectId, context.organizationId ?? null),
     readSampleScreens(projectId, trail.themes.map((t) => t.id)),
     listDesignAssetLinks(projectId),
@@ -121,6 +219,7 @@ export default async function ProjectDesignPage({ params, searchParams }: { para
     listProjectScreens(projectId),
     listDeliverables(projectId),
     readDesignActivity(projectId, 20),
+    readDesignReviewComments(projectId),
   ]);
   // SCR-038 — where an asset may be linked: every live screen and every UI version.
   const linkTargets = [
@@ -185,11 +284,13 @@ export default async function ProjectDesignPage({ params, searchParams }: { para
       <ProjectSubNav projectId={projectId} />
       <DesignSubNav projectId={projectId} />
 
-      <StatGrid cols={6}>
+      <StatGrid cols={4}>
         <Stat label="Total Screens" value={String(trail.baseline?.screenCount ?? 0)} caption={trail.baseline ? `Baseline v${trail.baseline.version} · ${trail.baseline.status}` : 'No baseline drafted'} tone="brand" icon={<IconFile size={16} />} ring={liveScreens.length > 0 ? { percent: (approvedScreens / liveScreens.length) * 100, label: 'of live screens approved' } : undefined} href={`/projects/${projectId}/design/screens`} />
         <Stat label="Approved Screens" value={String(approvedScreens)} caption={liveScreens.length > 0 ? `of ${liveScreens.length} live` : 'None recorded'} tone={liveScreens.length > 0 && approvedScreens === liveScreens.length ? 'success' : 'info'} icon={<IconCheck size={16} />} href={`/projects/${projectId}/design/screens?status=approved`} />
         <Stat label="Approved Assets" value={String(assetLibrary.approved)} caption={`${assetLibrary.draft} draft · ${assetLibrary.uploaded} uploaded`} tone={assetLibrary.approved > 0 ? 'success' : 'neutral'} icon={<IconUpload size={16} />} href="#design-assets" />
         <Stat label="Theme Options" value={String(trail.themes.length)} caption={trail.themes.length > 0 ? `${trail.themes.filter((t) => t.clientStatus === 'selected').length} selected by the client` : undefined} tone="accent" icon={<IconSparkle size={16} />} ring={trail.themes.length > 0 ? { percent: (trail.themes.filter((t) => t.clientStatus === 'selected').length / trail.themes.length) * 100, label: 'of theme options selected by the client' } : undefined} href={`/projects/${projectId}/design/themes`} />
+        <Stat label="Design Versions" value={String(designVersions.length)} caption={`${designVersions.filter((d) => d.status === 'in_review').length} in review · ${designVersions.filter((d) => d.status === 'approved').length} approved`} tone="brand" icon={<IconFile size={16} />} href="#design-versions" />
+        <Stat label="Prototype Builds" value={String(prototypeVersions.length)} caption={`${prototypeVersions.filter((d) => d.status === 'in_review').length} with the client · ${prototypeVersions.filter((d) => d.status === 'approved').length} approved`} tone="accent" icon={<IconSparkle size={16} />} href={`/projects/${projectId}/prototype`} />
         <Stat label="Pending Review" value={String(pendingInternal + pendingAdmin)} caption={`${pendingInternal} internal · ${pendingAdmin} admin`} tone={pendingInternal + pendingAdmin > 0 ? 'warning' : 'success'} icon={<IconClock size={16} />} href={`/projects/${projectId}/design/themes`} />
         <Stat label="Phase Status" value={humanize(phase.state)} caption={phase.blockedReason ? 'Blocked' : trail.handoff ? 'Handed to Phase 4' : `Started ${when(phase.startedAt)}`} tone={phase.blockedReason ? 'danger' : trail.handoff ? 'success' : 'info'} icon={phase.blockedReason ? <IconAlert size={16} /> : <IconCheck size={16} />} />
       </StatGrid>
@@ -488,12 +589,28 @@ export default async function ProjectDesignPage({ params, searchParams }: { para
               title={`Design assets (${assetLibrary.families.length})`}
               description="Uploaded designs and AI-drawn reference imagery (Designer §9). Each has a state — draft until a person approves it — and versions. Figma stays the canonical design."
               actions={
-                <a href={`/api/projects/${projectId}/design/assets/export`} className="text-xs underline hover:text-foreground">
-                  Handoff package (JSON)
-                </a>
+                <span className="flex flex-wrap gap-3">
+                  <a href={`/api/projects/${projectId}/design/assets/export?format=zip`} className="text-xs underline hover:text-foreground">
+                    Handoff package (ZIP)
+                  </a>
+                  <a href={`/api/projects/${projectId}/design/assets/export`} className="text-xs underline hover:text-foreground">
+                    Manifest (JSON)
+                  </a>
+                </span>
               }
             />
             <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+              {/* SCR-038 — asset categories: how many assets of each kind, and where the brand kit lives. */}
+              <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
+                {[...new Set(assetLibrary.families.map((f) => f.kind))].sort().map((k) => (
+                  <Badge key={k} tone="neutral" dot={false}>
+                    {k.replace(/_/g, ' ')} · {assetLibrary.families.filter((f) => f.kind === k).length}
+                  </Badge>
+                ))}
+                <Link href={`/projects/${projectId}/design/brand`} className="underline hover:text-foreground">
+                  Brand Kit
+                </Link>
+              </p>
               {mayDecide ? <UploadDesignAssetPanel projectId={projectId} storage={assetLibrary.storage} /> : null}
               {!assetLibrary.storage.reachable && assetLibrary.uploaded > 0 ? (
                 <p className="text-xs text-warning">{assetLibrary.uploaded} uploaded asset{assetLibrary.uploaded === 1 ? '' : 's'} cannot be shown: {assetLibrary.storage.reason}</p>
@@ -601,69 +718,8 @@ export default async function ProjectDesignPage({ params, searchParams }: { para
       emptyDescription="Every decision on this design writes an audit row; they appear here as they happen."
       viewAllHref={`/projects/${projectId}/activity`}
     />
-        <Card>
-        <CardHeader title={`Design Versions (${designVersions.length})`} description="Every design deliverable recorded, newest first, with its review state." actions={<ViewAll href={`/projects/${projectId}`} label="Overview" />} />
-        <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
-          {designVersions.length === 0 ? (
-            <Nothing>No design version has been recorded as a deliverable yet.</Nothing>
-          ) : (
-            <ul className="flex flex-col gap-1">
-              {designVersions.map((d) => (
-                <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="font-medium">v{d.version}</span>
-                    <span className="truncate">{d.title}</span>
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <Badge tone={statusTone(d.status)}>{humanize(d.status)}</Badge>
-                    {d.artifact_url ? (
-                      <a href={d.artifact_url} target="_blank" rel="noreferrer noopener" className="text-xs underline underline-offset-2">
-                        open
-                      </a>
-                    ) : null}
-                    <span className="text-xs text-muted">{clock.date(d.created_at)}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {mayDecide ? <SubmitDesignReviewPanel projectId={projectId} deliverable={draftDesign ? { id: draftDesign.id, version: draftDesign.version, title: draftDesign.title } : null} /> : null}
-        </div>
-      </Card>
-      <Card>
-        <CardHeader title={`Prototype Links (${prototypeVersions.length})`} description="The prototype builds and the UI versions they were built from." actions={<ViewAll href={`/projects/${projectId}/prototype`} label="Prototype" />} />
-        <div className="flex flex-col gap-2 px-4 pb-4 sm:px-5">
-          {prototypeVersions.length === 0 && uiVersions.length === 0 ? (
-            <Nothing>No prototype build or UI version yet. They appear once Phase 4 drafts one.</Nothing>
-          ) : (
-            <ul className="flex flex-col gap-1">
-              {prototypeVersions.map((d) => (
-                <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
-                  <Link href={`/projects/${projectId}/prototype`} className="font-medium underline-offset-2 hover:underline">
-                    Prototype v{d.version} — {d.title}
-                  </Link>
-                  <span className="flex items-center gap-2">
-                    <Badge tone={statusTone(d.status)}>{humanize(d.status)}</Badge>
-                    {d.artifact_url ? (
-                      <a href={d.artifact_url} target="_blank" rel="noreferrer noopener" className="text-xs underline underline-offset-2">
-                        open
-                      </a>
-                    ) : null}
-                  </span>
-                </li>
-              ))}
-              {uiVersions.map((v) => (
-                <li key={v.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
-                  <Link href={`/projects/${projectId}/prototype/preview/${v.id}`} className="underline-offset-2 hover:underline">
-                    UI version {v.version} preview
-                  </Link>
-                  <Badge tone={statusTone(v.status)}>{humanize(v.status)}</Badge>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </Card>
+        <DesignVersionsCard projectId={projectId} designVersions={designVersions} draftDesign={draftDesign} mayDecide={mayDecide} clock={clock} comments={deliverableComments} />
+        <PrototypeLinksCard projectId={projectId} prototypeVersions={prototypeVersions} uiVersions={uiVersions} />
       </div>
     </div>
   );

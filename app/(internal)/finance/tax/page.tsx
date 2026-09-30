@@ -6,7 +6,8 @@ import { listSavedViews } from '@/lib/admin/saved-views';
 import { readSettingHistory } from '@/lib/admin/settings-history';
 import { requireInternal } from '@/lib/auth/session';
 import { can, hasRole } from '@/lib/authz/permissions';
-import { listExpenses, listReceipts, listTaxReportInvoices } from '@/modules/finance/queries';
+import { listExpenses, listPayments, listReceipts, listTaxReportInvoices } from '@/modules/finance/queries';
+import { EXPORT_KIND_LABEL, listReportExports } from '@/modules/finance/export-log';
 import {
   expensesInPeriod,
   invoicesInPeriod,
@@ -14,6 +15,7 @@ import {
   receiptsInPeriod,
   resolveTaxPeriod,
   splitByMode,
+  verifiedReceivedInPeriod,
   taxPeriodOptions,
   type TaxTotals,
 } from '@/modules/finance/tax-report';
@@ -78,7 +80,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
   { key: 'subtotal', header: 'Taxable', align: 'right', cellClassName: 'tabular', cell: (i) => money(i.subtotalMinor, i.currency), sortKey: 'subtotal' },
   { key: 'tax', header: 'Tax', align: 'right', cellClassName: 'tabular font-medium', cell: (i) => money(i.taxMinor, i.currency), sortKey: 'tax' },
   { key: 'total', header: 'Total', align: 'right', cellClassName: 'tabular', cell: (i) => money(i.totalMinor, i.currency), sortKey: 'total' },
-  { key: 'paid', header: 'Paid', align: 'right', cellClassName: 'tabular text-success', cell: (i) => money(i.paidMinor, i.currency), sortKey: 'paid' },
+  { key: 'paid', header: 'Verified paid', align: 'right', cellClassName: 'tabular text-success', cell: (i) => money(i.paidMinor, i.currency), sortKey: 'paid' },
   { key: 'issued', header: 'Issued', align: 'right', cellClassName: 'text-muted', cell: (i) => (i.issuedAt ? clock.date(i.issuedAt) : '—'), sortKey: 'issued' },
 ];
 
@@ -101,7 +103,7 @@ function TotalsCard({ title, totals, currency, tone }: { title: string; totals: 
         <dd className="text-right font-medium tabular">{money(totals.tax, currency)}</dd>
         <dt className="text-muted">Invoice total</dt>
         <dd className="text-right font-semibold tabular">{money(totals.total, currency)}</dd>
-        <dt className="text-muted">Paid</dt>
+        <dt className="text-muted">Verified paid</dt>
         <dd className="text-right tabular text-success">{money(totals.paid, currency)}</dd>
       </dl>
     </Card>
@@ -142,10 +144,14 @@ export default async function TaxReportPage({
   };
   const currentQuery = qs({}).slice(1);
 
-  const [allInvoices, allReceipts, allExpenses, savedViews, locks, gstIdentity, gstrRows, gstExports, settingHistory] = await Promise.all([
+  const [allInvoices, allReceipts, allExpenses, allPayments, reportExports, savedViews, locks, gstIdentity, gstrRows, gstExports, settingHistory] = await Promise.all([
     listTaxReportInvoices(),
     listReceipts(),
     listExpenses(),
+    // The money received is the verified payments (the ONE basis — verified-basis.ts), not a count of receipts.
+    listPayments(2000),
+    // SCR-056: every CSV / PDF download, beside the GSTR files below.
+    listReportExports(),
     listSavedViews('/finance/tax'),
     listTaxPeriodLocks(),
     readGstIdentity(),
@@ -174,7 +180,7 @@ export default async function TaxReportPage({
   const receipts = receiptsInPeriod(allReceipts, period);
   const expenses = expensesInPeriod(allExpenses, period);
   const splits = splitByMode(periodInvoices);
-  const pnl = profitAndLoss(periodInvoices, receipts, expenses);
+  const pnl = profitAndLoss(periodInvoices, verifiedReceivedInPeriod(allPayments, period), expenses);
 
   const filtered = modeFilter
     ? periodInvoices.filter((i) => (modeFilter === 'unconfirmed' ? i.billingMode === null : i.billingMode === modeFilter))
@@ -183,6 +189,24 @@ export default async function TaxReportPage({
   const { page, pageCount, rows: pageRows } = paginate(invoices, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
 
   const unconfirmedCount = periodInvoices.filter((i) => i.billingMode === null).length;
+
+  // SCR-056 "Report status": locked when the window carries an exact lock,
+  // exported when any file was produced for exactly this period label, else open.
+  const exportedForPeriod =
+    gstExports.some((e) => e.periodLabel === period.label) || reportExports.some((e) => e.periodLabel === period.label);
+  const reportStatus: { label: string; tone: 'danger' | 'success' | 'warning' | 'neutral'; caption: string } = lockState?.exact
+    ? { label: 'Locked', tone: 'danger', caption: `locked ${clock.date(lockState.exact.lockedAt)}` }
+    : lockState && lockState.overlapping.length > 0
+      ? { label: 'Locked', tone: 'danger', caption: 'inside a wider lock' }
+      : exportedForPeriod
+        ? { label: 'Exported', tone: 'success', caption: 'a file was produced for this period' }
+        : { label: 'Open', tone: 'neutral', caption: lockWindow ? 'not locked, not exported' : 'pick a month or quarter to lock it' };
+  const principal = splits[0];
+  // One merged, newest-first history: GSTR files and every other download.
+  const exportHistory = [
+    ...gstExports.map((e) => ({ id: e.id, at: e.createdAt, kind: e.kind === 'gstr1' ? 'GSTR-1' : 'GSTR-3B', period: `${e.periodLabel} · ${e.returnPeriod.slice(0, 2)}/${e.returnPeriod.slice(2)}`, detail: Object.entries(e.counts).filter(([, n]) => n > 0).map(([k, n]) => `${k} ${n}`).join(' · ') || '—', omitted: e.omitted.length, by: e.exportedByName })),
+    ...reportExports.map((e) => ({ id: e.id, at: e.createdAt, kind: EXPORT_KIND_LABEL[e.kind] ?? e.kind, period: e.periodLabel, detail: `${e.rowCount} row${e.rowCount === 1 ? '' : 's'}`, omitted: 0, by: e.exportedByName })),
+  ].sort((a, b) => b.at.localeCompare(a.at));
 
   return (
     <div className="flex flex-col gap-5">
@@ -216,6 +240,14 @@ export default async function TaxReportPage({
           </div>
         }
       />
+
+      {/* SCR-056's header: GST invoice totals, non-GST totals, tax period, report status. */}
+      <StatGrid cols={4}>
+        <Stat label="GST Invoice Totals" value={principal ? money(principal.gst.total, principal.currency) : '—'} caption={principal ? `${principal.gst.count} invoice${principal.gst.count === 1 ? '' : 's'} · ${money(principal.gst.tax, principal.currency)} tax` : 'nothing issued in this period'} tone="brand" icon={<IconInvoices size={16} />} />
+        <Stat label="Non-GST Totals" value={principal ? money(principal.nonGst.total, principal.currency) : '—'} caption={principal ? `${principal.nonGst.count} invoice${principal.nonGst.count === 1 ? '' : 's'}${principal.unconfirmed.count > 0 ? ` · ${principal.unconfirmed.count} unconfirmed` : ''}` : 'nothing issued in this period'} icon={<IconInvoices size={16} />} />
+        <Stat label="Tax Period" value={<span className="text-xl">{period.label}</span>} caption={lockWindow ? `${lockWindow.start} to ${lockWindow.end}` : 'no fixed window'} icon={<IconFile size={16} />} />
+        <Stat label="Report Status" value={<span className="text-xl">{reportStatus.label}</span>} caption={reportStatus.caption} tone={reportStatus.tone} icon={<IconLock size={16} />} />
+      </StatGrid>
 
       <SavedViewsBar page="/finance/tax" currentQuery={currentQuery} views={savedViews} />
 
@@ -358,24 +390,24 @@ export default async function TaxReportPage({
         ) : null}
       </Card>
 
-      {/* SCR-056: export history — every GSTR file the panel produced, from finance.gst_exports. */}
+      {/* SCR-056: export history — every GSTR file and every CSV / PDF download: who, when, which period, how many rows. */}
       <Card>
         <CardHeader
           icon={<IconDownload size={16} />}
           title="Export history"
-          description={gstExports.length === 0 ? 'No GSTR file has been exported yet.' : `${gstExports.length} export${gstExports.length === 1 ? '' : 's'}, newest first — which return period, what the file held, what it left out.`}
+          description={exportHistory.length === 0 ? 'Nothing has been exported yet. Every CSV, PDF and GSTR download is logged here.' : `${exportHistory.length} export${exportHistory.length === 1 ? '' : 's'}, newest first — which file, which period, what it held, who pulled it.`}
         />
-        {gstExports.length > 0 ? (
+        {exportHistory.length > 0 ? (
           <DataTable
-            rows={gstExports}
+            rows={exportHistory.slice(0, 50)}
             dense
             columns={[
-              { key: 'when', header: 'Exported', primary: true, cell: (e) => clock.dateTime(e.createdAt) },
-              { key: 'kind', header: 'File', badge: true, cell: (e) => <Badge tone="brand" mono>{e.kind === 'gstr1' ? 'GSTR-1' : 'GSTR-3B'}</Badge> },
-              { key: 'period', header: 'Period', cellClassName: 'text-muted', cell: (e) => `${e.periodLabel} · ${e.returnPeriod.slice(0, 2)}/${e.returnPeriod.slice(2)}` },
-              { key: 'counts', header: 'In the file', desktopOnly: true, cellClassName: 'text-muted', cell: (e) => Object.entries(e.counts).filter(([, n]) => n > 0).map(([k, n]) => `${k} ${n}`).join(' · ') || '—' },
-              { key: 'omitted', header: 'Omitted', align: 'right', cell: (e) => (e.omitted.length > 0 ? <span className="text-warning" title={e.omitted.join(', ')}>{e.omitted.length}</span> : <span className="text-muted">0</span>) },
-              { key: 'by', header: 'By', desktopOnly: true, cellClassName: 'text-muted', cell: (e) => e.exportedByName ?? '—' },
+              { key: 'when', header: 'Exported', primary: true, cell: (e) => clock.dateTime(e.at) },
+              { key: 'kind', header: 'File', badge: true, cell: (e) => <Badge tone="brand" mono>{e.kind}</Badge> },
+              { key: 'period', header: 'Period', cellClassName: 'text-muted', cell: (e) => e.period },
+              { key: 'counts', header: 'In the file', desktopOnly: true, cellClassName: 'text-muted', cell: (e) => e.detail },
+              { key: 'omitted', header: 'Omitted', align: 'right', cell: (e) => (e.omitted > 0 ? <span className="text-warning">{e.omitted}</span> : <span className="text-muted">0</span>) },
+              { key: 'by', header: 'By', desktopOnly: true, cellClassName: 'text-muted', cell: (e) => e.by ?? '—' },
             ]}
             getKey={(e) => e.id}
           />
@@ -428,7 +460,7 @@ export default async function TaxReportPage({
               <dl className="grid grid-cols-2 gap-x-3 gap-y-2 px-4 py-3 text-[13px] sm:px-5">
                 <dt className="text-muted">Invoiced</dt>
                 <dd className="text-right tabular">{money(row.invoiced, row.currency)}</dd>
-                <dt className="text-muted">Received (receipts)</dt>
+                <dt className="text-muted">Received (verified payments)</dt>
                 <dd className="text-right tabular text-success">{money(row.received, row.currency)}</dd>
                 <dt className="text-muted">Expenses</dt>
                 <dd className="text-right tabular text-danger">− {money(row.expenses, row.currency)}</dd>

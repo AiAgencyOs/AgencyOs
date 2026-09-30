@@ -24,7 +24,7 @@ import { listProjectFiles } from '@/modules/projects/queries';
 import { readProjectTime } from '@/modules/projects/time-log-queries';
 import { listPaymentClaims } from '@/modules/finance/queries';
 import { readBlockersAcrossProjects } from '@/modules/projects/blockers-queries';
-import { projectHealth } from '@/modules/projects/project-health';
+import { overallProgress, projectHealth } from '@/modules/projects/project-health';
 import { listPhaseFourEscalations } from '@/modules/projects/queries';
 import { listDefects } from '@/modules/qa/queries';
 import { blocksDelivery, type DefectSeverity, type DefectStatus } from '@/modules/qa/schema';
@@ -154,7 +154,7 @@ export default async function ProjectReportPage({
   const csvHref = `/api/projects/${projectId}/report?from=${from}&to=${to}`;
   const tasksOverdue = tasks.filter((t) => t.status !== 'done' && t.dueOn && t.dueOn < today).length;
   const milestonesMet = plan.filter((m) => m.met_at).length;
-  const completion = plan.length > 0 ? Math.round((milestonesMet / plan.length) * 100) : tasks.length > 0 ? Math.round((tasksDone / tasks.length) * 100) : 0;
+  const completion = overallProgress({ milestonesTotal: plan.length, milestonesMet, tasksTotal: tasks.length, tasksDone });
 
   const byStatus = new Map<string, number>();
   for (const t of tasks) byStatus.set(t.status, (byStatus.get(t.status) ?? 0) + 1);
@@ -193,6 +193,7 @@ export default async function ProjectReportPage({
     blockingDefects: blocking,
     escalations: escalations.filter((e) => e.projectId === projectId).length,
     pendingClaims: claims.filter((c) => c.status === 'pending').length,
+    pastDue: project.ends_on !== null && project.ends_on < today,
   });
   const overdueTasks = tasks.filter((t) => t.status !== 'done' && t.dueOn && t.dueOn < today);
   // Recent Activity — a timeline of what each table already timestamps (not the audit log); Resource Usage — hours per person.
@@ -202,7 +203,7 @@ export default async function ProjectReportPage({
     milestones: plan,
     defects,
     files: projectFiles,
-  });
+  }, 5, projectId);
   const resources = resourceBars(time.people);
 
   return (
@@ -360,7 +361,7 @@ export default async function ProjectReportPage({
                     <IconCheck size={13} />
                   </span>
                   <span className="min-w-0">
-                    <span className="block break-words">{e.who ? <span className="font-medium">{e.who} </span> : null}{e.verb} <span className="font-medium">{e.subject}</span></span>
+                    <span className="block break-words">{e.who ? <span className="font-medium">{e.who} </span> : null}{e.verb} {e.href ? <Link href={e.href} className="font-medium hover:underline">{e.subject}</Link> : <span className="font-medium">{e.subject}</span>}</span>
                     <span className="block text-xs text-muted">{clock.dateTime(e.at)}</span>
                   </span>
                 </li>

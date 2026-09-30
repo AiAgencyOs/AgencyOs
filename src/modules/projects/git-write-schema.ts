@@ -62,3 +62,12 @@ export const setRepositoryWorkflowSchema = z.object({
     .refine((v) => v.length === 0 || /^[A-Za-z0-9._-]{1,120}\.ya?ml$/.test(v), 'A workflow file is its name under .github/workflows/, ending in .yml'),
 });
 export type SetRepositoryWorkflowInput = z.infer<typeof setRepositoryWorkflowSchema>;
+
+/** SCR-042 — the repository's access level and merge policy (migration 20261006400200). */
+export const setRepositoryPolicySchema = z.object({
+  projectId: z.uuid(),
+  accessLevel: z.enum(['read_only', 'branch_and_review', 'full']),
+  mergeMinApprovals: z.coerce.number().int().min(0, 'Zero or more approvals.').max(5, 'At most 5 approvals.'),
+  mergeRole: z.enum(['owner', 'admin', 'delivery']),
+});
+export type SetRepositoryPolicyInput = z.input<typeof setRepositoryPolicySchema>;

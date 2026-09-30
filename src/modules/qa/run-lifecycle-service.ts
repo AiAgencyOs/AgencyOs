@@ -6,9 +6,11 @@ import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
 import {
+  addRunEvidenceSchema,
   closeTestRunSchema,
   openTestRunSchema,
   rerunTestRunSchema,
+  type AddRunEvidenceInput,
   type CloseTestRunInput,
   type OpenTestRunInput,
   type RerunTestRunInput,
@@ -42,6 +44,8 @@ export async function openTestRun(input: OpenTestRunInput): Promise<Result<{ run
     ...(parsed.data.device ? { p_device: parsed.data.device } : {}),
     ...(parsed.data.browser ? { p_browser: parsed.data.browser } : {}),
     ...(parsed.data.os ? { p_os: parsed.data.os } : {}),
+    ...(parsed.data.environment ? { p_environment: parsed.data.environment } : {}),
+    ...(parsed.data.testerId ? { p_tester_id: parsed.data.testerId } : {}),
   });
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'openTestRun', detail: error.message }));
@@ -57,6 +61,10 @@ export async function openTestRun(input: OpenTestRunInput): Promise<Result<{ run
       return err('CONFLICT', 'A test run is run against a build deliverable, not a design or a document.');
     case 'bad_suite':
       return err('VALIDATION', 'That is not a suite this register knows.');
+    case 'bad_environment':
+      return err('VALIDATION', 'That is not a deployment environment: choose development, staging, production or other.');
+    case 'tester_not_found':
+      return err('VALIDATION', 'That tester is not on the team.');
     case 'not_authorized':
       return err('FORBIDDEN', 'The database refused: your role may not record runs.');
     default:
@@ -127,5 +135,43 @@ export async function rerunTestRun(input: RerunTestRunInput): Promise<Result<{ r
       return err('CONFLICT', 'Nothing failed or was blocked on this run — there is nothing to rerun.');
     default:
       return err('INTERNAL', `Could not open the rerun (${row?.outcome ?? 'no answer'}).`);
+  }
+}
+
+/** SCR-046: one more screenshot, log, report, recording or note on a run — open or closed. `task.write`; the door asks `can_write()` again. */
+export async function addRunEvidence(input: AddRunEvidenceInput): Promise<Result<{ evidenceId: string }>> {
+  const parsed = addRunEvidenceSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid evidence.');
+
+  const context = await requireInternal();
+  if (!can(context, 'task.write')) return err('FORBIDDEN', 'You do not have permission to add evidence to a run.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('qa').rpc('add_run_evidence', {
+    p_run_id: parsed.data.runId,
+    p_kind: parsed.data.kind,
+    p_value: parsed.data.value,
+    ...(parsed.data.label ? { p_label: parsed.data.label } : {}),
+  });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'addRunEvidence', detail: error.message }));
+    return err('INTERNAL', 'Could not add the evidence.');
+  }
+  const row = first(data);
+  switch (row?.outcome) {
+    case 'added':
+      return row.id ? ok({ evidenceId: row.id }) : err('INTERNAL', 'Could not add the evidence.');
+    case 'not_found':
+      return err('NOT_FOUND', 'That run is not on this project.');
+    case 'bad_kind':
+      return err('VALIDATION', 'That is not a kind of evidence this register knows.');
+    case 'bad_value':
+      return err('VALIDATION', 'A screenshot, log, report or recording is a link; a note is up to 2000 characters.');
+    case 'bad_label':
+      return err('VALIDATION', 'A label is at most 160 characters.');
+    case 'not_authorized':
+      return err('FORBIDDEN', 'The database refused: your role may not add evidence.');
+    default:
+      return err('INTERNAL', `Could not add the evidence (${row?.outcome ?? 'no answer'}).`);
   }
 }

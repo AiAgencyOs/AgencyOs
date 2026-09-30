@@ -25,7 +25,7 @@ describe('SCR-070 · the integration row carries the update control', () => {
   const list = read(LIST);
 
   it('the page mounts the Settings forms — imported from settings/forms, never re-declared', () => {
-    assert.match(page, /import \{ TestRecipientForm, VerifyAiProviderForm, VerifyCalendarForm, VerifyWhatsAppButton, WhatsAppNumberForm \} from '\.\.\/settings\/forms'/);
+    assert.match(page, /import \{ TestRecipientForm, VerifyAiProviderForm, VerifyCalendarForm, VerifyFigmaForm, VerifyWhatsAppButton, WhatsAppNumberForm \} from '\.\.\/settings\/forms'/);
     assert.match(page, /<WhatsAppNumberForm current=\{whatsappNumberId\} \/>/);
     assert.match(page, /<TestRecipientForm current=\{whatsappTestRecipient\} \/>/);
     assert.doesNotMatch(page, /useActionState|setOrganizationSetting\(/, 'the page owns no form and calls no door itself');
@@ -55,7 +55,8 @@ describe('SCR-070 · the integration row carries the update control', () => {
     assert.match(page, /envPresent\('ALERT_WEBHOOK_URL'\)/);
     assert.match(page, /envPresent\('GOOGLE_CALENDAR_ID'\)/);
     assert.doesNotMatch(page, /process\.env|serverEnv\(/, 'no value of an environment variable reaches the page');
-    assert.match(page, /not editable from the panel/);
+    // W6: the calendar id is a registry row now; the list says environment identifiers cannot be changed from the panel
+    assert.match(list, /the panel reads them and cannot change them/);
   });
 
   it('secrets stay out: every external integration says where its credential lives, and the drawer links only where the panel holds one', () => {

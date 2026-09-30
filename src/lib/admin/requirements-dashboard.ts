@@ -40,7 +40,21 @@ export type ScopeDriftAlert = {
   createdAt: string;
 };
 
+/** A question asked of one requirement that nobody has answered yet (migration 20261006400000). */
+export type OpenRequirementQuestion = {
+  id: string;
+  scopeItemId: string;
+  projectId: string;
+  projectName: string;
+  requirementTitle: string;
+  question: string;
+  impact: string;
+  raisedAt: string;
+};
+
 export type RequirementsDashboard = {
+  /** SCR-028 "open-question queue": every unanswered question asked of a requirement, oldest first. */
+  openRequirementQuestions: OpenRequirementQuestion[];
   projectsWithOpenQuestions: ProjectWithOpenQuestions[];
   awaitingClientConfirmation: number;
   scopeDrift: ScopeDriftAlert[];
@@ -97,6 +111,24 @@ export async function readRequirementsDashboard(): Promise<RequirementsDashboard
     pmQuestionsByProject.set(row.project_id, (pmQuestionsByProject.get(row.project_id) ?? 0) + 1);
   }
 
+  // ── questions asked of a requirement, unanswered ──────────────────────
+  const { data: reqQuestionRows, error: reqQuestionsError } = await supabase
+    .schema('projects')
+    .from('requirement_clarifications')
+    .select('id, scope_item_id, project_id, question, impact, raised_at')
+    .eq('status', 'open')
+    .order('raised_at', { ascending: true })
+    .limit(200);
+  if (reqQuestionsError) unreadable('readRequirementsDashboard.requirementClarifications', reqQuestionsError);
+  const reqQuestions = reqQuestionRows ?? [];
+  const reqItemIds = [...new Set(reqQuestions.map((q) => q.scope_item_id))];
+  const reqItemTitle = new Map<string, string>();
+  if (reqItemIds.length > 0) {
+    const { data: items, error: itemsError } = await supabase.schema('projects').from('scope_items').select('id, title').in('id', reqItemIds);
+    if (itemsError) unreadable('readRequirementsDashboard.requirementItems', itemsError);
+    for (const i of items ?? []) reqItemTitle.set(i.id, i.title);
+  }
+
   // ── awaiting client confirmation ───────────────────────────────────────
   const { count: awaitingClientConfirmation, error: awaitingError } = await supabase
     .schema('crm')
@@ -136,6 +168,7 @@ export async function readRequirementsDashboard(): Promise<RequirementsDashboard
       ...planQuestionsByProject.keys(),
       ...pmQuestionsByProject.keys(),
       ...drift.map((cr) => cr.project_id),
+      ...reqQuestions.map((q) => q.project_id),
     ]),
   ];
   const nameById = new Map<string, string>();
@@ -163,6 +196,18 @@ export async function readRequirementsDashboard(): Promise<RequirementsDashboard
     .sort((a, b) => b.planQuestions + b.pmQuestions - (a.planQuestions + a.pmQuestions));
 
   return {
+    openRequirementQuestions: reqQuestions
+      .filter((q) => nameById.has(q.project_id))
+      .map((q) => ({
+        id: q.id,
+        scopeItemId: q.scope_item_id,
+        projectId: q.project_id,
+        projectName: nameById.get(q.project_id) ?? 'Unknown project',
+        requirementTitle: reqItemTitle.get(q.scope_item_id) ?? 'Requirement',
+        question: q.question,
+        impact: q.impact,
+        raisedAt: q.raised_at,
+      })),
     projectsWithOpenQuestions,
     awaitingClientConfirmation: awaitingClientConfirmation ?? 0,
     scopeDrift: drift

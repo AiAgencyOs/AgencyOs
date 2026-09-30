@@ -13,7 +13,9 @@ import { getProject, listScopeItemsForVersion, listScopeVersionHistory, readChan
 import { readRevisionAllowance, readScopeDrift, readScopeQuoteLinks } from '@/modules/projects/scope-insight-queries';
 import Link from 'next/link';
 
-import { Badge, Card, CardHeader, EmptyState, humanize, IconCheck, IconClock, IconFlag, IconProjects, PageHeader, Stat, StatGrid, statusTone, PermissionDenied } from '@/ui';
+import { CHANGE_REQUEST_CLASSIFICATIONS } from '@/modules/projects/schema';
+import { DEFAULT_REVISION_LIMIT } from '@/modules/projects/scope-insight-queries';
+import { Badge, buttonClass, Card, CardHeader, EmptyState, humanize, labelClass, selectClass, IconCheck, IconClock, IconFlag, IconProjects, PageHeader, Stat, StatGrid, statusTone, PermissionDenied } from '@/ui';
 
 import { ChangeRequestList, SubmitChangeRequestForm } from '../change-request-panel';
 import { OpenScopeVersionForm, ScopeVersionCard, type FreezeCheck } from '../scope-panel';
@@ -32,9 +34,9 @@ export const metadata: Metadata = { title: 'Scope' };
  * actions); deciding one is stricter still — owner only, matching the door's
  * own `core.is_owner()` check.
  */
-export default async function ScopePage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ compare?: string }> }) {
+export default async function ScopePage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ compare?: string; crStatus?: string; crClass?: string }> }) {
   const { projectId } = await params;
-  const { compare } = await searchParams;
+  const { compare, crStatus, crClass } = await searchParams;
 
   const context = await requireInternal(`/projects/${projectId}/scope`);
   if (!can(context, 'project.read')) return <PermissionDenied />;
@@ -82,9 +84,13 @@ export default async function ScopePage({ params, searchParams }: { params: Prom
       ]
     : [];
   const activeQuote = active ? (quoteLinks.find((q) => q.scopeVersionId === active.id)?.proposals[0] ?? null) : null;
-  const allowanceValue = (a: { used: number; limit: number } | null) => (a ? `${a.used} / ${a.limit}` : '—');
+  // SCR-030/031 "Revision allowance usage": used / limit as stored on the phase row. Before the phase
+  // opens there is no row, so the tile says so and shows the limit the database gives a new phase (3).
+  const allowanceValue = (a: { used: number; limit: number } | null) => (a ? `${a.used} / ${a.limit}` : `0 / ${DEFAULT_REVISION_LIMIT}`);
   const allowanceTone = (a: { used: number; limit: number } | null) =>
     !a ? 'neutral' : a.used >= a.limit ? 'danger' : a.used + 1 >= a.limit ? 'warning' : 'success';
+  const allowanceCaption = (a: { used: number; limit: number } | null, what: string, phase: string) =>
+    a ? `${what} of the ${phase} limit · ${Math.max(0, a.limit - a.used)} left` : `${phase} has not started · ${DEFAULT_REVISION_LIMIT} rounds once it opens`;
 
   // SCR-029's compare: one earlier version beside the current baseline,
   // item by item, matched on title. Nothing is inferred about *why* an item
@@ -111,6 +117,7 @@ export default async function ScopePage({ params, searchParams }: { params: Prom
   // separate from canWrite.
   const isOwner = hasRole(context, 'owner');
 
+  const shownRequests = changeRequests.filter((cr) => (!crStatus || cr.status === crStatus) && (!crClass || cr.classification === crClass));
   const crOpen = changeRequests.filter((cr) => ['submitted', 'analysing', 'classified', 'pending_approval'].includes(cr.status));
   const crAwaitingOwner = changeRequests.filter((cr) => ['classified', 'pending_approval'].includes(cr.status));
   const crApproved = changeRequests.filter((cr) => cr.status === 'approved');
@@ -130,11 +137,13 @@ export default async function ScopePage({ params, searchParams }: { params: Prom
 
       <ProjectSubNav projectId={projectId} />
 
-      <StatGrid cols={5}>
+      <StatGrid cols={6}>
         <Stat label="Frozen baseline" value={active ? `v${active.version}` : '—'} caption={active ? `${scopeIn} in · ${scopeOut} out of scope` : draft ? 'Draft open, nothing frozen yet' : 'No baseline'} tone="brand" icon={<IconFlag size={16} />} />
-        <Stat label="Open change requests" value={String(crOpen.length)} caption={crAwaitingOwner.length > 0 ? `${crAwaitingOwner.length} awaiting an owner` : 'None waiting on a decision'} tone={crOpen.length > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} />
+        <Stat label="Open change requests" value={String(crOpen.length)} caption="submitted, analysing, classified or pending" tone={crOpen.length > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} />
+        <Stat label="Awaiting approval" value={String(crAwaitingOwner.length)} caption={crAwaitingOwner.length > 0 ? 'classified, waiting on an owner' : 'None waiting on a decision'} tone={crAwaitingOwner.length > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} />
         <Stat label="Approved, not applied" value={String(crApproved.length)} caption="Apply to open the next draft" tone={crApproved.length > 0 ? 'info' : 'neutral'} icon={<IconCheck size={16} />} />
-        <Stat label="Applied" value={String(crApplied.length)} caption={`${crRejected.length} rejected`} tone="success" icon={<IconCheck size={16} />} />
+        <Stat label="Applied" value={String(crApplied.length)} caption="opened the next scope draft" tone="success" icon={<IconCheck size={16} />} />
+        <Stat label="Rejected" value={String(crRejected.length)} caption="declined by an owner" tone={crRejected.length > 0 ? 'danger' : 'neutral'} icon={<IconClock size={16} />} />
         <Stat label="Captured impact" value={crEffort > 0 ? `${crEffort}h` : '—'} caption={crDays > 0 ? `+${crDays} day${crDays === 1 ? '' : 's'} to the timeline` : 'No estimates recorded'} tone="accent" icon={<IconClock size={16} />} />
       </StatGrid>
 
@@ -156,9 +165,9 @@ export default async function ScopePage({ params, searchParams }: { params: Prom
           }
           href={activeQuote ? `/quotations?status=${encodeURIComponent(activeQuote.status)}` : undefined}
         />
-        <Stat label="Design revision rounds" value={allowanceValue(allowance.design)} tone={allowanceTone(allowance.design)} caption="client rounds used of the Phase 3 limit" />
-        <Stat label="UI revision rounds" value={allowanceValue(allowance.ui)} tone={allowanceTone(allowance.ui)} caption="of the Phase 4 limit" />
-        <Stat label="Prototype revision rounds" value={allowanceValue(allowance.prototype)} tone={allowanceTone(allowance.prototype)} caption="of the Phase 4 limit" />
+        <Stat label="Design revision rounds" value={allowanceValue(allowance.design)} tone={allowanceTone(allowance.design)} caption={allowanceCaption(allowance.design, 'client rounds used', 'Phase 3')} />
+        <Stat label="UI revision rounds" value={allowanceValue(allowance.ui)} tone={allowanceTone(allowance.ui)} caption={allowanceCaption(allowance.ui, 'rounds used', 'Phase 4')} />
+        <Stat label="Prototype revision rounds" value={allowanceValue(allowance.prototype)} tone={allowanceTone(allowance.prototype)} caption={allowanceCaption(allowance.prototype, 'rounds used', 'Phase 4')} />
       </StatGrid>
 
       {drift && (drift.appliedRequests.length > 0 || drift.added.length > 0 || drift.removed.length > 0) ? (
@@ -239,9 +248,36 @@ export default async function ScopePage({ params, searchParams }: { params: Prom
           </p>
         </div>
         {canWrite ? <SubmitChangeRequestForm projectId={projectId} /> : null}
+        {/* SCR-031 search/filter: narrow the list by status or classification; a URL somebody can send. */}
+        {changeRequests.length > 1 ? (
+          <form method="GET" action={`/projects/${projectId}/scope`} className="flex flex-wrap items-end gap-2" aria-label="Filter change requests">
+            {compare ? <input type="hidden" name="compare" value={compare} /> : null}
+            <label className="flex flex-col gap-1">
+              <span className={labelClass}>Status</span>
+              <select name="crStatus" defaultValue={crStatus ?? ''} className={selectClass}>
+                <option value="">Any status</option>
+                {[...new Set(changeRequests.map((cr) => cr.status))].map((st) => (
+                  <option key={st} value={st}>{humanize(st)}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className={labelClass}>Classification</span>
+              <select name="crClass" defaultValue={crClass ?? ''} className={selectClass}>
+                <option value="">Any classification</option>
+                {CHANGE_REQUEST_CLASSIFICATIONS.map((c) => (
+                  <option key={c} value={c}>{humanize(c)}</option>
+                ))}
+              </select>
+            </label>
+            <button type="submit" className={buttonClass('secondary', 'sm')}>Filter</button>
+            {crStatus || crClass ? <Link href={`/projects/${projectId}/scope`} className={buttonClass('ghost', 'sm')}>Clear</Link> : null}
+            <span className="pb-2 text-xs text-muted">{shownRequests.length} of {changeRequests.length}</span>
+          </form>
+        ) : null}
         <ChangeRequestList
           projectId={projectId}
-          changeRequests={changeRequests}
+          changeRequests={shownRequests}
           mayManage={canWrite}
           mayDecide={isOwner}
           context={crContext}

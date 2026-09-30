@@ -11,6 +11,7 @@ import {
   readGithubTokenScopes,
 } from '@/lib/git/github';
 import type { GitAction } from '@/modules/projects/git-queries';
+import { accessAllows, accessRefusal } from '@/modules/projects/repository-policy';
 import type { RepositoryLink } from '@/modules/projects/repository-link-queries';
 import { Badge, Callout, Card, CardHeader, EmptyState, humanize, IconIntegrations } from '@/ui';
 
@@ -41,6 +42,7 @@ export async function GithubPanel({
   mayWriteTask,
   tasks,
   gitActions,
+  q = '',
 }: {
   projectId: string;
   link: RepositoryLink | null;
@@ -48,6 +50,7 @@ export async function GithubPanel({
   mayWriteTask: boolean;
   tasks: { id: string; title: string; status: string }[];
   gitActions: GitAction[];
+  q?: string;
 }) {
   const clock = await agencyClock();
   const configured = await githubConfigured();
@@ -127,7 +130,7 @@ export async function GithubPanel({
         />
       )}
 
-      {link && configured ? <LiveRead projectId={projectId} link={link} editable={editable} mayWriteTask={mayWriteTask} tasks={tasks} /> : null}
+      {link && configured ? <LiveRead projectId={projectId} link={link} editable={editable} mayWriteTask={mayWriteTask} tasks={tasks} q={q} /> : null}
 
       {link ? (
         <Card>
@@ -177,12 +180,14 @@ async function LiveRead({
   editable,
   mayWriteTask,
   tasks,
+  q,
 }: {
   projectId: string;
   link: RepositoryLink;
   editable: boolean;
   mayWriteTask: boolean;
   tasks: { id: string; title: string; status: string }[];
+  q: string;
 }) {
   const clock = await agencyClock();
   const read = await readGithubRepository({ owner: link.owner, repo: link.repo, branch: link.defaultBranch });
@@ -195,7 +200,11 @@ async function LiveRead({
     );
   }
 
-  const { repository, branch, commits, pullRequests, branchesCount, readAt } = read.data;
+  const { repository, branch, commits: allCommits, pullRequests: allPulls, branchesCount, readAt } = read.data;
+  // SCR-042 search: commits by message, sha or author, pull requests by title or branch, branches by name.
+  const needle = q.trim().toLowerCase();
+  const commits = allCommits.filter((c) => !needle || `${c.message} ${c.shortSha} ${c.author ?? ''}`.toLowerCase().includes(needle));
+  const pullRequests = allPulls.filter((p) => !needle || `${p.title} ${p.headBranch} ${p.author ?? ''}`.toLowerCase().includes(needle));
   const [branches, checks, findings] = await Promise.all([
     readGithubBranches({ owner: link.owner, repo: link.repo }),
     readGithubChecks({ owner: link.owner, repo: link.repo }, branch),
@@ -366,7 +375,7 @@ async function LiveRead({
             </Callout>
           ) : (
             <ul className="grid gap-1 rounded-lg border border-line bg-surface p-2 sm:grid-cols-2 lg:grid-cols-3">
-              {branches.data.branches.map((b) => (
+              {branches.data.branches.filter((b) => !needle || b.name.toLowerCase().includes(needle)).map((b) => (
                 <li key={b.name} className="flex items-center justify-between gap-2 px-2 py-1 text-[13px]">
                   <a href={b.url} target="_blank" rel="noreferrer noopener" className="min-w-0 truncate font-mono text-xs underline-offset-2 hover:underline">
                     {b.name}
@@ -388,20 +397,28 @@ async function LiveRead({
           {mayWriteTask ? (
             <Card className="p-4">
               <h3 className="mb-2 text-[13px] font-semibold tracking-tight">Create task branch</h3>
-              <CreateTaskBranchPanel projectId={projectId} tasks={tasks.filter((t) => t.status !== 'done')} />
+              {accessAllows(link.accessLevel, 'branch') ? <CreateTaskBranchPanel projectId={projectId} tasks={tasks.filter((t) => t.status !== 'done')} /> : <p className="text-[13px] text-muted">{accessRefusal(link.accessLevel, 'branch')}</p>}
             </Card>
           ) : null}
           {editable ? (
             <Card className="p-4">
               <h3 className="mb-2 text-[13px] font-semibold tracking-tight">Submit review</h3>
-              <SubmitReviewPanel projectId={projectId} pulls={pulls} />
+              {accessAllows(link.accessLevel, 'review') ? <SubmitReviewPanel projectId={projectId} pulls={pulls} /> : <p className="text-[13px] text-muted">{accessRefusal(link.accessLevel, 'review')}</p>}
             </Card>
           ) : null}
           {editable ? (
             <Card className="p-4">
               <h3 className="mb-2 text-[13px] font-semibold tracking-tight">Approve / reject merge</h3>
-              <MergePullRequestPanel projectId={projectId} pulls={pulls} />
-              <p className="mt-2 text-xs text-muted">Rejecting is a review that requests changes; merging is the squash above.</p>
+              {accessAllows(link.accessLevel, 'merge') ? (
+                <>
+                  <MergePullRequestPanel projectId={projectId} pulls={pulls} />
+                  <p className="mt-2 text-xs text-muted">
+                    Policy: {link.mergeMinApprovals} approving review{link.mergeMinApprovals === 1 ? '' : 's'}, green checks, and {link.mergeRole === 'owner' ? 'the owner' : link.mergeRole === 'admin' ? 'an owner or ops admin' : 'an owner, ops admin or delivery lead'}. Rejecting is a review that requests changes; merging is the squash above.
+                  </p>
+                </>
+              ) : (
+                <p className="text-[13px] text-muted">{accessRefusal(link.accessLevel, 'merge')}</p>
+              )}
             </Card>
           ) : null}
         </div>

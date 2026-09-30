@@ -13,7 +13,7 @@ import { err, ok, unreadable, type Result } from '@/lib/result';
  * entry rather than copying it.
  */
 
-export type SearchFilters = { type?: string; since?: string };
+export type SearchFilters = { type?: string; since?: string; /** The filter builder's stacked conditions, `field:op:value`. */ f?: string[] };
 
 export type SavedSearch = {
   id: string;
@@ -29,10 +29,11 @@ export type SavedSearch = {
 export const RECENT_SEARCH_LIMIT = 20;
 
 /** Only the two filters the page has, in a fixed key order, so equality in the database means equality here. */
-export function normalizeFilters(input: { type?: string | null; since?: string | null }): SearchFilters {
+export function normalizeFilters(input: { type?: string | null; since?: string | null; f?: string[] | null }): SearchFilters {
   const out: SearchFilters = {};
-  if (input.type) out.type = input.type;
+  if (input.f && input.f.length > 0) out.f = [...input.f].filter(Boolean).slice(0, 8);
   if (input.since) out.since = input.since;
+  if (input.type) out.type = input.type;
   return out;
 }
 
@@ -40,11 +41,12 @@ export function searchHref(query: string, filters: SearchFilters): string {
   const params = new URLSearchParams({ q: query });
   if (filters.type) params.set('type', filters.type);
   if (filters.since) params.set('since', filters.since);
+  for (const c of filters.f ?? []) params.append('f', c);
   return `/search?${params.toString()}`;
 }
 
 function toRow(r: { id: string; query: string; filters: unknown; name: string | null; last_used_at: string; use_count: number }): SavedSearch {
-  const filters = normalizeFilters((r.filters ?? {}) as { type?: string; since?: string });
+  const filters = normalizeFilters((r.filters ?? {}) as { type?: string; since?: string; f?: string[] });
   return { id: r.id, query: r.query, filters, name: r.name, lastUsedAt: r.last_used_at, useCount: r.use_count, href: searchHref(r.query, filters) };
 }
 
@@ -155,5 +157,24 @@ export async function forgetSearch(id: string): Promise<Result<{ id: string }>> 
   const supabase = await createClient();
   const { error } = await supabase.schema('core').from('saved_searches').delete().eq('id', id);
   if (error) return err('INTERNAL', 'Could not remove the search.');
+  return ok({ id });
+}
+
+/**
+ * Renames a saved search and/or changes its query — the saved-search manager's
+ * "edit". The row stays the caller's own (RLS); a clash with another entry of
+ * the same query and filters is refused with a sentence, not merged silently.
+ */
+export async function editSearch(id: string, input: { name: string; query: string }): Promise<Result<{ id: string }>> {
+  const name = input.name.trim();
+  const query = input.query.trim();
+  if (name.length < 1 || name.length > 60) return err('VALIDATION', 'Give the search a name of up to 60 characters.');
+  if (query.length < 2 || query.length > 200) return err('VALIDATION', 'A search needs two to 200 characters.');
+  await requireInternal();
+  const supabase = await createClient();
+  const { error } = await supabase.schema('core').from('saved_searches').update({ name, query }).eq('id', id).not('name', 'is', null);
+  if (error) {
+    return err(error.code === '23505' ? 'CONFLICT' : 'INTERNAL', error.code === '23505' ? 'Another saved search already has that query and filters.' : 'Could not update the search.');
+  }
   return ok({ id });
 }

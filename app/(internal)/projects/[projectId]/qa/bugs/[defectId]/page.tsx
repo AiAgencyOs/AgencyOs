@@ -237,7 +237,7 @@ export default async function BugDetailPage({ params }: { params: Promise<{ proj
                   label="Found by run"
                   value={
                     run ? (
-                      <Link href={`/projects/${projectId}/qa#run-${run.id}`} className="underline underline-offset-2">
+                      <Link href={`/projects/${projectId}/qa/runs/${run.id}`} className="underline underline-offset-2">
                         {humanize(run.suite)} run · {run.status} · {clock.dateTime(run.executedAt)}
                       </Link>
                     ) : (

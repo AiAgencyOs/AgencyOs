@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { readOrgProjectDefaults } from './org-project-defaults-queries';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
@@ -96,7 +97,7 @@ export async function watchProject(input: WatchProjectInput): Promise<Result<{ u
         organization_id: context.organizationId,
         project_id: parsed.data.projectId,
         user_id: userId,
-        phases: parsed.data.phases,
+        phases: parsed.data.phases ?? (await readOrgProjectDefaults()).watchPhases,
       },
       { onConflict: 'project_id,user_id' },
     );

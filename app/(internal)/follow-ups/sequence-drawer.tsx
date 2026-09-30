@@ -99,8 +99,8 @@ export function SequenceDetailButton({ view }: { view: SequenceDetailView }) {
           </DetailList>
 
           <p className="text-[12px] text-faint">
-            Read-only. Starting, stopping and escalating a sequence stay the worker&rsquo;s job under the follow-up
-            contract; cancelling one would need a terminal state the table does not have.
+            Pause (stop), resume, reschedule, complete and cancel are on the row in the queue and each records its
+            reason. Starting a sequence and escalating one stay the worker&rsquo;s job under the follow-up contract.
           </p>
         </div>
       </Drawer>

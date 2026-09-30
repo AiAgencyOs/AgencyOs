@@ -47,7 +47,7 @@ const DOMAINS: Domain[] = [
   { page: 'app/(internal)/communication/campaigns/page.tsx', reader: 'src/modules/crm/campaign-queries.ts', fn: 'listCampaigns', columns: ['name'] },
   { page: 'app/(internal)/usage/runs/page.tsx', reader: 'src/lib/admin/agent-runs.ts', fn: 'listAgentRuns', columns: ['agent_key', 'trigger', 'model', 'error'] },
   { page: 'app/(internal)/qa/page.tsx', reader: 'src/modules/qa/queries.ts', fn: 'listOpenDefects', columns: ['title', 'environment'] },
-  { page: 'app/(internal)/audit/page.tsx', reader: 'src/lib/audit/queries.ts', fn: 'readAuditLog', columns: ['action', 'subject_type'] },
+  { page: 'app/(internal)/audit/page.tsx', reader: 'src/lib/audit/queries.ts', fn: 'readAuditPage', columns: ['action', 'subject_type'] },
 ];
 
 /** The body of one exported async function, up to the next export. */

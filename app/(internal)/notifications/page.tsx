@@ -47,7 +47,7 @@ export default async function NotificationsPage({
   // over the composed title and detail — there is no column to hand PostgREST.
   const q = normaliseSearch(qRaw);
   const needle = q.toLowerCase();
-  const [everything, history, roster] = await Promise.all([listAnnotatedActionItems(context, clock), listNotificationHistory(30), listInternalRoster()]);
+  const [everything, history, roster] = await Promise.all([listAnnotatedActionItems(context, clock), listNotificationHistory(200), listInternalRoster()]);
   const all = needle ? everything.filter((r) => r.title.toLowerCase().includes(needle) || (r.detail ?? '').toLowerCase().includes(needle)) : everything;
 
   const attention = all.filter((r) => r.attention);
@@ -71,6 +71,16 @@ export default async function NotificationsPage({
       .join('&');
     return `/notifications${search ? `?${search}` : ''}`;
   };
+  const verbOf = (e: (typeof history)[number]) =>
+    e.event === 'assigned'
+      ? `assigned to ${e.assignedToName ?? 'a member'}`
+      : e.event === 'snoozed'
+        ? `snoozed${e.snoozedUntil ? ` until ${clock.dateTime(e.snoozedUntil)}` : ''}`
+        : e.event === 'unread'
+          ? 'marked unread'
+          : e.event === 'read'
+            ? 'marked read'
+            : 'resolved';
   const rosterOptions = roster.filter((m) => m.userId !== context.userId).map((m) => ({ userId: m.userId, fullName: m.fullName || m.email }));
 
   return (
@@ -156,6 +166,9 @@ export default async function NotificationsPage({
                   }
                 : null,
               snoozedUntilLabel: r.state?.snoozedUntil ? clock.dateTime(r.state.snoozedUntil) : null,
+              history: history
+                .filter((e) => e.itemKey === r.key)
+                .map((e) => ({ id: e.id, text: `${verbOf(e)}${e.byName ? ` by ${e.byName}` : ''}${e.note ? ` — ${e.note}` : ''}`, at: clock.dateTime(e.createdAt) })),
             }))}
           />
         </Card>
@@ -185,7 +198,7 @@ export default async function NotificationsPage({
         />
         {history.length > 0 ? (
           <ul className="divide-y divide-line">
-            {history.map((e) => {
+            {history.slice(0, 30).map((e) => {
               const title = all.find((r) => r.key === e.itemKey)?.title ?? e.itemKey;
               const verb =
                 e.event === 'assigned'

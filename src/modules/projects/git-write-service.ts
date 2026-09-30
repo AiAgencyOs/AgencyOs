@@ -3,6 +3,7 @@ import 'server-only';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
+import { readGithubPullReviews } from '@/lib/git/github';
 import {
   createTaskBranch as githubCreateTaskBranch,
   describeGithubWriteReason,
@@ -17,16 +18,19 @@ import {
   createTaskBranchSchema,
   linkCommitSchema,
   mergePullRequestSchema,
+  setRepositoryPolicySchema,
   setRepositoryWorkflowSchema,
   submitReviewSchema,
   triggerBuildSchema,
   type CreateTaskBranchInput,
   type LinkCommitInput,
   type MergePullRequestInput,
+  type SetRepositoryPolicyInput,
   type SetRepositoryWorkflowInput,
   type SubmitReviewInput,
   type TriggerBuildInput,
 } from './git-write-schema';
+import { accessRefusal, countApprovals, evaluateMergePolicy, type GitAction } from './repository-policy';
 import { getRepositoryLink } from './repository-link-queries';
 
 /**
@@ -82,7 +86,7 @@ async function recordGitAction(input: {
 async function linkedRepository(projectId: string) {
   const link = await getRepositoryLink(projectId);
   if (!link) return null;
-  return { owner: link.owner, repo: link.repo, defaultBranch: link.defaultBranch, workflowFile: link.workflowFile, full: `${link.owner}/${link.repo}` };
+  return { owner: link.owner, repo: link.repo, defaultBranch: link.defaultBranch, workflowFile: link.workflowFile, full: `${link.owner}/${link.repo}`, accessLevel: link.accessLevel, mergeRole: link.mergeRole, mergeMinApprovals: link.mergeMinApprovals };
 }
 
 export async function createTaskBranch(input: CreateTaskBranchInput): Promise<Result<{ branch: string; url: string }>> {
@@ -107,6 +111,9 @@ export async function createTaskBranch(input: CreateTaskBranchInput): Promise<Re
 
   const link = await linkedRepository(parsed.data.projectId);
   if (!link) return err('CONFLICT', 'This project has no linked GitHub repository. Link one on the Repository tab first.');
+
+  const branchRefusal = accessRefusal(link.accessLevel, 'branch' satisfies GitAction);
+  if (branchRefusal) return err('FORBIDDEN', branchRefusal);
 
   const created = await githubCreateTaskBranch({ link, taskId: task.id, title: task.title });
   if (!created.ok) return githubRefused(created.reason, created.detail);
@@ -134,6 +141,9 @@ export async function submitReview(input: SubmitReviewInput): Promise<Result<{ s
   const link = await linkedRepository(parsed.data.projectId);
   if (!link) return err('CONFLICT', 'This project has no linked GitHub repository.');
 
+  const reviewRefusal = accessRefusal(link.accessLevel, 'review' satisfies GitAction);
+  if (reviewRefusal) return err('FORBIDDEN', reviewRefusal);
+
   const sent = await githubSubmitReview({ link, pullNumber: parsed.data.pullNumber, event: parsed.data.event, body: parsed.data.body });
   if (!sent.ok) return githubRefused(sent.reason, sent.detail);
 
@@ -158,6 +168,18 @@ export async function mergePullRequest(input: MergePullRequestInput): Promise<Re
 
   const link = await linkedRepository(parsed.data.projectId);
   if (!link) return err('CONFLICT', 'This project has no linked GitHub repository.');
+
+  // SCR-042 — the merge policy: access level, who may merge, approving reviews needed.
+  // The reviews are read from GitHub only when the policy asks for any, so a policy of
+  // zero approvals needs nothing GitHub cannot be asked for.
+  let approvals = 0;
+  if (link.mergeMinApprovals > 0) {
+    const reviews = await readGithubPullReviews(link, parsed.data.pullNumber);
+    if (!reviews.ok) return githubRefused(reviews.reason, reviews.detail);
+    approvals = countApprovals(reviews.data);
+  }
+  const verdict = evaluateMergePolicy({ level: link.accessLevel, mergeRole: link.mergeRole, minApprovals: link.mergeMinApprovals, roles: context.roles, approvals });
+  if (!verdict.allowed) return err('FORBIDDEN', `Merge refused by this repository's policy. ${verdict.reasons.join(' ')}`);
 
   const merged = await githubMergePullRequest({ link, pullNumber: parsed.data.pullNumber });
   if (!merged.ok) return githubRefused(merged.reason, merged.detail);
@@ -226,6 +248,9 @@ export async function triggerBuild(input: TriggerBuildInput): Promise<Result<{ d
   const link = await linkedRepository(parsed.data.projectId);
   if (!link) return err('CONFLICT', 'This project has no linked GitHub repository. Link one on the Repository tab first.');
 
+  const buildRefusal = accessRefusal(link.accessLevel, 'build' satisfies GitAction);
+  if (buildRefusal) return err('FORBIDDEN', buildRefusal);
+
   let url: string | null = null;
   if (link.workflowFile) {
     const dispatched = await dispatchWorkflow({ link, workflowFile: link.workflowFile, ref: link.defaultBranch });
@@ -275,5 +300,43 @@ export async function setRepositoryWorkflow(input: SetRepositoryWorkflowInput): 
       return err('FORBIDDEN', 'The database refused: only an owner, ops admin or delivery lead may change the link.');
     default:
       return err('INTERNAL', 'Could not set the workflow file.');
+  }
+}
+
+/**
+ * SCR-042 — set the repository's access level and merge policy. Owner or ops
+ * admin (`project.sign_off`), and `projects.set_repository_policy` re-checks
+ * `core.is_admin()` and audits the before and after.
+ */
+export async function setRepositoryPolicy(input: SetRepositoryPolicyInput): Promise<Result<{ saved: true }>> {
+  const parsed = setRepositoryPolicySchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid policy.');
+
+  const context = await requireInternal();
+  if (!can(context, 'project.sign_off')) return err('FORBIDDEN', 'Only an owner or ops admin sets a repository policy.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('set_repository_policy', {
+    p_project_id: parsed.data.projectId,
+    p_access_level: parsed.data.accessLevel,
+    p_merge_min_approvals: parsed.data.mergeMinApprovals,
+    p_merge_role: parsed.data.mergeRole,
+  });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setRepositoryPolicy', detail: error.message }));
+    return err('INTERNAL', 'Could not save the policy.');
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+  switch (row?.outcome) {
+    case 'set':
+      return ok({ saved: true });
+    case 'unchanged':
+      return err('CONFLICT', 'That is already the policy.');
+    case 'not_linked':
+      return err('NOT_FOUND', 'This project has no linked repository.');
+    case 'bad_policy':
+      return err('VALIDATION', 'That is not a policy this system knows.');
+    default:
+      return err('FORBIDDEN', 'The database refused: only an owner or ops admin sets a repository policy.');
   }
 }

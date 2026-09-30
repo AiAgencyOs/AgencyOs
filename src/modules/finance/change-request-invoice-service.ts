@@ -7,7 +7,8 @@ import { err, ok, type Result } from '@/lib/result';
 
 import { changeRequestInvoiceLines, invoiceChangeRequestSchema, invoiceTotals, type InvoiceChangeRequestInput } from './change-request-invoice-schema';
 import { taxRateBpForMode } from './gstin';
-import { invoiceNumberPrefix, nextInvoiceNumber, parseInvoiceSequence } from './schema';
+import { highestInvoiceSequenceFor, readInvoiceNumbering } from './numbering';
+import { nextInvoiceNumber } from './schema';
 import { readBillingReadiness } from './service';
 
 const NUMBER_ATTEMPTS = 5;
@@ -80,20 +81,14 @@ export async function invoiceChangeRequest(input: InvoiceChangeRequestInput): Pr
   const totals = invoiceTotals(lines);
 
   const year = new Date().getUTCFullYear();
-  const { data: highestRow } = await supabase
-    .schema('finance')
-    .from('invoices')
-    .select('number')
-    .like('number', `${invoiceNumberPrefix(year)}%`)
-    .order('number', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const highest = parseInvoiceSequence(highestRow?.number, year);
+  const numbering = await readInvoiceNumbering(supabase);
+  const highest = await highestInvoiceSequenceFor(supabase, year, numbering.prefix);
 
-  const dueAt = parsed.data.dueInDays === undefined ? null : new Date(Date.now() + parsed.data.dueInDays * 86_400_000).toISOString();
+  const dueDays = parsed.data.dueInDays ?? numbering.termsDays ?? undefined;
+  const dueAt = dueDays === undefined ? null : new Date(Date.now() + dueDays * 86_400_000).toISOString();
 
   for (let attempt = 0; attempt < NUMBER_ATTEMPTS; attempt += 1) {
-    const number = nextInvoiceNumber(year, highest, attempt);
+    const number = nextInvoiceNumber(year, highest, attempt, numbering.prefix);
     const { data, error } = await supabase.schema('finance').rpc('create_change_request_invoice', {
       p_change_request_id: cr.id,
       p_number: number,

@@ -9,6 +9,16 @@ import { listExpenses, listPayments, listPendingPaymentClaims } from '@/modules/
 import { listBillableMilestones, listBillingClients, listInvoicesFiltered } from '@/modules/finance/overview-queries';
 import { listInvoices } from '@/modules/finance/queries';
 import { milestoneInvoiceability } from '@/modules/finance/schema';
+import {
+  basisDisagreements,
+  financeBasis,
+  isLiveInvoice,
+  isVerifiedPayment,
+  owedOn,
+  principalCurrency,
+  receivedByProject,
+  verifiedByMonth,
+} from '@/modules/finance/verified-basis';
 import { CreateFromMilestoneForm } from '../invoices/create-from-milestone-form';
 import { listProjects } from '@/modules/projects/queries';
 
@@ -16,6 +26,7 @@ import { RecordClaimForm } from '../projects/[projectId]/claims-panel';
 import {
   Avatar,
   buttonClass,
+  Callout,
   Card,
   CardHeader,
   DataTable,
@@ -63,7 +74,7 @@ function money(minor: number, currency: string): string {
 }
 
 /** Invoices that are bills — everything but a draft, a pending approval, or a voided one. */
-const LIVE = new Set(['issued', 'partially_paid', 'paid', 'overdue']);
+const LIVE = { has: isLiveInvoice };
 
 /**
  * Finance Overview — SCR-050, laid out as the reference's finance screen:
@@ -81,7 +92,7 @@ const LIVE = new Set(['issued', 'partially_paid', 'paid', 'overdue']);
 export default async function FinanceOverviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ days?: string; client?: string; project?: string }>;
+  searchParams: Promise<{ days?: string; client?: string; project?: string; from?: string; to?: string }>;
 }) {
   const context = await requireInternal('/finance');
   const clock = await agencyClock();
@@ -92,9 +103,13 @@ export default async function FinanceOverviewPage({
   // database. Payments and expenses follow the invoice set (a payment belongs
   // to an invoice; an expense to a project) so every figure below is about
   // the same slice.
-  const { days: daysParam, client: clientId, project: projectId } = await searchParams;
-  const days = daysParam && /^\d+$/.test(daysParam) ? Number(daysParam) : undefined;
-  const filtered = Boolean(days || clientId || projectId);
+  const { days: daysParam, client: clientId, project: projectId, from: fromParam, to: toParam } = await searchParams;
+  const dayShape = /^\d{4}-\d{2}-\d{2}$/;
+  const from = fromParam && dayShape.test(fromParam) ? fromParam : undefined;
+  const to = toParam && dayShape.test(toParam) ? toParam : undefined;
+  // A custom range wins over the preset: the two never apply together.
+  const days = !(from || to) && daysParam && /^\d+$/.test(daysParam) ? Number(daysParam) : undefined;
+  const filtered = Boolean(days || from || to || clientId || projectId);
   const canIssue = can(context, 'invoice.issue');
 
   // SCR-050: creating an invoice from here, through the same door the
@@ -112,7 +127,7 @@ export default async function FinanceOverviewPage({
     .map((m) => ({ id: m.id, projectId: m.projectId, name: m.name, position: m.position, amountLabel: money(m.amountMinor, m.currency) }));
 
   const [invoices, allPayments, allExpenses, pendingClaims, projects, clients, recentInvoices] = await Promise.all([
-    listInvoicesFiltered({ days, clientId, projectId }),
+    listInvoicesFiltered({ days, clientId, projectId, from, to }),
     listPayments(500),
     listExpenses(500),
     canIssue ? listPendingPaymentClaims() : Promise.resolve([]),
@@ -123,13 +138,15 @@ export default async function FinanceOverviewPage({
   ]);
   const invoiceIds = new Set(invoices.map((i) => i.id));
   const payments = filtered ? allPayments.filter((p) => invoiceIds.has(p.invoiceId)) : allPayments;
-  const since = days ? new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10) : null;
+  const since = from ?? (days ? new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10) : null);
   const expenses = allExpenses.filter(
-    (e) => (!projectId || e.projectId === projectId) && (!since || e.incurredOn >= since) && (!clientId || !filtered || projectId),
+    (e) => (!projectId || e.projectId === projectId) && (!since || e.incurredOn >= since) && (!to || e.incurredOn <= to) && (!clientId || !filtered || projectId),
   );
   const claimable = invoices.filter((i) => LIVE.has(i.status) && i.status !== 'paid');
   const exportQuery = new URLSearchParams();
   if (days) exportQuery.set('days', String(days));
+  if (from) exportQuery.set('from', from);
+  if (to) exportQuery.set('to', to);
   if (clientId) exportQuery.set('client', clientId);
   if (projectId) exportQuery.set('project', projectId);
   const exportHref = `/api/finance/invoices/export${exportQuery.size > 0 ? `?${exportQuery.toString()}` : ''}`;
@@ -141,24 +158,21 @@ export default async function FinanceOverviewPage({
     { title: 'Expenses (CSV)', note: 'Every recorded expense', href: '/api/finance/expenses/export' },
   ];
 
-  const live = invoices.filter((i) => LIVE.has(i.status));
-  const invoicedByCurrency = new Map<string, number>();
-  for (const i of live) invoicedByCurrency.set(i.currency, (invoicedByCurrency.get(i.currency) ?? 0) + i.total_minor);
-  const currency = [...invoicedByCurrency.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? expenses[0]?.currency ?? 'INR';
-  const otherCurrencies = [...invoicedByCurrency.keys()].filter((c) => c !== currency);
+  // ONE basis (verified-basis.ts): received is what a person verified, not
+  // what was recorded. Every figure below — tiles, donut, top projects,
+  // upcoming, the chart — is computed from it, so none can disagree.
+  const currency = principalCurrency(invoices, expenses[0]?.currency ?? 'INR');
+  const invoicedByCurrency = new Set(invoices.filter((i) => LIVE.has(i.status)).map((i) => i.currency));
+  const otherCurrencies = [...invoicedByCurrency].filter((c) => c !== currency);
 
-  const inCurrency = live.filter((i) => i.currency === currency);
+  const inCurrency = invoices.filter((i) => LIVE.has(i.status) && i.currency === currency);
   const paymentsInCurrency = payments.filter((p) => p.currency === currency && p.status !== 'refunded');
   const expensesInCurrency = expenses.filter((e) => e.currency === currency);
-
-  const invoiced = inCurrency.reduce((n, i) => n + i.total_minor, 0);
-  const received = inCurrency.reduce((n, i) => n + i.paid_minor, 0);
-  const outstanding = invoiced - received;
-  const spent = expensesInCurrency.reduce((n, e) => n + e.amountMinor, 0);
-  const net = received - spent;
-  const collection = invoiced > 0 ? Math.round((received / invoiced) * 100) : null;
-  const pendingInvoices = inCurrency.filter((i) => i.paid_minor < i.total_minor);
+  const basis = financeBasis({ invoices, expenses, currency });
+  const { invoicedMinor: invoiced, receivedMinor: received, outstandingMinor: outstanding, expensesMinor: spent, netMinor: net, collectionPercent: collection } = basis;
+  const pendingInvoices = inCurrency.filter((i) => owedOn(i) > 0);
   const overdue = inCurrency.filter((i) => i.status === 'overdue');
+  const unbacked = basisDisagreements(invoices, payments);
 
   // KPI chips: this 30 days against the 30 before, from issue / capture /
   // incurred dates. Outstanding is a balance, not a flow, so it has no chip.
@@ -170,8 +184,8 @@ export default async function FinanceOverviewPage({
   );
   const receivedFlow = sumPeriods(
     allPayments
-      .filter((p) => p.currency === currency && p.status !== 'refunded' && (!(clientId || projectId) || recentIds.has(p.invoiceId)))
-      .map((p) => ({ at: p.captured_at, amount: p.amount_minor })),
+      .filter((p) => p.currency === currency && isVerifiedPayment(p) && (!(clientId || projectId) || recentIds.has(p.invoiceId)))
+      .map((p) => ({ at: p.verified_at, amount: p.amount_minor })),
     chipNow,
   );
   const spentFlow = sumPeriods(
@@ -189,15 +203,16 @@ export default async function FinanceOverviewPage({
     months.push(d.toISOString().slice(0, 7));
   }
   const monthLabel = (ym: string) => new Date(`${ym}-15T00:00:00Z`).toLocaleDateString('en-IN', { month: 'short', timeZone: 'UTC' });
+  const incomeByMonth = verifiedByMonth(payments, currency, monthKey);
   const series = months.map((ym) => ({
     month: monthLabel(ym),
-    income: paymentsInCurrency.filter((p) => p.captured_at && monthKey(p.captured_at) === ym).reduce((n, p) => n + p.amount_minor, 0) / 100,
+    income: (incomeByMonth.get(ym) ?? 0) / 100,
     expenses: expensesInCurrency.filter((e) => e.incurredOn.slice(0, 7) === ym).reduce((n, e) => n + e.amountMinor, 0) / 100,
   }));
 
-  const paidAmount = inCurrency.filter((i) => i.status === 'paid').reduce((n, i) => n + i.total_minor, 0);
-  const overdueAmount = overdue.reduce((n, i) => n + i.total_minor - i.paid_minor, 0);
-  const pendingAmount = Math.max(0, invoiced - paidAmount - overdueAmount);
+  const paidAmount = basis.paidInvoiceMinor;
+  const overdueAmount = basis.overdueMinor;
+  const pendingAmount = Math.max(0, outstanding - overdueAmount);
   const statusData = [
     { label: 'Paid', value: paidAmount / 100 },
     { label: 'Pending', value: pendingAmount / 100 },
@@ -205,11 +220,10 @@ export default async function FinanceOverviewPage({
   ].filter((d) => d.value > 0);
 
   const projectName = new Map(projects.map((p) => [p.id, p.name]));
-  const revenueByProject = new Map<string, number>();
-  for (const i of inCurrency) {
-    if (!i.project_id) continue;
-    revenueByProject.set(i.project_id, (revenueByProject.get(i.project_id) ?? 0) + i.paid_minor);
-  }
+  // Top project revenue — verified money by project. Invoices with no project
+  // pool under one honest "No project" row instead of vanishing, which is why
+  // the old list showed ₹0 against a real Total Received.
+  const revenueByProject = receivedByProject(invoices, currency);
   const topProjects = [...revenueByProject.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
   const topMax = topProjects[0]?.[1] ?? 0;
 
@@ -261,7 +275,7 @@ export default async function FinanceOverviewPage({
     { key: 'status', header: 'Status', badge: true, cell: (p) => <StatusBadge status={p.verified_at ? 'verified' : p.status} dot={false} /> },
   ];
 
-  const rangeLabel = days ? `${clock.date(new Date(now.getTime() - days * 86_400_000))} - ${clock.date(now)}` : 'All time';
+  const rangeLabel = from || to ? `${from ?? 'Start'} - ${to ?? 'Today'}` : days ? `${clock.date(new Date(now.getTime() - days * 86_400_000))} - ${clock.date(now)}` : 'All time';
 
   return (
     <div className="flex flex-col gap-5">
@@ -354,6 +368,18 @@ export default async function FinanceOverviewPage({
               ))}
             </select>
           </div>
+          <div className="flex flex-col gap-1">
+            <label className={labelClass} htmlFor="finance-from">
+              From
+            </label>
+            <input id="finance-from" type="date" name="from" defaultValue={from ?? ''} className={`${selectClass} sm:w-40`} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className={labelClass} htmlFor="finance-to">
+              To
+            </label>
+            <input id="finance-to" type="date" name="to" defaultValue={to ?? ''} className={`${selectClass} sm:w-40`} />
+          </div>
           <div className="flex items-end gap-2">
             <button type="submit" className={buttonClass('primary', 'sm')}>
               Apply
@@ -367,12 +393,25 @@ export default async function FinanceOverviewPage({
         </FilterBar>
       </form>
 
+      {unbacked.length > 0 ? (
+        <Callout tone="warning" icon={<IconAlert size={16} />}>
+          {unbacked.length} invoice{unbacked.length === 1 ? '' : 's'} carry{unbacked.length === 1 ? 's' : ''} a paid amount that no verified payment backs, so {unbacked.length === 1 ? 'it is' : 'they are'} not counted as received:{' '}
+          {unbacked.slice(0, 4).map((d, k) => (
+            <span key={d.invoiceId}>
+              {k > 0 ? ', ' : ''}
+              <Link href={`/invoices/${d.invoiceId}`} className="font-medium underline underline-offset-2">{invoices.find((i) => i.id === d.invoiceId)?.number ?? 'invoice'}</Link>
+            </span>
+          ))}
+          {unbacked.length > 4 ? ` and ${unbacked.length - 4} more` : ''}.
+        </Callout>
+      ) : null}
+
       <StatGrid cols={5}>
         <Stat label="Total Invoiced" value={money(invoiced, currency)} caption={`${inCurrency.length} invoice${inCurrency.length === 1 ? '' : 's'}`} trend={trendOf(periodDelta(invoicedFlow))} tone="success" icon={<IconTrendUp size={16} />} href="/invoices" />
-        <Stat label="Total Received" value={money(received, currency)} caption={collection === null ? `${paymentsInCurrency.length} payment${paymentsInCurrency.length === 1 ? '' : 's'}` : `${collection}% Collection Rate`} trend={trendOf(periodDelta(receivedFlow))} tone="info" icon={<IconCheck size={16} />} href="/finance/payments" />
+        <Stat label="Total Received" value={money(received, currency)} caption={`${collection === null ? `${paymentsInCurrency.length} payment${paymentsInCurrency.length === 1 ? '' : 's'}` : `${collection}% Collection Rate`}${basis.awaitingVerificationMinor > 0 ? ` · ${money(basis.awaitingVerificationMinor, currency)} awaiting verification` : ''}`} trend={trendOf(periodDelta(receivedFlow))} tone="info" icon={<IconCheck size={16} />} href="/finance/payments" />
         <Stat label="Outstanding" value={money(outstanding, currency)} caption={`${pendingInvoices.length} pending invoice${pendingInvoices.length === 1 ? '' : 's'}${overdue.length > 0 ? ` · ${overdue.length} overdue` : ''}`} tone={overdue.length > 0 ? 'danger' : 'warning'} icon={<IconClock size={16} />} href="/invoices" />
         <Stat label="Total Expenses" value={money(spent, currency)} caption={`${expensesInCurrency.length} recorded`} trend={trendOf(periodDelta(spentFlow), true)} tone="danger" icon={<IconRupee size={16} />} href="/finance/expenses" />
-        <Stat label="Net Profit" value={money(net, currency)} caption={received > 0 ? `${Math.round((net / received) * 100)}% margin` : 'Received minus expenses'} trend={trendOf(periodDelta(netFlow))} tone={net >= 0 ? 'accent' : 'danger'} icon={<IconUsage size={16} />} />
+        <Stat label="Net Profit" value={money(net, currency)} caption={basis.marginPercent !== null ? `${basis.marginPercent}% margin · verified received minus expenses` : 'Verified received minus expenses'} trend={trendOf(periodDelta(netFlow))} tone={net >= 0 ? 'accent' : 'danger'} icon={<IconUsage size={16} />} />
       </StatGrid>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]">
@@ -401,20 +440,24 @@ export default async function FinanceOverviewPage({
         <Card>
           <CardHeader title="Top Project Revenue" actions={<ViewAll href="/projects" />} />
           {topProjects.length === 0 ? (
-            <p className="px-4 py-4 text-[13px] text-muted sm:px-5">No payments against a project yet.</p>
+            <p className="px-4 py-4 text-[13px] text-muted sm:px-5">No verified payment yet.</p>
           ) : (
             <ul className="flex flex-col gap-3 p-4 sm:p-5">
               {topProjects.map(([id, minor]) => (
-                <li key={id} className="flex items-center gap-3">
-                  <Avatar name={projectName.get(id) ?? id} size="md" square tone="sidebar" />
+                <li key={id ?? 'none'} className="flex items-center gap-3">
+                  <Avatar name={id ? (projectName.get(id) ?? id) : 'No project'} size="md" square tone="sidebar" />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline justify-between gap-2">
-                      <Link href={`/projects/${id}`} className="truncate text-[13px] font-medium text-foreground hover:text-brand">
-                        {projectName.get(id) ?? 'Project'}
-                      </Link>
+                      {id ? (
+                        <Link href={`/projects/${id}`} className="truncate text-[13px] font-medium text-foreground hover:text-brand">
+                          {projectName.get(id) ?? 'Project'}
+                        </Link>
+                      ) : (
+                        <span className="truncate text-[13px] font-medium text-foreground">No project</span>
+                      )}
                       <span className="tabular shrink-0 text-[13px] font-semibold">{money(minor, currency)}</span>
                     </span>
-                    <ProgressBar value={topMax > 0 ? (minor / topMax) * 100 : 0} showValue={false} tone="brand" size="sm" label={`${projectName.get(id) ?? 'Project'} share of top revenue`} className="mt-1 w-full" />
+                    <ProgressBar value={topMax > 0 ? (minor / topMax) * 100 : 0} showValue={false} tone="brand" size="sm" label={`${id ? (projectName.get(id) ?? 'Project') : 'No project'} share of top revenue`} className="mt-1 w-full" />
                   </span>
                 </li>
               ))}
@@ -473,7 +516,7 @@ export default async function FinanceOverviewPage({
                         <span className="block truncate font-medium text-foreground">{i.project_id ? (projectName.get(i.project_id) ?? i.number) : i.number}</span>
                         <span className="block font-mono text-[11px] text-muted">{i.number}</span>
                       </span>
-                      <span className="tabular shrink-0 font-medium">{money(i.total_minor - i.paid_minor, i.currency)}</span>
+                      <span className="tabular shrink-0 font-medium">{money(owedOn(i), i.currency)}</span>
                       <span className="shrink-0 text-xs text-muted">{i.due_at ? clock.date(i.due_at) : ''}</span>
                       {days !== null ? <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${days <= 3 ? 'bg-danger-soft text-danger' : 'bg-warning-soft text-warning'}`}>{days} day{days === 1 ? '' : 's'}</span> : null}
                     </Link>

@@ -39,6 +39,24 @@ export type RequirementRow = {
   priority: RequirementPriority | null;
   assignee: { userId: string; name: string } | null;
   files: { fileId: string; title: string; url: string | null }[];
+  /** SCR-029: the feature the item is planned under, and the development tasks built under it. */
+  featureId: string | null;
+  tasks: { id: string; title: string; status: string }[];
+  /** SCR-029: the quotations priced from the requirement version this scope descends from. */
+  quotations: { id: string; title: string; version: number; status: string }[];
+  /** SCR-028/029: questions asked of this requirement (migration 20261006400000). */
+  clarifications: RequirementClarification[];
+};
+
+export type RequirementClarification = {
+  id: string;
+  question: string;
+  impact: string;
+  status: 'open' | 'answered';
+  raisedAt: string;
+  raisedByName: string | null;
+  answer: string | null;
+  answeredAt: string | null;
 };
 
 export function requirementCode(index: number): string {

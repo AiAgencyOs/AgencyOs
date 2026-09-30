@@ -58,6 +58,7 @@ export function IntegrationsList({
   editors = {},
   secrets = {},
   vaultHref,
+  verifiedLabels = {},
 }: {
   integrations: Integration[];
   /** The verify form for an integration id, when one exists. */
@@ -69,6 +70,8 @@ export function IntegrationsList({
   /** Where each integration's secret lives, per id. */
   secrets?: Record<string, SecureStorage>;
   vaultHref: string;
+  /** Per integration id: the agency-local text of its last recorded check, when it has one. */
+  verifiedLabels?: Record<string, string>;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const open = integrations.find((i) => i.id === openId) ?? null;
@@ -87,6 +90,10 @@ export function IntegrationsList({
                 </button>
                 <span className="text-xs text-muted">
                   {i.category} · {i.detail}
+                </span>
+                <span className="text-[11px] text-muted">
+                  {verifiedLabels[i.id] ? `Last verified ${verifiedLabels[i.id]}` : 'No verification recorded'}
+                  {i.count ? ` · ${i.count.value} ${i.count.label}` : ''}
                 </span>
               </div>
               <span className="flex flex-wrap items-center gap-2 text-xs">
@@ -138,6 +145,8 @@ export function IntegrationsList({
             <DetailList>
               <DetailRow label="Lifecycle" value={<Badge tone={TONE[open.lifecycle]} dot>{open.lifecycle.replace('_', ' ')}</Badge>} />
               <DetailRow label="Evidence" value={<span className="text-left">{open.detail}</span>} />
+              <DetailRow label="Last verified" value={verifiedLabels[open.id] ?? 'never'} />
+              {open.count ? <DetailRow label={`Records (${open.count.label})`} value={String(open.count.value)} /> : null}
               <DetailRow label="Needs an external credential" value={open.external ? 'yes' : 'no'} />
               {(identifiers[open.id] ?? []).map((row) => (
                 <DetailRow

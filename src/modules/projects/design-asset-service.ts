@@ -40,7 +40,7 @@ export async function uploadDesignAsset(
   if (file.size > MAX_UPLOAD_BYTES) return err('VALIDATION', `That file is ${Math.round(file.size / 1024 / 1024)} MB; the limit is ${MAX_UPLOAD_BYTES / 1024 / 1024} MB.`);
   const mediaType = file.type;
   if (!(DESIGN_ASSET_MEDIA_TYPES as readonly string[]).includes(mediaType)) {
-    return err('VALIDATION', 'A design asset is a PNG, JPEG, WebP, SVG or PDF.');
+    return err('VALIDATION', 'A design asset is a PNG, JPEG, WebP, SVG or PDF, or a WOFF, WOFF2, TTF or OTF font.');
   }
 
   const context = await requireInternal();
@@ -68,6 +68,7 @@ export async function uploadDesignAsset(
     p_media_type: mediaType,
     p_size_bytes: file.size,
     p_parent_asset_id: parsed.data.parentAssetId,
+    p_licence: parsed.data.licence || undefined,
   });
   const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; asset_id?: string | null; version?: number | null } | undefined;
 
@@ -86,6 +87,8 @@ export async function uploadDesignAsset(
         return err('NOT_FOUND', 'Project not found.');
       case 'no_phase_three':
         return err('CONFLICT', 'Phase 3 has not started for this project, so there is no design to attach an asset to.');
+      case 'licence_too_long':
+        return err('VALIDATION', 'A licence note is at most 500 characters.');
       case 'bad_kind':
         return err('VALIDATION', 'That is not an asset kind.');
       case 'parent_not_found':

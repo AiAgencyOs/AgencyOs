@@ -2,10 +2,13 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { reactivationSummary } from '@/lib/admin/reactivation-summary';
+import { readSettingImpact } from '@/lib/admin/settings-impact';
+import { impactEffects } from '@/lib/admin/settings-impact-copy';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
-import { listAnnouncements } from '@/modules/crm/announcements-queries';
+import { listAnnouncementTargets, listAnnouncements } from '@/modules/crm/announcements-queries';
+import { listAnnouncementTemplates } from '@/modules/crm/announcement-templates-queries';
 import { readInternalGroup, readInternalRecipient } from '@/modules/crm/queries';
 import { listWhatsAppTemplates, listWhatsAppTemplateVersions } from '@/modules/crm/template-queries';
 import { agencyClock } from '@/lib/admin/agency-clock';
@@ -26,16 +29,18 @@ import {
   WhatsAppNumberForm,
   WhatsAppTemplatesForm,
 } from '../forms';
+import { ImpactGate } from '../impact-gate';
 import { SettingHistory } from '../setting-history';
 import { loadSettingHistory } from '../setting-history-entries';
 import { AnnouncementsPanel } from './announcements-panel';
+import { AnnouncementTemplatesPanel } from './announcement-templates-panel';
 
 export const metadata: Metadata = { title: 'Settings — Communication' };
 
 export default async function SettingsCommunicationPage() {
   const context = await requireInternal('/settings');
 
-  const historyOf = await loadSettingHistory();
+  const [historyOf, impact] = await Promise.all([loadSettingHistory(), readSettingImpact()]);
   const supabase = await createClient();
   const { data: orgRows } = await supabase.schema('core').from('organizations').select('settings').limit(1);
   const orgSettings = (orgRows?.[0]?.settings ?? {}) as Record<string, unknown>;
@@ -79,7 +84,7 @@ export default async function SettingsCommunicationPage() {
   const reactivation = await reactivationSummary();
 
   // SCR-017/057 — announcements: a record, never a send.
-  const announcements = await listAnnouncements({ limit: 50 });
+  const [announcements, announcementTargets, announcementTemplates] = await Promise.all([listAnnouncements({ limit: 50 }), listAnnouncementTargets(), listAnnouncementTemplates()]);
 
   // SCR-059 — the registry by the numbers, and its history. Categories are
   // the situations a template answers; languages are what it answers in.
@@ -141,12 +146,17 @@ export default async function SettingsCommunicationPage() {
         </p>
         <AnnouncementsPanel
           canWrite={can(context, 'organization.settings')}
+          targets={announcementTargets}
+          templates={announcementTemplates}
           announcements={announcements.map((a) => ({
             id: a.id,
             title: a.title,
             body: a.body,
             audience: a.audience,
             status: a.status,
+            projectName: a.projectName,
+            clientName: a.clientName,
+            fromMilestone: a.source === 'milestone',
             when:
               a.status === 'published' && a.publishedAt
                 ? `published ${clock.dateTime(a.publishedAt)}`
@@ -155,6 +165,15 @@ export default async function SettingsCommunicationPage() {
                   : `drafted ${clock.dateTime(a.createdAt)}`,
           }))}
         />
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
+        <h2 id="announcement-templates" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Announcement templates</h2>
+        <p className="text-xs text-muted">
+          Reusable client-update formats. A template marked Milestone drafts an announcement each time a client-visible
+          milestone is met, naming the project, the client and the milestone; you publish it — <span className="font-medium">nothing is sent</span>.
+        </p>
+        <AnnouncementTemplatesPanel canWrite={can(context, 'organization.settings')} templates={announcementTemplates} />
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
@@ -207,7 +226,9 @@ export default async function SettingsCommunicationPage() {
           leads become reachable. These are the numbers in force; the defaults are what a careful
           person would choose rather than what a campaign would like.
         </p>
-        <OutreachLimitsForm limits={outreachLimits} />
+        <ImpactGate title="Changing the outreach limits affects" effects={impactEffects('outreach-limits', impact)}>
+          <OutreachLimitsForm limits={outreachLimits} />
+        </ImpactGate>
 
         <h2 id="outreach-window" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">When AgencyOS may send</h2>
         <p className="text-xs text-muted">
@@ -215,7 +236,9 @@ export default async function SettingsCommunicationPage() {
             ? `Set — follow-ups go out between ${setting('outreach_window_start_hour')}:00 and ${setting('outreach_window_end_hour')}:00 in the agency’s timezone, on business days.`
             : 'Not set — follow-ups go out between 10:00 and 19:00 in the agency’s timezone, on business days. A follow-up that falls due outside these hours waits for the next opening.'}
         </p>
-        <OutreachWindowForm start={setting('outreach_window_start_hour')} end={setting('outreach_window_end_hour')} />
+        <ImpactGate title="Changing when AgencyOS may send affects" effects={impactEffects('outreach-window', impact)}>
+          <OutreachWindowForm start={setting('outreach_window_start_hour')} end={setting('outreach_window_end_hour')} />
+        </ImpactGate>
         <SettingHistory label="Sending window" entries={historyOf('outreach_window_start_hour', 'outreach_window_end_hour')} />
 
         <h2 className="text-[13px] font-semibold tracking-tight">How far ahead a meeting time is offered</h2>
@@ -271,7 +294,9 @@ export default async function SettingsCommunicationPage() {
             switching the pilot on for a large cohort does not send the whole batch at once — the daily outreach limits
             bound the day, this bounds the run.
           </p>
+          <ImpactGate title="Changing the reactivation cap affects" effects={impactEffects('reactivation-cap', impact)}>
           <ReactivationCapForm maxPerRun={setting('reactivation_max_per_run')} />
+        </ImpactGate>
           <SettingHistory label="Reactivation per-run cap" entries={historyOf('reactivation_max_per_run')} />
         </div>
       </div>

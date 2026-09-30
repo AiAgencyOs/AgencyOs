@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useActionState, useEffect, useRef, useState } from 'react';
 
+import { groupRepeats } from '@/lib/admin/notification-groups';
 import { SEVERITY_LABEL, SEVERITY_TONE, type Severity } from '@/lib/admin/escalation-types';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { Badge, buttonClass, cx, DetailList, DetailRow, Drawer, FormMessage, inputClass, selectClass } from '@/ui';
@@ -35,6 +36,8 @@ export type NotificationRow = {
   } | null;
   /** Already formatted by the agency clock — the snooze end, if any. */
   snoozedUntilLabel: string | null;
+  /** This item's own action history (newest first), already formatted. */
+  history: { id: string; text: string; at: string }[];
 };
 
 export type RosterOption = { userId: string; fullName: string };
@@ -62,6 +65,10 @@ export function NotificationList({ rows, roster, canAnswer }: { rows: Notificati
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openKey, setOpenKey] = useState<string | null>(null);
   const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.key));
+  // "No duplicate alert storms": rows with the same source and title collapse
+  // behind the newest one, with a count; "Show" expands the repeats.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const groups = groupRepeats(rows);
   const openRow = openKey ? (rows.find((r) => r.key === openKey) ?? null) : null;
 
   const toggle = (key: string) =>
@@ -82,7 +89,10 @@ export function NotificationList({ rows, roster, canAnswer }: { rows: Notificati
         onDone={() => setSelected(new Set())}
       />
       <ul className="divide-y divide-line">
-        {rows.map((r) => (
+        {groups.flatMap((g) => {
+          const open = expanded.has(g.lead.key);
+          return (open ? [g.lead, ...g.repeats] : [g.lead]).map((r) => ({ r, g }));
+        }).map(({ r, g }) => (
           <li key={r.key} className={cx('flex flex-col gap-2 px-4 py-3 text-sm sm:px-5', !r.attention && 'opacity-70')}>
             <div className="flex items-start gap-3">
               <input
@@ -99,6 +109,23 @@ export function NotificationList({ rows, roster, canAnswer }: { rows: Notificati
                 </span>
                 <span className="text-xs text-muted">{r.detail}</span>
               </Link>
+              {g.lead.key === r.key && g.repeats.length > 0 ? (
+                <button
+                  type="button"
+                  aria-expanded={expanded.has(r.key)}
+                  onClick={() =>
+                    setExpanded((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(r.key)) next.delete(r.key);
+                      else next.add(r.key);
+                      return next;
+                    })
+                  }
+                  className={buttonClass('ghost', 'sm')}
+                >
+                  {expanded.has(r.key) ? 'Hide repeats' : `×${g.repeats.length + 1} — show ${g.repeats.length} similar`}
+                </button>
+              ) : null}
               <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
                 <Badge tone={SEVERITY_TONE[r.severity]} dot={r.severity === 'critical'}>
                   {SEVERITY_LABEL[r.severity]}
@@ -169,6 +196,20 @@ function NotificationDrawer({ row, roster, canAnswer, onClose }: { row: Notifica
           <div className="flex flex-col gap-2 border-t border-line pt-3">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">State</p>
             <RowControls itemKey={row.key} current={row.state?.state ?? 'unread'} roster={roster} />
+          </div>
+          <div className="flex flex-col gap-2 border-t border-line pt-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Action history</p>
+            {row.history.length > 0 ? (
+              <ul className="flex flex-col gap-1.5 border-l-2 border-line pl-3">
+                {row.history.map((h) => (
+                  <li key={h.id} className="text-[13px]">
+                    <span className="text-foreground">{h.text}</span> <span className="text-xs text-faint">· {h.at}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[13px] text-muted">Nobody has marked, snoozed, resolved or assigned this item yet.</p>
+            )}
           </div>
           <div className="flex flex-col gap-2 border-t border-line pt-3">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Escalation</p>

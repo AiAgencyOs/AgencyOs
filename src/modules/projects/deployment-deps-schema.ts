@@ -1,9 +1,8 @@
 import { z } from 'zod';
 
-/** SCR-049 — a deployment dependency on the release candidate's handover (`projects.set_deployment_dependency`). */
+/** SCR-049 — a deployment dependency on the project's release record (`projects.set_release_dependency`). */
 export const setDeploymentDependencySchema = z.object({
   projectId: z.uuid(),
-  handoverId: z.uuid(),
   label: z.string().trim().min(1, 'Name the dependency.').max(200),
   status: z.enum(['pending', 'ready']).default('pending'),
   remove: z.boolean().default(false),

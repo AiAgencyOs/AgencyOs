@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState, useState } from 'react';
+import { SECRETS_WARNING } from '@/modules/projects/file-secrets-guard';
 
 import { IDLE_STATE } from '@/modules/identity/types';
 import {
@@ -97,6 +98,7 @@ export function UploadFileForm({
           <textarea name="description" maxLength={1000} disabled={disabled} className={textareaClass} rows={2} />
         </label>
       )}
+        <p className="text-[11px] text-muted">{SECRETS_WARNING}</p>
       <div className="flex flex-wrap items-center gap-3">
         <button type="submit" disabled={disabled} className={buttonClass('primary', 'sm')}>
           <IconUpload size={14} />

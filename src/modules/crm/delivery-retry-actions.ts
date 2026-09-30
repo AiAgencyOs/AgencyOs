@@ -16,7 +16,7 @@ export async function retryFailedDeliveryAction(_prev: FormState, formData: Form
   const messageId = String(formData.get('messageId') ?? '');
   const leadId = String(formData.get('leadId') ?? '');
 
-  const result = await retryFailedDelivery({ messageId });
+  const result = await retryFailedDelivery({ messageId, reason: String(formData.get('reason') ?? '') });
 
   revalidatePath('/operations');
   revalidatePath('/communication');

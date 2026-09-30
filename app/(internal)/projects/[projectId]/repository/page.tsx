@@ -6,11 +6,13 @@ import { can } from '@/lib/authz/permissions';
 import { listGitActions, listTaskOptions } from '@/modules/projects/git-queries';
 import { getProject, listRepositories } from '@/modules/projects/queries';
 import { getRepositoryLink } from '@/modules/projects/repository-link-queries';
-import { Callout, EmptyState, IconIntegrations, PageHeader, PermissionDenied } from '@/ui';
+import { ACCESS_LEVEL_LABEL, ACCESS_LEVEL_NEEDS, ACCESS_LEVELS, MERGE_ROLE_LABEL } from '@/modules/projects/repository-policy';
+import { Badge, Callout, Card, CardHeader, DomainSearch, EmptyState, IconIntegrations, PageHeader, PermissionDenied } from '@/ui';
 
 import { AddRepositoryForm, RepositoryCard } from '../repository-panel';
 import { ProjectSubNav } from '../project-subnav';
 import { GithubPanel } from './github-panel';
+import { RepositoryPolicyForm } from './policy-panel';
 
 export const metadata: Metadata = { title: 'Repository' };
 
@@ -37,8 +39,9 @@ export const metadata: Metadata = { title: 'Repository' };
  * in projects.git_actions and audited; commits are linked to tasks; failed
  * checks and review findings are read from GitHub beside them.
  */
-export default async function RepositoryPage({ params }: { params: Promise<{ projectId: string }> }) {
+export default async function RepositoryPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ q?: string }> }) {
   const { projectId } = await params;
+  const q = ((await searchParams).q ?? '').trim().slice(0, 120);
 
   const context = await requireInternal(`/projects/${projectId}/repository`);
   if (!can(context, 'project.read')) return <PermissionDenied />;
@@ -63,7 +66,47 @@ export default async function RepositoryPage({ params }: { params: Promise<{ pro
 
       <ProjectSubNav projectId={projectId} />
 
-      <GithubPanel projectId={projectId} link={link} editable={editable} mayWriteTask={mayWriteTask} tasks={tasks} gitActions={gitActions} />
+      {/* SCR-042 — least privilege and the merge policy, per repository. */}
+      {link ? (
+        <Card>
+          <CardHeader
+            title="Access and Merge Policy"
+            description={`${link.owner}/${link.repo}. The GitHub token is organisation-wide; this limits what the panel will do with it in this repository, and every write door checks it first.`}
+          />
+          <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+            <div className="flex flex-wrap items-center gap-2 text-[13px]">
+              <Badge tone={link.accessLevel === 'full' ? 'warning' : 'success'}>{ACCESS_LEVEL_LABEL[link.accessLevel]}</Badge>
+              <span className="text-muted">
+                Merge: {MERGE_ROLE_LABEL[link.mergeRole].toLowerCase()} · {link.mergeMinApprovals} approving review{link.mergeMinApprovals === 1 ? '' : 's'} · green checks always required
+              </span>
+            </div>
+            <dl className="grid gap-2 text-[13px] md:grid-cols-3">
+              {ACCESS_LEVELS.map((l) => (
+                <div key={l} className={`rounded-md border p-2 ${l === link.accessLevel ? 'border-brand bg-brand-soft/40' : 'border-line'}`}>
+                  <dt className="font-medium">{ACCESS_LEVEL_LABEL[l]}{l === link.accessLevel ? ' (current)' : ''}</dt>
+                  <dd>
+                    <ul className="mt-1 list-disc pl-4 text-xs text-muted">
+                      {ACCESS_LEVEL_NEEDS[l].map((n) => (
+                        <li key={n}>{n}</li>
+                      ))}
+                    </ul>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <p className="text-xs text-muted">The token should carry no more than the current level needs. The panel cannot shrink the token itself; it can refuse to use it for more.</p>
+            {can(context, 'project.sign_off') ? (
+              <RepositoryPolicyForm projectId={projectId} accessLevel={link.accessLevel} mergeMinApprovals={link.mergeMinApprovals} mergeRole={link.mergeRole} />
+            ) : (
+              <p className="text-xs text-muted">Only an owner or ops admin changes the policy.</p>
+            )}
+          </div>
+        </Card>
+      ) : null}
+
+      {link ? <DomainSearch action={`/projects/${projectId}/repository`} value={q} placeholder="Search commits, branches and pull requests…" label="Search the repository" /> : null}
+
+      <GithubPanel projectId={projectId} q={q} link={link} editable={editable} mayWriteTask={mayWriteTask} tasks={tasks} gitActions={gitActions} />
 
       <h2 className="text-[13px] font-semibold tracking-tight">Repository links</h2>
       <Callout tone="info">

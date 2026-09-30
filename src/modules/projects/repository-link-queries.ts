@@ -3,6 +3,8 @@ import 'server-only';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
+import { parseAccessLevel, parseMergeRole, type AccessLevel, type MergeRole } from './repository-policy';
+
 /**
  * The one GitHub repository a project is read from — Decision: reversed by
  * the owner on 2026-09-29. Only the link is stored; what GitHub says about it
@@ -16,6 +18,10 @@ export type RepositoryLink = {
   defaultBranch: string;
   /** SCR-043 — the GitHub Actions workflow a build trigger dispatches; null means record only. */
   workflowFile: string | null;
+  /** SCR-042: what the panel may do here, and the merge policy (migration 20261006400200). */
+  accessLevel: AccessLevel;
+  mergeMinApprovals: number;
+  mergeRole: MergeRole;
   linkedBy: string | null;
   linkedAt: string;
   updatedAt: string;
@@ -27,7 +33,7 @@ export async function getRepositoryLink(projectId: string): Promise<RepositoryLi
   const { data, error } = await supabase
     .schema('projects')
     .from('repository_links')
-    .select('id, provider, owner, repo, default_branch, workflow_file, linked_by, created_at, updated_at')
+    .select('id, provider, owner, repo, default_branch, workflow_file, access_level, merge_min_approvals, merge_role, linked_by, created_at, updated_at')
     .eq('project_id', projectId)
     .maybeSingle();
   if (error) unreadable('getRepositoryLink', error);
@@ -40,6 +46,9 @@ export async function getRepositoryLink(projectId: string): Promise<RepositoryLi
     repo: data.repo,
     defaultBranch: data.default_branch,
     workflowFile: data.workflow_file ?? null,
+    accessLevel: parseAccessLevel(data.access_level),
+    mergeMinApprovals: data.merge_min_approvals ?? 0,
+    mergeRole: parseMergeRole(data.merge_role),
     linkedBy: data.linked_by,
     linkedAt: data.created_at,
     updatedAt: data.updated_at,

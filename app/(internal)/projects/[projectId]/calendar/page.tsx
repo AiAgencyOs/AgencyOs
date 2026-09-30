@@ -45,7 +45,7 @@ export const metadata: Metadata = { title: 'Calendar' };
 
 const VIEWS = ['month', 'week', 'day', 'list'] as const;
 type View = (typeof VIEWS)[number];
-const KINDS = ['task', 'milestone', 'meeting'] as const;
+const KINDS = ['task', 'milestone', 'meeting', 'deadline'] as const;
 type Kind = (typeof KINDS)[number];
 
 type CalendarEntry = { id: string; date: string; label: string; kind: Kind; status: string; overdue: boolean; time: string | null; href: string };
@@ -133,14 +133,18 @@ export default async function ProjectCalendarPage({
   if (kinds.has('task')) {
     for (const t of tasks) {
       if (!t.dueOn || t.status === 'done') continue;
-      entries.push({ id: `task-${t.id}`, date: t.dueOn, label: t.title, kind: 'task', status: t.status, overdue: t.dueOn < today, time: null, href: `/projects/${projectId}/board` });
+      entries.push({ id: `task-${t.id}`, date: t.dueOn, label: t.title, kind: 'task', status: t.status, overdue: t.dueOn < today, time: null, href: `/projects/${projectId}/development/tasks/${t.id}` });
     }
   }
   if (kinds.has('milestone')) {
     for (const m of milestones) {
       if (!m.due_on || m.status === 'met') continue;
-      entries.push({ id: `milestone-${m.id}`, date: m.due_on, label: m.name, kind: 'milestone', status: m.status, overdue: m.due_on < today, time: null, href: `/projects/${projectId}/plan` });
+      entries.push({ id: `milestone-${m.id}`, date: m.due_on, label: m.name, kind: 'milestone', status: m.status, overdue: m.due_on < today, time: null, href: `/projects/${projectId}/milestones?milestone=${m.id}` });
     }
+  }
+  // SCR-022 "deadline": the project's own due date, the one deadline that is not a task or a milestone.
+  if (kinds.has('deadline') && project.ends_on && project.status !== 'completed' && project.status !== 'cancelled') {
+    entries.push({ id: `deadline-${projectId}`, date: project.ends_on, label: `${project.name} is due`, kind: 'deadline', status: project.status, overdue: project.ends_on < today, time: null, href: `/projects/${projectId}` });
   }
   if (kinds.has('meeting')) {
     for (const m of meetings) {
@@ -187,7 +191,7 @@ export default async function ProjectCalendarPage({
   for (const [date, dayEntries] of byDate) {
     gridEntriesByDate[date] = dayEntries.map((e) => ({
       label: e.time ? `${e.time} ${e.label}` : e.label,
-      tone: e.overdue ? 'danger' : e.kind === 'milestone' ? 'brand' : e.kind === 'meeting' ? 'accent' : 'info',
+      tone: e.overdue || e.kind === 'deadline' ? 'danger' : e.kind === 'milestone' ? 'brand' : e.kind === 'meeting' ? 'accent' : 'info',
       href: e.href,
     }));
   }
@@ -251,7 +255,7 @@ export default async function ProjectCalendarPage({
                     <ul className="mt-1.5 flex flex-col gap-1">
                       {(byDate.get(key) ?? []).map((e) => (
                         <li key={`${e.id}-${key}`}>
-                          <Link href={e.href} className={cx('block w-full truncate rounded px-1.5 py-0.5 text-xs', e.overdue ? 'bg-danger-soft text-danger' : e.kind === 'milestone' ? 'bg-brand-soft text-brand' : e.kind === 'meeting' ? 'bg-accent-soft text-accent' : 'bg-info-soft text-info')}>
+                          <Link href={e.href} className={cx('block w-full truncate rounded px-1.5 py-0.5 text-xs', e.overdue || e.kind === 'deadline' ? 'bg-danger-soft text-danger' : e.kind === 'milestone' ? 'bg-brand-soft text-brand' : e.kind === 'meeting' ? 'bg-accent-soft text-accent' : 'bg-info-soft text-info')}>
                             {e.time ? <span className="mr-1 tabular opacity-80">{e.time}</span> : null}
                             {e.label}
                           </Link>
@@ -312,6 +316,7 @@ export default async function ProjectCalendarPage({
                 <span className="flex items-center gap-2 text-xs text-muted">
                   <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-info" /> Task</span>
                   <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-brand" /> Milestone</span>
+                  <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-danger" /> Deadline</span>
                   <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-danger" /> Overdue</span>
                 </span>
               }
@@ -400,7 +405,7 @@ export default async function ProjectCalendarPage({
                       <span className="tabular text-base font-semibold leading-tight">{e.date.slice(8, 10)}</span>
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium text-foreground">{e.label}</span>
+                      <Link href={e.href} className="block truncate text-[13px] font-medium text-foreground hover:underline">{e.label}</Link>
                       <span className="block text-xs text-muted">{humanize(e.kind)} · {e.status.replace('_', ' ')}{e.time ? ` · ${e.time}` : ''}</span>
                     </span>
                   </li>

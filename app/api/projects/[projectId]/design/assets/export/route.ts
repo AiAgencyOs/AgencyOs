@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject } from '@/modules/projects/queries';
+import { buildDesignHandoffBundle } from '@/modules/projects/design-handoff-bundle';
 import { readDesignHandoffPackage } from '@/modules/projects/design-export-queries';
 
 /**
@@ -15,7 +16,7 @@ import { readDesignHandoffPackage } from '@/modules/projects/design-export-queri
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET(_request: Request, { params }: { params: Promise<{ projectId: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/design`);
@@ -25,6 +26,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
 
   const project = await getProject(projectId);
   if (!project) return NextResponse.json({ error: 'Project not found.' }, { status: 404 });
+
+  const slug0 = (project.code ?? project.name).replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+  if (new URL(request.url).searchParams.get('format') === 'zip') {
+    const bytes = await buildDesignHandoffBundle({ id: project.id, name: project.name, code: project.code });
+    return new NextResponse(Buffer.from(bytes), {
+      status: 200,
+      headers: { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${slug0}-design-handoff.zip"`, 'Cache-Control': 'no-store' },
+    });
+  }
 
   const pkg = await readDesignHandoffPackage(projectId);
   const slug = (project.code ?? project.name).replace(/[^a-z0-9]+/gi, '-').toLowerCase();

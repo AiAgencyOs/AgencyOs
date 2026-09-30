@@ -6,7 +6,7 @@ import { useActionState, useMemo, useState } from 'react';
 import { amountInWords } from '@/lib/money/amount-in-words';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { composeQuotationAction, type ComposeQuotationState } from '@/modules/sales/actions';
-import { Avatar, Badge, buttonClass, Callout, Card, CardHeader, cx, FormMessage, IconAlert, IconCheck, IconFile, IconPlus, IconSend, IconShare, PageHeader, inputClass, labelClass, selectClass, textareaClass } from '@/ui';
+import { Avatar, Badge, buttonClass, Callout, Card, CardHeader, cx, FormMessage, IconAlert, IconCheck, IconFile, IconPlus, IconSend, PageHeader, inputClass, labelClass, selectClass, textareaClass } from '@/ui';
 
 export type ComposerDeal = {
   opportunityId: string;
@@ -71,7 +71,6 @@ export function QuotationComposer({
     else if (intent === 'send') formData.set('submit', 'on');
     return composeQuotationAction(previous, formData);
   }, IDLE_STATE);
-  const [copied, setCopied] = useState(false);
   const [opportunityId, setOpportunityId] = useState(initialOpportunityId ?? deals[0]?.opportunityId ?? '');
   const [lines, setLines] = useState<Line[]>([{ key: 1, description: '', quantity: '1', unitPrice: '' }]);
   const [discount, setDiscount] = useState('');
@@ -135,21 +134,7 @@ export function QuotationComposer({
             <button type="submit" formAction="/api/quotations/preview" formMethod="post" formTarget="_blank" disabled={pending || !deal} className={buttonClass('secondary', 'sm')}>
               Preview
             </button>
-            <button
-              type="button"
-              disabled={!deal}
-              title="Copies a link that opens this quotation form on this deal"
-              onClick={() => {
-                void navigator.clipboard
-                  ?.writeText(`${window.location.origin}/quotations/new?opportunity=${opportunityId}`)
-                  .then(() => setCopied(true))
-                  .catch(() => setCopied(false));
-              }}
-              className={buttonClass('secondary', 'sm')}
-            >
-              <IconShare size={14} />
-              {copied ? 'Link copied' : 'Share'}
-            </button>
+            {/* Owner decision #13: Share (copy link) is offered only once the owner has approved the quotation — on the quotations list, not here. */}
             <button type="submit" name="intent" value="send" disabled={pending || !deal} title="Prices it and sends it to the owner for approval; it reaches the client once approved" className={buttonClass('primary', 'sm')}>
               <IconSend size={14} />
               {pending ? 'Working…' : 'Send to Client'}

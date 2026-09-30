@@ -78,11 +78,11 @@ describe('each tile opens the list filtered to exactly its number', () => {
     ['Meetings completed', /\/meetings\?window=past&status=completed/, 'completed meetings, not every past one'],
     ['Active Projects', /\/projects\?status=open/, 'every project not finished or abandoned — the four statuses it counts'],
     ['Projects on hold', /\/projects\?status=on_hold/, 'on hold, not every project'],
-    ['Blocked projects', /\/projects\/escalations/, 'the escalations list'],
-    ['Failed deliveries', /\/operations#failed-deliveries/, 'the failed-deliveries section'],
+    ['Blocked Projects', /\/projects\?health=blocked/, 'the projects list filtered by the ONE health rule (W3)'],
+    ['Failed Deliveries', /\/operations#failed-deliveries/, 'the failed-deliveries section'],
     ['Dead jobs', /\/operations#dead-letters/, 'the dead-letters section'],
-    ['Pending approvals', /"\/approvals"/, 'the queue — pending is its default'],
-    ['Payments to verify', /\/invoices\/verify/, 'the verification queue'],
+    ['Pending Approvals', /"\/approvals"/, 'the queue — pending is its default'],
+    ['Payment Verification', /\/invoices\/verify/, 'the verification queue'],
     ['Total Leads', /"\/leads"/, 'all time — the unfiltered list IS the number'],
   ];
 
@@ -132,9 +132,11 @@ describe('the list on the other end honours the filter', () => {
 
 describe('the project health column is the projects list\'s own rule', () => {
   it('both pages import project-health.ts, and neither restates the rule', () => {
-    assert.match(dashboard, /from '@\/lib\/admin\/project-health'/);
+    // W2/W3: the dashboard and the list both use the ONE project rule.
+    assert.match(dashboard, /from '@\/modules\/projects\/project-health'/);
     const projects = read('app/(internal)/projects/page.tsx');
-    assert.match(projects, /from '@\/lib\/admin\/project-health'/);
+    // W2: the list now ends in the ONE project rule (healthOfProject), shared with the Overview and Reports.
+    assert.match(projects, /from '@\/modules\/projects\/project-health'/);
     assert.doesNotMatch(projects, /p\.endsOn < todayKey/, 'the late rule lives in project-health.ts now');
   });
 
@@ -152,8 +154,7 @@ describe('the project health column is the projects list\'s own rule', () => {
   });
 
   it('the dashboard renders it beside the stage', () => {
-    assert.match(dashboard, /projectHealth\(input\)/);
-    assert.match(dashboard, /PROJECT_HEALTH_LABEL\[health\]/);
+    assert.match(dashboard, /healthOfProject\(p, /);
   });
 });
 

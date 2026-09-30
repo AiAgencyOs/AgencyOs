@@ -217,26 +217,54 @@ export default async function ProjectFilesPage({
                 </li>
               ))}
             </ul>
-            {/* SCR-024 "Folder tree": the folders inside the chosen category (or every category), as a tree. */}
-            {tree.length > 0 ? (
-              <nav aria-label="Folder tree" className="mt-3 rounded-xl border border-line bg-surface p-3 shadow-xs">
-                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted">{category ? `${humanize(category)} folders` : 'Folders across categories'}</p>
-                <ul className="flex flex-col gap-0.5 text-[13px]">
-                  <li>
-                    <Link href={href(category)} className={cx('inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-surface-hover', !folder ? 'font-medium text-foreground' : 'text-muted')}>
-                      <IconFile size={12} /> {category ? humanize(category) : 'All'} (root)
-                    </Link>
-                  </li>
-                  {tree.map((node) => (
-                    <li key={`${node.category}/${node.path}`} style={{ paddingLeft: `${node.depth * 1.25 + 0.75}rem` }}>
-                      <Link href={href(node.category, node.path)} className={cx('inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-surface-hover', folder === node.path && category === node.category ? 'font-medium text-foreground' : 'text-muted')}>
-                        <IconFile size={12} /> {category ? '' : `${humanize(node.category)} / `}{node.path.split('/').pop()} <span className="text-xs text-faint">({node.files})</span>
-                      </Link>
+            {/* SCR-024 "Folder tree": every category expands into its folders, and a folder into the folders inside it. */}
+            <nav aria-label="Folder tree" className="mt-3 rounded-xl border border-line bg-surface p-3 shadow-xs">
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted">Folder tree</p>
+              <ul className="flex flex-col gap-0.5 text-[13px]">
+                {PROJECT_FILE_CATEGORIES.map((c) => {
+                  const inside = folderRecords.filter((f) => f.category === c);
+                  const nodes = folderNodes(inside, allFiles);
+                  const branch = (parent: string): React.ReactNode => {
+                    const kids = nodes.filter((n) => parentFolder(n.path) === parent);
+                    if (kids.length === 0) return null;
+                    return (
+                      <ul className="ml-3 border-l border-line pl-2">
+                        {kids.map((n) => {
+                          const below = nodes.some((m) => parentFolder(m.path) === n.path);
+                          const link = (
+                            <Link href={href(c, n.path)} className={cx('inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-surface-hover', folder === n.path && category === c ? 'font-medium text-foreground' : 'text-muted')}>
+                              <IconFile size={12} /> {n.path.split('/').pop()} <span className="text-xs text-faint">({n.files})</span>
+                            </Link>
+                          );
+                          return below ? (
+                            <li key={n.path}>
+                              <div>
+                                {link}
+                                {branch(n.path)}
+                              </div>
+                            </li>
+                          ) : (
+                            <li key={n.path}>{link}</li>
+                          );
+                        })}
+                      </ul>
+                    );
+                  };
+                  return (
+                    <li key={c}>
+                      <div>
+                        <div>
+                          <Link href={href(c)} className={cx('inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-surface-hover', category === c && !folder ? 'font-medium text-foreground' : 'text-foreground')}>
+                            <IconFile size={12} /> {humanize(c)} <span className="text-xs text-faint">({countBy(c)})</span>
+                          </Link>
+                        </div>
+                        {branch('') ?? <p className="ml-6 text-xs text-muted">No folders inside yet.</p>}
+                      </div>
                     </li>
-                  ))}
-                </ul>
-              </nav>
-            ) : null}
+                  );
+                })}
+              </ul>
+            </nav>
           </div>
 
           {showTrash ? (

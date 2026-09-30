@@ -83,6 +83,7 @@ export async function invoicePdfForInvoice(
         : Promise.resolve({ data: null }),
     ]);
 
+    const { numberingFrom } = await import('./numbering');
     const { renderInvoicePdf, invoicePdfFilename } = await import('@/lib/pdf/invoice');
     const { quotationContactLine } = await import('@/lib/pdf/quotation');
 
@@ -118,7 +119,8 @@ export async function invoicePdfForInvoice(
       dueAt: invoice.due_at,
       paidAt: invoice.paid_at,
       createdAt: invoice.created_at,
-      notes: invoice.notes,
+      // The invoice's own notes, then the owner's terms note (Settings › Finance) — printed on every invoice.
+      notes: [invoice.notes, numberingFrom(org.settings as Record<string, unknown> | null).termsNote].filter((t): t is string => Boolean(t)).join('\n\n') || null,
       // Exactly the accounts the invoice page's "Pay into" card shows.
       receivingAccounts: accounts
         .filter((a) => a.status === 'active')

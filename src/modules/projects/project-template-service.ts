@@ -8,6 +8,8 @@ import { err, ok, type Result } from '@/lib/result';
 
 import { createProjectManually } from './project-create-service';
 import {
+  cloneProjectTemplateSchema,
+  type CloneProjectTemplateInput,
   createProjectFromTemplateSchema,
   createProjectTemplateFromProjectSchema,
   deleteProjectTemplateSchema,
@@ -278,4 +280,38 @@ export async function deleteProjectTemplate(input: DeleteProjectTemplateInput): 
   }
   if (!data || data.length === 0) return err('NOT_FOUND', 'Template not found.');
   return ok({ deleted: true });
+}
+
+/**
+ * SCR-027 "Clone template": a copy under a new name, through
+ * `projects.clone_project_template` (security definer, the same role check the
+ * rest of the delivery doors use, audited `project_template.cloned`).
+ */
+export async function cloneProjectTemplate(input: CloneProjectTemplateInput): Promise<Result<{ templateId: string }>> {
+  const parsed = cloneProjectTemplateSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid template.');
+  const context = await requireInternal();
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to clone a template.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('clone_project_template', { p_template_id: parsed.data.templateId, p_name: parsed.data.name });
+  if (error) {
+    log('cloneProjectTemplate', error.message);
+    return err('INTERNAL', 'Could not clone the template.');
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; template_id?: string | null } | undefined;
+  switch (row?.outcome) {
+    case 'cloned':
+      return row.template_id ? ok({ templateId: row.template_id }) : err('INTERNAL', 'Could not clone the template.');
+    case 'name_taken':
+      return err('CONFLICT', 'A template with that name already exists. Choose another name for the copy.');
+    case 'invalid_name':
+      return err('VALIDATION', 'Give the copy a name.');
+    case 'not_found':
+      return err('NOT_FOUND', 'Template not found.');
+    case 'forbidden':
+      return err('FORBIDDEN', 'The database refused: your role may not clone a template.');
+    default:
+      return err('INTERNAL', 'Could not clone the template.');
+  }
 }

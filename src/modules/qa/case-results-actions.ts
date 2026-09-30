@@ -68,6 +68,8 @@ export async function recordTestRunWithResultsAction(_prev: FormState, formData:
     browser: text('browser'),
     os: text('os'),
     perfNotes: text('perfNotes'),
+    environment: text('environment') as never,
+    testerId: text('testerId'),
   });
   if (!run.ok) return { status: 'error', message: run.error.message };
 

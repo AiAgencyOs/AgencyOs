@@ -7,7 +7,7 @@ import {
   verifyPaymentSubmissionAction,
 } from '@/modules/finance/actions';
 import type { PaymentClaim } from '@/modules/finance/queries';
-import { SUBMISSION_METHODS } from '@/modules/finance/schema';
+import { isClaimAwaiting, SUBMISSION_METHODS } from '@/modules/finance/schema';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { FormMessage, buttonClass, inputClass, labelClass, selectClass } from '@/ui';
 
@@ -128,7 +128,7 @@ export function VerifyClaimForm({
   // `verified` and `rejected` are final; the guard refuses a further move.
   // `mismatch` is not — §6 calls it *requires resolution*, and a resolution the
   // row refuses to record is not one.
-  if (claim.status !== 'pending_verification' && claim.status !== 'mismatch') return null;
+  if (!isClaimAwaiting(claim.status)) return null;
 
   return (
     <form action={action} className="mt-2 flex flex-col gap-2 border-t border-line pt-2">

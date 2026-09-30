@@ -7,12 +7,15 @@ import { readClientName } from '@/lib/admin/clients';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listMilestoneViews } from '@/modules/projects/milestone-view-queries';
+import { readMilestoneDependencies } from '@/modules/projects/milestone-dependency-queries';
+import { finalDelivery } from '@/modules/projects/project-health';
 import { dueLine, inclusiveDays, phaseState, phaseWindow, rollup, topLevelTasks } from '@/modules/projects/project-view-derive';
 import { getProject, listDevelopmentBreakdown, listInternalRoster, listProjectFiles } from '@/modules/projects/queries';
 import {
   Avatar,
   AvatarStack,
   Badge,
+  humanize,
   buttonClass,
   Card,
   CardHeader,
@@ -31,6 +34,8 @@ import {
 } from '@/ui';
 
 import { MarkMilestoneMetForm } from '../plan/milestone-forms';
+import { DraftMilestoneAnnouncementForm } from './draft-announcement-form';
+import { listAnnouncements } from '@/modules/crm/announcements-queries';
 import { ProjectSubNav } from '../project-subnav';
 import { WorkspaceHeader } from '../workspace-header';
 
@@ -64,10 +69,14 @@ export default async function ProjectMilestonesPage({ params, searchParams }: { 
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
   ]);
   const tasks = topLevelTasks(allTasks);
+  const dependencies = await readMilestoneDependencies(projectId, milestones.map((m) => ({ id: m.id, name: m.name, position: m.position, met: m.metAt !== null || m.status === 'met' })));
   const today = clock.dayKey(new Date());
   const nameByUser = new Map(roster.map((r) => [r.userId, r.fullName]));
   const base = `/projects/${projectId}`;
   const mayWritePlan = can(context, 'milestone.write');
+  // SCR-059: a met milestone's announcement (the owner drafts one by hand when no template was active).
+  const mayAnnounce = can(context, 'organization.settings');
+  const announcementsForProject = await listAnnouncements({ projectId, limit: 100 });
 
   const firstUnmet = milestones.find((m) => !m.metAt && m.status !== 'met')?.id ?? null;
   let previousDue: string | null = null;
@@ -87,8 +96,7 @@ export default async function ProjectMilestonesPage({ params, searchParams }: { 
   const inProgress = cards.filter((c) => c.state === 'current' || c.state === 'late').length;
   const pending = cards.filter((c) => c.state === 'upcoming').length;
   const overall = cards.length === 0 ? 0 : Math.round((done / cards.length) * 100);
-  const finalDue = milestones.map((m) => m.dueOn).filter((d): d is string => d !== null).sort().at(-1) ?? null;
-  const daysLeft = project.ends_on ? Math.ceil((new Date(`${project.ends_on}T00:00:00Z`).getTime() - new Date(`${today}T00:00:00Z`).getTime()) / 86_400_000) : null;
+  const { date: finalDue, daysLeft } = finalDelivery(milestones.map((m) => m.dueOn), project.ends_on, today);
 
   const gantt: GanttRow[] = cards
     .filter((c) => c.window !== null)
@@ -126,7 +134,7 @@ export default async function ProjectMilestonesPage({ params, searchParams }: { 
         <Stat compact label="Completed" value={String(done)} caption={cards.length ? `${Math.round((done / cards.length) * 100)}%` : '0%'} tone="success" icon={<IconCheck size={16} />} />
         <Stat compact label="In progress" value={String(inProgress)} caption={cards.length ? `${Math.round((inProgress / cards.length) * 100)}%` : '0%'} tone="info" icon={<IconCalendar size={16} />} />
         <Stat compact label="Pending" value={String(pending)} caption={cards.length ? `${Math.round((pending / cards.length) * 100)}%` : '0%'} tone="warning" icon={<IconCalendar size={16} />} />
-        <Stat compact label="Final delivery" value={finalDue ? clock.date(finalDue) : '—'} caption={daysLeft === null ? 'No project due date' : dueLine(project.ends_on, today)} tone="accent" icon={<IconCalendar size={16} />} />
+        <Stat compact label="Final delivery" value={finalDue ? clock.date(finalDue) : '—'} caption={finalDue === null || daysLeft === null ? 'No final date' : dueLine(finalDue, today)} tone="accent" icon={<IconCalendar size={16} />} />
       </StatGrid>
 
       {cards.length === 0 ? (
@@ -251,6 +259,47 @@ export default async function ProjectMilestonesPage({ params, searchParams }: { 
                     </div>
                     <p className="mt-1 text-xs text-muted">{selected.roll.done} of {selected.roll.total} tasks completed</p>
                   </div>
+                  {/* SCR-023: the dependency list — what this milestone waits on, from stored facts only. */}
+                  {(() => {
+                    const dep = dependencies.get(selected.m.id);
+                    const total = dep ? dep.gates.length + dep.earlierUnmet.length + dep.blockedTasks.length : 0;
+                    return (
+                      <div>
+                        <p className="font-semibold text-foreground">Dependencies{total > 0 ? ` (${total})` : ''}</p>
+                        {!dep || total === 0 ? (
+                          <p className="text-muted">Nothing is holding this milestone: no earlier milestone is open, no plan dependency gates it and none of its tasks is blocked.</p>
+                        ) : (
+                          <ul className="mt-1 flex flex-col gap-1.5">
+                            {dep.earlierUnmet.map((e) => (
+                              <li key={e.id} className="flex flex-wrap items-center gap-1.5">
+                                <Badge tone="warning" dot={false}>Earlier milestone</Badge>
+                                <Link href={`${base}/milestones?milestone=${e.id}`} className="hover:underline">{e.name}</Link>
+                                <span className="text-xs text-muted">not met yet</span>
+                              </li>
+                            ))}
+                            {dep.gates.map((g) => (
+                              <li key={g.id} className="flex flex-col gap-0.5">
+                                <span className="flex flex-wrap items-center gap-1.5">
+                                  <Badge tone={g.status === 'received' || g.status === 'not_applicable' ? 'success' : g.status === 'blocked' ? 'danger' : 'warning'} dot={false}>{humanize(g.kind)}</Badge>
+                                  <span>{g.description}</span>
+                                </span>
+                                <span className="text-xs text-muted">{humanize(g.status)} · owner {humanize(g.ownerRole)} · needed by {humanize(g.neededByPhase)}</span>
+                              </li>
+                            ))}
+                            {dep.blockedTasks.map((t) => (
+                              <li key={t.id} className="flex flex-col gap-0.5">
+                                <span className="flex flex-wrap items-center gap-1.5">
+                                  <Badge tone="danger" dot={false}>Blocked task</Badge>
+                                  <Link href={`${base}/development/tasks/${t.id}`} className="hover:underline">{t.title}</Link>
+                                </span>
+                                <span className="text-xs text-muted">{[t.reason, t.owner ? `owner ${t.owner}` : null, t.nextAction ? `next: ${t.nextAction}` : null].filter(Boolean).join(' · ')}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <div>
                     <p className="font-semibold text-foreground">Assignees</p>
                     {selected.people.length === 0 ? <p className="text-muted">Nobody holds a task here yet.</p> : (
@@ -272,6 +321,19 @@ export default async function ProjectMilestonesPage({ params, searchParams }: { 
                     <Link href={`${base}/tasks?phase=${selected.m.id}`} className={`${buttonClass('primary', 'md')} justify-center`}>View tasks</Link>
                     {mayWritePlan ? <Link href={`${base}/plan?milestone=${selected.m.id}`} className={`${buttonClass('secondary', 'md')} justify-center`}>Edit milestone</Link> : null}
                     {mayWritePlan && selected.state !== 'done' ? <MarkMilestoneMetForm projectId={projectId} milestoneId={selected.m.id} label="Mark as Completed" /> : null}
+                    {selected.state === 'done' ? (
+                      (() => {
+                        const announced = announcementsForProject.find((a) => a.milestoneId === selected.m.id);
+                        if (announced) {
+                          return (
+                            <p className="rounded-md border border-line px-3 py-2 text-xs text-muted">
+                              Announcement: <span className="font-medium text-foreground">{announced.title}</span> ({announced.status}).
+                            </p>
+                          );
+                        }
+                        return mayAnnounce ? <DraftMilestoneAnnouncementForm milestoneId={selected.m.id} /> : null;
+                      })()
+                    ) : null}
                   </div>
                 </div>
               </Card>

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 
+import { isClaimAwaiting } from '@/modules/finance/schema';
 import { Badge, DetailList, DetailRow, Drawer, StatusBadge, buttonClass, humanize } from '@/ui';
 
 export type ClaimView = {
@@ -74,7 +75,7 @@ export function ClaimsDrawerList({ claims }: { claims: ClaimView[] }) {
               <Link href={`/invoices/${open.invoiceId}`} className={buttonClass('secondary', 'sm')}>
                 Open invoice
               </Link>
-              {open.status === 'pending_verification' || open.status === 'mismatch' ? (
+              {isClaimAwaiting(open.status) ? (
                 <Link href="/invoices/verify" className={buttonClass('primary', 'sm')}>
                   Decide on the queue
                 </Link>

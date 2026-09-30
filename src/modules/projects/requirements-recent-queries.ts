@@ -22,7 +22,7 @@ export type RecentRequirementChange = {
   href: string;
 };
 
-export type RequirementsProjectPlan = { projectId: string; projectName: string; planId: string | null; planStatus: string | null; hasActiveScope: boolean };
+export type RequirementsProjectPlan = { projectId: string; projectName: string; planId: string | null; planStatus: string | null; hasActiveScope: boolean; requirements: { id: string; title: string }[] };
 
 export async function readRecentRequirementChanges(limit = 12): Promise<RecentRequirementChange[]> {
   const supabase = await createClient();
@@ -68,11 +68,24 @@ export async function readRecentRequirementChanges(limit = 12): Promise<RecentRe
 /** Every live project with its newest non-superseded plan, for the dashboard's clarification and change-request doors. */
 export async function listRequirementsProjectPlans(): Promise<RequirementsProjectPlan[]> {
   const supabase = await createClient();
-  const [projects, plans, scopes] = await Promise.all([
+  const [projects, plans, scopes, liveScopes] = await Promise.all([
     supabase.schema('projects').from('projects').select('id, name, status').is('deleted_at', null).is('archived_at', null).order('name', { ascending: true }).limit(500),
     supabase.schema('projects').from('project_plans').select('id, project_id, version, status').neq('status', 'superseded').order('version', { ascending: false }).limit(2000),
     supabase.schema('projects').from('scope_versions').select('project_id').eq('status', 'active').limit(2000),
+    supabase.schema('projects').from('scope_versions').select('id, project_id, status').in('status', ['active', 'draft']).limit(2000),
   ]);
+  if (liveScopes.error) unreadable('listRequirementsProjectPlans.liveScopes', liveScopes.error);
+  const liveVersionIds = (liveScopes.data ?? []).map((v) => v.id);
+  const itemsRes = liveVersionIds.length > 0
+    ? await supabase.schema('projects').from('scope_items').select('id, title, scope_version_id, position').in('scope_version_id', liveVersionIds).order('position', { ascending: true }).limit(5000)
+    : { data: [], error: null };
+  if (itemsRes.error) unreadable('listRequirementsProjectPlans.items', itemsRes.error);
+  const projectOfVersion = new Map((liveScopes.data ?? []).map((v) => [v.id, v.project_id]));
+  const requirementsByProject = new Map<string, { id: string; title: string }[]>();
+  for (const i of itemsRes.data ?? []) {
+    const pid = projectOfVersion.get(i.scope_version_id);
+    if (pid) requirementsByProject.set(pid, [...(requirementsByProject.get(pid) ?? []), { id: i.id, title: i.title }]);
+  }
   if (projects.error) unreadable('listRequirementsProjectPlans.projects', projects.error);
   if (plans.error) unreadable('listRequirementsProjectPlans.plans', plans.error);
   if (scopes.error) unreadable('listRequirementsProjectPlans.scopes', scopes.error);
@@ -87,5 +100,6 @@ export async function listRequirementsProjectPlans(): Promise<RequirementsProjec
     planId: planByProject.get(p.id)?.id ?? null,
     planStatus: planByProject.get(p.id)?.status ?? null,
     hasActiveScope: active.has(p.id),
+    requirements: requirementsByProject.get(p.id) ?? [],
   }));
 }

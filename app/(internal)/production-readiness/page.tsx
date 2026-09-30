@@ -1,10 +1,15 @@
 import type { Metadata } from 'next';
 
+import { agencyClock } from '@/lib/admin/agency-clock';
+import { getIntegrations } from '@/lib/admin/integrations';
 import { getProductionReadiness } from '@/lib/admin/production-readiness';
+import { lastAlertTest } from '@/lib/observability/alert-destination';
 import { readinessSentence, type ReadinessStatus } from '@/lib/admin/production-readiness-eval';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { IntegrationState, PageHeader, PermissionDenied } from '@/ui';
+import { Card, CardHeader, IntegrationState, PageHeader, PermissionDenied } from '@/ui';
+
+import { RunVerificationForm, TestAlertDestinationForm } from './verification-forms';
 
 export const metadata: Metadata = { title: 'Production readiness' };
 
@@ -41,7 +46,9 @@ export default async function ProductionReadinessPage() {
   const context = await requireInternal('/production-readiness');
   if (!can(context, 'organization.settings')) return <PermissionDenied />;
 
-  const { checks, summary } = await getProductionReadiness();
+  const [{ checks, summary }, { integrations, lastVerifiedAt }, alertTest, clock] = await Promise.all([getProductionReadiness(), getIntegrations(), lastAlertTest(), agencyClock()]);
+  // "Last live checks": the moment each live check last answered, from the moments the verify actions recorded.
+  const liveChecks = integrations.filter((i) => ['whatsapp', 'ai-provider', 'calendar', 'figma'].includes(i.id));
   const sentence = readinessSentence(summary);
   const order: ReadinessStatus[] = ['red', 'unknown', 'yellow', 'green'];
   const sorted = [...checks].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status));
@@ -59,6 +66,29 @@ export default async function ProductionReadinessPage() {
       />
 
       <div className={`rounded-lg border px-4 py-3 text-sm ${BANNER[sentence.tone]}`}>{sentence.text}</div>
+
+      {/* SCR-067: run every live check the panel can run, and say when each last answered. */}
+      <Card>
+        <CardHeader
+          title="Live Checks"
+          description={lastVerifiedAt ? `Last live check answered ${clock.dateTime(lastVerifiedAt)}.` : 'No live check has a recorded answer yet. Configured is not verified.'}
+        />
+        <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+          <RunVerificationForm />
+          <ul className="flex flex-col gap-1 text-[13px]">
+            {liveChecks.map((i) => (
+              <li key={i.id} className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className="font-medium">{i.name}</span>
+                <span className="text-xs text-muted">{i.lastVerifiedAt ? `last answered ${clock.dateTime(i.lastVerifiedAt)}` : `never verified — ${i.lifecycle === 'NOT_CONFIGURED' ? 'not configured' : 'configured, unproven'}`}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-col gap-1 border-t border-line pt-3">
+            <span className="text-[13px] font-medium">Alert destination</span>
+            <TestAlertDestinationForm last={alertTest ? `last test ${clock.dateTime(alertTest.at)} — ${alertTest.ok ? 'delivered' : (alertTest.reason ?? 'not delivered')}` : 'never tested'} />
+          </div>
+        </div>
+      </Card>
 
       {/* The shared IntegrationState callout (bucket F) for every external
           dependency that is not green — the same component Integrations

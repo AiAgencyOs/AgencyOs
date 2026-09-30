@@ -44,7 +44,7 @@ export default async function AutomationsPage() {
           {handoffs.map((h) => (
             <li key={h.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-3 text-sm">
               <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="flex items-center gap-2">
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <Link href={`/agents/${h.fromAgent}`} className="font-medium underline-offset-2 hover:underline">
                     {h.fromAgent}
                   </Link>

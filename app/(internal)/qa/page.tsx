@@ -7,6 +7,8 @@ import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
 import { listPerformanceNotes, readCompatibilityMatrix } from '@/modules/qa/compatibility-queries';
+import { mergeDeviceCards, unsupportedFor } from '@/modules/qa/device-config';
+import { listDeviceConfigurations } from '@/modules/qa/device-queries';
 import { deviceTiles, PLATFORMS, type Platform } from '@/modules/qa/device-tiles';
 import { DeviceTestingCard, QaTeamCard } from '@/modules/qa/qa-device-view';
 import { listDeviceRuns, readQaTeam } from '@/modules/qa/qa-team-queries';
@@ -18,6 +20,7 @@ import { describeCron } from '@/modules/qa/cron';
 import { listSuiteSchedules } from '@/modules/qa/schedule-queries';
 import { listRecentRuns, listReleaseCandidates, readBugTrend, readOrgEvidenceSummary } from '@/modules/qa/summary-queries';
 
+import { AddDeviceForm, DeviceSupportForm } from './device-forms';
 import { AssignRetestForm, BlockReleaseFromDashboard } from './qa-forms';
 import {
   buttonClass,
@@ -97,7 +100,7 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
   // project, org-wide evidence, schedules, and the roster the retest form needs.
   const mayWrite = can(context, 'project.write');
   const maySignOff = can(context, 'project.sign_off');
-  const [recentRuns, trend, candidates, evidence, schedules, roster, projects, deviceRuns, qaTeam] = await Promise.all([
+  const [recentRuns, trend, candidates, evidence, schedules, roster, projects, deviceRuns, qaTeam, deviceConfigs] = await Promise.all([
     listRecentRuns(25),
     readBugTrend(12),
     listReleaseCandidates(),
@@ -107,8 +110,13 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
     maySignOff ? listProjects(500) : Promise.resolve([]),
     listDeviceRuns(),
     readQaTeam(),
+    listDeviceConfigurations(),
   ]);
-  const tiles = deviceTiles(deviceRuns);
+  // SCR-044/048: registered devices (and the ones explicitly unsupported) sit beside what runs recorded.
+  const tiles = mergeDeviceCards(deviceTiles(deviceRuns), deviceConfigs);
+  // The matrix grows by every registered device and browser, so a refused cell can be drawn as refused.
+  const matrixDevices = [...new Set([...compat.devices, ...deviceConfigs.map((c) => c.name)])].sort();
+  const matrixBrowsers = [...new Set([...compat.browsers, ...deviceConfigs.flatMap((c) => (c.browser ? [c.browser] : []))])].sort();
   const candidateByProject = new Map(candidates.map((c) => [c.projectId, c]));
   const trendRows = trend.map((p) => ({ week: p.week.slice(5), raised: p.raised, settled: p.settled }));
   const blockers = countBy(defects, 'blocker');
@@ -203,35 +211,42 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
             tiles={tiles}
             active={platform}
             hrefFor={(p) => (p ? `/qa?platform=${p}#device-testing` : '/qa#device-testing')}
-            addHref="/projects"
+            addHref="/qa#device-testing"
             date={(iso) => clock.date(iso)}
+            addForm={mayWrite ? <AddDeviceForm /> : undefined}
+            renderSupport={mayWrite ? (t) => (t.configId ? <DeviceSupportForm deviceId={t.configId} status={t.state === 'unsupported' ? 'unsupported' : 'supported'} name={t.name} /> : null) : undefined}
           />
 
-          {compat.devices.length > 0 ? (
+          {matrixDevices.length > 0 ? (
             <Card>
               <CardHeader
                 title="Device × Browser"
-                description={`From compatibility-suite runs in the last 90 days. Each cell is runs recorded and tests failed — a report, not a gate.${compat.unplaced > 0 ? ` ${compat.unplaced} run${compat.unplaced === 1 ? '' : 's'} recorded no device or browser and sit${compat.unplaced === 1 ? 's' : ''} outside the grid.` : ''}`}
+                description={`From compatibility-suite runs in the last 90 days. Each cell is runs recorded and tests failed — a report, not a gate. A cell the agency has recorded as unsupported says so, with its reason; a dash is untested.${compat.unplaced > 0 ? ` ${compat.unplaced} run${compat.unplaced === 1 ? '' : 's'} recorded no device or browser and sit${compat.unplaced === 1 ? 's' : ''} outside the grid.` : ''}`}
               />
               <div className="overflow-x-auto px-4 pb-4 sm:px-5">
                 <table className="w-full text-[13px]">
                   <thead>
                     <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-wider text-muted">
                       <th className="py-2 pr-3">Device</th>
-                      {compat.browsers.map((b) => (
+                      {matrixBrowsers.map((b) => (
                         <th key={b} className="py-2 pr-3 text-right">{b}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {compat.devices.map((d) => (
+                    {matrixDevices.map((d) => (
                       <tr key={d} className="border-b border-line last:border-0">
                         <td className="py-2 pr-3 font-medium">{d}</td>
-                        {compat.browsers.map((b) => {
+                        {matrixBrowsers.map((b) => {
                           const cell = compat.cells.get(`${d}|${b}`);
+                          const refused = unsupportedFor(deviceConfigs, d, b);
                           return (
                             <td key={b} className="py-2 pr-3 text-right tabular">
-                              {cell ? (
+                              {refused ? (
+                                <span className="text-muted" title={refused.reason ?? undefined}>
+                                  Unsupported{refused.reason ? ` — ${refused.reason}` : ''}
+                                </span>
+                              ) : cell ? (
                                 <span className={cell.failed > 0 ? 'text-danger' : 'text-success'}>
                                   {cell.runs} run{cell.runs === 1 ? '' : 's'} · {cell.failed} failed
                                 </span>

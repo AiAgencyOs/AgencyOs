@@ -12,7 +12,6 @@ export async function setDeploymentDependencyAction(_prev: FormState, formData: 
   const projectId = text('projectId');
   const result = await setDeploymentDependency({
     projectId,
-    handoverId: text('handoverId'),
     label: text('label'),
     status: text('status') === 'ready' ? 'ready' : 'pending',
     remove: text('remove') === 'true',

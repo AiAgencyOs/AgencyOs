@@ -844,6 +844,9 @@ export type PlanBoard = {
     status: string;
     objective: string | null;
     scopeVersionId: string | null;
+    /** SCR-040: the internal approval of a draft plan (migration 20261006400200). */
+    approvedAt?: string | null;
+    approvalNote?: string | null;
   } | null;
   deliverables: {
     id: string;
@@ -879,7 +882,7 @@ export async function readPlanBoard(projectId: string): Promise<PlanBoard> {
   const { data: planRow, error: planError } = await supabase
     .schema('projects')
     .from('project_plans')
-    .select('id, version, status, objective, scope_version_id')
+    .select('id, version, status, objective, scope_version_id, approved_at, approval_note')
     .eq('project_id', projectId)
     .in('status', ['draft', 'active'])
     .order('version', { ascending: false })
@@ -950,6 +953,8 @@ export async function readPlanBoard(projectId: string): Promise<PlanBoard> {
       status: planRow.status,
       objective: planRow.objective,
       scopeVersionId: planRow.scope_version_id,
+      approvedAt: planRow.approved_at,
+      approvalNote: planRow.approval_note,
     },
     deliverables: (deliverables.data ?? []).map((row) => ({
       id: row.id,
@@ -2874,14 +2879,16 @@ export type RequirementsOverview = {
 export async function readRequirementsOverview(): Promise<RequirementsOverview> {
   const supabase = await createClient();
 
-  const [{ data: projects, error: projectsError }, { data: scopes, error: scopesError }, { data: crs, error: crsError }, { data: planQs, error: planQsError }, { data: uiQs, error: uiQsError }] =
+  const [{ data: projects, error: projectsError }, { data: scopes, error: scopesError }, { data: crs, error: crsError }, { data: planQs, error: planQsError }, { data: uiQs, error: uiQsError }, { data: reqQs, error: reqQsError }] =
     await Promise.all([
       supabase.schema('projects').from('projects').select('id, name').is('deleted_at', null).limit(500),
       supabase.schema('projects').from('scope_versions').select('project_id, version, status').order('version', { ascending: false }).limit(2000),
       supabase.schema('projects').from('change_requests').select('project_id, status').limit(2000),
       supabase.schema('projects').from('plan_clarifications').select('plan_id, status, project_plans:plan_id(project_id)').limit(2000),
       supabase.schema('projects').from('clarification_requests').select('project_id, status').limit(2000),
+      supabase.schema('projects').from('requirement_clarifications').select('project_id').eq('status', 'open').limit(2000),
     ]);
+  if (reqQsError) unreadable('readRequirementsOverview.requirementClarifications', reqQsError);
   if (projectsError) unreadable('readRequirementsOverview.projects', projectsError);
   if (scopesError) unreadable('readRequirementsOverview.scopes', scopesError);
   if (crsError) unreadable('readRequirementsOverview.changeRequests', crsError);
@@ -2906,9 +2913,10 @@ export async function readRequirementsOverview(): Promise<RequirementsOverview> 
     if (pid && OPEN_Q.has(q.status)) qByProject.set(pid, (qByProject.get(pid) ?? 0) + 1);
   }
   for (const q of uiQs ?? []) if (q.status === 'open') qByProject.set(q.project_id, (qByProject.get(q.project_id) ?? 0) + 1);
+  for (const q of reqQs ?? []) qByProject.set(q.project_id, (qByProject.get(q.project_id) ?? 0) + 1);
 
   return {
-    frozenScopes: (scopes ?? []).filter((sv) => sv.status !== 'draft').length,
+    frozenScopes: new Set((scopes ?? []).filter((sv) => sv.status !== 'draft').map((sv) => sv.project_id)).size,
     openChangeRequests: (crs ?? []).filter((cr) => OPEN_CR.has(cr.status)).length,
     pendingApprovalChangeRequests: (crs ?? []).filter((cr) => cr.status === 'pending_approval').length,
     openClarifications: [...qByProject.values()].reduce((n, c) => n + c, 0),

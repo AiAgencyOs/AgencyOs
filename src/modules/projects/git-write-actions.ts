@@ -5,7 +5,8 @@ import { revalidatePath } from 'next/cache';
 import type { FormState } from '@/modules/identity/types';
 
 import { REVIEW_EVENTS } from './git-write-schema';
-import { createTaskBranch, linkCommit, mergePullRequest, setRepositoryWorkflow, submitReview, triggerBuild } from './git-write-service';
+import { ACCESS_LEVELS, MERGE_ROLES, type AccessLevel, type MergeRole } from './repository-policy';
+import { createTaskBranch, linkCommit, mergePullRequest, setRepositoryPolicy, setRepositoryWorkflow, submitReview, triggerBuild } from './git-write-service';
 
 /** Git is written — Decision: reversed by the owner on 2026-09-30. The Repository, Builds and task pages' controls. */
 
@@ -84,4 +85,20 @@ export async function setRepositoryWorkflowAction(_prev: FormState, formData: Fo
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidateGit(projectId);
   return { status: 'success', message: result.data.workflowFile ? `Build trigger dispatches ${result.data.workflowFile}.` : 'Workflow file cleared; a build trigger is recorded only.' };
+}
+
+/** SCR-042 — the repository's access level and merge policy, from the Repository tab's policy card. */
+export async function setRepositoryPolicyAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = str(formData, 'projectId');
+  const accessLevel = str(formData, 'accessLevel');
+  const mergeRole = str(formData, 'mergeRole');
+  const result = await setRepositoryPolicy({
+    projectId,
+    accessLevel: (ACCESS_LEVELS as readonly string[]).includes(accessLevel) ? (accessLevel as AccessLevel) : ('' as AccessLevel),
+    mergeMinApprovals: Number(str(formData, 'mergeMinApprovals') || 0),
+    mergeRole: (MERGE_ROLES as readonly string[]).includes(mergeRole) ? (mergeRole as MergeRole) : ('' as MergeRole),
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateGit(projectId);
+  return { status: 'success', message: 'Repository policy saved.' };
 }

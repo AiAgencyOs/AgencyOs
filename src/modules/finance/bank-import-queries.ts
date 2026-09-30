@@ -54,3 +54,36 @@ export async function listBankStatementLines(reconciliationId: string): Promise<
     createdAt: l.created_at,
   }));
 }
+
+/**
+ * The uploaded lines of every period, newest statement first — the
+ * verification queue's cross-check (SCR-054 "Bank/gateway reference"): does
+ * any line the bank printed agree with what a client said they paid?
+ */
+export async function listRecentBankLines(limit = 500): Promise<BankStatementLineRow[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('finance')
+    .from('bank_statement_lines')
+    .select('id, reconciliation_id, import_batch, source_filename, line_no, statement_date, description, amount_minor, reference, status, item_id, ignored_reason, created_at')
+    .order('statement_date', { ascending: false })
+    .limit(limit);
+  if (error) unreadable('listRecentBankLines', error);
+
+  return (data ?? []).map((l) => ({
+    id: l.id,
+    reconciliationId: l.reconciliation_id,
+    importBatch: l.import_batch,
+    sourceFilename: l.source_filename,
+    lineNo: l.line_no,
+    statementDate: l.statement_date,
+    description: l.description,
+    amountMinor: Number(l.amount_minor),
+    reference: l.reference,
+    status: l.status === 'confirmed' ? 'confirmed' : l.status === 'ignored' ? 'ignored' : 'pending',
+    itemId: l.item_id,
+    ignoredReason: l.ignored_reason,
+    createdAt: l.created_at,
+  }));
+}

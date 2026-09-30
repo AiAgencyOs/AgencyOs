@@ -1,12 +1,13 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { auditActionPrefixes, auditFacets, changedKeys, readAuditLog } from '@/lib/audit/queries';
+import { actorNames, AUDIT_PAGE_SIZE, auditActionPrefixes, auditFacets, changedKeys, readAuditPage } from '@/lib/audit/queries';
+import { auditReason, auditRecordLink } from '@/lib/audit/links';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
-import { Badge, buttonClass, Card, cx, DomainSearch, EmptyState, FilterBar, FilterChips, humanize, IconAudit, IconDownload, inputClass, PageHeader, PermissionDenied, SearchSummary, selectClass } from '@/ui';
+import { Badge, buttonClass, Card, cx, DomainSearch, EmptyState, FilterBar, FilterChips, humanize, IconAudit, IconDownload, inputClass, PageHeader, Pagination, PermissionDenied, SearchSummary, selectClass } from '@/ui';
 
 export const metadata: Metadata = { title: 'Audit log' };
 
@@ -30,22 +31,24 @@ function show(value: unknown): string {
 export default async function AuditPage({
   searchParams,
 }: {
-  searchParams: Promise<{ action?: string; subject?: string; actor?: string; from?: string; to?: string; correlation?: string; q?: string }>;
+  searchParams: Promise<{ action?: string; subject?: string; actor?: string; from?: string; to?: string; correlation?: string; q?: string; page?: string }>;
 }) {
   const context = await requireInternal('/audit');
   const clock = await agencyClock();
   if (!can(context, 'audit.read')) return <PermissionDenied />;
 
-  const { action, subject, actor, from, to, correlation, q: qRaw } = await searchParams;
+  const { action, subject, actor, from, to, correlation, q: qRaw, page: pageRaw } = await searchParams;
   // Search within domain (bucket G-3): the action or subject type text, filtered by the reader.
   const q = normaliseSearch(qRaw);
   const isoDay = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
   const fromDay = isoDay(from);
   const toDay = isoDay(to);
 
-  const [entries, prefixes, facets] = await Promise.all([
-    readAuditLog({
+  const [{ entries, total, page, pageCount }, prefixes, facets] = await Promise.all([
+    readAuditPage({
       q: q || undefined,
+      page: Number.parseInt(pageRaw ?? '1', 10) || 1,
+      pageSize: AUDIT_PAGE_SIZE,
       actionPrefix: action,
       subjectType: subject,
       actorType: actor,
@@ -53,11 +56,12 @@ export default async function AuditPage({
       correlationId: correlation && /^[0-9a-f-]{36}$/i.test(correlation.trim()) ? correlation.trim() : undefined,
       from: fromDay ? `${fromDay}T00:00:00Z` : undefined,
       to: toDay ? `${toDay}T23:59:59.999Z` : undefined,
-      limit: 100,
     }),
     auditActionPrefixes(),
     auditFacets(),
   ]);
+  // The actor is shown by name; an id fragment only where the person no longer exists.
+  const names = await actorNames(entries.map((e) => e.actorId));
 
   const qs = (over: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
@@ -83,7 +87,7 @@ export default async function AuditPage({
       <FilterBar clearHref="/audit" filtered={anyFilter}>
         {/* Search within domain (bucket G-3): the action or subject type text, filtered by the reader. */}
         <DomainSearch action="/audit" value={q} placeholder="Search action or subject…" label="Search audit log" preserve={{ action, subject, actor, from: fromDay, to: toDay, correlation }} />
-        <SearchSummary q={q} count={entries.length} bounded={entries.length >= 100} clearHref={`/audit${qs({ q: undefined })}`} />
+        <SearchSummary q={q} count={total} bounded={false} clearHref={`/audit${qs({ q: undefined })}`} />
         {prefixes.length > 0 ? (
           <FilterChips
             options={[
@@ -125,6 +129,8 @@ export default async function AuditPage({
           <ul className="divide-y divide-line">
             {entries.map((e) => {
               const keys = e.hasChange ? changedKeys(e.before, e.after) : [];
+              const link = auditRecordLink(e.subjectType, e.subjectId, e.before, e.after);
+              const reason = auditReason(e.after, e.before);
               return (
                 <li key={e.id} className="flex flex-col gap-2 px-4 py-3 sm:px-5">
                   <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -134,14 +140,20 @@ export default async function AuditPage({
                         {e.hasChange ? <Badge tone="info">{keys.length > 0 ? `${keys.length} field${keys.length === 1 ? '' : 's'} changed` : 'snapshot'}</Badge> : null}
                       </span>
                       <span className="text-xs text-muted">
-                        {e.subjectType ? `${e.subjectType} ${short(e.subjectId)}` : 'no subject'}
+                        {e.subjectType ? `${humanize(e.subjectType)} ${short(e.subjectId)}` : 'no subject'}
                         {e.correlationId ? ` · correlation ${short(e.correlationId)}` : ''}
+                        {link ? (
+                          <>
+                            {' · '}
+                            <Link href={link.href} className="font-medium text-brand underline-offset-2 hover:underline">{link.label}</Link>
+                          </>
+                        ) : null}
                       </span>
+                      {reason ? <span className="text-xs text-foreground/80">Reason: {reason}</span> : null}
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-1 text-xs text-muted">
                       <span className="font-medium text-foreground/70">
-                        {e.actorType ?? 'system'}
-                        {e.actorId ? ` ${short(e.actorId)}` : ''}
+                        {e.actorId ? (names.get(e.actorId) ?? `${humanize(e.actorType ?? 'user')} ${short(e.actorId)} (account removed)`) : humanize(e.actorType ?? 'system')}
                       </span>
                       <span>{clock.dateTime(e.createdAt)}</span>
                     </div>
@@ -178,9 +190,11 @@ export default async function AuditPage({
         </Card>
       )}
 
+      <Pagination page={page} pageCount={pageCount} makeHref={(n) => `/audit${qs({ page: n > 1 ? String(n) : undefined })}`} />
+
       <p className="text-xs leading-relaxed text-muted">
-        Showing the {entries.length} most recent{action ? ` “${action}”` : ''} entries{fromDay || toDay ? ' in the chosen window' : ''}. The audit log
-        is append-only — it cannot be edited or deleted, even by the service role.
+        Showing {entries.length === 0 ? 0 : (page - 1) * AUDIT_PAGE_SIZE + 1}–{(page - 1) * AUDIT_PAGE_SIZE + entries.length} of {total.toLocaleString('en-IN')} entr{total === 1 ? 'y' : 'ies'}, newest first{action ? ` (“${action}”)` : ''}{fromDay || toDay ? ' in the chosen window' : ''}. The audit log
+        is append-only — it cannot be edited or deleted, even by the service role. Who may read it (<code>audit.read</code>, owner and ops admin) is set in the permission matrix on <Link href="/security" className="underline underline-offset-2">Security</Link>, which is code-owned: a change is a code review, not a setting.
       </p>
     </div>
   );

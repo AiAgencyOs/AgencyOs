@@ -24,6 +24,7 @@ import { readLeadScore } from '@/modules/crm/lead-score-queries';
 import { readLeadScoreOverride } from '@/modules/crm/lead-score-override-queries';
 import { listSequencesForLead } from '@/modules/crm/lead-sequence-queries';
 import { readRequirementQuestionSends } from '@/modules/crm/requirement-question-queries';
+import { readProjectsForRequirementVersions } from '@/modules/projects/requirements-tab-queries';
 import { situationFor } from '@/modules/crm/follow-up-situations';
 import { readRetryHistory } from '@/lib/observability/retry-queries';
 import {
@@ -274,6 +275,8 @@ export default async function LeadConversationPage({
     readRequirementLinks(versionIds),
     versionIds.length > 0 ? readRequirementLinkTargets({ opportunityId: opportunity?.id ?? null, projectIds: projectGroup ? [projectGroup.projectId] : [] }) : Promise.resolve({ quotations: [], designs: [], tasks: [] }),
   ]);
+  // SCR-029: the project scope(s) frozen from these versions — the way to the project's requirement list.
+  const requirementProjects = await readProjectsForRequirementVersions(versionIds);
   const leadTasks = await listTasksForLead(opportunity?.id ?? null);
   const openObjections = await listOpenObjectionsForLead(leadId);
   const meetings = await listMeetingsForLead(leadId);
@@ -821,6 +824,9 @@ export default async function LeadConversationPage({
                 <summary className="cursor-pointer text-[13px] font-semibold">
                   Qualification
                 </summary>
+                <p className="pt-2 text-xs text-muted">
+                  <Link href={`/leads/${leadId}/qualification`} className="font-medium text-brand hover:underline">Open the full Qualification screen</Link>
+                </p>
                 <div className="pt-3">
                   <QualificationForm
                     leadId={leadId}
@@ -1346,6 +1352,19 @@ export default async function LeadConversationPage({
             }
           />
           <CardBody className="flex flex-col gap-3">
+            {requirementProjects.length > 0 ? (
+              <p className="text-[13px] text-muted">
+                Frozen as project scope:{' '}
+                {requirementProjects.map((p, i) => (
+                  <span key={p.projectId}>
+                    {i > 0 ? ', ' : ''}
+                    <Link href={`/projects/${p.projectId}/requirements`} className="font-medium text-brand hover:underline">
+                      {p.projectName} (scope v{p.scopeVersion})
+                    </Link>
+                  </span>
+                ))}
+              </p>
+            ) : null}
             {versions.length === 0 ? (
               <p className="text-[13px] text-muted">
                 None yet. Extraction runs as a queued job and records a version here.

@@ -6,14 +6,19 @@ import { aiStatus } from '@/lib/admin/agent-status';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { listRoutingPolicies } from '@/lib/admin/model-routing';
 import { listModels, listVaultEntries } from '@/lib/admin/model-registry';
-import { listFallbackChains, listProviderBudgets } from '@/modules/agents/models-queries';
+import { listFallbackChains, listModelBudgets, listProviderBudgets } from '@/modules/agents/models-queries';
 import { ROUTING_CATEGORIES, categoryForAgent, effectiveModel } from '@/lib/ai/model-choice';
 import { requireInternal } from '@/lib/auth/session';
 import { can, hasRole } from '@/lib/authz/permissions';
-import { Badge, Card, CardHeader, DataTable, PageHeader, PermissionDenied, StatusBadge, type Column } from '@/ui';
+import { listToolDefinitions } from '@/modules/agents/permissions-schema';
+import { listToolPermissionsForTool } from '@/modules/agents/tool-detail-queries';
+import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
+import { Badge, Card, CardHeader, DataTable, IconAgents, IconSettings, IconSparkle, IconUsage, PageHeader, PermissionDenied, Stat, StatGrid, StatusBadge, type Column } from '@/ui';
+
+import { VerifyAiProviderForm } from '../../settings/forms';
 
 import { RevokeProviderCredentialForm } from '../../settings/revoke-provider-form';
-import { AddModelForm, FallbackChainsPanel, ProviderBudgetsPanel, RetireModelForm } from './model-registry-panel';
+import { AddModelForm, FallbackChainsPanel, ModelBudgetsPanel, ProviderBudgetsPanel, RetireModelForm } from './model-registry-panel';
 import { RoutingOverrideForm } from './override-form';
 import { RoutingPolicyForm } from './routing-form';
 
@@ -57,7 +62,7 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
   const params = await searchParams;
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? '';
 
-  const [policies, models, vault, ai, overrides, chains, budgets] = await Promise.all([
+  const [policies, models, vault, ai, overrides, chains, budgets, settings, toolPermissions, modelBudgets] = await Promise.all([
     listRoutingPolicies(),
     listModels(),
     listVaultEntries(),
@@ -65,7 +70,15 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
     listAgentRoutingOverrides(),
     listFallbackChains(),
     listProviderBudgets(),
+    readOperationalSettings(),
+    Promise.all(listToolDefinitions().map(async (t) => ({ tool: t, permissions: await listToolPermissionsForTool(t.name) }))),
+    listModels().then((rows) => listModelBudgets(rows.filter((m) => m.status !== 'retired').map((m) => m.modelId))),
   ]);
+  const providerVerifiedAt = settingInstant(settings, 'ai_provider_verified_at');
+  const providerVerifiedModel = settingText(settings, 'ai_provider_verified_model');
+  const storedKeys = VAULT_PROVIDERS.filter((p) => vault.some((v) => v.provider === p)).length;
+  const configuredPolicies = policies.filter((p) => p.configured).length;
+  const chainsSet = chains.filter((c) => c.modelIds.length > 0).length;
   const availableModels = models.filter((m) => m.status === 'available').map((m) => m.modelId);
   const vaultByProvider = new Map(vault.map((v) => [v.provider, v]));
   const policyByCategory = new Map(policies.map((p) => [p.category, p]));
@@ -189,7 +202,23 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
         }
       />
 
-      <Card>
+      {/* SCR-064 header: provider status, verified runtime, model availability, routing rules, fallback policy. */}
+      <StatGrid>
+        <Stat label="Provider Status" value={`${Math.max(ai.providers.length, storedKeys)} of ${VAULT_PROVIDERS.length}`} caption={ai.providerConfigured ? `${ai.providers.join(', ') || 'a stored key'} ready` : 'No provider key — no agent can run'} tone={ai.providerConfigured ? 'success' : 'warning'} icon={<IconAgents size={16} />} href="#vault" />
+        <Stat label="Verified Runtime" value={providerVerifiedAt ? 'Verified' : 'Never'} caption={providerVerifiedAt ? `${providerVerifiedAt}${providerVerifiedModel ? ` (${providerVerifiedModel})` : ''}` : 'Configured is not verified'} tone={providerVerifiedAt ? 'success' : 'warning'} icon={<IconSparkle size={16} />} href="#verify" />
+        <Stat label="Model Availability" value={`${availableModels.length} available`} caption={`${models.length} registered`} tone={availableModels.length > 0 ? 'success' : 'neutral'} icon={<IconUsage size={16} />} href="#models" />
+        <Stat label="Routing Rules" value={`${configuredPolicies} of ${policies.length}`} caption="Categories with a set policy" icon={<IconSettings size={16} />} href="#matrix" />
+        <Stat label="Fallback Policy" value={`${chainsSet} of ${chains.length}`} caption="Work classes with a chain" icon={<IconSettings size={16} />} href="#fallback" />
+      </StatGrid>
+
+      <Card id="verify">
+        <CardHeader title="Verify Provider" description="Make one real call to the provider with the model an agent would use. A stored key is configured, not verified, until a call answers." />
+        <div className="px-4 pb-4 sm:px-5">
+          <VerifyAiProviderForm lastVerifiedAt={providerVerifiedAt} model={providerVerifiedModel} />
+        </div>
+      </Card>
+
+      <Card id="vault">
         <CardHeader
           title="Provider vault"
           description="Which providers hold a stored key, when it was set and by whom. The key itself is never read here. Env-set keys still take precedence."
@@ -225,7 +254,7 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
       </Card>
 
       {/* SCR-064 — Decision 2026-09-30: ADM-84 reversed, the owner manages models in the panel. */}
-      <Card>
+      <Card id="models">
         <CardHeader
           title="Model registry"
           description="ai.models — the models the resolver may name, with their declared capabilities and rates. The owner adds and retires them here; every change is audited."
@@ -244,7 +273,7 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
         {isOwner ? <AddModelForm /> : <p className="border-t border-line px-4 py-3 text-xs text-muted sm:px-5">Adding and retiring models is the owner&apos;s alone; shown read-only for your role.</p>}
       </Card>
 
-      <Card>
+      <Card id="fallback">
         <CardHeader
           title="Fallback chain per work class"
           description="What the runner tries, in order, for each class of work — after the agent's override and the category policy, before the agent's own default. Only registered, available models may be named."
@@ -260,7 +289,37 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
         <ProviderBudgetsPanel budgets={budgets} editable={isOwner} />
       </Card>
 
-      <Card>
+      <Card id="model-budgets">
+        <CardHeader
+          title="Model Budgets"
+          description="The most each registered model may cost this organisation in a calendar month, against what it has cost so far. Past the cap the runner refuses calls on that model, records the refusal and raises a critical alert. A provider cap above still applies."
+        />
+        <ModelBudgetsPanel budgets={modelBudgets} editable={isOwner} />
+      </Card>
+
+      <Card id="tool-permissions">
+        <CardHeader
+          title="Tool Permissions"
+          description="Which agents this organisation has allowed or denied on each tool. The owner sets one per agent on the agent's page; open a tool for its calls and failures."
+          actions={<Link href="/agents/tools" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">All tools</Link>}
+        />
+        <ul className="divide-y divide-line">
+          {toolPermissions.map(({ tool, permissions }) => (
+            <li key={tool.name} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-[13px] sm:px-5">
+              <Link href={`/agents/tools/${encodeURIComponent(tool.name)}`} className="underline-offset-2 hover:underline">
+                <code className="text-xs">{tool.name}</code>
+              </Link>
+              <span className="flex items-center gap-2 text-xs text-muted">
+                <Badge tone="success">{permissions.filter((p) => p.allowed).length} allowed</Badge>
+                <Badge tone={permissions.some((p) => !p.allowed) ? 'danger' : 'neutral'}>{permissions.filter((p) => !p.allowed).length} denied</Badge>
+                <span>{tool.boundAgents.length} bound</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </Card>
+
+      <Card id="matrix">
         <CardHeader
           title="Routing matrix"
           description="Every category and the policy in force. The grid below says which model each agent would actually get."

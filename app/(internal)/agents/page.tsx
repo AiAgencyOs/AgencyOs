@@ -9,6 +9,7 @@ import { periodDelta, trendOf } from '@/lib/admin/period-delta';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
 import { getAgentUsage } from '@/lib/admin/usage';
+import { listModels } from '@/lib/admin/model-registry';
 import { providerOfModel } from '@/lib/ai/model-provider';
 import { providerCredentialStatus } from '@/lib/ai/vault';
 import { boundToolKeysFor, listToolDefinitions } from '@/modules/agents/permissions-schema';
@@ -80,7 +81,7 @@ export default async function AgentsPage() {
   const clock = await agencyClock();
   if (!can(context, 'audit.read')) return <PermissionDenied />;
 
-  const [{ providerConfigured, providers, agents }, settings, usage, recentRuns, metrics, handoffs, activity] = await Promise.all([
+  const [{ providerConfigured, providers, agents }, settings, usage, recentRuns, metrics, handoffs, activity, registeredModels] = await Promise.all([
     aiStatus(),
     readOperationalSettings(),
     getAgentUsage(),
@@ -88,7 +89,10 @@ export default async function AgentsPage() {
     readRunMetrics(),
     listHandoffs(6),
     getAgentActivity(new Date()),
+    listModels(),
   ]);
+  // A model page exists only for a model the registry holds; a run's model that is not registered is shown as plain text.
+  const registeredModelIds = new Set(registeredModels.map((m) => m.modelId));
   const providerVerifiedAt = settingInstant(settings, 'ai_provider_verified_at');
   const providerVerifiedModel = settingText(settings, 'ai_provider_verified_model');
   const enabledCount = agents.filter((a) => a.enabled).length;
@@ -254,7 +258,7 @@ export default async function AgentsPage() {
         tabs={[
           { href: '/agents', label: 'Overview', icon: <IconAgents size={15} />, exact: true },
           { href: '/agents#agents', label: 'Agents', icon: <IconAgents size={15} /> },
-          { href: '/agents/tools/runs', label: 'Task Runs', icon: <IconSparkle size={15} /> },
+          { href: '/usage/runs', label: 'Task Runs', icon: <IconSparkle size={15} /> },
           { href: '/usage', label: 'Model Usage', icon: <IconUsage size={15} /> },
           { href: '/agents/tools', label: 'Tools & Integrations', icon: <IconSettings size={15} /> },
           { href: '/agents/automations', label: 'Automations', icon: <IconSparkle size={15} /> },
@@ -340,7 +344,11 @@ export default async function AgentsPage() {
             <ul className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
               {metrics.byModel.slice(0, 5).map((m) => (
                 <li key={m.model} className="grid grid-cols-[minmax(0,8rem)_1fr_2.5rem] items-center gap-3 text-[13px]">
-                  <Link href={`/agents/models/${encodeURIComponent(m.model)}`} className="truncate font-medium hover:text-brand">{m.model}</Link>
+                  {registeredModelIds.has(m.model) ? (
+                    <Link href={`/agents/models/${encodeURIComponent(m.model)}`} className="truncate font-medium hover:text-brand">{m.model}</Link>
+                  ) : (
+                    <span className="truncate font-medium" title="Not in the model registry">{m.model}</span>
+                  )}
                   <ProgressBar value={m.share * 100} showValue={false} tone="brand" size="sm" label={`${m.model} share of spend`} className="w-full" />
                   <span className="tabular text-right text-muted">{Math.round(m.share * 100)}%</span>
                 </li>

@@ -184,6 +184,10 @@ export const TEST_RUN_SUITES = [
   'regression', 'smoke', 'security', 'performance', 'compatibility',
 ] as const;
 
+/** SCR-046 — where a build ran when it was tested (the vocabulary of `projects.environments`). */
+export const RUN_ENVIRONMENTS = ['development', 'staging', 'production', 'other'] as const;
+export type RunEnvironment = (typeof RUN_ENVIRONMENTS)[number];
+
 /**
  * Recording one run of evidence against a build — qa.record_test_run
  * (20260921180000). `total = passed + failed + skipped` is re-checked here
@@ -206,6 +210,9 @@ export const recordTestRunSchema = z
     browser: z.string().trim().max(120).optional(),
     os: z.string().trim().max(120).optional(),
     perfNotes: z.string().trim().max(4000).optional(),
+    /** SCR-046: the deployment environment the build ran in, and who ran the suite (default: the recorder). */
+    environment: z.enum(RUN_ENVIRONMENTS).optional(),
+    testerId: z.uuid().optional(),
   })
   .refine((v) => v.passed + v.failed + v.skipped === v.total, {
     message: 'Passed + failed + skipped must equal the total.',
@@ -213,6 +220,7 @@ export const recordTestRunSchema = z
   });
 
 export type RecordTestRunInput = z.infer<typeof recordTestRunSchema>;
+
 
 /** Triage: who takes a defect and how bad it is — `qa.defects.assignee_id` / `severity`. */
 export const triageDefectSchema = z.object({

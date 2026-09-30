@@ -5,15 +5,21 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getApproval } from '@/modules/approvals/queries';
+import { readDeliverableDetails, readPrototypeSendGate } from '@/modules/projects/build-details-queries';
+import { prototypeSendBlockers } from '@/modules/projects/build-details-schema';
 import { listPrototypeBuilds } from '@/modules/projects/prototype-queries';
+import { PROTOTYPE_PLATFORMS } from '@/modules/projects/prototype-schema';
 import { getProject, listDeliverables } from '@/modules/projects/queries';
 import { listTestRuns } from '@/modules/qa/queries';
-import { Badge, Card, CardHeader, DataTable, EmptyState, humanize, IconProjects, PageHeader, statusTone, PermissionDenied, Stat, StatGrid, IconCheck, IconClock, IconAlert } from '@/ui';
+import Link from 'next/link';
+
+import { Badge, buttonClass, Card, CardHeader, DataTable, EmptyState, humanize, IconProjects, labelClass, PageHeader, selectClass, inputClass, statusTone, PermissionDenied, Stat, StatGrid, IconCheck, IconClock, IconAlert } from '@/ui';
 
 import { ApprovalDecisionForm } from '../../../approvals/approval-decision-form';
-import { AddPrototypeForm, SubmitDeliverableForm } from '../deliverables-panel';
+import { AddPrototypeForm } from '../deliverables-panel';
 import { ProjectSubNav } from '../project-subnav';
 import { PlatformPicker, SubmitToQaButton } from './prototype-panels';
+import { SendPrototypeForm } from './build-panels';
 
 export const metadata: Metadata = { title: 'Prototype' };
 
@@ -33,8 +39,9 @@ export const metadata: Metadata = { title: 'Prototype' };
  * and when a person submitted the build to QA) and what the client said
  * about the UI version each was built from — all read, none inferred.
  */
-export default async function PrototypePage({ params }: { params: Promise<{ projectId: string }> }) {
+export default async function PrototypePage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ q?: string; status?: string; platform?: string; qa?: string }> }) {
   const { projectId } = await params;
+  const { q: qRaw, status: statusRaw, platform: platformRaw, qa: qaRaw } = await searchParams;
 
   const context = await requireInternal(`/projects/${projectId}/prototype`);
   if (!can(context, 'project.read')) return <PermissionDenied />;
@@ -44,45 +51,106 @@ export default async function PrototypePage({ params }: { params: Promise<{ proj
 
   const clock = await agencyClock();
   const canWrite = can(context, 'project.write');
-  const builds = (await listDeliverables(projectId)).filter((d) => d.kind === 'prototype');
-  const [runs, approvals, artifacts] = await Promise.all([
+  const allBuilds = (await listDeliverables(projectId)).filter((d) => d.kind === 'prototype');
+  const [runs, approvals, artifacts, details, gates] = await Promise.all([
     listTestRuns(projectId),
-    Promise.all(builds.map((b) => (b.approval_request_id ? getApproval(b.approval_request_id) : Promise.resolve(null)))),
+    Promise.all(allBuilds.map((b) => (b.approval_request_id ? getApproval(b.approval_request_id) : Promise.resolve(null)))),
     listPrototypeBuilds(projectId),
+    readDeliverableDetails(projectId),
+    Promise.all(allBuilds.map((b) => readPrototypeSendGate(b.id))),
   ]);
+  const gateOf = new Map(allBuilds.map((b, i) => [b.id, gates[i]!]));
+  const platformOf = (id: string) => details.get(id)?.platform ?? artifacts.find((a) => a.deliverableId === id)?.platform ?? null;
+  const revisionsOf = (id: string) => artifacts.find((a) => a.deliverableId === id)?.revisionCount ?? null;
+  const q = (qRaw ?? '').trim().slice(0, 120).toLowerCase();
+  const statusFilter = ['draft', 'in_review', 'approved', 'changes_requested'].includes(statusRaw ?? '') ? (statusRaw as string) : '';
+  const platformFilter = (PROTOTYPE_PLATFORMS as readonly string[]).includes(platformRaw ?? '') ? (platformRaw as string) : '';
+  const qaFilter = qaRaw === 'passed' || qaRaw === 'not_passed' ? qaRaw : '';
+  const builds = allBuilds.filter(
+    (b) =>
+      (!q || `${b.title} v${b.version}`.toLowerCase().includes(q))
+      && (!statusFilter || b.status === statusFilter)
+      && (!platformFilter || platformOf(b.id) === platformFilter)
+      && (!qaFilter || (qaFilter === 'passed') === Boolean(gateOf.get(b.id)?.qaPassed)),
+  );
   const withPlatform = artifacts.filter((a) => a.platform).length;
   const submittedToQa = artifacts.filter((a) => a.qaSubmittedAt).length;
   const latestRun = (deliverableId: string) => runs.filter((r) => r.deliverableId === deliverableId).sort((a, b) => b.executedAt.localeCompare(a.executedAt))[0] ?? null;
   const approvalFor = new Map(builds.map((b, i) => [b.id, approvals[i] ?? null]));
-  const inReview = builds.filter((b) => ['client_review', 'submitted', 'pending_approval'].includes(b.status)).length;
-  const approved = builds.filter((b) => ['approved', 'client_approved', 'accepted'].includes(b.status)).length;
-  const withRuns = builds.filter((b) => latestRun(b.id)).length;
+  const inReview = allBuilds.filter((b) => b.status === 'in_review').length;
+  const approved = allBuilds.filter((b) => b.status === 'approved').length;
+  const withRuns = allBuilds.filter((b) => latestRun(b.id)).length;
+  const qaPassed = allBuilds.filter((b) => gateOf.get(b.id)?.qaPassed).length;
+  const adminApproved = allBuilds.filter((b) => gateOf.get(b.id)?.adminApproved).length;
+  const mayOverride = can(context, 'project.sign_off') && context.roles.includes('owner');
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         title={`${project.name} — Prototype`}
-        description={builds.length === 0 ? 'No prototype builds yet.' : `${builds.length} version${builds.length === 1 ? '' : 's'}.`}
+        description={allBuilds.length === 0 ? 'No prototype builds yet.' : `${allBuilds.length} version${allBuilds.length === 1 ? '' : 's'}.`}
       />
 
       <ProjectSubNav projectId={projectId} />
 
-      {builds.length > 0 ? (
+      {allBuilds.length > 0 ? (
         <StatGrid cols={4}>
-          <Stat label="Builds" value={String(builds.length)} caption={`latest v${builds[0]?.version ?? 0}`} tone="brand" icon={<IconProjects size={16} />} />
-          <Stat label="In review" value={String(inReview)} caption="Awaiting a decision" tone={inReview > 0 ? 'info' : 'neutral'} icon={<IconClock size={16} />} />
-          <Stat label="Approved" value={String(approved)} caption="Client or admin sign-off" tone="success" icon={<IconCheck size={16} />} />
-          <Stat label="With a QA run" value={String(withRuns)} caption={withRuns < builds.length ? `${builds.length - withRuns} untested` : 'Every build tested'} tone={withRuns < builds.length ? 'warning' : 'success'} icon={<IconAlert size={16} />} />
+          <Stat label="Builds" value={String(allBuilds.length)} caption={`latest v${allBuilds[0]?.version ?? 0}`} tone="brand" icon={<IconProjects size={16} />} />
+          <Stat label="With the Client" value={String(inReview)} caption="Awaiting the client's decision" tone={inReview > 0 ? 'info' : 'neutral'} icon={<IconClock size={16} />} />
+          <Stat label="Approved" value={String(approved)} caption="Client sign-off" tone="success" icon={<IconCheck size={16} />} />
+          <Stat label="QA Passed" value={String(qaPassed)} caption={`${adminApproved} Admin approved · ${withRuns} with a run`} tone={qaPassed < allBuilds.length ? 'warning' : 'success'} icon={<IconAlert size={16} />} />
         </StatGrid>
       ) : null}
+
+      {allBuilds.length > 0 ? (
+        <form method="get" className="flex flex-wrap items-end gap-2">
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Search builds</span>
+            <input name="q" defaultValue={qRaw ?? ''} maxLength={120} placeholder="Title or version" className={`${inputClass} w-52`} />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Status</span>
+            <select name="status" defaultValue={statusFilter} className={selectClass}>
+              <option value="">Any status</option>
+              {['draft', 'in_review', 'approved', 'changes_requested'].map((st) => (
+                <option key={st} value={st}>{humanize(st)}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Platform</span>
+            <select name="platform" defaultValue={platformFilter} className={selectClass}>
+              <option value="">Any platform</option>
+              {PROTOTYPE_PLATFORMS.map((pl) => (
+                <option key={pl} value={pl}>{pl.replace('_', ' ')}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>QA</span>
+            <select name="qa" defaultValue={qaFilter} className={selectClass}>
+              <option value="">Any QA state</option>
+              <option value="passed">QA passed</option>
+              <option value="not_passed">QA not passed</option>
+            </select>
+          </label>
+          <button type="submit" className={buttonClass('secondary', 'sm')}>Apply</button>
+          {q || statusFilter || platformFilter || qaFilter ? <Link href={`/projects/${projectId}/prototype`} className="pb-2 text-xs underline hover:text-foreground">Clear</Link> : null}
+        </form>
+      ) : null}
+
+      {allBuilds.length > 0 && builds.length === 0 ? <EmptyState icon={<IconProjects size={22} />} title="No build matches" description="Nothing in the list fits that search or filter." action={<Link href={`/projects/${projectId}/prototype`} className={buttonClass('secondary', 'sm')}>Clear filters</Link>} /> : null}
 
       {builds.length > 0 ? (
         <DataTable
           rows={builds}
           dense
           columns={[
-            { key: 'version', header: 'Build', primary: true, cell: (b) => `v${b.version} — ${b.title}` },
+            { key: 'version', header: 'Build', primary: true, cell: (b) => <Link href={`/projects/${projectId}/prototype/builds/${b.id}`} className="font-medium text-brand hover:underline">{`v${b.version} — ${b.title}`}</Link> },
+            { key: 'platform', header: 'Platform', desktopOnly: true, cell: (b) => (platformOf(b.id) ? <Badge tone="info" dot={false}>{platformOf(b.id)?.replace('_', ' ')}</Badge> : <span className="text-xs text-muted">not set</span>) },
             { key: 'status', header: 'Client decision', badge: true, cell: (b) => <Badge tone={statusTone(b.status)}>{humanize(b.status)}</Badge> },
+            { key: 'admin', header: 'Admin', badge: true, cell: (b) => { const st = details.get(b.id)?.adminStatus ?? 'pending'; return <Badge tone={st === 'approved' ? 'success' : st === 'changes_required' ? 'danger' : 'neutral'}>{st === 'pending' ? 'Not decided' : humanize(st)}</Badge>; } },
+            { key: 'revisions', header: 'Revisions', align: 'right', desktopOnly: true, cellClassName: 'tabular', cell: (b) => revisionsOf(b.id) ?? '—' },
             {
               key: 'qa',
               header: 'QA',
@@ -220,8 +288,11 @@ export default async function PrototypePage({ params }: { params: Promise<{ proj
               ) : null}
               <p className="mt-1 text-xs text-faint">Added {clock.dateTime(b.created_at)}</p>
               {canWrite && b.status === 'draft' ? (
-                <SubmitDeliverableForm deliverableId={b.id} projectId={projectId} />
+                <div className="mt-2">
+                  <SendPrototypeForm projectId={projectId} deliverableId={b.id} blockers={prototypeSendBlockers(gateOf.get(b.id) ?? { qaPassed: false, adminApproved: false, qaSource: 'no QA evidence' })} mayOverride={mayOverride} />
+                </div>
               ) : null}
+              <Link href={`/projects/${projectId}/prototype/builds/${b.id}`} className="mt-1 inline-block text-xs text-brand hover:underline">Open the build</Link>
               {(() => {
                 // SCR-037 — a pending approval is decided here rather than on
                 // /approvals. The same form; `approvals.decide_approval` holds

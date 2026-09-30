@@ -32,6 +32,7 @@ import { isAnalysisNote, parseAnalysisSections } from '@/modules/crm/analysis-se
 import { listMeetingMemoryAttachments, listProjectsForLead } from '@/modules/crm/meeting-memory-queries';
 import { listProjectOptionsForMeeting, readMeetingProjects } from '@/modules/crm/meeting-project-queries';
 import { isSettledMeeting, requirementPayloadSchema, type MeetingStatus } from '@/modules/crm/schema';
+import { listInternalRoster } from '@/modules/projects/queries';
 import { Badge, Callout, Card, CardBody, CardHeader, IconArrowLeft, StatusBadge, cx, humanize, PermissionDenied } from '@/ui';
 
 import { AttachMeetingSummaryForm } from './attach-memory-form';
@@ -90,6 +91,8 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
   const mayReadAudit = can(context, 'audit.read');
   const audit = mayReadAudit ? await readAuditLog({ subjectId: m.id, limit: 20 }) : [];
   // SCR-010 — the project this meeting is about, and what it may be linked to.
+  // SCR-060: the uploader is shown by name, not as an id fragment.
+  const uploaderName = new Map((await listInternalRoster()).map((member) => [member.userId, member.fullName || member.email]));
   const [projectLinks, projectOptions] = await Promise.all([readMeetingProjects([m.id]), can(context, 'lead.write') ? listProjectOptionsForMeeting() : Promise.resolve([])]);
   const projectLink = projectLinks.get(m.id) ?? null;
   const leadProjects = memoryProjects.map((p) => ({ id: p.id, name: p.name }));
@@ -340,7 +343,7 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
                     {e.media_type ? <span className="text-[11px] text-faint">{e.media_type}</span> : null}
                     {e.byte_size !== null ? <span className="text-[11px] text-faint">{Math.round(e.byte_size / 1024)} KB</span> : null}
                     <span className="ml-auto text-[11px] text-faint">
-                      {agencyClockNow.dateTime(e.uploaded_at)} · by {e.uploaded_by ? e.uploaded_by.slice(0, 8) : 'unnamed'}
+                      {agencyClockNow.dateTime(e.uploaded_at)} · by {e.uploaded_by ? (uploaderName.get(e.uploaded_by) ?? 'a former member') : 'the system'}
                     </span>
                   </div>
                   {e.artifact_ref ? <p className="font-mono text-[11.5px] text-muted">reference recorded: {e.artifact_ref}</p> : null}

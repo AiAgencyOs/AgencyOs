@@ -208,6 +208,7 @@ export function QaInsights({
                   <span className="flex flex-wrap items-center gap-2">
                     <Badge tone={run.failed > 0 ? 'danger' : run.skipped > 0 ? 'warning' : 'success'}>{run.suite}</Badge>
                     <span className="text-muted">{buildLabel.get(run.deliverableId) ?? 'build'}</span>
+                    {run.environment ? <Badge tone="neutral">{run.environment}</Badge> : null}
                     <span className="tabular">
                       {run.passed}/{run.total} passed
                       {run.failed > 0 ? `, ${run.failed} failed` : ''}
@@ -228,6 +229,7 @@ export function QaInsights({
                         evidence
                       </a>
                     ) : null}
+                    <Link href={`/projects/${projectId}/qa/runs/${run.id}`} className="font-medium text-brand hover:underline">Open run</Link>
                   </span>
                 </div>
                 {mayWrite && run.failed > 0 ? (

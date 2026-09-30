@@ -1,11 +1,13 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 
 import type { FormState } from '@/modules/identity/types';
 
 import { parseMinorUnits, PAYMENT_ACCOUNT_FIELDS, PAYMENT_ACCOUNT_KINDS, type PaymentAccountKind } from './schema';
 import {
+  composeInvoice,
   confirmBillingMode,
   generateInvoiceFromMilestone,
   issueFreeMaintenanceInvoice,
@@ -16,6 +18,7 @@ import {
   verifyPayment,
   verifyPaymentSubmission,
   recordRefund,
+  requestPaymentEvidence,
   requestRefund,
   voidInvoice,
   recordExpense,
@@ -505,4 +508,76 @@ export async function updateExpenseAction(_prev: FormState, formData: FormData):
   revalidatePath('/finance/expenses');
   revalidatePath('/finance/tax');
   return { status: 'success', message: 'Expense updated.' };
+}
+
+/**
+ * The composer's submit: a draft invoice from typed lines. The form posts the
+ * lines as JSON text (`lines`) — text, never amounts: the service recomputes
+ * every figure. On success it lands on the new invoice, where review and issue
+ * are separate, audited steps.
+ */
+export async function composeInvoiceAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  let lines: unknown;
+  try {
+    lines = JSON.parse(String(formData.get('lines') ?? '[]'));
+  } catch {
+    return { status: 'error', message: 'The lines could not be read. Reload the page and try again.' };
+  }
+  const dueOn = String(formData.get('dueOn') ?? '').trim();
+  const notes = String(formData.get('notes') ?? '').trim();
+
+  const result = await composeInvoice({
+    projectId: String(formData.get('projectId') ?? ''),
+    lines: lines as { description: string; quantity: string; unitPrice: string }[],
+    ...(dueOn ? { dueOn } : {}),
+    ...(notes ? { notes } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath('/invoices');
+  revalidatePath('/finance');
+  redirect(`/invoices/${result.data.invoiceId}`);
+}
+
+/**
+ * The verification queue's three buttons — PDF SCR-054: PAYMENT VERIFIED,
+ * REJECT, NEED MORE EVIDENCE, plus a mismatch flag. One form, one note field
+ * (what you checked / why / what is missing), four intents, each routed to its
+ * own door — the same `verify_payment_submission` decision the project panel
+ * uses, and `request_payment_evidence` for the fourth. Nothing here moves
+ * money: a verified claim records that somebody checked it.
+ */
+export async function decideClaimAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const text = (name: string) => String(formData.get(name) ?? '').trim();
+  const intent = text('intent');
+  const note = text('note');
+  const submissionId = text('submissionId');
+
+  if (intent === 'evidence') {
+    const result = await requestPaymentEvidence({ submissionId, note });
+    if (!result.ok) return { status: 'error', message: result.error.message };
+    revalidateInvoice(text('invoiceId'), text('projectId') || undefined);
+    return { status: 'success', message: 'Sent back for more evidence. It stays in the queue until somebody answers it.' };
+  }
+
+  const decision = intent === 'verify' ? 'confirm' : intent === 'mismatch' ? 'mismatch' : intent === 'reject' ? 'reject' : null;
+  if (decision === null) return { status: 'error', message: 'Choose what to do with the claim.' };
+
+  const result = await verifyPaymentSubmission({
+    submissionId,
+    decision,
+    ...(decision === 'confirm' ? { evidence: note } : { reason: note }),
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateInvoice(text('invoiceId'), text('projectId') || undefined);
+  return {
+    status: 'success',
+    message:
+      result.data.status === 'verified'
+        ? 'Verified. Record the payment itself to move the invoice.'
+        : result.data.status === 'mismatch'
+          ? 'Recorded as a mismatch. It stays in the queue until it is resolved.'
+          : 'Rejected.',
+  };
 }

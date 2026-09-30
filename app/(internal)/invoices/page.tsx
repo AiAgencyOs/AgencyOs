@@ -2,24 +2,25 @@ import type { Metadata } from 'next';
 
 import Link from 'next/link';
 
-import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { agencyClock } from '@/lib/admin/agency-clock';
 import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listInvoices, listPendingPaymentClaims } from '@/modules/finance/queries';
 import { listBillableMilestones, listBillingClients, listInvoicesFiltered } from '@/modules/finance/overview-queries';
 import { INVOICE_STATUSES, milestoneInvoiceability } from '@/modules/finance/schema';
-import { readInvoiceMilestones, readInvoiceSendHistory, type InvoiceMilestone } from '@/modules/finance/invoice-list-queries';
-import { readInvoiceSendSummaries, type InvoiceSendSummary } from '@/modules/finance/sends-queries';
+import { readInvoiceMilestones, readInvoiceSendHistory } from '@/modules/finance/invoice-list-queries';
+import { readInvoiceSendSummaries } from '@/modules/finance/sends-queries';
 import { needsReminder } from '@/modules/finance/sends-schema';
+import { INVOICE_KINDS, INVOICE_KIND_LABEL, invoiceKindLabel, isInvoiceKind } from '@/modules/finance/invoice-kind';
+import { owedOn, verifiedOn } from '@/modules/finance/verified-basis';
 import { listProjects } from '@/modules/projects/queries';
 import { SavedViewsBar } from '../saved-views-bar';
 import { CreateFromMilestoneForm } from './create-from-milestone-form';
-import { ReminderHistoryButton, type ReminderHistoryEntry } from './reminder-history-drawer';
+import { InvoiceRegistryTable, type RegistryRow } from './invoice-registry-table';
+import type { ReminderHistoryEntry } from './reminder-history-drawer';
 import {
-  Badge,
   Callout,
-  DataTable,
   DEFAULT_PAGE_SIZE,
   EmptyState,
   IconAlert,
@@ -27,8 +28,6 @@ import {
   paginate,
   Pagination,
   PageHeader,
-  StatusBadge,
-  type Column,
   PermissionDenied,
   sortRows,
   type SortDirection,
@@ -58,110 +57,11 @@ function money(minor: number, currency: string): string {
   }).format(minor / 100);
 }
 
-type Row = Awaited<ReturnType<typeof listInvoices>>[number];
-
-const columnsFor = (
-  clock: AgencyClock,
-  sends: Map<string, InvoiceSendSummary>,
-  now: Date,
-  milestones: Map<string, InvoiceMilestone>,
-  history: Map<string, ReminderHistoryEntry[]>,
-): Column<Row>[] => [
-  {
-    key: 'number',
-    header: 'Number',
-    primary: true,
-    cellClassName: 'font-mono text-xs',
-    cell: (i) => i.number,
-  },
-  {
-    key: 'status',
-    header: 'Status',
-    badge: true,
-    cell: (i) => (
-      <span className="inline-flex flex-wrap items-center gap-1">
-        <StatusBadge status={i.status} />
-        {/* SCR-051: issued, past due, and no reminder recorded in the last 7 days. */}
-        {needsReminder(i, sends.get(i.id)?.lastReminderAt ?? null, now) ? <Badge tone="warning">needs reminder</Badge> : null}
-      </span>
-    ),
-  },
-  {
-    // SCR-051: the linked milestone, named as the plan names it.
-    key: 'milestone',
-    header: 'Milestone',
-    desktopOnly: true,
-    cellClassName: 'text-muted',
-    cell: (i) => {
-      const m = i.milestone_id ? milestones.get(i.milestone_id) : undefined;
-      return m ? `${m.position + 1}. ${m.name}` : i.milestone_id ? 'milestone' : '—';
-    },
-  },
-  {
-    key: 'sent',
-    header: 'Last sent',
-    desktopOnly: true,
-    cellClassName: 'text-muted',
-    cell: (i) => {
-      const s = sends.get(i.id);
-      return s?.lastAt ? `${s.lastKind === 'reminder' ? 'reminded' : 'sent'} ${clock.date(s.lastAt)}` : '—';
-    },
-  },
-  {
-    // SCR-051: the reminder history, in a drawer, without leaving the list.
-    key: 'history',
-    header: 'Reminders',
-    desktopOnly: true,
-    cell: (i) => <ReminderHistoryButton invoiceId={i.id} number={i.number} entries={history.get(i.id) ?? []} />,
-  },
-  {
-    key: 'pdf',
-    header: '',
-    align: 'right',
-    desktopOnly: true,
-    cell: (i) => (
-      <a href={`/api/invoices/${i.id}/pdf`} target="_blank" rel="noreferrer" className="text-xs font-medium text-brand hover:underline">
-        Open PDF
-      </a>
-    ),
-  },
-  {
-    key: 'total',
-    header: 'Total',
-    align: 'right',
-    cellClassName: 'tabular font-medium',
-    cell: (i) => money(i.total_minor, i.currency),
-    sortKey: 'total',
-  },
-  {
-    key: 'paid',
-    header: 'Paid',
-    align: 'right',
-    cellClassName: 'tabular text-muted',
-    cell: (i) => money(i.paid_minor, i.currency),
-    sortKey: 'paid',
-  },
-  {
-    key: 'issued',
-    header: 'Issued',
-    align: 'right',
-    cellClassName: 'text-muted',
-    cell: (i) => (i.issued_at ? clock.date(i.issued_at) : '—'),
-    sortKey: 'issued',
-  },
-  {
-    key: 'due',
-    header: 'Due',
-    align: 'right',
-    cellClassName: 'text-muted',
-    cell: (i) => (i.due_at ? clock.date(i.due_at) : '—'),
-    sortKey: 'due',
-  },
-];
+type Row = Awaited<ReturnType<typeof listInvoicesFiltered>>[number];
 
 const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
   total: (a, b) => a.total_minor - b.total_minor,
-  paid: (a, b) => a.paid_minor - b.paid_minor,
+  paid: (a, b) => verifiedOn(a) - verifiedOn(b),
   issued: (a, b) => (a.issued_at ?? '').localeCompare(b.issued_at ?? ''),
   due: (a, b) => (a.due_at ?? '').localeCompare(b.due_at ?? ''),
 };
@@ -176,16 +76,17 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
 export default async function InvoicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; q?: string; client?: string; project?: string; gst?: string; milestone?: string; issuedFrom?: string }>;
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; q?: string; client?: string; project?: string; gst?: string; milestone?: string; issuedFrom?: string; kind?: string }>;
 }) {
   const context = await requireInternal('/invoices');
   const clock = await agencyClock();
   if (!can(context, 'invoice.read')) return <PermissionDenied />;
 
-  const { page: pageParam, sort: sortKey, dir, status, q, client: clientId, project: projectId, gst: gstParam, milestone: milestoneParam, issuedFrom: issuedFromParam } = await searchParams;
+  const { page: pageParam, sort: sortKey, dir, status, q, client: clientId, project: projectId, gst: gstParam, milestone: milestoneParam, issuedFrom: issuedFromParam, kind: kindParam } = await searchParams;
   // SCR-051: GST filter (with / without tax) and milestone filter, from the URL like every other filter here.
   const gst = gstParam === 'with' || gstParam === 'without' ? gstParam : undefined;
   const milestoneFilter = milestoneParam && /^[0-9a-f-]{36}$/i.test(milestoneParam) ? milestoneParam : milestoneParam === 'none' ? 'none' : undefined;
+  const kind = isInvoiceKind(kindParam) ? kindParam : undefined;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
   // Bucket F: the Command Center's "Invoices issued in the last N days" tile
   // lands here with `?issuedFrom=YYYY-MM-DD`, so the list is exactly the
@@ -199,10 +100,12 @@ export default async function InvoicesPage({
     projectId ? `project=${encodeURIComponent(projectId)}` : '',
     gst ? `gst=${gst}` : '',
     milestoneFilter ? `milestone=${milestoneFilter}` : '',
+    kind ? `kind=${kind}` : '',
   ].filter(Boolean);
   const currentQuery = [...keep, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
   const qs = (extra: string) => `/invoices?${[...keep, extra].filter(Boolean).join('&')}`;
   const canCreate = can(context, 'invoice.create');
+  const mayVoidFromList = can(context, 'invoice.issue');
   // SCR-051: client and project filters are applied by the reader at the
   // database; the milestone picker needs every invoice (to know which
   // milestones are already billed) and every milestone, unfiltered.
@@ -235,19 +138,45 @@ export default async function InvoicesPage({
     (i) =>
       (!status || (status === 'unpaid' ? unpaid(i) : i.status === status)) &&
       (!needle || i.number.toLowerCase().includes(needle)) &&
+      (!kind || i.kind === kind) &&
       (!gst || (gst === 'with' ? i.tax_minor > 0 : i.tax_minor === 0)) &&
       (!milestoneFilter || (milestoneFilter === 'none' ? i.milestone_id === null : i.milestone_id === milestoneFilter)) &&
       (!issuedFrom || (i.issued_at !== null && i.issued_at >= issuedFrom)),
   );
   const invoices = sortRows(rawInvoices, sortKey, direction, COMPARATORS);
+  const { page, pageCount, rows: pageRows } = paginate(invoices, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
   const countBy = (st: string) => allInvoices.filter((i) => i.status === st).length;
   const currency = allInvoices[0]?.currency ?? 'INR';
-  const sum = (pred: (i: Row) => boolean) => allInvoices.filter((i) => i.currency === currency && pred(i)).reduce((n, i) => n + i.total_minor - (pred === unpaid ? i.paid_minor : 0), 0);
-  const outstanding = allInvoices.filter((i) => i.currency === currency && unpaid(i)).reduce((n, i) => n + i.total_minor - i.paid_minor, 0);
-  const overdueAmount = allInvoices.filter((i) => i.currency === currency && i.status === 'overdue').reduce((n, i) => n + i.total_minor - i.paid_minor, 0);
+  // The same verified basis every finance total uses (verified-basis.ts): what
+  // is owed is the total less what a person verified.
+  const outstanding = allInvoices.filter((i) => i.currency === currency && unpaid(i)).reduce((n, i) => n + owedOn(i), 0);
+  const overdueAmount = allInvoices.filter((i) => i.currency === currency && i.status === 'overdue').reduce((n, i) => n + owedOn(i), 0);
   const paidAmount = allInvoices.filter((i) => i.currency === currency && i.status === 'paid').reduce((n, i) => n + i.total_minor, 0);
-  void sum;
-  const { page, pageCount, rows: pageRows } = paginate(invoices, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
+  const exportQuery = [...keep].join('&');
+  const exportHref = `/api/finance/invoices/export?${exportQuery}${exportQuery ? '&' : ''}`;
+  const registryRows: RegistryRow[] = pageRows.map((i) => {
+    const m = i.milestone_id ? linkedMilestones.get(i.milestone_id) : undefined;
+    const s = sendSummaries.get(i.id);
+    const awaiting = Math.max(0, Math.min(i.paid_minor, i.total_minor) - verifiedOn(i));
+    return {
+      id: i.id,
+      number: i.number,
+      status: i.status,
+      needsReminder: needsReminder(i, s?.lastReminderAt ?? null, now),
+      kindLabel: invoiceKindLabel(i.kind),
+      milestoneLabel: m ? `${m.position + 1}. ${m.name}` : i.milestone_id ? 'milestone' : '—',
+      lastSent: s?.lastAt ? `${s.lastKind === 'reminder' ? 'reminded' : 'sent'} ${clock.date(s.lastAt)}` : '—',
+      history: historyViews.get(i.id) ?? [],
+      totalLabel: money(i.total_minor, i.currency),
+      verifiedLabel: money(verifiedOn(i), i.currency),
+      awaitingLabel: awaiting > 0 ? money(awaiting, i.currency) : null,
+      issuedLabel: i.issued_at ? clock.date(i.issued_at) : '—',
+      dueLabel: i.due_at ? clock.date(i.due_at) : '—',
+      projectId: i.project_id,
+      clientId: i.client_account_id,
+      canVoid: mayVoidFromList && i.status !== 'void' && i.status !== 'paid' && i.paid_minor === 0,
+    };
+  });
 
   return (
     <div className="flex flex-col gap-5">
@@ -257,6 +186,18 @@ export default async function InvoicesPage({
           invoices.length === 0
             ? 'No invoices raised yet.'
             : `${invoices.length} invoice${invoices.length === 1 ? '' : 's'}.`
+        }
+        actions={
+          <>
+            <a href={exportHref.replace(/[?&]$/, '')} className={buttonClass('secondary', 'sm')}>
+              Export CSV
+            </a>
+            {canCreate ? (
+              <Link href="/invoices/new" className={buttonClass('primary', 'sm')}>
+                New invoice
+              </Link>
+            ) : null}
+          </>
         }
       />
 
@@ -272,7 +213,7 @@ export default async function InvoicesPage({
         </StatGrid>
       ) : null}
 
-      <FilterBar clearHref="/invoices" filtered={Boolean(status || q || clientId || projectId || issuedFrom)}>
+      <FilterBar clearHref="/invoices" filtered={Boolean(status || q || clientId || projectId || issuedFrom || kind)}>
         <FilterChips
           options={[
             { key: 'all', label: `All (${allInvoices.length})`, href: q ? `/invoices?q=${encodeURIComponent(q)}` : '/invoices', active: !status },
@@ -280,10 +221,17 @@ export default async function InvoicesPage({
             ...INVOICE_STATUSES.map((st) => ({ key: st, label: `${humanize(st)} (${countBy(st)})`, href: `/invoices?status=${st}${q ? `&q=${encodeURIComponent(q)}` : ''}`, active: status === st })),
           ]}
         />
+        <FilterChips
+          options={[
+            { key: 'any-kind', label: 'Any type', href: qs(''), active: !kind },
+            ...INVOICE_KINDS.map((k) => ({ key: k, label: INVOICE_KIND_LABEL[k], href: `/invoices?${[...keep.filter((x) => !x.startsWith('kind=')), `kind=${k}`].join('&')}`, active: kind === k })),
+          ]}
+        />
         <form method="get" action="/invoices" className="flex flex-wrap items-center gap-2">
           {status ? <input type="hidden" name="status" value={status} /> : null}
-          <input name="q" defaultValue={q ?? ''} placeholder="Invoice number…" aria-label="Search invoices" className={cx(inputClass, 'w-48')} />
-          <select name="client" defaultValue={clientId ?? ''} aria-label="Client" className={cx(selectClass, 'w-44')}>
+          {kind ? <input type="hidden" name="kind" value={kind} /> : null}
+          <input name="q" defaultValue={q ?? ''} placeholder="Invoice number…" aria-label="Search invoices" className={cx(inputClass, 'sm:w-48')} />
+          <select name="client" defaultValue={clientId ?? ''} aria-label="Client" className={cx(selectClass, 'sm:w-44')}>
             <option value="">Every client</option>
             {clients.map((c) => (
               <option key={c.id} value={c.id}>
@@ -291,7 +239,7 @@ export default async function InvoicesPage({
               </option>
             ))}
           </select>
-          <select name="project" defaultValue={projectId ?? ''} aria-label="Project" className={cx(selectClass, 'w-44')}>
+          <select name="project" defaultValue={projectId ?? ''} aria-label="Project" className={cx(selectClass, 'sm:w-44')}>
             <option value="">Every project</option>
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
@@ -299,12 +247,12 @@ export default async function InvoicesPage({
               </option>
             ))}
           </select>
-          <select name="gst" defaultValue={gst ?? ''} aria-label="GST" className={cx(selectClass, 'w-36')}>
+          <select name="gst" defaultValue={gst ?? ''} aria-label="GST" className={cx(selectClass, 'sm:w-36')}>
             <option value="">GST and non-GST</option>
             <option value="with">With GST</option>
             <option value="without">Without GST</option>
           </select>
-          <select name="milestone" defaultValue={milestoneFilter ?? ''} aria-label="Milestone" className={cx(selectClass, 'w-48')}>
+          <select name="milestone" defaultValue={milestoneFilter ?? ''} aria-label="Milestone" className={cx(selectClass, 'sm:w-48')}>
             <option value="">Every milestone</option>
             <option value="none">No milestone</option>
             {[...linkedMilestones.values()]
@@ -359,23 +307,12 @@ export default async function InvoicesPage({
 
       {invoices.length > 0 ? (
         <>
-          <DataTable
-            rows={pageRows}
-            columns={columnsFor(clock, sendSummaries, now, linkedMilestones, historyViews)}
-            getKey={(i) => i.id}
-            href={(i) => `/invoices/${i.id}`}
-            // Bucket F: the shared per-row overflow menu.
-            rowActions={(i) => [
-              { key: 'open', label: 'Open invoice', href: `/invoices/${i.id}` },
-              { key: 'pdf', label: 'Open PDF', href: `/api/invoices/${i.id}/pdf` },
-              ...(i.project_id ? [{ key: 'project', label: 'Open project', href: `/projects/${i.project_id}` }] : []),
-              { key: 'client', label: 'Open client', href: `/clients/${i.client_account_id}` },
-            ]}
-            sort={{
-              key: sortKey,
-              direction,
-              makeHref: (key, nextDirection) => qs(`sort=${key}&dir=${nextDirection}`),
-            }}
+          <InvoiceRegistryTable
+            rows={registryRows}
+            sortKey={sortKey}
+            sortDirection={direction}
+            sortHrefPrefix={`/invoices?${keep.join('&')}${keep.length > 0 ? '&' : ''}`}
+            exportHref={exportHref}
           />
           <Pagination
             page={page}
@@ -387,8 +324,8 @@ export default async function InvoicesPage({
         <EmptyState
           icon={<IconInvoices size={22} />}
           title="No invoices yet"
-          description="Invoices raised against project milestones will appear here."
-          action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>}
+          description="Invoices raised against project milestones, change requests, maintenance plans or composed by hand will appear here."
+          action={canCreate ? <Link href="/invoices/new" className={buttonClass('secondary', 'sm')}>New invoice</Link> : <Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>}
         />
       )}
     </div>

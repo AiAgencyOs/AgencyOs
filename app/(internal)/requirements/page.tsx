@@ -9,6 +9,19 @@ import { readRequirementsDashboard } from '@/lib/admin/requirements-dashboard';
 import { readRequirementsOverview } from '@/modules/projects/queries';
 import { listRequirementsProjectPlans, readRecentRequirementChanges } from '@/modules/projects/requirements-recent-queries';
 
+import {
+  filterRequirementProjects,
+  OPEN_FILTER_LABEL,
+  OPEN_FILTERS,
+  pageOf,
+  parseOpenFilter,
+  parseScopeFilter,
+  SCOPE_FILTER_LABEL,
+  SCOPE_FILTERS,
+  type OpenFilter,
+  type ScopeFilter,
+} from '@/modules/projects/requirements-dashboard-filter';
+
 import { RequirementsDoors } from './requirements-doors';
 import {
   buttonClass,
@@ -16,7 +29,9 @@ import {
   Badge,
   Card,
   CardHeader,
+  cx,
   DataTable,
+  DomainSearch,
   EmptyState,
   IconCheck,
   IconClock,
@@ -43,7 +58,8 @@ export const metadata: Metadata = { title: 'Requirements' };
  * first, so an owner does not have to check every lead to find the ones
  * nobody has answered.
  */
-export default async function RequirementsPage() {
+export default async function RequirementsPage({ searchParams }: { searchParams: Promise<{ q?: string; scope?: string; open?: string; page?: string }> }) {
+  const { q: qRaw, scope: scopeRaw, open: openRaw, page: pageRaw } = await searchParams;
   const context = await requireInternal('/requirements');
   if (!can(context, 'lead.read')) return <PermissionDenied />;
   const clock = await agencyClock();
@@ -58,6 +74,23 @@ export default async function RequirementsPage() {
     listRequirementsProjectPlans(),
   ]);
   const mayRaise = can(context, 'milestone.write');
+  const mayAskClarification = can(context, 'task.write');
+  const q = (qRaw ?? '').trim().slice(0, 120);
+  const scopeFilter = parseScopeFilter(scopeRaw);
+  const openFilter = parseOpenFilter(openRaw);
+  const filteredProjects = filterRequirementProjects(overview.projects, { q, scope: scopeFilter, open: openFilter });
+  const pageOfProjects = pageOf(filteredProjects, Number(pageRaw));
+  const filterHref = (over: { scope?: ScopeFilter; open?: OpenFilter; page?: number }) => {
+    const sp = new URLSearchParams();
+    if (q) sp.set('q', q);
+    const sc = over.scope ?? scopeFilter;
+    const op = over.open ?? openFilter;
+    if (sc !== 'all') sp.set('scope', sc);
+    if (op !== 'all') sp.set('open', op);
+    if (over.page && over.page > 1) sp.set('page', String(over.page));
+    const str = sp.toString();
+    return str ? `/requirements?${str}#requirement-sets` : '/requirements#requirement-sets';
+  };
   const openQuestionProjects = dashboard.projectsWithOpenQuestions.length;
   const now = Date.now();
   const ageDays = (iso: string) => Math.floor((now - new Date(iso).getTime()) / 86_400_000);
@@ -101,9 +134,9 @@ export default async function RequirementsPage() {
       <StatGrid cols={5}>
         <Stat label="Awaiting decision" value={String(proposed.length)} caption="Across every lead" tone={proposed.length > 0 ? 'warning' : 'success'} icon={<IconClock size={16} />} />
         <Stat label="AI extracted" value={String(fromAgent)} caption={proposed.length > 0 ? `${Math.round((fromAgent / proposed.length) * 100)}% of the queue` : 'Nothing queued'} tone="brand" icon={<IconSparkle size={16} />} />
-        <Stat label="Frozen scopes" value={String(overview.frozenScopes)} caption="Scope versions past draft" tone="success" icon={<IconCheck size={16} />} />
+        <Stat label="Frozen scopes" value={String(overview.frozenScopes)} caption="Projects with a frozen baseline" tone="success" icon={<IconCheck size={16} />} />
         <Stat label="Open change requests" value={String(overview.openChangeRequests)} caption={`${overview.pendingApprovalChangeRequests} awaiting approval`} tone={overview.openChangeRequests > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/approvals" />
-        <Stat label="Open clarifications" value={String(overview.openClarifications)} caption="Plan and UI questions not resolved" tone={overview.openClarifications > 0 ? 'info' : 'neutral'} icon={<IconSparkle size={16} />} />
+        <Stat label="Open clarifications" value={String(overview.openClarifications)} caption="Requirement, plan and UI questions not resolved" tone={overview.openClarifications > 0 ? 'info' : 'neutral'} icon={<IconSparkle size={16} />} />
       </StatGrid>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(18rem,1fr)]">
@@ -124,25 +157,90 @@ export default async function RequirementsPage() {
           )}
         </Card>
 
-        <Card>
-        <CardHeader title="Requirement sets by project" description="The scope version each project works to, and what is open against it." />
+        <Card id="requirement-sets">
+        <CardHeader title="Requirement sets by project" description="The scope version each project works to, and what is open against it. Open a row to read its requirement set." />
         {overview.projects.length === 0 ? (
           <EmptyState title="No projects yet" action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>} />
         ) : (
-          <div className="px-4 pb-4 sm:px-5">
-            <DataTable
-              dense
-              rows={overview.projects}
-              getKey={(p) => p.projectId}
-              href={(p) => `/projects/${p.projectId}/scope`}
-              columns={[
-                { key: 'project', header: 'Project', primary: true, cell: (p) => p.projectName },
-                { key: 'scope', header: 'Scope version', cell: (p) => (p.scopeVersion === null ? <Badge tone="neutral">none</Badge> : <span className="flex items-center gap-1.5"><span className="font-mono text-xs">v{p.scopeVersion}</span><Badge tone={p.scopeStatus === 'active' ? 'success' : 'neutral'}>{p.scopeStatus ?? '—'}</Badge></span>) },
-                { key: 'crs', header: 'Open change requests', align: 'right', cellClassName: 'tabular', cell: (p) => String(p.openChangeRequests) },
-                { key: 'qs', header: 'Open clarifications', align: 'right', cellClassName: 'tabular', cell: (p) => String(p.openClarifications) },
-              ]}
-            />
+          <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+            <DomainSearch action="/requirements" value={q} placeholder="Search projects…" label="Search projects" preserve={{ scope: scopeFilter === 'all' ? undefined : scopeFilter, open: openFilter === 'all' ? undefined : openFilter }} />
+            <nav aria-label="Scope state" className="flex flex-wrap gap-1.5">
+              {SCOPE_FILTERS.map((f) => (
+                <Link key={f} href={filterHref({ scope: f, page: 1 })} aria-current={f === scopeFilter ? 'page' : undefined} className={cx('inline-flex items-center rounded-lg border px-2.5 py-1 text-[13px] font-medium', f === scopeFilter ? 'border-brand bg-brand-soft text-brand' : 'border-line text-muted hover:text-foreground')}>
+                  {SCOPE_FILTER_LABEL[f]}
+                </Link>
+              ))}
+            </nav>
+            <nav aria-label="Open items" className="flex flex-wrap gap-1.5">
+              {OPEN_FILTERS.map((f) => (
+                <Link key={f} href={filterHref({ open: f, page: 1 })} aria-current={f === openFilter ? 'page' : undefined} className={cx('inline-flex items-center rounded-lg border px-2.5 py-1 text-[13px] font-medium', f === openFilter ? 'border-brand bg-brand-soft text-brand' : 'border-line text-muted hover:text-foreground')}>
+                  {OPEN_FILTER_LABEL[f]}
+                </Link>
+              ))}
+            </nav>
+            {filteredProjects.length === 0 ? (
+              <EmptyState title="No project matches" description="Nothing in the list fits that search or filter." action={<Link href="/requirements#requirement-sets" className={buttonClass('secondary', 'sm')}>Clear filters</Link>} />
+            ) : (
+              <>
+                <DataTable
+                  dense
+                  rows={pageOfProjects.rows}
+                  getKey={(p) => p.projectId}
+                  href={(p) => `/projects/${p.projectId}/requirements`}
+                  columns={[
+                    { key: 'project', header: 'Project', primary: true, cell: (p) => p.projectName },
+                    { key: 'scope', header: 'Scope version', cell: (p) => (p.scopeVersion === null ? <Badge tone="neutral">none</Badge> : <span className="flex items-center gap-1.5"><span className="font-mono text-xs">v{p.scopeVersion}</span><Badge tone={p.scopeStatus === 'active' ? 'success' : 'neutral'}>{p.scopeStatus ?? '—'}</Badge></span>) },
+                    { key: 'crs', header: 'Open change requests', align: 'right', cellClassName: 'tabular', cell: (p) => String(p.openChangeRequests) },
+                    { key: 'qs', header: 'Open clarifications', align: 'right', cellClassName: 'tabular', cell: (p) => String(p.openClarifications) },
+                  ]}
+                />
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+                  <span>
+                    {filteredProjects.length} project{filteredProjects.length === 1 ? '' : 's'}
+                    {filteredProjects.length !== overview.projects.length ? ` of ${overview.projects.length}` : ''}
+                  </span>
+                  {pageOfProjects.pages > 1 ? (
+                    <span className="flex items-center gap-2">
+                      {pageOfProjects.page > 1 ? <Link href={filterHref({ page: pageOfProjects.page - 1 })} className="underline underline-offset-2">Previous</Link> : null}
+                      <span>Page {pageOfProjects.page} of {pageOfProjects.pages}</span>
+                      {pageOfProjects.page < pageOfProjects.pages ? <Link href={filterHref({ page: pageOfProjects.page + 1 })} className="underline underline-offset-2">Next</Link> : null}
+                    </span>
+                  ) : null}
+                </div>
+              </>
+            )}
           </div>
+        )}
+      </Card>
+
+      <Card id="open-requirement-questions">
+        <CardHeader
+          title="Open-question queue"
+          description="Every question asked of a requirement and not yet answered, oldest first. The requirement is not settled until somebody answers."
+        />
+        {dashboard.openRequirementQuestions.length === 0 ? (
+          <EmptyState
+            icon={<IconCheck size={22} />}
+            title="No open requirement question"
+            description="Ask one from a requirement (Request Clarification) and it waits here until it is answered."
+            action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open a project's requirements</Link>}
+          />
+        ) : (
+          <ul className="divide-y divide-line">
+            {dashboard.openRequirementQuestions.map((rq) => (
+              <li key={rq.id}>
+                <Link href={`/projects/${rq.projectId}/requirements?req=${rq.scopeItemId}`} className="flex flex-col gap-1 px-4 py-3 text-[13px] hover:bg-surface-hover sm:px-5">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{rq.projectName}</span>
+                    <Badge tone="neutral">{rq.requirementTitle}</Badge>
+                    <span className="ml-auto text-xs text-muted">asked {clock.dateTime(rq.raisedAt)}</span>
+                  </span>
+                  <span>{rq.question}</span>
+                  <span className="text-xs text-muted">Changes: {rq.impact}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
         )}
       </Card>
 
@@ -234,8 +332,8 @@ export default async function RequirementsPage() {
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
-          {mayRaise ? (
-            <RequirementsDoors projects={projectPlans} />
+          {mayRaise || mayAskClarification ? (
+            <RequirementsDoors projects={projectPlans} mayAskClarification={mayAskClarification} mayRaise={mayRaise} />
           ) : (
             <Card>
               <CardHeader title="Request clarification · Create change request" description="Raising a plan question or a change request takes the milestone.write permission (owner, ops admin, delivery lead)." />

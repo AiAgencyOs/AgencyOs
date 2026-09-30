@@ -1,26 +1,26 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useId } from 'react';
 
-import { setRollbackPlanAction, setSmokeItemAction } from '@/modules/projects/handover-release-actions';
+import { recordVerificationAction, setRollbackPlanAction, setSmokeItemAction } from '@/modules/projects/handover-release-actions';
+import { VERIFICATION_ENVIRONMENTS, VERIFICATION_OUTCOMES } from '@/modules/projects/handover-release-schema';
 import type { SmokeItem } from '@/modules/projects/handover-release-queries';
 import { IDLE_STATE } from '@/modules/identity/types';
-import { FormMessage, buttonClass, inputClass } from '@/ui';
+import { FormMessage, buttonClass, inputClass, labelClass, selectClass } from '@/ui';
 
 /**
- * SCR-049 — the rollback plan and the smoke checklist on the release
- * candidate's handover. Both are `project.write` doors on
- * `projects.handovers`; the gate summary reports the checklist and the
- * sign-off door does not read it.
+ * SCR-049 — the rollback plan, the post-deploy smoke checklist and the dated
+ * verification, recorded on the PROJECT's release record (20261006500100) so
+ * they need no handover. All `project.write` doors; the gate summary reports
+ * them and the sign-off door does not read them.
  */
 
-export function RollbackPlanForm({ projectId, handoverId, current }: { projectId: string; handoverId: string; current: string | null }) {
+export function RollbackPlanForm({ projectId, current }: { projectId: string; current: string | null }) {
   const [state, action, pending] = useActionState(setRollbackPlanAction, IDLE_STATE);
 
   return (
     <form action={action} className="flex flex-col gap-2">
       <input type="hidden" name="projectId" value={projectId} />
-      <input type="hidden" name="handoverId" value={handoverId} />
       <textarea
         name="rollbackPlan"
         rows={4}
@@ -39,14 +39,13 @@ export function RollbackPlanForm({ projectId, handoverId, current }: { projectId
   );
 }
 
-function SmokeItemToggle({ projectId, handoverId, item }: { projectId: string; handoverId: string; item: SmokeItem }) {
+function SmokeItemToggle({ projectId, item }: { projectId: string; item: SmokeItem }) {
   const [state, action, pending] = useActionState(setSmokeItemAction, IDLE_STATE);
   const done = item.doneAt !== null;
 
   return (
     <form action={action} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="projectId" value={projectId} />
-      <input type="hidden" name="handoverId" value={handoverId} />
       <input type="hidden" name="label" value={item.label} />
       <button type="submit" name="done" value={done ? 'false' : 'true'} disabled={pending} className={buttonClass('ghost', 'sm')}>
         {pending ? '…' : done ? 'Untick' : 'Tick'}
@@ -61,13 +60,11 @@ function SmokeItemToggle({ projectId, handoverId, item }: { projectId: string; h
 
 export function SmokeChecklist({
   projectId,
-  handoverId,
   items,
   editable,
   formatDate,
 }: {
   projectId: string;
-  handoverId: string;
   items: SmokeItem[];
   editable: boolean;
   /** Pre-formatted by the server's agency clock; the client has no clock of its own. */
@@ -90,7 +87,7 @@ export function SmokeChecklist({
                 <span className={item.doneAt ? '' : 'text-foreground'}>{item.label}</span>
                 {item.doneAt ? <span className="text-xs text-muted">done {formatDate[item.doneAt] ?? ''}</span> : null}
               </span>
-              {editable ? <SmokeItemToggle projectId={projectId} handoverId={handoverId} item={item} /> : null}
+              {editable ? <SmokeItemToggle projectId={projectId} item={item} /> : null}
             </li>
           ))}
         </ul>
@@ -99,8 +96,7 @@ export function SmokeChecklist({
       {editable ? (
         <form action={action} className="flex flex-wrap items-center gap-2">
           <input type="hidden" name="projectId" value={projectId} />
-          <input type="hidden" name="handoverId" value={handoverId} />
-          <input type="hidden" name="done" value="false" />
+              <input type="hidden" name="done" value="false" />
           <input name="label" required maxLength={200} className={`${inputClass} min-w-48 flex-1`} placeholder="Home page loads over HTTPS" />
           <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
             {pending ? 'Adding…' : 'Add check'}
@@ -109,5 +105,67 @@ export function SmokeChecklist({
         </form>
       ) : null}
     </div>
+  );
+}
+
+const OUTCOME_LABEL: Record<(typeof VERIFICATION_OUTCOMES)[number], string> = { passed: 'Passed', partial: 'Partly passed', failed: 'Failed' };
+const ENV_LABEL: Record<(typeof VERIFICATION_ENVIRONMENTS)[number], string> = { staging: 'Staging', production: 'Production', other: 'Other' };
+
+/**
+ * SCR-049 "Record post-deploy verification": somebody checked the deployed
+ * release — against which build, in which environment, with what result. A
+ * partial or failed verification must say what was found
+ * (`projects.record_release_verification`).
+ */
+export function VerificationForm({ projectId, builds }: { projectId: string; builds: { id: string; title: string; version: number }[] }) {
+  const [state, action, pending] = useActionState(recordVerificationAction, IDLE_STATE);
+  const id = useId();
+  return (
+    <form action={action} className="flex flex-col gap-2 rounded-lg border border-dashed border-line p-3">
+      <input type="hidden" name="projectId" value={projectId} />
+      <div className="flex flex-wrap gap-2">
+        <div className="flex min-w-36 flex-1 flex-col gap-1">
+          <label htmlFor={`${id}-env`} className={labelClass}>Environment</label>
+          <select id={`${id}-env`} name="environment" defaultValue="production" className={selectClass}>
+            {VERIFICATION_ENVIRONMENTS.map((e) => (
+              <option key={e} value={e}>{ENV_LABEL[e]}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex min-w-36 flex-1 flex-col gap-1">
+          <label htmlFor={`${id}-out`} className={labelClass}>Result</label>
+          <select id={`${id}-out`} name="outcome" defaultValue="passed" className={selectClass}>
+            {VERIFICATION_OUTCOMES.map((o) => (
+              <option key={o} value={o}>{OUTCOME_LABEL[o]}</option>
+            ))}
+          </select>
+        </div>
+        {builds.length > 0 ? (
+          <div className="flex min-w-36 flex-1 flex-col gap-1">
+            <label htmlFor={`${id}-build`} className={labelClass}>Build (optional)</label>
+            <select id={`${id}-build`} name="deliverableId" defaultValue="" className={selectClass}>
+              <option value="">Not named</option>
+              {builds.map((b) => (
+                <option key={b.id} value={b.id}>v{b.version} · {b.title}</option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+      </div>
+      <div className="flex flex-col gap-1">
+        <label htmlFor={`${id}-notes`} className={labelClass}>What was checked, and what was found (required unless it passed)</label>
+        <textarea id={`${id}-notes`} name="notes" rows={2} maxLength={2000} className={`${inputClass} min-h-16`} placeholder="Login, checkout and the invoice PDF all work on production; the cache warmed in two minutes." />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label htmlFor={`${id}-url`} className={labelClass}>Evidence link (optional)</label>
+        <input id={`${id}-url`} name="evidenceUrl" type="url" className={inputClass} placeholder="https://status.example.com/run/42" />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+          {pending ? 'Recording…' : 'Record verification'}
+        </button>
+        <FormMessage status={state.status} message={state.message} />
+      </div>
+    </form>
   );
 }

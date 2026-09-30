@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useId } from 'react';
 
 import {
   activateProjectPlanAction,
@@ -16,6 +16,7 @@ import {
   resolveClarificationAction,
   routeClarificationAction,
 } from '@/modules/projects/actions';
+import { approveProjectPlanAction } from '@/modules/projects/plan-approval-actions';
 import { PLAN_MILESTONE_KINDS, PLAN_PHASES } from '@/modules/projects/plan-vocabulary';
 import type { PlanBoard } from '@/modules/projects/queries';
 import { IDLE_STATE } from '@/modules/identity/types';
@@ -530,6 +531,26 @@ export function ActivatePlanForm({ projectId, planId }: { projectId: string; pla
           client-side copy would disagree with the database the moment somebody
           added a deliverable in another tab.
         */}
+        <Feedback state={state} />
+      </div>
+    </form>
+  );
+}
+
+/** SCR-040 — "Approve plan internally": a record of who accepted the draft, made before it is activated. */
+export function ApprovePlanForm({ projectId, planId }: { projectId: string; planId: string }) {
+  const [state, action, pending] = useActionState(approveProjectPlanAction, IDLE_STATE);
+  const id = useId();
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="planId" value={planId} />
+      <label htmlFor={id} className="text-xs text-muted">Approval note (optional)</label>
+      <input id={id} name="note" maxLength={1000} className="rounded-md border border-line bg-surface px-2 py-1 text-[13px]" />
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="submit" disabled={pending} className={buttonClass('secondary')}>
+          {pending ? 'Approving…' : 'Approve plan internally'}
+        </button>
         <Feedback state={state} />
       </div>
     </form>

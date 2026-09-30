@@ -797,6 +797,33 @@ export type Database = {
         }
         Relationships: []
       }
+      model_budgets: {
+        Row: {
+          created_at: string
+          model_id: string
+          monthly_cap_minor: number
+          organization_id: string
+          set_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          model_id: string
+          monthly_cap_minor: number
+          organization_id: string
+          set_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          model_id?: string
+          monthly_cap_minor?: number
+          organization_id?: string
+          set_by?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       provider_budgets: {
         Row: {
           created_at: string
@@ -894,6 +921,16 @@ export type Database = {
       }
     }
     Views: {
+      model_budget_status: {
+        Row: {
+          model_id: string | null
+          monthly_cap_minor: number | null
+          organization_id: string | null
+          spent_minor: number | null
+          updated_at: string | null
+        }
+        Relationships: []
+      }
       provider_budget_status: {
         Row: {
           monthly_cap_minor: number | null
@@ -1071,6 +1108,22 @@ export type Database = {
         Returns: {
           outcome: string
         }[]
+      }
+      set_model_budget: {
+        Args: {
+          p_model_id: string
+          p_monthly_cap_minor: number | null
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      model_spend_this_month: {
+        Args: {
+          p_model_id: string
+          p_organization_id: string
+        }
+        Returns: number
       }
       set_provider_budget: {
         Args: {
@@ -3228,8 +3281,142 @@ export type Database = {
   }
   crm: {
     Tables: {
+      announcement_templates: {
+        Row: {
+          active: boolean
+          audience: string
+          body_template: string
+          created_at: string
+          created_by: string | null
+          id: string
+          kind: string
+          name: string
+          organization_id: string
+          title_template: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          audience: string
+          body_template: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kind?: string
+          name: string
+          organization_id: string
+          title_template: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          audience?: string
+          body_template?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kind?: string
+          name?: string
+          organization_id?: string
+          title_template?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      delivery_retry_reasons: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          original_id: string
+          reason: string
+          requested_by: string | null
+          retry_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          original_id: string
+          reason: string
+          requested_by?: string | null
+          retry_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          original_id?: string
+          reason?: string
+          requested_by?: string | null
+          retry_id?: string | null
+        }
+        Relationships: []
+      }
+      outbound_emails: {
+        Row: {
+          body: string
+          client_account_id: string | null
+          created_at: string
+          error: string | null
+          id: string
+          kind: string
+          message_ref: string | null
+          organization_id: string
+          project_id: string | null
+          retry_of: string | null
+          retry_reason: string | null
+          sent_by: string | null
+          status: string
+          subject: string
+          to_address: string
+          transport: string | null
+        }
+        Insert: {
+          body: string
+          client_account_id?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          kind?: string
+          message_ref?: string | null
+          organization_id: string
+          project_id?: string | null
+          retry_of?: string | null
+          retry_reason?: string | null
+          sent_by?: string | null
+          status: string
+          subject: string
+          to_address: string
+          transport?: string | null
+        }
+        Update: {
+          body?: string
+          client_account_id?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          kind?: string
+          message_ref?: string | null
+          organization_id?: string
+          project_id?: string | null
+          retry_of?: string | null
+          retry_reason?: string | null
+          sent_by?: string | null
+          status?: string
+          subject?: string
+          to_address?: string
+          transport?: string | null
+        }
+        Relationships: []
+      }
       announcements: {
         Row: {
+          client_account_id: string | null
+          milestone_id: string | null
+          project_id: string | null
+          source: string
+          template_id: string | null
           scheduled_for: string | null
           archived_at: string | null
           audience: string
@@ -3244,6 +3431,11 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          client_account_id?: string | null
+          milestone_id?: string | null
+          project_id?: string | null
+          source?: string
+          template_id?: string | null
           scheduled_for?: string | null
           archived_at?: string | null
           audience: string
@@ -3258,6 +3450,11 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          client_account_id?: string | null
+          milestone_id?: string | null
+          project_id?: string | null
+          source?: string
+          template_id?: string | null
           scheduled_for?: string | null
           archived_at?: string | null
           audience?: string
@@ -5515,6 +5712,41 @@ export type Database = {
         }
         Returns: string
       }
+      save_announcement_template: {
+        Args: { p_active?: boolean; p_audience: string; p_body_template: string; p_kind: string; p_name: string; p_template_id?: string; p_title_template: string }
+        Returns: {
+          id: string | null
+          outcome: string
+        }[]
+      }
+      create_announcement: {
+        Args: { p_audience: string; p_body: string; p_client_account_id?: string; p_project_id?: string; p_template_id?: string; p_title: string }
+        Returns: {
+          id: string | null
+          outcome: string
+        }[]
+      }
+      draft_milestone_announcement: {
+        Args: { p_milestone_id: string }
+        Returns: {
+          id: string | null
+          outcome: string
+        }[]
+      }
+      requeue_failed_delivery: {
+        Args: { p_original_id: string; p_reason: string; p_retry_id: string }
+        Returns: {
+          outcome: string
+          retry_count: number | null
+        }[]
+      }
+      record_outbound_email: {
+        Args: { p_body: string; p_error?: string; p_kind: string; p_message_ref?: string; p_project_id?: string; p_retry_of?: string; p_retry_reason?: string; p_status: string; p_subject: string; p_to: string; p_transport?: string }
+        Returns: {
+          id: string | null
+          outcome: string
+        }[]
+      }
       record_delivery_retry: {
         Args: { p_original_id: string; p_retry_id: string }
         Returns: {
@@ -6101,6 +6333,7 @@ export type Database = {
       }
       invoices: {
         Row: {
+          kind: string
           maintenance_plan_id: string | null
           billing_profile_id: string | null
           client_account_id: string
@@ -6125,6 +6358,7 @@ export type Database = {
           verified_minor: number
         }
         Insert: {
+          kind?: string
           maintenance_plan_id?: string | null
           billing_profile_id?: string | null
           client_account_id: string
@@ -6149,6 +6383,7 @@ export type Database = {
           verified_minor?: number
         }
         Update: {
+          kind?: string
           maintenance_plan_id?: string | null
           billing_profile_id?: string | null
           client_account_id?: string
@@ -6216,8 +6451,39 @@ export type Database = {
         }
         Relationships: []
       }
+      report_exports: {
+        Row: {
+          created_at: string
+          exported_by: string | null
+          id: string
+          kind: string
+          organization_id: string
+          period_label: string
+          row_count: number
+        }
+        Insert: {
+          created_at?: string
+          exported_by?: string | null
+          id?: string
+          kind: string
+          organization_id: string
+          period_label: string
+          row_count?: number
+        }
+        Update: {
+          created_at?: string
+          exported_by?: string | null
+          id?: string
+          kind?: string
+          organization_id?: string
+          period_label?: string
+          row_count?: number
+        }
+        Relationships: []
+      }
       payment_submissions: {
         Row: {
+          evidence_request_note: string | null
           account_id: string | null
           amount_minor: number
           created_at: string
@@ -6243,6 +6509,7 @@ export type Database = {
           verified_by: string | null
         }
         Insert: {
+          evidence_request_note?: string | null
           account_id?: string | null
           amount_minor: number
           created_at?: string
@@ -6268,6 +6535,7 @@ export type Database = {
           verified_by?: string | null
         }
         Update: {
+          evidence_request_note?: string | null
           account_id?: string | null
           amount_minor?: number
           created_at?: string
@@ -6698,6 +6966,49 @@ export type Database = {
       blocking_invoice_number: {
         Args: { p_organization_id: string; p_project_id: string }
         Returns: string
+      }
+      ai_cost_buckets: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          agent_key: string
+          cost_minor: number
+          input_tokens: number
+          month: string
+          output_tokens: number
+          project_id: string | null
+          runs: number
+        }[]
+      }
+      create_composed_invoice: {
+        Args: {
+          p_billing_profile_id?: string
+          p_currency: string
+          p_due_at?: string
+          p_lines: Json
+          p_notes?: string
+          p_number: string
+          p_project_id: string
+          p_subtotal_minor: number
+          p_tax_minor: number
+          p_total_minor: number
+        }
+        Returns: {
+          invoice_id: string | null
+          number: string | null
+          outcome: string
+        }[]
+      }
+      request_payment_evidence: {
+        Args: { p_note: string; p_submission_id: string }
+        Returns: { outcome: string; status: string | null }[]
+      }
+      log_report_export: {
+        Args: { p_kind: string; p_period_label: string; p_row_count: number }
+        Returns: { outcome: string }[]
+      }
+      set_invoice_numbering: {
+        Args: { p_prefix: string; p_terms_days: string; p_terms_note: string }
+        Returns: { outcome: string }[]
       }
       create_milestone_invoice: {
         Args: {
@@ -7736,6 +8047,30 @@ export type Database = {
           },
         ]
       }
+      project_defaults: {
+        Row: {
+          default_watch_phases: string[]
+          organization_id: string
+          standard_folders: Json
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          default_watch_phases?: string[]
+          organization_id: string
+          standard_folders?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          default_watch_phases?: string[]
+          organization_id?: string
+          standard_folders?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       project_folders: {
         Row: {
           category: string
@@ -8023,6 +8358,9 @@ export type Database = {
       }
       repository_links: {
         Row: {
+          access_level: string
+          merge_min_approvals: number
+          merge_role: string
           workflow_file: string | null
           created_at: string
           default_branch: string
@@ -8036,6 +8374,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          access_level?: string
+          merge_min_approvals?: number
+          merge_role?: string
           workflow_file?: string | null
           created_at?: string
           default_branch?: string
@@ -8049,6 +8390,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          access_level?: string
+          merge_min_approvals?: number
+          merge_role?: string
           workflow_file?: string | null
           created_at?: string
           default_branch?: string
@@ -8628,6 +8972,9 @@ export type Database = {
       }
       project_plans: {
         Row: {
+          approval_note: string | null
+          approved_at: string | null
+          approved_by: string | null
           activated_at: string | null
           activated_by: string | null
           change_reason: string | null
@@ -8643,6 +8990,9 @@ export type Database = {
           version: number
         }
         Insert: {
+          approval_note?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
           activated_at?: string | null
           activated_by?: string | null
           change_reason?: string | null
@@ -8658,6 +9008,9 @@ export type Database = {
           version: number
         }
         Update: {
+          approval_note?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
           activated_at?: string | null
           activated_by?: string | null
           change_reason?: string | null
@@ -9043,6 +9396,81 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      release_records: {
+        Row: {
+          created_at: string
+          deployment_dependencies: Json
+          id: string
+          organization_id: string
+          project_id: string
+          rollback_plan: string | null
+          smoke_checklist: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deployment_dependencies?: Json
+          id?: string
+          organization_id: string
+          project_id: string
+          rollback_plan?: string | null
+          smoke_checklist?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deployment_dependencies?: Json
+          id?: string
+          organization_id?: string
+          project_id?: string
+          rollback_plan?: string | null
+          smoke_checklist?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      release_verifications: {
+        Row: {
+          created_at: string
+          deliverable_id: string | null
+          environment: string
+          evidence_url: string | null
+          id: string
+          notes: string | null
+          organization_id: string
+          outcome: string
+          project_id: string
+          verified_at: string
+          verified_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          deliverable_id?: string | null
+          environment: string
+          evidence_url?: string | null
+          id?: string
+          notes?: string | null
+          organization_id: string
+          outcome: string
+          project_id: string
+          verified_at?: string
+          verified_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          deliverable_id?: string | null
+          environment?: string
+          evidence_url?: string | null
+          id?: string
+          notes?: string | null
+          organization_id?: string
+          outcome?: string
+          project_id?: string
+          verified_at?: string
+          verified_by?: string | null
+        }
+        Relationships: []
       }
       handovers: {
         Row: {
@@ -9620,6 +10048,177 @@ export type Database = {
         }
         Relationships: []
       }
+      requirement_clarifications: {
+        Row: {
+          answer: string | null
+          answered_at: string | null
+          answered_by: string | null
+          id: string
+          impact: string
+          organization_id: string
+          project_id: string
+          question: string
+          raised_at: string
+          raised_by: string | null
+          scope_item_id: string
+          status: string
+        }
+        Insert: {
+          answer?: string | null
+          answered_at?: string | null
+          answered_by?: string | null
+          id?: string
+          impact: string
+          organization_id: string
+          project_id: string
+          question: string
+          raised_at?: string
+          raised_by?: string | null
+          scope_item_id: string
+          status?: string
+        }
+        Update: {
+          answer?: string | null
+          answered_at?: string | null
+          answered_by?: string | null
+          id?: string
+          impact?: string
+          organization_id?: string
+          project_id?: string
+          question?: string
+          raised_at?: string
+          raised_by?: string | null
+          scope_item_id?: string
+          status?: string
+        }
+        Relationships: []
+      }
+      design_review_comments: {
+        Row: {
+          author_id: string | null
+          body: string
+          created_at: string
+          id: string
+          organization_id: string
+          project_id: string
+          subject_id: string
+          subject_type: string
+        }
+        Insert: {
+          author_id?: string | null
+          body: string
+          created_at?: string
+          id?: string
+          organization_id: string
+          project_id: string
+          subject_id: string
+          subject_type: string
+        }
+        Update: {
+          author_id?: string | null
+          body?: string
+          created_at?: string
+          id?: string
+          organization_id?: string
+          project_id?: string
+          subject_id?: string
+          subject_type?: string
+        }
+        Relationships: []
+      }
+      brand_rules: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          organization_id: string
+          project_id: string
+          rule: string
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id: string
+          project_id: string
+          rule: string
+          title: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id?: string
+          project_id?: string
+          rule?: string
+          title?: string
+        }
+        Relationships: []
+      }
+      deliverable_details: {
+        Row: {
+          qa_decided_at: string | null
+          qa_decided_by: string | null
+          qa_evidence_url: string | null
+          qa_note: string | null
+          qa_status: string
+          admin_decided_at: string | null
+          admin_decided_by: string | null
+          admin_note: string | null
+          admin_status: string
+          build_number: string | null
+          commit_ref: string | null
+          deliverable_id: string
+          organization_id: string
+          platform: string | null
+          project_id: string
+          rollback_note: string | null
+          rollback_target_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          qa_decided_at?: string | null
+          qa_decided_by?: string | null
+          qa_evidence_url?: string | null
+          qa_note?: string | null
+          qa_status?: string
+          admin_decided_at?: string | null
+          admin_decided_by?: string | null
+          admin_note?: string | null
+          admin_status?: string
+          build_number?: string | null
+          commit_ref?: string | null
+          deliverable_id: string
+          organization_id: string
+          platform?: string | null
+          project_id: string
+          rollback_note?: string | null
+          rollback_target_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          qa_decided_at?: string | null
+          qa_decided_by?: string | null
+          qa_evidence_url?: string | null
+          qa_note?: string | null
+          qa_status?: string
+          admin_decided_at?: string | null
+          admin_decided_by?: string | null
+          admin_note?: string | null
+          admin_status?: string
+          build_number?: string | null
+          commit_ref?: string | null
+          deliverable_id?: string
+          organization_id?: string
+          platform?: string | null
+          project_id?: string
+          rollback_note?: string | null
+          rollback_target_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       scope_item_comments: {
         Row: {
           author_id: string | null
@@ -9863,6 +10462,9 @@ export type Database = {
       }
       screens: {
         Row: {
+          category: string | null
+          qa_confirmed_at: string | null
+          qa_confirmed_by: string | null
           components: string[]
           device_targets: string[]
           responsive_coverage: Json
@@ -9899,6 +10501,9 @@ export type Database = {
           validation: string | null
         }
         Insert: {
+          category?: string | null
+          qa_confirmed_at?: string | null
+          qa_confirmed_by?: string | null
           components?: string[]
           device_targets?: string[]
           responsive_coverage?: Json
@@ -9935,6 +10540,9 @@ export type Database = {
           validation?: string | null
         }
         Update: {
+          category?: string | null
+          qa_confirmed_at?: string | null
+          qa_confirmed_by?: string | null
           components?: string[]
           device_targets?: string[]
           responsive_coverage?: Json
@@ -10122,6 +10730,13 @@ export type Database = {
       }
       tasks: {
         Row: {
+          blocker_type: string | null
+          blocker_owner: string | null
+          blocker_next_action: string | null
+          origin: string
+          verified_at: string | null
+          verified_by: string | null
+          verification_note: string | null
           start_on: string | null
           parent_task_id: string | null
           sprint_id: string | null
@@ -10150,6 +10765,13 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          blocker_type?: string | null
+          blocker_owner?: string | null
+          blocker_next_action?: string | null
+          origin?: string
+          verified_at?: string | null
+          verified_by?: string | null
+          verification_note?: string | null
           start_on?: string | null
           parent_task_id?: string | null
           sprint_id?: string | null
@@ -10178,6 +10800,13 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          blocker_type?: string | null
+          blocker_owner?: string | null
+          blocker_next_action?: string | null
+          origin?: string
+          verified_at?: string | null
+          verified_by?: string | null
+          verification_note?: string | null
           start_on?: string | null
           parent_task_id?: string | null
           sprint_id?: string | null
@@ -10646,6 +11275,66 @@ export type Database = {
       }
     }
     Functions: {
+      raise_requirement_clarification: {
+        Args: { p_impact: string; p_question: string; p_scope_item_id: string }
+        Returns: { clarification_id: string | null; outcome: string }[]
+      }
+      answer_requirement_clarification: {
+        Args: { p_answer: string; p_clarification_id: string }
+        Returns: { outcome: string }[]
+      }
+      comment_on_design_review: {
+        Args: { p_body: string; p_subject_id: string; p_subject_type: string }
+        Returns: { comment_id: string | null; outcome: string }[]
+      }
+      set_screen_category: {
+        Args: { p_category: string; p_screen_id: string }
+        Returns: { outcome: string }[]
+      }
+      confirm_screen_qa: {
+        Args: { p_screen_id: string }
+        Returns: { outcome: string }[]
+      }
+      approve_screen: {
+        Args: { p_screen_id: string }
+        Returns: { detail: string | null; outcome: string }[]
+      }
+      add_brand_rule: {
+        Args: { p_project_id: string; p_rule: string; p_title: string }
+        Returns: { outcome: string; rule_id: string | null }[]
+      }
+      remove_brand_rule: {
+        Args: { p_rule_id: string }
+        Returns: { outcome: string }[]
+      }
+      set_deliverable_details: {
+        Args: { p_build_number: string; p_commit_ref: string; p_deliverable_id: string; p_platform: string; p_rollback_note?: string; p_rollback_target_id?: string }
+        Returns: { outcome: string }[]
+      }
+      decide_prototype_admin: {
+        Args: { p_decision: string; p_deliverable_id: string; p_note?: string }
+        Returns: { outcome: string }[]
+      }
+      prototype_send_gate: {
+        Args: { p_deliverable_id: string }
+        Returns: { admin_approved: boolean; qa_passed: boolean; qa_source: string }[]
+      }
+      send_prototype_for_client_review: {
+        Args: { p_deliverable_id: string; p_override_reason?: string; p_summary?: string }
+        Returns: { outcome: string; request_id: string | null; status: string | null }[]
+      }
+      approve_project_plan: {
+        Args: { p_note?: string; p_plan_id: string }
+        Returns: { outcome: string }[]
+      }
+      set_repository_policy: {
+        Args: { p_access_level: string; p_merge_min_approvals: number; p_merge_role: string; p_project_id: string }
+        Returns: { outcome: string }[]
+      }
+      record_prototype_qa_check: {
+        Args: { p_evidence_url?: string; p_deliverable_id: string; p_note?: string; p_outcome: string }
+        Returns: { outcome: string }[]
+      }
       comment_on_scope_item: {
         Args: { p_body: string; p_scope_item_id: string }
         Returns: {
@@ -10733,6 +11422,7 @@ export type Database = {
           p_kind: string
           p_media_type: string
           p_parent_asset_id?: string
+          p_licence?: string
           p_project_id: string
           p_size_bytes: number
           p_storage_path: string
@@ -10801,6 +11491,30 @@ export type Database = {
       unlink_requirement_file: {
         Args: { p_file_id: string; p_scope_item_id: string }
         Returns: { outcome: string }[]
+      }
+      attach_meeting_to_project: {
+        Args: { p_meeting_id: string; p_project_id: string }
+        Returns: { outcome: string }[]
+      }
+      mark_task_agent_generated: {
+        Args: { p_agent: boolean; p_task_id: string }
+        Returns: { outcome: string }[]
+      }
+      verify_agent_task: {
+        Args: { p_note: string; p_task_id: string }
+        Returns: { outcome: string }[]
+      }
+      clone_project_template: {
+        Args: { p_name: string; p_template_id: string }
+        Returns: { outcome: string; template_id: string }[]
+      }
+      set_project_defaults: {
+        Args: { p_folders: Json; p_watch_phases: string[] }
+        Returns: { outcome: string }[]
+      }
+      project_activity: {
+        Args: { p_limit?: number; p_project_id: string }
+        Returns: { action: string; actor_name: string | null; actor_type: string; created_at: string; detail: string | null; id: number; subject_id: string | null; subject_type: string }[]
       }
       create_project_folder: {
         Args: { p_category: string; p_path: string; p_project_id: string }
@@ -10905,6 +11619,31 @@ export type Database = {
       }
       override_release_payment: {
         Args: { p_project_id: string; p_reason: string }
+        Returns: {
+          id: string | null
+          outcome: string
+        }[]
+      }
+      set_release_rollback_plan: {
+        Args: { p_project_id: string; p_rollback_plan: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      set_release_smoke_item: {
+        Args: { p_done: boolean; p_label: string; p_project_id: string; p_remove?: boolean }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      set_release_dependency: {
+        Args: { p_label: string; p_project_id: string; p_remove?: boolean; p_status?: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      record_release_verification: {
+        Args: { p_deliverable_id?: string; p_environment: string; p_evidence_url?: string; p_notes?: string; p_outcome: string; p_project_id: string }
         Returns: {
           id: string | null
           outcome: string
@@ -11763,6 +12502,117 @@ export type Database = {
         }
         Relationships: []
       }
+      test_run_evidence: {
+        Row: {
+          added_at: string
+          added_by: string | null
+          created_at: string
+          id: string
+          kind: string
+          label: string | null
+          organization_id: string
+          run_id: string
+          updated_at: string
+          value: string
+        }
+        Insert: {
+          added_at?: string
+          added_by?: string | null
+          created_at?: string
+          id?: string
+          kind: string
+          label?: string | null
+          organization_id: string
+          run_id: string
+          updated_at?: string
+          value: string
+        }
+        Update: {
+          added_at?: string
+          added_by?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          label?: string | null
+          organization_id?: string
+          run_id?: string
+          updated_at?: string
+          value?: string
+        }
+        Relationships: []
+      }
+      test_coverage_waivers: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          plan_id: string
+          reason: string
+          scope_item_id: string
+          waived_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          plan_id: string
+          reason: string
+          scope_item_id: string
+          waived_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          plan_id?: string
+          reason?: string
+          scope_item_id?: string
+          waived_by?: string | null
+        }
+        Relationships: []
+      }
+      device_configurations: {
+        Row: {
+          browser: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          organization_id: string
+          os: string | null
+          platform: string
+          reason: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          browser?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          organization_id: string
+          os?: string | null
+          platform: string
+          reason?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          browser?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          organization_id?: string
+          os?: string | null
+          platform?: string
+          reason?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       defect_evidence: {
         Row: {
           added_at: string
@@ -12159,6 +13009,8 @@ export type Database = {
       }
       test_runs: {
         Row: {
+          environment: string | null
+          tester_id: string | null
           blocked: number
           ended_at: string | null
           rerun_of: string | null
@@ -12184,6 +13036,8 @@ export type Database = {
           total: number
         }
         Insert: {
+          environment?: string | null
+          tester_id?: string | null
           blocked?: number
           ended_at?: string | null
           rerun_of?: string | null
@@ -12209,6 +13063,8 @@ export type Database = {
           total: number
         }
         Update: {
+          environment?: string | null
+          tester_id?: string | null
           blocked?: number
           ended_at?: string | null
           rerun_of?: string | null
@@ -12261,7 +13117,7 @@ export type Database = {
         }[]
       }
       open_test_run: {
-        Args: { p_browser?: string; p_deliverable_id: string; p_device?: string; p_os?: string; p_rerun_of?: string; p_suite: string }
+        Args: { p_browser?: string; p_deliverable_id: string; p_device?: string; p_environment?: string; p_os?: string; p_rerun_of?: string; p_suite: string; p_tester_id?: string }
         Returns: {
           id: string | null
           outcome: string
@@ -12308,6 +13164,44 @@ export type Database = {
         }
         Returns: {
           id: string
+          outcome: string
+        }[]
+      }
+      add_run_evidence: {
+        Args: { p_kind: string; p_label?: string; p_run_id: string; p_value: string }
+        Returns: {
+          id: string | null
+          outcome: string
+        }[]
+      }
+      update_test_plan_item: {
+        Args: { p_critical_path: boolean; p_expected_result?: string; p_item_id: string; p_preconditions?: string; p_reason: string; p_steps?: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      waive_test_coverage: {
+        Args: { p_plan_id: string; p_reason: string; p_scope_item_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      restore_test_coverage: {
+        Args: { p_plan_id: string; p_scope_item_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      add_device_configuration: {
+        Args: { p_browser?: string; p_name: string; p_os?: string; p_platform: string; p_reason?: string; p_status?: string }
+        Returns: {
+          id: string | null
+          outcome: string
+        }[]
+      }
+      set_device_support: {
+        Args: { p_device_id: string; p_reason?: string; p_status: string }
+        Returns: {
           outcome: string
         }[]
       }
@@ -12376,6 +13270,7 @@ export type Database = {
           p_browser?: string
           p_deliverable_id: string
           p_device?: string
+          p_environment?: string
           p_evidence_url?: string
           p_failed: number
           p_os?: string
@@ -12383,6 +13278,7 @@ export type Database = {
           p_perf_notes?: string
           p_skipped?: number
           p_suite: string
+          p_tester_id?: string
           p_total: number
         }
         Returns: {

@@ -5,6 +5,8 @@ import type { Severity } from '@/lib/admin/escalation-types';
 import type { AuthContext } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listPendingApprovals } from '@/modules/approvals/queries';
+import { listUnansweredClientReplies } from '@/lib/admin/client-communication';
+import { listOpenAlerts } from '@/lib/observability/alerts';
 import { listFailedDeliveries, listDeadJobs } from '@/lib/observability/queries';
 import { listPendingPaymentClaims } from '@/modules/finance/queries';
 import { listOpenDefects } from '@/modules/qa/queries';
@@ -43,6 +45,8 @@ export const ACTION_CATEGORY_LABEL: Record<string, string> = {
   delivery: 'Deliveries',
   task: 'Tasks',
   phase: 'Phase changes',
+  reply: 'Client responses',
+  alert: 'System alerts',
 };
 
 /**
@@ -61,7 +65,7 @@ export async function listActionItems(context: AuthContext, clock: AgencyClock):
   // 30 days — keyed on the change's own timestamp, so the bucket B state
   // (read / snoozed / resolved) sticks to one change and a new one is new.
   const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
-  const [approvals, failedDeliveries, deadJobs, paymentClaims, defects, myTasks, phaseChanges] = await Promise.all([
+  const [approvals, failedDeliveries, deadJobs, paymentClaims, defects, myTasks, phaseChanges, replies, alerts] = await Promise.all([
     listPendingApprovals(),
     show('audit.read') ? listFailedDeliveries() : Promise.resolve([]),
     show('job.requeue') || show('audit.read') ? listDeadJobs() : Promise.resolve([]),
@@ -69,6 +73,8 @@ export async function listActionItems(context: AuthContext, clock: AgencyClock):
     show('project.read') ? listOpenDefects() : Promise.resolve([]),
     listMyTasks(context.userId),
     show('project.read') ? listWatchedPhaseChanges(context.userId, since) : Promise.resolve([]),
+    show('lead.read') ? listUnansweredClientReplies() : Promise.resolve([]),
+    show('audit.read') ? listOpenAlerts(25) : Promise.resolve([]),
   ]);
 
   const now = Date.now();
@@ -157,6 +163,32 @@ export async function listActionItems(context: AuthContext, clock: AgencyClock):
       href: `/projects/${c.projectId}`,
       urgent: false,
       severity: 'info',
+    });
+  }
+
+  // SCR-003 "client responses": a thread whose newest message is the
+  // client's. The key carries the latest message time so a new reply on a
+  // resolved thread is a new row.
+  for (const r of replies) {
+    rows.push({
+      key: `reply-${r.conversationId}-${r.latestAt}`,
+      title: `Client replied${r.title ? ` — ${r.title}` : ''}`,
+      detail: `${r.unread} unanswered · ${when(r.latestAt)}${r.latestBody ? ` · ${r.latestBody.slice(0, 80)}` : ''}`,
+      href: r.projectId ? `/projects/${r.projectId}` : r.leadId ? `/leads/${r.leadId}` : '/communication',
+      urgent: false,
+      severity: 'action',
+    });
+  }
+
+  // SCR-003 "system alerts": open (unacknowledged) `core.alerts`.
+  for (const a of alerts) {
+    rows.push({
+      key: `alert-${a.id}`,
+      title: a.summary,
+      detail: `${a.severity} alert · seen ${a.occurrences} time${a.occurrences === 1 ? '' : 's'} · last ${when(a.lastSeenAt)}`,
+      href: '/operations',
+      urgent: a.severity === 'critical',
+      severity: a.severity === 'critical' ? 'critical' : a.severity === 'warning' ? 'warning' : 'info',
     });
   }
 

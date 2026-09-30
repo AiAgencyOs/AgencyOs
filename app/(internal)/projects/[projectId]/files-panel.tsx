@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState } from 'react';
+import { SECRETS_WARNING } from '@/modules/projects/file-secrets-guard';
 
 import { addProjectFileAction, removeProjectFileAction, updateProjectFileAction } from '@/modules/projects/actions';
 import { PROJECT_FILE_CATEGORIES } from '@/modules/projects/schema';
@@ -48,6 +49,7 @@ export function AddProjectFileForm({ projectId }: { projectId: string }) {
           <span className={labelClass}>Description (optional)</span>
           <textarea name="description" maxLength={1000} className={textareaClass} rows={2} />
         </label>
+        <p className="text-[11px] text-muted">{SECRETS_WARNING}</p>
         <div className="flex items-center gap-3">
           <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
             {pending ? 'Adding…' : 'Add file'}
