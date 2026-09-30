@@ -5,7 +5,7 @@ import { filterRequirements, groupByModule, numberRows, requirementCode, require
 
 const row = (over: Partial<RequirementRow>): RequirementRow => ({
   id: 'i', code: 'REQ-001', title: 'Home screen', detail: null, criteria: [], inclusion: 'included', versionStatus: 'active', version: 1, status: 'approved',
-  module: null, delivery: null, createdAt: '2026-09-01T00:00:00Z', screens: [], testCases: 0, deliverables: [], comments: 0, ...over,
+  module: null, delivery: null, createdAt: '2026-09-01T00:00:00Z', screens: [], testCases: 0, deliverables: [], comments: 0, priority: null, assignee: null, files: [], ...over,
 });
 
 describe('a requirement is a scope item, numbered by its place in the list', () => {

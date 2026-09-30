@@ -1302,6 +1302,9 @@ export default async function ProjectPage({
             { label: 'Start date', value: project.starts_on ? clock.date(project.starts_on) : 'Not set' },
             { label: 'Due date', value: project.ends_on ? clock.date(project.ends_on) : 'Not set' },
             { label: 'Status', value: <StatusBadge status={project.status} /> },
+            { label: 'Project type', value: project.project_type ? <Badge tone="brand">{project.project_type}</Badge> : <span className="font-normal text-muted">Not set</span> },
+            { label: 'Technology', value: project.technology.length > 0 ? <span className="flex flex-wrap gap-1.5">{project.technology.map((c) => <Badge key={c} tone="info">{c}</Badge>)}</span> : <span className="font-normal text-muted">Not set</span> },
+            { label: 'Tags', value: project.tags.length > 0 ? <span className="flex flex-wrap gap-1.5">{project.tags.map((c) => <Badge key={c} tone="neutral">{c}</Badge>)}</span> : <span className="font-normal text-muted">None</span> },
             ...(project.status_reason ? [{ label: 'Status reason', value: <span className="whitespace-pre-wrap">{project.status_reason}</span> }] : []),
             { label: 'Budget', value: project.budget_minor === null ? 'Not set' : money(project.budget_minor, project.currency) },
             ...(can(context, 'invoice.read')

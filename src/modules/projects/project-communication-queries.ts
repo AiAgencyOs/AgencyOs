@@ -7,7 +7,7 @@ import { deliveryOf } from '@/modules/crm/types';
 import { conversationTitle, previewOf, sortThreads, type ConversationKind, type MessageCounts, type ThreadRow } from './project-communication';
 
 /**
- * The project Communication tab's reads — the conversations a project has
+ * The project Discussion tab's reads — the conversations a project has
  * (its WhatsApp group, and its client's own thread), each with its newest
  * message, and the queries a project has open. RLS is the boundary: every
  * read runs as the signed-in person. Counts are exact head counts over the

@@ -51,6 +51,8 @@ export type BoardTask = KanbanItem & {
   /** SCR-020: the payment milestone ("phase") the task is filed under. */
   milestoneId: string | null;
   milestoneName: string | null;
+  /** The sprint of this project the task is placed in (20261005100000). */
+  sprintId: string | null;
   moduleId: string | null;
   moduleName: string | null;
   dueOn: string | null;
@@ -67,6 +69,8 @@ export type BoardModule = { id: string; name: string };
 export type BoardPerson = { userId: string; fullName: string };
 /** SCR-020: the payment milestone a task is filed under — the Board's "phase" filter. */
 export type BoardMilestone = { id: string; name: string };
+/** A sprint of the project — the Board's "sprint" filter. */
+export type BoardSprint = { id: string; name: string };
 
 const PRIORITY: Record<string, { label: string; tone: 'danger' | 'warning' | 'info' | 'neutral' }> = {
   p0: { label: 'Critical', tone: 'danger' },
@@ -110,6 +114,8 @@ export function ProjectBoard({
   rosterSource = 'roster',
   milestones = [],
   initialMilestone,
+  sprints = [],
+  initialSprint,
   canWrite,
   collab,
   currentUserId,
@@ -129,6 +135,10 @@ export function ProjectBoard({
   milestones?: BoardMilestone[];
   /** `?milestone=` — the Plan page's "open tasks" link lands here pre-filtered. */
   initialMilestone?: string;
+  /** The project's sprints — the "sprint" filter. */
+  sprints?: BoardSprint[];
+  /** `?sprint=` — a sprint id or `none`. */
+  initialSprint?: string;
   canWrite: boolean;
   /** Comments, checklist, attachments and the blocker per task id — SCR-020. */
   collab: Record<string, TaskCollab>;
@@ -144,6 +154,7 @@ export function ProjectBoard({
   const [priority, setPriority] = useState('');
   const [moduleFilter, setModuleFilter] = useState('');
   const [milestoneFilter, setMilestoneFilter] = useState(initialMilestone ?? '');
+  const [sprintFilter, setSprintFilter] = useState(initialSprint ?? '');
   const [sort, setSort] = useState<SortKey>('');
   const [quick, setQuick] = useState<QuickFilter>('');
   const [groupBy, setGroupBy] = useState<GroupBy>('status');
@@ -213,13 +224,14 @@ export function ProjectBoard({
         (!priority || t.priority === priority) &&
         (!moduleFilter || t.moduleId === moduleFilter) &&
         (!milestoneFilter || (milestoneFilter === 'none' ? t.milestoneId === null : t.milestoneId === milestoneFilter)) &&
+        (!sprintFilter || (sprintFilter === 'none' ? t.sprintId === null : t.sprintId === sprintFilter)) &&
         (!quick || quickTest[quick](t)),
     );
     if (sort === 'due') rows.sort((a, b) => (a.dueOn ?? '9999').localeCompare(b.dueOn ?? '9999'));
     else if (sort === 'priority') rows.sort((a, b) => a.priority.localeCompare(b.priority));
     else if (sort === 'title') rows.sort((a, b) => a.title.localeCompare(b.title));
     return rows;
-  }, [tasks, query, assignee, priority, moduleFilter, milestoneFilter, sort, quick, quickTest]);
+  }, [tasks, query, assignee, priority, moduleFilter, milestoneFilter, sprintFilter, sort, quick, quickTest]);
 
   const filtered = visible.length !== tasks.length;
 
@@ -241,6 +253,7 @@ export function ProjectBoard({
     setPriority('');
     setModuleFilter('');
     setMilestoneFilter('');
+    setSprintFilter('');
     setQuick('');
   };
   const quickCounts = {
@@ -306,6 +319,18 @@ export function ProjectBoard({
               </option>
             ))}
             <option value="none">No milestone</option>
+          </select>
+        ) : null}
+        {/* Owner decision 1: the sprint filter — the sprint of this project a task is placed in. */}
+        {sprints.length > 0 ? (
+          <select aria-label="Filter by sprint" value={sprintFilter} onChange={(e) => setSprintFilter(e.target.value)} className={cx(selectClass, 'sm:w-auto sm:min-w-[9rem]')}>
+            <option value="">All sprints</option>
+            {sprints.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+            <option value="none">Not in a sprint</option>
           </select>
         ) : null}
         {rosterSource === 'members' ? <span className="text-[11px] text-muted" title="Assignees are the project's members; the organisation roster is offered when a project has none.">assignees: project members</span> : null}

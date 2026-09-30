@@ -12,6 +12,8 @@ import { listProjectMembers, readLastActive } from '@/modules/projects/project-m
 import { listTeamActivity } from '@/modules/projects/team-activity-queries';
 
 import { ProjectMembersPanel } from './members-panel';
+import { DepartmentSelect } from './department-select';
+import { readDepartments } from '@/modules/projects/member-department-queries';
 
 import { DeliveryLeadForm } from '../milestone-controls';
 import {
@@ -87,6 +89,9 @@ export default async function ProjectTeamPage({ params, searchParams }: { params
   const lastActive = await readLastActive([...new Set([...team.map((m) => m.userId), ...members.map((m) => m.userId)])], canReadAudit);
   const lastActiveLabels: Record<string, string> = {};
   if (lastActive.visible) for (const [userId, at] of Object.entries(lastActive.byUser)) lastActiveLabels[userId] = clock.dateTime(at);
+  // Owner decision 2: department only, from a fixed list; owners and ops admins set it here.
+  const departments = await readDepartments([...team.map((m) => m.userId), ...members.map((m) => m.userId)]);
+  const mayAssignDepartment = can(context, 'organization.settings');
   const activeToday = lastActive.visible ? Object.values(lastActive.byUser).filter((at) => clock.dayKey(at) === clock.dayKey(new Date())).length : null;
   const mayEditDefaults = can(context, 'organization.settings');
   const nameByUser = new Map(roster.map((m) => [m.userId, m.fullName]));
@@ -118,6 +123,18 @@ export default async function ProjectTeamPage({ params, searchParams }: { params
       ),
     },
     { key: 'role', header: 'Role', badge: true, cell: (m) => <Badge tone="info">{humanize(m.role)}</Badge> },
+    {
+      key: 'department',
+      header: 'Department',
+      cell: (m) =>
+        mayAssignDepartment ? (
+          <DepartmentSelect projectId={projectId} userId={m.userId} name={m.fullName} current={departments[m.userId] ?? null} />
+        ) : departments[m.userId] ? (
+          <Badge tone="neutral">{departments[m.userId]}</Badge>
+        ) : (
+          <span className="text-muted">—</span>
+        ),
+    },
     {
       key: 'progress',
       header: 'Tasks done',
@@ -205,7 +222,7 @@ export default async function ProjectTeamPage({ params, searchParams }: { params
             title={`Project Members (${members.length})`}
             description="Add team members to collaborate on this project. The Board offers them first when assigning a task."
           />
-          <ProjectMembersPanel projectId={projectId} members={members} roster={roster} lastActive={lastActive} lastActiveLabels={lastActiveLabels} mayEdit={canEdit} />
+          <ProjectMembersPanel projectId={projectId} members={members} roster={roster} lastActive={lastActive} lastActiveLabels={lastActiveLabels} mayEdit={canEdit} departments={departments} mayAssignDepartment={mayAssignDepartment} />
         </Card>
         </div>
 

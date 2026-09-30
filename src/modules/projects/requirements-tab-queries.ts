@@ -3,6 +3,7 @@ import 'server-only';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
+import { priorityOf } from './requirement-plan-schema';
 import { numberRows, splitCriteria, statusOf, type FeatureStatus, type RequirementRow, type ScopeInclusion } from './requirements-tab';
 
 /**
@@ -50,27 +51,40 @@ export async function readProjectRequirements(projectId: string): Promise<{ rows
   const itemIds = scopeItems.map((i) => i.id);
   const featureIds = [...new Set(scopeItems.map((i) => i.feature_id).filter((id): id is string => id !== null))];
 
-  const [features, screenLinks, testCases, deliverables, comments] = await Promise.all([
+  const [features, screenLinks, testCases, deliverables, comments, plans, fileLinks] = await Promise.all([
     featureIds.length > 0 ? supabase.schema('projects').from('features').select('id, status, module_id').in('id', featureIds) : Promise.resolve({ data: [], error: null }),
     supabase.schema('projects').from('screen_scope_items').select('scope_item_id, screen_id').in('scope_item_id', itemIds),
     supabase.schema('qa').from('test_plan_items').select('scope_item_id').in('scope_item_id', itemIds),
     supabase.schema('projects').from('plan_deliverables').select('scope_item_id, name, status').in('scope_item_id', itemIds),
     supabase.schema('projects').from('scope_item_comments').select('scope_item_id').in('scope_item_id', itemIds),
+    supabase.schema('projects').from('scope_item_plans').select('scope_item_id, priority, assignee_id').in('scope_item_id', itemIds),
+    supabase.schema('projects').from('scope_item_files').select('scope_item_id, file_id, created_at').in('scope_item_id', itemIds).order('created_at', { ascending: true }),
   ]);
   if (features.error) unreadable('readProjectRequirements.features', features.error);
   if (screenLinks.error) unreadable('readProjectRequirements.screenLinks', screenLinks.error);
   if (testCases.error) unreadable('readProjectRequirements.testCases', testCases.error);
   if (deliverables.error) unreadable('readProjectRequirements.deliverables', deliverables.error);
   if (comments.error) unreadable('readProjectRequirements.comments', comments.error);
+  if (plans.error) unreadable('readProjectRequirements.plans', plans.error);
+  if (fileLinks.error) unreadable('readProjectRequirements.fileLinks', fileLinks.error);
 
   const moduleIds = [...new Set((features.data ?? []).map((f) => f.module_id))];
   const screenIds = [...new Set((screenLinks.data ?? []).map((s) => s.screen_id))];
-  const [modules, screens] = await Promise.all([
+  const assigneeIds = [...new Set((plans.data ?? []).map((p) => p.assignee_id).filter((id): id is string => id !== null))];
+  const fileIds = [...new Set((fileLinks.data ?? []).map((l) => l.file_id))];
+  const [modules, screens, people, linkedFiles] = await Promise.all([
     moduleIds.length > 0 ? supabase.schema('projects').from('modules').select('id, name').in('id', moduleIds) : Promise.resolve({ data: [], error: null }),
     screenIds.length > 0 ? supabase.schema('projects').from('screens').select('id, name').in('id', screenIds) : Promise.resolve({ data: [], error: null }),
+    assigneeIds.length > 0 ? supabase.schema('core').from('users').select('id, full_name, email').in('id', assigneeIds) : Promise.resolve({ data: [], error: null }),
+    fileIds.length > 0 ? supabase.schema('projects').from('project_files').select('id, title, url, deleted_at').in('id', fileIds) : Promise.resolve({ data: [], error: null }),
   ]);
   if (modules.error) unreadable('readProjectRequirements.modules', modules.error);
   if (screens.error) unreadable('readProjectRequirements.screens', screens.error);
+  if (people.error) unreadable('readProjectRequirements.people', people.error);
+  if (linkedFiles.error) unreadable('readProjectRequirements.linkedFiles', linkedFiles.error);
+  const personName = new Map((people.data ?? []).map((u) => [u.id, u.full_name || u.email]));
+  const planById = new Map((plans.data ?? []).map((p) => [p.scope_item_id, p]));
+  const fileById = new Map((linkedFiles.data ?? []).filter((f) => f.deleted_at === null).map((f) => [f.id, f]));
 
   const moduleName = new Map((modules.data ?? []).map((m) => [m.id, m.name]));
   const featureById = new Map((features.data ?? []).map((f) => [f.id, { status: f.status as FeatureStatus, module: moduleName.get(f.module_id) ?? null }]));
@@ -108,6 +122,9 @@ export async function readProjectRequirements(projectId: string): Promise<{ rows
       testCases: testCount.get(i.id) ?? 0,
       deliverables: (deliverables.data ?? []).filter((d) => d.scope_item_id === i.id).map((d) => ({ name: d.name, status: d.status })),
       comments: commentCount.get(i.id) ?? 0,
+      priority: priorityOf(planById.get(i.id)?.priority),
+      assignee: planById.get(i.id)?.assignee_id ? { userId: planById.get(i.id)?.assignee_id as string, name: personName.get(planById.get(i.id)?.assignee_id as string) ?? 'Former member' } : null,
+      files: (fileLinks.data ?? []).filter((l) => l.scope_item_id === i.id && fileById.has(l.file_id)).map((l) => ({ fileId: l.file_id, title: fileById.get(l.file_id)?.title ?? 'File', url: fileById.get(l.file_id)?.url ?? null })),
     };
   });
   return { rows, openChangeRequests, activeVersion: active?.version ?? null, draftVersion: draft?.version ?? null };
@@ -137,4 +154,20 @@ export async function readRequirementComments(scopeItemId: string): Promise<Requ
     }
   }
   return rows.map((r) => ({ id: r.id, authorName: r.author_id ? (names.get(r.author_id) ?? 'Former member') : 'Former member', body: r.body, createdAt: r.created_at }));
+}
+
+/** The files a requirement can have attached: the project's own, latest versions, not in the trash. */
+export async function readAttachableFiles(projectId: string): Promise<{ id: string; title: string }[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('project_files')
+    .select('id, title')
+    .eq('project_id', projectId)
+    .is('deleted_at', null)
+    .is('parent_file_id', null)
+    .order('title', { ascending: true })
+    .limit(300);
+  if (error) unreadable('readAttachableFiles', error);
+  return data ?? [];
 }

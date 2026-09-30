@@ -56,7 +56,7 @@ function money(minor: number | null, currency: string): string {
     .format(minor / 100);
 }
 
-type Row = Awaited<ReturnType<typeof listProjectsForTable>>[number] & { phase: LifecyclePhase; health: HealthFilter; archivedAt: string | null };
+type Row = Awaited<ReturnType<typeof listProjectsForTable>>[number] & { phase: LifecyclePhase; health: HealthFilter; archivedAt: string | null; inQa: boolean };
 
 const HEALTH_LABEL: Record<HealthFilter, string> = { healthy: 'Healthy', at_risk: 'At risk', blocked: 'Blocked' };
 const HEALTH_TONE: Record<HealthFilter, 'success' | 'warning' | 'danger'> = { healthy: 'success', at_risk: 'warning', blocked: 'danger' };
@@ -83,7 +83,11 @@ const columnsFor = (clock: AgencyClock, mayArchive: boolean): Column<Row>[] => [
     badge: true,
     // SCR-018: the pause/cancel reason rides on the chip's title.
     cell: (p) =>
-      p.statusReason ? (
+      p.inQa ? (
+        <Badge tone="info" dot={false}>
+          In QA
+        </Badge>
+      ) : p.statusReason ? (
         <span title={p.statusReason} className="inline-flex cursor-help">
           <StatusBadge status={p.status} dot={false} />
         </span>
@@ -216,6 +220,7 @@ export default async function ProjectsPage({
       ...p,
       phase: life?.phase ?? (p.status === 'completed' ? 'completed' : 'onboarding'),
       archivedAt: life?.archivedAt ?? null,
+      inQa: life?.inQa ?? false,
       health: healthOf({ atRisk: atRiskIds.has(p.id) || paymentBlockedIds.has(p.id), blocked: life?.blocked ?? false }),
     };
   });
@@ -223,7 +228,8 @@ export default async function ProjectsPage({
   const allProjects = showArchived ? everything : everything.filter((p) => p.archivedAt === null);
   const archivedCount = everything.filter((p) => p.archivedAt !== null).length;
   const countByStatus = new Map<string, number>();
-  for (const p of allProjects) countByStatus.set(p.status, (countByStatus.get(p.status) ?? 0) + 1);
+  // Decision 9: a project in QA is counted once, under In QA, not under its stored status.
+  for (const p of allProjects) if (!p.inQa) countByStatus.set(p.status, (countByStatus.get(p.status) ?? 0) + 1);
   const countByPhase = new Map<LifecyclePhase, number>();
   for (const p of allProjects) countByPhase.set(p.phase, (countByPhase.get(p.phase) ?? 0) + 1);
   const blocked = allProjects.filter((p) => p.health === 'blocked');
@@ -233,12 +239,14 @@ export default async function ProjectsPage({
       ? allProjects.filter((p) => atRiskIds.has(p.id))
       : status === 'payment_blocked'
         ? allProjects.filter((p) => paymentBlockedIds.has(p.id))
+        : status === 'in_qa'
+          ? allProjects.filter((p) => p.inQa)
         : status === 'open'
           ? // Bucket F: the Command Center's "Active projects" tile — every
             // project not yet finished or abandoned, the same set it counts.
             allProjects.filter((p) => OPEN_STATUSES.has(p.status))
           : status
-            ? allProjects.filter((p) => p.status === status)
+            ? allProjects.filter((p) => p.status === status && !p.inQa)
             : allProjects;
   const faceted = filtered.filter((p) => {
     const f = facets.byProject.get(p.id);
@@ -301,6 +309,7 @@ export default async function ProjectsPage({
             options={[
               { key: 'all', label: 'All', href: chipHref(null), active: !status },
               { key: 'at_risk', label: `At risk (${atRiskIds.size})`, href: chipHref('at_risk'), active: status === 'at_risk' },
+              { key: 'in_qa', label: `In QA (${allProjects.filter((p) => p.inQa).length})`, href: chipHref('in_qa'), active: status === 'in_qa' },
               ...PROJECT_STATUSES.map((s) => ({
                 key: s,
                 label: `${humanize(s)} (${countByStatus.get(s) ?? 0})`,

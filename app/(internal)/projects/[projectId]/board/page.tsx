@@ -8,6 +8,7 @@ import { can } from '@/lib/authz/permissions';
 import { listTasksByMilestone } from '@/modules/projects/milestone-tasks-queries';
 import { listAssigneeCandidates } from '@/modules/projects/project-members-queries';
 import { getProject, listDevelopmentBreakdown, listInternalRoster, listPaymentPlan, listProjectFiles, listProjectTeam } from '@/modules/projects/queries';
+import { listProjectSprints } from '@/modules/projects/sprint-queries';
 import { topLevelTasks } from '@/modules/projects/project-view-derive';
 import { countPeriods, periodDelta, trendOf } from '@/lib/admin/period-delta';
 import { readTaskCollabFor } from '@/modules/projects/task-collab-queries';
@@ -62,9 +63,9 @@ const COLUMNS: KanbanColumn[] = [
  * remains the same single writer for `projects.tasks` — just with a second
  * way to reach it.
  */
-export default async function ProjectBoardPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ milestone?: string }> }) {
+export default async function ProjectBoardPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ milestone?: string; sprint?: string }> }) {
   const { projectId } = await params;
-  const { milestone: initialMilestone } = await searchParams;
+  const { milestone: initialMilestone, sprint: initialSprint } = await searchParams;
 
   const context = await requireInternal(`/projects/${projectId}/board`);
   if (!can(context, 'project.read')) return <PermissionDenied />;
@@ -75,7 +76,7 @@ export default async function ProjectBoardPage({ params, searchParams }: { param
   // SCR-020: the assignee list reads from the project's members (20261001120000)
   // and falls back to the organisation roster when the project has none; the
   // phase filter is the payment milestone a task is filed under.
-  const [{ tasks: allTasks, modules }, roster, clock, clientName, candidates, tasksByMilestone, milestones, team, files] = await Promise.all([
+  const [{ tasks: allTasks, modules }, roster, clock, clientName, candidates, tasksByMilestone, milestones, team, files, sprints] = await Promise.all([
     listDevelopmentBreakdown(projectId),
     listInternalRoster(),
     agencyClock(),
@@ -85,6 +86,7 @@ export default async function ProjectBoardPage({ params, searchParams }: { param
     listPaymentPlan(projectId),
     listProjectTeam(projectId),
     listProjectFiles(projectId),
+    listProjectSprints(projectId),
   ]);
   // A subtask is drawn under its parent on the task page, not as a card of its own.
   const tasks = topLevelTasks(allTasks);
@@ -118,6 +120,7 @@ export default async function ProjectBoardPage({ params, searchParams }: { param
     dueLabel: t.dueOn ? clock.date(t.dueOn) : null,
     completedLabel: t.completedAt ? clock.dateTime(t.completedAt) : null,
     overdue: t.status !== 'done' && t.dueOn !== null && t.dueOn < todayKey,
+    sprintId: t.sprintId,
     milestoneId: milestoneByTask.get(t.id) ?? null,
     milestoneName: milestoneByTask.has(t.id) ? (milestoneName.get(milestoneByTask.get(t.id) as string) ?? null) : null,
   }));
@@ -188,6 +191,8 @@ export default async function ProjectBoardPage({ params, searchParams }: { param
             rosterSource={candidates.source}
             milestones={milestones.map((m) => ({ id: m.id, name: m.name }))}
             initialMilestone={initialMilestone && milestoneName.has(initialMilestone) ? initialMilestone : ''}
+            sprints={sprints.map((s) => ({ id: s.id, name: s.name }))}
+            initialSprint={initialSprint && (initialSprint === 'none' || sprints.some((s) => s.id === initialSprint)) ? initialSprint : ''}
             canWrite={canWrite}
             collab={collab}
             currentUserId={context.userId}

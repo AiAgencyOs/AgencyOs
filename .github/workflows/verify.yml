@@ -303,6 +303,13 @@ jobs:
       - name: A deal that is won says what was won (G-230)
         run: npm run db:verify:wongate
 
+      # Owner decisions 10, 11, 14. A contract lives only on a WON deal and is
+      # written only through its doors; a lead's files carry to the project
+      # once (six simultaneous claims, one winner); "when a lead last wrote" is
+      # the newest client message.
+      - name: A won deal has a contract and a lead keeps its files (decisions 10, 11, 14)
+        run: npm run db:verify:contracts
+
       # G-227, P0. Idempotency cannot be proved by reading a migration: an
       # index that refuses a duplicate and an index that was never created look
       # identical in source until two callers arrive at once. This fires EIGHT
@@ -398,6 +405,27 @@ jobs:
       # no write grant), none of which reading TypeScript can prove.
       - name: A task has a start, a parent and labels, and a project keeps notes
         run: npm run db:verify:taskschedule
+
+      # UI parity round 3, stream R1 (the owner's decisions of 2026-10-03). Each
+      # is a database rule, none of which reading TypeScript can prove:
+      # open sprints of a project never overlap and a task sits only in a
+      # sprint of its own project (a trigger); a department is one of six
+      # names (a CHECK) set only by an owner or ops admin; a project type is
+      # from a fixed list and chips are bounded; a requirement's priority and
+      # assignee change after the freeze without touching the frozen row, and
+      # its attachments are links to the project's own files; a folder is a
+      # record, empty folders exist, and a file can only be filed into a real
+      # folder of its own category.
+      - name: A project runs in sprints of a fixed length
+        run: npm run db:verify:sprints
+      - name: A member belongs to a department
+        run: npm run db:verify:department
+      - name: A project has a type, a technology and tags
+        run: npm run db:verify:classification
+      - name: A requirement has a priority, an assignee and linked files
+        run: npm run db:verify:requirementplan
+      - name: A project has folders that exist before a file is in them
+        run: npm run db:verify:folders
 
       # The wording of a quotation's acceptance, cancellation, liability and
       # jurisdiction clauses is the owner's, appended a version at a time and

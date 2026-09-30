@@ -2,6 +2,8 @@ import 'server-only';
 
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
+import { isInQa, pipelineCounts } from './qa-stage';
+import { readQaStageFacts } from './qa-stage-queries';
 
 /**
  * Reads for the Dashboard's "Recent leads", "Active projects", "Revenue this
@@ -88,6 +90,8 @@ export type ActiveProjectSummary = {
   milestonesMet: number;
   milestonesTotal: number;
   endsOn: string | null;
+  /** Derived (decision 9): an open test run and no release. */
+  inQa: boolean;
 };
 
 /**
@@ -114,7 +118,7 @@ export async function getActiveProjectsSummary(limit = 5): Promise<ActiveProject
   const rows = data ?? [];
   const clientIds = [...new Set(rows.map((r) => r.client_account_id).filter((id): id is string => id !== null))];
 
-  const [{ data: clients }, summaries] = await Promise.all([
+  const [{ data: clients }, summaries, qa] = await Promise.all([
     clientIds.length > 0
       ? supabase.schema('core').from('client_accounts').select('id, name').in('id', clientIds)
       : Promise.resolve({ data: [] as { id: string; name: string }[] }),
@@ -123,6 +127,7 @@ export async function getActiveProjectsSummary(limit = 5): Promise<ActiveProject
         supabase.schema('projects').rpc('completion_summary', { p_project_id: r.id }).single(),
       ),
     ),
+    readQaStageFacts(),
   ]);
 
   const nameById = new Map((clients ?? []).map((c) => [c.id, c.name]));
@@ -137,6 +142,7 @@ export async function getActiveProjectsSummary(limit = 5): Promise<ActiveProject
       milestonesMet: summary?.milestones_met ?? 0,
       milestonesTotal: summary?.milestones_total ?? 0,
       endsOn: r.ends_on,
+      inQa: isInQa({ status: r.status, openTestRuns: qa.get(r.id)?.openTestRuns ?? 0, hasRelease: qa.get(r.id)?.hasRelease ?? false }),
     };
   });
 }
@@ -188,18 +194,27 @@ export async function getMessagesSentThisMonth(): Promise<number> {
 export type ProjectCountsByStatus = Record<string, number>;
 
 /**
- * How many projects sit in each delivery status — the right-hand half of
- * the Command Center's pipeline strip. One `status` column over every
- * project the caller may read, counted here; the strip prints exactly these.
+ * How many projects sit in each delivery stage — the right-hand half of the
+ * Command Center's pipeline strip. Stored statuses, except that a project
+ * with an open test run and no release is counted under `inQa` instead of
+ * its status (decision 9; the rule is `pipelineCounts`).
  */
 export async function getProjectCountsByStatus(): Promise<ProjectCountsByStatus> {
   const supabase = await createClient();
 
-  const { data, error } = await supabase.schema('projects').from('projects').select('status');
+  const [{ data, error }, qa] = await Promise.all([
+    supabase.schema('projects').from('projects').select('id, status, archived_at'),
+    readQaStageFacts(),
+  ]);
 
   if (error) unreadable('getProjectCountsByStatus', error);
 
-  const counts: ProjectCountsByStatus = {};
-  for (const row of data ?? []) counts[row.status] = (counts[row.status] ?? 0) + 1;
-  return counts;
+  return pipelineCounts(
+    (data ?? []).map((row) => ({
+      status: row.status,
+      archivedAt: row.archived_at,
+      openTestRuns: qa.get(row.id)?.openTestRuns ?? 0,
+      hasRelease: qa.get(row.id)?.hasRelease ?? false,
+    })),
+  );
 }

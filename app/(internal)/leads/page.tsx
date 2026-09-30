@@ -8,7 +8,9 @@ import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
 import { LEAD_STATUSES, NURTURE_REASONS } from '@/modules/crm/schema';
 import { listLeadsForTable, listLeadsNeedingAttention } from '@/modules/crm/queries';
+import { readLeadHeat } from '@/modules/crm/lead-heat-queries';
 import { readLeadFacts } from '@/modules/crm/lead-list-queries';
+import { isQuickFilterKey, matchesQuickFilter } from '@/modules/crm/lead-quick-filters';
 import { readLeadScores, type LeadScoreSummary } from '@/modules/crm/lead-score-queries';
 import { readLeadServices } from '@/modules/crm/lead-service-queries';
 import { listInternalRoster } from '@/modules/projects/queries';
@@ -220,12 +222,15 @@ export default async function LeadsPage({
     createdTo?: string;
     service?: string;
     lead?: string;
+    quick?: string;
   }>;
 }) {
   const context = await requireInternal('/leads');
   if (!can(context, 'lead.read')) return <PermissionDenied />;
 
-  const { status, page: pageParam, sort: sortKey, dir, q, source, owner, budgetMin, budgetMax, createdFrom: createdFromParam, createdTo: createdToParam, service: serviceParam, lead: leadParam } = await searchParams;
+  const { status, page: pageParam, sort: sortKey, dir, q, source, owner, budgetMin, budgetMax, createdFrom: createdFromParam, createdTo: createdToParam, service: serviceParam, lead: leadParam, quick: quickParam } = await searchParams;
+  // Decision 14: the rail's Hot Leads / No Response, read from when the lead last wrote.
+  const quick = isQuickFilterKey(quickParam) ? quickParam : undefined;
   // SCR-006 — `?service=`: the lead's recorded service, matched whole and
   // case-insensitively; the datalist offers the distinct values in use.
   const service = (serviceParam ?? '').trim().slice(0, 80);
@@ -251,6 +256,7 @@ export default async function LeadsPage({
     createdFrom ? `createdFrom=${createdFrom}` : '',
     createdTo ? `createdTo=${createdTo}` : '',
     service ? `service=${encodeURIComponent(service)}` : '',
+    quick ? `quick=${quick}` : '',
   ].filter(Boolean);
   const currentQuery = [...keep, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
   const statusHref = (st: string | null) => `/leads?${[st ? `status=${st}` : '', ...keep.filter((k) => !k.startsWith('status='))].filter(Boolean).join('&')}`;
@@ -264,6 +270,7 @@ export default async function LeadsPage({
   ]);
   const now = new Date();
   const facts = await readLeadFacts(allLeads.map((l) => l.id));
+  const heat = await readLeadHeat();
   // ADM-88 (reversed 2026-09-29): the stored score per lead, with its reasons.
   const scores = await readLeadScores(allLeads.map((l) => l.id));
   const services = await readLeadServices(allLeads.map((l) => l.id));
@@ -274,6 +281,9 @@ export default async function LeadsPage({
   const countByStatus = new Map<string, number>();
   for (const l of allLeads) countByStatus.set(l.status, (countByStatus.get(l.status) ?? 0) + 1);
 
+  const heatOf = (l: Row) => ({ status: l.status, dealStage: heat.get(l.id)?.dealStage ?? null, createdAt: facts.get(l.id)?.createdAt ?? l.updated_at, lastInboundAt: heat.get(l.id)?.lastInboundAt ?? null });
+  const hotLeads = allLeads.filter((l) => matchesQuickFilter('hot_leads', heatOf(l), now)).length;
+  const noResponse = allLeads.filter((l) => matchesQuickFilter('no_response', heatOf(l), now)).length;
   const needle = (q ?? '').trim().toLowerCase();
   const filtered = allLeads.filter(
     (l) =>
@@ -289,7 +299,8 @@ export default async function LeadsPage({
         })()) &&
       (!createdFrom || (facts.get(l.id)?.createdAt ?? '') >= `${createdFrom}T00:00:00`) &&
       (!createdTo || (facts.get(l.id)?.createdAt ?? '') <= `${createdTo}T23:59:59.999Z`) &&
-      (!service || (services.byLead.get(l.id) ?? '').toLowerCase() === service.toLowerCase()),
+      (!service || (services.byLead.get(l.id) ?? '').toLowerCase() === service.toLowerCase()) &&
+      (!quick || matchesQuickFilter(quick, heatOf(l), now)),
   );
   const sources = [...new Set(allLeads.map((l) => l.source))].sort();
   const owners = [...new Map(allLeads.filter((l) => l.assigned_to && l.assignedEmail).map((l) => [l.assigned_to as string, l.assignedEmail as string])).entries()];
@@ -367,8 +378,9 @@ export default async function LeadsPage({
         />
       ) : null}
 
-      <FilterBar clearHref="/leads" filtered={Boolean(status || q || source || owner || boundedByBudget || createdFrom || createdTo || service)}>
+      <FilterBar clearHref="/leads" filtered={Boolean(status || q || source || owner || boundedByBudget || createdFrom || createdTo || service || quick)}>
         <form method="get" action="/leads" className="flex w-full flex-wrap items-center gap-2 [&_input]:w-auto [&_select]:w-auto">
+          {quick ? <input type="hidden" name="quick" value={quick} /> : null}
           <label className="relative min-w-[14rem] flex-1">
             <span className="sr-only">Search leads</span>
             <span aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><IconSearch size={15} /></span>
@@ -564,13 +576,15 @@ export default async function LeadsPage({
               <CardHeader title="Quick Filters" />
               <ul className="flex flex-col divide-y divide-line px-4 pb-2 text-[13px] sm:px-5">
                 {[
-                  { label: 'New This Month', href: `/leads?createdFrom=${monthStart}`, n: newThisMonth },
+                  { label: 'Hot Leads', href: '/leads?quick=hot_leads', n: hotLeads, active: quick === 'hot_leads' },
                   { label: 'Follow-up Today', href: '/leads', n: followUpToday, link: '/follow-ups' },
+                  { label: 'No Response (3+ days)', href: '/leads?quick=no_response', n: noResponse, active: quick === 'no_response' },
+                  { label: 'New This Month', href: `/leads?createdFrom=${monthStart}`, n: newThisMonth },
                   { label: 'Unassigned', href: '/leads?owner=unassigned', n: unassigned },
                   { label: 'High Value (₹50K+)', href: '/leads?budgetMin=50000', n: highValue },
                 ].map((f) => (
                   <li key={f.label}>
-                    <Link href={f.link ?? f.href} className="flex items-center justify-between gap-2 py-2 hover:text-brand">
+                    <Link href={f.link ?? f.href} aria-current={f.active ? 'true' : undefined} className={cx('flex items-center justify-between gap-2 py-2 hover:text-brand', f.active ? 'font-semibold text-brand' : '')}>
                       <span>{f.label}</span>
                       <span className="tabular rounded-full bg-surface-sunken px-2 py-0.5 text-xs text-muted">{f.n}</span>
                     </Link>

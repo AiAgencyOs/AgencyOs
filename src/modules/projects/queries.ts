@@ -20,7 +20,7 @@ const LIST_SELECT = 'id, name, code, status, currency, budget_minor, created_at'
 // quotation's presence — or absence — to be *visible*, not merely auditable.
 // It was written by conversion since G-017 and read by nothing until G-114.
 // SCR-018/027 (20261001120000): the archive mark and the template followed.
-const DETAIL_SELECT = `${LIST_SELECT}, description, client_account_id, opportunity_id, proposal_id, starts_on, ends_on, visibility, delivery_lead_id, status_reason, status_changed_at, archived_at, template_id`;
+const DETAIL_SELECT = `${LIST_SELECT}, description, client_account_id, opportunity_id, proposal_id, starts_on, ends_on, visibility, delivery_lead_id, status_reason, status_changed_at, archived_at, template_id, project_type, technology, tags`;
 
 export async function listProjects(limit = 100): Promise<ProjectListItem[]> {
   const supabase = await createClient();
@@ -129,6 +129,8 @@ export type DevelopmentTask = {
   /** The task this is a subtask of; null for a top-level task. */
   parentTaskId: string | null;
   labels: string[];
+  /** The sprint of this project the task is placed in (migration 20261005100000). */
+  sprintId: string | null;
   createdAt: string;
 };
 
@@ -165,7 +167,7 @@ export async function listDevelopmentBreakdown(
       supabase
         .schema('projects')
         .from('tasks')
-        .select('id, module_id, feature_id, title, description, status, priority, assignee_id, due_on, completed_at, estimate_hours, milestone_id, start_on, parent_task_id, labels, created_at')
+        .select('id, module_id, feature_id, title, description, status, priority, assignee_id, due_on, completed_at, estimate_hours, milestone_id, start_on, parent_task_id, labels, sprint_id, created_at')
         .eq('project_id', projectId)
         .order('created_at', { ascending: true }),
     ]);
@@ -208,6 +210,7 @@ export async function listDevelopmentBreakdown(
       startOn: t.start_on,
       parentTaskId: t.parent_task_id,
       labels: t.labels ?? [],
+      sprintId: t.sprint_id,
       createdAt: t.created_at,
     })),
   };

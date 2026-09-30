@@ -45,13 +45,12 @@ import {
 import { ProjectSubNav } from '../project-subnav';
 import { WorkspaceHeader } from '../workspace-header';
 
-export const metadata: Metadata = { title: 'Project communication' };
+export const metadata: Metadata = { title: 'Project Discussion' };
 
 const TABS: { key: ThreadTab; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'client', label: 'Client' },
   { key: 'internal', label: 'Internal' },
-  { key: 'waiting', label: 'Waiting on you' },
 ];
 
 function bytes(n: number | null): string {
@@ -69,7 +68,7 @@ function dayLabel(at: Date, now: Date, clock: AgencyClock): string {
 }
 
 /**
- * The project Communication tab (reference images 33, 35 and 36): message
+ * The project Discussion tab (route stays /communication; reference images 33, 35 and 36): message
  * figures, the conversations this project has, the selected thread read as a
  * WhatsApp conversation, and a rail of members, shared files and quick
  * actions. The thread is READ-ONLY here: a message to the client goes through

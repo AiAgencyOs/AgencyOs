@@ -205,6 +205,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
       ? ([
           { label: 'Onboarding', count: projectCounts.onboarding ?? 0, tone: 'warning', href: '/projects?status=onboarding' },
           { label: 'In Progress', count: projectCounts.active ?? 0, tone: 'success', href: '/projects?status=active' },
+          { label: 'In QA', count: projectCounts.inQa ?? 0, tone: 'info', href: '/projects?status=in_qa' },
           { label: 'Launched', count: projectCounts.completed ?? 0, tone: 'success', href: '/projects?status=completed' },
         ] satisfies PipelineStage[])
       : []),
@@ -257,7 +258,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
         const reason = projectHealthReason(input);
         return (
           <span className="flex flex-col items-start gap-1">
-            <StatusBadge status={p.status} dot={false} />
+            {p.inQa ? <Badge tone="info" dot={false}>In QA</Badge> : <StatusBadge status={p.status} dot={false} />}
             {reason ? (
               <Badge tone={PROJECT_HEALTH_TONE[health]} dot>
                 {PROJECT_HEALTH_LABEL[health]} · {reason}

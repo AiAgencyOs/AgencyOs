@@ -45,7 +45,7 @@ export async function ProjectSubNav({ projectId }: { projectId: string }) {
     { href: `${base}/timeline`, label: 'Timeline', icon: <IconTrendUp size={15} /> },
     { href: `${base}/team`, label: 'Team', icon: <IconUsers size={15} /> },
     { href: `${base}/files`, label: 'Files', icon: <IconFile size={15} /> },
-    { href: `${base}/communication`, label: 'Communication', icon: <IconMessage size={15} /> },
+    { href: `${base}/communication`, label: 'Discussion', icon: <IconMessage size={15} /> },
     { href: `${base}/activity`, label: 'Activity', icon: <IconActivity size={15} /> },
     { href: `${base}/settings`, label: 'Settings', icon: <IconSettings size={15} /> },
   ];

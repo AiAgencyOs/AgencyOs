@@ -1,3 +1,5 @@
+import { ContractsTable } from '../../contracts/contracts-list';
+import { listContracts } from '@/modules/sales/contract-service';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -176,6 +178,8 @@ export default async function ClientDetailPage({
     listEligibleMilestones(projectIds),
     listClientOpportunities(clientId),
   ]);
+  // Decision 10: the contracts on this client's won deals, shown beside its quotations.
+  const clientContracts = tab === 'quotations' ? await listContracts({ clientAccountId: clientId }) : [];
   const mayInvoice = can(context, 'invoice.create');
   const mayEditClient = can(context, 'project.write');
   // SCR-014 (owner select) and SCR-017 (announcements addressed to clients).
@@ -502,6 +506,7 @@ export default async function ClientDetailPage({
       ) : null}
 
       {tab === 'quotations' ? (
+        <>
         <Card>
           <CardHeader title="Quotations" description="Every quotation raised on this client's deals, newest first." actions={<ViewAll href="/quotations" />} />
           {client.quotations.length === 0 ? (
@@ -528,6 +533,15 @@ export default async function ClientDetailPage({
             </ul>
           )}
         </Card>
+        <Card>
+          <CardHeader title="Contracts" description="The contract recorded on each of this client's won deals: the file, who signed it and when." actions={<ViewAll href="/contracts" />} />
+          {clientContracts.length === 0 ? (
+            <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No contract has been recorded on this client's won deals.</p>
+          ) : (
+            <ContractsTable rows={clientContracts} clock={clock} mayWrite={false} showClient={false} />
+          )}
+        </Card>
+        </>
       ) : null}
 
       {tab === 'invoices' ? (

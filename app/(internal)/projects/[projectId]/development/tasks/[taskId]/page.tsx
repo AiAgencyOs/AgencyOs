@@ -19,6 +19,9 @@ import { TaskCollabPanel } from '../../../../../task-collab-panel';
 import { TimeLogPanel } from '../../../../../time-log-panel';
 import { TaskClarificationForm } from './task-clarification-form';
 import { AddSubtaskForm, LabelsForm } from './task-plan-forms';
+import { listProjectSprints } from '@/modules/projects/sprint-queries';
+import { sprintEnd } from '@/modules/projects/sprint-schema';
+import { PlaceInSprintForm } from '../../../sprint-forms';
 import { listAssigneeCandidates } from '@/modules/projects/project-members-queries';
 import { LinkCommitPanel, ReadyForQaButton, ReopenFromDefectPanel, StartTaskButton, SubmitEvidencePanel } from './task-doors-panel';
 
@@ -61,6 +64,7 @@ export default async function TaskDetailPage({
   const testEvidence = taskEvidence.filter((e) => e.kind === 'test');
   const { task, module, feature, scopeItems, evidence, plan, dependencies, subtasks } = detail;
   const candidates = await listAssigneeCandidates(projectId);
+  const sprints = await listProjectSprints(projectId);
   const mayPlan = can(context, 'project.write');
   const mayWriteTask = can(context, 'task.write');
 
@@ -402,6 +406,17 @@ export default async function TaskDetailPage({
               { label: 'Status', value: <Badge tone={statusTone(task.status)}>{humanize(task.status)}</Badge> },
               { label: 'Priority', value: <Badge tone={pr.tone}>{pr.label}</Badge> },
               { label: 'Assignee', value: task.assignee ? task.assignee.fullName : <span className="font-normal text-muted">Unassigned</span> },
+              {
+                label: 'Sprint',
+                value: task.sprint ? (
+                  <span>
+                    {task.sprint.name}
+                    <span className="ml-1.5 text-xs font-normal text-muted">{clock.date(task.sprint.startsOn)} – {clock.date(sprintEnd(task.sprint.startsOn, task.sprint.lengthDays))}{task.sprint.closedAt ? ' · closed' : ''}</span>
+                  </span>
+                ) : (
+                  <span className="font-normal text-muted">Not in a sprint</span>
+                ),
+              },
               { label: 'Start date', value: task.startOn ? clock.date(task.startOn) : <span className="font-normal text-muted">No date</span> },
               { label: 'Due date', value: task.dueOn ? clock.date(task.dueOn) : <span className="font-normal text-muted">No date</span> },
               { label: 'Estimated hours', value: task.estimateHours !== null ? `${task.estimateHours} hours` : <span className="font-normal text-muted">Not estimated</span> },
@@ -467,6 +482,21 @@ export default async function TaskDetailPage({
                   <TimeLogPanel projectId={projectId} taskId={task.id} time={time} currentUserId={context.userId} canDeleteAny={mayPlan} canWrite={mayWriteTask} today={clock.dayKey(new Date())} />
                 </div>
               </Card>
+
+          {mayWriteTask ? (
+            <Card>
+              <CardHeader title="Sprint" description="Place the task in one open sprint of this project, or take it out." />
+              <div className="px-4 pb-4 sm:px-5">
+                {sprints.length === 0 ? (
+                  <p className="text-[13px] text-muted">
+                    This project has no sprint yet. <Link href={`/projects/${projectId}/tasks`} className="text-brand hover:underline">Create one on the Tasks tab.</Link>
+                  </p>
+                ) : (
+                  <PlaceInSprintForm projectId={projectId} taskId={task.id} current={task.sprint?.id ?? null} sprints={sprints.map((s) => ({ id: s.id, name: s.name, closed: s.closedAt !== null }))} />
+                )}
+              </div>
+            </Card>
+          ) : null}
 
           {mayWriteTask ? (
             <Card>

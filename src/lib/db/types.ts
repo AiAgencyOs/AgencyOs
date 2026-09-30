@@ -2098,6 +2098,7 @@ export type Database = {
       memberships: {
         Row: {
           created_at: string
+          department: string | null
           id: string
           organization_id: string
           role: string
@@ -2107,6 +2108,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          department?: string | null
           id?: string
           organization_id: string
           role: string
@@ -2116,6 +2118,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          department?: string | null
           id?: string
           organization_id?: string
           role?: string
@@ -2969,6 +2972,12 @@ export type Database = {
       }
       set_agency_timezone: {
         Args: { p_organization_id: string; p_timezone: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      set_member_department: {
+        Args: { p_department: string; p_user_id: string }
         Returns: {
           outcome: string
         }[]
@@ -4143,6 +4152,42 @@ export type Database = {
           },
         ]
       }
+      lead_files: {
+        Row: {
+          added_at: string
+          added_by: string | null
+          carried_at: string | null
+          carried_to_project_id: string | null
+          id: string
+          lead_id: string
+          organization_id: string
+          title: string
+          url: string
+        }
+        Insert: {
+          added_at?: string
+          added_by?: string | null
+          carried_at?: string | null
+          carried_to_project_id?: string | null
+          id?: string
+          lead_id: string
+          organization_id: string
+          title: string
+          url: string
+        }
+        Update: {
+          added_at?: string
+          added_by?: string | null
+          carried_at?: string | null
+          carried_to_project_id?: string | null
+          id?: string
+          lead_id?: string
+          organization_id?: string
+          title?: string
+          url?: string
+        }
+        Relationships: []
+      }
       lead_activities: {
         Row: {
           actor_id: string | null
@@ -5300,6 +5345,26 @@ export type Database = {
           id: string
           version: number
         }[]
+      }
+      add_lead_file: {
+        Args: { p_lead_id: string; p_title: string; p_url: string }
+        Returns: { file_id: string | null; outcome: string }[]
+      }
+      claim_lead_file_carry: {
+        Args: { p_file_id: string; p_project_id: string }
+        Returns: { outcome: string }[]
+      }
+      last_inbound_by_lead: {
+        Args: Record<PropertyKey, never>
+        Returns: { last_inbound_at: string | null; lead_id: string }[]
+      }
+      release_lead_file_carry: {
+        Args: { p_file_id: string; p_project_id: string }
+        Returns: { outcome: string }[]
+      }
+      remove_lead_file: {
+        Args: { p_file_id: string }
+        Returns: { outcome: string }[]
       }
       lead_attention: {
         Args: { p_limit?: number; p_organization_id?: string }
@@ -7544,6 +7609,171 @@ export type Database = {
           },
         ]
       }
+      sprints: {
+        Row: {
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          length_days: number
+          name: string
+          organization_id: string
+          project_id: string
+          starts_on: string
+          updated_at: string
+        }
+        Insert: {
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          length_days: number
+          name: string
+          organization_id: string
+          project_id: string
+          starts_on: string
+          updated_at?: string
+        }
+        Update: {
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          length_days?: number
+          name?: string
+          organization_id?: string
+          project_id?: string
+          starts_on?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sprints_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scope_item_plans: {
+        Row: {
+          assignee_id: string | null
+          organization_id: string
+          priority: string | null
+          scope_item_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          assignee_id?: string | null
+          organization_id: string
+          priority?: string | null
+          scope_item_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          assignee_id?: string | null
+          organization_id?: string
+          priority?: string | null
+          scope_item_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scope_item_plans_scope_item_id_fkey"
+            columns: ["scope_item_id"]
+            isOneToOne: true
+            referencedRelation: "scope_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scope_item_files: {
+        Row: {
+          created_at: string
+          file_id: string
+          id: string
+          linked_by: string | null
+          organization_id: string
+          scope_item_id: string
+        }
+        Insert: {
+          created_at?: string
+          file_id: string
+          id?: string
+          linked_by?: string | null
+          organization_id: string
+          scope_item_id: string
+        }
+        Update: {
+          created_at?: string
+          file_id?: string
+          id?: string
+          linked_by?: string | null
+          organization_id?: string
+          scope_item_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scope_item_files_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "project_files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scope_item_files_scope_item_id_fkey"
+            columns: ["scope_item_id"]
+            isOneToOne: false
+            referencedRelation: "scope_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_folders: {
+        Row: {
+          category: string
+          created_at: string
+          created_by: string | null
+          id: string
+          organization_id: string
+          path: string
+          project_id: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id: string
+          path: string
+          project_id: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id?: string
+          path?: string
+          project_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_folders_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       project_notes: {
         Row: {
           body: string | null
@@ -9286,6 +9516,9 @@ export type Database = {
           completed_at: string | null
           completion_override_reason: string | null
           created_at: string
+          project_type: string | null
+          technology: string[]
+          tags: string[]
           currency: string
           default_assignee_id: string | null
           deleted_at: string | null
@@ -9320,6 +9553,9 @@ export type Database = {
           completed_at?: string | null
           completion_override_reason?: string | null
           created_at?: string
+          project_type?: string | null
+          technology?: string[]
+          tags?: string[]
           currency?: string
           default_assignee_id?: string | null
           deleted_at?: string | null
@@ -9354,6 +9590,9 @@ export type Database = {
           completed_at?: string | null
           completion_override_reason?: string | null
           created_at?: string
+          project_type?: string | null
+          technology?: string[]
+          tags?: string[]
           currency?: string
           default_assignee_id?: string | null
           deleted_at?: string | null
@@ -9885,6 +10124,7 @@ export type Database = {
         Row: {
           start_on: string | null
           parent_task_id: string | null
+          sprint_id: string | null
           labels: string[]
           ready_for_qa_at: string | null
           reopened_count: number
@@ -9912,6 +10152,7 @@ export type Database = {
         Insert: {
           start_on?: string | null
           parent_task_id?: string | null
+          sprint_id?: string | null
           labels?: string[]
           ready_for_qa_at?: string | null
           reopened_count?: number
@@ -9939,6 +10180,7 @@ export type Database = {
         Update: {
           start_on?: string | null
           parent_task_id?: string | null
+          sprint_id?: string | null
           labels?: string[]
           ready_for_qa_at?: string | null
           reopened_count?: number
@@ -9964,6 +10206,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "tasks_sprint_id_fkey"
+            columns: ["sprint_id"]
+            isOneToOne: false
+            referencedRelation: "sprints"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "tasks_parent_task_id_fkey"
             columns: ["parent_task_id"]
@@ -10524,6 +10773,42 @@ export type Database = {
       start_qa_handoff: {
         Args: { p_project_id: string }
         Returns: { blocked: number; event_id: string; not_ready: number; outcome: string }[]
+      }
+      create_sprint: {
+        Args: { p_length_days: number; p_name: string; p_project_id: string; p_starts_on: string }
+        Returns: { outcome: string; sprint_id: string }[]
+      }
+      close_sprint: {
+        Args: { p_sprint_id: string }
+        Returns: { outcome: string }[]
+      }
+      place_task_in_sprint: {
+        Args: { p_sprint_id: string; p_task_id: string }
+        Returns: { outcome: string }[]
+      }
+      set_project_classification: {
+        Args: { p_project_id: string; p_tags: string[]; p_technology: string[]; p_type: string }
+        Returns: { outcome: string }[]
+      }
+      set_requirement_plan: {
+        Args: { p_assignee_id: string; p_priority: string; p_scope_item_id: string }
+        Returns: { outcome: string }[]
+      }
+      link_requirement_file: {
+        Args: { p_file_id: string; p_scope_item_id: string }
+        Returns: { outcome: string }[]
+      }
+      unlink_requirement_file: {
+        Args: { p_file_id: string; p_scope_item_id: string }
+        Returns: { outcome: string }[]
+      }
+      create_project_folder: {
+        Args: { p_category: string; p_path: string; p_project_id: string }
+        Returns: { folder_id: string; outcome: string }[]
+      }
+      file_into_folder: {
+        Args: { p_file_id: string; p_path: string }
+        Returns: { outcome: string }[]
       }
       add_project_note: {
         Args: { p_body?: string; p_project_id: string; p_title: string }
@@ -12123,6 +12408,51 @@ export type Database = {
   }
   sales: {
     Tables: {
+      contracts: {
+        Row: {
+          client_account_id: string | null
+          created_at: string
+          created_by: string | null
+          file_url: string | null
+          id: string
+          opportunity_id: string
+          organization_id: string
+          signed_on: string | null
+          signer_name: string | null
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          client_account_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          file_url?: string | null
+          id?: string
+          opportunity_id: string
+          organization_id: string
+          signed_on?: string | null
+          signer_name?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          client_account_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          file_url?: string | null
+          id?: string
+          opportunity_id?: string
+          organization_id?: string
+          signed_on?: string | null
+          signer_name?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       approved_offers: {
         Row: {
           active: boolean
@@ -12984,6 +13314,21 @@ export type Database = {
           sla_due_at: string | null
           state: string | null
         }[]
+      }
+      create_contract: {
+        Args: {
+          p_file_url?: string
+          p_opportunity_id: string
+          p_signed_on?: string
+          p_signer_name?: string
+          p_status?: string
+          p_title: string
+        }
+        Returns: { contract_id: string | null; outcome: string }[]
+      }
+      update_contract_status: {
+        Args: { p_contract_id: string; p_file_url?: string; p_signed_on?: string; p_signer_name?: string; p_status: string }
+        Returns: { outcome: string }[]
       }
       record_won_handoff: {
         Args: { p_opportunity_id: string; p_project_id?: string }

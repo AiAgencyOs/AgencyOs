@@ -26,6 +26,10 @@ export type ProjectDetail = ProjectListItem &
     // SCR-018/027 (20261001120000): the archive mark, and the template followed.
     | 'archived_at'
     | 'template_id'
+    // Owner decision 4 (20261005100200): a type from a fixed list, technology and tags as chips.
+    | 'project_type'
+    | 'technology'
+    | 'tags'
   >;
 
 /** A milestone as the payment plan renders it. */

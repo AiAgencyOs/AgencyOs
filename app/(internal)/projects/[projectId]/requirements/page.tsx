@@ -17,12 +17,15 @@ import {
   type RequirementRow,
   type RequirementStatus,
 } from '@/modules/projects/requirements-tab';
-import { readProjectRequirements, readRequirementComments } from '@/modules/projects/requirements-tab-queries';
-import { Badge, buttonClass, Card, CardHeader, cx, DomainSearch, EmptyState, IconCheck, IconClock, IconFile, IconList, IconPlus, IconRefresh, IconTarget, PermissionDenied, Stat, StatGrid, type Tone, ViewAll } from '@/ui';
+import { readAttachableFiles, readProjectRequirements, readRequirementComments } from '@/modules/projects/requirements-tab-queries';
+import { PRIORITY_LABEL, PRIORITY_TONE } from '@/modules/projects/requirement-plan-schema';
+import { listInternalRoster } from '@/modules/projects/queries';
+import { Badge, buttonClass, Card, CardHeader, cx, DomainSearch, EmptyState, IconAttach, IconCheck, IconClock, IconFile, IconList, IconPlus, IconRefresh, IconTarget, PermissionDenied, Stat, StatGrid, type Tone, ViewAll } from '@/ui';
 
 import { ProjectSubNav } from '../project-subnav';
 import { WorkspaceHeader } from '../workspace-header';
 import { RequirementCommentForm } from './requirement-comment-form';
+import { AttachFileForm, DetachFileButton, RequirementPlanForm } from './requirement-plan-forms';
 
 export const metadata: Metadata = { title: 'Project requirements' };
 
@@ -65,7 +68,7 @@ export default async function ProjectRequirementsPage({ params, searchParams }: 
   const filter: RequirementFilter = FILTERS.some((f) => f.key === status) ? (status as RequirementFilter) : 'all';
   const shown = filterRequirements(rows, filter, q);
   const selected: RequirementRow | null = rows.find((r) => r.id === req) ?? shown[0] ?? null;
-  const comments = selected ? await readRequirementComments(selected.id) : [];
+  const [comments, attachable, roster] = await Promise.all([selected ? readRequirementComments(selected.id) : Promise.resolve([]), selected ? readAttachableFiles(projectId) : Promise.resolve([]), listInternalRoster()]);
   const kpis = requirementKpis(rows, openChangeRequests);
   const mayDraftScope = can(context, 'milestone.write');
   const mayComment = can(context, 'task.write');
@@ -176,6 +179,9 @@ export default async function ProjectRequirementsPage({ params, searchParams }: 
                           <span className="w-16 shrink-0 font-mono text-xs text-brand">{r.code}</span>
                           <span className="min-w-0 flex-1 basis-40 font-medium text-foreground">{r.title}</span>
                           <Badge tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</Badge>
+                          <span className="w-16">{r.priority ? <Badge tone={PRIORITY_TONE[r.priority]}>{PRIORITY_LABEL[r.priority]}</Badge> : <span className="text-xs text-muted">—</span>}</span>
+                          <span className="w-28 truncate text-xs text-muted" title={r.assignee?.name}>{r.assignee?.name ?? 'Unassigned'}</span>
+                          <span className="inline-flex w-10 items-center justify-end gap-0.5 text-xs text-muted" title={`${r.files.length} attached file${r.files.length === 1 ? '' : 's'}`}>{r.files.length > 0 ? <><IconAttach size={12} />{r.files.length}</> : null}</span>
                           <span className="w-24 text-xs text-muted">{r.delivery ? DELIVERY_LABEL[r.delivery] : 'Not planned'}</span>
                           <span className="w-24 text-right text-xs text-muted">{clock.date(r.createdAt)}</span>
                         </Link>
@@ -214,6 +220,8 @@ export default async function ProjectRequirementsPage({ params, searchParams }: 
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px]">
                     <div><dt className="text-xs text-muted">Inclusion</dt><dd className="font-medium capitalize">{selected.inclusion}</dd></div>
                     <div><dt className="text-xs text-muted">Scope version</dt><dd className="font-medium">v{selected.version}{selected.versionStatus === 'draft' ? ' (draft)' : ''}</dd></div>
+                    <div><dt className="text-xs text-muted">Priority</dt><dd className="font-medium">{selected.priority ? <Badge tone={PRIORITY_TONE[selected.priority]}>{PRIORITY_LABEL[selected.priority]}</Badge> : <span className="font-normal text-muted">Not set</span>}</dd></div>
+                    <div><dt className="text-xs text-muted">Assignee</dt><dd className="font-medium">{selected.assignee ? selected.assignee.name : <span className="font-normal text-muted">Unassigned</span>}</dd></div>
                     <div><dt className="text-xs text-muted">Delivery</dt><dd className="font-medium">{selected.delivery ? DELIVERY_LABEL[selected.delivery] : 'Not planned'}</dd></div>
                     <div><dt className="text-xs text-muted">Created</dt><dd className="font-medium">{clock.date(selected.createdAt)}</dd></div>
                   </dl>
@@ -235,6 +243,41 @@ export default async function ProjectRequirementsPage({ params, searchParams }: 
                         ))}
                       </ul>
                     )}
+                  </section>
+                </div>
+              </Card>
+
+              <Card>
+                <CardHeader title="Plan and Attachments" description="Kept beside the frozen scope, so they stay editable after the freeze. The wording never changes." />
+                <div className="flex flex-col gap-4 px-4 pb-4 sm:px-5">
+                  {mayComment ? (
+                    <RequirementPlanForm projectId={projectId} scopeItemId={selected.id} priority={selected.priority} assigneeId={selected.assignee?.userId ?? null} roster={roster.map((p) => ({ userId: p.userId, fullName: p.fullName }))} />
+                  ) : (
+                    <p className="text-xs text-muted">Changing priority, assignee and attachments takes the task.write permission.</p>
+                  )}
+                  <section aria-label="Attachments">
+                    <h4 className="text-[13px] font-bold">Attachments ({selected.files.length})</h4>
+                    {selected.files.length === 0 ? (
+                      <p className="mt-1 text-[13px] text-muted">No file is attached. Attach one of the project&apos;s files below.</p>
+                    ) : (
+                      <ul className="mt-1.5 flex flex-col gap-1.5 text-[13px]">
+                        {selected.files.map((f) => (
+                          <li key={f.fileId} className="flex items-center justify-between gap-2 rounded-lg border border-line px-3 py-1.5">
+                            {f.url ? (
+                              <a href={f.url} target="_blank" rel="noreferrer noopener" className="min-w-0 truncate font-medium text-brand hover:underline">{f.title}</a>
+                            ) : (
+                              <Link href={`/projects/${projectId}/files`} className="min-w-0 truncate font-medium text-brand hover:underline">{f.title}</Link>
+                            )}
+                            {mayComment ? <DetachFileButton projectId={projectId} scopeItemId={selected.id} fileId={f.fileId} title={f.title} /> : null}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {mayComment ? (
+                      <div className="mt-2">
+                        <AttachFileForm projectId={projectId} scopeItemId={selected.id} choices={attachable.filter((f) => !selected.files.some((a) => a.fileId === f.id))} />
+                      </div>
+                    ) : null}
                   </section>
                 </div>
               </Card>

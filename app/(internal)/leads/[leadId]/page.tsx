@@ -33,6 +33,8 @@ import {
   type LeadStatus,
 } from '@/modules/crm/schema';
 import { timezonePair, whenOf } from '@/modules/crm/meetings-view';
+import { readLeadFiles } from '@/modules/crm/lead-files-service';
+import { listContracts } from '@/modules/sales/contract-service';
 import {
   listDisqualificationHistory,
   listRequirementSourceRefs,
@@ -95,6 +97,7 @@ import {
   IconLock,
   IconSparkle,
   IconActivity,
+  IconAttach,
   IconEdit,
   IconFile,
   IconList,
@@ -107,6 +110,9 @@ import {
 
 import { ExtractionForm, MessageForm, SendToClientForm } from './message-form';
 import { SendTemplateForm } from './template-send-form';
+import { AddLeadFileForm, RemoveLeadFileButton } from './lead-files-forms';
+import { ContractsTable } from '../../contracts/contracts-list';
+import { NewContractForm } from '../../contracts/contract-forms';
 import { listWhatsAppTemplates } from '@/modules/crm/template-queries';
 import { RequirementDecisionForm } from './requirement-decision-form';
 import { RequirementSetPanel } from './requirement-set-panel';
@@ -271,6 +277,9 @@ export default async function LeadConversationPage({
   const leadTasks = await listTasksForLead(opportunity?.id ?? null);
   const openObjections = await listOpenObjectionsForLead(leadId);
   const meetings = await listMeetingsForLead(leadId);
+  // Decision 11: the links kept on this lead. Decision 10: the contracts on its won deal.
+  const leadFiles = await readLeadFiles(leadId);
+  const dealContracts = opportunity ? await listContracts({ opportunityIds: [opportunity.id] }) : [];
   // SCR-007 — the follow-up sequences running against this lead, its proposals and its meetings.
   const sequences = await listSequencesForLead({ leadId, proposalIds: proposals.map((p) => p.id), meetingIds: meetings.map((m) => m.id) });
   // SCR-012 — the composer's owner select and GST pre-fill. The billing mode
@@ -1212,6 +1221,66 @@ export default async function LeadConversationPage({
         </CardBody>
       </Card>
 
+      {/* ── Files (decision 11): links kept on the lead; they carry over to the project when the deal is won ── */}
+      <Card id="files">
+        <CardHeader
+          title="Files"
+          description="Links to what the lead has shared or you have promised — brand guidelines, briefs, references. When the deal is won they appear on the project."
+        />
+        <CardBody>
+          <div className="flex flex-col gap-3">
+            {leadFiles.length === 0 ? (
+              <p className="text-[13px] text-muted">No file has been kept on this lead yet.{mayWrite ? ' Add a link below.' : ''}</p>
+            ) : (
+              <ul className="flex flex-col divide-y divide-line">
+                {leadFiles.map((f) => (
+                  <li key={f.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 first:pt-0 text-[13px]">
+                    <a href={f.url} target="_blank" rel="noopener noreferrer" className="min-w-0 max-w-full truncate font-medium text-brand hover:underline">
+                      {f.title}
+                    </a>
+                    <span className="text-xs text-muted">
+                      {f.addedByName ?? 'Someone'} · {clock.dateTime(f.addedAt)}
+                    </span>
+                    {f.carriedToProjectId ? (
+                      <Link href={`/projects/${f.carriedToProjectId}/files`} className="text-xs text-success hover:underline">
+                        On the project
+                      </Link>
+                    ) : null}
+                    {mayWrite ? (
+                      <span className="ml-auto">
+                        <RemoveLeadFileButton leadId={leadId} fileId={f.id} title={f.title} />
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {mayWrite ? <AddLeadFileForm leadId={leadId} /> : null}
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* ── Contracts (decision 10): only a won deal has one ───────────── */}
+      {opportunity && dealStage === 'won' ? (
+        <Card id="contracts">
+          <CardHeader
+            title="Contracts"
+            description="The contract for this won deal: where the file is kept, who signed it and when."
+            actions={
+              <Link href="/contracts" className="text-xs text-muted underline underline-offset-2 hover:text-foreground">
+                All contracts
+              </Link>
+            }
+          />
+          <CardBody>
+            <div className="flex flex-col gap-4">
+              {dealContracts.length === 0 ? <p className="text-[13px] text-muted">No contract has been recorded for this deal.</p> : <ContractsTable rows={dealContracts} clock={clock} mayWrite={mayWrite} showDeal={false} showClient={false} />}
+              {mayWrite ? <NewContractForm deals={[]} fixedOpportunityId={opportunity.id} leadId={leadId} clientId={opportunity.client_account_id ?? null} /> : null}
+            </div>
+          </CardBody>
+        </Card>
+      ) : null}
+
       {/* ── Follow-up sequences (SCR-007) ────────────────────────────── */}
       <Card id="sequences">
         <CardHeader
@@ -1524,7 +1593,7 @@ export default async function LeadConversationPage({
           { id: 'requirements', label: 'Requirements', icon: <IconFile size={14} /> },
           { id: 'quotations', label: 'Quote', icon: <IconInvoices size={14} /> },
           { id: 'sequences', label: 'Follow-ups', icon: <IconCalendar size={14} /> },
-          { id: 'meetings', label: 'Meetings', icon: <IconClock size={14} /> },
+          { id: 'files', label: 'Files', icon: <IconAttach size={14} /> },
           { id: 'activity', label: 'Activity', icon: <IconActivity size={14} /> },
           { id: 'notes', label: 'Notes', icon: <IconEdit size={14} /> },
         ]}

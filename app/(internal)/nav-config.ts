@@ -56,6 +56,7 @@ export const NAV_MODULES: readonly NavModule[] = [
       { href: '/quotations', label: 'Quotations', capability: 'lead.read', screens: ['SCR-011'] },
       { href: '/meetings', label: 'Meetings', capability: 'lead.read', screens: ['SCR-010'] },
       { href: '/follow-ups', label: 'Follow-ups', capability: 'lead.read', screens: ['SCR-013'] },
+      { href: '/contracts', label: 'Contracts', capability: 'lead.read', screens: ['SCR-072'] },
     ],
   },
   {

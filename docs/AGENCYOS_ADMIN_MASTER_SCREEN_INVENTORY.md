@@ -44,13 +44,14 @@ a record that only its editor changes.
 |---|---|---|---|---|---|---|
 | SCR-005 | Sales Overview & Pipeline | `/sales-funnel` | `lead.read` | `salesFunnel`, `listOpportunities` (Kanban, 3 open stages) | — | COMPLETE |
 | SCR-006 | Leads List | `/leads` | `lead.read` | `listLeadsForTable` (avatar + company cells), `listLeadsNeedingAttention`, saved views | — | COMPLETE |
-| SCR-007 | Lead 360 | `/leads/[leadId]` | `lead.read` | lead + `getLeadFacts`, conversation, requirements, quotations, meetings, follow-ups, timeline (three panes: information · chat · deal) | — | COMPLETE |
+| SCR-007 | Lead 360 | `/leads/[leadId]` | `lead.read` | lead + `getLeadFacts`, conversation, requirements, quotations, meetings, follow-ups, timeline (three panes: information · chat · deal), Files tab (`crm.lead_files` through `crm.add_lead_file` / `remove_lead_file`; links carried once to the project when the deal is converted), contracts on a won deal | — | COMPLETE |
 | SCR-008 | Qualification & Scoring | `/leads/[leadId]` › Sales panel | `lead.read` | `crm.qualification_coverage`, `crm.leads.score` + `score_reasons` + `score_inputs` (`scoreLead`, `crm.set_lead_score`, 20260930120000) | — | COMPLETE (ADM-88 reversed by the owner 2026-09-29: numeric score, always with reasons) |
 | SCR-009 | Requirements Discovery | `/leads/[leadId]` › requirement decision | `lead.read` | `crm.requirement_versions` | — | GROUPED |
 | SCR-010 | Meetings | `/meetings`, `/meetings/[meetingId]` | `lead.read` | meetings, evidence, calendar verification | — | COMPLETE |
 | SCR-011 | Quotations List | `/quotations` | `lead.read` | `listProposals`, saved views | — | COMPLETE |
 | SCR-012 | Create / Edit Quotation | `/quotations/new` + Lead 360 panels | `proposal.draft` | `composeQuotationAction` → draftProposal, addProposalItem, setProposalPricing, submitProposal; third-party charge picker (`listThirdPartyCharges`), payment-schedule preview (`listPaymentStructures`) | — | COMPLETE |
 | SCR-013 | Follow-ups & Nurture | `/follow-ups` | `lead.read` | `listFollowUpSequences` | — | COMPLETE |
+| SCR-072 | Contracts | `/contracts` (+ the contracts on a won deal in Lead 360, and on Client 360 › Quotations) | `lead.read` (`lead.write` to record or move one) | `sales.contracts` through `sales.create_contract` / `sales.update_contract_status` (owner or ops admin; only a WON deal can have one; draft → sent → signed; signing names the signer and the day; audited); owner decision 10, no e-signature | — | COMPLETE |
 
 ### Clients
 
@@ -179,7 +180,7 @@ a record that only its editor changes.
 
 | Status | Count | Screens |
 |---|---|---|
-| COMPLETE | 60 | — (008, 027, 042 moved here on 2026-09-30 after the owner reopened them) |
+| COMPLETE | 61 | — (008, 027, 042 moved here on 2026-09-30 after the owner reopened them) |
 | GROUPED | 11 | 002, 004, 009, 016, 026, 029, 038, 048, 058, 067 + 003's bell |
 | PARTIAL | 0 | — (056 files no GST return by design: the register and P&L are complete, filing is the accountant's) |
 | DECLINED (sub-features) | 0 | — (059 broadcast reopened 2026-09-30 as a governed campaign: `/communication/campaigns`, every recipient a per-thread send the consent, window and outreach rules decide) |

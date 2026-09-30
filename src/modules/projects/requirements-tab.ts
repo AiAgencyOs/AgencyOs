@@ -8,6 +8,8 @@
  * is planned under, and the delivery state is that feature's own status.
  */
 
+import type { RequirementPriority } from './requirement-plan-schema';
+
 export type ScopeInclusion = 'included' | 'excluded' | 'optional';
 export type RequirementStatus = 'approved' | 'in_review' | 'optional' | 'excluded';
 export type FeatureStatus = 'not_started' | 'in_progress' | 'blocked' | 'done';
@@ -33,6 +35,10 @@ export type RequirementRow = {
   testCases: number;
   deliverables: { name: string; status: string }[];
   comments: number;
+  /** Owner decisions 5 and 6 (20261005100300): kept beside the frozen scope row, so editable after the freeze. */
+  priority: RequirementPriority | null;
+  assignee: { userId: string; name: string } | null;
+  files: { fileId: string; title: string; url: string | null }[];
 };
 
 export function requirementCode(index: number): string {

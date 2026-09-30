@@ -10,6 +10,8 @@ import { can } from '@/lib/authz/permissions';
 import { getProject, listDevelopmentBreakdown, listInternalRoster, listPaymentPlan } from '@/modules/projects/queries';
 import { groupsFor, rollup, topLevelTasks } from '@/modules/projects/project-view-derive';
 import { TASK_STATUSES } from '@/modules/projects/schema';
+import { listProjectSprints } from '@/modules/projects/sprint-queries';
+import { sprintDay, sprintState } from '@/modules/projects/sprint-schema';
 import {
   Avatar,
   Badge,
@@ -36,6 +38,7 @@ import {
 } from '@/ui';
 
 import { QuickTaskForm } from '../create-in-place';
+import { CloseSprintButton, NewSprintForm } from '../sprint-forms';
 import { ProjectSubNav } from '../project-subnav';
 import { WorkspaceHeader } from '../workspace-header';
 
@@ -48,7 +51,7 @@ const PRIORITY: Record<string, { label: string; tone: 'danger' | 'warning' | 'in
   p3: { label: 'Low', tone: 'neutral' },
 };
 
-type Search = { q?: string; phase?: string; status?: string; assignee?: string; priority?: string; due?: string; mine?: string };
+type Search = { q?: string; phase?: string; status?: string; assignee?: string; priority?: string; due?: string; mine?: string; sprint?: string };
 
 /**
  * The project's Tasks tab: every task as a list grouped by phase (the payment
@@ -66,10 +69,11 @@ export default async function ProjectTasksPage({ params, searchParams }: { param
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const [{ tasks: allTasks, modules }, roster, phases, clock, clientName] = await Promise.all([
+  const [{ tasks: allTasks, modules }, roster, phases, sprints, clock, clientName] = await Promise.all([
     listDevelopmentBreakdown(projectId),
     listInternalRoster(),
     listPaymentPlan(projectId),
+    listProjectSprints(projectId),
     agencyClock(),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
   ]);
@@ -80,6 +84,7 @@ export default async function ProjectTasksPage({ params, searchParams }: { param
   const weekEndKey = weekEnd.toISOString().slice(0, 10);
   const nameByUser = new Map(roster.map((r) => [r.userId, r.fullName]));
   const phaseName = new Map(phases.map((m) => [m.id, m.name]));
+  const sprintName = new Map(sprints.map((sp0) => [sp0.id, sp0.name]));
 
   const q = (sp.q ?? '').trim().toLowerCase();
   const visible = tasks.filter(
@@ -89,6 +94,7 @@ export default async function ProjectTasksPage({ params, searchParams }: { param
       (!sp.status || t.status === sp.status) &&
       (!sp.assignee || (sp.assignee === 'none' ? t.assigneeId === null : t.assigneeId === sp.assignee)) &&
       (!sp.priority || t.priority === sp.priority) &&
+      (!sp.sprint || (sp.sprint === 'none' ? t.sprintId === null : t.sprintId === sp.sprint)) &&
       (!sp.due ||
         (sp.due === 'overdue' && t.status !== 'done' && t.dueOn !== null && t.dueOn < todayKey) ||
         (sp.due === 'week' && t.dueOn !== null && t.dueOn >= todayKey && t.dueOn <= weekEndKey) ||
@@ -160,12 +166,13 @@ export default async function ProjectTasksPage({ params, searchParams }: { param
             />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[46rem] text-[13px]">
+              <table className="w-full min-w-[52rem] text-[13px]">
                 <thead>
                   <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-wider text-muted">
                     <th className="w-8 py-2 pr-2">#</th>
                     <th className="py-2 pr-3">Task name</th>
                     <th className="py-2 pr-3">Phase</th>
+                    <th className="py-2 pr-3">Sprint</th>
                     <th className="py-2 pr-3">Assigned to</th>
                     <th className="py-2 pr-3">Priority</th>
                     <th className="py-2 pr-3">Status</th>
@@ -180,7 +187,7 @@ export default async function ProjectTasksPage({ params, searchParams }: { param
                   return (
                     <tbody key={g.key} className="divide-y divide-line">
                       <tr className="bg-brand-soft/60">
-                        <th colSpan={8} scope="colgroup" className="px-2 py-2 text-left text-[13px] font-semibold text-foreground">
+                        <th colSpan={9} scope="colgroup" className="px-2 py-2 text-left text-[13px] font-semibold text-foreground">
                           {g.label} <span className="font-normal text-muted">({r.done}/{r.total} completed)</span>
                         </th>
                       </tr>
@@ -194,6 +201,7 @@ export default async function ProjectTasksPage({ params, searchParams }: { param
                               <Link href={`${base}/development/tasks/${t.id}`} className={`font-medium text-foreground hover:underline ${t.status === 'done' ? 'text-muted line-through' : ''}`}>{t.title}</Link>
                             </td>
                             <td className="py-2 pr-3 text-muted">{t.milestoneId ? (phaseName.get(t.milestoneId) ?? '—') : '—'}</td>
+                            <td className="py-2 pr-3 text-muted">{t.sprintId ? (sprintName.get(t.sprintId) ?? '—') : '—'}</td>
                             <td className="py-2 pr-3">
                               {t.assigneeId ? (
                                 <span className="flex items-center gap-2"><Avatar name={nameByUser.get(t.assigneeId) ?? '?'} size="sm" /><span className="truncate text-muted">{nameByUser.get(t.assigneeId) ?? 'Unknown'}</span></span>
@@ -240,6 +248,16 @@ export default async function ProjectTasksPage({ params, searchParams }: { param
               </select>
             </div>
             <div className="flex flex-col gap-1">
+              <label htmlFor="f-sprint" className={labelClass}>Sprint</label>
+              <select id="f-sprint" name="sprint" defaultValue={sp.sprint ?? ''} className={selectClass}>
+                <option value="">All sprints</option>
+                {sprints.map((s0) => (
+                  <option key={s0.id} value={s0.id}>{s0.name}</option>
+                ))}
+                <option value="none">Not in a sprint</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
               <label htmlFor="f-status" className={labelClass}>Status</label>
               <select id="f-status" name="status" defaultValue={sp.status ?? ''} className={selectClass}>
                 <option value="">All statuses</option>
@@ -282,6 +300,36 @@ export default async function ProjectTasksPage({ params, searchParams }: { param
             </label>
             <button type="submit" className={buttonClass('primary', 'sm')}>Filter</button>
           </form>
+
+          <Card>
+            <CardHeader title="Sprints" description="Fixed-length working periods of this project. A task sits in one." />
+            <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+              {sprints.length === 0 ? (
+                <p className="text-[13px] text-muted">No sprint yet{canWrite ? ' — create the first below.' : '.'}</p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {sprints.map((s0) => {
+                    const state = sprintState(s0, todayKey);
+                    const day = sprintDay(s0, todayKey);
+                    return (
+                      <li key={s0.id} className="flex flex-col gap-0.5 rounded-lg border border-line px-3 py-2 text-[13px]">
+                        <span className="flex flex-wrap items-center gap-2">
+                          <Link href={`${base}/tasks?sprint=${s0.id}`} className="font-medium text-foreground hover:underline">{s0.name}</Link>
+                          <Badge tone={state === 'active' ? 'success' : state === 'upcoming' ? 'info' : state === 'ended' ? 'warning' : 'neutral'}>{state === 'ended' ? 'Ended, still open' : humanize(state)}</Badge>
+                          {canWrite && !s0.closedAt ? <span className="ml-auto"><CloseSprintButton projectId={projectId} sprintId={s0.id} name={s0.name} /></span> : null}
+                        </span>
+                        <span className="text-xs text-muted">
+                          {clock.date(s0.startsOn)} – {clock.date(s0.endsOn)} · {s0.lengthDays} days{day ? ` · day ${day.day} of ${day.of}` : ''}
+                        </span>
+                        <span className="tabular text-xs text-muted">{s0.done}/{s0.tasks} task{s0.tasks === 1 ? '' : 's'} done</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {canWrite ? <NewSprintForm projectId={projectId} defaultStart={todayKey} suggestedName={`Sprint ${sprints.length + 1}`} /> : null}
+            </div>
+          </Card>
 
           <Card>
             <CardHeader title="Team workload" actions={<Link href={`${base}/team`} className="text-[13px] font-medium text-brand hover:underline">View All</Link>} />

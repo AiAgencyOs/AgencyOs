@@ -17,7 +17,8 @@ import { listInternalRoster } from '@/modules/projects/queries';
 import { can } from '@/lib/authz/permissions';
 import Link from 'next/link';
 
-import { Avatar, BarChart, buttonClass, Card, CardHeader, DonutChart, EmptyState, FilterChips, humanize, IconCalendar, IconCheck, IconClock, IconDownload, IconInvoices, TabStrip, ViewAll, IconRupee, IconTarget, IconTrendUp, IconUsers, PageHeader, Stat, StatGrid, statusTone, type KanbanColumn, PermissionDenied } from '@/ui';
+import { SalesTabs } from '../sales-tabs';
+import { Avatar, BarChart, buttonClass, Card, CardHeader, DonutChart, EmptyState, FilterChips, humanize, IconCheck, IconDownload, ViewAll, IconRupee, IconTarget, IconTrendUp, IconUsers, PageHeader, Stat, StatGrid, statusTone, type KanbanColumn, PermissionDenied } from '@/ui';
 
 import { TodayCard } from '../today-card';
 import { PipelineBoard, type PipelineCard } from './pipeline-board';
@@ -202,17 +203,7 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
       </StatGrid>
 
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
-        <TabStrip
-          className="min-w-0"
-          label="Sales & CRM"
-          tabs={[
-            { href: '/sales-funnel', label: 'Pipeline', icon: <IconTarget size={15} />, exact: true },
-            { href: '/leads', label: 'Leads', icon: <IconUsers size={15} /> },
-            { href: '/meetings', label: 'Meetings', icon: <IconCalendar size={15} /> },
-            { href: '/quotations', label: 'Proposals', icon: <IconInvoices size={15} /> },
-            { href: '/follow-ups', label: 'Follow-ups', icon: <IconClock size={15} /> },
-          ]}
-        />
+        <SalesTabs />
         <div className="flex flex-wrap items-center gap-2">
           <a href={exportHref} className={buttonClass('secondary', 'sm')}>
             <IconDownload size={14} /> Export CSV{filtering ? ' (filtered)' : ''}

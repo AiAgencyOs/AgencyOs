@@ -1,5 +1,5 @@
 /**
- * The project Communication tab — pure helpers (no I/O).
+ * The project Discussion tab — pure helpers (no I/O).
  *
  * The tab reads the conversations the project already has (its WhatsApp
  * group, and the client's own thread) and the messages in them. Nothing is

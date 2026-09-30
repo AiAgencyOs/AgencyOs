@@ -7,7 +7,9 @@ import { readClientName } from '@/lib/admin/clients';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { clientEnv } from '@/lib/env';
-import { listProjectFileTree, listTrashedFiles, readStorageStatus, type ProjectFileHead } from '@/modules/projects/files-storage-queries';
+import { listProjectFolders } from '@/modules/projects/project-folder-queries';
+import { folderNodes, parentFolder } from '@/modules/projects/project-folder-schema';
+import { listProjectFileTree, listTrashedFiles, readStorageStatus } from '@/modules/projects/files-storage-queries';
 import { listProjectMembers } from '@/modules/projects/project-members-queries';
 import { PROJECT_ROLE_LABEL } from '@/modules/projects/project-members-schema';
 import { getProject } from '@/modules/projects/queries';
@@ -20,6 +22,7 @@ import { ProjectSubNav } from '../project-subnav';
 import { WorkspaceHeader } from '../workspace-header';
 
 import { FilePreviewButton } from './file-preview-drawer';
+import { FileIntoFolderForm, NewFolderForm } from './folder-forms';
 
 export const metadata: Metadata = { title: 'Files' };
 
@@ -40,20 +43,6 @@ function bytes(n: number): string {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
   if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
-
-/** The folder tree inside one category: every folder path and its ancestors, with file counts. */
-function folderTree(files: readonly ProjectFileHead[]): { path: string; depth: number; count: number }[] {
-  const counts = new Map<string, number>();
-  for (const f of files) {
-    if (!f.folder) continue;
-    const parts = f.folder.split('/');
-    for (let i = 1; i <= parts.length; i += 1) {
-      const path = parts.slice(0, i).join('/');
-      counts.set(path, (counts.get(path) ?? 0) + (i === parts.length ? 1 : 0));
-    }
-  }
-  return [...counts.keys()].sort().map((path) => ({ path, depth: path.split('/').length - 1, count: files.filter((f) => f.folder === path || f.folder.startsWith(`${path}/`)).length }));
 }
 
 /**
@@ -78,10 +67,11 @@ export default async function ProjectFilesPage({
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ category?: string; folder?: string; view?: string; q?: string; sort?: string }>;
+  searchParams: Promise<{ category?: string; folder?: string; view?: string; q?: string; sort?: string; layout?: string }>;
 }) {
   const { projectId } = await params;
-  const { category, folder, view, q, sort } = await searchParams;
+  const { category, folder, view, q, sort, layout: layoutRaw } = await searchParams;
+  const layout: 'grid' | 'list' = layoutRaw === 'grid' ? 'grid' : 'list';
 
   const context = await requireInternal(`/projects/${projectId}/files`);
   if (!can(context, 'project.read')) return <PermissionDenied />;
@@ -90,13 +80,14 @@ export default async function ProjectFilesPage({
   if (!project) notFound();
 
   const editable = can(context, 'project.write');
-  const [allFiles, trashed, storage, clock, clientName, members] = await Promise.all([
+  const [allFiles, trashed, storage, clock, clientName, members, folderRecords] = await Promise.all([
     listProjectFileTree(projectId),
     listTrashedFiles(projectId),
     context.organizationId ? readStorageStatus(context.organizationId) : Promise.resolve({ reachable: false as const, bucket: 'project-files', reason: 'No organization on this session.' }),
     agencyClock(),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
     listProjectMembers(projectId),
+    listProjectFolders(projectId),
   ]);
   const inCategory = category ? allFiles.filter((f) => f.category === category) : allFiles;
   const inFolder = folder ? inCategory.filter((f) => f.folder === folder || f.folder.startsWith(`${folder}/`)) : inCategory;
@@ -105,7 +96,21 @@ export default async function ProjectFilesPage({
   const files = sort === 'name' ? [...matched].sort((a, b) => a.title.localeCompare(b.title)) : matched;
   const countBy = (c: string) => allFiles.filter((f) => f.category === c).length;
   const showTrash = view === 'trash';
-  const tree = folderTree(inCategory);
+  // Owner decision 7: folders are records, so an empty folder is drawn; the count is the files filed in it.
+  const tree = folderNodes(category ? folderRecords.filter((f) => f.category === category) : folderRecords, allFiles);
+  const foldersOf = (c: string) => folderRecords.filter((f) => f.category === c).map((f) => f.path);
+  // Grid: the folders directly inside where the person is (only meaningful once a category is chosen).
+  const childFolders = category ? tree.filter((n) => parentFolder(n.path) === (folder ?? '')) : [];
+  const viewHref = (l: 'grid' | 'list') => {
+    const p = new URLSearchParams();
+    if (category) p.set('category', category);
+    if (folder) p.set('folder', folder);
+    if (q) p.set('q', q);
+    if (sort) p.set('sort', sort);
+    if (l === 'grid') p.set('layout', 'grid');
+    const qs = p.toString();
+    return qs ? `${base}?${qs}` : base;
+  };
 
   // Pre-formatted dates, keyed by row id, for the client rows.
   const labels: FileLabels = {};
@@ -161,8 +166,10 @@ export default async function ProjectFilesPage({
             </a>
           ) : null}
         </div>
+        {editable ? <NewFolderForm projectId={projectId} categories={PROJECT_FILE_CATEGORIES} defaultCategory={category ?? 'documents'} parent={folder ?? ''} /> : null}
         <form action={base} method="GET" className="flex flex-wrap items-center gap-2">
           {folder ? <input type="hidden" name="folder" value={folder} /> : null}
+          {layout === 'grid' ? <input type="hidden" name="layout" value="grid" /> : null}
           <label className="relative min-w-[220px] flex-1">
             <span className="sr-only">Search files and folders</span>
             <span aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><IconSearch size={15} /></span>
@@ -221,9 +228,9 @@ export default async function ProjectFilesPage({
                     </Link>
                   </li>
                   {tree.map((node) => (
-                    <li key={node.path} style={{ paddingLeft: `${node.depth * 1.25 + 0.75}rem` }}>
-                      <Link href={href(category, node.path)} className={cx('inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-surface-hover', folder === node.path ? 'font-medium text-foreground' : 'text-muted')}>
-                        <IconFile size={12} /> {node.path.split('/').pop()} <span className="text-xs text-faint">({node.count})</span>
+                    <li key={`${node.category}/${node.path}`} style={{ paddingLeft: `${node.depth * 1.25 + 0.75}rem` }}>
+                      <Link href={href(node.category, node.path)} className={cx('inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-surface-hover', folder === node.path && category === node.category ? 'font-medium text-foreground' : 'text-muted')}>
+                        <IconFile size={12} /> {category ? '' : `${humanize(node.category)} / `}{node.path.split('/').pop()} <span className="text-xs text-faint">({node.files})</span>
                       </Link>
                     </li>
                   ))}
@@ -246,8 +253,44 @@ export default async function ProjectFilesPage({
               <CardHeader
                 title={folder ? `${humanize(category ?? 'all')} / ${folder}` : category ? `${humanize(category)} files` : 'Recent Files'}
                 description={`${files.length} file${files.length === 1 ? '' : 's'}, newest first. A stored file opens its latest version; expand a row for its versions, the internal share and the public share links.`}
+                actions={
+                  <span role="group" aria-label="Layout" className="inline-flex overflow-hidden rounded-lg border border-line text-[13px] font-medium">
+                    <Link href={viewHref('grid')} aria-current={layout === 'grid' ? 'page' : undefined} className={cx('px-3 py-1.5', layout === 'grid' ? 'bg-brand-soft text-brand' : 'text-muted hover:text-foreground')}>Grid</Link>
+                    <Link href={viewHref('list')} aria-current={layout === 'list' ? 'page' : undefined} className={cx('border-l border-line px-3 py-1.5', layout === 'list' ? 'bg-brand-soft text-brand' : 'text-muted hover:text-foreground')}>List</Link>
+                  </span>
+                }
               />
-              {files.length > 0 ? (
+              {layout === 'grid' && (files.length > 0 || childFolders.length > 0) ? (
+                <ul className="grid grid-cols-2 gap-3 px-4 pb-4 sm:grid-cols-3 sm:px-5 xl:grid-cols-4">
+                  {childFolders.map((n) => (
+                    <li key={`${n.category}/${n.path}`}>
+                      <Link href={`${href(n.category, n.path)}${href(n.category, n.path).includes('?') ? '&' : '?'}layout=grid`} className="flex h-full flex-col gap-2 rounded-xl border border-line bg-surface p-3 shadow-xs hover:bg-surface-hover">
+                        <FolderGlyph color="var(--brand)" />
+                        <span className="min-w-0">
+                          <span className="block truncate text-[13px] font-semibold text-foreground">{n.path.split('/').pop()}</span>
+                          <span className="block text-xs text-muted">{n.files} file{n.files === 1 ? '' : 's'}</span>
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                  {files.map((f) => (
+                    <li key={f.id}>
+                      <a
+                        href={f.stored ? `/api/projects/${projectId}/files/${f.latest.id}/download` : (f.url ?? viewHref('list'))}
+                        {...(f.stored || f.url ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
+                        className="flex h-full flex-col gap-2 rounded-xl border border-line bg-surface p-3 shadow-xs hover:bg-surface-hover"
+                      >
+                        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-soft text-brand"><IconFile size={18} /></span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-[13px] font-semibold text-foreground">{f.title}</span>
+                          <span className="block truncate text-xs text-muted">{humanize(f.category)}{f.folder ? ` / ${f.folder}` : ''}</span>
+                          <span className="block truncate text-xs text-muted">{[f.stored && f.latest.sizeBytes ? bytes(f.latest.sizeBytes) : f.stored ? '' : 'Link', clock.date(f.latest.createdAt)].filter(Boolean).join(' · ')}</span>
+                        </span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              ) : layout === 'list' && files.length > 0 ? (
                 <ul className="divide-y divide-line">
                   {files.map((f) => (
                     <StoredFileRow
@@ -281,6 +324,7 @@ export default async function ProjectFilesPage({
                         ) : null
                       }
                     >
+                      {editable ? <FileIntoFolderForm projectId={projectId} fileId={f.id} title={f.title} current={f.folder} folders={foldersOf(f.category)} /> : null}
                       {editable ? (
                         <EditFileForm
                           file={{ id: f.id, category: f.category, title: f.title, ...(f.url ? { url: f.url } : {}), description: f.description, uploadedByName: f.uploadedByName, createdAt: f.createdAt }}

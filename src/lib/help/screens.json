@@ -1,7 +1,7 @@
 {
   "source": "docs/AGENCYOS_ADMIN_MASTER_SCREEN_INVENTORY.md",
-  "inventoryHash": "54be1cb2e783a204c45bd132d2f8c105e291de34bd46f26a0ebfca9a6d61cbee",
-  "count": 71,
+  "inventoryHash": "94709e79a53a185234645381ed4a248b43a736f85de6051b66c32accc4059b56",
+  "count": 72,
   "screens": [
     {
       "id": "SCR-001",
@@ -86,7 +86,7 @@
         "/leads/[leadId]"
       ],
       "capability": "lead.read",
-      "reads": "lead + getLeadFacts, conversation, requirements, quotations, meetings, follow-ups, timeline (three panes: information · chat · deal)",
+      "reads": "lead + getLeadFacts, conversation, requirements, quotations, meetings, follow-ups, timeline (three panes: information · chat · deal), Files tab (crm.lead_files through crm.add_lead_file / remove_lead_file; links carried once to the project when the deal is converted), contracts on a won deal",
       "live": "—",
       "status": "COMPLETE"
     },
@@ -166,6 +166,19 @@
       ],
       "capability": "lead.read",
       "reads": "listFollowUpSequences",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-072",
+      "title": "Contracts",
+      "module": "Sales & CRM",
+      "route": "/contracts (+ the contracts on a won deal in Lead 360, and on Client 360 › Quotations)",
+      "routes": [
+        "/contracts"
+      ],
+      "capability": "lead.read (lead.write to record or move one)",
+      "reads": "sales.contracts through sales.create_contract / sales.update_contract_status (owner or ops admin; only a WON deal can have one; draft → sent → signed; signing names the signer and the day; audited); owner decision 10, no e-signature",
       "live": "—",
       "status": "COMPLETE"
     },

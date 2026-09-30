@@ -11,6 +11,7 @@ import { err, ok, unreadable, type Result } from '@/lib/result';
 
 import { markLeadConverted, sendClientDocument, sendClientMessage } from '@/modules/crm/service';
 import { createProject, seedOnboarding } from '@/modules/projects/service';
+import { carryLeadFilesToProject } from './lead-files-carry';
 
 import {
   addProposalItemSchema,
@@ -502,6 +503,9 @@ export async function convertToProject(
   if (alreadyConverted) {
     // A second click is also the repair path: a handoff the first conversion
     // could not bind is bound now, or found already bound.
+    // Decision 11: any lead link not yet carried (a link added after the first
+    // conversion, or one whose copy failed) is carried now — once, by claim.
+    if (opportunity.lead_id) await carryLeadFilesToProject(opportunity.lead_id, alreadyConverted.id);
     return ok({
       projectId: alreadyConverted.id,
       clientAccountId: alreadyConverted.client_account_id,
@@ -594,6 +598,7 @@ export async function convertToProject(
         .maybeSingle();
 
       if (raced) {
+        if (opportunity.lead_id) await carryLeadFilesToProject(opportunity.lead_id, raced.id);
         return ok({
           projectId: raced.id,
           clientAccountId: raced.client_account_id,
@@ -654,6 +659,12 @@ export async function convertToProject(
   // TOLD, because a handoff that did not happen is the exact thing §33 says
   // must not pass silently.
   const handoffRecorded = await recordWonHandoff(supabase, opportunity.id, project.data.projectId);
+
+  // ── the lead's files, visible on the project — decision 11 ──────────────
+  //
+  // The links kept on the lead are copied once as project file links. A
+  // shortfall is logged inside and repaired by re-running conversion.
+  if (opportunity.lead_id) await carryLeadFilesToProject(opportunity.lead_id, project.data.projectId);
 
   return ok({
     projectId: project.data.projectId,

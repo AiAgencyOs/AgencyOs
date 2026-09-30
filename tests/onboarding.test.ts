@@ -108,6 +108,8 @@ mock.module('@/modules/projects/service', {
         ? { ok: true, data: { items: 17, alreadySeeded: false } }
         : { ok: false, error: { code: 'INTERNAL', message: 'no' } };
     },
+    // the lead's file links ride along on conversion (lead-files-carry); nothing to carry in these cases
+    addProjectFile: async () => ({ ok: true, data: { id: 'unused' } }),
   },
 });
 

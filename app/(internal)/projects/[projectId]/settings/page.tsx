@@ -12,7 +12,7 @@ import { getProjectTemplate, listProjectTemplates } from '@/modules/projects/pro
 import { TemplateSelectForm } from './template-select-panel';
 import { Badge, Callout, Card, CardHeader, EmptyState, IconAudit, PageHeader, PermissionDenied, Stat, StatGrid, StatusBadge } from '@/ui';
 
-import { ProjectDetailsForm, ProjectVisibilityForm } from '../settings-panel';
+import { ProjectClassificationForm, ProjectDetailsForm, ProjectVisibilityForm } from '../settings-panel';
 import { DefaultAssigneeForm, WatchersPanel } from './project-defaults-panel';
 import { ProjectSubNav } from '../project-subnav';
 
@@ -109,6 +109,14 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
             budgetMinor={project.budget_minor}
             currency={project.currency}
           />
+        </section>
+      ) : null}
+
+      {canWrite ? (
+        <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 shadow-xs sm:p-5">
+          <h2 className="text-sm font-semibold tracking-tight">Type, technology and tags</h2>
+          <p className="text-[13px] text-muted">What kind of project this is, from a fixed list, and the technology and tags the overview shows as chips.</p>
+          <ProjectClassificationForm projectId={projectId} type={project.project_type} technology={project.technology} tags={project.tags} />
         </section>
       ) : null}
 

@@ -36,6 +36,8 @@ export type TaskDetail = {
     labels: string[];
     milestone: { id: string; name: string } | null;
     parent: { id: string; title: string } | null;
+    /** The sprint of the task's project it is placed in (20261005100000). */
+    sprint: { id: string; name: string; startsOn: string; lengthDays: number; closedAt: string | null } | null;
   };
   /** Subtasks of this task (20261004100000), oldest first. */
   subtasks: { id: string; title: string; status: string; dueOn: string | null; assigneeId: string | null; assigneeName: string | null }[];
@@ -57,7 +59,7 @@ export async function readTaskDetail(projectId: string, taskId: string): Promise
     .schema('projects')
     .from('tasks')
     .select(
-      'id, project_id, title, description, status, priority, due_on, estimate_hours, completed_at, created_at, assignee_id, module_id, feature_id, requirement_version_id, start_on, labels, milestone_id, parent_task_id',
+      'id, project_id, title, description, status, priority, due_on, estimate_hours, completed_at, created_at, assignee_id, module_id, feature_id, requirement_version_id, start_on, labels, milestone_id, parent_task_id, sprint_id',
     )
     .eq('id', taskId)
     .eq('project_id', projectId)
@@ -119,6 +121,13 @@ export async function readTaskDetail(projectId: string, taskId: string): Promise
     const { data: people, error: peopleError } = await supabase.schema('core').from('users').select('id, full_name, email').in('id', subtaskPeople);
     if (peopleError) unreadable('readTaskDetail.subtaskPeople', peopleError);
     for (const u of people ?? []) subtaskNames.set(u.id, u.full_name || u.email);
+  }
+
+  let sprint: TaskDetail['task']['sprint'] = null;
+  if (task.sprint_id) {
+    const { data: sprintRow, error: sprintError } = await supabase.schema('projects').from('sprints').select('id, name, starts_on, length_days, closed_at').eq('id', task.sprint_id).maybeSingle();
+    if (sprintError) unreadable('readTaskDetail.sprint', sprintError);
+    if (sprintRow) sprint = { id: sprintRow.id, name: sprintRow.name, startsOn: sprintRow.starts_on, lengthDays: sprintRow.length_days, closedAt: sprintRow.closed_at };
   }
 
   let scopeItems: TaskDetail['scopeItems'] = [];
@@ -185,6 +194,7 @@ export async function readTaskDetail(projectId: string, taskId: string): Promise
       labels: task.labels ?? [],
       milestone: milestoneRes.data ? { id: milestoneRes.data.id, name: milestoneRes.data.name } : null,
       parent: parentRes.data ? { id: parentRes.data.id, title: parentRes.data.title } : null,
+      sprint,
     },
     subtasks: subtaskRows.map((r) => ({ id: r.id, title: r.title, status: r.status, dueOn: r.due_on, assigneeId: r.assignee_id, assigneeName: r.assignee_id ? (subtaskNames.get(r.assignee_id) ?? null) : null })),
     module: module.data ? { id: module.data.id, name: module.data.name, status: module.data.status } : null,

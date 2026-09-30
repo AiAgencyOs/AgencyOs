@@ -110,13 +110,13 @@ describe('the migration carries every convention', () => {
 
 describe('the pure rules the screens lean on', () => {
   it('the lifecycle phase follows the newest phase table, and the archive wins over everything', () => {
-    const base = { status: 'active', archivedAt: null, productionReadyAt: null, hasPhaseTwo: false, hasPhaseThree: false, hasPhaseFour: false, hasTestRun: false, hasHandover: false };
+    const base = { status: 'active', archivedAt: null, productionReadyAt: null, hasPhaseTwo: false, hasPhaseThree: false, hasPhaseFour: false, hasOpenTestRun: false, hasHandover: false };
     assert.equal(lifecyclePhaseOf(base), 'onboarding');
     assert.equal(lifecyclePhaseOf({ ...base, hasPhaseTwo: true }), 'planning');
     assert.equal(lifecyclePhaseOf({ ...base, hasPhaseTwo: true, hasPhaseThree: true }), 'design');
     assert.equal(lifecyclePhaseOf({ ...base, hasPhaseThree: true, hasPhaseFour: true }), 'development');
-    assert.equal(lifecyclePhaseOf({ ...base, hasPhaseFour: true, hasTestRun: true }), 'qa');
-    assert.equal(lifecyclePhaseOf({ ...base, hasTestRun: true, hasHandover: true }), 'release');
+    assert.equal(lifecyclePhaseOf({ ...base, hasPhaseFour: true, hasOpenTestRun: true }), 'qa');
+    assert.equal(lifecyclePhaseOf({ ...base, hasOpenTestRun: true, hasHandover: true }), 'release');
     assert.equal(lifecyclePhaseOf({ ...base, productionReadyAt: '2026-09-01T00:00:00Z' }), 'release');
     assert.equal(lifecyclePhaseOf({ ...base, status: 'completed', hasHandover: true }), 'completed');
     assert.equal(lifecyclePhaseOf({ ...base, status: 'completed', archivedAt: '2026-09-30T00:00:00Z' }), 'archived');
