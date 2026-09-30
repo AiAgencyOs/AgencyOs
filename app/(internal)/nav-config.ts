@@ -152,7 +152,7 @@ export const NAV_MODULES: readonly NavModule[] = [
       { href: '/security', label: 'Security', capability: 'audit.read', screens: ['SCR-069'] },
       { href: '/security/users', label: 'Users & roles', capability: 'audit.read', screens: ['SCR-069'] },
       { href: '/security/incidents', label: 'Incidents', capability: 'audit.read', screens: ['SCR-069'] },
-      { href: '/security/keys', label: 'Keys & secrets', capability: 'organization.settings', screens: ['SCR-071'] },
+      { href: '/security/keys', label: 'Keys & secrets', capability: 'audit.read', screens: ['SCR-071'] },
       { href: '/governance/overrides', label: 'Overrides & controls', capability: 'audit.read', screens: ['SCR-068'] },
       { href: '/audit', label: 'Audit log', capability: 'audit.read', screens: ['SCR-069'] },
     ],

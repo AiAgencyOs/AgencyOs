@@ -134,8 +134,11 @@ describe('the palette offers only what the role can open', () => {
     assert.equal(catalogueFor({ role: 'member', roles: ['member', 'owner'] }).length, SETTINGS_CATALOGUE.length, 'a granted role counts (the union)');
   });
 
-  it('an ops admin (who lacks organization.settings, as in the nav), a delivery lead, a member, a contractor, a finance user and a client are offered none', () => {
-    for (const role of ['ops_admin', 'delivery_lead', 'member', 'contractor', 'finance', 'client_admin', 'client_member'] as const) {
+  it('an ops admin is offered the keys (view and verify) but no organization setting; everyone else below is offered none', () => {
+    const ops = catalogueFor('ops_admin');
+    assert.ok(ops.length > 0, 'the ops admin may open the keys screen');
+    assert.ok(ops.every((e) => e.href.startsWith('/security/keys')), 'and nothing that needs organization.settings');
+    for (const role of ['delivery_lead', 'member', 'contractor', 'finance', 'client_admin', 'client_member'] as const) {
       assert.deepEqual(catalogueFor(role), [], role);
     }
     assert.deepEqual(catalogueFor(undefined), []);

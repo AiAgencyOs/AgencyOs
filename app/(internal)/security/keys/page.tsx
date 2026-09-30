@@ -35,7 +35,8 @@ type Show = (typeof SHOWS)[number];
  */
 export default async function KeysPage({ searchParams }: { searchParams: Promise<{ show?: string }> }) {
   const context = await requireInternal('/security/keys');
-  if (!can(context, 'organization.settings')) return <PermissionDenied />;
+  // View and verify: the owner and the ops admin (audit.read). Store and revoke stay owner-only below.
+  if (!can(context, 'audit.read')) return <PermissionDenied />;
   const isOwner = hasRole(context, 'owner');
 
   const { show: showParam } = await searchParams;

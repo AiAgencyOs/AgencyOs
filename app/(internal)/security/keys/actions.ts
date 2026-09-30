@@ -65,7 +65,7 @@ export async function revokeSecretAction(_prev: FormState, formData: FormData): 
  */
 export async function verifySecretAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const context = await requireInternal();
-  if (!can(context, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify a key.' };
+  if (!can(context, 'audit.read')) return { status: 'error', message: 'Only an owner or ops admin may verify a key.' };
   const slot = slotFor(String(formData.get('slot') ?? ''));
   if (!slot?.verifier) return { status: 'error', message: 'There is no live check for that key.' };
 

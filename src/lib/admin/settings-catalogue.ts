@@ -133,7 +133,8 @@ export const SECRET_ENTRIES: readonly SettingsEntry[] = SECRET_SLOTS.map((slot) 
     SECRET_CATEGORY_LABEL[slot.category],
     ...slot.usedBy,
   ],
-  capability: SETTINGS,
+  // The keys screen is viewed and verified by the owner and the ops admin (audit.read); the owner alone stores.
+  capability: 'audit.read',
 }));
 
 export const SETTINGS_CATALOGUE: readonly SettingsEntry[] = [...SETTINGS_ENTRIES, ...SECRET_ENTRIES];
