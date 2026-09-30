@@ -18,6 +18,11 @@ export type Defect = Pick<
   | 'deliverable_id'
   | 'verified_at'
   | 'created_at'
+  | 'assignee_id'
+  | 'task_id'
+  | 'run_id'
+  /** SCR-047 (20261001160000): the build the fix lands in. */
+  | 'build_id'
 >;
 
 /** The counts a readiness gate will need, once ADM-19 says what the gate is. */

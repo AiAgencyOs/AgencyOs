@@ -2,8 +2,7 @@ import type { Metadata } from 'next';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { PageHeader } from '@/ui';
-import { redirect } from 'next/navigation';
+import { PageHeader, PermissionDenied } from '@/ui';
 
 import { SettingsTabs } from './settings-tabs';
 
@@ -15,6 +14,9 @@ const TABS = [
   { href: '/settings/team', label: 'Team' },
   { href: '/settings/communication', label: 'Communication' },
   { href: '/settings/approvals', label: 'Approvals' },
+  { href: '/settings/finance', label: 'Finance' },
+  // Decision: reversed by the owner on 2026-09-29 — project templates.
+  { href: '/settings/templates', label: 'Templates' },
 ] as const;
 
 /**
@@ -26,7 +28,7 @@ const TABS = [
  */
 export default async function SettingsLayout({ children }: { children: React.ReactNode }) {
   const context = await requireInternal('/settings');
-  if (!can(context.role, 'organization.settings')) redirect('/dashboard');
+  if (!can(context, 'organization.settings')) return <PermissionDenied />;
 
   return (
     <div className="flex flex-col gap-5">
@@ -41,7 +43,10 @@ export default async function SettingsLayout({ children }: { children: React.Rea
         }
       />
       <SettingsTabs tabs={TABS} />
-      {children}
+      {/* A bounded column: a form field the full width of a 1400px canvas
+          reads as a text area, not a setting. Each page's sections are
+          cards (screen architecture §4, "rounded cards"). */}
+      <div className="max-w-4xl [&_h2]:text-sm">{children}</div>
     </div>
   );
 }

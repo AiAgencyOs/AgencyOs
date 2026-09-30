@@ -12,6 +12,8 @@
  * the corpus had none — each marked at its definition.
  */
 
+import { DEFAULT_QUOTATION_VALIDITY_DAYS } from '@/lib/admin/operational-defaults';
+
 import { parseQuotationDocument } from './schema';
 import { pricingNoteFor } from './pricing-reference';
 import { clientBudgetNoteFor, productionCostNoteFor, type StoredProductionCost } from './production-cost';
@@ -199,7 +201,7 @@ export const SCOPE_PROTECTION_LINES: readonly string[] = [
  * all). Already applied at draft time by `quotationValidUntil()`; named here
  * so the number has one home rather than two.
  */
-export const VALIDITY_DAYS = 15;
+export const VALIDITY_DAYS = DEFAULT_QUOTATION_VALIDITY_DAYS;
 
 /**
  * The four clauses the corpus effectively did not have — G-167, study §10.
@@ -215,6 +217,13 @@ export const VALIDITY_DAYS = 15;
  * can say and still settle the question, because a quotation is not the
  * place to litigate and a clause nobody reads protects nobody.
  */
+export function commercialTermsFor(validityDays: number = VALIDITY_DAYS): readonly string[] {
+  return [
+    `This quotation is valid for ${validityDays} days from its date.`,
+    ...COMMERCIAL_TERMS.slice(1),
+  ];
+}
+
 export const COMMERCIAL_TERMS: readonly string[] = [
   `This quotation is valid for ${VALIDITY_DAYS} days from its date.`,
   'A milestone is accepted when the demo it names is delivered and no written objection follows within 5 working days.',
@@ -314,6 +323,11 @@ export function quotationSectionsFor(
     features?: readonly string[] | null;
     kind?: 'surface' | 'foundation' | null;
   }>,
+  /**
+   * Organization settings the standard clauses read (configurability audit
+   * B-1). Omitted, every clause prints exactly as it always did.
+   */
+  options?: { validityDays?: number },
 ): {
   understanding: string | null;
   exclusions: readonly string[] | null;
@@ -499,7 +513,9 @@ export function quotationSectionsFor(
       (doc.optionalAddons as ReadonlyArray<{ label: string; priceRupees: number }> | null | undefined) ?? null,
     theme: doc.industryTheme ?? null,
     regulatedClauses: regulatedClauses.length > 0 ? regulatedClauses : null,
-    commercialTerms: COMMERCIAL_TERMS,
+    // SCR-012 — the terms as edited in the composer, when they were; the
+    // standard clauses otherwise, exactly as before.
+    commercialTerms: doc.commercialTerms && doc.commercialTerms.length > 0 ? doc.commercialTerms : commercialTermsFor(options?.validityDays),
     internalNote,
     phaseLabel,
     deferredLines,

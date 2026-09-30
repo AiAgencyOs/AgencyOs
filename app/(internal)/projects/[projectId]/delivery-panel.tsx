@@ -4,7 +4,8 @@ import { useActionState, useState } from 'react';
 
 import { configurePaymentPlanAction, setProjectStatusAction, startProjectAction } from '@/modules/projects/actions';
 import { IDLE_STATE } from '@/modules/identity/types';
-import { FormMessage, buttonClass, inputClass, labelClass } from '@/ui';
+import { PROJECT_STATUSES_NEEDING_REASON } from '@/modules/projects/schema';
+import { FormMessage, buttonClass, inputClass, labelClass, textareaClass } from '@/ui';
 
 const input = inputClass;
 const button = buttonClass('secondary', 'sm');
@@ -23,16 +24,22 @@ export function ProjectStatusForm({
   allowed: readonly string[];
 }) {
   const [state, action, pending] = useActionState(setProjectStatusAction, IDLE_STATE);
+  const [target, setTarget] = useState(allowed[0] ?? '');
 
   if (allowed.length === 0) {
     return <p className="text-sm text-muted">Project is {current}; no further moves.</p>;
   }
 
+  // SCR-018: a pause or a cancellation says why. Required for those two
+  // targets (the service refuses without it); optional for the rest, and
+  // recorded either way.
+  const reasonRequired = (PROJECT_STATUSES_NEEDING_REASON as readonly string[]).includes(target);
+
   return (
     <form action={action} className="flex flex-col gap-2">
       <input type="hidden" name="projectId" value={projectId} />
       <div className="flex flex-wrap items-center gap-2">
-        <select name="status" defaultValue={allowed[0]} aria-label="New status" className={`${input} w-auto`}>
+        <select name="status" value={target} onChange={(e) => setTarget(e.target.value)} aria-label="New status" className={`${input} w-auto`}>
           {allowed.map((s) => (
             <option key={s} value={s}>
               {s}
@@ -42,6 +49,20 @@ export function ProjectStatusForm({
         <button type="submit" disabled={pending} className={button}>
           {pending ? 'Moving…' : 'Move project'}
         </button>
+      </div>
+      <div className="flex max-w-md flex-col gap-1">
+        <label className={labelClass} htmlFor="project-status-reason">
+          {reasonRequired ? `Why ${target.replace('_', ' ')}` : 'Reason (optional)'}
+        </label>
+        <textarea
+          id="project-status-reason"
+          name="reason"
+          required={reasonRequired}
+          maxLength={1000}
+          rows={2}
+          className={textareaClass}
+          placeholder={reasonRequired ? 'Required — shown on the project and recorded on the audit trail' : 'Recorded with the change'}
+        />
       </div>
       <Status state={state} />
     </form>

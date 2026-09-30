@@ -1,12 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { listHandoffs } from '@/lib/admin/agent-status';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { EmptyState, IconAgents, PageHeader, StatusBadge } from '@/ui';
+import { EmptyState, IconAgents, PageHeader, StatusBadge, PermissionDenied } from '@/ui';
 
 export const metadata: Metadata = { title: 'Automations' };
 
@@ -25,7 +24,7 @@ function when(clock: AgencyClock, value: string): string {
 export default async function AutomationsPage() {
   const context = await requireInternal('/agents/automations');
   const clock = await agencyClock();
-  if (!can(context.role, 'audit.read')) redirect('/dashboard');
+  if (!can(context, 'audit.read')) return <PermissionDenied />;
 
   const handoffs = await listHandoffs();
 

@@ -30,6 +30,8 @@ export type AgentRow = {
   disabledReason: string | null;
   definitionVersion: string | null;
   lastValidatedAt: string | null;
+  /** ADM-61 classes the owner allows (SCR-063). Empty = every class. */
+  allowedWorkClasses: string[];
 };
 
 export type AiStatus = {
@@ -49,7 +51,7 @@ export async function aiStatus(): Promise<AiStatus> {
     .schema('ai')
     .from('agents')
     .select(
-      'key, display_name, description, enabled, autonomy_level, default_model, default_effort, max_steps, max_cost_minor, disabled_reason, definition_version, last_validated_at',
+      'key, display_name, description, enabled, autonomy_level, default_model, default_effort, max_steps, max_cost_minor, disabled_reason, definition_version, last_validated_at, allowed_work_classes',
     )
     .order('key');
 
@@ -72,6 +74,7 @@ export async function aiStatus(): Promise<AiStatus> {
     disabledReason: a.disabled_reason,
     definitionVersion: a.definition_version,
     lastValidatedAt: a.last_validated_at,
+    allowedWorkClasses: a.allowed_work_classes ?? [],
   }));
 
   return { providerConfigured, providers, agents };
@@ -139,7 +142,7 @@ export async function getAgent(agentKey: string): Promise<AgentRow | null> {
     .schema('ai')
     .from('agents')
     .select(
-      'key, display_name, description, enabled, autonomy_level, default_model, default_effort, max_steps, max_cost_minor, disabled_reason, definition_version, last_validated_at',
+      'key, display_name, description, enabled, autonomy_level, default_model, default_effort, max_steps, max_cost_minor, disabled_reason, definition_version, last_validated_at, allowed_work_classes',
     )
     .eq('key', agentKey)
     .maybeSingle();
@@ -160,6 +163,7 @@ export async function getAgent(agentKey: string): Promise<AgentRow | null> {
     disabledReason: data.disabled_reason,
     definitionVersion: data.definition_version,
     lastValidatedAt: data.last_validated_at,
+    allowedWorkClasses: data.allowed_work_classes ?? [],
   };
 }
 
@@ -206,5 +210,43 @@ export async function listHandoffs(limit = 100): Promise<HandoffRow[]> {
     projectId: h.project_id,
     createdAt: h.created_at,
     completedAt: h.completed_at,
+  }));
+}
+
+export type RecentAgentRun = AgentRunRow & { agentKey: string };
+
+/**
+ * The most recent runs across every agent — the AI Workforce dashboard's
+ * activity feed. The same `ai.agent_runs` rows `listAgentRuns` reads for one
+ * agent, without the filter; RLS scopes them to the caller's organisation.
+ */
+export async function listRecentAgentRuns(limit = 8): Promise<RecentAgentRun[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('ai')
+    .from('agent_runs')
+    .select(
+      'id, agent_key, trigger, subject_type, subject_id, status, model, input_tokens, output_tokens, cost_minor, step_count, error, created_at',
+    )
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) unreadable('listRecentAgentRuns', error);
+
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    agentKey: r.agent_key,
+    trigger: r.trigger,
+    subjectType: r.subject_type,
+    subjectId: r.subject_id,
+    status: r.status,
+    model: r.model,
+    inputTokens: r.input_tokens,
+    outputTokens: r.output_tokens,
+    costMinor: r.cost_minor,
+    stepCount: r.step_count,
+    error: r.error,
+    createdAt: r.created_at,
   }));
 }

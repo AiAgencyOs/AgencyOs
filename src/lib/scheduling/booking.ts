@@ -44,7 +44,7 @@ export type Proposed = { message: string; leadId: string | null; slots: Slot[] }
 
 async function authorise(): Promise<Result<true>> {
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) return err('FORBIDDEN', 'Your role cannot offer or book a time; the owner or an ops admin can.');
+  if (!can(context, 'lead.write')) return err('FORBIDDEN', 'Your role cannot offer or book a time; the owner or an ops admin can.');
   return ok(true);
 }
 

@@ -1,12 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { packetSections, readiness, unresolvedSentences } from '@/modules/sales/handoff-view';
 import { readWonHandoffPacket } from '@/modules/sales/queries';
-import { Badge, Callout, Card, CardBody, CardHeader, EmptyState, IconArrowLeft, IconArrowUpRight, StatusBadge } from '@/ui';
+import { Badge, Callout, Card, CardBody, CardHeader, EmptyState, IconArrowLeft, IconArrowUpRight, StatusBadge, PermissionDenied } from '@/ui';
 
 export const metadata: Metadata = { title: 'Handoff packet' };
 
@@ -25,7 +24,7 @@ export const metadata: Metadata = { title: 'Handoff packet' };
 export default async function HandoffPage({ params }: { params: Promise<{ opportunityId: string }> }) {
   const { opportunityId } = await params;
   const context = await requireInternal(`/handoffs/${opportunityId}`);
-  if (!can(context.role, 'lead.read')) redirect('/dashboard');
+  if (!can(context, 'lead.read')) return <PermissionDenied />;
 
   const packet = await readWonHandoffPacket(opportunityId);
   if (!packet) {

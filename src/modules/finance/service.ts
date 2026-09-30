@@ -9,6 +9,8 @@ import { getBillableMilestone } from '@/modules/projects/service';
 import { toLadderProgress } from './ladder';
 
 import { billingReadiness, checkGstin, taxRateBpForMode, type BillingReadiness } from './gstin';
+import { lockedPeriodRefusal } from './tax-lock-schema';
+import { activeTaxLockCovering } from './tax-lock-service';
 
 import {
   applyPayment,
@@ -24,6 +26,12 @@ import {
   parseInvoiceSequence,
   recordManualPaymentSchema,
   recordPaymentSubmissionSchema,
+  createPaymentAccountSchema,
+  setPaymentAccountStatusSchema,
+  updateExpenseSchema,
+  type UpdateExpenseInput,
+  type CreatePaymentAccountInput,
+  type SetPaymentAccountStatusInput,
   verifyPaymentSubmissionSchema,
   type RecordPaymentSubmissionInput,
   type VerifyPaymentSubmissionInput,
@@ -131,7 +139,7 @@ export async function generateInvoiceFromMilestone(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.create')) {
+  if (!can(context, 'invoice.create')) {
     return err('FORBIDDEN', 'You do not have permission to raise invoices.');
   }
 
@@ -773,7 +781,7 @@ export async function issueInvoice(
   if (!parsed.success) return err('VALIDATION', 'Invalid issue request.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to issue invoices.');
   }
 
@@ -794,6 +802,12 @@ export async function issueInvoice(
   if (invoice.total_minor <= 0) {
     return err('CONFLICT', 'This invoice has no amount and cannot be issued.');
   }
+
+  // SCR-056: issuing stamps issued_at = now(), so today is the issue date; a
+  // locked reporting period (a filed return) cannot take a new invoice.
+  const issueLock = await activeTaxLockCovering(supabase, new Date().toISOString().slice(0, 10));
+  if (!issueLock.ok) return issueLock;
+  if (issueLock.data) return err('CONFLICT', lockedPeriodRefusal(issueLock.data, 'issued'));
 
   // The line items are no longer counted here. That was a second unlocked
   // round trip whose `error` was never read, so a failed read came back as
@@ -924,7 +938,7 @@ export async function recordManualPayment(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to record payments.');
   }
 
@@ -1130,7 +1144,7 @@ export async function voidInvoice(
   if (!parsed.success) return err('VALIDATION', 'A voided invoice needs a reason.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to void invoices.');
   }
 
@@ -1154,6 +1168,14 @@ export async function voidInvoice(
       'CONFLICT',
       'This invoice has payments recorded against it. Refund them before voiding.',
     );
+  }
+
+  // SCR-056: voiding an invoice issued into a locked (filed) period would
+  // change a figure already reported. Refused with the lock's note verbatim.
+  if (invoice.issued_at) {
+    const voidLock = await activeTaxLockCovering(supabase, invoice.issued_at.slice(0, 10));
+    if (!voidLock.ok) return voidLock;
+    if (voidLock.data) return err('CONFLICT', lockedPeriodRefusal(voidLock.data, 'voided'));
   }
 
   const note = `Voided: ${parsed.data.reason}`;
@@ -1226,7 +1248,7 @@ type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 type AdminClient = ReturnType<typeof createAdminClient>;
 
 const INVOICE_COLUMNS =
-  'id, organization_id, client_account_id, project_id, milestone_id, number, status, currency, total_minor, paid_minor, notes';
+  'id, organization_id, client_account_id, project_id, milestone_id, number, status, currency, total_minor, paid_minor, notes, issued_at';
 
 /**
  * The invoice a write is about to act on.
@@ -1479,7 +1501,7 @@ export async function requestRefund(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'refund.issue')) {
+  if (!can(context, 'refund.issue')) {
     return err('FORBIDDEN', 'Only an owner may ask for a refund.');
   }
 
@@ -1552,7 +1574,7 @@ export async function recordRefund(input: RecordRefundInput): Promise<Result<{ n
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'refund.issue')) {
+  if (!can(context, 'refund.issue')) {
     return err('FORBIDDEN', 'Only an owner may record a refund.');
   }
 
@@ -1660,7 +1682,7 @@ export async function verifyPayment(input: VerifyPaymentInput): Promise<Result<V
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to confirm payments.');
   }
 
@@ -1779,7 +1801,7 @@ export async function recordPaymentSubmission(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to record a payment claim.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -1854,7 +1876,7 @@ export async function verifyPaymentSubmission(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to verify a payment claim.');
   }
 
@@ -1919,7 +1941,7 @@ export async function confirmBillingMode(
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid billing mode.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.create')) {
+  if (!can(context, 'invoice.create')) {
     return err('FORBIDDEN', 'You do not have permission to set a billing mode.');
   }
 
@@ -1973,7 +1995,7 @@ export async function recordBillingDetails(
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.create')) {
+  if (!can(context, 'invoice.create')) {
     return err('FORBIDDEN', 'You do not have permission to record billing details.');
   }
 
@@ -2130,7 +2152,7 @@ export async function issueFreeMaintenanceInvoice(
   planId: string,
 ): Promise<Result<{ invoiceId: string; number: string; issued: boolean }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.create')) {
+  if (!can(context, 'invoice.create')) {
     return err('FORBIDDEN', 'You do not have permission to raise invoices.');
   }
 
@@ -2210,7 +2232,7 @@ export async function recordExpense(input: RecordExpenseInput): Promise<Result<{
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'invoice.issue')) {
+  if (!can(context, 'invoice.issue')) {
     return err('FORBIDDEN', 'You do not have permission to record an expense.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -2228,6 +2250,7 @@ export async function recordExpense(input: RecordExpenseInput): Promise<Result<{
       amount_minor: parsed.data.amountMinor,
       currency: parsed.data.currency ?? 'INR',
       incurred_on: parsed.data.incurredOn,
+      receipt_url: parsed.data.receiptUrl ?? null,
       recorded_by: context.userId,
     })
     .select('id')
@@ -2237,6 +2260,137 @@ export async function recordExpense(input: RecordExpenseInput): Promise<Result<{
     console.error(JSON.stringify({ level: 'error', scope: 'recordExpense', detail: error?.message }));
     return err('INTERNAL', 'Could not record the expense.');
   }
+
+  return ok({ expenseId: data.id });
+}
+
+/* ── receiving accounts — Doc 15 §9, SCR-057 ─────────────────────────────── */
+
+/**
+ * Adds a receiving account. Owner/ops_admin (the same two roles RLS's
+ * payment_accounts_write names and that record manual payments). Empty
+ * instruction fields are dropped so the JSON holds only what a person typed.
+ */
+export async function createPaymentAccount(
+  input: CreatePaymentAccountInput,
+): Promise<Result<{ accountId: string; label: string }>> {
+  const parsed = createPaymentAccountSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid payment account.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context, 'invoice.issue')) {
+    return err('FORBIDDEN', 'You do not have permission to manage receiving accounts.');
+  }
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const instructions: Record<string, string> = {};
+  for (const [key, value] of Object.entries(parsed.data.instructions)) {
+    if (value.trim()) instructions[key] = value.trim();
+  }
+  if (Object.keys(instructions).length === 0) {
+    return err('VALIDATION', 'Say how a client pays into this account — at least one detail is needed.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('finance')
+    .from('payment_accounts')
+    .insert({
+      organization_id: context.organizationId,
+      kind: parsed.data.kind,
+      label: parsed.data.label,
+      instructions,
+      created_by: context.userId,
+      ...(parsed.data.effectiveFrom ? { effective_from: parsed.data.effectiveFrom } : {}),
+    })
+    .select('id, label')
+    .single();
+
+  if (error || !data) {
+    console.error(JSON.stringify({ level: 'error', scope: 'createPaymentAccount', detail: error?.message }));
+    return err('INTERNAL', error?.message ?? 'Could not add the receiving account.');
+  }
+
+  return ok({ accountId: data.id, label: data.label });
+}
+
+/**
+ * Activates or deactivates a receiving account — §9 asks for it by name and
+ * it is the one edit the database allows once a claim has named the account.
+ * Deactivating also closes the effective window so history says when it
+ * stopped being offered.
+ */
+export async function setPaymentAccountStatus(
+  input: SetPaymentAccountStatusInput,
+): Promise<Result<{ accountId: string; status: 'active' | 'inactive' }>> {
+  const parsed = setPaymentAccountStatusSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid request.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context, 'invoice.issue')) {
+    return err('FORBIDDEN', 'You do not have permission to manage receiving accounts.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('finance')
+    .from('payment_accounts')
+    .update({
+      status: parsed.data.status,
+      effective_to: parsed.data.status === 'inactive' ? new Date().toISOString() : null,
+    })
+    .eq('id', parsed.data.accountId)
+    .select('id, status')
+    .maybeSingle();
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setPaymentAccountStatus', detail: error.message }));
+    return err('INTERNAL', error.message);
+  }
+  if (!data) return err('NOT_FOUND', 'That receiving account is not visible to you.');
+
+  return ok({ accountId: data.id, status: data.status === 'inactive' ? 'inactive' : 'active' });
+}
+
+/** SCR-055 — correct an expense. Owner/ops_admin, the same two RLS (expenses_write, is_admin) names. */
+export async function updateExpense(input: UpdateExpenseInput): Promise<Result<{ expenseId: string }>> {
+  const parsed = updateExpenseSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid expense.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context, 'invoice.issue')) {
+    return err('FORBIDDEN', 'You do not have permission to edit an expense.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('finance')
+    .from('expenses')
+    .update({
+      project_id: parsed.data.projectId ?? null,
+      category: parsed.data.category,
+      vendor: parsed.data.vendor ?? null,
+      description: parsed.data.description,
+      amount_minor: parsed.data.amountMinor,
+      incurred_on: parsed.data.incurredOn,
+      receipt_url: parsed.data.receiptUrl ?? null,
+      ...(parsed.data.currency ? { currency: parsed.data.currency } : {}),
+    })
+    .eq('id', parsed.data.expenseId)
+    .select('id')
+    .maybeSingle();
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'updateExpense', detail: error.message }));
+    return err('INTERNAL', 'Could not save the expense.');
+  }
+  if (!data) return err('NOT_FOUND', 'That expense is not visible to you.');
 
   return ok({ expenseId: data.id });
 }

@@ -1,8 +1,13 @@
 import type { Metadata } from 'next';
 
+import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
+import { normaliseSearch } from '@/lib/db/search';
+import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { listInternalRoster, listInternalRosterWithRoles, listTeamDefaults } from '@/modules/projects/queries';
+import { listMemberCostRates, type CostRateAccess } from '@/modules/team/cost-rate-queries';
+import { DomainSearch, SearchSummary } from '@/ui';
 
 import { DefaultDesignReviewerForm, ProjectGroupIdentifierForm } from '../forms';
 import { MemberRolesPanel } from '../member-roles-panel';
@@ -10,14 +15,30 @@ import { TeamRosterPanel } from '../team-roster-panel';
 
 export const metadata: Metadata = { title: 'Settings — Team' };
 
-export default async function SettingsTeamPage() {
-  await requireInternal('/settings');
+export default async function SettingsTeamPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+  const context = await requireInternal('/settings');
+  // Search within domain (bucket G-3): a person's name or email, filtered by the reader.
+  const { q: qRaw } = await searchParams;
+  const q = normaliseSearch(qRaw);
 
   // G-267 — the people every new project group card is prepared with.
   const teamDefaults = await listTeamDefaults();
   const roster = await listInternalRoster();
   // G-310 — the same roster, with each person's additional roles attached.
-  const rosterWithRoles = await listInternalRosterWithRoles();
+  const rosterWithRoles = await listInternalRosterWithRoles(q || undefined);
+  // Decision E2 of 2026-09-30 — a person's cost rate, private to management.
+  // `organization.settings` is the owner's alone (they set); `audit.read` is
+  // owner and ops_admin, the pair member_cost_rates_select admits (they see);
+  // everybody else does not get the column, and the read is not even made.
+  const costRateAccess: CostRateAccess = can(context, 'organization.settings')
+    ? 'set'
+    : can(context, 'audit.read')
+      ? 'view'
+      : 'none';
+  const [costRates, clock] = await Promise.all([
+    costRateAccess === 'none' ? Promise.resolve({}) : listMemberCostRates(),
+    agencyClock(),
+  ]);
 
   const supabase = await createClient();
   const { data: orgRows } = await supabase
@@ -34,7 +55,7 @@ export default async function SettingsTeamPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">Project group names</h2>
         {/*
           G-188. Four of the five parts are facts about the project — its name,
@@ -61,7 +82,12 @@ export default async function SettingsTeamPage() {
         their primary one; see the panel's own comment for exactly what that
         does and does not affect.
       */}
-      <MemberRolesPanel members={rosterWithRoles} />
+      {/* Search within domain (bucket G-3): the roster below, by name or email, filtered by the reader. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <DomainSearch action="/settings/team" value={q} placeholder="Search name or email…" label="Search team" />
+        <SearchSummary q={q} count={rosterWithRoles.length} clearHref="/settings/team" />
+      </div>
+      <MemberRolesPanel members={rosterWithRoles} costRates={costRates} costRateAccess={costRateAccess} today={clock.dayKey(new Date())} />
 
       {/*
         Designer §4, G-300. The gate refuses until a named person holds it, and
@@ -69,7 +95,7 @@ export default async function SettingsTeamPage() {
         A default removes that, and deliberately does not govern: see the
         wording in the form.
       */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">Who reviews design work</h2>
         <p className="text-xs text-muted">
           The internal design gate refuses until somebody specific holds it — a capability check

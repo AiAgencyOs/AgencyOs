@@ -45,7 +45,7 @@ async function designActor(): Promise<Result<true>> {
   const context = await requireInternal();
   // The same capability that governs the project. Phase 3 is project work, and
   // no new capability was invented for it — the doors hold the finer rules.
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to change this project’s design work.');
   }
   return ok(true);

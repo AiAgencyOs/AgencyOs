@@ -57,7 +57,10 @@ describe('the agency signs its own name', () => {
     assert.match(forms, /export function OrganizationNameForm/);
     assert.match(forms, /setOrganizationNameAction/);
     const page = read('../app/(internal)/settings/page.tsx');
-    assert.match(page, /<OrganizationNameForm current=\{organizationName\} \/>/);
+    // Bucket F (F-F, SCR-071): the rename is a high-risk setting, so the page
+    // mounts the preview-impact variant, which posts to the same action.
+    assert.match(page, /<OrganizationNameFormWithPreview current=\{organizationName\} impact=\{impact\.name\} \/>/);
+    assert.match(read('../app/(internal)/settings/high-risk-forms.tsx'), /useActionState\(setOrganizationNameAction, IDLE_STATE\)/);
     assert.match(page, /Agency name/);
   });
 

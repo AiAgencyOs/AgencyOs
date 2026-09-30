@@ -283,7 +283,8 @@ describe('D. onboarding → active refuses through the generic door', () => {
       readOutcome = { data: { id: ID, organization_id: 'o', status: 'onboarding' }, error: null };
       seen.patches = [];
 
-      const result = await setProjectStatus({ projectId: ID, status: to });
+      // 20260929140000: a pause says why — on_hold and cancelled carry a reason now.
+      const result = await setProjectStatus({ projectId: ID, status: to, reason: 'Client asked to stop for now' });
 
       assert.equal(result.ok, true, `onboarding -> ${to} should still succeed: ${JSON.stringify(result)}`);
       assert.equal(seen.patches.length, 1, `onboarding -> ${to} should still write`);

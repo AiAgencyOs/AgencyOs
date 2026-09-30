@@ -2,13 +2,19 @@ import type { Metadata } from 'next';
 
 import { reactivationSummary } from '@/lib/admin/reactivation-summary';
 import { requireInternal } from '@/lib/auth/session';
+import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
+import { listAnnouncements } from '@/modules/crm/announcements-queries';
 import { readInternalGroup, readInternalRecipient } from '@/modules/crm/queries';
+import { listWhatsAppTemplates, listWhatsAppTemplateVersions } from '@/modules/crm/template-queries';
+import { agencyClock } from '@/lib/admin/agency-clock';
+import { Badge, Stat, StatGrid, StatusBadge } from '@/ui';
 
 import {
   InternalGroupForm,
   InternalRecipientForm,
   OutreachLimitsForm,
+  OutreachWindowForm,
   PilotToggleForm,
   ReactivationCapForm,
   SendWhatsAppTestForm,
@@ -18,11 +24,12 @@ import {
   WhatsAppNumberForm,
   WhatsAppTemplatesForm,
 } from '../forms';
+import { AnnouncementsPanel } from './announcements-panel';
 
 export const metadata: Metadata = { title: 'Settings — Communication' };
 
 export default async function SettingsCommunicationPage() {
-  await requireInternal('/settings');
+  const context = await requireInternal('/settings');
 
   const supabase = await createClient();
   const { data: orgRows } = await supabase.schema('core').from('organizations').select('settings').limit(1);
@@ -66,6 +73,17 @@ export default async function SettingsCommunicationPage() {
 
   const reactivation = await reactivationSummary();
 
+  // SCR-017/057 — announcements: a record, never a send.
+  const announcements = await listAnnouncements({ limit: 50 });
+
+  // SCR-059 — the registry by the numbers, and its history. Categories are
+  // the situations a template answers; languages are what it answers in.
+  const clock = await agencyClock();
+  const [allTemplates, templateVersions] = await Promise.all([listWhatsAppTemplates(), listWhatsAppTemplateVersions(50)]);
+  const categories = new Set(allTemplates.map((t) => t.situationKey)).size;
+  const languages = new Set(allTemplates.map((t) => t.languageCode)).size;
+  const approved = allTemplates.filter((t) => t.status === 'approved' && t.active).length;
+
   return (
     <div className="flex flex-col gap-5">
       {/*
@@ -74,7 +92,7 @@ export default async function SettingsCommunicationPage() {
         — an approval waiting, a conversation handed to a person — answered
         `no_group` and went nowhere.
       */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">Internal group</h2>
         <p className="text-xs text-muted">
           Where the agent asks for a person — an approval that needs deciding, a client it has
@@ -92,7 +110,7 @@ export default async function SettingsCommunicationPage() {
         prefer the person, because a channel that delivers outranks one that
         cannot.
       */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">Announcements number</h2>
         <p className="text-xs text-muted">
           A person&rsquo;s own WhatsApp — approvals with the full quotation and its PDF, and
@@ -102,7 +120,39 @@ export default async function SettingsCommunicationPage() {
         <InternalRecipientForm current={internalRecipient} />
       </div>
 
-      <div className="flex flex-col gap-2">
+      {/*
+        SCR-017/057/059. An announcement is RECORDED here — drafted,
+        published, archived, each audited — and shown read-only on the
+        Communication Center and on every Client 360. It is not sent:
+        WhatsApp broadcast is declined on record (traceability row 59), and
+        no other channel exists for a message to many people at once.
+      */}
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
+        <h2 className="text-[13px] font-semibold tracking-tight">Announcements</h2>
+        <p className="text-xs text-muted">
+          What the agency announced, to the team or to clients, and when. Publishing records the announcement so the
+          Communication Center and each client&rsquo;s page can show it; <span className="font-medium">nothing is
+          sent</span> — WhatsApp broadcast is declined on record (traceability row 59).
+        </p>
+        <AnnouncementsPanel
+          canWrite={can(context, 'organization.settings')}
+          announcements={announcements.map((a) => ({
+            id: a.id,
+            title: a.title,
+            body: a.body,
+            audience: a.audience,
+            status: a.status,
+            when:
+              a.status === 'published' && a.publishedAt
+                ? `published ${clock.dateTime(a.publishedAt)}`
+                : a.status === 'archived' && a.archivedAt
+                  ? `archived ${clock.dateTime(a.archivedAt)}`
+                  : `drafted ${clock.dateTime(a.createdAt)}`,
+          }))}
+        />
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">Messages outside the 24-hour window</h2>
         <p className="text-xs text-muted">
           WhatsApp only carries a free-form message within 24 hours of the client&rsquo;s last message.
@@ -110,7 +160,40 @@ export default async function SettingsCommunicationPage() {
           be delivered as a template Meta has approved. Register which approved template answers which
           situation; the wording itself lives at Meta.
         </p>
+        <StatGrid>
+          <Stat label="Templates" value={allTemplates.length} caption="registered, any status" />
+          <Stat label="Approved" value={approved} tone={approved > 0 ? 'success' : 'neutral'} caption="active and approved by Meta" />
+          <Stat label="Categories" value={categories} caption="situations with a template" />
+          <Stat label="Languages" value={languages} caption="distinct language codes" />
+        </StatGrid>
         <WhatsAppTemplatesForm registered={whatsappTemplates} />
+
+        <h2 className="text-[13px] font-semibold tracking-tight">Template history</h2>
+        <p className="text-xs text-muted">
+          Every change to a registration, newest first, as <code className="text-xs">crm.whatsapp_template_versions</code> recorded it.
+        </p>
+        {templateVersions.length === 0 ? (
+          <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] text-muted">No change has been recorded yet.</p>
+        ) : (
+          <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-surface">
+            {templateVersions.map((v) => (
+              <li key={v.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2.5 text-[13px]">
+                <span className="flex flex-wrap items-center gap-2">
+                  <code className="text-xs">{v.templateName}</code>
+                  <Badge tone="neutral">{v.languageCode}</Badge>
+                  <StatusBadge status={v.status} />
+                  {!v.active ? <Badge tone="neutral">inactive</Badge> : null}
+                  {v.parameters.length > 0 ? <span className="text-xs text-muted">{v.parameters.join(', ')}</span> : null}
+                </span>
+                <span className="text-xs text-muted">
+                  {clock.dateTime(v.recordedAt)}
+                  {v.changedBy ? ` · by ${v.changedBy.slice(0, 8)}` : ''}
+                  {v.changeReason ? ` · ${v.changeReason}` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
 
         <h2 className="text-[13px] font-semibold tracking-tight">How often AgencyOS starts a conversation</h2>
         <p className="text-xs text-muted">
@@ -120,6 +203,14 @@ export default async function SettingsCommunicationPage() {
           person would choose rather than what a campaign would like.
         </p>
         <OutreachLimitsForm limits={outreachLimits} />
+
+        <h2 className="text-[13px] font-semibold tracking-tight">When AgencyOS may send</h2>
+        <p className="text-xs text-muted">
+          {setting('outreach_window_start_hour') && setting('outreach_window_end_hour')
+            ? `Set — follow-ups go out between ${setting('outreach_window_start_hour')}:00 and ${setting('outreach_window_end_hour')}:00 in the agency’s timezone, on business days.`
+            : 'Not set — follow-ups go out between 10:00 and 19:00 in the agency’s timezone, on business days. A follow-up that falls due outside these hours waits for the next opening.'}
+        </p>
+        <OutreachWindowForm start={setting('outreach_window_start_hour')} end={setting('outreach_window_end_hour')} />
 
         <h2 className="text-[13px] font-semibold tracking-tight">How quickly the agent answers</h2>
         <p className="text-xs text-muted">
@@ -169,7 +260,7 @@ export default async function SettingsCommunicationPage() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">WhatsApp</h2>
         <p className="text-xs text-muted">
           Whether the tokens are set is shown on the General tab. This checks the number itself with Meta — a

@@ -23,7 +23,7 @@ export default async function SettingsApprovalsPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">Who must approve what</h2>
         <p className="text-xs text-muted">
           A quotation cannot be submitted until a policy covers it — with none, the queue would

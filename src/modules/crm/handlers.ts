@@ -2,6 +2,7 @@ import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
 
+import { OUTBOUND_PAUSED, outboundPaused } from './kill-switch';
 import { deferSend, markAsOutreach, planOutbound } from './outbound-window';
 
 import {
@@ -503,7 +504,7 @@ export async function handleApprovalRequested(
 
   const queued = (Array.isArray(data) ? data[0] : data) as
     | {
-        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent';
+        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent' | 'outbound_paused';
         message_id: string | null;
         to_phone: string | null;
         from_phone_number_id: string | null;
@@ -515,6 +516,7 @@ export async function handleApprovalRequested(
   if (!queued) {
     return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
   }
+  if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
 
   if (queued.outcome === 'not_found') {
     // The group was read a moment ago and is gone now. Permanent: a retry
@@ -763,7 +765,10 @@ async function renderQuotationDocument(
       // so a line drafted before the column existed draws exactly as it did.
       ...(Array.isArray(i.serves) ? { serves: i.serves as string[] } : {}),
   }));
-  const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems);
+  const { quotationValidityDays } = await import('@/lib/admin/operational-defaults');
+  const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems, {
+    validityDays: quotationValidityDays(org.settings as Record<string, unknown> | null),
+  });
 
   try {
     const rendered = await renderQuotationPdf({
@@ -901,7 +906,7 @@ async function announceQuotationPdf(
 
   const queued = (Array.isArray(data) ? data[0] : data) as
     | {
-        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent' | 'bad_shape';
+        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent' | 'bad_shape' | 'outbound_paused';
         message_id: string | null;
         to_phone: string | null;
         from_phone_number_id: string | null;
@@ -913,6 +918,7 @@ async function announceQuotationPdf(
   if (!queued) {
     return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing for the document' };
   }
+  if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
   if (queued.outcome === 'not_found') {
     return { status: 'failed', permanent: true, detail: 'the internal group no longer exists' };
   }
@@ -1060,7 +1066,7 @@ export async function deliverFollowUp(admin: Admin, job: AnnounceJob): Promise<H
 
   const queued = (Array.isArray(data) ? data[0] : data) as
     | {
-        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent';
+        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent' | 'outbound_paused';
         message_id: string | null;
         to_phone: string | null;
         from_phone_number_id: string | null;
@@ -1070,6 +1076,7 @@ export async function deliverFollowUp(admin: Admin, job: AnnounceJob): Promise<H
     | undefined;
 
   if (!queued) return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
+  if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
 
   if (queued.outcome === 'not_found') {
     return { status: 'failed', permanent: true, detail: 'the conversation no longer exists' };
@@ -1315,6 +1322,7 @@ export async function handleConversationEscalated(
   if (!queued) {
     return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
   }
+  if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
 
   if (queued.outcome === 'not_found') {
     return { status: 'failed', permanent: true, detail: 'the internal channel no longer exists' };
@@ -1504,6 +1512,7 @@ export async function handleRevisionLimitEscalated(
   if (!queued) {
     return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
   }
+  if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
 
   if (queued.outcome === 'not_found') {
     return { status: 'failed', permanent: true, detail: 'the internal channel no longer exists' };
@@ -1663,6 +1672,7 @@ export async function handlePhaseThreeCompleted(
   if (!queued) {
     return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
   }
+  if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
 
   if (queued.outcome === 'not_found') {
     return { status: 'failed', permanent: true, detail: 'the internal channel no longer exists' };
@@ -1790,6 +1800,7 @@ async function announceToInternalChannel(
   if (!queued) {
     return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
   }
+  if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
   if (queued.outcome === 'not_found') {
     return { status: 'failed', permanent: true, detail: 'the internal channel no longer exists' };
   }
@@ -2364,7 +2375,7 @@ export async function dispatchApprovedQuotation(
   }
 
   type Queued = {
-    outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent' | 'bad_shape';
+    outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent' | 'bad_shape' | 'outbound_paused';
     message_id: string | null;
     to_phone: string | null;
     from_phone_number_id: string | null;
@@ -2377,6 +2388,7 @@ export async function dispatchApprovedQuotation(
   if (!queued) {
     return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
   }
+  if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
   if (queued.outcome === 'not_found') {
     return { status: 'failed', permanent: true, detail: 'the conversation no longer exists' };
   }
@@ -2560,6 +2572,7 @@ export async function dispatchApprovedQuotation(
         detail: 'send_outbound_message answered nothing for the document',
       };
     }
+    if (doc.outcome === OUTBOUND_PAUSED) return outboundPaused();
 
     if (doc.outcome === 'not_found') {
       return { status: 'failed', permanent: true, detail: 'the conversation no longer exists' };
@@ -2811,6 +2824,7 @@ export async function announceOfferApplied(admin: Admin, job: AnnounceJob): Prom
   if (!queued || queued.outcome === 'not_found') {
     return { status: 'failed', permanent: true, detail: 'the internal channel no longer exists' };
   }
+  if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
   if (queued.outcome === 'already_sent') {
     return { status: 'succeeded', outcome: 'already_announced', detail: 'the owner was already told' };
   }

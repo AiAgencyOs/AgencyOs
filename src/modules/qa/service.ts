@@ -18,6 +18,8 @@ import {
   type RemoveTestPlanItemInput,
   recordTestRunSchema,
   type RecordTestRunInput,
+  triageDefectSchema,
+  type TriageDefectInput,
 } from './schema';
 
 /**
@@ -44,7 +46,7 @@ export async function raiseDefect(input: RaiseDefectInput): Promise<Result<{ def
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to raise defects.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
@@ -65,6 +67,7 @@ export async function raiseDefect(input: RaiseDefectInput): Promise<Result<{ def
       actual: parsed.data.actual ?? null,
       environment: parsed.data.environment ?? null,
       evidence_url: parsed.data.evidenceUrl ?? null,
+      run_id: parsed.data.runId ?? null,
       reported_by: context.userId,
     })
     .select('id')
@@ -97,7 +100,7 @@ export async function settleDefect(input: SettleDefectInput): Promise<Result<{ s
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to change defects.');
   }
 
@@ -143,7 +146,8 @@ export async function settleDefect(input: SettleDefectInput): Promise<Result<{ s
 
 /** The row `projects.mark_production_ready` returns. */
 type ProductionReadyRow = {
-  outcome: 'ready' | 'already_ready' | 'not_found' | 'not_ready';
+  /** `held` (SCR-044, 20260929190000): a release hold stands; `unmet` carries its reason. */
+  outcome: 'ready' | 'already_ready' | 'not_found' | 'not_ready' | 'held' | 'payment_unverified';
   unmet: string[] | null;
 };
 
@@ -177,7 +181,7 @@ export async function markProductionReady(projectId: string): Promise<Result<{ r
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.sign_off')) {
+  if (!can(context, 'project.sign_off')) {
     return err('FORBIDDEN', 'You do not have permission to sign a project off.');
   }
 
@@ -221,6 +225,20 @@ export async function markProductionReady(projectId: string): Promise<Result<{ r
       return err('CONFLICT', `This project is not production ready: ${reasons.join(', ')}.`);
     }
 
+    // Decision F1 (2026-09-30): the final payment is not verified. unmet
+    // carries the invoice number (or 'no invoice') and the milestone name.
+    case 'payment_unverified': {
+      const [invoice, milestone] = row.unmet ?? [];
+      return err(
+        'CONFLICT',
+        `The final payment is not verified: ${invoice && invoice !== 'no invoice' ? `invoice ${invoice}` : 'no invoice'}${milestone ? ` for milestone "${milestone}"` : ''} is not paid, net-verified or claim-verified. Verify it on Finance › Payments, or the owner records an override with a reason on the Release tab.`,
+      );
+    }
+
+    // SCR-044: a person's hold, quoted in their words. Lifted on the Release tab.
+    case 'held':
+      return err('CONFLICT', `A release hold is on this project: "${(row.unmet ?? []).join(' ')}". Lift it on the Release tab before signing off.`);
+
     default:
       console.error(
         JSON.stringify({
@@ -244,7 +262,7 @@ export async function draftTestPlan(input: DraftTestPlanInput): Promise<Result<{
   if (!parsed.success) return err('VALIDATION', 'Invalid scope baseline.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to draft a test plan.');
   }
 
@@ -282,7 +300,7 @@ export async function addTestPlanItem(input: AddTestPlanItemInput): Promise<Resu
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to edit a test plan.');
   }
 
@@ -293,6 +311,9 @@ export async function addTestPlanItem(input: AddTestPlanItemInput): Promise<Resu
     p_category: parsed.data.category,
     p_reason: parsed.data.reason,
     p_critical_path: parsed.data.criticalPath,
+    ...(parsed.data.preconditions ? { p_preconditions: parsed.data.preconditions } : {}),
+    ...(parsed.data.steps ? { p_steps: parsed.data.steps } : {}),
+    ...(parsed.data.expectedResult ? { p_expected_result: parsed.data.expectedResult } : {}),
   });
 
   if (error) {
@@ -308,6 +329,8 @@ export async function addTestPlanItem(input: AddTestPlanItemInput): Promise<Resu
       return ok({ itemId: row.id });
     case 'already_planned':
       return err('CONFLICT', 'This item already has that category planned.');
+    case 'plan_approved':
+      return err('CONFLICT', 'This plan is approved; what was approved is what is tested.');
     case 'wrong_baseline':
       return err('VALIDATION', 'That scope item is not part of this plan’s baseline.');
     case 'bad_category':
@@ -326,7 +349,7 @@ export async function removeTestPlanItem(input: RemoveTestPlanItemInput): Promis
   if (!parsed.success) return err('VALIDATION', 'Invalid test plan item.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'project.write')) {
+  if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to edit a test plan.');
   }
 
@@ -345,6 +368,8 @@ export async function removeTestPlanItem(input: RemoveTestPlanItemInput): Promis
   switch (row?.outcome) {
     case 'removed':
       return ok({ removed: true });
+    case 'plan_approved':
+      return err('CONFLICT', 'This plan is approved; what was approved is what is tested.');
     case 'not_found':
       return err('NOT_FOUND', 'Item not found.');
     default:
@@ -366,7 +391,7 @@ export async function recordTestRun(input: RecordTestRunInput): Promise<Result<{
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'task.write')) {
+  if (!can(context, 'task.write')) {
     return err('FORBIDDEN', 'You do not have permission to record test evidence.');
   }
 
@@ -379,6 +404,10 @@ export async function recordTestRun(input: RecordTestRunInput): Promise<Result<{
     p_failed: parsed.data.failed,
     p_skipped: parsed.data.skipped,
     ...(parsed.data.evidenceUrl ? { p_evidence_url: parsed.data.evidenceUrl } : {}),
+    ...(parsed.data.device ? { p_device: parsed.data.device } : {}),
+    ...(parsed.data.browser ? { p_browser: parsed.data.browser } : {}),
+    ...(parsed.data.os ? { p_os: parsed.data.os } : {}),
+    ...(parsed.data.perfNotes ? { p_perf_notes: parsed.data.perfNotes } : {}),
   });
 
   if (error) {
@@ -403,4 +432,78 @@ export async function recordTestRun(input: RecordTestRunInput): Promise<Result<{
     default:
       return err('FORBIDDEN', 'You do not have permission to record test evidence.');
   }
+}
+
+/**
+ * Triage — assigns a defect to a developer and/or changes its severity.
+ * Severity is what the delivery gate reads (`blocksDelivery`), so a change
+ * to it must say why; the reason is appended to the resolution trail rather
+ * than replacing it. Status is not touched: `settleDefect` owns that.
+ */
+export async function triageDefect(input: TriageDefectInput): Promise<Result<{ defectId: string }>> {
+  const parsed = triageDefectSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid triage.');
+
+  const context = await requireInternal();
+  if (!can(context, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to triage defects.');
+  }
+
+  const supabase = await createClient();
+  const { data: defect } = await supabase
+    .schema('qa')
+    .from('defects')
+    .select('id, organization_id, severity, resolution, status')
+    .eq('id', parsed.data.defectId)
+    .eq('project_id', parsed.data.projectId)
+    .maybeSingle();
+  if (!defect) return err('NOT_FOUND', 'Defect not found.');
+  if (defect.status === 'verified' || defect.status === 'wontfix') {
+    return err('CONFLICT', 'A settled defect is not triaged; reopen it first.');
+  }
+
+  const severityChanged = defect.severity !== parsed.data.severity;
+  if (severityChanged && !parsed.data.reason) {
+    return err('VALIDATION', 'Say why the severity changes.');
+  }
+
+  if (parsed.data.assigneeId) {
+    const { data: member } = await supabase
+      .schema('core')
+      .from('memberships')
+      .select('user_id')
+      .eq('organization_id', defect.organization_id)
+      .eq('user_id', parsed.data.assigneeId)
+      .maybeSingle();
+    if (!member) return err('VALIDATION', 'That person is not a member of this organisation.');
+  }
+
+  // SCR-047: the linked task must be one of this project's — the FK alone
+  // would accept any task in the organization.
+  if (parsed.data.taskId) {
+    const { data: task, error: taskError } = await supabase
+      .schema('projects')
+      .from('tasks')
+      .select('id')
+      .eq('id', parsed.data.taskId)
+      .eq('project_id', parsed.data.projectId)
+      .maybeSingle();
+    if (taskError) return err('INTERNAL', 'Could not check the task.');
+    if (!task) return err('VALIDATION', 'That task is not on this project.');
+  }
+
+  const note = severityChanged ? `Severity ${defect.severity} → ${parsed.data.severity}: ${parsed.data.reason}` : null;
+  const { error } = await supabase
+    .schema('qa')
+    .from('defects')
+    .update({
+      assignee_id: parsed.data.assigneeId,
+      severity: parsed.data.severity,
+      ...(parsed.data.taskId !== undefined ? { task_id: parsed.data.taskId } : {}),
+      ...(note ? { resolution: defect.resolution ? `${defect.resolution}\n${note}` : note } : {}),
+    })
+    .eq('id', defect.id);
+  if (error) return err('INTERNAL', 'Could not triage the defect.');
+
+  return ok({ defectId: defect.id });
 }

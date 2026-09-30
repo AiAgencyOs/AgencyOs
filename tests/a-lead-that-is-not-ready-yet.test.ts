@@ -123,7 +123,7 @@ describe('C. who may put a lead there', () => {
     // Deciding somebody is not ready is a reading of their intent, and
     // business rules §5 makes treating a client's word as a fact one of the
     // five things no agent may do at any level.
-    assert.match(SERVICE, /export async function setLeadStatus\([\s\S]{0,600}?requireInternal\(\)[\s\S]{0,200}?can\(context\.role, 'lead\.write'\)/);
+    assert.match(SERVICE, /export async function setLeadStatus\([\s\S]{0,600}?requireInternal\(\)[\s\S]{0,200}?can\(context, 'lead\.write'\)/);
   });
 
   test('and nothing in the agent workflows writes this status', () => {

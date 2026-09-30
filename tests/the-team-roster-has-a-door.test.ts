@@ -147,8 +147,8 @@ describe('C. the guards every door in this repository carries', () => {
 
 describe('D. the service refuses what the door would, one layer earlier', () => {
   test('every write is owner-gated, because the roster is the agency’s own', () => {
-    assert.equal((ROSTER.match(/can\(context\.role, 'organization\.settings'\)/g) ?? []).length, 3);
-    assert.match(LAYOUT, /can\(context\.role, 'organization\.settings'\)/);
+    assert.equal((ROSTER.match(/can\(context, 'organization\.settings'\)/g) ?? []).length, 3);
+    assert.match(LAYOUT, /can\(context, 'organization\.settings'\)/);
   });
 
   test('already_listed is a success, not an error', () => {

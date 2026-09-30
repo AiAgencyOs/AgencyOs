@@ -5,6 +5,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 import { createAdminClient } from '@/lib/db/admin';
 import type { createClient } from '@/lib/db/server';
 import { serverEnv } from '@/lib/env';
+import { hasRole, type RoleSubject } from '@/lib/authz/permissions';
 import { err, ok, type Result } from '@/lib/result';
 
 /**
@@ -81,6 +82,43 @@ export async function setProviderCredential(
 
   if (error) return err('INTERNAL', `Could not store the key: ${error.message}`);
   return ok(undefined);
+}
+
+/**
+ * Owner-entered, owner-only — SCR-064's "revoke". Stricter than storing
+ * (is_admin): losing a key stops every agent routed to that vendor.
+ *
+ * Goes through `ai.revoke_provider_credential` rather than a bare DELETE so
+ * the removal and its audit row (`provider_credential.revoked`: who set it,
+ * when, never what) commit together; the function is security invoker, so
+ * `provider_credentials_admin_rw` decides again. The caller's role is checked
+ * here too, as the app-layer half. Nothing about the key is read, returned
+ * or logged.
+ */
+export async function deleteProviderCredential(
+  supabase: RequestClient,
+  provider: VaultProvider,
+  subject: RoleSubject,
+): Promise<Result<{ provider: VaultProvider }>> {
+  if (!VAULT_PROVIDERS.includes(provider)) return err('VALIDATION', `Unknown provider "${provider}".`);
+  // Decision 2026-09-30 (F2): the union — a secondary owner is an owner here.
+  if (!hasRole(subject, 'owner')) return err('FORBIDDEN', 'Only the owner may revoke a provider key.');
+
+  const { data, error } = await supabase.schema('ai').rpc('revoke_provider_credential', { p_provider: provider });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'deleteProviderCredential', provider, detail: error.message }));
+    return err('INTERNAL', 'Could not revoke the key.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+  switch (row?.outcome) {
+    case 'revoked':
+      return ok({ provider });
+    case 'not_found':
+      return err('NOT_FOUND', `No ${provider} key is stored in the vault. An env-set key cannot be revoked from here.`);
+    default:
+      return err('FORBIDDEN', 'Only the owner may revoke a provider key.');
+  }
 }
 
 export type ProviderCredentialStatus = { provider: string; configured: boolean; updatedAt: string | null };

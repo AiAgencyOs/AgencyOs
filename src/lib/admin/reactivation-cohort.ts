@@ -48,7 +48,7 @@ export async function enrollLeadInReactivation(id: string): Promise<Result<{ enr
   if (!parsed.success) return err('VALIDATION', 'That is not a valid lead id.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to manage the reactivation cohort.');
   }
 
@@ -70,7 +70,7 @@ export async function removeLeadFromReactivation(id: string): Promise<Result<{ e
   if (!parsed.success) return err('VALIDATION', 'That is not a valid lead id.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to manage the reactivation cohort.');
   }
 
@@ -126,7 +126,7 @@ export async function enrolReactivationBatch(
   if (!parsed.success) return err('VALIDATION', 'That is not a valid import batch id.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to enrol leads for reactivation.');
   }
 
@@ -175,7 +175,7 @@ export async function withdrawReactivationBatch(batchId: string): Promise<Result
   if (!parsed.success) return err('VALIDATION', 'That is not a valid import batch id.');
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change the reactivation cohort.');
   }
 

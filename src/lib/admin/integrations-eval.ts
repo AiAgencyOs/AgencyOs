@@ -32,6 +32,18 @@ export type IntegrationSignals = {
   transcriberConfigured: Avail<boolean>;
   imageGeneratorConfigured: Avail<boolean>;
   alertWebhookConfigured: boolean;
+  /**
+   * Live Git — Decision: reversed by the owner on 2026-09-29. Whether a
+   * GITHUB_TOKEN is present (never its value) and how many projects have
+   * linked a repository. Optional so an older caller still evaluates.
+   */
+  github?: {
+    tokenConfigured: boolean;
+    linkedRepositories: Avail<number>;
+    /** Bucket F — the token's scopes as GitHub states them (null: fine-grained token, none stated); undefined when unread. */
+    scopes?: string[] | null;
+    mayWrite?: boolean;
+  };
 };
 
 export function evaluateIntegrations(s: IntegrationSignals): Integration[] {
@@ -140,6 +152,40 @@ export function evaluateIntegrations(s: IntegrationSignals): Integration[] {
     href: '/settings',
     external: true,
   });
+
+  // GitHub — read (Decision: reversed by the owner on 2026-09-29) and written through governed doors (Decision: reversed by the owner on 2026-09-30).
+  // CONFIGURED at most: a token being present says nothing about whether it
+  // can read a given repository; each project's Repository tab is where a
+  // real read succeeds or says why not. The count is of links, not of
+  // anything GitHub answered.
+  if (s.github) {
+    const links = s.github.linkedRepositories;
+    const linked = links.ok ? links.value : null;
+    const linkedText =
+      linked === null
+        ? 'linked repositories: DATA UNAVAILABLE'
+        : `${linked} linked ${linked === 1 ? 'repository' : 'repositories'}`;
+    const scopesText =
+      s.github.scopes === undefined
+        ? 'scopes not read yet'
+        : s.github.scopes === null
+          ? 'scopes not stated (fine-grained token)'
+          : s.github.scopes.length === 0
+            ? 'no scopes'
+            : `scopes: ${s.github.scopes.join(', ')}`;
+    const writeText = s.github.mayWrite === undefined ? '' : s.github.mayWrite ? '; branch, review, merge and build dispatch may be written' : '; the write doors will be refused (no repo scope)';
+    out.push({
+      id: 'github',
+      name: 'GitHub',
+      category: 'Source control',
+      lifecycle: !links.ok ? 'FAILED' : s.github.tokenConfigured ? 'CONFIGURED' : 'NOT_CONFIGURED',
+      detail: s.github.tokenConfigured
+        ? `GITHUB_TOKEN is set — ${linkedText}; ${scopesText}${writeText}; each project's Repository tab reads live`
+        : `GITHUB_TOKEN unset — ${linkedText}; links are kept, nothing is read or written`,
+      href: '/settings',
+      external: true,
+    });
+  }
 
   return out;
 }

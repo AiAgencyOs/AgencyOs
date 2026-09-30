@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState } from 'react';
 
 import {
@@ -59,11 +60,14 @@ function StatusForm({
   );
 }
 
-function TaskRow({ task }: { task: DevelopmentTask }) {
+function TaskRow({ task, projectId }: { task: DevelopmentTask; projectId: string }) {
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
       <span className="flex flex-wrap items-baseline gap-2">
-        <span className="font-medium">{task.title}</span>
+        {/* SCR-041 — the title opens the task's own surface. */}
+        <Link href={`/projects/${projectId}/development/tasks/${task.id}`} className="font-medium underline-offset-2 hover:underline">
+          {task.title}
+        </Link>
         <span className="text-xs text-muted">{task.priority}</span>
       </span>
       <StatusForm
@@ -182,7 +186,7 @@ export function ModuleCard({
       {tasks.length > 0 ? (
         <ul className="flex flex-col gap-1">
           {tasks.map((t) => (
-            <TaskRow key={t.id} task={t} />
+            <TaskRow key={t.id} task={t} projectId={projectId} />
           ))}
         </ul>
       ) : null}
@@ -224,7 +228,7 @@ export function UnassignedTasks({ projectId, tasks }: { projectId: string; tasks
       {tasks.length > 0 ? (
         <ul className="flex flex-col gap-1">
           {tasks.map((t) => (
-            <TaskRow key={t.id} task={t} />
+            <TaskRow key={t.id} task={t} projectId={projectId} />
           ))}
         </ul>
       ) : (

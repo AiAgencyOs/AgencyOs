@@ -1,148 +1,222 @@
 import type { Metadata } from 'next';
+
 import Link from 'next/link';
 
-import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { agencyClock } from '@/lib/admin/agency-clock';
+import { isSeverity, SEVERITIES, SEVERITY_LABEL } from '@/lib/admin/escalation-types';
+import { listNotificationHistory } from '@/lib/admin/notification-state';
 import { requireInternal } from '@/lib/auth/session';
+import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
-import { listPendingApprovals } from '@/modules/approvals/queries';
-import { listFailedDeliveries, listDeadJobs } from '@/lib/observability/queries';
-import { listPendingPaymentClaims } from '@/modules/finance/queries';
-import { listOpenDefects } from '@/modules/qa/queries';
-import { listMyTasks } from '@/modules/projects/queries';
-import { Card, EmptyState, IconCheck, PageHeader } from '@/ui';
+import { LiveRefresh } from '@/lib/realtime';
+import { listInternalRoster } from '@/modules/projects/queries';
+import { buttonClass, Card, CardHeader, DomainSearch, EmptyState, FilterBar, FilterChips, humanize, IconCheck, PageHeader, SearchSummary } from '@/ui';
+
+import { ACTION_CATEGORY_LABEL, categoryOf } from './action-items';
+import { listAnnotatedActionItems } from './annotated-items';
+import { NotificationList } from './notification-list';
 
 export const metadata: Metadata = { title: 'Notifications' };
-
-function when(clock: AgencyClock, value: string): string {
-  return clock.dateTime(value);
-}
-
-type Row = { key: string; title: string; detail: string; href: string; urgent: boolean };
 
 /**
  * Notifications & Action Center — SCR-003. Every source here already has
  * its own screen and its own real data; this is the aggregation nothing
  * tied together before — an owner had to open six pages to answer "what
- * needs me right now". No new state, no snooze/dismiss mechanism: every row
- * traces to the real record on the page it links to, and resolving it there
- * is what removes it from this list on the next load.
+ * needs me right now". Every row traces to the real record on the page it
+ * links to, and resolving it there is what removes it from this list.
+ *
+ * The rows are still DERIVED live; `core.notification_states` only
+ * annotates them (read, snoozed until, resolved with a note, assigned).
+ * An annotated row keeps existing while its source is pending — it stops
+ * counting against this person, and a snooze that has ended counts again.
+ * The header bell's number is the number of rows shown here as needing
+ * attention. The list is live: the same tables that feed it push a refresh
+ * when they change (`LiveRefresh`).
  */
-export default async function NotificationsPage() {
+export default async function NotificationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ category?: string; severity?: string; show?: string; q?: string }>;
+}) {
   const context = await requireInternal('/notifications');
   const clock = await agencyClock();
+  const { category, severity, show, q: qRaw } = await searchParams;
+  // Search within domain (bucket G-3). A notification is not a table row: the
+  // items are composed on the server from a dozen sources by
+  // listAnnotatedActionItems, so the search is applied here, on the server,
+  // over the composed title and detail — there is no column to hand PostgREST.
+  const q = normaliseSearch(qRaw);
+  const needle = q.toLowerCase();
+  const [everything, history, roster] = await Promise.all([listAnnotatedActionItems(context, clock), listNotificationHistory(30), listInternalRoster()]);
+  const all = needle ? everything.filter((r) => r.title.toLowerCase().includes(needle) || (r.detail ?? '').toLowerCase().includes(needle)) : everything;
 
-  const show = (cap: Parameters<typeof can>[1]) => can(context.role, cap);
-
-  const [approvals, failedDeliveries, deadJobs, paymentClaims, defects, myTasks] = await Promise.all([
-    listPendingApprovals(),
-    show('audit.read') ? listFailedDeliveries() : Promise.resolve([]),
-    show('job.requeue') || show('audit.read') ? listDeadJobs() : Promise.resolve([]),
-    show('invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
-    show('project.read') ? listOpenDefects() : Promise.resolve([]),
-    listMyTasks(context.userId),
-  ]);
-
-  const now = Date.now();
-  const rows: Row[] = [];
-
-  for (const a of approvals) {
-    const overdue = a.sla_due_at ? new Date(a.sla_due_at).getTime() <= now : false;
-    rows.push({
-      key: `approval-${a.id}`,
-      title: a.summary ?? `${a.subject_type} approval`,
-      detail: overdue ? `overdue since ${when(clock, a.sla_due_at!)}` : a.sla_due_at ? `due ${when(clock, a.sla_due_at)}` : 'no deadline set',
-      href: '/approvals',
-      urgent: overdue,
-    });
-  }
-
-  for (const c of paymentClaims) {
-    rows.push({
-      key: `claim-${c.id}`,
-      title: `Payment claim — ${c.invoiceNumber}`,
-      detail: `${c.clientName ?? 'unknown client'} · claimed ${when(clock, c.submitted_at)}`,
-      href: '/invoices/verify',
-      urgent: c.status === 'mismatch',
-    });
-  }
-
-  const blockers = defects.filter((d) => d.severity === 'blocker' || d.severity === 'major');
-  for (const d of blockers) {
-    rows.push({
-      key: `defect-${d.id}`,
-      title: d.title,
-      detail: `${d.severity} · ${d.projectName}`,
-      href: '/qa',
-      urgent: d.severity === 'blocker',
-    });
-  }
-
-  for (const j of deadJobs) {
-    rows.push({
-      key: `job-${j.id}`,
-      title: `Dead job — ${j.kind}`,
-      detail: j.last_error ?? 'no error recorded',
-      href: '/operations',
-      urgent: true,
-    });
-  }
-
-  for (const f of failedDeliveries) {
-    rows.push({
-      key: `delivery-${f.occurredAt}`,
-      title: 'Failed client delivery',
-      detail: when(clock, f.occurredAt),
-      href: '/operations',
-      urgent: false,
-    });
-  }
-
-  const overdueTasks = myTasks.filter((t) => t.dueOn && t.dueOn < clock.dayKey(new Date()));
-  for (const t of overdueTasks) {
-    rows.push({
-      key: `task-${t.id}`,
-      title: t.title,
-      detail: `${t.projectName} · overdue — ${clock.date(t.dueOn!)}`,
-      href: '/my-tasks',
-      urgent: true,
-    });
-  }
-
-  rows.sort((a, b) => Number(b.urgent) - Number(a.urgent));
-  const urgentCount = rows.filter((r) => r.urgent).length;
+  const attention = all.filter((r) => r.attention);
+  const parked = all.filter((r) => !r.attention);
+  const pool = show === 'parked' ? parked : show === 'all' ? all : attention;
+  const urgentCount = attention.filter((r) => r.urgent).length;
+  const categories = [...new Set(pool.map(categoryOf))];
+  // SCR-003 (bucket F): the four severity chips the PDF names, over the
+  // severity the reader derived. The old urgent/normal pair maps onto them
+  // (urgent = critical) so a bookmarked ?severity=urgent still works.
+  const wantedSeverity = isSeverity(severity) ? severity : severity === 'urgent' ? 'critical' : null;
+  const rows = pool.filter(
+    (r) => (!category || categoryOf(r) === category) && (!severity || (wantedSeverity ? r.severity === wantedSeverity : severity === 'normal' && !r.urgent)),
+  );
+  const canAnswer = can(context, 'audit.read');
+  const link = (over: Partial<{ category: string; severity: string; show: string; q: string }>) => {
+    const next = { category: category ?? '', severity: severity ?? '', show: show ?? '', q, ...over };
+    const search = Object.entries(next)
+      .filter(([, v]) => v)
+      .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+      .join('&');
+    return `/notifications${search ? `?${search}` : ''}`;
+  };
+  const rosterOptions = roster.filter((m) => m.userId !== context.userId).map((m) => ({ userId: m.userId, fullName: m.fullName || m.email }));
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Notifications"
         description={
-          rows.length === 0
-            ? 'Nothing needs your attention right now.'
-            : `${rows.length} item${rows.length === 1 ? '' : 's'} need attention${urgentCount > 0 ? `, ${urgentCount} urgent` : ''}.`
+          attention.length === 0
+            ? parked.length > 0
+              ? `Nothing needs your attention right now — ${parked.length} read, snoozed or resolved.`
+              : 'Nothing needs your attention right now.'
+            : `${attention.length} item${attention.length === 1 ? '' : 's'} need attention${urgentCount > 0 ? `, ${urgentCount} urgent` : ''}${parked.length > 0 ? ` · ${parked.length} parked` : ''}.`
         }
+        actions={<LiveRefresh topics={['approvals', 'finance', 'jobs', 'qa', 'tasks', 'conversations']} />}
       />
+
+      {all.length > 0 || q ? (
+        <FilterBar clearHref="/notifications" filtered={Boolean(show || category || severity || q)}>
+          {/* Search within domain (bucket G-3): title or detail of the composed items, filtered on the server. */}
+          <DomainSearch action="/notifications" value={q} placeholder="Search notifications…" label="Search notifications" preserve={{ category, severity, show }} />
+          <SearchSummary q={q} count={rows.length} clearHref={link({ q: '' })} />
+          <FilterChips
+            options={[
+              { key: 'attention', label: `Needs attention (${attention.length})`, href: link({ show: '', category: '' }), active: !show },
+              { key: 'parked', label: `Read, snoozed & resolved (${parked.length})`, href: link({ show: 'parked', category: '' }), active: show === 'parked' },
+              { key: 'all', label: `Everything (${all.length})`, href: link({ show: 'all', category: '' }), active: show === 'all' },
+            ]}
+          />
+          <FilterChips
+            options={[
+              { key: 'all', label: `All (${pool.length})`, href: link({ category: '' }), active: !category },
+              ...categories.map((c) => ({ key: c, label: `${ACTION_CATEGORY_LABEL[c] ?? c} (${pool.filter((r) => categoryOf(r) === c).length})`, href: link({ category: c }), active: category === c })),
+            ]}
+          />
+          <FilterChips
+            options={[
+              { key: 'any', label: 'Any severity', href: link({ severity: '' }), active: !severity },
+              ...SEVERITIES.map((sev) => ({
+                key: sev,
+                label: `${SEVERITY_LABEL[sev]} (${pool.filter((r) => r.severity === sev).length})`,
+                href: link({ severity: sev }),
+                active: wantedSeverity === sev,
+              })),
+            ]}
+          />
+        </FilterBar>
+      ) : null}
 
       {rows.length > 0 ? (
         <Card>
-          <ul className="divide-y divide-line">
-            {rows.map((r) => (
-              <li key={r.key}>
-                <Link
-                  href={r.href}
-                  className="flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-surface-hover sm:px-5"
-                >
-                  <span className="flex min-w-0 flex-col gap-0.5">
-                    <span className={`font-medium ${r.urgent ? 'text-danger' : 'text-foreground'}`}>{r.title}</span>
-                    <span className="text-xs text-muted">{r.detail}</span>
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <NotificationList
+            roster={rosterOptions}
+            canAnswer={canAnswer}
+            rows={rows.map((r) => ({
+              key: r.key,
+              title: r.title,
+              detail: r.detail,
+              href: r.href,
+              urgent: r.urgent,
+              severity: r.severity,
+              category: categoryOf(r),
+              categoryLabel: ACTION_CATEGORY_LABEL[categoryOf(r)] ?? categoryOf(r),
+              escalation: r.escalation
+                ? {
+                    id: r.escalation.id,
+                    toRole: r.escalation.toRole,
+                    reason: r.escalation.reason,
+                    state: r.escalation.state,
+                    fromUserName: r.escalation.fromUserName,
+                    acknowledgedByName: r.escalation.acknowledgedByName,
+                    createdAtLabel: clock.dateTime(r.escalation.createdAt),
+                  }
+                : null,
+              attention: r.attention,
+              state: r.state
+                ? {
+                    state: r.state.state,
+                    snoozedUntil: r.state.snoozedUntil,
+                    assignedToName: r.state.assignedToName,
+                    note: r.state.note,
+                    assignedToMe: r.state.assignedToMe,
+                    byName: r.state.byName,
+                  }
+                : null,
+              snoozedUntilLabel: r.state?.snoozedUntil ? clock.dateTime(r.state.snoozedUntil) : null,
+            }))}
+          />
         </Card>
       ) : (
-        <EmptyState icon={<IconCheck size={22} />} title="All clear" description="No pending approvals, failed deliveries, overdue tasks or open blockers." />
+        <EmptyState
+          icon={<IconCheck size={22} />}
+          title={all.length > 0 ? 'Nothing in this filter' : 'All clear'}
+          description={all.length > 0 ? 'Widen the filters to see the rest.' : 'No pending approvals, failed deliveries, overdue tasks or open blockers.'}
+          action={
+            all.length > 0 ? (
+              <Link href="/notifications" className={buttonClass('secondary', 'sm')}>
+                Clear filters
+              </Link>
+            ) : (
+              <Link href="/dashboard" className={buttonClass('secondary', 'sm')}>
+                Back to the Command Center
+              </Link>
+            )
+          }
+        />
       )}
+
+      <Card>
+        <CardHeader
+          title="History"
+          description="What you marked read, snoozed, resolved or assigned — and what others assigned to you — newest first. Resolutions and assignments are also in the audit log."
+        />
+        {history.length > 0 ? (
+          <ul className="divide-y divide-line">
+            {history.map((e) => {
+              const title = all.find((r) => r.key === e.itemKey)?.title ?? e.itemKey;
+              const verb =
+                e.event === 'assigned'
+                  ? `assigned to ${e.assignedToName ?? 'a member'}`
+                  : e.event === 'snoozed'
+                    ? `snoozed${e.snoozedUntil ? ` until ${clock.dateTime(e.snoozedUntil)}` : ''}`
+                    : e.event === 'unread'
+                      ? 'marked unread'
+                      : e.event === 'read'
+                        ? 'marked read'
+                        : 'resolved';
+              return (
+                <li key={e.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 px-4 py-2.5 text-[13px] sm:px-5">
+                  <span className="min-w-0 flex-1">
+                    <span className="font-medium text-foreground">{title}</span>{' '}
+                    <span className="text-muted">
+                      {verb}
+                      {e.byName ? ` by ${e.byName}` : ''}
+                      {e.fromState && e.fromState !== e.toState ? ` (${humanize(e.fromState)} → ${humanize(e.toState)})` : ''}
+                    </span>
+                    {e.note ? <span className="block text-xs text-muted">Note: {e.note}</span> : null}
+                  </span>
+                  <span className="shrink-0 text-xs text-faint">{clock.dateTime(e.createdAt)}</span>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">Nothing recorded yet — the first mark-read, snooze, resolve or assign appears here.</p>
+        )}
+      </Card>
     </div>
   );
 }

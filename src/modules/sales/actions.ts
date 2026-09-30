@@ -26,6 +26,11 @@ import {
   submitPlanSet,
   submitProposal,
 } from './service';
+import { setOpportunityOwner } from './owner-service';
+import { setProposalTerms } from './terms-service';
+import { COMMERCIAL_TERMS } from './quotation-standards';
+import { termsFromText } from './terms-schema';
+import { quotationReferenceCode } from '@/lib/pdf/quotation';
 
 /** Server Actions for the sales pipeline — thin wrappers over service.ts. */
 
@@ -63,6 +68,10 @@ export async function setOpportunityStageAction(
 
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidateLead(formData);
+  // The Sales Pipeline board (SCR-005) reads the same open opportunities by
+  // stage — added when that board grew a drag-and-drop write path onto this
+  // same action, so it needs revalidating too.
+  revalidatePath('/sales-funnel');
   return { status: 'success', message: `Deal moved to ${result.data.stage}.` };
 }
 
@@ -123,11 +132,28 @@ export async function draftProposalAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  // SCR-012 — project type and duration have no column on sales.proposals;
+  // they are written as the first lines of the scope summary, which the
+  // composer's labels say. Nothing here is a field the row does not hold.
+  const projectType = String(formData.get('projectType') ?? '').trim();
+  const duration = String(formData.get('duration') ?? '').trim();
+  const bodyText = String(formData.get('body') ?? '').trim();
+  const body = [
+    projectType ? `Project type: ${projectType}` : '',
+    duration ? `Duration: ${duration}` : '',
+    bodyText,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
   const result = await draftProposal({
     opportunityId: String(formData.get('opportunityId') ?? ''),
     title: String(formData.get('title') ?? ''),
-    body: String(formData.get('body') ?? '') || undefined,
+    body: body || undefined,
     validUntil: String(formData.get('validUntil') ?? '') || undefined,
+    // SCR-007 — the accepted requirement version the Lead 360 gates
+    // drafting on; §12's "built against" citation on the row.
+    requirementVersionId: String(formData.get('requirementVersionId') ?? '') || undefined,
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };
@@ -422,4 +448,116 @@ export async function createClientAccountAction(
   const result = await createClientAccount(input);
   if (result.ok) revalidatePath('/clients');
   return result;
+}
+
+/**
+ * The quotation composer (SCR-012) — one screen, the same governed steps.
+ *
+ * The reference draws quoting as a single form; the product's rule is that a
+ * quotation is drafted, itemised, priced and only then submitted, each a
+ * recorded step behind `proposal.draft`, with the owner's approval a separate
+ * decision. This action keeps every one of those doors: it calls the SAME
+ * service functions the Lead 360 panels call, in order, and stops at the
+ * first refusal, reporting how far it got so nothing is silently half-done.
+ * Nothing here computes a total — the pricing door does, from the rows.
+ */
+export type ComposeQuotationState = FormState & { proposalId?: string; leadId?: string; reference?: string };
+
+export async function composeQuotationAction(
+  _prev: ComposeQuotationState,
+  formData: FormData,
+): Promise<ComposeQuotationState> {
+  const leadId = String(formData.get('leadId') ?? '');
+  const descriptions = formData.getAll('lineDescription').map((v) => String(v).trim());
+  const quantities = formData.getAll('lineQuantity').map((v) => Number(String(v).trim() || '1'));
+  const unitPrices = formData.getAll('lineUnitPrice').map((v) => toMinor(v) ?? 0);
+  const lines = descriptions
+    .map((description, i) => ({ description, quantity: quantities[i] ?? 1, unitPriceMinor: unitPrices[i] ?? 0 }))
+    .filter((l) => l.description.length > 0);
+
+  if (lines.length === 0) return { status: 'error', message: 'Add at least one service or item.' };
+
+  // SCR-012 — project type and duration have no column on sales.proposals;
+  // they are written as the first lines of the scope note, which the
+  // composer's labels say. Nothing here is a field the row does not hold.
+  const projectType = String(formData.get('projectType') ?? '').trim();
+  const duration = String(formData.get('duration') ?? '').trim();
+  const bodyText = String(formData.get('body') ?? '').trim();
+  const body = [projectType ? `Project type: ${projectType}` : '', duration ? `Duration: ${duration}` : '', bodyText].filter(Boolean).join('\n');
+
+  const opportunityId = String(formData.get('opportunityId') ?? '');
+  const drafted = await draftProposal({
+    opportunityId,
+    title: String(formData.get('title') ?? ''),
+    body: body || undefined,
+    validUntil: String(formData.get('validUntil') ?? '') || undefined,
+  });
+  if (!drafted.ok) return { status: 'error', message: drafted.error.message };
+  const proposalId = drafted.data.proposalId;
+  const version = drafted.data.version;
+  // SCR-012 — the number the PDF prints, derived from the row (G-170).
+  const reference = quotationReferenceCode(proposalId, new Date().toISOString());
+
+  // SCR-012 — the sales owner, through its own door (`lead.assign`). A
+  // refusal here does not undo the draft; it is reported beside the result.
+  const ownerId = String(formData.get('ownerId') ?? '').trim();
+  let ownerNote = '';
+  if (ownerId) {
+    const owned = await setOpportunityOwner({ opportunityId, ownerId });
+    if (!owned.ok) ownerNote = ` The owner was not changed: ${owned.error.message}`;
+  }
+
+  // SCR-012 — the edited terms, on the draft's document. Only when they
+  // differ from the standard clauses: an untouched textarea stores nothing
+  // and the PDF prints exactly what it always did.
+  const terms = termsFromText(String(formData.get('commercialTerms') ?? ''));
+  if (terms.length > 0 && terms.join('\n') !== COMMERCIAL_TERMS.join('\n')) {
+    const termed = await setProposalTerms({ proposalId, terms });
+    if (!termed.ok) ownerNote += ` The terms were not saved: ${termed.error.message}`;
+  }
+
+  for (const [i, line] of lines.entries()) {
+    const added = await addProposalItem({ proposalId, ...line });
+    if (!added.ok) {
+      revalidateLead(formData);
+      return {
+        status: 'error',
+        message: `Quotation v${version} was drafted, but line ${i + 1} (“${line.description}”) was refused: ${added.error.message}. The draft is on the lead; finish it there.`,
+        proposalId,
+        leadId,
+      };
+    }
+  }
+
+  const discountMinor = toMinor(formData.get('discount'));
+  const taxMinor = toMinor(formData.get('tax'));
+  const priced = await setProposalPricing({
+    proposalId,
+    ...(discountMinor === undefined ? {} : { discountMinor }),
+    ...(taxMinor === undefined ? {} : { taxMinor }),
+  });
+  if (!priced.ok) {
+    revalidateLead(formData);
+    return { status: 'error', message: `Quotation v${version} was drafted with its lines, but pricing was refused: ${priced.error.message}.`, proposalId, leadId };
+  }
+
+  const submit = String(formData.get('submit') ?? '') === 'on';
+  if (submit) {
+    const submitted = await submitProposal({ proposalId, summary: String(formData.get('summary') ?? '') || undefined });
+    if (!submitted.ok) {
+      revalidateLead(formData);
+      return { status: 'error', message: `Quotation v${version} is drafted and priced, but could not be sent for approval: ${submitted.error.message}.`, proposalId, leadId };
+    }
+    revalidatePath('/approvals');
+  }
+
+  revalidateLead(formData);
+  revalidatePath('/quotations');
+  return {
+    status: 'success',
+    message: `${submit ? `Quotation ${reference} v${version} drafted, priced and sent to the owner for approval.` : `Quotation ${reference} v${version} drafted and priced. Submit it for approval from the lead when it is ready.`}${ownerNote}`,
+    proposalId,
+    leadId,
+    reference,
+  };
 }

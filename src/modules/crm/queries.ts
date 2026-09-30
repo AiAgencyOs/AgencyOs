@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { ilikeAny, ilikePattern } from '@/lib/db/search';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -11,6 +12,7 @@ import type {
   LeadHeader,
   LeadListItem,
   LeadPipeline,
+  LeadTableRow,
   LeadTimelineEvent,
   PortfolioItemRow,
   RequirementVersion,
@@ -57,6 +59,51 @@ export async function listLeads(limit = 100): Promise<LeadListItem[]> {
     contact: row.contacts
       ? { fullName: row.contacts.full_name, company: row.contacts.company }
       : null,
+  }));
+}
+
+const TABLE_SELECT = 'id, title, status, source, assigned_to, updated_at, contacts(full_name, company, phone, email)';
+
+/**
+ * The full-table view of the pipeline — phone, assignee, last activity — for
+ * the screens that want a dense desktop list rather than the chat metaphor
+ * `listLeads` backs. `assigned_to` resolves against `core.users` with a
+ * second query rather than a PostgREST embed: the two tables are in
+ * different schemas and there is no FK PostgREST can follow across them.
+ */
+export async function listLeadsForTable(limit = 500): Promise<LeadTableRow[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('leads')
+    .select(TABLE_SELECT)
+    .is('deleted_at', null)
+    .order('updated_at', { ascending: false })
+    .limit(limit);
+
+  if (error) unreadable('listLeadsForTable', error);
+
+  const rows = data ?? [];
+  const userIds = [...new Set(rows.map((r) => r.assigned_to).filter((id): id is string => id !== null))];
+
+  const { data: users } =
+    userIds.length > 0
+      ? await supabase.schema('core').from('users').select('id, email').in('id', userIds)
+      : { data: [] as { id: string; email: string }[] };
+  const emailById = new Map((users ?? []).map((u) => [u.id, u.email]));
+
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    status: row.status,
+    source: row.source,
+    assigned_to: row.assigned_to,
+    updated_at: row.updated_at,
+    contact: row.contacts
+      ? { fullName: row.contacts.full_name, company: row.contacts.company, phone: row.contacts.phone, email: row.contacts.email }
+      : null,
+    assignedEmail: row.assigned_to ? (emailById.get(row.assigned_to) ?? null) : null,
   }));
 }
 
@@ -157,7 +204,7 @@ export async function listMessages(conversationId: string): Promise<Conversation
   const { data, error } = await supabase
     .schema('crm')
     .from('conversation_messages')
-    .select('id, seq, author_type, body, occurred_at, metadata, media_description')
+    .select('id, seq, author_type, body, occurred_at, metadata, media_description, retry_of, retry_count')
     .eq('conversation_id', conversationId)
     .order('seq', { ascending: true });
 
@@ -297,6 +344,8 @@ export type MeetingListFilter = {
   /** Newest first, for a window in the past: the bound then keeps the most recent rather than the oldest. */
   newestFirst?: boolean;
   limit?: number;
+  /** Search within domain (bucket G-3): the meeting's purpose or its lead's title. Server-side. */
+  q?: string;
 };
 
 /**
@@ -329,6 +378,15 @@ export async function listMeetings(filter: MeetingListFilter): Promise<MeetingLi
   if (filter.status) query = query.eq('status', filter.status);
   if (filter.owner) query = query.eq('leads.assigned_to', filter.owner);
   if (filter.mode) query = query.or(`booked_mode.eq.${filter.mode},and(booked_mode.is.null,requested_mode.eq.${filter.mode})`);
+  // Search within domain (bucket G-3): the purpose, or the lead's title. An
+  // embedded column cannot sit in the top-level `or=` (PostgREST refuses the
+  // logic tree), so the lead is matched first and the meeting filtered by id.
+  if (filter.q) {
+    const { data: leadRows, error: leadError } = await supabase.schema('crm').from('leads').select('id').ilike('title', ilikePattern(filter.q)).limit(200);
+    if (leadError) unreadable('listMeetings.leads', leadError);
+    const leadIds = (leadRows ?? []).map((l) => l.id);
+    query = query.or(leadIds.length > 0 ? `${ilikeAny(['purpose'], filter.q)},lead_id.in.(${leadIds.join(',')})` : ilikeAny(['purpose'], filter.q));
+  }
 
   const { data, error } = await query;
   if (error) unreadable('listMeetings', error);
@@ -739,4 +797,87 @@ export async function listFollowUpSequences(filter?: {
     ...r,
     subjectTitle: r.subject_type === 'lead' ? (titleByLead.get(r.subject_id) ?? null) : null,
   }));
+}
+
+export type LeadFacts = {
+  contactName: string | null;
+  contactPhone: string | null;
+  contactEmail: string | null;
+  contactCompany: string | null;
+  assignedTo: string | null;
+  assignedEmail: string | null;
+  createdAt: string;
+  updatedAt: string;
+  nextFollowUpAt: string | null;
+  tags: string[];
+};
+
+/**
+ * The facts the Lead 360 header and its "Lead information" card print —
+ * who the person is, who has the lead, when it arrived and when it last
+ * moved. Read beside `getLeadHeader` rather than folded into it because
+ * every other caller of the header wants only the title and status.
+ */
+export async function getLeadFacts(leadId: string): Promise<LeadFacts | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('leads')
+    .select('id, assigned_to, created_at, updated_at, next_follow_up_at, tags, contacts:contact_id(full_name, phone, email, company)')
+    .eq('id', leadId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (error) unreadable('getLeadFacts', error);
+  // A missing lead is the read's own answer (maybeSingle gave null), not a
+  // value invented after a failure — the failure was refused above.
+  if (!data) return data;
+
+  let assignedEmail: string | null = null;
+  if (data.assigned_to) {
+    const { data: user } = await supabase.schema('core').from('users').select('email').eq('id', data.assigned_to).maybeSingle();
+    assignedEmail = user?.email ?? null;
+  }
+
+  const contact = (data.contacts ?? null) as { full_name: string; phone: string | null; email: string | null; company: string | null } | null;
+
+  return {
+    contactName: contact?.full_name ?? null,
+    contactPhone: contact?.phone ?? null,
+    contactEmail: contact?.email ?? null,
+    contactCompany: contact?.company ?? null,
+    assignedTo: data.assigned_to,
+    assignedEmail,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+    nextFollowUpAt: data.next_follow_up_at,
+    tags: data.tags ?? [],
+  };
+}
+
+export type ThirdPartyChargeRow = { service: string; charge: string; source: string | null; checkedOn: string; stale: boolean };
+
+/**
+ * The third-party charges the Admin maintains (G-207), for the quotation
+ * composer's picker — the same rows `readThirdPartyCharges` in service.ts
+ * returns, read here because a page calls queries, never service
+ * (ARCHITECTURE.md §3.2). Stale after six months, the same rule.
+ */
+export async function listThirdPartyCharges(): Promise<ThirdPartyChargeRow[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('third_party_charges')
+    .select('service, charge, source, checked_on')
+    .eq('active', true)
+    .order('service');
+  if (error) unreadable('listThirdPartyCharges', error);
+
+  const staleAfter = new Date();
+  staleAfter.setMonth(staleAfter.getMonth() - 6);
+  const cutoff = staleAfter.toISOString().slice(0, 10);
+
+  return (data ?? []).map((r) => ({ service: r.service, charge: r.charge, source: r.source, checkedOn: r.checked_on, stale: r.checked_on < cutoff }));
 }

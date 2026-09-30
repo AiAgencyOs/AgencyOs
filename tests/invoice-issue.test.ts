@@ -74,6 +74,13 @@ function readBuilder(table: string) {
       options?.head ? { eq: async () => ({ count: itemCount, error: null }) } : chain,
     eq: () => chain,
     maybeSingle: async () => readOutcome,
+    // 20260929160000: issuing consults finance.tax_period_locks first
+    // (`.is('unlocked_at', null).lte(...).gt(...)`, awaited as a list). This
+    // stub holds no lock, so the period is open and the issue proceeds to
+    // the read and the serialised function the tests below pin.
+    is: () => chain,
+    lte: () => chain,
+    gt: async () => ({ data: [] as unknown[], error: null }),
   };
   if (table === 'invoice_items') {
     return {

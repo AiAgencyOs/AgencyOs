@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
@@ -10,7 +10,7 @@ import {
   listPaymentPlan,
   readChangeRequests,
 } from '@/modules/projects/queries';
-import { Badge, EmptyState, humanize, IconClock, PageHeader, statusTone } from '@/ui';
+import { Badge, EmptyState, humanize, IconClock, PageHeader, statusTone, PermissionDenied } from '@/ui';
 
 import { ProjectSubNav } from '../project-subnav';
 
@@ -39,7 +39,7 @@ export default async function ProjectActivityPage({ params }: { params: Promise<
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/activity`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();

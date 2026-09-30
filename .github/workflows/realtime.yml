@@ -1,0 +1,144 @@
+name: realtime
+
+# Bucket E, E4 and E6 (docs/AGENCYOS_ADMIN_BUCKET_E_PLAN.md). The local QA
+# stack has no Realtime server, so AGENCYOS_ADMIN_TEST_MATRIX.md §5 — two
+# browser sessions, one acting and one watching — was "not run". This job is
+# where it runs: the same pinned Supabase CLI as verify.yml gives a fresh
+# database AND a Realtime container, the app is built and started for real,
+# and tests/e2e/realtime-two-sessions.spec.mjs drives the five scenarios with
+# a PostgREST read-back behind every screen assertion.
+#
+# It also runs the eight verification scripts that need exactly this — a
+# database nobody has signed into yet, and the model/Graph stubs the app must
+# be pointed at before it boots (§11 item 2). They are green on `main` in
+# verify.yml already; here they run against the same fresh `db reset` in the
+# order verify.yml runs them, and any red fails the job.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: realtime-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  realtime:
+    name: two sessions · push · fixture verifiers
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # 26, as in verify.yml: `mock.module` on an aliased specifier does not
+      # work before it, and `npm run build` shares the toolchain.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+
+      - run: npm ci
+
+      # playwright-core is not a project dependency (scripts/local-qa/README.md
+      # says why); `--no-save` keeps package-lock.json untouched. The browser is
+      # the runner's own Google Chrome — nothing is downloaded.
+      - name: playwright-core for the two-session spec
+        run: npm i --no-save playwright-core@1.55.0
+
+      # Same pin as verify.yml, for the same reasons: `latest` is resolved
+      # through a rate-limited API and can change under a run nobody touched.
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.112.0
+
+      # `db reset` applies every migration from scratch and then the seed
+      # (supabase/config.toml → [db.seed] sql_paths = ["./seed.sql"]), and
+      # `supabase start` brings up the Realtime container the last scenario
+      # stops and starts.
+      - name: Start Supabase and apply every migration and the seed
+        run: supabase start && supabase db reset
+
+      # Identical to verify.yml's step, so the verifiers and the app see the
+      # same target. Nothing here is a credential.
+      - name: Point the verifiers, the app and the spec at the CI database
+        run: |
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$(supabase status -o json | jq -r .API_URL)"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$(supabase status -o json | jq -r .ANON_KEY)"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$(supabase status -o json | jq -r .SERVICE_ROLE_KEY)"
+            echo "SUPABASE_JWT_SECRET=$(supabase status -o json | jq -r .JWT_SECRET)"
+            echo "NEXT_PUBLIC_APP_URL=http://localhost:3000"
+            echo "CRON_SECRET=ci-cron-secret-not-a-real-one"
+            echo "VAULT_ENCRYPTION_KEY=ci-vault-encryption-key-not-a-real-one-32chars"
+            echo "WHATSAPP_VERIFY_TOKEN=ci-whatsapp-verify-token-not-a-real-one"
+            echo "WHATSAPP_APP_SECRET=ci-app-secret-not-a-real-one"
+            echo "ANTHROPIC_API_KEY=verify-stub-key-not-a-real-credential"
+            echo "ANTHROPIC_BASE_URL=http://127.0.0.1:54399"
+            echo "WHATSAPP_ACCESS_TOKEN=ci-graph-token-not-a-real-one"
+            echo "WHATSAPP_GRAPH_BASE_URL=http://127.0.0.1:54398"
+            echo "OPENAI_API_KEY=ci-key-not-a-real-credential"
+            echo "OPENAI_BASE_URL=http://127.0.0.1:54397"
+          } >> .env.verify.local
+
+      # 1 of 8. First, before anything signs in: it asserts that no membership
+      # exists yet, which is only true of a database nobody has used.
+      - name: Fixture verifier 1/8 — first owner (D19)
+        run: npm run db:verify:owner
+
+      # The app and everything that drives it, in one step: a background
+      # process started in one step and used in the next is how this goes
+      # intermittently wrong (verify.yml learned the same).
+      - name: Build and start the app, run the seven app-driven fixture verifiers, then the two-session spec
+        run: |
+          set -a && . ./.env.verify.local && set +a
+          npm run build
+          npm run start > /tmp/app.log 2>&1 &
+
+          for _ in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:3000/api/health && break
+            sleep 2
+          done
+          if ! curl -sf -o /dev/null http://localhost:3000/api/health; then
+            echo "the app never became healthy:"
+            cat /tmp/app.log
+            exit 1
+          fi
+          trap 'echo "── app log ──"; cat /tmp/app.log' ERR
+
+          # 2–8 of 8, in verify.yml's order and for verify.yml's reasons: each
+          # tick claims whichever queued agent job comes first, so a script
+          # that waits on a job runs before the scripts whose ticks would take it.
+          npm run db:verify:proposal
+          npm run db:verify:flow01
+          npm run db:verify:media
+          npm run db:verify:analysis
+          npm run db:verify:quotescope
+          npm run db:verify:quotedispatch
+          npm run db:verify:announce
+
+          # The Realtime container, by the name `supabase start` gave it
+          # (supabase_realtime_<project_id>). Discovered rather than spelled,
+          # so a renamed project does not silently skip the degrade scenario.
+          REALTIME_CONTAINER="$(docker ps --format '{{.Names}}' | grep '^supabase_realtime_' | head -n 1)"
+          if [ -z "$REALTIME_CONTAINER" ]; then
+            echo "no supabase_realtime_* container is running:"; docker ps; exit 1
+          fi
+          export REALTIME_CONTAINER
+          export APP_URL=http://localhost:3000
+          export CHROME="$(command -v google-chrome || true)"
+          npm run e2e:realtime
+
+      - name: Upload screenshots, the JSON summary and the app log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: realtime-two-sessions
+          if-no-files-found: warn
+          path: |
+            tests/e2e/out/**
+            /tmp/app.log

@@ -19,6 +19,13 @@ export type ProjectDetail = ProjectListItem &
     | 'starts_on'
     | 'ends_on'
     | 'visibility'
+    | 'delivery_lead_id'
+    // SCR-018: why it was last paused, resumed or cancelled, and when.
+    | 'status_reason'
+    | 'status_changed_at'
+    // SCR-018/027 (20261001120000): the archive mark, and the template followed.
+    | 'archived_at'
+    | 'template_id'
   >;
 
 /** A milestone as the payment plan renders it. */
@@ -114,4 +121,29 @@ export type UiCoverageFlag = {
   blocking: boolean;
   subject_id: string;
   subject: string;
+};
+
+/**
+ * One project's row on the org-wide Design & Prototype index (SCR-032 at
+ * portfolio level): where Phase 3 stands, how many revisions the client has
+ * used, and how many design/prototype deliverables sit at each status.
+ */
+export type DesignPortfolioRow = ProjectListItem & {
+  phaseThreeState: string | null;
+  reviewerAssigned: boolean;
+  clientRevisionsUsed: number;
+  clientRevisionLimit: number | null;
+  designs: { total: number; inReview: number; approved: number };
+  prototypes: { total: number; inReview: number; approved: number };
+  designUpdatedAt: string | null;
+};
+
+/**
+ * One project's row on the org-wide Development index (SCR-039 at
+ * portfolio level): module and task counts by state, plus the latest build.
+ */
+export type DevelopmentPortfolioRow = ProjectListItem & {
+  modules: { total: number; done: number };
+  tasks: { total: number; todo: number; inProgress: number; blocked: number; inReview: number; done: number };
+  builds: { total: number; latestStatus: string | null; latestVersion: number | null };
 };

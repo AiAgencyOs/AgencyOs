@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { getImportBatch, importRelationshipPreview } from '@/lib/import/queries';
 import { reactivationStatus, type StagedClassification, type StagedRecord } from '@/lib/import/staged';
 import { requireInternal } from '@/lib/auth/session';
-import { IconArrowLeft } from '@/ui';
+import { IconArrowLeft, PermissionDenied } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 
 import { BatchCohortButtons, CommitAllButton, CommitButton } from '../forms';
@@ -44,7 +44,7 @@ const RELATIONSHIP_LABELS: Readonly<Record<string, string>> = {
 export default async function ImportBatchPage({ params }: { params: Promise<{ batchId: string }> }) {
   const { batchId } = await params;
   const context = await requireInternal(`/import/${batchId}`);
-  if (!can(context.role, 'organization.settings')) redirect('/dashboard');
+  if (!can(context, 'organization.settings')) return <PermissionDenied />;
 
   const batch = await getImportBatch(batchId);
   if (!batch) notFound();

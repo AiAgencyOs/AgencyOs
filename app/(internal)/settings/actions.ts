@@ -2,11 +2,11 @@
 
 import { PROBE_MODELS } from '@/lib/ai/providers';
 import { createGoogleCalendar } from '@/lib/scheduling/google';
-import { configuredProviders, resolveProvider } from '@/lib/ai/router';
-import { setProviderCredential, VAULT_PROVIDERS, type VaultProvider } from '@/lib/ai/vault';
+import { configuredProviders, resetProviderRegistry, resolveProvider } from '@/lib/ai/router';
+import { deleteProviderCredential, setProviderCredential, VAULT_PROVIDERS, type VaultProvider } from '@/lib/ai/vault';
 import { sendWhatsAppText } from '@/lib/whatsapp/send';
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
+import { can, hasRole } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 
 import { revalidatePath } from 'next/cache';
@@ -202,6 +202,8 @@ export async function setWhatsAppNumberAction(_prev: FormState, formData: FormDa
   const result = await setOrganizationSetting('whatsapp_phone_number_id', String(formData.get('phone_number_id') ?? ''));
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath('/settings');
+  // SCR-070 — the same form is mounted on the integration's own row.
+  revalidatePath('/integrations');
   return {
     status: 'success',
     message: result.data.cleared
@@ -214,6 +216,7 @@ export async function setTestRecipientAction(_prev: FormState, formData: FormDat
   const result = await setOrganizationSetting('whatsapp_test_recipient', String(formData.get('test_recipient') ?? ''));
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath('/settings');
+  revalidatePath('/integrations');
   return {
     status: 'success',
     message: result.data.cleared
@@ -551,7 +554,7 @@ export async function verifyWhatsAppAction(_prev: FormState, _formData: FormData
  */
 export async function sendWhatsAppTestAction(_prev: FormState, _formData: FormData): Promise<FormState> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may send the test message.' };
+  if (!can(context, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may send the test message.' };
   const settings = await readOperationalSettings();
   const phoneNumberId = settingText(settings, 'whatsapp_phone_number_id');
   const recipient = settingText(settings, 'whatsapp_test_recipient');
@@ -586,7 +589,7 @@ export async function sendWhatsAppTestAction(_prev: FormState, _formData: FormDa
  */
 export async function verifyAiProviderAction(_prev: FormState, _formData: FormData): Promise<FormState> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify the provider.' };
+  if (!can(context, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify the provider.' };
   const registered = await configuredProviders();
   if (registered.length === 0) return { status: 'error', message: 'No AI provider is configured; there is nothing to verify.' };
 
@@ -635,7 +638,7 @@ export async function verifyAiProviderAction(_prev: FormState, _formData: FormDa
  */
 export async function setProviderCredentialAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may set a provider key.' };
+  if (!can(context, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may set a provider key.' };
 
   const provider = String(formData.get('provider') ?? '');
   if (!VAULT_PROVIDERS.includes(provider as VaultProvider)) return { status: 'error', message: `Unknown provider "${provider}".` };
@@ -645,9 +648,37 @@ export async function setProviderCredentialAction(_prev: FormState, formData: Fo
   const result = await setProviderCredential(supabase, provider as VaultProvider, key, context.userId);
   if (!result.ok) return { status: 'error', message: result.error.message };
 
+  // The resolver's registry is cached per process; a key that just landed
+  // must register without waiting for a redeploy (SCR-064).
+  resetProviderRegistry();
   revalidatePath('/agents');
+  revalidatePath('/agents/routing');
   revalidatePath('/production-readiness');
   return { status: 'success', message: `${provider} key stored — encrypted, never shown again here.` };
+}
+
+/**
+ * SCR-064 — revoke a vault-stored provider key. Owner only, narrower than
+ * storing one; `deleteProviderCredential` says why. The key is never read.
+ */
+export async function revokeProviderCredentialAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const context = await requireInternal();
+  if (!hasRole(context, 'owner') || !can(context, 'organization.settings')) {
+    return { status: 'error', message: 'Only the owner may revoke a provider key.' };
+  }
+
+  const provider = String(formData.get('provider') ?? '');
+  if (!VAULT_PROVIDERS.includes(provider as VaultProvider)) return { status: 'error', message: `Unknown provider "${provider}".` };
+
+  const supabase = await createClient();
+  const result = await deleteProviderCredential(supabase, provider as VaultProvider, context);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  resetProviderRegistry();
+  revalidatePath('/agents');
+  revalidatePath('/agents/routing');
+  revalidatePath('/production-readiness');
+  return { status: 'success', message: `${provider} key revoked. Agents routed to it will not run until another key is stored or set in the environment.` };
 }
 
 /**
@@ -658,7 +689,7 @@ export async function setProviderCredentialAction(_prev: FormState, formData: Fo
  */
 export async function verifyCalendarAction(_prev: FormState, _formData: FormData): Promise<FormState> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify the calendar.' };
+  if (!can(context, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify the calendar.' };
   const calendar = createGoogleCalendar();
   if (!calendar) return { status: 'error', message: 'No calendar is configured: place GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_KEY and GOOGLE_CALENDAR_ID in the deployment environment (ADM-102).' };
   const from = new Date();
@@ -813,5 +844,78 @@ export async function setMembershipStatusAction(_prev: FormState, formData: Form
   return {
     status: 'success',
     message: result.data.updated ? (status === 'suspended' ? 'Suspended.' : 'Reactivated.') : 'Already in that state.',
+  };
+}
+
+/**
+ * How long a quotation stands — configurability audit B-1.
+ *
+ * Was `VALIDITY_DAYS = 15` in `quotation-standards.ts`, printed on every
+ * quotation PDF as "valid for 15 days". The number is the corpus modal, which
+ * makes it a fine default and a poor rule. Whole days, 1–90; empty clears,
+ * and cleared reads as 15 again — never as zero.
+ */
+export async function setQuotationValidityAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const raw = String(formData.get('validity_days') ?? '').trim();
+  if (raw !== '') {
+    const parsed = Number(raw);
+    if (!/^[0-9]+$/.test(raw) || !Number.isInteger(parsed) || parsed < 1 || parsed > 90) {
+      return { status: 'error', message: 'Validity must be a whole number of days between 1 and 90.' };
+    }
+  }
+  const result = await setOrganizationSetting('quotation_validity_days', raw);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message:
+      raw === ''
+        ? 'Validity cleared — new quotations say 15 days again. Ones already drafted keep the clause they were drafted with.'
+        : `Set. New quotations say they are valid for ${raw} day${raw === '1' ? '' : 's'}; ones already drafted keep the clause they were drafted with.`,
+  };
+}
+
+/**
+ * When follow-ups may be sent — configurability audit B-2.
+ *
+ * Was `WINDOW_START_HOUR = 10` / `WINDOW_END_HOUR = 19` in
+ * `follow-up-rhythms.ts` (ADM-69). The database validates each hour's range;
+ * the ORDER of the pair is checked here, because the one-key-at-a-time door
+ * cannot see both halves, and the reader falls back to the default for a
+ * pair that does not make a window — so a bad save can never send at 03:00.
+ * Both empty clears both, and cleared reads as 10–19 again.
+ */
+export async function setOutreachWindowAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const startRaw = String(formData.get('window_start_hour') ?? '').trim();
+  const endRaw = String(formData.get('window_end_hour') ?? '').trim();
+
+  if ((startRaw === '') !== (endRaw === '')) {
+    return { status: 'error', message: 'Set both hours, or clear both to go back to 10:00–19:00.' };
+  }
+  if (startRaw !== '') {
+    const start = Number(startRaw);
+    const end = Number(endRaw);
+    if (!/^[0-9]+$/.test(startRaw) || !/^[0-9]+$/.test(endRaw) || start < 0 || start > 22 || end < 1 || end > 23) {
+      return { status: 'error', message: 'Hours are on the 24-hour clock: start 0–22, end 1–23.' };
+    }
+    if (start >= end) {
+      return { status: 'error', message: `A window from ${start}:00 to ${end}:00 has no hours in it. The end must be after the start.` };
+    }
+  }
+
+  // Start first, then end: if the second write is refused the reader still
+  // sees an unusable pair and keeps the default, so nothing half-applies.
+  const first = await setOrganizationSetting('outreach_window_start_hour', startRaw);
+  if (!first.ok) return { status: 'error', message: first.error.message };
+  const second = await setOrganizationSetting('outreach_window_end_hour', endRaw);
+  if (!second.ok) return { status: 'error', message: second.error.message };
+
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message:
+      startRaw === ''
+        ? 'Window cleared — follow-ups go out between 10:00 and 19:00 agency time again.'
+        : `Set. Follow-ups go out between ${startRaw}:00 and ${endRaw}:00 agency time, on business days. Ones already due are moved into the window on the next run.`,
   };
 }

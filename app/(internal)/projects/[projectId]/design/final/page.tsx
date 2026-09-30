@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject, readDesignMessages, readDesignTrail } from '@/modules/projects/queries';
-import { Badge, PageHeader } from '@/ui';
+import { Badge, PageHeader, PermissionDenied } from '@/ui';
 
 import { ProjectSubNav } from '../../project-subnav';
 import { DesignSubNav } from '../design-subnav';
@@ -39,14 +39,14 @@ export default async function ProjectFinalSelectionPage({
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/design/final`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
 
   const trail = await readDesignTrail(projectId);
   const { phase } = trail;
-  const mayDecide = can(context.role, 'project.write');
+  const mayDecide = can(context, 'project.write');
 
   if (!phase) {
     return (
@@ -56,7 +56,7 @@ export default async function ProjectFinalSelectionPage({
         <DesignSubNav projectId={projectId} />
         <Nothing>
           Phase 3 has not started for this project.{' '}
-          <Link href={`/projects/${projectId}/design`} className="underline hover:text-fg">
+          <Link href={`/projects/${projectId}/design`} className="underline hover:text-foreground">
             Back to Design
           </Link>
           .
@@ -132,7 +132,7 @@ export default async function ProjectFinalSelectionPage({
                   </span>
                 </div>
                 <p className="text-muted">
-                  evidence <code className="text-fg">{s.evidenceRef}</code>
+                  evidence <code className="text-foreground">{s.evidenceRef}</code>
                 </p>
                 <ul className="flex flex-wrap gap-2">
                   {(s.sharedOptions as { themeOptionId?: string; name?: string }[]).map((o, i) => (
@@ -218,7 +218,7 @@ export default async function ProjectFinalSelectionPage({
                 ) : null}
                 {c.evidenceRef ? (
                   <p className="text-muted">
-                    evidence <code className="text-fg">{c.evidenceRef}</code>
+                    evidence <code className="text-foreground">{c.evidenceRef}</code>
                   </p>
                 ) : null}
               </li>
@@ -254,6 +254,41 @@ export default async function ProjectFinalSelectionPage({
                   {themeName(r.fromThemeOptionId)}
                   {r.toThemeOptionId ? ` → ${themeName(r.toThemeOptionId)}` : ' → not delivered yet'}
                 </p>
+                {/*
+                  SCR-036 — before and after, side by side. The two cards are
+                  the two theme options the revision names; a round not yet
+                  delivered has only a "before".
+                */}
+                <div className="grid max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">
+                  {[
+                    { label: 'Before', theme: trail.themes.find((t) => t.id === r.fromThemeOptionId) ?? null },
+                    { label: 'After', theme: r.toThemeOptionId ? (trail.themes.find((t) => t.id === r.toThemeOptionId) ?? null) : null },
+                  ].map(({ label, theme }) => (
+                    <div key={label} className="flex flex-col gap-1 rounded-md border border-line bg-surface p-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</span>
+                      {!theme ? (
+                        <span className="text-xs text-muted">{label === 'After' ? 'Not delivered yet.' : 'Not in this phase.'}</span>
+                      ) : (
+                        <>
+                          <span className="font-medium">
+                            {theme.name} <span className="text-xs text-muted">v{theme.version}</span>
+                          </span>
+                          {theme.previewAssetUrl ? (
+                            // A designer-provided preview URL; next/image cannot know its host.
+                            <img src={theme.previewAssetUrl} alt={`${theme.name} preview`} className="max-h-40 w-auto rounded border border-line" />
+                          ) : (
+                            <span className="text-xs text-muted">No preview recorded.</span>
+                          )}
+                          <span className="line-clamp-3 text-xs text-muted">{theme.directionSummary}</span>
+                          <span className="text-xs text-muted">
+                            {theme.figmaNodeId ? `Figma ${theme.figmaNodeName ?? theme.figmaNodeId}` : 'no Figma reference'} · admin{' '}
+                            {theme.adminStatus.replace(/_/g, ' ')} · client {theme.clientStatus.replace(/_/g, ' ')}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </li>
             ))}
           </ul>
@@ -293,7 +328,7 @@ export default async function ProjectFinalSelectionPage({
             <p className="text-muted">
               {trail.handoff.figmaNodeId ? (
                 <>
-                  Figma node <code className="text-fg">{trail.handoff.figmaNodeId}</code>
+                  Figma node <code className="text-foreground">{trail.handoff.figmaNodeId}</code>
                   {trail.handoff.figmaVersion ? ` · version ${trail.handoff.figmaVersion}` : ''}
                 </>
               ) : (

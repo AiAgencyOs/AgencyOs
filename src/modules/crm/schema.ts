@@ -49,7 +49,9 @@ export const LEAD_TRANSITIONS: Record<LeadStatus, readonly LeadStatus[]> = {
   // ready yet" is something you learn at any point — including from a client
   // who was about to sign.
   qualifying: ['qualified', 'nurture', 'disqualified'],
-  qualified: ['converted', 'nurture', 'disqualified'],
+  // SCR-008: back to discovery when the evidence turns out incomplete —
+  // `crm.leads_guard` (20261001110000) admits the same move.
+  qualified: ['qualifying', 'converted', 'nurture', 'disqualified'],
   // And it is a waiting room, not a terminus: a lead comes back OUT of it,
   // which is the entire reason it is not `disqualified`.
   nurture: ['qualifying', 'qualified', 'disqualified'],
@@ -279,6 +281,30 @@ export const requirementPayloadSchema = z.object({
   niceToHaves: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
   exclusions: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
   designReferences: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
+  /**
+   * SCR-009 (bucket F-B). Four facts the PDF's requirement screen shows as
+   * part of the versioned requirement rather than as coverage quotes: who
+   * will use it, on what, what it must talk to, and what the client said
+   * about time and money. All default empty so every historical payload
+   * still parses; jsonb shape only, no DDL.
+   */
+  userRoles: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
+  platforms: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
+  integrations: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
+  timelineBudgetNotes: z.string().trim().max(2_000).default(''),
+  /**
+   * SCR-029 (bucket G-3). The three sections the PDF's Requirement Set
+   * lists that the payload had folded away: every objective in full (the
+   * summary is a sentence, not the list), the business rules, and the
+   * non-functional requirements. `constraints` stays for every version
+   * written before these existed — the panel renders it under "Business
+   * rules" and says which version recorded it as constraints. All default
+   * empty so every historical payload still parses; the collector may fill
+   * them and never invents one when the transcript is silent.
+   */
+  objectives: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
+  businessRules: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
+  nonFunctionalRequirements: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
 });
 
 /**
@@ -1699,3 +1725,32 @@ export function completionIsAuthorized(meeting: {
   if (meeting.status !== 'completed' && meeting.status !== 'no_show') return true;
   return meeting.completedAt !== null && meeting.completedBy !== null;
 }
+
+/** Lead ownership and tags — the two `crm.leads` columns the PDF's list and 360 act on. */
+export const setLeadOwnerSchema = z.object({
+  leadId: z.uuid(),
+  /** null clears the owner. */
+  assignedTo: z.uuid().nullable(),
+});
+
+export const setLeadTagsSchema = z.object({
+  leadId: z.uuid(),
+  tags: z.array(z.string().trim().min(1).max(40)).max(20),
+});
+
+export const pauseAgentRepliesSchema = z.object({
+  conversationId: z.uuid(),
+  reason: z.string().trim().min(1).max(200),
+});
+
+export type SetLeadOwnerInput = z.infer<typeof setLeadOwnerSchema>;
+export type SetLeadTagsInput = z.infer<typeof setLeadTagsSchema>;
+export type PauseAgentRepliesInput = z.infer<typeof pauseAgentRepliesSchema>;
+
+export const stopFollowUpSequenceSchema = z.object({
+  sequenceId: z.uuid(),
+  reason: z.string().trim().min(1).max(200),
+});
+export const resumeFollowUpSequenceSchema = z.object({ sequenceId: z.uuid() });
+export type StopFollowUpSequenceInput = z.infer<typeof stopFollowUpSequenceSchema>;
+export type ResumeFollowUpSequenceInput = z.infer<typeof resumeFollowUpSequenceSchema>;

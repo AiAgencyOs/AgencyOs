@@ -2,7 +2,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { authorizeCronRequest } from '@/lib/cron-auth';
 import { createAdminClient } from '@/lib/db/admin';
-import { failJob, logJobParked, type Admin, type JobRow } from './agent-run';
+import { failJob, logJobParked, parkBudgetRefusedJob, parkRefusedJob, requeuePausedJob, settleCancelledJob, type Admin, type JobRow } from './agent-run';
+import { AgentPolicyRefusal } from '@/lib/ai/agent-policy';
+import { AgentBudgetRefusal, AgentsPaused, JobCancelled } from '@/lib/ai/run-gates';
 import { AGENT_JOB_KINDS, workflowFor } from './workflows';
 import { serverEnv } from '@/lib/env';
 import { newCorrelationId } from '@/lib/errors';
@@ -12,6 +14,10 @@ import { reapStalledJobs } from '@/lib/jobs/reaper';
 import { expireOverdueApprovals } from '@/lib/approvals/expire';
 import { lapseOverdueProposals } from '@/lib/sales/lapse';
 import { runFollowUps } from '@/modules/crm/follow-up-worker';
+import { runInvoiceReminders } from '@/modules/finance/reminder-worker';
+import { runCampaigns } from '@/modules/crm/campaign-worker';
+import { publishDueAnnouncements } from '@/modules/crm/announcement-worker';
+import { runSuiteSchedules } from '@/modules/qa/schedule-worker';
 import { detectUpsellSignals } from '@/lib/sales/upsell';
 import { markOverdueInvoices } from '@/lib/finance/overdue';
 import { mayAgentRun } from '@/lib/ai/autonomy';
@@ -255,6 +261,49 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const followUps = await runFollowUps(admin);
 
   /**
+   * ── past-due invoices chased on WhatsApp (owner decision 2026-09-29) ──
+   *
+   * The same shape as the follow-ups, one schema over: observe, pick the
+   * thread, claim (the invoice_sends row), queue through
+   * `crm.send_outbound_message` and the `followup.queued` handler, so
+   * consent, the 24-hour window and the approved `invoice_reminder`
+   * template keep deciding. Off until an owner turns it on under Settings ›
+   * Finance; then one reminder per invoice per interval, never more.
+   */
+  const invoiceReminders = await runInvoiceReminders(admin);
+
+  /**
+   * ── campaigns, one governed send at a time (owner decision 2026-09-30) ──
+   *
+   * Broadcast reopened as a governed campaign: an approved plan expands to
+   * one recipient row per lead, and this claims up to 25 of them per tick
+   * (FOR UPDATE SKIP LOCKED) and sends each through the composer's own
+   * template door, so consent, the phone, the outreach limits and the
+   * template's facts decide every recipient separately. A refused
+   * recipient is recorded with its reason; a spent organization allowance
+   * holds the rest for a later tick rather than refusing them.
+   */
+  const campaigns = await runCampaigns(admin);
+
+  /**
+   * ── scheduled announcements (SCR-059, bucket F) ────────────────────────
+   *
+   * A draft with a moment set becomes published at that moment. A record,
+   * not a send; audited as by the schedule.
+   */
+  const dueAnnouncements = await publishDueAnnouncements(admin);
+
+  /**
+   * ── suite schedules (SCR-048, bucket F) ────────────────────────────────
+   *
+   * A suite on a cron expression: when it is due, the tick OPENS a run
+   * against the scheduled build and advances the schedule. The panel has no
+   * test runner, so a fired schedule is a run somebody fills and closes —
+   * nothing here claims a suite passed.
+   */
+  const suiteSchedules = await runSuiteSchedules(admin);
+
+  /**
    * ── invoices whose date has passed (G-004) ────────────────────────────
    *
    * The transition INVOICE_TRANSITIONS has admitted since the first day and
@@ -307,6 +356,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       unlocks: unlocks.results,
@@ -346,6 +397,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       phaseTwo: phaseTwo.results,
@@ -382,6 +435,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       phaseThree: phaseThree.results,
@@ -413,6 +468,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       phaseFour: phaseFour.results,
@@ -444,6 +501,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       task2Route: task2Route.results,
@@ -475,6 +534,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       uiVersionQa: uiVersionQa.results,
@@ -505,6 +566,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       uiVersionAdminReview: uiVersionAdminReview.results,
@@ -536,6 +599,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       prototypeQa: prototypeQa.results,
@@ -569,6 +634,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       m1Invoices: m1Invoices.results,
@@ -598,6 +665,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       phaseFourCompletions: phaseFourCompletions.results,
@@ -628,6 +697,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       m2Invoices: m2Invoices.results,
@@ -660,6 +731,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       scopeChangeRequests: scopeChangeRequests.results,
@@ -978,6 +1051,10 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     reaped,
     dispatched,
     followUps,
+    invoiceReminders,
+    campaigns,
+    dueAnnouncements,
+    suiteSchedules,
     unlocks: unlocks.results,
     announcements: announcements.results,
     escalations: escalations.results,
@@ -1028,7 +1105,7 @@ async function runOneAgentJob(
   const { data: agent } = await admin
     .schema('ai')
     .from('agents')
-    .select('key, enabled, default_model, default_effort, autonomy_level')
+    .select('key, enabled, default_model, default_effort, autonomy_level, allowed_work_classes')
     .eq('key', workflow.agentKey)
     .maybeSingle();
 
@@ -1051,10 +1128,41 @@ async function runOneAgentJob(
     return { jobId: job.id, agent: workflow.agentKey, status: 'failed', reason: 'agent autonomy' };
   }
 
-  // ── and then the work, which is the only part that differs ──────────────
-  const outcome = await workflow.run({ admin, job, agent, correlationId, workClass: workflow.workClass });
+  // SCR-063: the owner's list of work classes for this agent, beside the
+  // autonomy gate. Empty is every class; a non-empty list is exhaustive.
+  const allowed = agent.allowed_work_classes ?? [];
+  if (allowed.length > 0 && !allowed.includes(workflow.workClass)) {
+    await failJob(admin, job, `agent "${workflow.agentKey}" is not allowed ${workflow.workClass} work (allowed: ${allowed.join(', ')})`);
+    return { jobId: job.id, agent: workflow.agentKey, status: 'failed', reason: 'agent work class' };
+  }
 
-  return { jobId: job.id, agent: workflow.agentKey, ...outcome };
+  // ── and then the work, which is the only part that differs ──────────────
+  //
+  // Decision 3 (2026-09-29): a workflow that opens a run on a project the
+  // agent is not assigned to is stopped by `openRun` throwing
+  // AgentPolicyRefusal — recorded and audited there. Caught here, and the
+  // job is parked rather than retried: a retry would not change the policy.
+  try {
+    const outcome = await workflow.run({ admin, job, agent, correlationId, workClass: workflow.workClass });
+    return { jobId: job.id, agent: workflow.agentKey, ...outcome };
+  } catch (error) {
+    // Stream F-F: the three between-step gates, each settled its own way.
+    if (error instanceof JobCancelled) {
+      await settleCancelledJob(admin, error);
+      return { jobId: job.id, agent: workflow.agentKey, status: 'cancelled', reason: 'cancelled while running', detail: error.reason, runId: error.runId };
+    }
+    if (error instanceof AgentsPaused) {
+      await requeuePausedJob(admin, job, error);
+      return { jobId: job.id, agent: workflow.agentKey, status: 'requeued', reason: 'agents paused', detail: error.message, runId: error.runId };
+    }
+    if (error instanceof AgentBudgetRefusal) {
+      await parkBudgetRefusedJob(admin, job, error);
+      return { jobId: job.id, agent: workflow.agentKey, status: 'failed', reason: 'provider budget', detail: error.message, runId: error.runId };
+    }
+    if (!(error instanceof AgentPolicyRefusal)) throw error;
+    await parkRefusedJob(admin, job, error);
+    return { jobId: job.id, agent: workflow.agentKey, status: 'failed', reason: 'agent policy', detail: error.message, runId: error.runId };
+  }
 }
 
 export async function GET(request: NextRequest) {

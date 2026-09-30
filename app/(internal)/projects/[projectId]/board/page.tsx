@@ -1,102 +1,116 @@
 import type { Metadata } from 'next';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
+import { agencyClock } from '@/lib/admin/agency-clock';
+import { readClientName } from '@/lib/admin/clients';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { getProject, listDevelopmentBreakdown, listInternalRoster, type DevelopmentTask } from '@/modules/projects/queries';
-import { Badge, Card, EmptyState, IconProjects, PageHeader, statusTone } from '@/ui';
+import { listTasksByMilestone } from '@/modules/projects/milestone-tasks-queries';
+import { listAssigneeCandidates } from '@/modules/projects/project-members-queries';
+import { getProject, listDevelopmentBreakdown, listInternalRoster, listPaymentPlan } from '@/modules/projects/queries';
+import { readTaskCollabFor } from '@/modules/projects/task-collab-queries';
+import { IconAlert, IconCheck, IconClock, IconList, IconSearch, PermissionDenied, statusTone, type KanbanColumn } from '@/ui';
 
+import { ProjectBoard, type BoardTask } from './board-client';
 import { ProjectSubNav } from '../project-subnav';
+import { WorkspaceHeader } from '../workspace-header';
 
 export const metadata: Metadata = { title: 'Board' };
 
-const COLUMNS: { status: string; label: string }[] = [
-  { status: 'todo', label: 'To do' },
-  { status: 'in_progress', label: 'In progress' },
-  { status: 'blocked', label: 'Blocked' },
-  { status: 'in_review', label: 'In review' },
-  { status: 'done', label: 'Done' },
+const COLUMNS: KanbanColumn[] = [
+  { id: 'todo', label: 'To do', tone: 'warning', icon: <IconList size={14} /> },
+  { id: 'in_progress', label: 'In progress', tone: statusTone('in_progress'), icon: <IconClock size={14} /> },
+  { id: 'in_review', label: 'Review', tone: 'brand', icon: <IconSearch size={14} /> },
+  { id: 'done', label: 'Completed', tone: statusTone('done'), icon: <IconCheck size={14} /> },
+  { id: 'blocked', label: 'Blocked', tone: statusTone('blocked'), icon: <IconAlert size={14} /> },
 ];
-
-function TaskCard({ task, assigneeName }: { task: DevelopmentTask; assigneeName: string | null }) {
-  return (
-    <div className="rounded-lg border border-line bg-surface p-3 shadow-xs">
-      <p className="text-[13px] font-medium leading-snug text-foreground">{task.title}</p>
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <Badge tone={task.priority === 'p0' ? 'danger' : task.priority === 'p1' ? 'warning' : 'neutral'}>
-          {task.priority.toUpperCase()}
-        </Badge>
-        {assigneeName ? <span className="text-xs text-muted">{assigneeName}</span> : null}
-      </div>
-      {task.dueOn ? <p className="mt-1.5 text-xs text-muted">Due {task.dueOn}</p> : null}
-    </div>
-  );
-}
 
 /**
  * SCR-020 — Project Board. A workflow-state view of the same tasks the
  * Development page already lists by module: here grouped by `status`
  * instead, which is the question a PM scanning "what's blocked right now"
  * actually has — the module view answers a different one ("what's in this
- * piece of the build"). Read-only: moving a card's status is still done from
- * the Development page's existing task actions, so this adds no second
- * writer for the same column.
+ * piece of the build"). Drag-and-drop and "+ Add task" both go through the
+ * Development page's own Server Actions via `<ProjectBoard>`, so this
+ * remains the same single writer for `projects.tasks` — just with a second
+ * way to reach it.
  */
-export default async function ProjectBoardPage({ params }: { params: Promise<{ projectId: string }> }) {
+export default async function ProjectBoardPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ milestone?: string }> }) {
   const { projectId } = await params;
+  const { milestone: initialMilestone } = await searchParams;
 
   const context = await requireInternal(`/projects/${projectId}/board`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const [{ tasks }, roster] = await Promise.all([listDevelopmentBreakdown(projectId), listInternalRoster()]);
+  // SCR-020: the assignee list reads from the project's members (20261001120000)
+  // and falls back to the organisation roster when the project has none; the
+  // phase filter is the payment milestone a task is filed under.
+  const [{ tasks, modules }, roster, clock, clientName, candidates, tasksByMilestone, milestones] = await Promise.all([
+    listDevelopmentBreakdown(projectId),
+    listInternalRoster(),
+    agencyClock(),
+    project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
+    listAssigneeCandidates(projectId),
+    listTasksByMilestone(projectId),
+    listPaymentPlan(projectId),
+  ]);
+  const milestoneByTask = new Map<string, string>();
+  for (const [milestoneId, list] of Object.entries(tasksByMilestone)) for (const t of list) milestoneByTask.set(t.id, milestoneId);
+  const milestoneName = new Map(milestones.map((m) => [m.id, m.name]));
+  // SCR-020: the blocker, checklist, comments and attachments for every
+  // card, read once for the whole board so each drawer opens from data the
+  // page already holds.
+  const collab = await readTaskCollabFor(tasks.map((t) => t.id), clock);
   const nameByUser = new Map(roster.map((r) => [r.userId, r.fullName]));
+  const moduleById = new Map(modules.map((m) => [m.id, m.name]));
+  const canWrite = can(context, 'task.write');
+  const todayKey = new Date().toISOString().slice(0, 10);
+
+  const boardTasks: BoardTask[] = tasks.map((t) => ({
+    id: t.id,
+    columnId: t.status,
+    title: t.title,
+    description: t.description,
+    estimateHours: t.estimateHours ?? null,
+    priority: t.priority,
+    assigneeId: t.assigneeId,
+    assigneeName: t.assigneeId ? (nameByUser.get(t.assigneeId) ?? null) : null,
+    moduleId: t.moduleId,
+    moduleName: t.moduleId ? (moduleById.get(t.moduleId) ?? null) : null,
+    dueOn: t.dueOn,
+    dueLabel: t.dueOn ? clock.date(t.dueOn) : null,
+    completedLabel: t.completedAt ? clock.dateTime(t.completedAt) : null,
+    overdue: t.status !== 'done' && t.dueOn !== null && t.dueOn < todayKey,
+    milestoneId: milestoneByTask.get(t.id) ?? null,
+    milestoneName: milestoneByTask.has(t.id) ? (milestoneName.get(milestoneByTask.get(t.id) as string) ?? null) : null,
+  }));
+
+  const assignees = [...new Set(tasks.map((t) => t.assigneeId).filter((id): id is string => id !== null))]
+    .map((id) => ({ userId: id, fullName: nameByUser.get(id) ?? 'Unknown' }))
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader
-        title={`${project.name} — Board`}
-        description={tasks.length === 0 ? 'No tasks yet.' : `${tasks.length} task${tasks.length === 1 ? '' : 's'}, by status.`}
-      />
+      <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={can(context, 'project.write')} />
 
       <ProjectSubNav projectId={projectId} />
 
-      {tasks.length > 0 ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          {COLUMNS.map((col) => {
-            const colTasks = tasks.filter((t) => t.status === col.status);
-            return (
-              <Card key={col.status} className="flex flex-col">
-                <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2.5">
-                  <span className="flex items-center gap-2 text-[13px] font-semibold text-foreground">
-                    <Badge tone={statusTone(col.status)} dot>
-                      {col.label}
-                    </Badge>
-                  </span>
-                  <span className="text-xs text-muted tabular">{colTasks.length}</span>
-                </div>
-                <div className="flex flex-1 flex-col gap-2 p-2">
-                  {colTasks.length > 0 ? (
-                    colTasks.map((t) => (
-                      <TaskCard key={t.id} task={t} assigneeName={t.assigneeId ? (nameByUser.get(t.assigneeId) ?? null) : null} />
-                    ))
-                  ) : (
-                    <p className="px-2 py-3 text-center text-xs text-faint">Empty</p>
-                  )}
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-      ) : (
-        <EmptyState
-          icon={<IconProjects size={22} />}
-          title="No tasks yet"
-          description="Tasks created on the Development page will show up here, grouped by status."
-        />
-      )}
+      <ProjectBoard
+        projectId={projectId}
+        columns={COLUMNS}
+        tasks={boardTasks}
+        modules={modules.map((m) => ({ id: m.id, name: m.name }))}
+        people={assignees}
+        roster={candidates.people}
+        rosterSource={candidates.source}
+        milestones={milestones.map((m) => ({ id: m.id, name: m.name }))}
+        initialMilestone={initialMilestone && milestoneName.has(initialMilestone) ? initialMilestone : ''}
+        canWrite={canWrite}
+        collab={collab}
+      />
     </div>
   );
 }

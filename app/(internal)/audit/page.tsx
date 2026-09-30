@@ -1,106 +1,185 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
+import Link from 'next/link';
 
-import { auditActionPrefixes, readAuditLog } from '@/lib/audit/queries';
+import { auditActionPrefixes, auditFacets, changedKeys, readAuditLog } from '@/lib/audit/queries';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
+import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
-import { Badge, Card, EmptyState, FilterBar, FilterChips, IconAudit, PageHeader } from '@/ui';
+import { Badge, buttonClass, Card, cx, DomainSearch, EmptyState, FilterBar, FilterChips, humanize, IconAudit, IconDownload, inputClass, PageHeader, PermissionDenied, SearchSummary, selectClass } from '@/ui';
 
 export const metadata: Metadata = { title: 'Audit log' };
 
-const short = (id: string | null) => (id ? id.slice(0, 8) : '—');
+function short(id: string | null): string {
+  return id ? id.slice(0, 8) : '';
+}
+
+function show(value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value);
+}
 
 /**
- * Who changed what, and when — area M.
- *
- * The append-only `audit.audit_log` is the record every gated transition writes
- * to; this is the first place the product reads it back. RLS (`audit_log_select`)
- * bounds it to an owner or ops_admin of their own organization, so the page
- * carries no gate the database does not already enforce — `audit.read` here
- * matches it. It filters by action facet (organization·, consent·, message·…);
- * the before/after diff is not spread to the list, only its presence.
+ * Audit log — the `audit.audit_log` table, newest first, exactly as the
+ * database appended it. Owner/ops-admin only (`audit.read`); RLS also
+ * matches it. Filters by action facet, subject type, actor type and a date
+ * window; each entry opens to the keys its before/after snapshots disagree
+ * on, printed as written — nothing here summarises a change into a verb.
  */
 export default async function AuditPage({
   searchParams,
 }: {
-  searchParams: Promise<{ action?: string }>;
+  searchParams: Promise<{ action?: string; subject?: string; actor?: string; from?: string; to?: string; correlation?: string; q?: string }>;
 }) {
   const context = await requireInternal('/audit');
   const clock = await agencyClock();
-  if (!can(context.role, 'audit.read')) redirect('/dashboard');
+  if (!can(context, 'audit.read')) return <PermissionDenied />;
 
-  const { action } = await searchParams;
-  const [entries, prefixes] = await Promise.all([
-    readAuditLog({ actionPrefix: action, limit: 100 }),
+  const { action, subject, actor, from, to, correlation, q: qRaw } = await searchParams;
+  // Search within domain (bucket G-3): the action or subject type text, filtered by the reader.
+  const q = normaliseSearch(qRaw);
+  const isoDay = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
+  const fromDay = isoDay(from);
+  const toDay = isoDay(to);
+
+  const [entries, prefixes, facets] = await Promise.all([
+    readAuditLog({
+      q: q || undefined,
+      actionPrefix: action,
+      subjectType: subject,
+      actorType: actor,
+      // SCR-066: the audit half of an event chain, linked from /operations.
+      correlationId: correlation && /^[0-9a-f-]{36}$/i.test(correlation.trim()) ? correlation.trim() : undefined,
+      from: fromDay ? `${fromDay}T00:00:00Z` : undefined,
+      to: toDay ? `${toDay}T23:59:59.999Z` : undefined,
+      limit: 100,
+    }),
     auditActionPrefixes(),
+    auditFacets(),
   ]);
+
+  const qs = (over: Record<string, string | undefined>) => {
+    const p = new URLSearchParams();
+    const merged = { action, subject, actor, from: fromDay, to: toDay, correlation, q, ...over };
+    for (const [k, v] of Object.entries(merged)) if (v) p.set(k, v);
+    const s = p.toString();
+    return s ? `?${s}` : '';
+  };
+  const anyFilter = Boolean(action || subject || actor || fromDay || toDay || q);
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Audit log"
         description="Every gated change — a settled approval, a consent grant, a config toggle — appended here and never edited. Owner and ops-admin only, scoped to this organization."
+        actions={
+          <a href={`/api/audit/export${qs({})}`} className={buttonClass('secondary', 'sm')}>
+            <IconDownload size={14} /> Export CSV
+          </a>
+        }
       />
 
-      {prefixes.length > 0 ? (
-        <FilterBar>
+      <FilterBar clearHref="/audit" filtered={anyFilter}>
+        {/* Search within domain (bucket G-3): the action or subject type text, filtered by the reader. */}
+        <DomainSearch action="/audit" value={q} placeholder="Search action or subject…" label="Search audit log" preserve={{ action, subject, actor, from: fromDay, to: toDay, correlation }} />
+        <SearchSummary q={q} count={entries.length} bounded={entries.length >= 100} clearHref={`/audit${qs({ q: undefined })}`} />
+        {prefixes.length > 0 ? (
           <FilterChips
             options={[
-              { key: 'all', label: 'All', href: '/audit', active: !action },
-              ...prefixes.map((p) => ({
-                key: p,
-                label: p,
-                href: `/audit?action=${encodeURIComponent(p)}`,
-                active: action === p,
-              })),
+              { key: 'all', label: 'All actions', href: `/audit${qs({ action: undefined })}`, active: !action },
+              ...prefixes.map((p) => ({ key: p, label: p, href: `/audit${qs({ action: p })}`, active: action === p })),
             ]}
           />
-        </FilterBar>
-      ) : null}
+        ) : null}
+        <form method="get" action="/audit" className="flex flex-wrap items-center gap-2">
+          {action ? <input type="hidden" name="action" value={action} /> : null}
+          <select name="subject" defaultValue={subject ?? ''} aria-label="Subject type" className={cx(selectClass, 'w-auto')}>
+            <option value="">All subjects</option>
+            {facets.subjectTypes.map((t) => (
+              <option key={t} value={t}>{humanize(t)}</option>
+            ))}
+          </select>
+          <select name="actor" defaultValue={actor ?? ''} aria-label="Actor type" className={cx(selectClass, 'w-auto')}>
+            <option value="">All actors</option>
+            {facets.actorTypes.map((t) => (
+              <option key={t} value={t}>{humanize(t)}</option>
+            ))}
+          </select>
+          <input type="date" name="from" defaultValue={fromDay ?? ''} aria-label="From" className={cx(inputClass, 'w-40')} />
+          <input type="date" name="to" defaultValue={toDay ?? ''} aria-label="To" className={cx(inputClass, 'w-40')} />
+          <button type="submit" className={buttonClass('secondary', 'sm')}>Apply</button>
+          {anyFilter ? <Link href="/audit" className="text-xs text-muted hover:underline">Clear</Link> : null}
+        </form>
+      </FilterBar>
 
       {entries.length === 0 ? (
         <EmptyState
           icon={<IconAudit size={22} />}
-          title={action ? 'No matching entries' : 'Nothing has been audited yet'}
-          description={
-            action
-              ? `No audited actions match “${action}”.`
-              : 'Gated changes are appended here as they happen.'
-          }
+          title={anyFilter ? 'No matching entries' : 'Nothing has been audited yet'}
+          description={anyFilter ? 'No audited action matches these filters.' : 'Gated changes are appended here as they happen.'}
+          action={anyFilter ? <Link href="/audit" className={buttonClass('secondary', 'sm')}>Clear filters</Link> : <Link href="/dashboard" className={buttonClass('secondary', 'sm')}>Back to the Command Center</Link>}
         />
       ) : (
         <Card>
           <ul className="divide-y divide-line">
-            {entries.map((e) => (
-              <li
-                key={e.id}
-                className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-3 sm:px-5"
-              >
-                <div className="flex min-w-0 flex-col gap-1">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="text-[13px] font-semibold">{e.action}</span>
-                    {e.hasChange ? <Badge tone="info">changed</Badge> : null}
-                  </span>
-                  <span className="text-xs text-muted">
-                    {e.subjectType ? `${e.subjectType} ${short(e.subjectId)}` : 'no subject'}
-                  </span>
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-1 text-xs text-muted">
-                  <span className="font-medium text-foreground/70">
-                    {e.actorType ?? 'system'}
-                    {e.actorId ? ` ${short(e.actorId)}` : ''}
-                  </span>
-                  <span>{clock.dateTime(e.createdAt)}</span>
-                </div>
-              </li>
-            ))}
+            {entries.map((e) => {
+              const keys = e.hasChange ? changedKeys(e.before, e.after) : [];
+              return (
+                <li key={e.id} className="flex flex-col gap-2 px-4 py-3 sm:px-5">
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="text-[13px] font-semibold">{e.action}</span>
+                        {e.hasChange ? <Badge tone="info">{keys.length > 0 ? `${keys.length} field${keys.length === 1 ? '' : 's'} changed` : 'snapshot'}</Badge> : null}
+                      </span>
+                      <span className="text-xs text-muted">
+                        {e.subjectType ? `${e.subjectType} ${short(e.subjectId)}` : 'no subject'}
+                        {e.correlationId ? ` · correlation ${short(e.correlationId)}` : ''}
+                      </span>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1 text-xs text-muted">
+                      <span className="font-medium text-foreground/70">
+                        {e.actorType ?? 'system'}
+                        {e.actorId ? ` ${short(e.actorId)}` : ''}
+                      </span>
+                      <span>{clock.dateTime(e.createdAt)}</span>
+                    </div>
+                  </div>
+                  {e.hasChange ? (
+                    <details className="text-xs">
+                      <summary className="cursor-pointer text-muted hover:underline">Before / after</summary>
+                      <div className="mt-2 overflow-x-auto rounded-lg border border-line bg-canvas">
+                        <table className="w-full text-left">
+                          <thead>
+                            <tr className="border-b border-line text-[11px] uppercase tracking-wider text-muted">
+                              <th className="px-3 py-1.5 font-semibold">Field</th>
+                              <th className="px-3 py-1.5 font-semibold">Before</th>
+                              <th className="px-3 py-1.5 font-semibold">After</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(keys.length > 0 ? keys : [...new Set([...Object.keys(e.before ?? {}), ...Object.keys(e.after ?? {})])]).map((k) => (
+                              <tr key={k} className="border-b border-line last:border-0 align-top">
+                                <td className="px-3 py-1.5 font-mono text-[11px] text-muted">{k}</td>
+                                <td className="max-w-xs break-words px-3 py-1.5 font-mono text-[11px] text-danger">{show(e.before?.[k])}</td>
+                                <td className="max-w-xs break-words px-3 py-1.5 font-mono text-[11px] text-success">{show(e.after?.[k])}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </details>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         </Card>
       )}
 
       <p className="text-xs leading-relaxed text-muted">
-        Showing the {entries.length} most recent{action ? ` “${action}”` : ''} entries. The audit log
+        Showing the {entries.length} most recent{action ? ` “${action}”` : ''} entries{fromDay || toDay ? ' in the chosen window' : ''}. The audit log
         is append-only — it cannot be edited or deleted, even by the service role.
       </p>
     </div>

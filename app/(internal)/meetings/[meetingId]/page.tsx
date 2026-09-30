@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { agencyClock, clockFor, getAgencyTimeZone } from '@/lib/admin/agency-clock';
 import { googleCalendarConfig } from '@/lib/scheduling/google';
@@ -28,9 +28,14 @@ import {
   listMeetingJobs,
   listRequirementVersions,
 } from '@/modules/crm/queries';
+import { isAnalysisNote, parseAnalysisSections } from '@/modules/crm/analysis-sections';
+import { listMeetingMemoryAttachments, listProjectsForLead } from '@/modules/crm/meeting-memory-queries';
+import { listProjectOptionsForMeeting, readMeetingProjects } from '@/modules/crm/meeting-project-queries';
 import { isSettledMeeting, requirementPayloadSchema, type MeetingStatus } from '@/modules/crm/schema';
-import { Badge, Callout, Card, CardBody, CardHeader, IconArrowLeft, StatusBadge, cx, humanize } from '@/ui';
+import { Badge, Callout, Card, CardBody, CardHeader, IconArrowLeft, StatusBadge, cx, humanize, PermissionDenied } from '@/ui';
 
+import { AttachMeetingSummaryForm } from './attach-memory-form';
+import { MeetingProjectForm } from './project-link-form';
 import { MeetingControls } from './controls';
 
 export const metadata: Metadata = { title: 'Meeting' };
@@ -67,19 +72,27 @@ const Row = ({ label, children }: { label: string; children: React.ReactNode }) 
 export default async function MeetingPage({ params }: { params: Promise<{ meetingId: string }> }) {
   const { meetingId } = await params;
   const context = await requireInternal(`/meetings/${meetingId}`);
-  if (!can(context.role, 'lead.read')) redirect('/dashboard');
+  if (!can(context, 'lead.read')) return <PermissionDenied />;
 
   const m = await getMeeting(meetingId);
   if (!m) notFound();
 
-  const [evidence, jobs, chain, versions] = await Promise.all([
+  const [evidence, jobs, chain, versions, memoryProjects, memoryAttachments] = await Promise.all([
     listMeetingEvidence(m.id),
     listMeetingJobs(m.id),
     listMeetingChain(m.supersedes_id),
     m.conversation_id ? listRequirementVersions(m.conversation_id) : Promise.resolve([]),
+    // SCR-017 — the projects this meeting's lead reaches, and what of this
+    // meeting is already in a project's memory.
+    listProjectsForLead(m.lead_id),
+    listMeetingMemoryAttachments(m.id),
   ]);
-  const mayReadAudit = can(context.role, 'audit.read');
+  const mayReadAudit = can(context, 'audit.read');
   const audit = mayReadAudit ? await readAuditLog({ subjectId: m.id, limit: 20 }) : [];
+  // SCR-010 — the project this meeting is about, and what it may be linked to.
+  const [projectLinks, projectOptions] = await Promise.all([readMeetingProjects([m.id]), can(context, 'lead.write') ? listProjectOptionsForMeeting() : Promise.resolve([])]);
+  const projectLink = projectLinks.get(m.id) ?? null;
+  const leadProjects = memoryProjects.map((p) => ({ id: p.id, name: p.name }));
 
   const now = new Date();
   const agencyZone = await getAgencyTimeZone();
@@ -93,12 +106,17 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
   const superseder = await findMeetingSuperseder(m.id);
   const controls = meetingControls(m.status as MeetingStatus, { calendarConfigured: calendar !== null });
   const offered = offeredSlots(m, agencyZone, (iso, zone) => clockFor(zone).dateTime(iso), (iso, zone) => clockFor(zone).clock(iso));
-  const mayWrite = can(context.role, 'lead.write');
+  const mayWrite = can(context, 'lead.write');
   const provider = providerState(m);
   const availability = availabilityState(m);
   const completion = completionState(m, now);
   const reminder = reminderState(reminderJob, m);
   const analysis = analysisState(analysisJob, m, evidence.length);
+  // SCR-060: what the analysis note says was decided, what comes next and
+  // what is still open — read back from the newest `summary` note the
+  // handler filed (analysis-sections.ts), never inferred here.
+  const analysisNote = evidence.find((e) => e.kind === 'summary' && isAnalysisNote(e.body));
+  const extracted = analysisNote?.body ? parseAnalysisSections(analysisNote.body) : null;
 
   const at = (iso: string | null | undefined) => (iso ? `${local.dateTime(iso)} ${zones.primary}` : '—');
 
@@ -135,6 +153,22 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
                 'Lead not readable'
               )}
               {m.lead?.assigned_to ? <span className="ml-2 text-muted">lead owner {m.lead.assigned_to.slice(0, 8)}</span> : <span className="ml-2 text-faint">no lead owner recorded</span>}
+            </Row>
+            {/* SCR-010 — the project this meeting is about, linked through
+                its own column and door; the lead's projects first. */}
+            <Row label="Project">
+              {projectLink ? (
+                <Link href={`/projects/${projectLink.projectId}`} className="underline underline-offset-2 hover:text-foreground">
+                  {projectLink.projectName}
+                </Link>
+              ) : (
+                <span className="text-muted">Not linked to a project</span>
+              )}
+              {mayWrite ? (
+                <div className="mt-1.5">
+                  <MeetingProjectForm meetingId={m.id} current={projectLink?.projectId ?? null} leadProjects={leadProjects} otherProjects={projectOptions} />
+                </div>
+              ) : null}
             </Row>
             <Row label="Requested">
               {m.requested_start_at ? `${at(m.requested_start_at)}${m.requested_window_end ? ` – ${local.clock(m.requested_window_end)}` : ''}` : 'No time requested'} · {humanize(m.requested_mode)}
@@ -235,6 +269,58 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
         </Card>
       </div>
 
+      {extracted ? (
+        <Card>
+          <CardHeader
+            title="Extracted from the analysis"
+            description="Decisions, next actions and open questions as the analysis note proposed them — inference, not confirmed until a person says so."
+          />
+          <CardBody>
+            <div className="grid gap-4 lg:grid-cols-3">
+              <div className="flex flex-col gap-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted">Decisions</p>
+                {extracted.decisions.length === 0 ? (
+                  <p className="text-[13px] text-muted">None recorded.</p>
+                ) : (
+                  <ul className="flex flex-col gap-1 text-[13px]">
+                    {extracted.decisions.map((d, i) => (
+                      <li key={i} className="flex gap-2">
+                        <Badge tone={d.who === 'agency' ? 'brand' : 'info'}>{d.who}</Badge>
+                        <span>{d.text}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted">Actions</p>
+                {extracted.actions.length === 0 ? (
+                  <p className="text-[13px] text-muted">None recorded.</p>
+                ) : (
+                  <ul className="flex list-disc flex-col gap-1 pl-4 text-[13px]">
+                    {extracted.actions.map((a, i) => (
+                      <li key={i}>{a}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted">Open questions</p>
+                {extracted.openQuestions.length === 0 ? (
+                  <p className="text-[13px] text-muted">None recorded.</p>
+                ) : (
+                  <ul className="flex list-disc flex-col gap-1 pl-4 text-[13px]">
+                    {extracted.openQuestions.map((q, i) => (
+                      <li key={i}>{q}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader
           title="Evidence"
@@ -262,6 +348,38 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
                 </li>
               ))}
             </ol>
+          )}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Project memory"
+          description="SCR-017 — files this meeting's newest summary (or typed notes) as a project-scoped memory, with the evidence row as its source. Owner or ops admin."
+          actions={<Badge tone="neutral">{memoryAttachments.length}</Badge>}
+        />
+        <CardBody className="flex flex-col gap-3">
+          {memoryAttachments.length === 0 ? (
+            <p className="text-[13px] text-muted">Nothing from this meeting is in a project's memory yet.</p>
+          ) : (
+            <ul className="flex flex-col gap-1 text-[13px]">
+              {memoryAttachments.map((a) => (
+                <li key={a.memoryId} className="flex flex-wrap items-center gap-2">
+                  <Link href={`/projects/${a.projectId}`} className="underline underline-offset-2">{a.projectName ?? a.projectId.slice(0, 8)}</Link>
+                  <Badge tone={a.confidence === 'explicit' ? 'success' : 'info'}>{a.confidence}</Badge>
+                  <span className="text-xs text-faint">from evidence {a.evidenceId.slice(0, 8)} · {agencyClockNow.dateTime(a.createdAt)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {mayWrite ? (
+            evidence.some((e) => (e.kind === 'summary' || e.kind === 'notes') && e.body) ? (
+              <AttachMeetingSummaryForm meetingId={m.id} projects={memoryProjects} />
+            ) : (
+              <p className="text-[12px] text-muted">Nothing to attach yet — add typed notes or a summary as evidence first.</p>
+            )
+          ) : (
+            <p className="text-[12px] text-muted">Attaching to project memory is for the owner or an ops admin.</p>
           )}
         </CardBody>
       </Card>

@@ -237,7 +237,7 @@ describe('C. failed', () => {
 
 describe('D. deciding a proposal', () => {
   test('it requires a capability, not merely a session', () => {
-    assert.match(decideBody, /can\(context\.role, 'lead\.write'\)/);
+    assert.match(decideBody, /can\(context, 'lead\.write'\)/);
     assert.match(decideBody, /FORBIDDEN/);
   });
 
@@ -408,7 +408,7 @@ describe('G. the database agrees with the capability model', () => {
   });
 
   test('the service still requires the capability the policy now enforces', () => {
-    assert.match(decideBody, /can\(context\.role, 'lead\.write'\)/);
+    assert.match(decideBody, /can\(context, 'lead\.write'\)/);
   });
 });
 

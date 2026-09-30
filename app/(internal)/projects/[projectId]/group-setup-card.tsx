@@ -225,7 +225,7 @@ export function GroupSetupCardPanel({
       ) : (
         <p className="text-[13px] text-muted">
           The standard name cannot be composed yet — it is missing{' '}
-          <strong className="text-fg">{card.suggestedNameMissing.join(', ') || 'some facts'}</strong>.
+          <strong className="text-foreground">{card.suggestedNameMissing.join(', ') || 'some facts'}</strong>.
         </p>
       )}
 

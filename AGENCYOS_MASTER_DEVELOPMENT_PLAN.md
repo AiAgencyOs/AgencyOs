@@ -1348,6 +1348,8 @@ Restated from directive §47, with the state of each at this baseline.
 
 | Date | Commit | Change |
 | --- | --- | --- |
+| 2026-09-28 | `65bf817` (PR #533) | **Two tenancy-guard gaps the catalogue scan found.** A receipt and a decision row learned their tenant: `core.enforce_parent_org` triggers on the columns the catalogue scan showed unguarded, so a child row cannot name a parent in another organisation. Recorded here by the change after it, as the convention requires. |
+| 2026-09-26 | `03d25b4` (PR #522) | **Second unreachable-code sweep — multirole is record-only, status drift fixed.** `grantSecondaryRole`/`revokeSecondaryRole` are wired to Settings but no capability check honours a secondary role (`canEffective` has no callers), so the panel's copy now says a grant is record-only until the ~150 `can()` sites are decided; the quotation PDF route calls the canonical `httpStatusFor` instead of its own map; transcriber and image-generator configuration checks surface on Integrations. |
 | 2026-08-11 | `2881caa` | Document created. Baseline established: 47 gaps, 23 Admin decisions, 549 tests passing, no CI. |
 | 2026-08-11 | `e4dc28a` | Phase 1 closed. D1 merged; ADM-01 granted. |
 | 2026-08-11 | `6d6b840` | Baseline documentation merged (PR #10). |

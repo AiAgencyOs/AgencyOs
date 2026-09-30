@@ -1,13 +1,16 @@
 import type { Metadata } from 'next';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { listGitActions, listTaskOptions } from '@/modules/projects/git-queries';
 import { getProject, listRepositories } from '@/modules/projects/queries';
-import { Callout, EmptyState, IconIntegrations, PageHeader } from '@/ui';
+import { getRepositoryLink } from '@/modules/projects/repository-link-queries';
+import { Callout, EmptyState, IconIntegrations, PageHeader, PermissionDenied } from '@/ui';
 
 import { AddRepositoryForm, RepositoryCard } from '../repository-panel';
 import { ProjectSubNav } from '../project-subnav';
+import { GithubPanel } from './github-panel';
 
 export const metadata: Metadata = { title: 'Repository' };
 
@@ -19,18 +22,33 @@ export const metadata: Metadata = { title: 'Repository' };
  * (20260922110000_a_repository_is_a_link_too.sql) for the full reasoning.
  * `defaultBranch` is therefore a fact somebody typed, not one this page
  * verifies against the host.
+ *
+ * Decision: reversed by the owner on 2026-09-29 — the tab ALSO carries one
+ * live GitHub repository per project (`projects.repository_links`): linked
+ * and unlinked through a governed door, read on each request through
+ * src/lib/git/github.ts with `GITHUB_TOKEN` (commits on the linked branch,
+ * open pull requests, branch count), never written to, and honest about a
+ * read that fails or a token that is absent. The link rows below stay what
+ * they were: where the code and its reviews live, typed by a person.
+ *
+ * Decision: reversed by the owner on 2026-09-30 — Git is WRITTEN too
+ * (bucket F, F4): a task branch, a review and a squash-merge go through the
+ * governed doors in src/modules/projects/git-write-service.ts, each recorded
+ * in projects.git_actions and audited; commits are linked to tasks; failed
+ * checks and review findings are read from GitHub beside them.
  */
 export default async function RepositoryPage({ params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/repository`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const editable = can(context.role, 'project.write');
-  const repositories = await listRepositories(projectId);
+  const editable = can(context, 'project.write');
+  const mayWriteTask = can(context, 'task.write');
+  const [repositories, link, tasks, gitActions] = await Promise.all([listRepositories(projectId), getRepositoryLink(projectId), listTaskOptions(projectId), listGitActions(projectId)]);
 
   return (
     <div className="flex flex-col gap-5">
@@ -45,9 +63,13 @@ export default async function RepositoryPage({ params }: { params: Promise<{ pro
 
       <ProjectSubNav projectId={projectId} />
 
+      <GithubPanel projectId={projectId} link={link} editable={editable} mayWriteTask={mayWriteTask} tasks={tasks} gitActions={gitActions} />
+
+      <h2 className="text-[13px] font-semibold tracking-tight">Repository links</h2>
       <Callout tone="info">
-        These are links to where the code and its reviews actually live — not a live GitHub/GitLab
-        integration. Branch and review state shown here is whatever was typed in, not read from the host.
+        These are links to where the code and its reviews actually live, typed by a person. Branch and review
+        state on these rows is whatever was typed in, not read from the host — the live panel above is the only
+        thing on this page that asks GitHub, or writes to it.
       </Callout>
 
       {repositories.length > 0 ? (

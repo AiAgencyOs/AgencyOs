@@ -69,7 +69,7 @@ export function Callout({
       {icon ? <span className="mt-0.5 shrink-0">{icon}</span> : null}
       <div className="min-w-0 text-[13px] leading-relaxed">
         {title ? <p className="font-semibold">{title}</p> : null}
-        {children ? <div className={title ? 'mt-0.5 opacity-90' : 'opacity-90'}>{children}</div> : null}
+        {children ? <div className={title ? 'mt-0.5' : undefined}>{children}</div> : null}
       </div>
     </div>
   );

@@ -66,6 +66,12 @@ export function RecordExpenseForm({ projects }: { projects: { id: string; name: 
         </label>
         <input id="expense-description" name="description" required maxLength={2000} className={inputClass} />
       </div>
+      <div className="flex flex-col gap-1">
+        <label className={labelClass} htmlFor="expense-receipt">
+          Receipt link (optional)
+        </label>
+        <input id="expense-receipt" name="receiptUrl" type="url" maxLength={2000} className={inputClass} placeholder="https://drive.google.com/…" />
+      </div>
       <button type="submit" disabled={pending} className={`${buttonClass('primary', 'sm')} self-start`}>
         {pending ? 'Recording…' : 'Record expense'}
       </button>

@@ -548,9 +548,22 @@ const { mock: nodeMock } = await import('node:test');
 nodeMock.module('@/lib/ai/router', { exports: { resolveProvider: () => ({ ok: true, data: fakeProvider }) } });
 const { callModelWithTools } = await import('../app/api/jobs/run/agent-run.ts');
 
+// A step-gate read (F-F: the cancel flag, the pause switch, the provider
+// budget, the routing tables) answers "no row" — nothing gates, nothing routes.
+const noRow = { data: null, error: null };
+const gateRead = () => ({ eq: gateRead, maybeSingle: async () => noRow });
+function gatedAdmin(insert: (row: { kind: string; seq: number }) => Promise<{ error: null }>) {
+  return {
+    schema: () => ({
+      from: () => ({ insert, select: gateRead }),
+      rpc: async () => noRow,
+    }),
+  };
+}
+
 function freshCtx(jobId: string) {
   return {
-    admin: { schema: () => ({ from: () => ({ insert: async () => ({ error: null }) }) }) },
+    admin: gatedAdmin(async () => ({ error: null })),
     job: { id: jobId, kind: 'lead.qualify', organization_id: 'org-1', payload: null, attempts: 1, max_attempts: 3, correlation_id: null, last_error: null },
     agent: { key: 'sales', enabled: true, default_model: 'fake-model', default_effort: 'medium', autonomy_level: 'L1' },
     correlationId: 'corr-1',
@@ -564,16 +577,10 @@ describe('H. the loop: recording, bounding, and the round-trip', () => {
     providerState.calls = 0;
 
     const inserted: { kind: string; seq: number }[] = [];
-    const admin = {
-      schema: () => ({
-        from: () => ({
-          insert: async (row: { kind: string; seq: number }) => {
-            inserted.push({ kind: row.kind, seq: row.seq });
-            return { error: null };
-          },
-        }),
-      }),
-    };
+    const admin = gatedAdmin(async (row) => {
+      inserted.push({ kind: row.kind, seq: row.seq });
+      return { error: null };
+    });
 
     const dispatched: string[] = [];
     const result = await callModelWithTools(
