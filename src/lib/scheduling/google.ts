@@ -3,6 +3,7 @@ import 'server-only';
 import { createSign } from 'node:crypto';
 
 import { serverEnv } from '@/lib/env';
+import { resolveSecret } from '@/lib/secrets/resolve';
 
 import type { AvailabilityAnswer, Slot } from './availability';
 
@@ -22,7 +23,7 @@ import type { AvailabilityAnswer, Slot } from './availability';
  * agency books against: the server-to-server shape a Workspace admin can
  * create without a browser consent screen, and the one under which Google
  * will attach a Meet link. Four values, all placed by the owner in the
- * deployment environment, none read anywhere but serverEnv():
+ * deployment environment, the key through resolveSecret() (environment first, then the key vault), the rest through serverEnv():
  *
  *   GOOGLE_SERVICE_ACCOUNT_EMAIL     the account's client_email
  *   GOOGLE_SERVICE_ACCOUNT_KEY       its private_key (PEM; \n escapes accepted)
@@ -104,11 +105,11 @@ function trimmed(value: string | undefined): string | undefined {
   return v ? v : undefined;
 }
 
-/** The configuration from the environment, or null when the owner has not placed it. */
-export function googleCalendarConfig(): GoogleCalendarConfig | null {
+/** The configuration from the environment and the key vault, or null when the owner has not placed it. */
+export async function googleCalendarConfig(): Promise<GoogleCalendarConfig | null> {
   const env = serverEnv();
   const serviceAccountEmail = trimmed(env.GOOGLE_SERVICE_ACCOUNT_EMAIL);
-  const key = trimmed(env.GOOGLE_SERVICE_ACCOUNT_KEY);
+  const key = trimmed((await resolveSecret('GOOGLE_SERVICE_ACCOUNT_KEY')) ?? undefined);
   const calendarId = trimmed(env.GOOGLE_CALENDAR_ID);
   if (!serviceAccountEmail || !key || !calendarId) return null;
   return {
@@ -149,7 +150,12 @@ export function pemFromPaste(raw: string): string {
   return `${block[0].split('\n').map((line) => line.trim()).filter(Boolean).join('\n')}\n`;
 }
 
-export function createGoogleCalendar(config: GoogleCalendarConfig | null = googleCalendarConfig()): CalendarAdapter | null {
+/** The adapter for what is configured right now (environment, then vault); null when nothing is. */
+export async function resolveGoogleCalendar(): Promise<CalendarAdapter | null> {
+  return createGoogleCalendar(await googleCalendarConfig());
+}
+
+export function createGoogleCalendar(config: GoogleCalendarConfig | null): CalendarAdapter | null {
   if (!config) return null;
   const source = { provider: PROVIDER, calendarId: config.calendarId };
 

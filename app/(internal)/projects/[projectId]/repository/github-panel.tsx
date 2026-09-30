@@ -50,7 +50,7 @@ export async function GithubPanel({
   gitActions: GitAction[];
 }) {
   const clock = await agencyClock();
-  const configured = githubConfigured();
+  const configured = await githubConfigured();
   const scopes = configured ? await readGithubTokenScopes() : null;
 
   return (

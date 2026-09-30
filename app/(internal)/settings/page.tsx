@@ -1,4 +1,5 @@
-import { configStatus, type ConfigArea, type ConfigItem } from '@/lib/admin/config-status';
+import { configStatusResolved } from '@/lib/admin/config-status-resolved';
+import type { ConfigArea, ConfigItem } from '@/lib/admin/config-status';
 import { requireInternal } from '@/lib/auth/session';
 import { createClient } from '@/lib/db/server';
 import { readCronAgeSeconds } from '@/lib/observability/queries';
@@ -44,7 +45,10 @@ const AREAS: readonly ConfigArea[] = [
 ];
 
 function Dot({ item }: { item: ConfigItem }) {
-  if (item.present) return <span className="text-success">configured</span>;
+  if (item.present) {
+    const where = item.source === 'vault' ? ' (vault)' : item.source === 'env' ? ' (environment)' : '';
+    return <span className="text-success">configured{where}</span>;
+  }
   if (item.requiredInProduction)
     return <span className="text-danger">not configured — required</span>;
   return <span className="text-muted">not configured — optional</span>;
@@ -53,7 +57,7 @@ function Dot({ item }: { item: ConfigItem }) {
 export default async function SettingsGeneralPage() {
   await requireInternal('/settings');
 
-  const status = configStatus();
+  const status = await configStatusResolved();
   const clock = await agencyClock();
   // SCR-071: what a high-risk change touches, and each setting's recorded history.
   const [cronAge, impact, history] = await Promise.all([readCronAgeSeconds(), readSettingImpact(), readSettingHistory()]);

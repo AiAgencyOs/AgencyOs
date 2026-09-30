@@ -102,7 +102,7 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
   const when = whenOf(m);
   const reminderJob = pickNewest(jobs.filter((j) => j.kind === 'meeting.reminder'));
   const analysisJob = pickNewest(jobs.filter((j) => j.kind === 'meeting.analysis'));
-  const calendar = googleCalendarConfig();
+  const calendar = await googleCalendarConfig();
   const superseder = await findMeetingSuperseder(m.id);
   const controls = meetingControls(m.status as MeetingStatus, { calendarConfigured: calendar !== null });
   const offered = offeredSlots(m, agencyZone, (iso, zone) => clockFor(zone).dateTime(iso), (iso, zone) => clockFor(zone).clock(iso));

@@ -11,7 +11,7 @@ import { err, ok, type Result } from '@/lib/result';
 import { interpretBook, interpretPropose } from '@/lib/scheduler/meeting-commands-eval';
 
 import { bufferedSlot, offerableSlots, proposalWindow, readAvailabilityFrom, sliceWindows, slotStillFree, type Slot } from './availability';
-import { createGoogleCalendar } from './google';
+import { resolveGoogleCalendar } from './google';
 
 /**
  * Proposing and booking a slot from the meeting page — G-243, §5 and §6.
@@ -90,7 +90,7 @@ export async function proposeSlots(id: string, durationMinutes: number): Promise
   const meeting = await readMeeting(parsed.data.id);
   if (!meeting.ok) return meeting;
 
-  const calendar = createGoogleCalendar();
+  const calendar = await resolveGoogleCalendar();
   if (!calendar) return err('VALIDATION', 'No calendar is configured, so nothing can be offered — availability answers unconfigured (BLK-005).');
 
   const now = new Date();
@@ -153,7 +153,7 @@ export async function bookProposedSlot(id: string, startAt: string, mode: string
   const chosen = offered.find((s) => Date.parse(s.startAt) === Date.parse(parsed.data.startAt));
   if (!chosen) return err('VALIDATION', 'That time was not among the slots offered. Propose again if the client wants another.');
 
-  const calendar = createGoogleCalendar();
+  const calendar = await resolveGoogleCalendar();
   if (!calendar) return err('VALIDATION', 'No calendar is configured, so nothing can be booked (BLK-005).');
 
   // A slot offered days ago may be gone by the time somebody clicks: the

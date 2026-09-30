@@ -5,7 +5,7 @@ import { createClient } from '@/lib/db/server';
 import { readGithubTokenScopes } from '@/lib/git/github';
 import { readCronAgeSeconds } from '@/lib/observability/queries';
 
-import { configStatus } from './config-status';
+import { configStatusResolved } from './config-status-resolved';
 import { evaluateIntegrations, integrationsSummary, type Integration } from './integrations-eval';
 import type { Avail } from './overview-eval';
 
@@ -58,7 +58,7 @@ async function countRepositoryLinks(): Promise<number> {
 export type IntegrationsView = { integrations: Integration[]; summary: Record<string, number> };
 
 export async function getIntegrations(): Promise<IntegrationsView> {
-  const config = configStatus();
+  const config = await configStatusResolved();
   const present = (key: string) => config.items.find((i) => i.key === key)?.present ?? false;
 
   const [database, cronAgeSeconds, numberConfigured, aiProviderConfigured, transcriberConfigured, imageGeneratorConfigured, linkedRepositories, githubScopes] =

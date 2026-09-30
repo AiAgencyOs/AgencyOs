@@ -94,7 +94,7 @@ export default async function MeetingsPage({
   for (const j of jobs) if (j.kind === 'meeting.reminder') byMeeting.set(j.meetingId, [...(byMeeting.get(j.meetingId) ?? []), j]);
   const owners = [...new Set(rows.map((r) => r.lead?.assigned_to).filter((id): id is string => Boolean(id)))];
 
-  const googleCalendar = googleCalendarConfig();
+  const googleCalendar = await googleCalendarConfig();
   const settings = await readOperationalSettings();
   const calendarVerifiedAt = settingInstant(settings, 'calendar_verified_at');
   const calendarVerified = settingText(settings, 'calendar_verified_calendar');

@@ -112,7 +112,7 @@ export default async function InvoicePage({
   const receivingAccounts = accounts.filter((a) => a.status === 'active');
   // SCR-051: the email transport's own state (configured or the words about
   // what is missing) and the client's billing address as the default recipient.
-  const transportState = mayIssueInvoice ? emailTransportState() : null;
+  const transportState = mayIssueInvoice ? await emailTransportState() : null;
   const emailTransport = transportState === null ? null : transportState.configured ? { configured: true as const, label: transportState.label } : { configured: false as const, reason: transportState.reason };
   const billingEmail = mayIssueInvoice ? await readClientBillingEmail(invoice.client_account_id) : null;
   const taxRatePct = invoice.subtotal_minor > 0 ? Math.round((invoice.tax_minor / invoice.subtotal_minor) * 1000) / 10 : 0;
