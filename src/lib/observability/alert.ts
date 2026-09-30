@@ -1,7 +1,8 @@
 import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
-import { clientEnv, serverEnv } from '@/lib/env';
+import { clientEnv } from '@/lib/env';
+import { resolveSecret } from '@/lib/secrets/resolve';
 
 import { alertPayload, isHealthy, signatureOf, type BacklogRow } from './backlog';
 
@@ -100,7 +101,7 @@ export async function alertOnBacklog(admin: Admin): Promise<AlertOutcome> {
   // does not depend on the delivery succeeding.
   log('error', { severity: payload.severity, summary: payload.summary });
 
-  const url = serverEnv().ALERT_WEBHOOK_URL;
+  const url = await resolveSecret('ALERT_WEBHOOK_URL');
   // Unconfigured is not a failed delivery: the situation was recorded to the
   // log, and the claim standing means the log line is not repeated every
   // minute. Releasing here would restore per-minute log spam, so it does not.

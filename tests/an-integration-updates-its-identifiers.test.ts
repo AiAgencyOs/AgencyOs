@@ -62,8 +62,8 @@ describe('SCR-070 · the integration row carries the update control', () => {
     for (const id of ['whatsapp', "'ai-provider'", 'transcriber', "'image-generator'", 'github', 'alerts']) {
       assert.match(page, new RegExp(`${id}: \\{ href:`), `${id} has a secure-storage entry`);
     }
-    assert.match(page, /github: \{ href: null/);
-    assert.match(page, /alerts: \{ href: null/);
+    assert.match(page, /github: \{ href: '\/security\/keys'/);
+    assert.match(page, /alerts: \{ href: '\/security\/keys'/);
     assert.doesNotMatch(page, /WHATSAPP_ACCESS_TOKEN\b[^']*\}/, 'a secret is named, never read');
   });
 });

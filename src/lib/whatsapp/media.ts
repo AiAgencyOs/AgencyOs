@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { serverEnv } from '@/lib/env';
+import { resolveSecret } from '@/lib/secrets/resolve';
 import {
   AI_AUDIO_MEDIA_TYPES,
   AI_IMAGE_MEDIA_TYPES,
@@ -151,8 +152,9 @@ export async function fetchWhatsAppMedia(
   appetite: MediaAppetite,
 ): Promise<FetchMediaResult> {
   const env = serverEnv();
+  const accessToken = await resolveSecret('WHATSAPP_ACCESS_TOKEN');
 
-  if (!env.WHATSAPP_ACCESS_TOKEN) {
+  if (!accessToken) {
     // Transient, exactly as in send.ts: a deployment that has not set its token
     // yet may set it, and refusing forever over a deploy gap is the wrong
     // answer to a fixable state.
@@ -164,7 +166,7 @@ export async function fetchWhatsAppMedia(
   }
 
   const base = env.WHATSAPP_GRAPH_BASE_URL ?? DEFAULT_BASE;
-  const auth = { Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}` };
+  const auth = { Authorization: `Bearer ${accessToken}` };
 
   /**
    * What to call the thing, decided BEFORE the first request rather than after.

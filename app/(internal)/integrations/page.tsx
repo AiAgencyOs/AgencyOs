@@ -12,6 +12,7 @@ import { readSettingHistory } from '@/lib/admin/settings-history';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
+import { secretSource } from '@/lib/secrets/resolve';
 import { IntegrationState, PageHeader, PermissionDenied, buttonClass, labelClass } from '@/ui';
 
 import { TestRecipientForm, VerifyAiProviderForm, VerifyCalendarForm, VerifyWhatsAppButton, WhatsAppNumberForm } from '../settings/forms';
@@ -45,7 +46,7 @@ export default async function IntegrationsPage() {
   const [{ integrations, summary }, settings, githubScopes, history, clock] = await Promise.all([
     getIntegrations(),
     readOperationalSettings(),
-    githubConfigured() ? readGithubTokenScopes() : Promise.resolve(null),
+    githubConfigured().then((on) => (on ? readGithubTokenScopes() : null)),
     // SCR-070: each panel-set identifier's effective date and history, from the audit trail.
     readSettingHistory(),
     agencyClock(),
@@ -60,6 +61,7 @@ export default async function IntegrationsPage() {
   // Presence only — config-status never learns a value, and neither does this page.
   const env = configStatus();
   const envPresent = (key: string) => env.items.find((i) => i.key === key)?.present ?? false;
+  const alertWebhook = await secretSource('ALERT_WEBHOOK_URL');
   // SCR-067 / SCR-070: one verify control per integration that has an
   // action — the SAME forms Settings and /agents use, behind
   // verifyWhatsAppAction / verifyAiProviderAction / verifyCalendarAction —
@@ -89,7 +91,7 @@ export default async function IntegrationsPage() {
     ],
     'ai-provider': providerVerifiedModel ? [{ label: 'Verified model', value: providerVerifiedModel, effective: effectiveOf('ai_provider_verified_model') }] : [],
     // The webhook URL is read from the environment and may embed a token, so only its presence is stated.
-    alerts: [{ label: 'Webhook URL (ALERT_WEBHOOK_URL)', value: envPresent('ALERT_WEBHOOK_URL') ? 'set in the deployment environment' : 'unset' }],
+    alerts: [{ label: 'Webhook URL (ALERT_WEBHOOK_URL)', value: envPresent('ALERT_WEBHOOK_URL') ? 'set in the deployment environment' : alertWebhook.source === 'vault' ? 'set in the key vault' : 'unset' }],
     // Bucket F — the token's scopes, read once from X-OAuth-Scopes, so "can this deployment write to GitHub" is answered here.
     github: githubScopes
       ? githubScopes.ok
@@ -123,14 +125,14 @@ export default async function IntegrationsPage() {
     ),
   };
   // SCR-070: "Open secure key storage" — where the credential is, per integration.
-  const envOnly = (names: string) => `${names} live in the deployment environment. The panel never stores, shows or changes them; a deploy does.`;
+  const keyed = (names: string) => `${names} are read from the deployment environment first, then the key vault (Security › Keys). The panel never shows one; a value set in the environment wins until it is removed there.`;
   const secrets: Record<string, SecureStorage> = {
-    whatsapp: { href: '/settings/communication', note: envOnly('WHATSAPP_ACCESS_TOKEN, WHATSAPP_APP_SECRET and WHATSAPP_VERIFY_TOKEN') + ' Settings › Communication holds the non-secret WhatsApp configuration and the verify controls.' },
+    whatsapp: { href: '/settings/communication', note: keyed('WHATSAPP_ACCESS_TOKEN, WHATSAPP_APP_SECRET and WHATSAPP_VERIFY_TOKEN') + ' Settings › Communication holds the non-secret WhatsApp configuration and the verify controls.' },
     'ai-provider': { href: '/agents#vault', note: 'Provider keys are kept encrypted in the provider vault (core.provider_credentials); an environment key is read when the vault has none.' },
     transcriber: { href: '/agents#vault', note: 'The transcription key is kept encrypted in the provider vault, or read from the environment when the vault has none.' },
     'image-generator': { href: '/agents#vault', note: 'The image-generation key is kept encrypted in the provider vault, or read from the environment when the vault has none.' },
-    github: { href: null, note: envOnly('GITHUB_TOKEN') },
-    alerts: { href: null, note: envOnly('ALERT_WEBHOOK_URL') },
+    github: { href: '/security/keys', note: keyed('GITHUB_TOKEN') },
+    alerts: { href: '/security/keys', note: keyed('ALERT_WEBHOOK_URL') },
   };
   const verifiedCount = summary.VERIFIED ?? 0;
   const configuredCount = summary.CONFIGURED ?? 0;

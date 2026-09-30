@@ -1,7 +1,7 @@
 'use server';
 
 import { PROBE_MODELS } from '@/lib/ai/providers';
-import { createGoogleCalendar } from '@/lib/scheduling/google';
+import { resolveGoogleCalendar } from '@/lib/scheduling/google';
 import { configuredProviders, resetProviderRegistry, resolveProvider } from '@/lib/ai/router';
 import { deleteProviderCredential, setProviderCredential, VAULT_PROVIDERS, type VaultProvider } from '@/lib/ai/vault';
 import { sendWhatsAppText } from '@/lib/whatsapp/send';
@@ -690,8 +690,8 @@ export async function revokeProviderCredentialAction(_prev: FormState, formData:
 export async function verifyCalendarAction(_prev: FormState, _formData: FormData): Promise<FormState> {
   const context = await requireInternal();
   if (!can(context, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify the calendar.' };
-  const calendar = createGoogleCalendar();
-  if (!calendar) return { status: 'error', message: 'No calendar is configured: place GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_KEY and GOOGLE_CALENDAR_ID in the deployment environment (ADM-102).' };
+  const calendar = await resolveGoogleCalendar();
+  if (!calendar) return { status: 'error', message: 'No calendar is configured: place GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_KEY and GOOGLE_CALENDAR_ID in the deployment environment, or store the key in Security › Keys (ADM-102).' };
   const from = new Date();
   const to = new Date(from.getTime() + 7 * 86_400_000);
   const answer = await calendar.readAvailability({ from: from.toISOString(), to: to.toISOString() });

@@ -3,7 +3,7 @@ import 'server-only';
 import { z } from 'zod';
 
 import { requireInternal } from '@/lib/auth/session';
-import { createGoogleCalendar } from '@/lib/scheduling/google';
+import { resolveGoogleCalendar } from '@/lib/scheduling/google';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
@@ -209,7 +209,7 @@ export async function rescheduleMeeting(
 /** The adapter cancels the old booking's event, and says so on its own audit row. Null when there was nothing to take back. */
 async function takeProviderEventBack(meetingIdValue: string, providerEventId: string | null): Promise<string | null> {
   if (!providerEventId) return null;
-  const calendar = createGoogleCalendar();
+  const calendar = await resolveGoogleCalendar();
   if (!calendar) return `The calendar event ${providerEventId} was NOT cancelled at the provider: no calendar is configured here.`;
   const taken = await calendar.cancelEvent(providerEventId);
   const supabase = await createClient();

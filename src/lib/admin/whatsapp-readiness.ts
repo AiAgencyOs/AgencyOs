@@ -1,8 +1,8 @@
 import 'server-only';
 
 import { createClient } from '@/lib/db/server';
-import { serverEnv } from '@/lib/env';
 import { unreadable } from '@/lib/result';
+import { secretConfigured } from '@/lib/secrets/resolve';
 
 /**
  * Can this deployment send on WhatsApp at all? — the honest gate a send
@@ -17,7 +17,7 @@ import { unreadable } from '@/lib/result';
 export type WhatsAppReadiness = { ok: true } | { ok: false; reason: string };
 
 export async function readWhatsAppReadiness(): Promise<WhatsAppReadiness> {
-  const tokenConfigured = Boolean(serverEnv().WHATSAPP_ACCESS_TOKEN);
+  const tokenConfigured = await secretConfigured('WHATSAPP_ACCESS_TOKEN');
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('core').from('organizations').select('settings').limit(1).maybeSingle();

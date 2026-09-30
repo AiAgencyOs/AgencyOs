@@ -3,7 +3,7 @@ import 'server-only';
 import { agencyClock } from './agency-clock';
 import { wouldRun } from './agent-eval';
 import { aiStatus } from './agent-status';
-import { configStatus } from './config-status';
+import { configStatusResolved } from './config-status-resolved';
 import { DEFAULT_OVERVIEW_WINDOW, readWindowActivity, type WindowActivity } from './dashboard-window';
 import { reactivationSummary, type ReactivationSummary } from './reactivation-summary';
 import { createClient } from '@/lib/db/server';
@@ -192,7 +192,7 @@ async function needsAttentionItems(): Promise<AttentionItem[]> {
 
 export async function getOverview(options: { sinceDays?: number } = {}): Promise<OverviewData> {
   const sinceDays = options.sinceDays ?? DEFAULT_OVERVIEW_WINDOW;
-  const config = configStatus();
+  const config = await configStatusResolved();
   const clock = await agencyClock();
   const todayWindow = clock.today();
 

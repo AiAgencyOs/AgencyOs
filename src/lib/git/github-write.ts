@@ -116,7 +116,7 @@ async function githubSend<T>(token: string, method: 'POST' | 'PUT', path: string
 
 /** The token, refused honestly when absent or when its stated scopes cannot write. */
 async function writableToken(): Promise<{ ok: true; token: string } | { ok: false; reason: GithubWriteReason; detail: string }> {
-  const token = githubToken();
+  const token = await githubToken();
   if (!token) return { ok: false, reason: 'not_configured', detail: 'GITHUB_TOKEN is unset' };
   const scopes = await readGithubTokenScopes();
   if (!scopes.ok) return scopes;

@@ -79,7 +79,7 @@ export default async function ProjectThemesPage({
   // Whether a token exists, never its value. The form's wording changes with
   // it, because a deployment that cannot check a reference must not imply it
   // did.
-  const figmaReady = figmaConfigured();
+  const figmaReady = await figmaConfigured();
 
   return (
     <div className="flex flex-col gap-6">

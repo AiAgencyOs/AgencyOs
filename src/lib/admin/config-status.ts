@@ -50,6 +50,12 @@ export type ConfigItem = {
   requiredInProduction: boolean;
   /** Set and non-empty in this environment. NEVER the value. */
   present: boolean;
+  /**
+   * Where a stored-key slot's value comes from when `configStatusResolved()`
+   * built the item: the deployment environment, the vault, or nowhere.
+   * Absent on the env-only `configStatus()`. Presence only, never a value.
+   */
+  source?: 'env' | 'vault' | 'none';
   /** Safe, value-free explanation of what it does and what "missing" costs. */
   note: string;
 };
