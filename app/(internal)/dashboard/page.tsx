@@ -298,7 +298,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
       ...(isAvailable(o.ai)
         ? o.ai.value.providerConfigured
           ? { state: 'Configured', tone: 'success' as Tone }
-          : { state: 'Not configured', tone: 'warning' as Tone }
+          : { state: <Link href="/security/keys#ai" className="underline underline-offset-2">Not configured — add a key</Link>, tone: 'warning' as Tone }
         : { state: 'DATA UNAVAILABLE', tone: 'danger' as Tone }),
     },
     {
@@ -308,7 +308,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
         ? { state: 'DATA UNAVAILABLE', tone: 'danger' as Tone }
         : o.whatsapp.tokenConfigured && o.whatsapp.numberConfigured.value
           ? { state: 'Configured · verify', tone: 'warning' as Tone }
-          : { state: 'Not configured', tone: 'warning' as Tone }),
+          : { state: <Link href="/security/keys#messaging" className="underline underline-offset-2">Not configured — add a key</Link>, tone: 'warning' as Tone }),
     },
     { label: 'Scheduler (Cron)', icon: <IconClock size={13} />, state: cronText.text, tone: TONE[cronText.tone] ?? 'neutral' },
     {

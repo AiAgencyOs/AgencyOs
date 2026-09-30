@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { reactivationSummary } from '@/lib/admin/reactivation-summary';
 import { requireInternal } from '@/lib/auth/session';
@@ -93,7 +94,7 @@ export default async function SettingsCommunicationPage() {
         `no_group` and went nowhere.
       */}
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
-        <h2 className="text-[13px] font-semibold tracking-tight">Internal group</h2>
+        <h2 id="internal-group" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Internal group</h2>
         <p className="text-xs text-muted">
           Where the agent asks for a person — an approval that needs deciding, a client it has
           handed over. Add the AgencyOS number to your team&rsquo;s WhatsApp group, then paste the
@@ -111,7 +112,7 @@ export default async function SettingsCommunicationPage() {
         cannot.
       */}
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
-        <h2 className="text-[13px] font-semibold tracking-tight">Announcements number</h2>
+        <h2 id="announcements-number" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Announcements number</h2>
         <p className="text-xs text-muted">
           A person&rsquo;s own WhatsApp — approvals with the full quotation and its PDF, and
           handovers, arrive here. On this WhatsApp number Meta has not enabled groups, so this is
@@ -128,7 +129,7 @@ export default async function SettingsCommunicationPage() {
         no other channel exists for a message to many people at once.
       */}
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
-        <h2 className="text-[13px] font-semibold tracking-tight">Announcements</h2>
+        <h2 id="announcements" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Announcements</h2>
         <p className="text-xs text-muted">
           What the agency announced, to the team or to clients, and when. Publishing records the announcement so the
           Communication Center and each client&rsquo;s page can show it; <span className="font-medium">nothing is
@@ -153,7 +154,7 @@ export default async function SettingsCommunicationPage() {
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
-        <h2 className="text-[13px] font-semibold tracking-tight">Messages outside the 24-hour window</h2>
+        <h2 id="whatsapp-templates" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Messages outside the 24-hour window</h2>
         <p className="text-xs text-muted">
           WhatsApp only carries a free-form message within 24 hours of the client&rsquo;s last message.
           Every follow-up day is outside that, and so is every imported lead — so a follow-up can only
@@ -168,7 +169,7 @@ export default async function SettingsCommunicationPage() {
         </StatGrid>
         <WhatsAppTemplatesForm registered={whatsappTemplates} />
 
-        <h2 className="text-[13px] font-semibold tracking-tight">Template history</h2>
+        <h2 id="template-history" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Template history</h2>
         <p className="text-xs text-muted">
           Every change to a registration, newest first, as <code className="text-xs">crm.whatsapp_template_versions</code> recorded it.
         </p>
@@ -195,7 +196,7 @@ export default async function SettingsCommunicationPage() {
           </ul>
         )}
 
-        <h2 className="text-[13px] font-semibold tracking-tight">How often AgencyOS starts a conversation</h2>
+        <h2 id="outreach-limits" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">How often AgencyOS starts a conversation</h2>
         <p className="text-xs text-muted">
           Nothing limited this before, which was survivable while nothing could be delivered at all.
           It stops being survivable the moment templates are approved and twelve hundred historical
@@ -204,7 +205,7 @@ export default async function SettingsCommunicationPage() {
         </p>
         <OutreachLimitsForm limits={outreachLimits} />
 
-        <h2 className="text-[13px] font-semibold tracking-tight">When AgencyOS may send</h2>
+        <h2 id="outreach-window" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">When AgencyOS may send</h2>
         <p className="text-xs text-muted">
           {setting('outreach_window_start_hour') && setting('outreach_window_end_hour')
             ? `Set — follow-ups go out between ${setting('outreach_window_start_hour')}:00 and ${setting('outreach_window_end_hour')}:00 in the agency’s timezone, on business days.`
@@ -212,7 +213,7 @@ export default async function SettingsCommunicationPage() {
         </p>
         <OutreachWindowForm start={setting('outreach_window_start_hour')} end={setting('outreach_window_end_hour')} />
 
-        <h2 className="text-[13px] font-semibold tracking-tight">How quickly the agent answers</h2>
+        <h2 id="wake-on-inbound" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">How quickly the agent answers</h2>
         <p className="text-xs text-muted">
           A message normally waits for the next scheduled run before the agent starts reading it —
           up to a minute. Turning this on has the agent start the moment a message arrives. It does
@@ -220,7 +221,7 @@ export default async function SettingsCommunicationPage() {
         </p>
         <WakeOnInboundForm enabled={wakeOnInbound} />
 
-        <h2 className="text-[13px] font-semibold tracking-tight">Historical-lead reactivation</h2>
+        <h2 id="reactivation" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Historical-lead reactivation</h2>
         <p className="text-xs text-muted">
           Off by default. When on, only leads explicitly enrolled in the cohort — each with a granted WhatsApp consent
           row — are nurtured on the inactive-lead rhythm. Enrol leads from a lead&rsquo;s own page. Nothing sends until
@@ -249,7 +250,7 @@ export default async function SettingsCommunicationPage() {
           </span>
           <PilotToggleForm enabled={reactivation.pilotEnabled} />
         </div>
-        <div className="flex flex-col gap-1 rounded-lg border border-line px-4 py-3">
+        <div id="reactivation-cap" className="flex scroll-mt-24 flex-col gap-1 rounded-lg border border-line px-4 py-3">
           <span className="text-xs font-medium">Per-run cap</span>
           <p className="text-[11px] text-muted">
             The most reactivation follow-ups one worker run sends for this organization. Bounds a single tick so
@@ -261,11 +262,11 @@ export default async function SettingsCommunicationPage() {
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
-        <h2 className="text-[13px] font-semibold tracking-tight">WhatsApp</h2>
+        <h2 id="whatsapp" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">WhatsApp</h2>
         <p className="text-xs text-muted">
           Whether the tokens are set is shown on the General tab. This checks the number itself with Meta — a
           read-only lookup that <span className="font-medium">sends no message</span>. It needs
-          <code className="text-xs"> WHATSAPP_ACCESS_TOKEN</code> and a phone number id for this organization.
+          <code className="text-xs"> WHATSAPP_ACCESS_TOKEN</code> (add it under <Link href="/security/keys" className="underline underline-offset-2">Governance &amp; Security › Keys &amp; secrets</Link>, or set it in the deployment environment) and a phone number id for this organization.
         </p>
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface px-4 py-3 text-sm">
           <span>
@@ -286,9 +287,9 @@ export default async function SettingsCommunicationPage() {
               : 'Never verified with Meta — the readiness page stays amber until a person runs this and the answer is recorded.'}
           </p>
         </div>
-        <p className="text-xs text-muted">
+        <p id="whatsapp-test-recipient" className="scroll-mt-24 text-xs text-muted">
           Internal test recipient — an owner-controlled number for a controlled first send before anything reaches a
-          real customer. Not a secret; the send itself needs <code className="text-xs">WHATSAPP_ACCESS_TOKEN</code> and
+          real customer. Not a secret; the send itself needs <code className="text-xs">WHATSAPP_ACCESS_TOKEN</code> (add it under <Link href="/security/keys" className="underline underline-offset-2">Governance &amp; Security › Keys &amp; secrets</Link>) and
           stays off until you run it.
         </p>
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface px-4 py-3 text-sm">

@@ -239,7 +239,8 @@ export default async function OperationsPage({
           <h2 className="text-[13px] font-semibold tracking-tight">Alerts</h2>
           <span className="text-xs text-muted">
             In-app, acknowledged here by a person; the webhook destination (ALERT_WEBHOOK_URL) is reported on{' '}
-            <Link href="/settings" className="underline-offset-2 hover:underline">Settings</Link>.
+            <Link href="/settings" className="underline-offset-2 hover:underline">Settings</Link> and kept under{' '}
+            <Link href="/security/keys#ALERT_WEBHOOK_URL" className="underline-offset-2 hover:underline">Keys &amp; secrets</Link>.
           </span>
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -557,7 +558,9 @@ export default async function OperationsPage({
       <p className="text-xs text-muted">
         Dead jobs are never retried on their own. Requeueing one gives it a fresh set of attempts
         and records who asked for it. Alerts reach a person only where <code>ALERT_WEBHOOK_URL</code>{' '}
-        is configured; otherwise the situation is written to the log, once per situation.
+        is configured (add it under{' '}
+        <Link href="/security/keys#ALERT_WEBHOOK_URL" className="underline underline-offset-2">Governance &amp; Security › Keys &amp; secrets</Link>
+        {' '}or set it in the deployment environment); otherwise the situation is written to the log, once per situation.
       </p>
     </div>
   );

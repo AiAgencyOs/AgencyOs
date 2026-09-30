@@ -61,7 +61,7 @@ export async function GithubPanel({
           {configured ? (
             <span className="text-success">GITHUB_TOKEN configured</span>
           ) : (
-            <span className="text-warning">GITHUB_TOKEN not configured</span>
+            <span className="text-warning">GITHUB_TOKEN not configured — <Link href="/security/keys#GITHUB_TOKEN" className="underline underline-offset-2">add it</Link></span>
           )}
           {scopes?.ok ? (
             <>
@@ -78,7 +78,7 @@ export async function GithubPanel({
 
       {!configured ? (
         <Callout tone="warning">
-          GitHub is not configured in this deployment: set <code>GITHUB_TOKEN</code> (with the <code>repo</code> scope for the write doors) and the linked
+          GitHub is not configured in this deployment: add <code>GITHUB_TOKEN</code> under <Link href="/security/keys" className="underline underline-offset-2">Governance &amp; Security › Keys &amp; secrets</Link> (or set it in the deployment environment; with the <code>repo</code> scope for the write doors) and the linked
           repository&apos;s commits, open pull requests, branches, checks and review findings are read here. Until then only the link is kept.
         </Callout>
       ) : null}

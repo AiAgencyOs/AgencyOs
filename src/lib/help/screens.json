@@ -1,6 +1,6 @@
 {
   "source": "docs/AGENCYOS_ADMIN_MASTER_SCREEN_INVENTORY.md",
-  "inventoryHash": "15c346323c80eb339e9a489aa81db05c0367a48a93d442eb2a88b347da84fc1e",
+  "inventoryHash": "d54cad5b72affdc16e60ba52ddfccc896cbe1a93c1c8e5c73f5159b5a539b391",
   "count": 71,
   "screens": [
     {
@@ -44,7 +44,7 @@
       "id": "SCR-004",
       "title": "Quick Create / Command Palette",
       "module": "Global Control",
-      "route": "⌘K palette → New lead / New client",
+      "route": "⌘K palette → New lead / New client; type a setting or key name (“GST”, “window”, “github”) to jump to its section",
       "routes": [],
       "capability": "lead.write / project.write",
       "reads": "createLeadAction, createClientAccountAction",

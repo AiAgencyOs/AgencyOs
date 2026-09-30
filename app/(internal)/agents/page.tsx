@@ -208,7 +208,7 @@ export default async function AgentsPage() {
 
       {!providerConfigured ? (
         <Callout tone="warning" icon={<IconAlert size={16} />} title="AI provider not configured">
-          Set ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY or OPENROUTER_API_KEY (ADM-85), or store a key in the vault below. Until then no agent can run and nothing is faked.
+          Add ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY or OPENROUTER_API_KEY (ADM-85) under <Link href="/security/keys" className="underline underline-offset-2">Governance &amp; Security › Keys &amp; secrets</Link> (or set it in the deployment environment), or store a key in the vault below. Until then no agent can run and nothing is faked.
         </Callout>
       ) : null}
 
@@ -374,7 +374,12 @@ export default async function AgentsPage() {
           <Card>
             <CardHeader
               title="AI provider"
-              actions={<Badge tone={providerConfigured ? 'success' : 'warning'} dot>{providerConfigured ? 'Configured' : 'Not configured'}</Badge>}
+              actions={
+                <span className="flex items-center gap-2">
+                  <Badge tone={providerConfigured ? 'success' : 'warning'} dot>{providerConfigured ? 'Configured' : 'Not configured'}</Badge>
+                  {providerConfigured ? null : <Link href="/security/keys#ai" className="text-xs underline underline-offset-2">Add a key</Link>}
+                </span>
+              }
               description={
                 providerConfigured
                   ? providerVerifiedAt

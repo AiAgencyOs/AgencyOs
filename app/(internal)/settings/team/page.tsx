@@ -56,7 +56,7 @@ export default async function SettingsTeamPage({ searchParams }: { searchParams:
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
-        <h2 className="text-[13px] font-semibold tracking-tight">Project group names</h2>
+        <h2 id="project-group-names" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Project group names</h2>
         {/*
           G-188. Four of the five parts are facts about the project — its name,
           the quotation the client agreed, the start date, the client — and
@@ -96,7 +96,7 @@ export default async function SettingsTeamPage({ searchParams }: { searchParams:
         wording in the form.
       */}
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
-        <h2 className="text-[13px] font-semibold tracking-tight">Who reviews design work</h2>
+        <h2 id="design-reviewer" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Who reviews design work</h2>
         <p className="text-xs text-muted">
           The internal design gate refuses until somebody specific holds it — a capability check
           would let anyone stand in, and the point of the gate is that a named person looked.

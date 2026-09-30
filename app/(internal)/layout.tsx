@@ -5,6 +5,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { readOrganizationName } from '@/lib/admin/organization';
 import { listMyOrganizations, type MyOrganization } from '@/lib/admin/organization-switch';
+import { catalogueFor, groupOf } from '@/lib/admin/settings-catalogue';
 import { Avatar, humanize, IconMore } from '@/ui';
 
 import { SignOutButton } from '../(auth)/sign-out-button';
@@ -72,9 +73,19 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
 
   // The command palette searches exactly what the sidebar shows — already
   // capability-filtered, so it can only ever jump to a page this role may open.
-  const commands = visibleGroups.flatMap((g) =>
+  const pageCommands = visibleGroups.flatMap((g) =>
     g.items.map((i) => ({ href: i.href, label: i.label, group: g.title ?? 'Command Center' })),
   );
+  // Individual settings and key slots, findable by name — offered only to a
+  // role that may open the page they live on, and only once something is typed.
+  const settingCommands = catalogueFor(context).map((e) => ({
+    href: e.href,
+    label: e.label,
+    group: groupOf(e),
+    keywords: e.keywords,
+    searchOnly: true,
+  }));
+  const commands = [...pageCommands, ...settingCommands];
 
   const identity = { email: context.email, role: context.role };
   const displayName = context.fullName ?? context.email;

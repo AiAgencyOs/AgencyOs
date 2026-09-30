@@ -3,6 +3,7 @@ import type { ConfigArea, ConfigItem } from '@/lib/admin/config-status';
 import { requireInternal } from '@/lib/auth/session';
 import { createClient } from '@/lib/db/server';
 import { readCronAgeSeconds } from '@/lib/observability/queries';
+import { slotFor } from '@/lib/secrets/registry';
 
 import Link from 'next/link';
 
@@ -49,9 +50,18 @@ function Dot({ item }: { item: ConfigItem }) {
     const where = item.source === 'vault' ? ' (vault)' : item.source === 'env' ? ' (environment)' : '';
     return <span className="text-success">configured{where}</span>;
   }
+  // A key the vault can hold gets a way to add it; the rest are deployment settings.
+  const slot = slotFor(item.key);
+  const add =
+    slot && slot.storage !== 'env_only' ? (
+      <>
+        {' '}
+        — <Link href={`/security/keys#${slot.key}`} className="underline underline-offset-2">add it under Keys &amp; secrets</Link>
+      </>
+    ) : null;
   if (item.requiredInProduction)
-    return <span className="text-danger">not configured — required</span>;
-  return <span className="text-muted">not configured — optional</span>;
+    return <span className="text-danger">not configured — required{add}</span>;
+  return <span className="text-muted">not configured — optional{add}</span>;
 }
 
 export default async function SettingsGeneralPage() {
@@ -166,7 +176,7 @@ export default async function SettingsGeneralPage() {
       */}
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-[13px] font-semibold tracking-tight">Agency name</h2>
+          <h2 id="agency-name" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Agency name</h2>
           <SettingHistory label="Agency name" entries={historyOf('name')} />
         </div>
         <p className="text-xs text-muted">
@@ -177,7 +187,7 @@ export default async function SettingsGeneralPage() {
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
-        <h2 className="text-[13px] font-semibold tracking-tight">Quotation contact details</h2>
+        <h2 id="quotation-contact" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Quotation contact details</h2>
         <p className="text-xs text-muted">
           Printed under the agency name on every quotation PDF, so a client who forwards the
           document to a partner can still reach you from it. Leave a field empty to clear it —
@@ -189,7 +199,7 @@ export default async function SettingsGeneralPage() {
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-[13px] font-semibold tracking-tight">Agency timezone</h2>
+          <h2 id="agency-timezone" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Agency timezone</h2>
           <SettingHistory label="Agency timezone" entries={historyOf('timezone')} />
         </div>
         <p className="text-xs text-muted">

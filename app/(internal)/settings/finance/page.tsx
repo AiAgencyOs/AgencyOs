@@ -49,7 +49,7 @@ export default async function SettingsFinancePage() {
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-[13px] font-semibold tracking-tight">Receiving accounts</h2>
+          <h2 id="receiving-accounts" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Receiving accounts</h2>
           <span className="text-xs text-muted">
             {active.length} active · {inactive.length} inactive
           </span>
@@ -128,7 +128,7 @@ export default async function SettingsFinancePage() {
       */}
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-[13px] font-semibold tracking-tight">Past-due reminders</h2>
+          <h2 id="past-due-reminders" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Past-due reminders</h2>
           <Badge tone={reminderPolicy.enabled ? 'success' : 'neutral'} dot>
             {reminderPolicy.enabled ? `on · every ${reminderPolicy.intervalDays} day${reminderPolicy.intervalDays === 1 ? '' : 's'}` : 'off'}
           </Badge>
@@ -156,7 +156,7 @@ export default async function SettingsFinancePage() {
       */}
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-[13px] font-semibold tracking-tight">GST identity</h2>
+          <h2 id="gst-identity" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">GST identity</h2>
           {gstIssues.length === 0 ? (
             <Badge tone="success" dot>
               {gstIdentity.gstin} · {gstIdentity.stateCode ? describeStateCode(gstIdentity.stateCode) : ''} · SAC {gstIdentity.defaultSac}
