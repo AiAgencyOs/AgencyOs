@@ -38,7 +38,7 @@ export async function verifyWhatsAppConfig(): Promise<Result<WhatsAppVerifyResul
   if (!accessToken) {
     return err(
       'VALIDATION',
-      'WHATSAPP_ACCESS_TOKEN is not set — outbound WhatsApp is disabled. Set it in the deployment environment (never here).',
+      'WHATSAPP_ACCESS_TOKEN is not set — outbound WhatsApp is disabled. Add it under Governance & Security › Keys & secrets (or set WHATSAPP_ACCESS_TOKEN in the deployment environment).',
     );
   }
 

@@ -50,7 +50,7 @@ export async function emailTransportState(): Promise<EmailTransportState> {
   if (env.SMTP_HOST) {
     return { configured: true, kind: 'smtp', from: env.EMAIL_FROM, label: `SMTP via ${env.SMTP_HOST}, from ${env.EMAIL_FROM}` };
   }
-  return { configured: false, reason: 'No email transport is configured. Set RESEND_API_KEY, or SMTP_HOST with SMTP_PORT, SMTP_USER and SMTP_PASS, in the deployment environment or the key vault.' };
+  return { configured: false, reason: 'No email transport is configured. Set RESEND_API_KEY, or SMTP_HOST with SMTP_PORT, SMTP_USER and SMTP_PASS, in the deployment environment, or add them under Governance & Security › Keys & secrets.' };
 }
 
 export async function sendEmail(message: EmailMessage): Promise<EmailSendResult> {

@@ -36,7 +36,7 @@ a record that only its editor changes.
 | SCR-001 | Command Center | `/dashboard` | `project.read` | `getOverview`, `getRecentLeads`, `getActiveProjectsSummary`, `getRevenueThisMonth`, `getAgentUsage`, `getSalesFunnel`, `getProjectCountsByStatus`, `listActionItems` | approvals, finance, jobs, leads, projects, agents | COMPLETE |
 | SCR-002 | Global Search | ⌘K palette (every page) | rail-filtered | `globalSearch` (lead/client/project/invoice, RLS-scoped) | — | GROUPED (in shell) |
 | SCR-003 | Notifications & Action Center | `/notifications` + header bell | internal | `listActionItems` (6 sources) | approvals, finance, jobs, qa, tasks, conversations | COMPLETE |
-| SCR-004 | Quick Create / Command Palette | ⌘K palette → New lead / New client | `lead.write` / `project.write` | `createLeadAction`, `createClientAccountAction` | — | GROUPED (in shell) |
+| SCR-004 | Quick Create / Command Palette | ⌘K palette → New lead / New client; type a setting or key name (“GST”, “window”, “github”) to jump to its section | `lead.write` / `project.write` | `createLeadAction`, `createClientAccountAction` | — | GROUPED (in shell) |
 
 ### Sales & CRM
 

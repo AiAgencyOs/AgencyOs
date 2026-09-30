@@ -171,9 +171,9 @@ export default async function MeetingsPage({
         </Callout>
       ) : (
         <Callout tone="warning" title="Nothing can be proposed or booked from here yet">
-          No calendar credential is in the deployment environment (BLK-005), so availability answers{' '}
+          No calendar credential is configured (BLK-005), so availability answers{' '}
           <em>unconfigured</em> and the system refuses to invent a slot. ADM-102 chose Google Calendar + Meet;
-          the adapter registers the moment the owner places the service-account values (Configuration → Calendar).
+          the adapter registers the moment the owner adds the service-account key under <Link href="/security/keys" className="underline underline-offset-2">Governance &amp; Security › Keys &amp; secrets</Link> (or sets the service-account values in the deployment environment).
         </Callout>
       )}
 

@@ -691,7 +691,7 @@ export async function verifyCalendarAction(_prev: FormState, _formData: FormData
   const context = await requireInternal();
   if (!can(context, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify the calendar.' };
   const calendar = await resolveGoogleCalendar();
-  if (!calendar) return { status: 'error', message: 'No calendar is configured: place GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_KEY and GOOGLE_CALENDAR_ID in the deployment environment, or store the key in Security › Keys (ADM-102).' };
+  if (!calendar) return { status: 'error', message: 'No calendar is configured: place GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_KEY and GOOGLE_CALENDAR_ID in the deployment environment, or store the key under Governance & Security › Keys & secrets (ADM-102).' };
   const from = new Date();
   const to = new Date(from.getTime() + 7 * 86_400_000);
   const answer = await calendar.readAvailability({ from: from.toISOString(), to: to.toISOString() });

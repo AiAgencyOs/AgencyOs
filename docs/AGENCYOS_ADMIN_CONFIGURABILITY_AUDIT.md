@@ -90,7 +90,10 @@ other provider keys, `VAULT_ENCRYPTION_KEY`, `WHATSAPP_APP_SECRET`,
 `ALERT_WEBHOOK_URL`. Provider keys an admin enters go through the vault
 (`ai.provider_credentials`, AES-256-GCM) and are shown only as
 present/absent — Settings › General is explicit that secrets are never
-rendered or sent to the browser.
+rendered or sent to the browser. Every key with a vault slot can now also be
+added under Governance & Security › Keys & secrets; screens that say such a key
+is missing name that screen (and link to it) with the environment as the
+alternative.
 
 ### E — needs a business decision first
 
@@ -116,6 +119,20 @@ no table of its own), showing old value, new value, who and when.
 ## Follow-ups
 
 - B-5 … B-7 as above, in that order of value.
-- A configuration search: the ⌘K palette already jumps to the five Settings
-  tabs; indexing individual settings by name ("GST", "reminder", "window")
-  is one list away — `nav-config.ts`'s items can carry `keywords`.
+- ~~A configuration search~~ — implemented (stream H-3), see below.
+
+### Configuration search (implemented, H-3)
+
+Previously recorded as a follow-up: the ⌘K palette reached only the five
+Settings tabs. It now finds individual settings and key slots by name.
+
+| What | Where |
+|---|---|
+| The catalogue: every organization setting the Settings pages expose (`org-setting`), every settings section with no such key (`section`), and every slot of the key registry (`secret`, generated from `src/lib/secrets/registry.ts`), each with a label, keywords and a `page#anchor` href | `src/lib/admin/settings-catalogue.ts` |
+| Stable `id` anchors on each matching section heading (`/settings#quotation-contact`, `/settings/finance#gst-identity`, `/settings/communication#outreach-window` …) and `/security/keys#<SLOT>` | `app/(internal)/settings/**/page.tsx`, `app/(internal)/security/keys/page.tsx` |
+| Palette matching on label + section + keywords (`Command.keywords`); catalogue entries are `searchOnly` so an empty palette still lists pages | `src/lib/admin/command-palette-eval.ts` |
+| Permission filtering: `catalogueFor(context)` runs `can()` on each entry's capability (`organization.settings`) in the layout, the same filter the nav uses | `app/(internal)/layout.tsx` |
+| Guard: hrefs resolve to a real route and a single `id`; `org-setting` keys are on the database whitelist; no duplicate keys; "gst", "reminder", "window", "github", "whatsapp" find what they should | `tests/a-setting-is-found-by-its-name.test.ts` |
+
+Not indexed (no form exposes them): `meeting_reminder_minutes`,
+`won_requires_payment_evidence`, and the recorded-by-action verification keys.

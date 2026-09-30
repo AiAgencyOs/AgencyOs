@@ -78,7 +78,7 @@ export default async function SettingsCommercialPage() {
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
-        <h2 className="text-[13px] font-semibold tracking-tight">What the work costs</h2>
+        <h2 id="pricing-model" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">What the work costs</h2>
         <p className="text-xs text-muted">
           {pricingModelConfigured
             ? 'Set. A quotation drafted below your minimum band shows the owner what it cost to produce and what your bands are. A client never sees any of it.'
@@ -109,7 +109,7 @@ export default async function SettingsCommercialPage() {
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
-        <h2 className="text-[13px] font-semibold tracking-tight">When the client pays</h2>
+        <h2 id="payment-terms" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">When the client pays</h2>
         <p className="text-xs text-muted">
           {paymentTerms
             ? `Set — “${paymentTerms.name}”, ${paymentTerms.milestones.length} milestone${paymentTerms.milestones.length === 1 ? '' : 's'}. New quotations carry it; ones already drafted keep the terms they were drafted with.`
@@ -122,7 +122,7 @@ export default async function SettingsCommercialPage() {
         </p>
         <PaymentTermsForm structure={paymentTerms} />
 
-        <h3 className="mt-6 text-sm font-medium">How long a quotation stands</h3>
+        <h3 id="quotation-validity" className="mt-6 scroll-mt-24 text-sm font-medium">How long a quotation stands</h3>
         <p className="text-xs text-muted">
           {setting('quotation_validity_days')
             ? `Set — every new quotation says it is valid for ${setting('quotation_validity_days')} days from its date.`
@@ -131,7 +131,7 @@ export default async function SettingsCommercialPage() {
         <QuotationValidityForm current={setting('quotation_validity_days')} />
         <SettingHistory label="Quotation validity" entries={historyOf('quotation_validity_days')} />
 
-        <h3 className="mt-6 text-sm font-medium">Third-party charges</h3>
+        <h3 id="third-party-charges" className="mt-6 scroll-mt-24 text-sm font-medium">Third-party charges</h3>
         <p className="text-xs text-muted">
           What a quotation is allowed to say a gateway, store or service costs. The agent may cite
           one of these and cannot write a figure of its own.
@@ -140,7 +140,7 @@ export default async function SettingsCommercialPage() {
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
-        <h2 className="text-[13px] font-semibold tracking-tight">Limits on what the agent may do alone</h2>
+        <h2 id="negotiation-limits" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Limits on what the agent may do alone</h2>
         <p className="text-xs text-muted">
           {anyLimitSet
             ? 'Set. These bound what happens with nobody looking. None of them can refuse a decision you make yourself.'
@@ -174,7 +174,7 @@ export default async function SettingsCommercialPage() {
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
-        <h2 className="text-[13px] font-semibold tracking-tight">An offer the agent may apply</h2>
+        <h2 id="approved-offer" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">An offer the agent may apply</h2>
         <p className="text-xs text-muted">
           {offer
             ? `Authorised: ${offer.label} — ${offer.discountPct}% off, because ${offer.condition}.${
