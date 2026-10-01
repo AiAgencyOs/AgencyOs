@@ -29,3 +29,22 @@ Answered one by one by the owner. Each row is the decision, not a recommendation
 | 12 | Nothing to build | No Add Agent control exists; agents stay in code |
 | 13 | Nothing to build | Quotation Share is only offered after approval (internal link) |
 | 14 | Built | Hot Leads / No Response in Leads rail Quick Filters (`src/modules/crm/lead-quick-filters.ts`); No Response counts silence from last inbound message or creation, only for new/qualifying/qualified leads |
+
+## Round 2 — answers to the questions the PDF build left open (2026-10-01)
+
+| # | Question | Decision |
+|---|---|---|
+| 1 | Lead numeric score | No number: show a Hot / Warm / Cold label from reasons (stage, recent reply, budget recorded). Matches ADM-88. |
+| 2 | Payment schedule | Free plan stays; 30/20/30/20 tied to Phases 2, 4, 5, 6 is the pre-filled default when a quotation starts. |
+| 3 | Group-name pattern | Fixed (four parts + one trailing word as today). |
+| 4 | Blocker kinds | Confirmed: client answer, payment, dependency, decision, access, outside service, other. |
+| 5 | Invoice proof / expense receipts | Upload allowed, under the project file rules and credentials guard; links still allowed. |
+| 6 | Expense categories | Owner-editable list, starting from infrastructure, ai, tooling, vendor, contractor, other. Old expenses keep theirs. |
+| 7 | Finance role and client names | Finance sees the client's name only (no contacts or other client data). |
+| 8 | Client-facing PDF "Paid / Balance due" | Verified payments only. |
+| 9 | GST setup | Regular taxpayer, monthly filing (GSTR-1 and GSTR-3B), period = calendar month. |
+| 10 | Automation workflows | Stay in code. |
+| 11 | Audit log | Keep forever; owner and ops admin may export; every export is itself logged. |
+| 12 | Plan activation | Requires internal approval, enforced in the database. |
+| 13 | Contract and migration checks | A GitHub workflow dispatched from the panel; the result is recorded. |
+| 14 | AI / semantic search | Yes, over everything searchable. |
