@@ -2,9 +2,10 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { addMeetingEvidence, cancelMeeting, completeMeeting, recordNoShow, requestMeetingAnalysis, rescheduleMeeting, type Concluded } from '@/lib/scheduler/meeting-commands';
+import { addMeetingEvidence, addMeetingEvidenceFile, cancelMeeting, completeMeeting, recordNoShow, requestMeetingAnalysis, rescheduleMeeting, type Concluded } from '@/lib/scheduler/meeting-commands';
 import { bookProposedSlot, proposeSlots } from '@/lib/scheduling/booking';
 import type { Result } from '@/lib/result';
+import { decideMeetingNoteFile } from '@/modules/crm/meeting-note-file';
 import type { FormState } from '@/modules/identity/types';
 
 /**
@@ -46,6 +47,21 @@ export async function addEvidenceAction(_prev: FormState, formData: FormData): P
   return conclude(formData, (id) =>
     addMeetingEvidence(id, String(formData.get('kind') ?? 'notes'), String(formData.get('visibility') ?? 'internal'), String(formData.get('body') ?? '')),
   );
+}
+
+/**
+ * SCR-060 "Meeting note upload". The file's text is read here, judged by the
+ * pure rules (text only, size, credentials) and filed through the same door as
+ * typed evidence, keeping the human's own words verbatim.
+ */
+export async function uploadEvidenceFileAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const file = formData.get('file');
+  if (typeof File === 'undefined' || !(file instanceof File) || file.size === 0) {
+    return { status: 'error', message: 'Choose a text file to upload.' };
+  }
+  const decision = decideMeetingNoteFile({ name: file.name, type: file.type, size: file.size, text: await file.text() });
+  if (!decision.ok) return { status: 'error', message: decision.message };
+  return conclude(formData, (id) => addMeetingEvidenceFile(id, String(formData.get('visibility') ?? 'internal'), decision));
 }
 
 export async function requestAnalysisAction(_prev: FormState, formData: FormData): Promise<FormState> {

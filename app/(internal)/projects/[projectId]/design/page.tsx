@@ -45,6 +45,8 @@ import {
 } from '@/ui';
 
 import { listDesignAssetLinks, listUiVersionOptions } from '@/modules/projects/screen-edit-queries';
+import { assetMatches, recentFeedback } from '@/modules/projects/design-feedback';
+import { listUiVersionFeedback } from '@/modules/projects/prototype-queries';
 import { listProjectScreens } from '@/modules/projects/screens-queries';
 
 import { ProjectSubNav } from '../project-subnav';
@@ -162,9 +164,9 @@ function PrototypeLinksCard({ projectId, prototypeVersions, uiVersions }: { proj
   );
 }
 
-export default async function ProjectDesignPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ q?: string; view?: string; layout?: string }> }) {
+export default async function ProjectDesignPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ q?: string; view?: string; layout?: string; assetQ?: string }> }) {
   const { projectId } = await params;
-  const { q: qRaw, view: viewRaw, layout: layoutRaw } = await searchParams;
+  const { q: qRaw, view: viewRaw, layout: layoutRaw, assetQ: assetQRaw } = await searchParams;
 
   const context = await requireInternal(`/projects/${projectId}/design`);
   if (!can(context, 'project.read')) return <PermissionDenied />;
@@ -211,7 +213,7 @@ export default async function ProjectDesignPage({ params, searchParams }: { para
 
   const spend = await readProjectSpend(projectId);
   const screenCoverage = await readUiCoverage(projectId);
-  const [assetLibrary, sampleScreens, assetLinks, uiVersions, inventory, deliverables, activity, deliverableComments] = await Promise.all([
+  const [assetLibrary, sampleScreens, assetLinks, uiVersions, inventory, deliverables, activity, deliverableComments, uiFeedback] = await Promise.all([
     readDesignAssetVersions(projectId, context.organizationId ?? null),
     readSampleScreens(projectId, trail.themes.map((t) => t.id)),
     listDesignAssetLinks(projectId),
@@ -220,6 +222,7 @@ export default async function ProjectDesignPage({ params, searchParams }: { para
     listDeliverables(projectId),
     readDesignActivity(projectId, 20),
     readDesignReviewComments(projectId),
+    listUiVersionFeedback(projectId, 10),
   ]);
   // SCR-038 — where an asset may be linked: every live screen and every UI version.
   const linkTargets = [
@@ -231,12 +234,23 @@ export default async function ProjectDesignPage({ params, searchParams }: { para
   const pendingInternal = trail.themes.filter((t) => t.internalReviewStatus === 'pending').length;
   const pendingAdmin = trail.themes.filter((t) => t.adminStatus === 'pending').length;
   const clientDecision = trail.clientDecisions[0] ?? null;
+  // SCR-038 — recent feedback, each answer tied to the exact version it was about (the share's snapshot, or the UI version).
+  const feedback = recentFeedback({
+    decisions: trail.clientDecisions,
+    shares: trail.shares,
+    themes: trail.themes.map((t) => ({ id: t.id, name: t.name, version: t.version })),
+    uiDecisions: uiFeedback,
+    limit: 5,
+  });
+  const assetQuery = (assetQRaw ?? '').trim().slice(0, 80);
   const withPreview = sampleScreens.samples.filter((s) => s.previewAssetUrl).length;
 
   // SCR-032 — the counts as counts: screens approved, assets approved,
   // design versions, prototype builds. Each tile opens the list behind it.
   const liveScreens = inventory.filter((s) => s.status !== 'superseded');
   const approvedScreens = liveScreens.filter((s) => s.status === 'approved').length;
+  const designedScreens = liveScreens.filter((s) => s.design_state === 'drawn' || s.design_state === 'reviewed').length;
+  const latestUiVersion = uiVersions[0] ?? null;
   const designVersions = deliverables.filter((d) => d.kind === 'design');
   const prototypeVersions = deliverables.filter((d) => d.kind === 'prototype');
   // The All Screens views: the project's own screen inventory, split by review state.
@@ -284,14 +298,18 @@ export default async function ProjectDesignPage({ params, searchParams }: { para
       <ProjectSubNav projectId={projectId} />
       <DesignSubNav projectId={projectId} />
 
-      <StatGrid cols={4}>
+      <StatGrid cols={5}>
         <Stat label="Total Screens" value={String(trail.baseline?.screenCount ?? 0)} caption={trail.baseline ? `Baseline v${trail.baseline.version} · ${trail.baseline.status}` : 'No baseline drafted'} tone="brand" icon={<IconFile size={16} />} ring={liveScreens.length > 0 ? { percent: (approvedScreens / liveScreens.length) * 100, label: 'of live screens approved' } : undefined} href={`/projects/${projectId}/design/screens`} />
+        {/* SCR-032 "Total screens/designed/approved": designed = drawn or reviewed in Figma (the design state each screen carries). */}
+        <Stat label="Designed Screens" value={String(designedScreens)} caption={liveScreens.length > 0 ? `of ${liveScreens.length} live · ${liveScreens.length - designedScreens} not yet` : 'None recorded'} tone={liveScreens.length > 0 && designedScreens === liveScreens.length ? 'success' : 'info'} icon={<IconPalette size={16} />} href={`/projects/${projectId}/design/screens`} />
         <Stat label="Approved Screens" value={String(approvedScreens)} caption={liveScreens.length > 0 ? `of ${liveScreens.length} live` : 'None recorded'} tone={liveScreens.length > 0 && approvedScreens === liveScreens.length ? 'success' : 'info'} icon={<IconCheck size={16} />} href={`/projects/${projectId}/design/screens?status=approved`} />
         <Stat label="Approved Assets" value={String(assetLibrary.approved)} caption={`${assetLibrary.draft} draft · ${assetLibrary.uploaded} uploaded`} tone={assetLibrary.approved > 0 ? 'success' : 'neutral'} icon={<IconUpload size={16} />} href="#design-assets" />
         <Stat label="Theme Options" value={String(trail.themes.length)} caption={trail.themes.length > 0 ? `${trail.themes.filter((t) => t.clientStatus === 'selected').length} selected by the client` : undefined} tone="accent" icon={<IconSparkle size={16} />} ring={trail.themes.length > 0 ? { percent: (trail.themes.filter((t) => t.clientStatus === 'selected').length / trail.themes.length) * 100, label: 'of theme options selected by the client' } : undefined} href={`/projects/${projectId}/design/themes`} />
         <Stat label="Design Versions" value={String(designVersions.length)} caption={`${designVersions.filter((d) => d.status === 'in_review').length} in review · ${designVersions.filter((d) => d.status === 'approved').length} approved`} tone="brand" icon={<IconFile size={16} />} href="#design-versions" />
         <Stat label="Prototype Builds" value={String(prototypeVersions.length)} caption={`${prototypeVersions.filter((d) => d.status === 'in_review').length} with the client · ${prototypeVersions.filter((d) => d.status === 'approved').length} approved`} tone="accent" icon={<IconSparkle size={16} />} href={`/projects/${projectId}/prototype`} />
         <Stat label="Pending Review" value={String(pendingInternal + pendingAdmin)} caption={`${pendingInternal} internal · ${pendingAdmin} admin`} tone={pendingInternal + pendingAdmin > 0 ? 'warning' : 'success'} icon={<IconClock size={16} />} href={`/projects/${projectId}/design/themes`} />
+        {/* SCR-032 "UI status": where the latest Phase 4 UI version stands (draft, in review, approved...). */}
+        <Stat label="UI Status" value={latestUiVersion ? humanize(latestUiVersion.status) : 'Not started'} caption={latestUiVersion ? `UI v${latestUiVersion.version} of ${uiVersions.length}` : 'No UI version yet'} tone={latestUiVersion?.status === 'approved' ? 'success' : latestUiVersion ? 'info' : 'neutral'} icon={<IconSparkle size={16} />} href={latestUiVersion ? `/projects/${projectId}/ui-versions/${latestUiVersion.id}` : `/projects/${projectId}/prototype`} />
         <Stat label="Phase Status" value={humanize(phase.state)} caption={phase.blockedReason ? 'Blocked' : trail.handoff ? 'Handed to Phase 4' : `Started ${when(phase.startedAt)}`} tone={phase.blockedReason ? 'danger' : trail.handoff ? 'success' : 'info'} icon={phase.blockedReason ? <IconAlert size={16} /> : <IconCheck size={16} />} />
       </StatGrid>
 
@@ -584,6 +602,26 @@ export default async function ProjectDesignPage({ params, searchParams }: { para
             </dl>
           </Card>
 
+          <Card id="recent-feedback">
+            <CardHeader title="Recent Feedback" description="The latest client answers, each tied to the exact version it was about." actions={<ViewAll href={`/projects/${projectId}/design/final`} label="All feedback" />} />
+            {feedback.length === 0 ? (
+              <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">The client has not replied on any design or prototype version yet.</p>
+            ) : (
+              <ul className="flex flex-col gap-2.5 px-4 pb-4 sm:px-5">
+                {feedback.map((f) => (
+                  <li key={f.id} className="flex flex-col gap-0.5 border-l-2 border-line pl-3 text-[13px]">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <Badge tone={f.decision === 'final_confirmed' ? 'success' : f.decision === 'possible_scope_change' ? 'danger' : 'info'}>{humanize(f.decision)}</Badge>
+                      <span className="text-xs text-muted">{when(f.at)}</span>
+                    </span>
+                    <span className="text-xs text-muted">{f.kind === 'prototype' ? 'Prototype' : 'Design'} · {f.refersTo}</span>
+                    <span className="line-clamp-3">“{f.words}”</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
           <Card className="scroll-mt-4" id="design-assets">
             <CardHeader
               title={`Design assets (${assetLibrary.families.length})`}
@@ -611,6 +649,16 @@ export default async function ProjectDesignPage({ params, searchParams }: { para
                   Brand Kit
                 </Link>
               </p>
+              {assetLibrary.families.length > 0 ? (
+                <form method="get" className="flex flex-wrap items-end gap-2" role="search" aria-label="Search design assets">
+                  {viewRaw ? <input type="hidden" name="view" value={viewRaw} /> : null}
+                  {qRaw ? <input type="hidden" name="q" value={qRaw} /> : null}
+                  {layoutRaw ? <input type="hidden" name="layout" value={layoutRaw} /> : null}
+                  <input name="assetQ" defaultValue={assetQuery} maxLength={80} placeholder="Search assets by title, kind or status…" aria-label="Search assets" className={cx(inputClass, 'min-w-[12rem] flex-1')} />
+                  <button type="submit" className={buttonClass('secondary', 'sm')}>Search</button>
+                  {assetQuery ? <Link href={screenHref({})} className="pb-2 text-xs underline hover:text-foreground">Clear</Link> : null}
+                </form>
+              ) : null}
               {mayDecide ? <UploadDesignAssetPanel projectId={projectId} storage={assetLibrary.storage} /> : null}
               {!assetLibrary.storage.reachable && assetLibrary.uploaded > 0 ? (
                 <p className="text-xs text-warning">{assetLibrary.uploaded} uploaded asset{assetLibrary.uploaded === 1 ? '' : 's'} cannot be shown: {assetLibrary.storage.reason}</p>
@@ -624,8 +672,12 @@ export default async function ProjectDesignPage({ params, searchParams }: { para
                   (20260929200000): a screen or a UI version, linked and unlinked here.
                 */
                 <div className="flex flex-col gap-2">
+                  {assetQuery && !assetLibrary.families.some((f) => assetMatches({ title: f.latest.title, kind: f.kind, status: f.latest.status, rightsNote: f.latest.rightsNote ?? null }, assetQuery)) ? (
+                    <p className="text-[13px] text-muted">No asset matches “{assetQuery}”.</p>
+                  ) : null}
                   {[...new Set(assetLibrary.families.map((f) => f.kind))].map((kind) => {
-                    const folder = assetLibrary.families.filter((f) => f.kind === kind);
+                    const folder = assetLibrary.families.filter((f) => f.kind === kind && assetMatches({ title: f.latest.title, kind: f.kind, status: f.latest.status, rightsNote: f.latest.rightsNote ?? null }, assetQuery));
+                    if (folder.length === 0) return null;
                     return (
                       <details key={kind} open className="rounded-md border border-line">
                         <summary className="flex cursor-pointer flex-wrap items-center gap-2 px-3 py-2 text-[13px] font-medium">

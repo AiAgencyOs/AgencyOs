@@ -25,6 +25,7 @@ import { Badge, Card, CardHeader, IconAlert, IconCheck as IconOk, IconClock, Ico
 import { BudgetForm, CloseRunForm, MetricForm, OpenIncidentForm, OpenRunForm, RerunButton, ResolveIncidentForm, ScheduleSuiteForm } from './run-lifecycle-panel';
 import { EmptyState, IconCheck, PermissionDenied } from '@/ui';
 
+import { PreviewButton, PreviewDrawerProvider } from '../../../preview-drawer';
 import { ProjectSubNav } from '../project-subnav';
 import { WorkspaceHeader } from '../workspace-header';
 import { RaiseDefectForm } from '../qa-panel';
@@ -105,6 +106,7 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
   };
 
   return (
+    <PreviewDrawerProvider>
     <div className="flex flex-col gap-5">
       <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={canWrite} />
 
@@ -212,6 +214,7 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
                     {canRecordRuns && run.status === 'closed' && (run.failed > 0 || run.blocked > 0) ? <RerunButton projectId={projectId} runId={run.id} /> : null}
                     {canRecordRuns ? <MetricForm projectId={projectId} runId={run.id} /> : null}
                     {run.status === 'closed' ? <Link href={`/projects/${projectId}/qa?compare=${run.id}#baseline`} className="text-xs text-brand hover:underline">Compare against baseline</Link> : null}
+                    <PreviewButton group="Test Run" id={run.id} />
                     <Link href={`/projects/${projectId}/qa/runs/${run.id}`} className="text-xs font-medium text-brand hover:underline">Open run</Link>
                     <span className="text-xs text-muted">{defects.filter((d) => d.run_id === run.id).length} defect{defects.filter((d) => d.run_id === run.id).length === 1 ? '' : 's'} from this run</span>
                   </div>
@@ -357,5 +360,6 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
         filter={{ defects: defectsFilter, severity: severityFilter }}
       />
     </div>
+    </PreviewDrawerProvider>
   );
 }

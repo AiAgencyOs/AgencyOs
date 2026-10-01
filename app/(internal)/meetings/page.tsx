@@ -87,6 +87,9 @@ export default async function MeetingsPage({
   const q = normaliseSearch(params.q);
 
   const rows = await listMeetings({ from: window.from, to: window.to, status, mode, owner, newestFirst: window.key === 'past', limit: LIMIT, q: q || undefined });
+  // The count behind the "Upcoming" tile: agreed (booked) meetings from the agency's today onward, with the same owner and mode filters.
+  const upcomingFrom = meetingWindow('today', now, agencyZone).from;
+  const upcoming = await listMeetings({ from: upcomingFrom, to: new Date(upcomingFrom.getTime() + 366 * 86_400_000), status: 'booked', mode, owner, limit: LIMIT });
   const jobs = await listJobsForMeetings(rows.map((r) => r.id));
   // SCR-010 — the project each meeting is about, when it is about one.
   const projectLinks = await readMeetingProjects(rows.map((r) => r.id));
@@ -150,7 +153,8 @@ export default async function MeetingsPage({
       />
 
       <StatGrid cols={6}>
-        <Stat label="In this window" value={String(rows.length)} caption={window.chip} tone="brand" icon={<IconCalendar size={16} />} />
+        {/* SCR-010 "Upcoming": agreed meetings from today on, whatever window the list shows; the window's own count is the caption. */}
+        <Stat label="Upcoming" value={String(upcoming.length)} caption={`Booked, from today on · ${rows.length} in ${window.chip.toLowerCase()}`} tone="brand" icon={<IconCalendar size={16} />} href={href({ window: 'month', status: 'booked' })} />
         {(['requested', 'booked', 'completed', 'cancelled', 'no_show'] as const).map((s) => {
           const n = rows.filter((r) => r.status === s).length;
           return <Stat key={s} label={humanize(s)} value={String(n)} tone={n === 0 ? 'neutral' : statusTone(s)} icon={<IconClock size={16} />} href={href({ status: s })} />;

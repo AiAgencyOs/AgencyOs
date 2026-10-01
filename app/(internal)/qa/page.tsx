@@ -21,6 +21,7 @@ import { listSuiteSchedules } from '@/modules/qa/schedule-queries';
 import { listRecentRuns, listReleaseCandidates, readBugTrend, readOrgEvidenceSummary } from '@/modules/qa/summary-queries';
 
 import { AddDeviceForm, DeviceSupportForm } from './device-forms';
+import { PreviewButton, PreviewDrawerProvider } from '../preview-drawer';
 import { AssignRetestForm, BlockReleaseFromDashboard } from './qa-forms';
 import {
   buttonClass,
@@ -153,9 +154,11 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
     { key: 'severity', header: 'Severity', badge: true, cell: (d) => <Badge tone={SEVERITY_TONE[d.severity] ?? 'neutral'}>{humanize(d.severity)}</Badge> },
     { key: 'environment', header: 'Environment', desktopOnly: true, cellClassName: 'text-muted', cell: (d) => d.environment ?? '—' },
     { key: 'raised', header: 'Raised', align: 'right', cellClassName: 'text-muted whitespace-nowrap', cell: (d) => clock.date(d.created_at) },
+    { key: 'quick', header: '', align: 'right', cell: (d) => <PreviewButton group="Bug" id={d.id} /> },
   ];
 
   return (
+    <PreviewDrawerProvider>
     <div className="flex flex-col gap-5">
       <PageHeader
         title="QA & Testing"
@@ -199,6 +202,7 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
                     { key: 'project', header: 'Project', desktopOnly: true, cellClassName: 'text-muted', cell: (r) => <Link href={`/projects/${r.projectId}/qa`} className="hover:underline">{r.projectName}</Link> },
                     { key: 'build', header: 'Build', cellClassName: 'text-muted', cell: (r) => <Link href={`/projects/${r.projectId}/builds`} className="font-mono text-xs hover:underline">{r.deliverableVersion !== null ? `v${r.deliverableVersion}` : 'build'}</Link> },
                     { key: 'counts', header: 'Pass / fail / blocked', align: 'right', cellClassName: 'tabular', cell: (r) => (r.status === 'open' ? <span className="text-muted">in progress</span> : `${r.passed} / ${r.failed} / ${r.blocked}${r.skipped > 0 ? ` (+${r.skipped} skipped)` : ''}`) },
+                    { key: 'quick', header: '', align: 'right', cell: (r) => <PreviewButton group="Test Run" id={r.id} /> },
                     { key: 'when', header: 'Started · ended', align: 'right', desktopOnly: true, cellClassName: 'text-muted whitespace-nowrap', cell: (r) => `${clock.dateTime(r.startedAt ?? r.executedAt)}${r.endedAt ? ` · ${clock.dateTime(r.endedAt)}` : ''}` },
                   ]}
                   getKey={(r) => r.id}
@@ -537,5 +541,6 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
         </div>
       </div>
     </div>
+    </PreviewDrawerProvider>
   );
 }

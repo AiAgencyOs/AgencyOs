@@ -131,12 +131,14 @@ export default async function RequirementsPage({ searchParams }: { searchParams:
     <div className="flex flex-col gap-5">
       <PageHeader title="Requirements" description="Define, track and decide every requirement version across all leads — oldest waiting first." />
 
-      <StatGrid cols={5}>
-        <Stat label="Awaiting decision" value={String(proposed.length)} caption="Across every lead" tone={proposed.length > 0 ? 'warning' : 'success'} icon={<IconClock size={16} />} />
-        <Stat label="AI extracted" value={String(fromAgent)} caption={proposed.length > 0 ? `${Math.round((fromAgent / proposed.length) * 100)}% of the queue` : 'Nothing queued'} tone="brand" icon={<IconSparkle size={16} />} />
+      {/* SCR-028 header, in the PDF's words: projects with open questions, awaiting client confirmation, frozen scopes, open change requests. */}
+      <StatGrid cols={6}>
+        <Stat label="Projects with open questions" value={String(openQuestionProjects)} caption="A requirement, plan or UI question is unanswered" tone={openQuestionProjects > 0 ? 'warning' : 'success'} icon={<IconSparkle size={16} />} href="#open-questions" />
+        <Stat label="Awaiting client confirmation" value={String(dashboard.awaitingClientConfirmation)} caption="Sent, no answer recorded" tone={dashboard.awaitingClientConfirmation > 0 ? 'info' : 'neutral'} icon={<IconClock size={16} />} />
         <Stat label="Frozen scopes" value={String(overview.frozenScopes)} caption="Projects with a frozen baseline" tone="success" icon={<IconCheck size={16} />} />
         <Stat label="Open change requests" value={String(overview.openChangeRequests)} caption={`${overview.pendingApprovalChangeRequests} awaiting approval`} tone={overview.openChangeRequests > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/approvals" />
         <Stat label="Open clarifications" value={String(overview.openClarifications)} caption="Requirement, plan and UI questions not resolved" tone={overview.openClarifications > 0 ? 'info' : 'neutral'} icon={<IconSparkle size={16} />} />
+        <Stat label="Awaiting decision" value={String(proposed.length)} caption="Requirement versions across every lead" tone={proposed.length > 0 ? 'warning' : 'success'} icon={<IconClock size={16} />} />
       </StatGrid>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(18rem,1fr)]">
@@ -346,8 +348,7 @@ export default async function RequirementsPage({ searchParams }: { searchParams:
                 ['Drafted by hand', String(proposed.length - fromAgent), null],
                 ['Waiting 3+ days', String(stale), oldest === null ? null : `oldest ${oldest} day${oldest === 1 ? '' : 's'}`],
                 ['Projects with scope', `${overview.projects.filter((p) => p.scopeVersion !== null).length} of ${overview.projects.length}`, null],
-                ['Awaiting client confirmation', String(dashboard.awaitingClientConfirmation), 'sent, no answer recorded'],
-                ['Projects with open questions', String(openQuestionProjects), null],
+                ['AI extracted', String(fromAgent), proposed.length > 0 ? `${Math.round((fromAgent / proposed.length) * 100)}% of the queue` : 'nothing queued'],
                 ['Scope drift alerts', String(dashboard.scopeDrift.length), 'unsettled change requests'],
               ].map(([k, v, note]) => (
                 <div key={k} className="flex items-baseline justify-between gap-3 py-2">

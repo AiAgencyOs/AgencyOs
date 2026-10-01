@@ -5,7 +5,7 @@ import { aiStatus } from '@/lib/admin/agent-status';
 import { wouldRun } from '@/lib/admin/agent-eval';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
-import { Badge, Callout, IconAlert, IconClock, PageHeader, Stat, StaleDataWarning, type Tone, PermissionDenied } from '@/ui';
+import { Badge, Callout, DomainSearch, SearchSummary, IconAlert, IconClock, PageHeader, Stat, StaleDataWarning, type Tone, PermissionDenied } from '@/ui';
 import type { IconProps } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 import { readEscalationsByKey } from '@/lib/admin/escalations';
@@ -37,6 +37,8 @@ import {
 
 import { AlertsPanel } from './alerts-panel';
 import { DeadLettersList } from './dead-letters-list';
+import { narrow, workflowSearchText } from '@/lib/observability/operations-search';
+import { normaliseSearch } from '@/lib/db/search';
 import { EscalateControl } from '../notifications/escalate-form';
 
 export const metadata: Metadata = { title: 'Operations' };
@@ -77,7 +79,7 @@ export const metadata: Metadata = { title: 'Operations' };
 export default async function OperationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ outbox?: string; outboxPage?: string }>;
+  searchParams: Promise<{ outbox?: string; outboxPage?: string; q?: string }>;
 }) {
   const context = await requireInternal('/operations');
   const clock = await agencyClock();
@@ -86,7 +88,8 @@ export default async function OperationsPage({
   // D17, reversed by the owner on 2026-09-29: the outbox rows may be listed
   // read-only. The filter and page live in the URL (GET form), like every
   // other list here.
-  const { outbox: outboxStatus, outboxPage } = await searchParams;
+  const { outbox: outboxStatus, outboxPage, q: rawQuery } = await searchParams;
+  const query = normaliseSearch(rawQuery);
   const outboxPageNumber = Math.max(1, Number.parseInt(outboxPage ?? '1', 10) || 1);
 
   // Reading the failures and reviving them are different permissions, even
@@ -125,6 +128,11 @@ export default async function OperationsPage({
   const lines = describeBacklog(backlog);
 
   const failed = failedRows.map(viewFailedDelivery);
+  // SCR-066: one text box narrows what is drawn in the lists below; the counts above are never narrowed.
+  const deadShown = narrow(query, dead, (j) => [j.kind, j.last_error]);
+  const queuedShown = narrow(query, queued, (j) => [j.kind, j.lastError, j.status]);
+  const failedShown = narrow(query, failed, (f) => [f.reason, f.preview, f.providerRef]);
+  const workflowsShown = narrow(query, workflows, workflowSearchText);
   // SCR-060 — how each failed message's retries went, newest attempt first.
   const retryHistory = await readRetryHistory(failed.map((f) => f.id).filter((id): id is string => id !== null));
   const mayRetry = can(context, 'lead.write');
@@ -169,6 +177,20 @@ export default async function OperationsPage({
           </Badge>
         }
       />
+
+      {/* SCR-066: the lists below can grow, so they can be searched. It narrows what is drawn, never a count. */}
+      <div className="flex flex-col gap-2">
+        <div className="max-w-md">
+          <DomainSearch action="/operations" value={query} placeholder="Search a job kind, error or agent…" label="Search operations" preserve={{ outbox: outboxStatus }} className="[flex-wrap:nowrap]" />
+        </div>
+        {query ? (
+          <SearchSummary
+            q={query}
+            count={deadShown.rows.length + failedShown.rows.length + workflowsShown.rows.length + queuedShown.rows.length}
+            clearHref="/operations"
+          />
+        ) : null}
+      </div>
 
       {engaged.length > 0 ? (
         <Callout tone="danger" icon={<IconAlert size={16} />} title="Emergency control engaged">
@@ -358,15 +380,15 @@ export default async function OperationsPage({
       <div id="dead-letters" className="flex flex-col gap-2 scroll-mt-20">
         <h2 className="text-[13px] font-semibold tracking-tight">Dead letters</h2>
 
-        {dead.length === 0 ? (
+        {deadShown.rows.length === 0 ? (
           <p className="rounded-lg border border-line bg-surface px-4 py-6 text-center text-sm text-muted">
-            No job has been given up on.
+            {query && dead.length > 0 ? 'No dead letter matches that search.' : 'No job has been given up on.'}
           </p>
         ) : (
           <DeadLettersList
             canRequeue={canRequeue}
             canAnswerEscalation={can(context, 'audit.read')}
-            jobs={dead.map((job) => {
+            jobs={deadShown.rows.map((job) => {
               const e = escalationsByKey.get(`job-${job.id}`);
               return {
                 id: job.id,
@@ -396,13 +418,13 @@ export default async function OperationsPage({
       <div id="failed-deliveries" className="flex flex-col gap-2 scroll-mt-20">
         <h2 className="text-[13px] font-semibold tracking-tight">Failed client deliveries</h2>
 
-        {failed.length === 0 ? (
+        {failedShown.rows.length === 0 ? (
           <p className="rounded-lg border border-line bg-surface px-4 py-6 text-center text-sm text-muted">
-            No outbound message has been refused by the provider.
+            {query && failed.length > 0 ? 'No refused message matches that search.' : 'No outbound message has been refused by the provider.'}
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {failed.map((m, i) => (
+            {failedShown.rows.map((m, i) => (
               <li
                 key={`${m.occurredAt}:${i}`}
                 className="rounded-lg border border-danger/20 px-4 py-3 text-sm"
@@ -500,9 +522,9 @@ export default async function OperationsPage({
         one reason.
       */}
       <div className="flex flex-col gap-2">
-        <h2 className="text-[13px] font-semibold tracking-tight">Workflow runs <span className="text-muted">({workflows.length})</span></h2>
+        <h2 className="text-[13px] font-semibold tracking-tight">Workflow runs <span className="text-muted">({query ? `${workflowsShown.rows.length} of ${workflowsShown.held}` : workflows.length})</span></h2>
         <p className="text-xs text-muted">Recent agent runs grouped by correlation id, with the jobs that share it. Inspect one to see its event chain.</p>
-        <WorkflowList workflows={workflows} canCancel={can(context, 'job.requeue')} canAnswerEscalation={canAnswerEscalation} escalations={Object.fromEntries(workflows.map((w) => [`workflow-${w.correlationId}`, escalationView(`workflow-${w.correlationId}`)]))} />
+        <WorkflowList workflows={workflowsShown.rows} canCancel={can(context, 'job.requeue')} canAnswerEscalation={canAnswerEscalation} escalations={Object.fromEntries(workflows.map((w) => [`workflow-${w.correlationId}`, escalationView(`workflow-${w.correlationId}`)]))} />
       </div>
 
       {/*
@@ -512,13 +534,13 @@ export default async function OperationsPage({
       */}
       <div className="grid gap-4 xl:grid-cols-2">
         <div className="flex flex-col gap-2">
-          <h2 className="text-[13px] font-semibold tracking-tight">Job queue <span className="text-muted">({queued.length})</span></h2>
+          <h2 className="text-[13px] font-semibold tracking-tight">Job queue <span className="text-muted">({query ? `${queuedShown.rows.length} of ${queuedShown.held}` : queued.length})</span></h2>
           <p className="text-xs text-muted">Every job not yet done, in the order it will run. Dead jobs are listed above, not here.</p>
-          {queued.length === 0 ? (
-            <p className="rounded-lg border border-line bg-surface px-4 py-6 text-center text-sm text-muted">The queue is empty.</p>
+          {queuedShown.rows.length === 0 ? (
+            <p className="rounded-lg border border-line bg-surface px-4 py-6 text-center text-sm text-muted">{query && queued.length > 0 ? 'No queued job matches that search.' : 'The queue is empty.'}</p>
           ) : (
             <ul className="divide-y divide-line rounded-lg border border-line bg-surface">
-              {queued.map((j) => (
+              {queuedShown.rows.map((j) => (
                 <li key={j.id} className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-2 text-[13px]">
                   <span className="flex items-center gap-2">
                     <span className="font-mono text-xs">{j.kind}</span>

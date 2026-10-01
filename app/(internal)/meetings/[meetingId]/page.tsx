@@ -328,7 +328,7 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
         <CardHeader
           title="Evidence"
           actions={<Badge tone="neutral">{evidence.length}</Badge>}
-          description="References, never links: no store has been chosen to sign one (G-229 §9.2)."
+          description="The human source, word for word: typed notes or an uploaded text file, each with who added it and when. No store has been chosen to sign a link to a recording or an image (G-229 §9.2)."
         />
         <CardBody className="flex flex-col gap-3">
           {evidence.length === 0 ? (
@@ -341,13 +341,13 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
                     <Badge mono>{e.kind}</Badge>
                     <Badge tone={evidenceTone(e.visibility)}>{humanize(e.visibility)}</Badge>
                     {e.media_type ? <span className="text-[11px] text-faint">{e.media_type}</span> : null}
-                    {e.byte_size !== null ? <span className="text-[11px] text-faint">{Math.round(e.byte_size / 1024)} KB</span> : null}
+                    {e.byte_size !== null ? <span className="text-[11px] text-faint">{e.byte_size < 1024 ? `${e.byte_size} B` : `${Math.round(e.byte_size / 1024)} KB`}</span> : null}
                     <span className="ml-auto text-[11px] text-faint">
                       {agencyClockNow.dateTime(e.uploaded_at)} · by {e.uploaded_by ? (uploaderName.get(e.uploaded_by) ?? 'a former member') : 'the system'}
                     </span>
                   </div>
                   {e.artifact_ref ? <p className="font-mono text-[11.5px] text-muted">reference recorded: {e.artifact_ref}</p> : null}
-                  {e.body ? <p className="text-[13px] leading-relaxed">{e.body}</p> : null}
+                  {e.body ? <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{e.body}</p> : null}
                 </li>
               ))}
             </ol>
@@ -379,7 +379,7 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
             evidence.some((e) => (e.kind === 'summary' || e.kind === 'notes') && e.body) ? (
               <AttachMeetingSummaryForm meetingId={m.id} projects={memoryProjects} />
             ) : (
-              <p className="text-[12px] text-muted">Nothing to attach yet — add typed notes or a summary as evidence first.</p>
+              <p className="text-[12px] text-muted">Nothing to attach yet — add typed or uploaded notes, or a summary, as evidence first (a transcript is kept as the source and is not itself filed as memory).</p>
             )
           ) : (
             <p className="text-[12px] text-muted">Attaching to project memory is for the owner or an ops admin.</p>

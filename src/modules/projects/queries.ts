@@ -863,7 +863,7 @@ export type PlanBoard = {
   dependencies: { id: string; kind: string; description: string; neededByPhase: string; ownerRole: string; status: string }[];
   notes: { id: string; kind: string; statement: string; ownerRole: string | null }[];
   clarifications: { id: string; question: string; status: string; answer: string | null }[];
-  scopeItems: { id: string; title: string; inclusion: string }[];
+  scopeItems: { id: string; title: string; inclusion: string; acceptanceCriteria: string | null }[];
   /**
    * §10's second ending needs somewhere to send the question. The picker
    * offers the project's own change requests and nothing else — routing a
@@ -894,7 +894,7 @@ export async function readPlanBoard(projectId: string): Promise<PlanBoard> {
   const { data: scopeRows, error: scopeError } = await supabase
     .schema('projects')
     .from('scope_items')
-    .select('id, title, inclusion, scope_version_id')
+    .select('id, title, inclusion, scope_version_id, acceptance_criteria')
     .eq('scope_version_id', planRow?.scope_version_id ?? '00000000-0000-0000-0000-000000000000');
 
   if (scopeError) unreadable('readPlanBoard.scope', scopeError);
@@ -999,6 +999,7 @@ export async function readPlanBoard(projectId: string): Promise<PlanBoard> {
       id: row.id,
       title: row.title,
       inclusion: row.inclusion,
+      acceptanceCriteria: row.acceptance_criteria ?? null,
     })),
     changeRequests: (changeRequests.data ?? []).map((row) => ({
       id: row.id,
@@ -1190,6 +1191,8 @@ export type DesignTrailView = {
   }[];
   clientDecisions: {
     id: string;
+    /** The share the client was answering: it carries a snapshot of the exact theme options and versions that were sent. */
+    shareId: string;
     decision: string;
     clientWords: string;
     evidenceRef: string | null;
@@ -1273,7 +1276,7 @@ export async function readDesignTrail(projectId: string): Promise<DesignTrailVie
     supabase
       .schema('projects')
       .from('client_design_decisions')
-      .select('id, decision, client_words, evidence_ref, selected_theme_option_id, selected_color_option_id, created_at')
+      .select('id, share_id, decision, client_words, evidence_ref, selected_theme_option_id, selected_color_option_id, created_at')
       .eq('phase_three_id', phase.id)
       .order('created_at', { ascending: false }),
     supabase
@@ -1418,6 +1421,7 @@ export async function readDesignTrail(projectId: string): Promise<DesignTrailVie
     })),
     clientDecisions: ((clientDecisions ?? []) as Record<string, unknown>[]).map((c) => ({
       id: c.id as string,
+      shareId: c.share_id as string,
       decision: c.decision as string,
       clientWords: c.client_words as string,
       evidenceRef: (c.evidence_ref as string | null) ?? null,

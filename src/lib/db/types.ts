@@ -944,6 +944,18 @@ export type Database = {
         }
         Relationships: []
       }
+      spend_by_project: {
+        Row: {
+          cost_minor: number | null
+          input_tokens: number | null
+          last_run_at: string | null
+          organization_id: string | null
+          output_tokens: number | null
+          project_id: string | null
+          runs: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       attach_meeting_summary_to_memory: {
@@ -11626,6 +11638,10 @@ export type Database = {
         Args: { p_reason: string; p_task_id: string }
         Returns: { event_id: string; outcome: string }[]
       }
+      request_client_dependency: {
+        Args: { p_dependency_id: string; p_note?: string }
+        Returns: { event_id: string; outcome: string }[]
+      }
       link_commit: {
         Args: { p_message?: string; p_sha: string; p_task_id: string; p_url?: string }
         Returns: { link_id: string; outcome: string }[]
@@ -11795,6 +11811,10 @@ export type Database = {
       set_project_defaults: {
         Args: { p_folders: Json; p_watch_phases: string[] }
         Returns: { outcome: string }[]
+      }
+      schedule_changes: {
+        Args: { p_limit?: number; p_mine?: boolean; p_project_id?: string; p_since?: string }
+        Returns: { actor_name: string | null; audit_id: number; changed_at: string; kind: string; label: string | null; now_on: string | null; project_id: string; project_name: string; subject_id: string; was_on: string | null }[]
       }
       project_activity: {
         Args: { p_limit?: number; p_project_id: string }

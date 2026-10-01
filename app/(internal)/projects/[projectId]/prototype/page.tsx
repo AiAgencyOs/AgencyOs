@@ -16,6 +16,7 @@ import Link from 'next/link';
 import { Badge, buttonClass, Card, CardHeader, DataTable, EmptyState, humanize, IconProjects, labelClass, PageHeader, selectClass, inputClass, statusTone, PermissionDenied, Stat, StatGrid, IconCheck, IconClock, IconAlert } from '@/ui';
 
 import { ApprovalDecisionForm } from '../../../approvals/approval-decision-form';
+import { PreviewButton, PreviewDrawerProvider } from '../../../preview-drawer';
 import { AddPrototypeForm } from '../deliverables-panel';
 import { ProjectSubNav } from '../project-subnav';
 import { PlatformPicker, SubmitToQaButton } from './prototype-panels';
@@ -85,6 +86,7 @@ export default async function PrototypePage({ params, searchParams }: { params: 
   const mayOverride = can(context, 'project.sign_off') && context.roles.includes('owner');
 
   return (
+    <PreviewDrawerProvider>
     <div className="flex flex-col gap-5">
       <PageHeader
         title={`${project.name} — Prototype`}
@@ -175,6 +177,7 @@ export default async function PrototypePage({ params, searchParams }: { params: 
               },
             },
             { key: 'added', header: 'Added', align: 'right', cellClassName: 'text-muted', cell: (b) => clock.date(b.created_at) },
+            { key: 'quick', header: '', align: 'right', cell: (b) => <PreviewButton group="Build" id={b.id} /> },
           ]}
           getKey={(b) => b.id}
         />
@@ -330,5 +333,6 @@ export default async function PrototypePage({ params, searchParams }: { params: 
         </Card>
       ) : null}
     </div>
+    </PreviewDrawerProvider>
   );
 }

@@ -49,8 +49,8 @@ export default async function DevelopmentPage({ params }: { params: Promise<{ pr
     listGitActions(projectId, 10),
     agencyClock(),
   ]);
-  const openEscalations = events.filter((e) => e.kind === 'blocker_escalated' && e.status === 'open');
-  const escalatedTaskIds = new Set(openEscalations.map((e) => e.taskId));
+  const openEscalations = events.filter((e) => (e.kind === 'blocker_escalated' || e.kind === 'dependency_requested') && e.status === 'open');
+  const escalatedTaskIds = new Set(openEscalations.filter((e) => e.kind === 'blocker_escalated').map((e) => e.taskId));
   const handoffs = events.filter((e) => e.kind === 'qa_handoff_started');
   const notReady = tasks.filter((t) => t.status === 'todo' || t.status === 'in_progress').length;
   const mayManage = can(context, 'project.write');
@@ -194,7 +194,7 @@ export default async function DevelopmentPage({ params }: { params: Promise<{ pr
                       </span>
                       {e.reason ? <span className="text-muted">{e.reason}</span> : null}
                     </span>
-                    {mayManage && e.kind === 'blocker_escalated' && e.status === 'open' ? <AcknowledgeEscalationButton projectId={projectId} eventId={e.id} /> : null}
+                    {mayManage && (e.kind === 'blocker_escalated' || e.kind === 'dependency_requested') && e.status === 'open' ? <AcknowledgeEscalationButton projectId={projectId} eventId={e.id} /> : null}
                   </li>
                 ))}
               </ul>

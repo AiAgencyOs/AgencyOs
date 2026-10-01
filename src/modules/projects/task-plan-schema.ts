@@ -46,8 +46,8 @@ export type AddProjectNoteInput = z.input<typeof addProjectNoteSchema>;
 export const removeProjectNoteSchema = z.object({ projectId: z.uuid(), noteId: z.uuid() });
 export type RemoveProjectNoteInput = z.input<typeof removeProjectNoteSchema>;
 
-/** My tasks' per-column "Add task": a task for the caller, born in the column's status. Blocked is not offered (it needs a reason). */
-export const MY_TASK_ADD_STATUSES = ['todo', 'in_progress', 'in_review', 'done'] as const;
+/** My tasks' per-column "Add task": a task for the caller, born in the column's status. Blocked is not offered (it needs a reason), nor is Review (it is entered only through the hand-off, with evidence). */
+export const MY_TASK_ADD_STATUSES = ['todo', 'in_progress', 'done'] as const;
 export const addMyTaskSchema = z.object({
   projectId: z.uuid(),
   title: z.string().trim().min(1, 'A task needs a title').max(200),

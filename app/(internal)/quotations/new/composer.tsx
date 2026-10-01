@@ -321,7 +321,7 @@ export function QuotationComposer({
                   }}
                   className="h-4 w-4 rounded border-line-strong"
                 />
-                GST {gstRate}% on the discounted subtotal
+                GST {gstRate}% on the discounted subtotal (untick for Non-GST)
                 {deal?.billingMode === 'gst'
                   ? ' — pre-filled from the project’s confirmed GST billing mode'
                   : deal?.billingMode === 'non_gst'

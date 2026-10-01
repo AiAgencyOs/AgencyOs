@@ -84,7 +84,9 @@ export async function recordSearch(query: string, filters: SearchFilters): Promi
     .select('id, use_count')
     .eq('user_id', context.userId)
     .eq('query', q)
-    .eq('filters', filters as never)
+    // A jsonb column is compared through its JSON text: `.eq('filters', {})` serializes the object as
+    // `[object Object]`, PostgREST refuses it, and no recent search was ever recorded.
+    .filter('filters', 'eq', JSON.stringify(filters))
     .maybeSingle();
   if (readError) return err('INTERNAL', 'Could not read recent searches.');
 

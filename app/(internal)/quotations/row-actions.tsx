@@ -39,6 +39,7 @@ export function QuotationManageButton({
 }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   // Owner decision #13: Share (an internal link) only once the owner has approved.
   const shareable = status === 'approved' || status === 'sent' || status === 'accepted';
   const canSubmit = mayDraft && status === 'draft' && !inPlanSet;
@@ -86,6 +87,15 @@ export function QuotationManageButton({
       >
         {open ? (
           <div className="flex flex-col gap-4">
+            {/* SCR-011 "PDF preview": the same document the client gets, shown here before it is opened or sent. */}
+            <div className="flex flex-col gap-2">
+              <button type="button" onClick={() => setPreviewing((v) => !v)} aria-expanded={previewing} className={buttonClass('secondary', 'sm')}>
+                {previewing ? 'Hide the PDF preview' : 'Preview the PDF'}
+              </button>
+              {previewing ? (
+                <iframe title={`PDF preview of ${title}`} src={`/api/quotations/${proposalId}/pdf`} className="h-[60vh] w-full rounded-lg border border-line bg-surface-sunken" />
+              ) : null}
+            </div>
             {canSubmit ? <SubmitQuotationForm leadId={leadId} proposalId={proposalId} /> : null}
             {canSend ? <SendQuotationForm leadId={leadId} proposalId={proposalId} conversationId={null} /> : null}
             {canAnswer ? <QuotationResponseForm leadId={leadId} proposalId={proposalId} lapsed={lapsed} /> : null}

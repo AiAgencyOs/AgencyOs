@@ -20,6 +20,7 @@ import {
   DependencyCard,
   EnvironmentCard,
 } from '../environments-panel';
+import { PreviewButton, PreviewDrawerProvider } from '../../../preview-drawer';
 import { ProjectSubNav } from '../project-subnav';
 import { BuildDetailsForm } from '../prototype/build-panels';
 import { describeCheckRun } from '@/modules/projects/environment-check-runs';
@@ -87,6 +88,7 @@ export default async function BuildsPage({ params, searchParams }: { params: Pro
   const buildById = new Map(allBuilds.map((b) => [b.id, b]));
 
   return (
+    <PreviewDrawerProvider>
     <div className="flex flex-col gap-5">
       <PageHeader
         title={`${project.name} — Builds`}
@@ -360,6 +362,7 @@ export default async function BuildsPage({ params, searchParams }: { params: Pro
                   v{b.version} — {b.title}
                 </span>
                 <span className="flex items-center gap-2">
+                  <PreviewButton group="Build" id={b.id} />
                   {readiness.some((e) => e.promotedBuildId === b.id) ? (
                     <Badge tone="success">promoted to {readiness.filter((e) => e.promotedBuildId === b.id).map((e) => e.label).join(', ')}</Badge>
                   ) : null}
@@ -488,5 +491,6 @@ export default async function BuildsPage({ params, searchParams }: { params: Pro
       )}
       {canWrite ? <AddDependencyForm projectId={projectId} /> : null}
     </div>
+    </PreviewDrawerProvider>
   );
 }

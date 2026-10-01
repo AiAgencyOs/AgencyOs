@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { blockerProblem } from './task-blocker';
+import { buildCredentialProblem } from './build-secrets-guard';
 import { fileCredentialProblem } from './file-secrets-guard';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
@@ -84,6 +85,8 @@ import {
 import type { BillableMilestone } from './types';
 import { LOCKED_PAYMENT_STRUCTURE, lockedAmountsFor } from './payment-structure';
 import { resolveOnboardingContext, type ContextMatrix } from './onboarding-context';
+import { taskAcceptanceProblem } from './task-acceptance';
+import { enteringReviewProblem, REVIEW_HAND_OFF_DB_ERROR, REVIEW_HAND_OFF_MESSAGE } from './task-transitions';
 
 /**
  * Writes for the projects module — its only public surface.
@@ -704,6 +707,15 @@ export async function addDeliverable(
     return err('FORBIDDEN', 'You do not have permission to add deliverables.');
   }
 
+  // SCR-043: a build's text is read by the whole team; a credential is not recorded in it.
+  const credentialInBuild = buildCredentialProblem([
+    { label: 'Title', value: parsed.data.title },
+    { label: 'Build link', value: parsed.data.artifactUrl, isLink: true },
+    { label: 'What changed', value: parsed.data.changelog },
+    { label: 'Known issues', value: parsed.data.knownIssues },
+  ]);
+  if (credentialInBuild) return err('VALIDATION', credentialInBuild);
+
   const supabase = await createClient();
 
   const { data, error } = await supabase.schema('projects').rpc('add_deliverable', {
@@ -882,6 +894,14 @@ export async function addEnvironment(input: AddEnvironmentInput): Promise<Result
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
+  // SCR-043: an environment is described, never given its keys, here.
+  const credentialInEnvironment = buildCredentialProblem([
+    { label: 'Label', value: parsed.data.label },
+    { label: 'Address', value: parsed.data.url, isLink: true },
+    { label: 'Notes', value: parsed.data.notes },
+  ]);
+  if (credentialInEnvironment) return err('VALIDATION', credentialInEnvironment);
+
   const supabase = await createClient();
   const { data, error } = await supabase
     .schema('projects')
@@ -942,6 +962,15 @@ export async function addDependency(input: AddDependencyInput): Promise<Result<{
     return err('FORBIDDEN', 'You do not have permission to add a dependency.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  // SCR-043: a dependency is named and referenced, never given its keys, here.
+  const credentialInDependency = buildCredentialProblem([
+    { label: 'Name', value: parsed.data.name },
+    { label: 'Version', value: parsed.data.version },
+    { label: 'Reference', value: parsed.data.reference },
+    { label: 'Notes', value: parsed.data.notes },
+  ]);
+  if (credentialInDependency) return err('VALIDATION', credentialInDependency);
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -1932,6 +1961,13 @@ export async function setTaskStatus(input: SetTaskStatusInput): Promise<Result<{
   }
 
   const supabase = await createClient();
+
+  // SCR-020/021: Review is entered only through the evidence-gated hand-off. The
+  // database trigger refuses it as well; this answers in words before the write.
+  const { data: before } = await supabase.schema('projects').from('tasks').select('status').eq('id', parsed.data.taskId).maybeSingle();
+  const reviewProblem = enteringReviewProblem(before?.status, parsed.data.status);
+  if (reviewProblem && before) return err('CONFLICT', reviewProblem);
+
   const { error, count } = await supabase
     .schema('projects')
     .from('tasks')
@@ -1949,6 +1985,10 @@ export async function setTaskStatus(input: SetTaskStatusInput): Promise<Result<{
 
   if (error) {
     // SCR-020: the verification gate (trigger projects.refuse_unverified_agent_done) refuses an unverified agent task.
+    if (error.message.includes(REVIEW_HAND_OFF_DB_ERROR)) return err('CONFLICT', REVIEW_HAND_OFF_MESSAGE);
+    // SCR-041: a task is accepted as done only by a delivery role, with evidence, and no unverified defect.
+    const acceptance = taskAcceptanceProblem(error.message);
+    if (acceptance) return err('CONFLICT', acceptance);
     if (error.message.includes('agent_task_unverified')) {
       return err('CONFLICT', 'This task was produced by an agent. It is not done until somebody has verified it — verify it from the task drawer first.');
     }

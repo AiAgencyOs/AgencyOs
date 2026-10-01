@@ -10,9 +10,11 @@ import { listOpenAlerts } from '@/lib/observability/alerts';
 import { listFailedDeliveries, listDeadJobs } from '@/lib/observability/queries';
 import { listPendingPaymentClaims } from '@/modules/finance/queries';
 import { listOpenDefects } from '@/modules/qa/queries';
+import { listBlockedTasks } from '@/modules/projects/blocked-tasks-queries';
 import { listMyTasks } from '@/modules/projects/queries';
 import { listWatchedPhaseChanges } from '@/modules/projects/project-defaults-queries';
 import { WATCH_PHASE_LABEL } from '@/modules/projects/project-defaults-schema';
+import { describeScheduleMove, listScheduleChanges, SCHEDULE_KIND_LABEL, scheduleChangeHref } from '@/modules/projects/schedule-changes-queries';
 
 export type ActionItem = {
   key: string;
@@ -39,12 +41,14 @@ export function categoryOf(item: ActionItem): string {
 
 export const ACTION_CATEGORY_LABEL: Record<string, string> = {
   approval: 'Approvals',
+  blocker: 'Blockers',
   claim: 'Payments',
   defect: 'Defects',
   job: 'Jobs',
   delivery: 'Deliveries',
   task: 'Tasks',
   phase: 'Phase changes',
+  schedule: 'Schedule changes',
   reply: 'Client responses',
   alert: 'System alerts',
 };
@@ -65,7 +69,8 @@ export async function listActionItems(context: AuthContext, clock: AgencyClock):
   // 30 days — keyed on the change's own timestamp, so the bucket B state
   // (read / snoozed / resolved) sticks to one change and a new one is new.
   const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
-  const [approvals, failedDeliveries, deadJobs, paymentClaims, defects, myTasks, phaseChanges, replies, alerts] = await Promise.all([
+  const since14 = new Date(Date.now() - 14 * 86_400_000).toISOString();
+  const [approvals, failedDeliveries, deadJobs, paymentClaims, defects, myTasks, phaseChanges, replies, alerts, scheduleChanges, blockedTasks] = await Promise.all([
     listPendingApprovals(),
     show('audit.read') ? listFailedDeliveries() : Promise.resolve([]),
     show('job.requeue') || show('audit.read') ? listDeadJobs() : Promise.resolve([]),
@@ -75,6 +80,10 @@ export async function listActionItems(context: AuthContext, clock: AgencyClock):
     show('project.read') ? listWatchedPhaseChanges(context.userId, since) : Promise.resolve([]),
     show('lead.read') ? listUnansweredClientReplies() : Promise.resolve([]),
     show('audit.read') ? listOpenAlerts(25) : Promise.resolve([]),
+    // SCR-022: a date that moved on something of mine, moved by somebody else (last 14 days).
+    show('project.read') ? listScheduleChanges({ mine: true, sinceIso: since14, limit: 50 }) : Promise.resolve([]),
+    // SCR-003 "blockers": work that cannot move, with what it waits on and who has to act.
+    show('project.read') ? listBlockedTasks() : Promise.resolve([]),
   ]);
 
   const now = Date.now();
@@ -166,6 +175,19 @@ export async function listActionItems(context: AuthContext, clock: AgencyClock):
     });
   }
 
+  // SCR-022 "notify affected owners": a due date somebody else moved on a task, a milestone or a
+  // project of mine. The key carries the audit row, so a later move is a new row.
+  for (const c of scheduleChanges) {
+    rows.push({
+      key: `schedule-${c.auditId}`,
+      title: `${SCHEDULE_KIND_LABEL[c.kind]} moved — ${c.label}`,
+      detail: `${describeScheduleMove(c, (d) => clock.date(d))} · ${c.projectName}${c.actorName ? ` · by ${c.actorName}` : ''} · ${when(c.changedAt)}`,
+      href: scheduleChangeHref(c),
+      urgent: false,
+      severity: 'info',
+    });
+  }
+
   // SCR-003 "client responses": a thread whose newest message is the
   // client's. The key carries the latest message time so a new reply on a
   // resolved thread is a new row.
@@ -189,6 +211,18 @@ export async function listActionItems(context: AuthContext, clock: AgencyClock):
       href: '/operations',
       urgent: a.severity === 'critical',
       severity: a.severity === 'critical' ? 'critical' : a.severity === 'warning' ? 'warning' : 'info',
+    });
+  }
+
+  // The key carries when the task was last touched, so a task blocked again after being resolved is a new row.
+  for (const t of blockedTasks) {
+    rows.push({
+      key: `blocker-${t.id}-${t.since}`,
+      title: `Blocked — ${t.title}`,
+      detail: [t.projectName, t.blockerTypeLabel, t.blockerOwner ? `${t.blockerOwner} to act` : null, t.nextAction ? `next: ${t.nextAction}` : null].filter(Boolean).join(' · '),
+      href: `/projects/${t.projectId}/board`,
+      urgent: false,
+      severity: 'warning',
     });
   }
 

@@ -172,7 +172,7 @@ export default async function DevelopmentPortfolioPage({ searchParams }: { searc
   ]);
   const mayManage = can(context, 'project.write');
   const mayWriteTask = can(context, 'task.write');
-  const escalatedTaskIds = new Set(escalations.map((e) => e.taskId));
+  const escalatedTaskIds = new Set(escalations.filter((e) => e.kind === 'blocker_escalated').map((e) => e.taskId));
   // Tasks still todo or in progress: the count the handoff gate refuses on.
   const notReadyOf = (projectId: string) => {
     const r = allRows.find((row) => row.id === projectId);
@@ -343,7 +343,7 @@ export default async function DevelopmentPortfolioPage({ searchParams }: { searc
       {/* SCR-039 — escalations waiting on the PM, and recent commits / builds across projects. */}
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader title={`Waiting on the PM (${escalations.length})`} description="Blockers escalated and not yet acknowledged, oldest first." />
+          <CardHeader title={`Waiting on the PM (${escalations.length})`} description="Blockers escalated and client dependencies the plan needs requested, not yet acknowledged, oldest first." />
           <div className="px-4 pb-4 sm:px-5">
             {escalations.length === 0 ? (
               <p className="text-[13px] text-muted">No open escalation.</p>
@@ -359,6 +359,11 @@ export default async function DevelopmentPortfolioPage({ searchParams }: { searc
                         {e.taskId ? (
                           <Link href={`/projects/${e.projectId}/development/tasks/${e.taskId}`} className="underline-offset-2 hover:underline">
                             {e.taskTitle ?? 'task'}
+                          </Link>
+                        ) : null}
+                        {e.kind === 'dependency_requested' ? (
+                          <Link href={`/projects/${e.projectId}/plan`} className="underline-offset-2 hover:underline">
+                            Client dependency{typeof e.detail.description === 'string' ? `: ${e.detail.description}` : ''}
                           </Link>
                         ) : null}
                         <span className="text-xs text-muted">{clock.dateTime(e.createdAt)}</span>

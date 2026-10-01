@@ -123,6 +123,7 @@ import { listProjectNotes } from '@/modules/projects/project-notes-queries';
 import { progressSeries, topLevelTasks } from '@/modules/projects/project-view-derive';
 import { healthOfProject, overallProgress, overallProgressLabel } from '@/modules/projects/project-health';
 import { readProjectLifecycles } from '@/modules/projects/project-lifecycle-queries';
+import { LIFECYCLE_PHASE_LABEL } from '@/modules/projects/project-archive-schema';
 import { countPeriods, periodDelta, trendOf } from '@/lib/admin/period-delta';
 import { ProjectUpdatePanel } from './project-update-form';
 import { readMyWatch } from '@/modules/projects/project-defaults-queries';
@@ -408,6 +409,18 @@ export default async function ProjectPage({
           { label: 'Project code', value: <span className="font-mono">{project.code}</span>, icon: <IconList size={14} /> },
           { label: 'Start date', value: project.starts_on ? clock.date(project.starts_on) : 'Not set', icon: <IconCalendar size={14} /> },
           { label: 'Due date', value: project.ends_on ? clock.date(project.ends_on) : 'Not set', icon: <IconCalendar size={14} /> },
+          // SCR-019 header: the lifecycle phase beside the status, and the milestone payment status
+          // (verified share of the plan, from the same ladder the billing section prints).
+          ...(life ? [{ label: 'Phase', value: LIFECYCLE_PHASE_LABEL[life.phase], icon: <IconFlag size={14} /> }] : []),
+          ...(progress
+            ? [{
+                label: 'Milestone payments',
+                value: progress.measurable
+                  ? `${progress.verifiedPercent ?? 0}% verified · ${progress.verifiedMilestones} of ${progress.milestones} paid`
+                  : 'No payment plan',
+                icon: <IconInvoices size={14} />,
+              }]
+            : []),
           ...(project.budget_minor !== null ? [{ label: 'Budget', value: money(project.budget_minor, project.currency), icon: <IconInvoices size={14} /> }] : []),
           // SCR-018: why it is paused or cancelled, beside the status it explains.
           ...(project.status_reason && (project.status === 'on_hold' || project.status === 'cancelled')
@@ -649,7 +662,7 @@ export default async function ProjectPage({
           },
           {
             label: 'Phase 4 · UI and Prototype',
-            href: `/projects/${projectId}/ui-versions`,
+            href: phaseFour.uiVersion ? `/projects/${projectId}/ui-versions/${phaseFour.uiVersion.id}` : `/projects/${projectId}/prototype`,
             value: phaseFour.workspace ? humanize(phaseFour.workspace.state) : 'Not started',
             caption: phaseFour.workspace
               ? `${phaseFour.uiVersion ? `UI v${phaseFour.uiVersion.version} ${humanize(phaseFour.uiVersion.status)}` : 'No UI version yet'} · ${phaseFour.workspace.uiRevisionCount} of ${phaseFour.workspace.uiRevisionLimit} UI rounds${phaseFour.prototype ? ' · prototype built' : ''}`

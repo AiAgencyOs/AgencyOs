@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { getIntegrations } from '@/lib/admin/integrations';
@@ -7,7 +8,11 @@ import { lastAlertTest } from '@/lib/observability/alert-destination';
 import { readinessSentence, type ReadinessStatus } from '@/lib/admin/production-readiness-eval';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { Card, CardHeader, IntegrationState, PageHeader, PermissionDenied } from '@/ui';
+import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
+import { listOpenAlerts } from '@/lib/observability/alerts';
+import { Badge, Card, CardHeader, IntegrationState, PageHeader, PermissionDenied } from '@/ui';
+
+import { SendWhatsAppTestForm } from '../settings/forms';
 
 import { RunVerificationForm, TestAlertDestinationForm } from './verification-forms';
 
@@ -46,7 +51,18 @@ export default async function ProductionReadinessPage() {
   const context = await requireInternal('/production-readiness');
   if (!can(context, 'organization.settings')) return <PermissionDenied />;
 
-  const [{ checks, summary }, { integrations, lastVerifiedAt }, alertTest, clock] = await Promise.all([getProductionReadiness(), getIntegrations(), lastAlertTest(), agencyClock()]);
+  const [{ checks, summary }, { integrations, lastVerifiedAt }, alertTest, clock, settings, openAlerts] = await Promise.all([
+    getProductionReadiness(),
+    getIntegrations(),
+    lastAlertTest(),
+    agencyClock(),
+    readOperationalSettings(),
+    listOpenAlerts(100),
+  ]);
+  // SCR-067: the controlled first send and the alerts waiting on a person, reachable from the readiness page itself.
+  const testRecipient = settingText(settings, 'whatsapp_test_recipient');
+  const testSentAt = settingInstant(settings, 'whatsapp_test_sent_at');
+  const criticalAlerts = openAlerts.filter((a) => a.severity === 'critical').length;
   // "Last live checks": the moment each live check last answered, from the moments the verify actions recorded.
   const liveChecks = integrations.filter((i) => ['whatsapp', 'ai-provider', 'calendar', 'figma'].includes(i.id));
   const sentence = readinessSentence(summary);
@@ -86,6 +102,31 @@ export default async function ProductionReadinessPage() {
           <div className="flex flex-col gap-1 border-t border-line pt-3">
             <span className="text-[13px] font-medium">Alert destination</span>
             <TestAlertDestinationForm last={alertTest ? `last test ${clock.dateTime(alertTest.at)} — ${alertTest.ok ? 'delivered' : (alertTest.reason ?? 'not delivered')}` : 'never tested'} />
+          </div>
+          <div className="flex flex-col gap-1 border-t border-line pt-3">
+            <span className="text-[13px] font-medium">Controlled test message</span>
+            {testRecipient ? (
+              <SendWhatsAppTestForm recipient={testRecipient} lastSentAt={testSentAt ? clock.dateTime(testSentAt) : null} />
+            ) : (
+              <p className="text-xs text-muted">
+                No internal test recipient is set, so the controlled first send is off.{' '}
+                <Link href="/settings/communication#whatsapp-test-recipient" className="font-medium text-brand underline-offset-2 hover:underline">Set the test recipient</Link>.
+              </p>
+            )}
+          </div>
+          <div className="flex flex-col gap-1 border-t border-line pt-3">
+            <span className="text-[13px] font-medium">Alerts</span>
+            <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
+              {openAlerts.length === 0 ? (
+                <span>No alert is waiting on a person.</span>
+              ) : (
+                <>
+                  <Badge tone={criticalAlerts > 0 ? 'danger' : 'warning'} dot>{openAlerts.length} open{criticalAlerts > 0 ? `, ${criticalAlerts} critical` : ''}</Badge>
+                  <span>A person acknowledges each one with a reason.</span>
+                </>
+              )}
+              <Link href="/operations#alerts" className="font-medium text-brand underline-offset-2 hover:underline">{openAlerts.length === 0 ? 'Open alerts' : 'Acknowledge on Operations'}</Link>
+            </p>
           </div>
         </div>
       </Card>

@@ -5,11 +5,12 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject, listDevelopmentBreakdown, listPaymentPlan } from '@/modules/projects/queries';
-import { actionLabel, recordHref } from '@/modules/projects/project-activity';
+import { actionLabel, activityTypeChips, filterActivity, recordHref } from '@/modules/projects/project-activity';
 import { readProjectActivity } from '@/modules/projects/project-activity-queries';
 import Link from 'next/link';
 
-import { Badge, EmptyState, IconClock, PageHeader, PermissionDenied } from '@/ui';
+import { normaliseSearch } from '@/lib/db/search';
+import { Badge, DomainSearch, EmptyState, FilterChips, IconClock, PageHeader, PermissionDenied } from '@/ui';
 
 import { ProjectSubNav } from '../project-subnav';
 
@@ -25,8 +26,10 @@ export const metadata: Metadata = { title: 'Activity' };
  * Domain events (a task completed, a milestone met, a change request raised or
  * decided) are merged in, and each row links to its record.
  */
-export default async function ProjectActivityPage({ params }: { params: Promise<{ projectId: string }> }) {
+export default async function ProjectActivityPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ q?: string; type?: string }> }) {
   const { projectId } = await params;
+  const { q: qRaw, type: typeRaw } = await searchParams;
+  const q = normaliseSearch(qRaw);
 
   const context = await requireInternal(`/projects/${projectId}/activity`);
   if (!can(context, 'project.read')) return <PermissionDenied />;
@@ -36,14 +39,32 @@ export default async function ProjectActivityPage({ params }: { params: Promise<
 
   const clock = await agencyClock();
   const [{ tasks }, milestones] = await Promise.all([listDevelopmentBreakdown(projectId), listPaymentPlan(projectId)]);
-  const entries = await readProjectActivity(projectId, { tasks, milestones });
+  const all = await readProjectActivity(projectId, { tasks, milestones });
+  // The timeline grows with the project: search it, and narrow it to one kind of record.
+  const chips = activityTypeChips(all);
+  const type = chips.some((c) => c.label === typeRaw) ? typeRaw : undefined;
+  const entries = filterActivity(all, { q, type });
   const auditCount = entries.filter((e) => e.source === 'audit').length;
+  const base = `/projects/${projectId}/activity`;
+  const chipHref = (t?: string) => {
+    const qs = new URLSearchParams();
+    if (q) qs.set('q', q);
+    if (t) qs.set('type', t);
+    return qs.size > 0 ? `${base}?${qs.toString()}` : base;
+  };
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title={`${project.name} — Activity`} description="What has happened on this project — the audit trail and each record’s own dates, most recent first." />
 
       <ProjectSubNav projectId={projectId} />
+
+      {all.length > 0 ? (
+        <div className="flex flex-col gap-3">
+          <DomainSearch action={base} value={q} placeholder="Search the activity…" label="Search the activity" preserve={{ type }} />
+          <FilterChips options={[{ key: 'all', label: `All (${all.length})`, href: chipHref(), active: !type }, ...chips.map((c) => ({ key: c.label, label: `${c.label} (${c.count})`, href: chipHref(c.label), active: type === c.label }))]} />
+        </div>
+      ) : null}
 
       {entries.length > 0 ? (
         <>
@@ -67,8 +88,9 @@ export default async function ProjectActivityPage({ params }: { params: Promise<
       ) : (
         <EmptyState
           icon={<IconClock size={22} />}
-          title="Nothing yet"
-          description="Status changes, files, scope, tasks, milestones and change requests will appear here as they happen."
+          title={all.length > 0 ? 'No activity matches' : 'Nothing yet'}
+          description={all.length > 0 ? 'Nothing on this project fits that search or kind.' : 'Status changes, files, scope, tasks, milestones and change requests will appear here as they happen.'}
+          action={all.length > 0 ? <Link href={base} className="text-brand hover:underline">Clear the filters</Link> : <Link href={`/projects/${projectId}/board`} className="text-brand hover:underline">Open the board</Link>}
         />
       )}
     </div>

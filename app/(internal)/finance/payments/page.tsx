@@ -19,6 +19,7 @@ import { BANK_LINE_STATUS_LABEL } from '@/modules/finance/bank-import-schema';
 import { proposeMatches, type MatchCandidate } from '@/modules/finance/bank-csv';
 
 import { ConfirmBankLineMatchForm, IgnoreBankLineForm, ImportBankStatementForm } from './bank-import-panel';
+import { PreviewButton, PreviewDrawerProvider } from '../../preview-drawer';
 import { ClaimsDrawerList } from './claims-drawer';
 import { RecordClaimForm, VerifyClaimForm } from '../../projects/[projectId]/claims-panel';
 import {
@@ -119,6 +120,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     cell: (p) => (p.verified_at ? clock.dateTime(p.verified_at) : '—'),
     sortKey: 'verified',
   },
+  { key: 'quick', header: '', align: 'right', cell: (p) => <PreviewButton group="Payment" id={p.id} /> },
 ];
 
 const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
@@ -273,6 +275,7 @@ export default async function PaymentsPage({
   const currencies = [...new Set([...verifiedByCurrency.keys(), ...awaitingByCurrency.keys()])];
 
   return (
+    <PreviewDrawerProvider>
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Payments"
@@ -627,5 +630,6 @@ export default async function PaymentsPage({
         )}
       </Card>
     </div>
+    </PreviewDrawerProvider>
   );
 }

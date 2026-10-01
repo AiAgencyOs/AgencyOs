@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/lib/db/server';
+import { ilikeAny } from '@/lib/db/search';
 import { unreadable } from '@/lib/result';
 
 import type { AnnouncementAudience, AnnouncementStatus } from './announcements-schema';
@@ -28,7 +29,7 @@ export type AnnouncementRow = {
 };
 
 /** Announcements, newest first; filterable by audience and status. RLS scopes to the organization. */
-export async function listAnnouncements(filter: { audience?: AnnouncementAudience; status?: AnnouncementStatus; limit?: number; projectId?: string; clientAccountId?: string; agencyWideToo?: boolean } = {}): Promise<AnnouncementRow[]> {
+export async function listAnnouncements(filter: { audience?: AnnouncementAudience; status?: AnnouncementStatus; limit?: number; projectId?: string; clientAccountId?: string; agencyWideToo?: boolean; q?: string } = {}): Promise<AnnouncementRow[]> {
   const supabase = await createClient();
   let query = supabase
     .schema('crm')
@@ -38,6 +39,8 @@ export async function listAnnouncements(filter: { audience?: AnnouncementAudienc
     .limit(filter.limit ?? 100);
   if (filter.audience) query = query.eq('audience', filter.audience);
   if (filter.status) query = query.eq('status', filter.status);
+  // SCR-059: search by words in the title or body, server-side, so it reaches past the newest page.
+  if (filter.q) query = query.or(ilikeAny(['title', 'body'], filter.q));
   // A project's timeline shows what names it; a client's shows what names it, what names one of its projects
   // (the door copies the project's client onto the row), and — unless told otherwise — the agency-wide ones.
   if (filter.projectId) query = query.eq('project_id', filter.projectId);

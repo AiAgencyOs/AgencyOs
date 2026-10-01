@@ -10,6 +10,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { clientEnv } from '@/lib/env';
 import { readMyCalendarFeed } from '@/modules/projects/calendar-feed-queries';
+import { describeScheduleMove, listScheduleChanges, SCHEDULE_KIND_LABEL, scheduleChangeHref } from '@/modules/projects/schedule-changes-queries';
 import { listProjectMeetings } from '@/modules/projects/calendar-queries';
 import { getProject, listDevelopmentBreakdown, listPaymentPlan } from '@/modules/projects/queries';
 import {
@@ -101,7 +102,7 @@ export default async function ProjectCalendarPage({
   if (!project) notFound();
 
   const clock = await agencyClock();
-  const [{ tasks, modules }, milestones, clientName, meetings, clientLeads, agencyZone, feed] = await Promise.all([
+  const [{ tasks, modules }, milestones, clientName, meetings, clientLeads, agencyZone, feed, scheduleChanges] = await Promise.all([
     listDevelopmentBreakdown(projectId),
     listPaymentPlan(projectId),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
@@ -111,6 +112,8 @@ export default async function ProjectCalendarPage({
     getAgencyTimeZone(),
     // SCR-022 — "Sync supported calendars": the caller's own ICS feed, if one exists.
     readMyCalendarFeed(projectId),
+    // SCR-022 "Changes must preserve history": every date that moved on this project, from the audit trail.
+    listScheduleChanges({ projectId, limit: 8 }),
   ]);
   const mayProposeMeeting = can(context, 'lead.write');
   // SCR-022 — "create a milestone on this day": an unpriced one, through milestone.write.
@@ -432,6 +435,24 @@ export default async function ProjectCalendarPage({
                       <span className="block text-xs text-muted">{m.met_at ? `Met ${clock.date(m.met_at)}` : m.due_on ? `Due ${clock.date(m.due_on)}` : 'No date'}</span>
                     </span>
                     <StatusBadge status={m.met_at ? 'completed' : m.status} dot={false} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          {/* SCR-022 "Changes must preserve history and notify affected owners": the dates that moved, who moved them, from the audit trail. The people they concern see them in Notifications. */}
+          <Card>
+            <CardHeader title="Schedule Changes" description="Every due date that moved on this project, newest first. The people it concerns are told in Notifications." />
+            {scheduleChanges.length === 0 ? (
+              <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No date has moved on this project.</p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {scheduleChanges.map((c) => (
+                  <li key={c.auditId} className="flex flex-col gap-0.5 px-4 py-2.5 text-[13px] sm:px-5">
+                    <Link href={scheduleChangeHref(c)} className="truncate font-medium text-foreground hover:underline">{c.label}</Link>
+                    <span className="text-xs text-muted">{SCHEDULE_KIND_LABEL[c.kind]}: {describeScheduleMove(c, (d) => clock.date(d))}</span>
+                    <span className="text-xs text-muted">{c.actorName ? `by ${c.actorName} · ` : ''}{clock.dateTime(c.changedAt)}</span>
                   </li>
                 ))}
               </ul>

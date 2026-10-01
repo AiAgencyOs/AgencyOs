@@ -3,6 +3,7 @@ import Link from 'next/link';
 
 import { formatCostMinor, whyNotRun, wouldRun } from '@/lib/admin/agent-eval';
 import { readRunMetrics } from '@/lib/admin/agent-metrics';
+import { workflowDefinitions } from '@/lib/admin/automation-workflows-eval';
 import { aiStatus, listHandoffs, listRecentAgentRuns } from '@/lib/admin/agent-status';
 import { getAgentActivity } from '@/lib/admin/dashboard-deltas';
 import { periodDelta, trendOf } from '@/lib/admin/period-delta';
@@ -12,6 +13,7 @@ import { getAgentUsage } from '@/lib/admin/usage';
 import { listModels } from '@/lib/admin/model-registry';
 import { providerOfModel } from '@/lib/ai/model-provider';
 import { providerCredentialStatus } from '@/lib/ai/vault';
+import { AGENT_KEYS } from '@/modules/agents/registry';
 import { boundToolKeysFor, listToolDefinitions } from '@/modules/agents/permissions-schema';
 import { listLatestAgentValidations } from '@/modules/agents/validation-queries';
 import { requireInternal } from '@/lib/auth/session';
@@ -101,6 +103,7 @@ export default async function AgentsPage() {
   const disabled = agents.length - enabledCount;
 
   const isAdmin = can(context, 'organization.settings');
+  const workflowCount = workflowDefinitions(AGENT_KEYS).length;
   const vaultStatus = isAdmin ? await providerCredentialStatus(await createClient()) : null;
   // SCR-062: the last time a person validated each agent (ai.agent_validations).
   const personValidations = await listLatestAgentValidations();
@@ -359,7 +362,7 @@ export default async function AgentsPage() {
           )}
         </Card>
         <Card>
-          <CardHeader title="Automation Workflows" actions={<ViewAll href="/agents/automations" />} />
+          <CardHeader title="Automation Workflows" description={`${workflowCount} defined in code; handoffs below`} actions={<ViewAll href="/agents/automations" />} />
           {handoffs.length > 0 ? (
             <ul className="divide-y divide-line">
               {handoffs.map((h) => (
@@ -381,7 +384,7 @@ export default async function AgentsPage() {
           actions={[
             { label: 'View Logs', icon: <IconUsage size={13} />, href: '/usage' },
             ...(isAdmin ? [{ label: 'Configure Model', icon: <IconSettings size={13} />, href: '/agents/routing' }] : []),
-            { label: 'Create Automation', icon: <IconSparkle size={13} />, href: '/agents/automations' },
+            { label: 'View Automations', icon: <IconSparkle size={13} />, href: '/agents/automations' },
             { label: 'Integrations', icon: <IconAgents size={13} />, href: '/integrations' },
           ]}
         />
@@ -443,7 +446,7 @@ export default async function AgentsPage() {
 
       {/* The registry in full — every governance column the compact table above leaves out. */}
       <Card>
-            <CardHeader title="Agent registry" description="As enforced — autonomy, caps, validation and capabilities. Open an agent for its runs and limits." />
+            <CardHeader title="Agent registry" description="As enforced — autonomy, caps, validation and capabilities. Open an agent for its runs and limits. Admin and Client are people, and WhatsApp is a channel the agents use as a tool, so none of the three is an agent here." />
             <div className="px-4 pb-4 sm:px-5">
               <DataTable dense rows={agents} columns={columns} getKey={(a) => a.key} href={(a) => `/agents/${a.key}`} />
             </div>

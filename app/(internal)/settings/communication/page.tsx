@@ -7,12 +7,13 @@ import { impactEffects } from '@/lib/admin/settings-impact-copy';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
+import { normaliseSearch } from '@/lib/db/search';
 import { listAnnouncementTargets, listAnnouncements } from '@/modules/crm/announcements-queries';
 import { listAnnouncementTemplates } from '@/modules/crm/announcement-templates-queries';
 import { readInternalGroup, readInternalRecipient } from '@/modules/crm/queries';
 import { listWhatsAppTemplates, listWhatsAppTemplateVersions } from '@/modules/crm/template-queries';
 import { agencyClock } from '@/lib/admin/agency-clock';
-import { Badge, Stat, StatGrid, StatusBadge } from '@/ui';
+import { Badge, DomainSearch, SearchSummary, Stat, StatGrid, StatusBadge, buttonClass } from '@/ui';
 
 import {
   InternalGroupForm,
@@ -37,7 +38,12 @@ import { AnnouncementTemplatesPanel } from './announcement-templates-panel';
 
 export const metadata: Metadata = { title: 'Settings — Communication' };
 
-export default async function SettingsCommunicationPage() {
+const ANNOUNCEMENT_STATUS_FILTERS = ['draft', 'published', 'archived'] as const;
+
+export default async function SettingsCommunicationPage({ searchParams }: { searchParams: Promise<{ q?: string; astatus?: string }> }) {
+  const raw = await searchParams;
+  const announcementQuery = normaliseSearch(raw.q);
+  const announcementStatus = (ANNOUNCEMENT_STATUS_FILTERS as readonly string[]).includes(raw.astatus ?? '') ? (raw.astatus as (typeof ANNOUNCEMENT_STATUS_FILTERS)[number]) : undefined;
   const context = await requireInternal('/settings');
 
   const [historyOf, impact] = await Promise.all([loadSettingHistory(), readSettingImpact()]);
@@ -84,7 +90,7 @@ export default async function SettingsCommunicationPage() {
   const reactivation = await reactivationSummary();
 
   // SCR-017/057 — announcements: a record, never a send.
-  const [announcements, announcementTargets, announcementTemplates] = await Promise.all([listAnnouncements({ limit: 50 }), listAnnouncementTargets(), listAnnouncementTemplates()]);
+  const [announcements, announcementTargets, announcementTemplates] = await Promise.all([listAnnouncements({ limit: 50, q: announcementQuery || undefined, status: announcementStatus }), listAnnouncementTargets(), listAnnouncementTemplates()]);
 
   // SCR-059 — the registry by the numbers, and its history. Categories are
   // the situations a template answers; languages are what it answers in.
@@ -144,6 +150,25 @@ export default async function SettingsCommunicationPage() {
           Communication Center and each client&rsquo;s page can show it; <span className="font-medium">nothing is
           sent</span> — WhatsApp broadcast is declined on record (traceability row 59).
         </p>
+        {/* SCR-059: the list can grow, so it can be searched and narrowed by status (server-side, past the newest 50). */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="w-full max-w-md sm:w-80">
+          <DomainSearch action="/settings/communication#announcements" value={announcementQuery} placeholder="Search title or text…" label="Search announcements" preserve={{ astatus: announcementStatus }} className="[flex-wrap:nowrap]" />
+          </div>
+          <div role="group" aria-label="Announcement status" className="flex flex-wrap gap-1">
+            {[undefined, ...ANNOUNCEMENT_STATUS_FILTERS].map((st) => (
+              <Link
+                key={st ?? 'all'}
+                href={`/settings/communication?${new URLSearchParams({ ...(announcementQuery ? { q: announcementQuery } : {}), ...(st ? { astatus: st } : {}) }).toString()}#announcements`}
+                aria-current={announcementStatus === st ? 'true' : undefined}
+                className={buttonClass(announcementStatus === st ? 'primary' : 'secondary', 'sm')}
+              >
+                {st ? st[0]!.toUpperCase() + st.slice(1) : 'All'}
+              </Link>
+            ))}
+          </div>
+        </div>
+        {announcementQuery ? <SearchSummary q={announcementQuery} count={announcements.length} bounded={announcements.length >= 50} clearHref={`/settings/communication${announcementStatus ? `?astatus=${announcementStatus}` : ''}#announcements`} /> : null}
         <AnnouncementsPanel
           canWrite={can(context, 'organization.settings')}
           targets={announcementTargets}

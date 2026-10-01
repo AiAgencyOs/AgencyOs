@@ -311,6 +311,22 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
         : { text: 'Running', tone: 'good' as const };
 
   const systemRows: StatusRow[] = [
+    // SCR-001 "System health: app, …". The app answered this request, so it is serving; what can be wrong
+    // with it is its configuration, counted by the same production checks Production Readiness lists.
+    {
+      label: 'Application',
+      icon: <IconSettings size={13} />,
+      ...(o.environment.productionProblems > 0
+        ? {
+            state: show('organization.settings') ? (
+              <Link href="/production-readiness" className="underline underline-offset-2">{o.environment.productionProblems} configuration problem{o.environment.productionProblems === 1 ? '' : 's'}</Link>
+            ) : (
+              `${o.environment.productionProblems} configuration problem${o.environment.productionProblems === 1 ? '' : 's'}`
+            ),
+            tone: 'warning' as Tone,
+          }
+        : { state: 'Serving · configuration clear', tone: 'success' as Tone }),
+    },
     {
       label: 'Database (Supabase)',
       icon: <IconOperations size={13} />,

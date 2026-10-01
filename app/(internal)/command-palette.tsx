@@ -140,7 +140,7 @@ export function CommandPalette({
     if (canCreateClient) entries.push({ key: 'create-client', label: 'New client', group: 'Create', onSelect: () => setCreateMode('client') });
     if (canCreateQuotation) entries.push({ key: 'create-quotation', label: `New quotation${forLead}`, group: 'Create', onSelect: () => setCreateMode('quotation') });
     if (canCreateTask) entries.push({ key: 'create-task', label: `New task${where}`, group: 'Create', onSelect: () => setCreateMode('task') });
-    if (canCreateLead) entries.push({ key: 'create-meeting', label: `Request a meeting${forLead}`, group: 'Create', onSelect: () => setCreateMode('meeting') });
+    if (canCreateLead) entries.push({ key: 'create-meeting', label: `Schedule a meeting${forLead}`, group: 'Create', onSelect: () => setCreateMode('meeting') });
     // SCR-004 — the two records that had no by-hand door: a project not
     // born from a won deal, and an invoice drafted for a milestone without
     // first opening the project's billing panel.
@@ -200,7 +200,8 @@ export function CommandPalette({
       ...seeAll,
       ...commandEntries,
       ...searchEntries,
-      ...pageResults.map((c) => ({ key: c.href, label: c.label, group: c.group, href: c.href })),
+      // Several settings share one anchor, so the href alone is not a key: the label makes each entry (and its recent-command record) its own.
+      ...pageResults.map((c) => ({ key: `${c.href}|${c.label}`.slice(0, 200), label: c.label, group: c.group, href: c.href })),
     ];
   }, [createEntries, records, pageResults, query, mySearches, recentCommands]);
 
@@ -390,6 +391,7 @@ export function CommandPalette({
                 mode={createMode}
                 onCancel={cancelForm}
                 onCreated={created(createMode)}
+                onOpen={go}
                 draft={drafts[createMode]}
                 onFields={onFieldsFor(createMode)}
               />
@@ -452,6 +454,9 @@ export function CommandPalette({
   );
 }
 
+/** A record the new client may duplicate, as the door names it (`client-identity.ts`). */
+type DuplicateMatch = { kind: 'client' | 'contact'; id: string; label: string; reason: string; href: string };
+
 /** How many recent commands an empty palette shows before the page list. */
 const RECENT_SHOWN = 8;
 
@@ -467,17 +472,21 @@ function CreateForm({
   mode,
   onCancel,
   onCreated,
+  onOpen,
   draft,
   onFields,
 }: {
   mode: 'lead' | 'client';
   onCancel: () => void;
   onCreated: (href: string) => void;
+  /** Leave the form for an existing record (the draft is kept). */
+  onOpen: (href: string) => void;
   draft?: Record<string, string>;
   onFields?: (fields: Record<string, string>) => void;
 }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([]);
   const [fields, setFields] = useState(() => ({
     title: draft?.title ?? '',
     contactName: draft?.contactName ?? '',
@@ -491,8 +500,11 @@ function CreateForm({
     onFields?.(fields);
   }, [fields, onFields]);
 
-  const set = (key: keyof typeof fields) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const set = (key: keyof typeof fields) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Changing the name or email is a different question: ask again.
+    if (key === 'name' || key === 'billingEmail') setDuplicates([]);
     setFields((f) => ({ ...f, [key]: e.target.value }));
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -513,9 +525,26 @@ function CreateForm({
       const result = await createClientAccountAction({
         name: fields.name,
         billingEmail: fields.billingEmail,
+        // Set once the person has seen the records this may duplicate.
+        ...(duplicates.length > 0 ? { confirmDuplicate: true } : {}),
       });
       setSubmitting(false);
-      if (!result.ok) return setError(result.error.message);
+      if (!result.ok) {
+        // SCR-014: the agency already holds a client, contact or lead like this; show them and ask once.
+        if (result.error.code === 'CONFLICT' && result.error.details?.matches) {
+          const found: DuplicateMatch[] = [];
+          for (const raw of result.error.details.matches) {
+            try {
+              found.push(JSON.parse(raw) as DuplicateMatch);
+            } catch {
+              /* a malformed entry is simply not listed */
+            }
+          }
+          setDuplicates(found);
+          return setError(null);
+        }
+        return setError(result.error.message);
+      }
       onCreated(`/clients/${result.data.clientAccountId}`);
     }
   };
@@ -580,12 +609,36 @@ function CreateForm({
 
       <FormMessage status={error ? 'error' : 'idle'} message={error} />
 
+      {mode === 'client' && duplicates.length > 0 ? (
+        <div role="alert" className="flex flex-col gap-2 rounded-lg border border-warning/40 bg-warning-soft p-3 text-[13px]">
+          <p className="font-semibold text-foreground">This may already be known to the agency</p>
+          <ul className="flex flex-col gap-1">
+            {duplicates.map((d) => (
+              <li key={`${d.kind}-${d.id}`}>
+                <a
+                  href={d.href}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onOpen(d.href);
+                  }}
+                  className="font-medium text-brand underline underline-offset-2"
+                >
+                  {d.label}
+                </a>{' '}
+                <span className="text-muted">({d.reason})</span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-muted">Open that record instead, or create a separate client anyway.</p>
+        </div>
+      ) : null}
+
       <div className="flex justify-end gap-2">
         <Button type="button" variant="secondary" onClick={onCancel} disabled={submitting}>
           Cancel
         </Button>
         <Button type="submit" variant="primary" disabled={submitting}>
-          {submitting ? 'Creating…' : 'Create'}
+          {submitting ? 'Creating…' : mode === 'client' && duplicates.length > 0 ? 'Create a separate client anyway' : 'Create'}
         </Button>
       </div>
     </form>

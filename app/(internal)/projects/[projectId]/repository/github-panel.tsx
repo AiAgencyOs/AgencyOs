@@ -10,7 +10,8 @@ import {
   readGithubReviewFindings,
   readGithubTokenScopes,
 } from '@/lib/git/github';
-import type { GitAction } from '@/modules/projects/git-queries';
+import { taskForBranch, taskForCommit, summariseMapping } from '@/modules/projects/code-task-mapping';
+import { listCommitLinks, type GitAction } from '@/modules/projects/git-queries';
 import { accessAllows, accessRefusal } from '@/modules/projects/repository-policy';
 import type { RepositoryLink } from '@/modules/projects/repository-link-queries';
 import { Badge, Callout, Card, CardHeader, EmptyState, humanize, IconIntegrations } from '@/ui';
@@ -205,6 +206,8 @@ async function LiveRead({
   const needle = q.trim().toLowerCase();
   const commits = allCommits.filter((c) => !needle || `${c.message} ${c.shortSha} ${c.author ?? ''}`.toLowerCase().includes(needle));
   const pullRequests = allPulls.filter((p) => !needle || `${p.title} ${p.headBranch} ${p.author ?? ''}`.toLowerCase().includes(needle));
+  const commitLinks = await listCommitLinks(projectId, 200);
+  const mapping = summariseMapping({ commits: allCommits, pullRequests: allPulls, links: commitLinks, tasks });
   const [branches, checks, findings] = await Promise.all([
     readGithubBranches({ owner: link.owner, repo: link.repo }),
     readGithubChecks({ owner: link.owner, repo: link.repo }, branch),
@@ -223,6 +226,10 @@ async function LiveRead({
             {checks.data.pending.length > 0 ? ` · ${checks.data.pending.length} running` : ''}
           </Badge>
         ) : null}
+        {/* SCR-042 guardrail: every code artifact maps to a task — said plainly, including what does not. */}
+        <Badge tone={mapping.commits.mapped < mapping.commits.total || mapping.pullRequests.mapped < mapping.pullRequests.total ? 'warning' : 'success'}>
+          {mapping.commits.mapped}/{mapping.commits.total} commits and {mapping.pullRequests.mapped}/{mapping.pullRequests.total} pull requests map to a task
+        </Badge>
         {repository.private ? <Badge tone="warning">private</Badge> : null}
         <span>
           read {clock.dateTime(readAt)} · GitHub&apos;s default branch is <code>{repository.defaultBranch}</code>
@@ -254,6 +261,17 @@ async function LiveRead({
                   <span className="text-xs text-muted">
                     {c.author ?? 'unknown author'}
                     {c.authoredAt ? ` · ${clock.dateTime(c.authoredAt)}` : ''}
+                    {(() => {
+                      const t = taskForCommit(c.sha, commitLinks, tasks);
+                      return t ? (
+                        <>
+                          {' · task '}
+                          <Link href={`/projects/${projectId}/development/tasks/${t.id}`} className="underline-offset-2 hover:underline">{t.title}</Link>
+                        </>
+                      ) : (
+                        ' · not linked to a task'
+                      );
+                    })()}
                   </span>
                 </li>
               ))}
@@ -287,6 +305,17 @@ async function LiveRead({
                   <span className="text-xs text-muted">
                     {p.author ?? 'unknown author'} · <code>{p.headBranch}</code> → <code>{p.baseBranch}</code> · updated{' '}
                     {clock.dateTime(p.updatedAt)}
+                    {(() => {
+                      const t = taskForBranch(p.headBranch, tasks);
+                      return t ? (
+                        <>
+                          {' · task '}
+                          <Link href={`/projects/${projectId}/development/tasks/${t.id}`} className="underline-offset-2 hover:underline">{t.title}</Link>
+                        </>
+                      ) : (
+                        ' · branch is not a task branch'
+                      );
+                    })()}
                   </span>
                 </li>
               ))}

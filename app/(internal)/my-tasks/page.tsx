@@ -278,8 +278,8 @@ export default async function MyTasksPage({
                     );
                   })}
                 </ul>
-                {mayAdd && s !== 'blocked' ? (
-                  <MyTaskAdd status={s as 'todo' | 'in_progress' | 'in_review' | 'done'} statusLabel={s === 'todo' ? 'To do' : s === 'done' ? 'Completed' : humanize(s)} projects={projectList.map((p) => ({ id: p.id, name: p.name }))} />
+                {mayAdd && s !== 'blocked' && s !== 'in_review' ? (
+                  <MyTaskAdd status={s as 'todo' | 'in_progress' | 'done'} statusLabel={s === 'todo' ? 'To do' : s === 'done' ? 'Completed' : humanize(s)} projects={projectList.map((p) => ({ id: p.id, name: p.name }))} />
                 ) : null}
               </section>
             );

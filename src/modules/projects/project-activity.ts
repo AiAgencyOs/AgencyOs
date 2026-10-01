@@ -78,3 +78,45 @@ export function mergeActivity(rows: readonly ActivityRow[]): ActivityRow[] {
     return true;
   });
 }
+
+/** The record kinds a person can narrow the timeline to, in the words the page shows. */
+export const ACTIVITY_TYPE_LABEL: Record<string, string> = {
+  task: 'Tasks',
+  milestone: 'Milestones',
+  project: 'Project',
+  project_file: 'Files',
+  project_folder: 'Files',
+  scope_version: 'Scope',
+  scope_item: 'Scope',
+  change_request: 'Change requests',
+  defect: 'Defects',
+  deliverable: 'Deliverables',
+  project_member: 'Team',
+  theme_option: 'Design',
+  phase_three: 'Design',
+  meeting: 'Meetings',
+};
+
+/** One chip per label that actually occurs in the feed, most frequent first; kinds with no word of their own fall under "Other". */
+export function activityTypeChips(rows: readonly ActivityRow[]): { label: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const label = ACTIVITY_TYPE_LABEL[r.subjectType] ?? 'Other';
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return [...counts.entries()].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
+/**
+ * Narrow the timeline: `q` matches the action, the record's label or the actor
+ * (case-insensitive); `type` is one of the chip labels. Pure, so the rule is
+ * testable without the page.
+ */
+export function filterActivity(rows: readonly ActivityRow[], filter: { q?: string; type?: string }): ActivityRow[] {
+  const needle = (filter.q ?? '').trim().toLowerCase();
+  return rows.filter((r) => {
+    if (filter.type && (ACTIVITY_TYPE_LABEL[r.subjectType] ?? 'Other') !== filter.type) return false;
+    if (!needle) return true;
+    return `${actionLabel(r.action)} ${r.label} ${r.actor ?? ''}`.toLowerCase().includes(needle);
+  });
+}

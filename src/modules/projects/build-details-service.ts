@@ -15,6 +15,7 @@ import {
   type SendPrototypeInput,
   type SetDeliverableDetailsInput,
 } from './build-details-schema';
+import { buildCredentialProblem } from './build-secrets-guard';
 
 /**
  * The three doors on a prototype or build deliverable (migration
@@ -32,6 +33,13 @@ export async function setDeliverableDetails(input: SetDeliverableDetailsInput): 
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid details.');
   const context = await requireInternal();
   if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to change a build.');
+  // SCR-043: how a build was made and how to roll it back are read by the whole team; no credential goes in them.
+  const credential = buildCredentialProblem([
+    { label: 'Commit or ref', value: parsed.data.commitRef },
+    { label: 'Build number', value: parsed.data.buildNumber },
+    { label: 'How to roll back', value: parsed.data.rollbackNote },
+  ]);
+  if (credential) return err('VALIDATION', credential);
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('set_deliverable_details', {
     p_deliverable_id: parsed.data.deliverableId,

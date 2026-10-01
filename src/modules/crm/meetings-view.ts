@@ -392,7 +392,7 @@ export function meetingControls(status: MeetingStatus, options: { calendarConfig
       }
     }
   }
-  out.push(COMMAND('crm.add_meeting_evidence', null, 'typed notes and summaries only — no artifact store is chosen to sign a reference (G-229), so a file cannot be attached honestly yet'));
+  out.push(COMMAND('crm.add_meeting_evidence', null, 'typed notes and summaries, or a text file of notes or a transcript (.txt, .md, .vtt, .srt) kept word for word — no artifact store is chosen to sign a reference (G-229), so a recording or an image cannot be attached honestly yet'));
   if (status === 'completed') {
     out.push(COMMAND('crm.request_meeting_analysis', null, 'asks G-229\'s gate again: refused without evidence, queued once with it — and it stays queued, since no worker runs one (BLK-001)'));
   }

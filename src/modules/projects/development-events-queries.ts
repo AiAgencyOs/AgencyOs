@@ -9,7 +9,7 @@ export type DevelopmentEvent = {
   id: string;
   projectId: string;
   taskId: string | null;
-  kind: 'blocker_escalated' | 'qa_handoff_started';
+  kind: 'blocker_escalated' | 'qa_handoff_started' | 'dependency_requested';
   reason: string | null;
   detail: Record<string, unknown>;
   status: 'open' | 'acknowledged' | 'closed';
@@ -62,14 +62,14 @@ export async function listDevelopmentEvents(projectId: string, limit = 30): Prom
   return ((data ?? []) as Row[]).map(toEvent);
 }
 
-/** Open escalations across every project — the Development dashboard's "waiting on the PM" list. */
+/** Open escalations and dependency requests across every project — the Development dashboard's "waiting on the PM" list. */
 export async function listOpenEscalations(): Promise<(DevelopmentEvent & { projectName: string; taskTitle: string | null })[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .schema('projects')
     .from('development_events')
     .select(SELECT)
-    .eq('kind', 'blocker_escalated')
+    .in('kind', ['blocker_escalated', 'dependency_requested'])
     .eq('status', 'open')
     .order('created_at', { ascending: true });
   if (error) unreadable('listOpenEscalations', error);

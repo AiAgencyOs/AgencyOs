@@ -58,6 +58,11 @@ export function GstConfigurationCard({
         }
       />
       <div className="flex flex-col gap-3 px-4 py-3 sm:px-5">
+        {/* SCR-056 guardrail: the figures follow what is configured; nothing here decides what the law requires. */}
+        <p className="text-xs text-muted">
+          Every figure on this page follows the profile and the rules recorded here. AgencyOS does not decide whether a sale is taxable, which return
+          applies or whether the agency is compliant beyond them; an invoice whose project never confirmed a billing mode stays in its own &ldquo;Unconfirmed mode&rdquo; line instead of being guessed.
+        </p>
         <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-[13px] sm:grid-cols-4">
           <dt className="text-muted">Legal name</dt>
           <dd className="font-medium">{identity.legalName || '—'}</dd>

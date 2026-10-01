@@ -8,6 +8,7 @@ import { finalDelivery } from '@/modules/projects/project-health';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { readClientName } from '@/lib/admin/clients';
 import { listEligibleMilestones } from '@/modules/finance/eligible-milestones-queries';
+import { listDevelopmentEvents } from '@/modules/projects/development-events-queries';
 import { listPlanLayers } from '@/modules/projects/plan-layers-queries';
 import { PLAN_LAYER_LABEL, PLAN_LAYERS } from '@/modules/projects/plan-layers-types';
 import { listTasksByMilestone } from '@/modules/projects/milestone-tasks-queries';
@@ -23,6 +24,7 @@ import { WorkspaceHeader } from '../workspace-header';
 import { ProjectSubNav } from '../project-subnav';
 import { PlanBreakdownForm } from './plan-breakdown-form';
 import { PlanLayersPanel } from './plan-layers-panel';
+import { RequestClientDependencyForm } from '../../../development-events-panels';
 
 import {
   ActivatePlanForm,
@@ -103,7 +105,11 @@ export default async function ProjectPlanPage({
     // SCR-023: the tasks filed under each milestone, for the picked milestone's list.
     listTasksByMilestone(projectId),
   ]);
-  const [layersByDeliverable, breakdown] = await Promise.all([listPlanLayers(board.deliverables.map((d) => d.id)), listDevelopmentBreakdown(projectId)]);
+  const [layersByDeliverable, breakdown, projectEvents] = await Promise.all([listPlanLayers(board.deliverables.map((d) => d.id)), listDevelopmentBreakdown(projectId), listDevelopmentEvents(projectId, 100)]);
+  // SCR-040 — client dependencies the PM has already been asked to request (an open dependency_requested event).
+  const dependenciesWithThePm = new Set(
+    projectEvents.filter((e) => e.kind === 'dependency_requested' && e.status === 'open').map((e) => String(e.detail.dependencyId ?? '')),
+  );
   // SCR-040 — execution order first, then the plan's own position.
   const orderedDeliverables = [...board.deliverables].filter((d) => !planQuery || `${d.name} ${d.readinessCriteria} ${d.ownerRole ?? ''}`.toLowerCase().includes(planQuery)).sort((a, b) => {
     const oa = layersByDeliverable.get(a.id)?.executionOrder ?? Number.MAX_SAFE_INTEGER;
@@ -163,6 +169,7 @@ export default async function ProjectPlanPage({
   // project. The doors check it again — this only decides what to render.
   const mayPlan = can(context, 'project.write');
   const mayDate = can(context, 'milestone.write');
+  const mayRequestFromPm = can(context, 'task.write');
   const tasksFor = (id: string) => taskCounts.find((t) => t.milestoneId === id) ?? { milestoneId: id, total: 0, done: 0 };
   const { plan } = board;
   const openQuestions = board.clarifications.filter(
@@ -435,6 +442,16 @@ export default async function ProjectPlanPage({
                       </span>
                     </div>
                     <p className="text-muted">Ready when: {d.readinessCriteria}</p>
+                    {/* SCR-040 — acceptance criteria: cited from the approved scope item this deliverable comes from, never written here. */}
+                    {(() => {
+                      const cited = d.scopeItemId ? board.scopeItems.find((si) => si.id === d.scopeItemId) : null;
+                      if (!cited) return null;
+                      return cited.acceptanceCriteria ? (
+                        <p className="text-muted">Acceptance criteria (approved scope item “{cited.title}”): {cited.acceptanceCriteria}</p>
+                      ) : (
+                        <p className="text-xs text-warning">The approved scope item “{cited.title}” records no acceptance criteria.</p>
+                      );
+                    })()}
                     <p className="text-muted">Evidence: {d.evidenceRequired}</p>
                     {/* SCR-040 — Definition of Done, from what the plan holds: readiness + evidence + every applicable layer done. */}
                     <p className="text-muted">
@@ -541,6 +558,14 @@ export default async function ProjectPlanPage({
                       {d.kind.replace(/_/g, ' ')} · by {d.neededByPhase.replace('_', ' ')} · {d.ownerRole}
                       <Badge tone={d.status === 'blocked' ? 'danger' : 'warning'}>{d.status}</Badge>
                     </span>
+                    {/* SCR-040 — "Request missing client dependency through PM": recorded for the PM to chase. */}
+                    {dependenciesWithThePm.has(d.id) ? (
+                      <span className="w-full text-xs text-muted">With the PM: asked to request this from the client.</span>
+                    ) : mayRequestFromPm && (d.status === 'pending' || d.status === 'blocked') ? (
+                      <span className="w-full">
+                        <RequestClientDependencyForm projectId={projectId} dependencyId={d.id} />
+                      </span>
+                    ) : null}
                   </li>
                 ))}
               </ul>

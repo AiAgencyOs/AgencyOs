@@ -7,7 +7,7 @@ import { addMyTaskAction } from '@/modules/projects/task-plan-actions';
 import { buttonClass, FormMessage, IconPlus, inputClass, labelClass, selectClass } from '@/ui';
 
 /** A column's "+ Add task": a task for me on a project I pick, born in this column's status, through the createTask and setTaskStatus doors. */
-export function MyTaskAdd({ status, statusLabel, projects }: { status: 'todo' | 'in_progress' | 'in_review' | 'done'; statusLabel: string; projects: { id: string; name: string }[] }) {
+export function MyTaskAdd({ status, statusLabel, projects }: { status: 'todo' | 'in_progress' | 'done'; statusLabel: string; projects: { id: string; name: string }[] }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState(async (prev: FormState, fd: FormData) => {
     const result = await addMyTaskAction(prev, fd);

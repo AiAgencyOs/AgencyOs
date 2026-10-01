@@ -17,6 +17,7 @@ import { owedOn, verifiedOn } from '@/modules/finance/verified-basis';
 import { listProjects } from '@/modules/projects/queries';
 import { SavedViewsBar } from '../saved-views-bar';
 import { CreateFromMilestoneForm } from './create-from-milestone-form';
+import { PreviewDrawerProvider } from '../preview-drawer';
 import { InvoiceRegistryTable, type RegistryRow } from './invoice-registry-table';
 import type { ReminderHistoryEntry } from './reminder-history-drawer';
 import {
@@ -179,6 +180,7 @@ export default async function InvoicesPage({
   });
 
   return (
+    <PreviewDrawerProvider>
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Invoices"
@@ -329,5 +331,6 @@ export default async function InvoicesPage({
         />
       )}
     </div>
+    </PreviewDrawerProvider>
   );
 }

@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { readClientName } from '@/lib/admin/clients';
 import { requireInternal } from '@/lib/auth/session';
+import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
 import { listMilestoneViews } from '@/modules/projects/milestone-view-queries';
 import { readMilestoneDependencies } from '@/modules/projects/milestone-dependency-queries';
@@ -18,6 +19,7 @@ import {
   humanize,
   buttonClass,
   Card,
+  DomainSearch,
   CardHeader,
   EmptyState,
   Gantt,
@@ -51,9 +53,10 @@ const STATE_WORD = { done: 'Completed', current: 'In progress', late: 'Overdue',
  * so the payment rule (a milestone unlocks when the one before it is paid)
  * still decides. Assignees are the people holding tasks filed under it.
  */
-export default async function ProjectMilestonesPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ milestone?: string }> }) {
+export default async function ProjectMilestonesPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ milestone?: string; q?: string }> }) {
   const { projectId } = await params;
-  const { milestone: selectedParam } = await searchParams;
+  const { milestone: selectedParam, q: qRaw } = await searchParams;
+  const q = normaliseSearch(qRaw);
 
   const context = await requireInternal(`/projects/${projectId}/milestones`);
   if (!can(context, 'project.read')) return <PermissionDenied />;
@@ -111,6 +114,9 @@ export default async function ProjectMilestonesPage({ params, searchParams }: { 
       progress: c.roll.percent,
       href: `${base}/milestones?milestone=${c.m.id}`,
     }));
+  // SCR-023 / checklist: the list can grow past the payment plan (a milestone can be added from the calendar), so it can be searched.
+  const needle = q.toLowerCase();
+  const shownCards = needle ? cards.filter((c) => c.m.name.toLowerCase().includes(needle) || (c.m.description ?? '').toLowerCase().includes(needle)) : cards;
   const upcoming = cards.filter((c) => c.state !== 'done' && c.m.dueOn !== null).sort((a, b) => (a.m.dueOn as string).localeCompare(b.m.dueOn as string)).slice(0, 4);
 
   return (
@@ -146,15 +152,30 @@ export default async function ProjectMilestonesPage({ params, searchParams }: { 
       ) : (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="flex min-w-0 flex-col gap-4">
-            <Card>
-              <CardHeader title="Project milestone timeline" description="Each bar runs from its tasks' first start (or the day after the milestone before it closed) to its due date." />
+            <Card id="milestone-gantt">
+              <CardHeader
+                title="Project milestone timeline"
+                description="Each bar runs from its tasks' first start (or the day after the milestone before it closed) to its due date."
+                actions={
+                  // SCR-023 sub-screens: List, Gantt, Calendar.
+                  <div className="flex items-center gap-1.5 text-xs font-medium" role="group" aria-label="Milestone view">
+                    <a href="#milestone-list" className="inline-flex items-center rounded-lg border border-line bg-surface px-3 py-1.5 text-muted hover:bg-surface-hover">List</a>
+                    <span aria-current="true" className="inline-flex items-center rounded-lg border border-brand/40 bg-brand-soft px-3 py-1.5 text-brand">Gantt</span>
+                    <Link href={`${base}/calendar?types=milestone`} className="inline-flex items-center rounded-lg border border-line bg-surface px-3 py-1.5 text-muted hover:bg-surface-hover">Calendar</Link>
+                  </div>
+                }
+              />
               <div className="px-2 pb-4 sm:px-3">
                 {gantt.length === 0 ? <p className="px-2 text-[13px] text-muted">No milestone has a due date or a dated task yet, so there is nothing to draw.</p> : <Gantt rows={gantt} todayKey={today} />}
               </div>
             </Card>
 
-            <ol className="flex flex-col gap-3">
-              {cards.map((c) => (
+            {cards.length > 1 ? <DomainSearch action={`${base}/milestones`} value={q} placeholder="Search milestones…" label="Search milestones" preserve={{ milestone: selectedParam }} /> : null}
+            {shownCards.length === 0 ? (
+              <EmptyState title="No milestone matches" description="Nothing on the plan fits that search." action={<Link href={`${base}/milestones`} className={buttonClass('secondary', 'sm')}>Clear the search</Link>} />
+            ) : null}
+            <ol id="milestone-list" className="flex flex-col gap-3">
+              {shownCards.map((c) => (
                 <li key={c.m.id}>
                   <Link
                     href={`${base}/milestones?milestone=${c.m.id}`}

@@ -35,6 +35,7 @@ import {
   type TriggerBuildInput,
 } from './git-write-schema';
 import { DEFAULT_CHECKS_WORKFLOW, matchWorkflowRun, newDispatchKey, runState } from './environment-check-runs';
+import { buildCredentialProblem } from './build-secrets-guard';
 import { accessRefusal, countApprovals, evaluateMergePolicy, type GitAction } from './repository-policy';
 import { getRepositoryLink } from './repository-link-queries';
 
@@ -249,6 +250,10 @@ export async function triggerBuild(input: TriggerBuildInput): Promise<Result<{ d
 
   const context = await requireInternal();
   if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to trigger a build.');
+
+  // SCR-043: the note on a triggered build is read by the whole team; no credential goes in it.
+  const credential = buildCredentialProblem([{ label: 'Note', value: parsed.data.note }]);
+  if (credential) return err('VALIDATION', credential);
 
   const link = await linkedRepository(parsed.data.projectId);
   if (!link) return err('CONFLICT', 'This project has no linked GitHub repository. Link one on the Repository tab first.');

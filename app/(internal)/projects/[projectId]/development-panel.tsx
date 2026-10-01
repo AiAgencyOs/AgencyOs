@@ -12,6 +12,7 @@ import {
   setTaskStatusAction,
 } from '@/modules/projects/actions';
 import { FEATURE_STATUSES, MODULE_STATUSES, TASK_STATUSES } from '@/modules/projects/schema';
+import { selectableStatuses } from '@/modules/projects/task-transitions';
 import type { DevelopmentFeature, DevelopmentModule, DevelopmentTask } from '@/modules/projects/queries';
 import { IDLE_STATE, type FormState } from '@/modules/identity/types';
 import { FormMessage, buttonClass, inputClass, labelClass, selectClass } from '@/ui';
@@ -76,7 +77,7 @@ function TaskRow({ task, projectId }: { task: DevelopmentTask; projectId: string
         hiddenName="taskId"
         hiddenValue={task.id}
         status={task.status}
-        options={TASK_STATUSES}
+        options={selectableStatuses(TASK_STATUSES, task.status)}
       />
     </li>
   );

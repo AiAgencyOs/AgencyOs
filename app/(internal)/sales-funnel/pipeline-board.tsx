@@ -109,7 +109,13 @@ export function PipelineBoard({
               {deal.contact ?? deal.name}
             </Link>
             {deal.contact ? <p className="truncate text-xs text-muted">{deal.name}</p> : null}
-            <p className="tabular mt-2 text-sm font-semibold text-foreground">{deal.valueLabel}</p>
+            <p className="tabular mt-2 flex items-baseline justify-between gap-2 text-sm font-semibold text-foreground">
+              <span>{deal.valueLabel}</span>
+              {/* SCR-005 "Open lead or quotation from card": the lead is the name above, its quotations are here. */}
+              <Link href={`/leads/${deal.leadId}?tab=quotations`} className="text-xs font-medium text-brand hover:underline">
+                Quotations
+              </Link>
+            </p>
             <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
               <span className="whitespace-nowrap text-xs text-muted">{deal.ago}</span>
               <StatusBadge status={deal.columnId} dot={false} />

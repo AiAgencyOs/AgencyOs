@@ -8,9 +8,11 @@ import { err, ok, type Result } from '@/lib/result';
 import {
   acknowledgeEscalationSchema,
   escalateBlockerSchema,
+  requestClientDependencySchema,
   startQaHandoffSchema,
   type AcknowledgeEscalationInput,
   type EscalateBlockerInput,
+  type RequestClientDependencyInput,
   type StartQaHandoffInput,
 } from './development-events-schema';
 
@@ -116,5 +118,47 @@ export async function startQaHandoff(input: StartQaHandoffInput): Promise<Result
       return err('FORBIDDEN', 'The database refused: only an owner, ops admin or delivery lead may start a handoff.');
     default:
       return err('INTERNAL', 'Could not start the handoff.');
+  }
+}
+
+/**
+ * SCR-040 — "Request missing client dependency through PM": records a
+ * `dependency_requested` event the PM acknowledges (migration 20261008130000).
+ * `task.write` raises it (anyone planning or working the project); the database
+ * door re-checks, and only a client dependency that is still outstanding is accepted.
+ */
+export async function requestClientDependency(input: RequestClientDependencyInput): Promise<Result<{ eventId: string }>> {
+  const parsed = requestClientDependencySchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid request.');
+
+  const context = await requireInternal();
+  if (!can(context, 'task.write')) return err('FORBIDDEN', 'You do not have permission to ask the PM for a client dependency.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('request_client_dependency', { p_dependency_id: parsed.data.dependencyId, ...(parsed.data.note ? { p_note: parsed.data.note } : {}) });
+  if (error) {
+    log('requestClientDependency', error.message);
+    return err('INTERNAL', 'Could not record the request.');
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; event_id?: string | null } | undefined;
+  switch (row?.outcome) {
+    case 'requested':
+      return ok({ eventId: row.event_id ?? '' });
+    case 'already_open':
+      return err('CONFLICT', 'The PM already has a request open for this dependency.');
+    case 'not_a_client_dependency':
+      return err('VALIDATION', 'Only something the client owes (information or access) is requested through the PM.');
+    case 'not_outstanding':
+      return err('CONFLICT', 'This dependency is not outstanding: the client has supplied it, it is already requested, or it is not applicable.');
+    case 'note_too_long':
+      return err('VALIDATION', 'The note is too long.');
+    case 'not_found':
+      return err('NOT_FOUND', 'Dependency not found.');
+    case 'forbidden':
+      return err('FORBIDDEN', 'The database refused: your role may not raise this request.');
+    default:
+      return err('INTERNAL', 'Could not record the request.');
   }
 }

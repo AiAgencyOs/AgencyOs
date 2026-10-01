@@ -295,7 +295,7 @@ export default async function LeadsPage({
       (!source || l.source === source) &&
       (!owner || (owner === 'unassigned' ? l.assigned_to === null : l.assigned_to === owner)) &&
       // SCR-006 — name, phone, EMAIL and company, one box.
-      (!needle || `${l.title} ${l.contact?.fullName ?? ''} ${l.contact?.company ?? ''} ${l.contact?.phone ?? ''} ${l.contact?.email ?? ''}`.toLowerCase().includes(needle)) &&
+      (!needle || `${l.title} ${l.contact?.fullName ?? ''} ${l.contact?.company ?? ''} ${l.contact?.phone ?? ''} ${l.contact?.email ?? ''} ${l.source.replace(/_/g, ' ')}`.toLowerCase().includes(needle)) &&
       (!boundedByBudget ||
         (() => {
           const b = facts.get(l.id)?.budgetMinor ?? null;
@@ -387,7 +387,7 @@ export default async function LeadsPage({
           <label className="relative min-w-[14rem] flex-1">
             <span className="sr-only">Search leads</span>
             <span aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><IconSearch size={15} /></span>
-            <input name="q" defaultValue={q ?? ''} placeholder="Search leads by name, email, phone, source…" className={cx(inputClass, '!w-full pl-9')} />
+            <input name="q" defaultValue={q ?? ''} placeholder="Search leads by name, phone, email, company, source…" className={cx(inputClass, '!w-full pl-9')} />
           </label>
           <select name="source" defaultValue={source ?? ''} aria-label="Source" className={cx(selectClass, 'w-auto')}>
             <option value="">All Sources</option>

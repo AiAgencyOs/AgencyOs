@@ -42,6 +42,7 @@ import {
   listRequirementSourceRefs,
   readQualificationCoverage,
 } from '@/modules/crm/lead-insight-queries';
+import { handoffHeaderValue, requirementHeaderValue } from '@/modules/crm/requirement-header';
 import { readDealBillingMode, readOpportunityOwner } from '@/modules/sales/composer-queries';
 
 import { SalesOwnerForm } from './composer-extras';
@@ -108,6 +109,7 @@ import {
   SystemNote,
   humanize,
   PermissionDenied,
+  RowActionsMenu,
 } from '@/ui';
 
 import { ExtractionForm, MessageForm, SendToClientForm } from './message-form';
@@ -1510,6 +1512,9 @@ export default async function LeadConversationPage({
           ...(budget ? [{ label: 'Budget', value: budget, icon: <IconInvoices size={14} /> }] : []),
           { label: 'Assigned to', value: facts?.assignedEmail ? facts.assignedEmail.split('@')[0] : 'Unassigned', icon: <IconUser size={14} /> },
           ...(opportunity ? [{ label: 'Deal', value: humanize(dealStage), icon: <IconFlag size={14} /> }, { label: 'Deal value', value: money(opportunity.value_minor, opportunity.currency), icon: <IconRupee size={14} /> }] : []),
+          // SCR-007's header: the requirement version that stands, and who is answering the thread.
+          ...(conversation ? [{ label: 'Requirements', value: requirementHeaderValue(versions), icon: <IconFile size={14} /> }] : []),
+          ...(handoffHeaderValue(conversation) ? [{ label: 'Hand-off', value: handoffHeaderValue(conversation) as string, icon: <IconUser size={14} /> }] : []),
         ]}
         actions={
           <>
@@ -1535,6 +1540,18 @@ export default async function LeadConversationPage({
                 Send message
               </a>
             ) : null}
+            {/* The context header's overflow: where else this lead's work lives. */}
+            <RowActionsMenu
+              label="More actions for this lead"
+              actions={[
+                { key: 'qualification', label: 'Open the qualification screen', href: `/leads/${leadId}/qualification` },
+                { key: 'meetings', label: 'Meetings', href: `/leads/${leadId}?tab=meetings` },
+                { key: 'quotations', label: 'Quotations', href: `/leads/${leadId}?tab=quotations` },
+                { key: 'followups', label: 'Follow-ups', href: `/leads/${leadId}?tab=sequences` },
+                { key: 'activity', label: 'Activity', href: `/leads/${leadId}?tab=activity` },
+                { key: 'search', label: 'Find related records', href: `/search?q=${encodeURIComponent(lead.title)}` },
+              ]}
+            />
           </>
         }
         aside={
@@ -1563,6 +1580,7 @@ export default async function LeadConversationPage({
           { id: 'qualification', label: 'Qualification', icon: <IconTarget size={14} /> },
           { id: 'requirements', label: 'Requirements', icon: <IconFile size={14} /> },
           { id: 'quotations', label: 'Quote', icon: <IconInvoices size={14} /> },
+          { id: 'meetings', label: 'Meetings', icon: <IconCalendar size={14} /> },
           { id: 'sequences', label: 'Follow-ups', icon: <IconCalendar size={14} /> },
           { id: 'files', label: 'Files', icon: <IconAttach size={14} /> },
           { id: 'activity', label: 'Activity', icon: <IconActivity size={14} /> },

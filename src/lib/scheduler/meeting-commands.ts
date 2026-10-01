@@ -271,6 +271,45 @@ export async function addMeetingEvidence(id: string, kind: string, visibility: s
 }
 
 /**
+ * SCR-060: an uploaded text file kept as evidence. The caller has already read
+ * the file and judged it (`decideMeetingNoteFile`); this goes through the SAME
+ * door as typed notes, so the audit row, the capability and the named refusals
+ * are the same, and adds the file's name, media type and size to the row.
+ */
+export async function addMeetingEvidenceFile(
+  id: string,
+  visibility: string,
+  file: { kind: 'notes' | 'transcript'; body: string; reference: string; mediaType: string; byteSize: number },
+): Promise<Result<Concluded>> {
+  const parsed = z
+    .object({
+      id: meetingId,
+      kind: z.enum(['notes', 'transcript']),
+      visibility: z.enum(EVIDENCE_VISIBILITIES),
+      body: z.string().min(1).max(20000),
+      reference: z.string().min(1).max(260),
+      mediaType: z.string().max(100),
+      byteSize: z.number().int().positive(),
+    })
+    .safeParse({ id, visibility, ...file });
+  if (!parsed.success) return err('VALIDATION', 'That file cannot be kept as evidence: choose a text file under 20,000 characters, internal or client-visible.');
+  return throughDoor(
+    'crm.add_meeting_evidence',
+    {
+      p_meeting_id: parsed.data.id,
+      p_kind: parsed.data.kind,
+      p_body: parsed.data.body,
+      p_visibility: parsed.data.visibility,
+      p_artifact_ref: parsed.data.reference,
+      p_media_type: parsed.data.mediaType,
+      p_byte_size: String(parsed.data.byteSize),
+    },
+    'Could not attach the file.',
+    (row) => interpretEvidence(row?.outcome),
+  );
+}
+
+/**
  * §9.3's last step, asked again. A completion with no note answers
  * `no_evidence`; once evidence exists the gate can be asked from the page —
  * review found the first draft leaving a settled meeting with no way back

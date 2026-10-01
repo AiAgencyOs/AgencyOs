@@ -7,11 +7,13 @@ import { z } from 'zod';
 import { requireInternal } from '@/lib/auth/session';
 import { can, hasRole } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
+import { ilikeAny } from '@/lib/db/search';
 import { err, ok, unreadable, type Result } from '@/lib/result';
 
 import { markLeadConverted, sendClientDocument, sendClientMessage } from '@/modules/crm/service';
 import { createProject, seedOnboarding } from '@/modules/projects/service';
 import { carryLeadFilesToProject } from './lead-files-carry';
+import { clientIdentityMatches, describeIdentityMatches, type ClientCandidate, type ContactCandidate } from './client-identity';
 
 import {
   addProposalItemSchema,
@@ -699,6 +701,18 @@ export async function createClientAccount(
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
+
+  // SCR-014: identity must deduplicate against client, contact and lead records. A match stops
+  // the create once, names the record, and a confirmed re-submit goes through.
+  if (!parsed.data.confirmDuplicate) {
+    const candidates = await readIdentityCandidates(parsed.data.name, parsed.data.billingEmail || null);
+    if (!candidates.ok) return candidates;
+    const matches = clientIdentityMatches({ name: parsed.data.name, billingEmail: parsed.data.billingEmail }, candidates.data);
+    if (matches.length > 0) {
+      return err('CONFLICT', describeIdentityMatches(matches), { details: { matches: matches.map((m) => JSON.stringify(m)) } });
+    }
+  }
+
   const { data: account, error } = await supabase
     .schema('core')
     .from('client_accounts')
@@ -2486,4 +2500,48 @@ export async function recordPlanSetResponse(
     default:
       return err('INTERNAL', 'Could not record the response.');
   }
+}
+
+
+/**
+ * The rows `clientIdentityMatches` judges: clients with this name or billing
+ * email, contacts with this email or a name or company like it, and the lead
+ * each contact came in on. Read under the caller's own session, so it can only
+ * ever name what the caller may already open. A failed read refuses the create
+ * (a duplicate check that silently passed would be worse than none).
+ */
+async function readIdentityCandidates(name: string, billingEmail: string | null): Promise<Result<{ clients: ClientCandidate[]; contacts: ContactCandidate[] }>> {
+  const supabase = await createClient();
+  const clientFilter = [ilikeAny(['name'], name), billingEmail ? ilikeAny(['billing_email'], billingEmail) : null].filter(Boolean).join(',');
+  const contactFilter = [ilikeAny(['full_name', 'company'], name), billingEmail ? ilikeAny(['email'], billingEmail) : null].filter(Boolean).join(',');
+  const [clients, contacts] = await Promise.all([
+    supabase.schema('core').from('client_accounts').select('id, name, billing_email').or(clientFilter).limit(25),
+    supabase.schema('crm').from('contacts').select('id, full_name, email, company, client_account_id').or(contactFilter).limit(25),
+  ]);
+  if (clients.error || contacts.error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'createClientAccount.identity', detail: (clients.error ?? contacts.error)?.message }));
+    return err('INTERNAL', 'Could not check whether this client already exists, so it was not created.');
+  }
+  const contactRows = contacts.data ?? [];
+  const leadByContact = new Map<string, { id: string; title: string }>();
+  if (contactRows.length > 0) {
+    const leads = await supabase.schema('crm').from('leads').select('id, title, contact_id').in('contact_id', contactRows.map((c) => c.id));
+    if (leads.error) {
+      console.error(JSON.stringify({ level: 'error', scope: 'createClientAccount.identity.leads', detail: leads.error.message }));
+      return err('INTERNAL', 'Could not check whether this client already exists, so it was not created.');
+    }
+    for (const l of leads.data ?? []) if (l.contact_id && !leadByContact.has(l.contact_id)) leadByContact.set(l.contact_id, { id: l.id, title: l.title });
+  }
+  return ok({
+    clients: (clients.data ?? []).map((c) => ({ id: c.id, name: c.name, billingEmail: c.billing_email })),
+    contacts: contactRows.map((c) => ({
+      id: c.id,
+      fullName: c.full_name,
+      email: c.email,
+      company: c.company,
+      clientAccountId: c.client_account_id,
+      leadId: leadByContact.get(c.id)?.id ?? null,
+      leadTitle: leadByContact.get(c.id)?.title ?? null,
+    })),
+  });
 }

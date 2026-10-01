@@ -156,9 +156,11 @@ export default async function ClientsPage({
   const totalPaid = allClients.filter((c) => c.currency === currency).reduce((n, c) => n + c.paidMinor, 0);
   const completed = allClients.filter((c) => (projectCounts.get(c.id)?.completed ?? 0) > 0);
   const pendingClients = allClients.filter((c) => (projectCounts.get(c.id)?.pending ?? 0) > 0);
+  // SCR-014 "on-hold clients": a client with at least one project whose status is on_hold.
+  const onHoldClients = allClients.filter((c) => (projectCounts.get(c.id)?.byStatus['on_hold'] ?? 0) > 0);
 
   const byStatus =
-    status === 'active' ? active : status === 'archived' ? archived : status === 'owing' ? owing : status === 'working' ? withProjects : status === 'completed' ? completed : status === 'pending' ? pendingClients : allClients;
+    status === 'active' ? active : status === 'archived' ? archived : status === 'owing' ? owing : status === 'working' ? withProjects : status === 'completed' ? completed : status === 'pending' ? pendingClients : status === 'on_hold' ? onHoldClients : allClients;
   const bySearch = needle ? byStatus.filter((c) => c.name.toLowerCase().includes(needle) || (c.billingEmail ?? '').toLowerCase().includes(needle)) : byStatus;
   // SCR-014 — `?tag=` and `?owner=` (owner is a user id; `none` means unowned).
   const filtered = bySearch.filter((c) => (!tag || c.tags.includes(tag)) && (!owner || (owner === 'none' ? c.ownerId === null : c.ownerId === owner)));
@@ -235,6 +237,7 @@ export default async function ClientsPage({
               { key: 'all', label: `All Clients (${allClients.length})`, href: chip(null), active: !status },
               { key: 'active', label: `Active (${active.length})`, href: chip('active'), active: status === 'active' },
               { key: 'pending', label: `Pending (${pendingClients.length})`, href: chip('pending'), active: status === 'pending' },
+              { key: 'on_hold', label: `On hold (${onHoldClients.length})`, href: chip('on_hold'), active: status === 'on_hold' },
               { key: 'completed', label: `Completed (${completed.length})`, href: chip('completed'), active: status === 'completed' },
               { key: 'working', label: `Working (${withProjects.length})`, href: chip('working'), active: status === 'working' },
               { key: 'owing', label: `Owing (${owing.length})`, href: chip('owing'), active: status === 'owing' },

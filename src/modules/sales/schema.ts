@@ -396,6 +396,8 @@ export const convertToProjectSchema = z.object({
 export const createClientAccountSchema = z.object({
   name: z.string().trim().min(1, 'A client needs a name').max(200),
   billingEmail: z.email().trim().max(320).optional().or(z.literal('')),
+  /** The person saw the records this may duplicate (lead, contact, client) and wants a separate client anyway. */
+  confirmDuplicate: z.boolean().optional(),
 });
 
 export type CreateOpportunityInput = z.infer<typeof createOpportunitySchema>;

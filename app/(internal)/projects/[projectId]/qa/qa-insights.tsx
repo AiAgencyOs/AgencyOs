@@ -5,6 +5,7 @@ import type { DefectHistoryEntry, TestPlanVersion, TestRunDetail } from '@/modul
 import type { Defect } from '@/modules/qa/types';
 import { Badge, Card, CardHeader, FilterChips, humanize, Stat, StatGrid, statusTone, type Tone } from '@/ui';
 
+import { PreviewButton } from '../../../preview-drawer';
 import { DefectTriageForm, RaiseDefectForm, SettleDefectForm } from '../qa-panel';
 
 /**
@@ -293,8 +294,9 @@ export function QaInsights({
                         {d.title}
                       </Link>
                     </span>
-                    <span className="text-xs text-muted">
+                    <span className="flex items-center gap-2 text-xs text-muted">
                       {assignee ? assignee.fullName : 'unassigned'} · raised {clock.date(d.created_at)}
+                      <PreviewButton group="Bug" id={d.id} />
                     </span>
                   </div>
                   {d.task_id || d.build_id ? (

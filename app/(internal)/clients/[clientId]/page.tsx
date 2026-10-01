@@ -13,6 +13,8 @@ import { listClientUploads } from '@/lib/admin/client-uploads';
 import { readClientCommercialTimeline, type CommercialEvent } from '@/lib/admin/client-commercials';
 import { listClientMeetingNotes, readClientUnreadReplies } from '@/lib/admin/client-communication';
 import { listClientLeadThreads } from '@/lib/admin/client-threads';
+import { collaborationFeed, lastAnnouncement, meetingSignals } from '@/modules/crm/client-collaboration';
+import { maintenanceSentence, summariseCommercials } from '@/modules/sales/client-commercial-summary';
 import { readClientNextFollowUp } from '@/lib/admin/client-followups';
 import { listClientLeads, listClientOpportunities } from '@/lib/admin/client-leads';
 import { getClient } from '@/lib/admin/clients';
@@ -49,6 +51,7 @@ import {
   IconMessage,
   IconPlus,
   IconProjects,
+  IconRefresh,
   IconSettings,
   IconUser,
   PermissionDenied,
@@ -60,6 +63,7 @@ import {
   type ActivityItem,
   type Column,
   type Tone,
+  RowActionsMenu,
 } from '@/ui';
 
 import { TrailLabel } from '../../trail-label';
@@ -211,6 +215,18 @@ export default async function ClientDetailPage({
   const tabHref = (t: Tab) => (t === 'overview' ? base : `${base}?tab=${t}`);
   const invoiceTarget = eligible.find((e) => e.eligible)?.projectId ?? null;
   const commercialFeed = commercialItems(commercialEvents, clock);
+  const newestAnnouncement = lastAnnouncement(clientAnnouncements);
+  const commercialSummary = summariseCommercials(client.commercials, client.currency, new Date().toISOString().slice(0, 10));
+  const maintenanceLine = maintenanceSentence(commercialSummary.maintenance);
+  const signals = meetingSignals(meetingNotes);
+  const collaboration = collaborationFeed({
+    clientName: client.name,
+    announcements: clientAnnouncements,
+    uploads,
+    meetingNotes,
+    internalNotes: client.notes,
+    unread: unread.threads,
+  });
   const followUpOverdue = nextFollowUp !== null && nextFollowUp.at < new Date().toISOString();
 
   const canWriteNotes = can(context, 'project.write');
@@ -355,6 +371,17 @@ export default async function ClientDetailPage({
               />
             ) : null}
             {mayMessage ? <ClientMeetingForm leads={leadOptions} agencyZone={agencyZone} /> : null}
+            {/* The context header's overflow: the rest of this client's record. */}
+            <RowActionsMenu
+              label="More actions for this client"
+              actions={[
+                { key: 'communication', label: 'Communication', href: tabHref('communication') },
+                { key: 'files', label: 'Files', href: tabHref('files') },
+                { key: 'activity', label: 'Activity', href: tabHref('activity') },
+                { key: 'settings', label: 'Settings and billing details', href: tabHref('settings') },
+                { key: 'search', label: 'Find related records', href: `/search?q=${encodeURIComponent(client.name)}` },
+              ]}
+            />
           </>
         }
       />
@@ -382,7 +409,7 @@ export default async function ClientDetailPage({
         </ul>
       </nav>
 
-      {tab !== 'overview' ? workTiles : null}
+      {tab !== 'overview' && tab !== 'communication' ? workTiles : null}
 
       {tab === 'settings' ? (
         <div className="grid gap-4 xl:grid-cols-2">
@@ -390,7 +417,7 @@ export default async function ClientDetailPage({
           <Card>
             <CardHeader title="Billing details" description="Name, legal name, GSTIN, PAN and billing address — the account's identity on every document. The GSTIN's checksum is verified; a pass is not a registration. Audited." />
             <div className="px-4 pb-4 sm:px-5">
-              {mayEditClient && identity ? <ClientEditForm client={identity} /> : (
+              {mayEditClient && canSeeMoney && identity ? <ClientEditForm client={identity} /> : (
                 <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[13px]">
                   <dt className="text-muted">Legal name</dt><dd>{client.legalName ?? '—'}</dd>
                   {/* SCR-015: GST/PAN and billing data need the finance capability, not just the right to see the client. */}
@@ -438,6 +465,31 @@ export default async function ClientDetailPage({
           {(['planning', 'active', 'on_hold', 'completed', 'cancelled'] as const).map((st) => (
             <Stat key={st} label={humanize(st)} value={String(byStatus[st] ?? 0)} tone={st === 'completed' ? 'success' : st === 'active' ? 'brand' : st === 'on_hold' ? 'warning' : 'neutral'} icon={<IconProjects size={16} />} href={`/projects?status=${st}&client=${client.id}`} />
           ))}
+        </StatGrid>
+        {/* SCR-016's other header figures: accepted quote value, paid against outstanding, maintenance and renewal. */}
+        <StatGrid>
+          <Stat
+            label="Accepted quote value"
+            value={money(commercialSummary.acceptedQuoteMinor, client.currency)}
+            caption={
+              commercialSummary.cited === 0
+                ? 'No project cites an accepted quotation'
+                : `${commercialSummary.cited} of ${commercialSummary.projects} project${commercialSummary.projects === 1 ? '' : 's'} cite one${commercialSummary.otherCurrency > 0 ? ` · ${commercialSummary.otherCurrency} in another currency, not added` : ''}`
+            }
+            tone="brand"
+            icon={<IconInvoices size={16} />}
+          />
+          {canSeeMoney ? (
+            <Stat
+              label="Paid vs outstanding"
+              value={<span className="text-lg">{money(client.paidMinor, client.currency)} <span className="text-muted">/ {money(client.outstandingMinor, client.currency)}</span></span>}
+              caption={`Verified payments against ${money(client.invoicedMinor, client.currency)} invoiced`}
+              tone={client.outstandingMinor > 0 ? 'warning' : 'success'}
+              icon={<IconCheck size={16} />}
+              href={tabHref('invoices')}
+            />
+          ) : null}
+          <Stat label="Maintenance and renewal" value={maintenanceLine.value} caption={maintenanceLine.caption} tone={commercialSummary.maintenance.lapsed > 0 ? 'warning' : 'neutral'} icon={<IconRefresh size={16} />} />
         </StatGrid>
         <Card>
           <CardHeader title="Client projects" description={`${client.projectsActive} active of ${client.projectsTotal}.`} actions={<ViewAll href="/projects" />} />
@@ -602,6 +654,38 @@ export default async function ClientDetailPage({
 
       {tab === 'communication' ? (
         <>
+          {/* SCR-017's header: unread replies, the last announcement, recent uploads, meeting decisions and open questions. */}
+          <StatGrid cols={4}>
+            <Stat
+              label="Unread client replies"
+              value={String(unread.total)}
+              caption={unread.total > 0 ? `${unread.threads.length} thread${unread.threads.length === 1 ? '' : 's'} waiting` : 'Every message answered'}
+              tone={unread.total > 0 ? 'warning' : 'success'}
+              icon={<IconMessage size={16} />}
+            />
+            <Stat
+              label="Last announcement"
+              value={<span className="text-lg">{newestAnnouncement?.publishedAt ? clock.date(newestAnnouncement.publishedAt) : '—'}</span>}
+              caption={newestAnnouncement ? newestAnnouncement.title : 'None published for this client'}
+              tone="info"
+              icon={<IconInbox size={16} />}
+            />
+            <Stat
+              label="Recent uploads"
+              value={String(uploads.length)}
+              caption={uploads[0] ? `Newest ${clock.date(uploads[0].uploadedAt)} · ${uploads[0].title}` : 'Nothing uploaded on its projects'}
+              tone="accent"
+              icon={<IconFile size={16} />}
+            />
+            <Stat
+              label="Meeting decisions / open questions"
+              value={`${signals.decisions} / ${signals.openQuestions}`}
+              caption={signals.analysed > 0 ? `Proposed by ${signals.analysed} analysed meeting${signals.analysed === 1 ? '' : 's'}; not agreed until a person says so` : `${signals.notes} meeting note${signals.notes === 1 ? '' : 's'}, none analysed yet`}
+              tone={signals.openQuestions > 0 ? 'warning' : 'neutral'}
+              icon={<IconCalendar size={16} />}
+              href={tabHref('notes')}
+            />
+          </StatGrid>
           <Card>
             <CardHeader title="Unread client replies" description="Inbound messages after the last outbound one on each thread — replies nobody has answered." />
             {unread.threads.length > 0 ? (
@@ -712,12 +796,36 @@ export default async function ClientDetailPage({
       ) : null}
 
       {tab === 'activity' ? (
-        <ActivityFeed
-          title="Commercial timeline"
-          items={commercialFeed}
-          emptyTitle="No commercial history yet"
-          emptyDescription="An accepted quotation, a payment milestone, an invoice or a payment will appear here as each happens."
-        />
+        <>
+          <ActivityFeed
+            title="Commercial timeline"
+            items={commercialFeed}
+            emptyTitle="No commercial history yet"
+            emptyDescription="An accepted quotation, a payment milestone, an invoice or a payment will appear here as each happens."
+          />
+          {/* SCR-017 "Activity": every collaboration record with its author, time, source and linkage. */}
+          <ActivityFeed
+            title="Collaboration activity"
+            items={collaboration.map((e) => ({
+              id: e.key,
+              title: e.title,
+              detail: (
+                <span className="flex flex-col gap-0.5">
+                  {e.detail ? <span>{e.detail}</span> : null}
+                  <span className="text-xs text-faint">
+                    {e.by ? `By ${e.by} · ` : ''}Filed on {e.linkage}
+                    {e.internal ? ' · internal, never sent to the client' : ''}
+                  </span>
+                </span>
+              ),
+              when: clock.dateTime(e.at),
+              tone: e.kind === 'client_reply' ? ('warning' as const) : e.internal ? ('neutral' as const) : ('info' as const),
+              icon: e.kind === 'upload' ? <IconFile size={13} /> : e.kind === 'meeting_note' ? <IconCalendar size={13} /> : e.kind === 'announcement' ? <IconInbox size={13} /> : <IconMessage size={13} />,
+            }))}
+            emptyTitle="No collaboration yet"
+            emptyDescription="A client reply, an announcement, an upload, a meeting note or an internal note appears here with who wrote it and where it is filed."
+          />
+        </>
       ) : null}
 
       {tab === 'overview' || tab === 'files' || tab === 'notes' || tab === 'communication' ? (

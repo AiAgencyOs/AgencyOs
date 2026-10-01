@@ -13,9 +13,9 @@ import { can, hasRole } from '@/lib/authz/permissions';
 import { listToolDefinitions } from '@/modules/agents/permissions-schema';
 import { listToolPermissionsForTool } from '@/modules/agents/tool-detail-queries';
 import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
-import { Badge, Card, CardHeader, DataTable, IconAgents, IconSettings, IconSparkle, IconUsage, PageHeader, PermissionDenied, Stat, StatGrid, StatusBadge, type Column } from '@/ui';
+import { Badge, Callout, Card, CardHeader, DataTable, IconAgents, IconSettings, IconSparkle, IconUsage, PageHeader, PermissionDenied, Stat, StatGrid, StatusBadge, type Column } from '@/ui';
 
-import { VerifyAiProviderForm } from '../../settings/forms';
+import { SetProviderCredentialForm, VerifyAiProviderForm } from '../../settings/forms';
 
 import { RevokeProviderCredentialForm } from '../../settings/revoke-provider-form';
 import { AddModelForm, FallbackChainsPanel, ModelBudgetsPanel, ProviderBudgetsPanel, RetireModelForm } from './model-registry-panel';
@@ -211,6 +211,13 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
         <Stat label="Fallback Policy" value={`${chainsSet} of ${chains.length}`} caption="Work classes with a chain" icon={<IconSettings size={16} />} href="#fallback" />
       </StatGrid>
 
+      {/* SCR-064 guardrail: routing authority is the application's, and a gateway is only a provider. */}
+      <Callout tone="info" title="The AgencyOS Orchestrator decides the route">
+        Which model serves a task is chosen here, by the routing rules and fallback chains below, from the agent and the kind of work. A provider
+        only answers: OpenRouter is one of the five providers a model can be served by, a gateway the router may call by model name, and it
+        decides nothing about the business workflow.
+      </Callout>
+
       <Card id="verify">
         <CardHeader title="Verify Provider" description="Make one real call to the provider with the model an agent would use. A stored key is configured, not verified, until a call answers." />
         <div className="px-4 pb-4 sm:px-5">
@@ -224,7 +231,7 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
           description="Which providers hold a stored key, when it was set and by whom. The key itself is never read here. Env-set keys still take precedence."
           actions={
             <Link href="/agents#vault" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
-              Store a key
+              Registry vault
             </Link>
           }
         />
@@ -248,6 +255,12 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
             );
           })}
         </ul>
+        {isOwner ? (
+          <div className="flex flex-col gap-2 border-t border-line px-4 py-3 sm:px-5">
+            <span className="text-[13px] font-medium">Store a key</span>
+            <SetProviderCredentialForm />
+          </div>
+        ) : null}
         <p className="px-4 pb-3 text-xs text-muted sm:px-5">
           Storing a new key replaces the old one. Revoking is the owner&apos;s alone and is audited; a key set in the environment cannot be revoked from here.
         </p>

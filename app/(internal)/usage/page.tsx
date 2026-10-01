@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { formatCostMinor } from '@/lib/admin/agent-eval';
 import { formatDurationMs } from '@/lib/admin/agent-runs-eval';
 import { getAgentUsage } from '@/lib/admin/usage';
+import { readSpendByProject } from '@/lib/admin/spend-by-project';
+import type { SpendLine } from '@/lib/admin/spend-by-project-eval';
 import { LATENCY_SAMPLE, readLatencyKpis } from '@/lib/admin/usage-latency';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
@@ -41,10 +43,18 @@ export default async function UsagePage() {
   const context = await requireInternal('/usage');
   if (!can(context, 'audit.read')) return <PermissionDenied />;
 
-  const [{ perAgent, totals, capped, dailyTrend }, latency] = await Promise.all([getAgentUsage(), readLatencyKpis()]);
+  const [{ perAgent, totals, capped, dailyTrend }, latency, spend] = await Promise.all([getAgentUsage(), readLatencyKpis(), readSpendByProject()]);
   const ms = (v: number | null) => formatDurationMs(v) ?? '—';
   const cost = (minor: number) => `₹${formatCostMinor(minor) ?? '0.00'}`;
   const trendData = dailyTrend.map((d) => ({ day: d.day.slice(5), costRupees: d.costMinor / 100 }));
+
+  const projectSpendColumns: Column<SpendLine>[] = [
+    { key: 'project', header: 'Project', primary: true, cell: (l) => l.name ?? 'No project' },
+    { key: 'runs', header: 'Runs', align: 'right', cellClassName: 'tabular', cell: (l) => N.format(l.runs) },
+    { key: 'tokens', header: 'Tokens', align: 'right', desktopOnly: true, cellClassName: 'tabular text-muted', cell: (l) => N.format(l.inputTokens + l.outputTokens) },
+    { key: 'cost', header: 'Cost', align: 'right', cellClassName: 'tabular', cell: (l) => cost(l.costMinor) },
+    { key: 'share', header: 'Share', align: 'right', desktopOnly: true, cellClassName: 'tabular text-muted', cell: (l) => (l.sharePercent === null ? '—' : `${l.sharePercent}%`) },
+  ];
 
   const columns: Column<Row>[] = [
     { key: 'agent', header: 'Agent', primary: true, cell: (a) => a.agentKey },
@@ -135,6 +145,23 @@ export default async function UsagePage() {
             </Card>
           ) : null}
           <DataTable rows={perAgent} columns={columns} getKey={(a) => a.agentKey} />
+          {/* SCR-065 "No hidden spend": every settled run, by project, with the work that belongs to no project kept as its own line. */}
+          <Card>
+            <CardHeader
+              title="Spend by Project"
+              description={
+                spend.unattributed.runs > 0
+                  ? `${spend.unattributed.runs} of ${spend.total.runs} settled runs (${cost(spend.unattributed.costMinor)}) belong to no project, such as a lead's reply or the search index. They are listed, not left out.`
+                  : 'Every settled run belongs to a project.'
+              }
+            />
+            <DataTable
+              rows={spend.lines}
+              columns={projectSpendColumns}
+              getKey={(l) => l.projectId ?? 'no-project'}
+              href={(l) => `/usage/runs?project=${l.projectId ?? 'none'}`}
+            />
+          </Card>
         </>
       )}
 

@@ -4,6 +4,7 @@ import { useId, useState } from 'react';
 
 import { Badge, DataTable, StatusBadge, buttonClass, type Column, type RowAction, type SortDirection, type SortState } from '@/ui';
 
+import { PreviewButton } from '../preview-drawer';
 import { ReminderHistoryButton, type ReminderHistoryEntry } from './reminder-history-drawer';
 
 /**
@@ -87,6 +88,7 @@ export function InvoiceRegistryTable({
     { key: 'milestone', header: 'Milestone', desktopOnly: true, cellClassName: 'text-muted', cell: (r) => r.milestoneLabel },
     { key: 'sent', header: 'Last sent', desktopOnly: true, cellClassName: 'text-muted', cell: (r) => r.lastSent },
     { key: 'history', header: 'Reminders', desktopOnly: true, cell: (r) => <ReminderHistoryButton invoiceId={r.id} number={r.number} entries={r.history} /> },
+    { key: 'quick', header: '', align: 'right', desktopOnly: true, cell: (r) => <PreviewButton group="Invoice" id={r.id} /> },
     {
       key: 'pdf',
       header: '',

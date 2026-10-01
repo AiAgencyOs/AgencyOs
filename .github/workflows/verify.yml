@@ -317,6 +317,12 @@ jobs:
       - name: Projects, tasks and plan (W2)
         run: npm run db:verify:w2-projects
 
+      # Trace B (20261008120000): a task enters Review only from in progress and with evidence (a
+      # trigger, whichever path writes); a milestone's due date change is audited; the schedule-change
+      # door returns the dates that really moved and, for the Notifications inbox, only what concerns the caller.
+      - name: Review hand-off, date history and schedule notices (trace B)
+        run: npm run db:verify:trace-b
+
       # G-227, P0. Idempotency cannot be proved by reading a migration: an
       # index that refuses a duplicate and an index that was never created look
       # identical in source until two callers arrive at once. This fires EIGHT
@@ -410,6 +416,12 @@ jobs:
       # directly and the audit names the model. All database rules.
       - name: A model has a monthly budget of its own
         run: npm run db:verify:modelbudget
+
+      # Trace D / SCR-055, SCR-065. Recording or correcting an expense is
+      # audited with before and after (a trigger, so every path is covered),
+      # and the spend-by-project view keeps the runs that belong to no project.
+      - name: An expense is audited and no AI spend is hidden
+        run: npm run db:verify:trace-d
 
       # Theme W5 — QA, release, communication. A run's tester and environment,
       # append-only run evidence, editable cases and coverage waivers, an
@@ -893,6 +905,12 @@ jobs:
           # indexing job, ranking, role scoping, hash-skip, the budget gate
           # and the ledger. Plants and removes its own clients and users.
           npm run db:verify:semantic
+
+          # Trace C (PDF pages 46 to 63): a person's task reaches done only through
+          # a delivery role with evidence and no unverified defect; a missing client
+          # dependency is requested of the PM and acknowledged. Plants a project,
+          # a plan and users under a marker and removes them.
+          npm run db:verify:trace-c
 
           # Last, and deliberately so: the deploy smoke runs against the app
           # in its most-exercised state, and a tick it fires cannot disturb

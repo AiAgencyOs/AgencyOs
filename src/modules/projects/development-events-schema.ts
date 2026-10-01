@@ -17,3 +17,11 @@ export type AcknowledgeEscalationInput = z.infer<typeof acknowledgeEscalationSch
 
 export const startQaHandoffSchema = z.object({ projectId: z.uuid() });
 export type StartQaHandoffInput = z.infer<typeof startQaHandoffSchema>;
+
+/** SCR-040 — a planner asks the PM to request an outstanding client dependency from the client (migration 20261008130000). */
+export const requestClientDependencySchema = z.object({
+  projectId: z.uuid(),
+  dependencyId: z.uuid(),
+  note: z.string().trim().max(4000).optional(),
+});
+export type RequestClientDependencyInput = z.infer<typeof requestClientDependencySchema>;
