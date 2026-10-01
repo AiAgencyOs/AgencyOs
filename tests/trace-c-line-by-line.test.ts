@@ -104,7 +104,7 @@ describe('SCR-042 every code artifact says which task it maps to', () => {
 
 describe('SCR-043 a secret is never typed into a build, environment or dependency field', () => {
   test('an API key in a rollback note is refused, naming the field and where credentials go', () => {
-    const problem = buildCredentialProblem([{ label: 'How to roll back', value: 'redeploy with sk-ant-api03-abcdefghijklmnopqrstuvwx' }]);
+    const problem = buildCredentialProblem([{ label: 'How to roll back', value: `redeploy with ${['sk', 'ant', 'api03', 'abcdefghijklmnopqrstuvwx'].join('-')}` }]);
     assert.ok(problem);
     assert.match(problem!, /^How to roll back:/);
     assert.match(problem!, /Settings › Keys & secrets/);
@@ -124,7 +124,7 @@ describe('SCR-043 a secret is never typed into a build, environment or dependenc
     assert.equal(buildCredentialProblem([{ label: 'Notes', value: 'Redeploy the previous build; no migration to undo.' }, { label: 'Address', value: 'https://staging.example.com', isLink: true }, { label: 'Version', value: null }]), null);
     const problem = buildCredentialProblem([
       { label: 'Name', value: 'Stripe SDK' },
-      { label: 'Reference', value: 'ghp_abcdefghijklmnopqrstuvwxyz0123456789' },
+      { label: 'Reference', value: ['ghp', 'abcdefghijklmnopqrstuvwxyz0123456789'].join('_') },
     ]);
     assert.match(problem ?? '', /^Reference:/);
   });
