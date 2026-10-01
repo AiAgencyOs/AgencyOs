@@ -24,6 +24,9 @@ import { unreadable } from '@/lib/result';
  */
 
 export type DesignQueueRow = {
+  /** A theme option at a gate, or a design/prototype deliverable in review (SCR-036: one queue, fix for "2 in review, queue 0"). */
+  kind: 'theme' | 'design' | 'prototype';
+  href: string;
   themeOptionId: string;
   projectId: string;
   projectName: string;
@@ -34,7 +37,7 @@ export type DesignQueueRow = {
   internalReviewStatus: string;
   adminStatus: string;
   clientStatus: string;
-  waitingOn: 'internal' | 'admin' | 'client';
+  waitingOn: 'internal' | 'admin' | 'client' | 'approval';
   updatedAt: string;
   reviewerUserId: string | null;
 };
@@ -43,6 +46,8 @@ export type DesignReviewQueue = {
   awaitingInternal: number;
   awaitingAdmin: number;
   awaitingClient: number;
+  /** Design and prototype deliverables in review, waiting on an approval decision. */
+  awaitingApproval: number;
   rows: DesignQueueRow[];
 };
 
@@ -86,6 +91,8 @@ export async function readDesignReviewQueue(): Promise<DesignReviewQueue> {
   const rows: DesignQueueRow[] = waiting
     .filter((w) => projectName.has(w.t.project_id))
     .map(({ t, on }) => ({
+      kind: 'theme' as const,
+      href: `/projects/${t.project_id}/design/themes`,
       themeOptionId: t.id,
       projectId: t.project_id,
       projectName: projectName.get(t.project_id) ?? 'Unknown project',
@@ -101,7 +108,45 @@ export async function readDesignReviewQueue(): Promise<DesignReviewQueue> {
       reviewerUserId: reviewerByPhase.get(t.phase_three_id) ?? null,
     }));
 
+  // Design and prototype deliverables sitting in review — the rows the portfolio's "Artifacts in review" counts.
+  const { data: deliverables, error: deliverablesError } = await supabase
+    .schema('projects')
+    .from('deliverables')
+    .select('id, project_id, kind, version, title, updated_at')
+    .in('kind', ['design', 'prototype'])
+    .eq('status', 'in_review')
+    .order('updated_at', { ascending: true });
+  if (deliverablesError) unreadable('readDesignReviewQueue.deliverables', deliverablesError);
+  const dProjectIds = [...new Set((deliverables ?? []).map((d) => d.project_id))].filter((id) => !projectName.has(id));
+  if (dProjectIds.length > 0) {
+    const { data: more, error: moreError } = await supabase.schema('projects').from('projects').select('id, name').in('id', dProjectIds).is('deleted_at', null);
+    if (moreError) unreadable('readDesignReviewQueue.deliverableProjects', moreError);
+    for (const p of more ?? []) projectName.set(p.id, p.name);
+  }
+  for (const d of deliverables ?? []) {
+    if (!projectName.has(d.project_id)) continue;
+    rows.push({
+      kind: d.kind === 'prototype' ? 'prototype' : 'design',
+      href: d.kind === 'prototype' ? `/projects/${d.project_id}/prototype` : `/projects/${d.project_id}/design`,
+      themeOptionId: d.id,
+      projectId: d.project_id,
+      projectName: projectName.get(d.project_id) ?? 'Unknown project',
+      phaseThreeId: '',
+      name: d.title,
+      optionIndex: 0,
+      version: d.version,
+      internalReviewStatus: 'n/a',
+      adminStatus: 'n/a',
+      clientStatus: 'n/a',
+      waitingOn: 'approval',
+      updatedAt: d.updated_at,
+      reviewerUserId: null,
+    });
+  }
+  rows.sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
+
   return {
+    awaitingApproval: rows.filter((r) => r.waitingOn === 'approval').length,
     awaitingInternal: rows.filter((r) => r.waitingOn === 'internal').length,
     awaitingAdmin: rows.filter((r) => r.waitingOn === 'admin').length,
     awaitingClient: rows.filter((r) => r.waitingOn === 'client').length,

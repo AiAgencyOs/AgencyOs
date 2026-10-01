@@ -6,6 +6,7 @@ import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { serverEnv } from '@/lib/env';
 import { err, ok, type Result } from '@/lib/result';
+import { resolveSecret } from '@/lib/secrets/resolve';
 
 /**
  * "Verify WhatsApp configuration" — Phase 3 of the Admin control-center mandate,
@@ -33,10 +34,11 @@ export async function verifyWhatsAppConfig(): Promise<Result<WhatsAppVerifyResul
   }
 
   const env = serverEnv();
-  if (!env.WHATSAPP_ACCESS_TOKEN) {
+  const accessToken = await resolveSecret('WHATSAPP_ACCESS_TOKEN');
+  if (!accessToken) {
     return err(
       'VALIDATION',
-      'WHATSAPP_ACCESS_TOKEN is not set — outbound WhatsApp is disabled. Set it in the deployment environment (never here).',
+      'WHATSAPP_ACCESS_TOKEN is not set — outbound WhatsApp is disabled. Add it under Security & Audit › Keys & secrets (or set WHATSAPP_ACCESS_TOKEN in the deployment environment).',
     );
   }
 
@@ -55,7 +57,7 @@ export async function verifyWhatsAppConfig(): Promise<Result<WhatsAppVerifyResul
       `${base}/${encodeURIComponent(phoneNumberId)}?fields=verified_name,display_phone_number,quality_rating`,
       {
         method: 'GET',
-        headers: { Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}` },
+        headers: { Authorization: `Bearer ${accessToken}` },
         signal: AbortSignal.timeout(TIMEOUT_MS),
         cache: 'no-store',
       },

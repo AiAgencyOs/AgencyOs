@@ -107,3 +107,30 @@ export async function listPrototypeBuilds(projectId: string): Promise<PrototypeB
     ];
   });
 }
+
+/**
+ * SCR-038 — what the client said about each UI version (`ui_version_client_decisions`),
+ * newest first, with the version it was said about. Read for the design page's
+ * "Recent Feedback" card; an unreadable ledger is an error, never an empty list.
+ */
+export async function listUiVersionFeedback(projectId: string, limit = 20): Promise<{ id: string; uiVersion: number | null; decision: string; clientWords: string; createdAt: string }[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('ui_version_client_decisions')
+    .select('id, ui_version_id, decision, client_words, created_at')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) unreadable('listUiVersionFeedback', error);
+  const rows = data ?? [];
+  if (rows.length === 0) return [];
+  const { data: versions, error: versionsError } = await supabase
+    .schema('projects')
+    .from('ui_versions')
+    .select('id, version')
+    .in('id', [...new Set(rows.map((r) => r.ui_version_id))]);
+  if (versionsError) unreadable('listUiVersionFeedback.versions', versionsError);
+  const versionOf = new Map((versions ?? []).map((v) => [v.id, v.version]));
+  return rows.map((r) => ({ id: r.id, uiVersion: versionOf.get(r.ui_version_id) ?? null, decision: r.decision, clientWords: r.client_words, createdAt: r.created_at }));
+}

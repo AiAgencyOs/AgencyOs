@@ -70,7 +70,9 @@ export async function listAgentRuns(filters: AgentRunFilters = {}): Promise<Agen
   if (filters.agentKey) query = query.eq('agent_key', filters.agentKey);
   if (filters.status) query = query.eq('status', filters.status);
   if (filters.model) query = query.eq('model', filters.model);
-  if (filters.projectId) query = query.eq('project_id', filters.projectId);
+  // 'none' is the run that belongs to no project (the line Spend by Project keeps, so no spend is hidden).
+  if (filters.projectId === 'none') query = query.is('project_id', null);
+  else if (filters.projectId) query = query.eq('project_id', filters.projectId);
   // `subject_id` is a uuid, which ilike refuses; the text columns are the human-named ones.
   if (filters.q) query = query.or(ilikeAny(['agent_key', 'trigger', 'model', 'error'], filters.q));
 

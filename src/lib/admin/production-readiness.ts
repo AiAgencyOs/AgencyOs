@@ -4,7 +4,7 @@ import { hasConfiguredProvider } from '@/lib/ai/router';
 import { createClient } from '@/lib/db/server';
 import { readBacklog, readCronAgeSeconds } from '@/lib/observability/queries';
 
-import { configStatus } from './config-status';
+import { configStatusResolved } from './config-status-resolved';
 import { settingInstant, settingText } from './settings';
 import type { Avail } from './overview-eval';
 import {
@@ -61,7 +61,7 @@ export type ProductionReadiness = {
 };
 
 export async function getProductionReadiness(): Promise<ProductionReadiness> {
-  const config = configStatus();
+  const config = await configStatusResolved();
   const present = (key: string) => config.items.find((i) => i.key === key)?.present ?? false;
 
   const [org, cronAgeSeconds, backlog, aiProviderConfigured] = await Promise.all([

@@ -9,12 +9,17 @@ import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
 import { listPaymentAccounts, listPayments, listPendingPaymentClaims } from '@/modules/finance/queries';
 import { listPaymentSubmissions } from '@/modules/finance/overview-queries';
+import { filterPayments, paymentFilterQuery, parsePaymentFilter } from '@/modules/finance/payment-filters';
+import { isClaimAwaiting } from '@/modules/finance/schema';
+import { claimProofHref, proofIsImage } from '@/modules/finance/attachment-links';
+import { isVerifiedPayment } from '@/modules/finance/verified-basis';
 import { listReconciliationItems, listReconciliations, readMatchProposal } from '@/modules/finance/reconciliation-queries';
 import { listBankStatementLines } from '@/modules/finance/bank-import-queries';
 import { BANK_LINE_STATUS_LABEL } from '@/modules/finance/bank-import-schema';
 import { proposeMatches, type MatchCandidate } from '@/modules/finance/bank-csv';
 
 import { ConfirmBankLineMatchForm, IgnoreBankLineForm, ImportBankStatementForm } from './bank-import-panel';
+import { PreviewButton, PreviewDrawerProvider } from '../../preview-drawer';
 import { ClaimsDrawerList } from './claims-drawer';
 import { RecordClaimForm, VerifyClaimForm } from '../../projects/[projectId]/claims-panel';
 import {
@@ -26,6 +31,7 @@ import {
 import { SavedViewsBar } from '../../saved-views-bar';
 import {
   Badge,
+  buttonClass,
   Callout,
   Card,
   CardHeader,
@@ -37,11 +43,14 @@ import {
   humanize,
   IconAlert,
   IconInvoices,
+  inputClass,
+  labelClass,
   paginate,
   Pagination,
   PageHeader,
   StatGrid,
   Stat,
+  selectClass,
   statusTone,
   type Column,
   PermissionDenied,
@@ -111,6 +120,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     cell: (p) => (p.verified_at ? clock.dateTime(p.verified_at) : '—'),
     sortKey: 'verified',
   },
+  { key: 'quick', header: '', align: 'right', cell: (p) => <PreviewButton group="Payment" id={p.id} /> },
 ];
 
 const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
@@ -131,19 +141,24 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
 export default async function PaymentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; page?: string; sort?: string; dir?: string; recon?: string; q?: string }>;
+  searchParams: Promise<{ status?: string; page?: string; sort?: string; dir?: string; recon?: string; q?: string; method?: string; from?: string; to?: string; client?: string; verification?: string }>;
 }) {
   const context = await requireInternal('/finance/payments');
   const clock = await agencyClock();
   if (!can(context, 'invoice.read')) return <PermissionDenied />;
 
-  const { status, page: pageParam, sort: sortKey, dir, recon: reconParam, q: qRaw } = await searchParams;
+  const rawParams = await searchParams;
+  const { page: pageParam, sort: sortKey, dir, recon: reconParam, q: qRaw } = rawParams;
+  // SCR-053 filters: status, method, verification, client, date range — all from the URL, applied to the one register the page and its export share.
+  const filter = parsePaymentFilter(rawParams);
+  const status = filter.status;
+  const filterActive = Boolean(filter.status || filter.method || filter.from || filter.to || filter.client || filter.verification);
   // Search within domain (bucket G-3): provider reference, provider or invoice number, filtered by the reader.
   const q = normaliseSearch(qRaw);
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
-  const currentQuery = [status ? `status=${status}` : '', q ? `q=${encodeURIComponent(q)}` : '', sortKey ? `sort=${sortKey}&dir=${direction}` : '']
-    .filter(Boolean)
-    .join('&');
+  const keptQuery = paymentFilterQuery(filter, q || undefined);
+  const currentQuery = [keptQuery, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
+  const withKept = (extra: string) => `/finance/payments?${[keptQuery, extra].filter(Boolean).join('&')}`;
   const mayReconcile = can(context, 'invoice.issue');
   const [allPayments, savedViews, pendingClaims, claims, reconciliations, accounts] = await Promise.all([
     listPayments(200, q || undefined),
@@ -190,7 +205,7 @@ export default async function PaymentsPage({
         invoiceNumber: p.invoiceNumber,
       })),
     ...claims
-      .filter((c) => c.status === 'pending_verification' || c.status === 'mismatch')
+      .filter((c) => isClaimAwaiting(c.status))
       .map((c): MatchCandidate => ({
         kind: 'claim',
         id: c.id,
@@ -218,9 +233,10 @@ export default async function PaymentsPage({
   // SCR-053's four KPIs count the claims table and say so: "submitted" is
   // what clients said, "verified" / "rejected" the answers, "pending" what
   // has none yet. The ledger rows below are money that moved.
-  const pendingCount = claims.filter((c) => c.status === 'pending_verification' || c.status === 'mismatch').length;
+  const pendingCount = claims.filter((c) => isClaimAwaiting(c.status)).length;
   const verifiedCount = claims.filter((c) => c.status === 'verified').length;
   const rejectedCount = claims.filter((c) => c.status === 'rejected').length;
+  const pendingProofHref = (c: (typeof pendingClaims)[number]) => claimProofHref({ id: c.id, proofUrl: c.proof_url, proofFileName: c.proof_file_name });
   const claimViews = claims.map((c) => ({
     id: c.id,
     invoiceId: c.invoiceId,
@@ -231,7 +247,9 @@ export default async function PaymentsPage({
     reference: c.reference,
     payerName: c.payerName,
     paidAtLabel: c.paidAt ? clock.date(c.paidAt) : null,
-    proofUrl: c.proofUrl,
+    proofUrl: claimProofHref(c),
+    proofIsImage: proofIsImage(claimProofHref(c), c.proofFileName),
+    proofUploaded: Boolean(c.proofFileName),
     status: c.status,
     submittedAtLabel: clock.dateTime(c.submittedAt),
     verifiedAtLabel: c.verifiedAt ? clock.dateTime(c.verifiedAt) : null,
@@ -241,17 +259,23 @@ export default async function PaymentsPage({
     mismatchNote: c.mismatchNote,
     paymentId: c.paymentId,
   }));
-  const filtered = status ? allPayments.filter((p) => p.status === status) : allPayments;
+  const filtered = filterPayments(allPayments, filter);
+  const methods = [...new Set(allPayments.map((p) => p.provider))].sort();
   const payments = sortRows(filtered, sortKey, direction, COMPARATORS);
   const { page, pageCount, rows: pageRows } = paginate(payments, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
 
-  const byCurrency = new Map<string, number>();
+  // Verified money is what a person confirmed; recorded-but-unverified is shown beside it, never inside it.
+  const verifiedByCurrency = new Map<string, number>();
+  const awaitingByCurrency = new Map<string, number>();
   for (const p of allPayments) {
     if (p.status !== 'captured') continue;
-    byCurrency.set(p.currency, (byCurrency.get(p.currency) ?? 0) + p.amount_minor);
+    const into = isVerifiedPayment(p) ? verifiedByCurrency : awaitingByCurrency;
+    into.set(p.currency, (into.get(p.currency) ?? 0) + p.amount_minor);
   }
+  const currencies = [...new Set([...verifiedByCurrency.keys(), ...awaitingByCurrency.keys()])];
 
   return (
+    <PreviewDrawerProvider>
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Payments"
@@ -302,7 +326,7 @@ export default async function PaymentsPage({
                   <li key={c.id} className="rounded-lg border border-line bg-canvas p-3 text-[13px]">
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
                       <span className="font-semibold tabular">{money(c.amount_minor, c.currency)} · <Link href={`/invoices/${c.invoice_id}`} className="font-mono text-xs underline-offset-2 hover:underline">{c.invoiceNumber}</Link></span>
-                      <span className="text-xs text-muted">{c.clientName ?? 'Unknown client'} · claimed {clock.date(c.submitted_at)}{c.proof_url ? ' · ' : ''}{c.proof_url ? <a href={c.proof_url} target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">proof</a> : null}</span>
+                      <span className="text-xs text-muted">{c.clientName ?? 'Unknown client'} · claimed {clock.date(c.submitted_at)}{pendingProofHref(c) ? ' · ' : ''}{pendingProofHref(c) ? <a href={pendingProofHref(c) ?? undefined} target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">{c.proof_file_name ? 'uploaded proof' : 'proof'}</a> : null}</span>
                     </div>
                     <VerifyClaimForm projectId={c.projectId ?? null} claim={c} />
                   </li>
@@ -318,36 +342,79 @@ export default async function PaymentsPage({
         </Card>
       ) : null}
 
-      {byCurrency.size > 0 ? (
+      {currencies.length > 0 ? (
         <StatGrid>
-          {[...byCurrency.entries()].map(([currency, total]) => (
+          {currencies.flatMap((currency) => [
             <Stat
-              key={currency}
-              label={`Captured (${currency})`}
-              value={money(total, currency)}
-              caption="Ledger payments the provider confirmed"
+              key={`v-${currency}`}
+              label={`Verified (${currency})`}
+              value={money(verifiedByCurrency.get(currency) ?? 0, currency)}
+              caption="Captured and confirmed by a person"
               tone="success"
               icon={<IconInvoices size={16} />}
-            />
-          ))}
+            />,
+            <Stat
+              key={`a-${currency}`}
+              label={`Recorded, unverified (${currency})`}
+              value={money(awaitingByCurrency.get(currency) ?? 0, currency)}
+              caption="Not counted as received until verified"
+              tone={(awaitingByCurrency.get(currency) ?? 0) > 0 ? 'warning' : 'neutral'}
+              icon={<IconInvoices size={16} />}
+            />,
+          ])}
         </StatGrid>
       ) : null}
 
-      <FilterBar clearHref="/finance/payments" filtered={Boolean(status || q)}>
+      <FilterBar clearHref="/finance/payments" filtered={Boolean(filterActive || q)}>
         {/* Search within domain (bucket G-3): provider reference, provider or invoice number, filtered by the reader. */}
-        <DomainSearch action="/finance/payments" value={q} placeholder="Search reference or invoice…" label="Search payments" preserve={{ status, recon: reconParam }} />
+        <DomainSearch action="/finance/payments" value={q} placeholder="Search reference or invoice…" label="Search payments" preserve={{ status, recon: reconParam, method: filter.method, from: filter.from, to: filter.to, client: filter.client, verification: filter.verification }} />
         <SearchSummary q={q} count={allPayments.length} clearHref={status ? `/finance/payments?status=${status}` : '/finance/payments'} />
         <FilterChips
           options={[
-            { key: 'all', label: 'All', href: q ? `/finance/payments?q=${encodeURIComponent(q)}` : '/finance/payments', active: !status },
-            ...STATUS_FILTERS.map((s) => ({
-              key: s,
-              label: humanize(s),
-              href: `/finance/payments?status=${s}${q ? `&q=${encodeURIComponent(q)}` : ''}`,
-              active: status === s,
+            { key: 'all', label: 'All', href: `/finance/payments?${paymentFilterQuery({ ...filter, status: undefined }, q || undefined)}`, active: !status },
+            ...STATUS_FILTERS.map((st) => ({
+              key: st,
+              label: humanize(st),
+              href: `/finance/payments?${paymentFilterQuery({ ...filter, status: st }, q || undefined)}`,
+              active: status === st,
             })),
           ]}
         />
+        <form method="get" action="/finance/payments" className="flex flex-wrap items-end gap-2">
+          {q ? <input type="hidden" name="q" value={q} /> : null}
+          {status ? <input type="hidden" name="status" value={status} /> : null}
+          <div className="flex flex-col gap-1">
+            <label className={labelClass} htmlFor="pay-method">Method</label>
+            <select id="pay-method" name="method" defaultValue={filter.method ?? ''} className={`${selectClass} sm:w-36`}>
+              <option value="">Any method</option>
+              {methods.map((m) => (
+                <option key={m} value={m}>{m === 'manual' ? 'Recorded by hand' : humanize(m)}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className={labelClass} htmlFor="pay-verification">Verification</label>
+            <select id="pay-verification" name="verification" defaultValue={filter.verification ?? ''} className={`${selectClass} sm:w-36`}>
+              <option value="">Any</option>
+              <option value="verified">Verified</option>
+              <option value="unverified">Not verified</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className={labelClass} htmlFor="pay-client">Client</label>
+            <input id="pay-client" name="client" defaultValue={filter.client ?? ''} placeholder="Client name" className={`${inputClass} sm:w-40`} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className={labelClass} htmlFor="pay-from">From</label>
+            <input id="pay-from" type="date" name="from" defaultValue={filter.from ?? ''} className={`${inputClass} sm:w-36`} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className={labelClass} htmlFor="pay-to">To</label>
+            <input id="pay-to" type="date" name="to" defaultValue={filter.to ?? ''} className={`${inputClass} sm:w-36`} />
+          </div>
+          <button type="submit" className={buttonClass('secondary', 'sm')}>Apply</button>
+          <a href={`/api/finance/payments/export${keptQuery ? `?${keptQuery}` : ''}`} className={buttonClass('secondary', 'sm')}>Export CSV</a>
+        </form>
       </FilterBar>
 
       <SavedViewsBar page="/finance/payments" currentQuery={currentQuery} views={savedViews} />
@@ -358,28 +425,32 @@ export default async function PaymentsPage({
             rows={pageRows}
             columns={columnsFor(clock)}
             getKey={(p) => p.id}
-            href={(p) => `/invoices/${p.invoiceId}`}
+            href={(p) => `/finance/payments/${p.id}`}
             sort={{
               key: sortKey,
               direction,
-              makeHref: (key, nextDirection) =>
-                `/finance/payments?${status ? `status=${status}&` : ''}sort=${key}&dir=${nextDirection}`,
+              makeHref: (key, nextDirection) => withKept(`sort=${key}&dir=${nextDirection}`),
             }}
           />
           <Pagination
             page={page}
             pageCount={pageCount}
-            makeHref={(p) =>
-              `/finance/payments?${status ? `status=${status}&` : ''}${sortKey ? `sort=${sortKey}&dir=${direction}&` : ''}page=${p}`
-            }
+            makeHref={(p) => withKept(`${sortKey ? `sort=${sortKey}&dir=${direction}&` : ''}page=${p}`)}
           />
         </>
       ) : (
         <EmptyState
           icon={<IconInvoices size={22} />}
-          title={status ? 'No matching payments' : 'No payments yet'}
+          title={filterActive ? 'No matching payments' : 'No payments yet'}
           description={
-            status ? `No payments are currently "${humanize(status)}".` : 'A payment appears here once the provider confirms it.'
+            filterActive ? 'No payment matches these filters. Clear them to see the whole register.' : 'A payment appears here once the provider confirms it.'
+          }
+          action={
+            filterActive ? (
+              <Link href="/finance/payments" className={buttonClass('secondary', 'sm')}>Clear the filters</Link>
+            ) : (
+              <Link href="/invoices" className={buttonClass('secondary', 'sm')}>Open invoices</Link>
+            )
           }
         />
       )}
@@ -559,5 +630,6 @@ export default async function PaymentsPage({
         )}
       </Card>
     </div>
+    </PreviewDrawerProvider>
   );
 }

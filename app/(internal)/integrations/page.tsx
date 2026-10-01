@@ -12,9 +12,10 @@ import { readSettingHistory } from '@/lib/admin/settings-history';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
+import { secretSource } from '@/lib/secrets/resolve';
 import { IntegrationState, PageHeader, PermissionDenied, buttonClass, labelClass } from '@/ui';
 
-import { TestRecipientForm, VerifyAiProviderForm, VerifyCalendarForm, VerifyWhatsAppButton, WhatsAppNumberForm } from '../settings/forms';
+import { CalendarIdForm, TestRecipientForm, VerifyAiProviderForm, VerifyCalendarForm, VerifyFigmaForm, VerifyWhatsAppButton, WhatsAppNumberForm } from '../settings/forms';
 import { SettingHistory, type SettingHistoryEntry } from '../settings/setting-history';
 import { IntegrationsList, type IntegrationIdentifier, type SecureStorage } from './integrations-list';
 
@@ -42,10 +43,10 @@ export default async function IntegrationsPage() {
   const context = await requireInternal('/integrations');
   if (!can(context, 'organization.settings')) return <PermissionDenied />;
 
-  const [{ integrations, summary }, settings, githubScopes, history, clock] = await Promise.all([
+  const [{ integrations, summary, lastVerifiedAt }, settings, githubScopes, history, clock] = await Promise.all([
     getIntegrations(),
     readOperationalSettings(),
-    githubConfigured() ? readGithubTokenScopes() : Promise.resolve(null),
+    githubConfigured().then((on) => (on ? readGithubTokenScopes() : null)),
     // SCR-070: each panel-set identifier's effective date and history, from the audit trail.
     readSettingHistory(),
     agencyClock(),
@@ -60,6 +61,7 @@ export default async function IntegrationsPage() {
   // Presence only — config-status never learns a value, and neither does this page.
   const env = configStatus();
   const envPresent = (key: string) => env.items.find((i) => i.key === key)?.present ?? false;
+  const alertWebhook = await secretSource('ALERT_WEBHOOK_URL');
   // SCR-067 / SCR-070: one verify control per integration that has an
   // action — the SAME forms Settings and /agents use, behind
   // verifyWhatsAppAction / verifyAiProviderAction / verifyCalendarAction —
@@ -70,8 +72,10 @@ export default async function IntegrationsPage() {
   const whatsappVerifiedNumber = settingText(settings, 'whatsapp_verified_number');
   const providerVerifiedAt = settingInstant(settings, 'ai_provider_verified_at');
   const providerVerifiedModel = settingText(settings, 'ai_provider_verified_model');
+  const calendarId = settingText(settings, 'google_calendar_id');
   const calendarVerifiedAt = settingInstant(settings, 'calendar_verified_at');
   const calendarVerifiedName = settingText(settings, 'calendar_verified_calendar');
+  const figmaRow = integrations.find((i) => i.id === 'figma');
   const verify: Record<string, React.ReactNode> = {
     whatsapp: (
       <span className="flex flex-wrap items-center gap-2">
@@ -80,6 +84,9 @@ export default async function IntegrationsPage() {
       </span>
     ),
     'ai-provider': <VerifyAiProviderForm lastVerifiedAt={providerVerifiedAt} model={providerVerifiedModel} />,
+    // SCR-070: Figma and Google Calendar are first-class rows, each with its own check.
+    figma: <VerifyFigmaForm lastVerifiedAt={figmaRow?.lastVerifiedAt ?? null} references={figmaRow?.count?.value ?? 0} />,
+    calendar: <VerifyCalendarForm lastVerifiedAt={calendarVerifiedAt} calendar={calendarVerifiedName} />,
   };
   const identifiers: Record<string, IntegrationIdentifier[]> = {
     whatsapp: [
@@ -87,9 +94,19 @@ export default async function IntegrationsPage() {
       { label: 'Internal test recipient', value: whatsappTestRecipient ?? 'not set', effective: effectiveOf('whatsapp_test_recipient') },
       ...(whatsappVerifiedNumber ? [{ label: 'Verified number', value: whatsappVerifiedNumber, effective: effectiveOf('whatsapp_verified_number') }] : []),
     ],
+    figma: [
+      { label: 'Token (FIGMA_ACCESS_TOKEN)', value: envPresent('FIGMA_ACCESS_TOKEN') ? 'set in the deployment environment' : 'not in the environment — the key vault may hold it' },
+      { label: 'Design references recorded', value: String(figmaRow?.count?.value ?? 0) },
+    ],
+    calendar: [
+      // Q-D1: the panel's own setting is read first; the environment value is the fallback.
+      { label: 'Calendar id (set in the panel)', value: calendarId ?? 'not set', effective: effectiveOf('google_calendar_id') },
+      { label: 'Calendar id (GOOGLE_CALENDAR_ID)', value: envPresent('GOOGLE_CALENDAR_ID') ? (calendarId ? 'set in the deployment environment; the panel value above is read first' : 'set in the deployment environment') : 'unset' },
+      ...(calendarVerifiedName ? [{ label: 'Verified calendar', value: calendarVerifiedName, effective: effectiveOf('calendar_verified_calendar') }] : []),
+    ],
     'ai-provider': providerVerifiedModel ? [{ label: 'Verified model', value: providerVerifiedModel, effective: effectiveOf('ai_provider_verified_model') }] : [],
     // The webhook URL is read from the environment and may embed a token, so only its presence is stated.
-    alerts: [{ label: 'Webhook URL (ALERT_WEBHOOK_URL)', value: envPresent('ALERT_WEBHOOK_URL') ? 'set in the deployment environment' : 'unset' }],
+    alerts: [{ label: 'Webhook URL (ALERT_WEBHOOK_URL)', value: envPresent('ALERT_WEBHOOK_URL') ? 'set in the deployment environment' : alertWebhook.source === 'vault' ? 'set in the key vault' : 'unset' }],
     // Bucket F — the token's scopes, read once from X-OAuth-Scopes, so "can this deployment write to GitHub" is answered here.
     github: githubScopes
       ? githubScopes.ok
@@ -107,6 +124,13 @@ export default async function IntegrationsPage() {
   // organization.setting_set). Only WhatsApp reads an identifier the panel may
   // set; the others' identifiers are environment values the panel cannot write.
   const editors: Record<string, React.ReactNode> = {
+    // Q-D1: the Google Calendar id is an organization setting, read before the environment value.
+    calendar: (
+      <div id="calendar-id" className="flex scroll-mt-4 flex-col gap-1">
+        <CalendarIdForm current={calendarId} environmentSet={envPresent('GOOGLE_CALENDAR_ID')} />
+        <SettingHistory label="Google Calendar id" entries={historyOf('google_calendar_id')} />
+      </div>
+    ),
     whatsapp: (
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-1">
@@ -123,14 +147,16 @@ export default async function IntegrationsPage() {
     ),
   };
   // SCR-070: "Open secure key storage" — where the credential is, per integration.
-  const envOnly = (names: string) => `${names} live in the deployment environment. The panel never stores, shows or changes them; a deploy does.`;
+  const keyed = (names: string) => `${names} are read from the deployment environment first, then the key vault (Security › Keys). The panel never shows one; a value set in the environment wins until it is removed there.`;
   const secrets: Record<string, SecureStorage> = {
-    whatsapp: { href: '/settings/communication', note: envOnly('WHATSAPP_ACCESS_TOKEN, WHATSAPP_APP_SECRET and WHATSAPP_VERIFY_TOKEN') + ' Settings › Communication holds the non-secret WhatsApp configuration and the verify controls.' },
+    whatsapp: { href: '/settings/communication', note: keyed('WHATSAPP_ACCESS_TOKEN, WHATSAPP_APP_SECRET and WHATSAPP_VERIFY_TOKEN') + ' Settings › Communication holds the non-secret WhatsApp configuration and the verify controls.' },
     'ai-provider': { href: '/agents#vault', note: 'Provider keys are kept encrypted in the provider vault (core.provider_credentials); an environment key is read when the vault has none.' },
     transcriber: { href: '/agents#vault', note: 'The transcription key is kept encrypted in the provider vault, or read from the environment when the vault has none.' },
     'image-generator': { href: '/agents#vault', note: 'The image-generation key is kept encrypted in the provider vault, or read from the environment when the vault has none.' },
-    github: { href: null, note: envOnly('GITHUB_TOKEN') },
-    alerts: { href: null, note: envOnly('ALERT_WEBHOOK_URL') },
+    github: { href: '/security/keys', note: keyed('GITHUB_TOKEN') },
+    figma: { href: '/security/keys', note: keyed('FIGMA_ACCESS_TOKEN') },
+    calendar: { href: '/security/keys', note: keyed('GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_KEY') + ' The calendar id is not a secret: the panel stores it as an organization setting and reads it before the GOOGLE_CALENDAR_ID environment value.' },
+    alerts: { href: '/security/keys', note: keyed('ALERT_WEBHOOK_URL') },
   };
   const verifiedCount = summary.VERIFIED ?? 0;
   const configuredCount = summary.CONFIGURED ?? 0;
@@ -142,8 +168,8 @@ export default async function IntegrationsPage() {
         description={
           <>
         Every external dependency and its real lifecycle. <span className="font-medium">Configured is not verified</span> —
-        only the database and scheduler, which a live signal exercised, read VERIFIED; WhatsApp and the AI provider are
-        configured at most until a person verifies them.
+        the database and scheduler read VERIFIED from a live signal; Figma and Google Calendar read VERIFIED only once a real
+        check answered; WhatsApp and the AI provider are configured at most until a person verifies them.
           </>
         }
         actions={
@@ -160,7 +186,8 @@ export default async function IntegrationsPage() {
       />
 
       <p className="text-[13px] text-muted">
-        {verifiedCount} verified · {configuredCount} configured but unproven · {integrations.length - verifiedCount - configuredCount} not configured, degraded or failed.
+        {verifiedCount} verified · {configuredCount} configured but unproven · {integrations.length - verifiedCount - configuredCount} not configured, degraded or failed.{' '}
+        <span className="font-medium text-foreground">{lastVerifiedAt ? `Last verified ${clock.dateTime(lastVerifiedAt)}.` : 'Nothing has a recorded verification yet.'}</span>
       </p>
 
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
@@ -185,19 +212,7 @@ export default async function IntegrationsPage() {
         </div>
       ) : null}
 
-      <IntegrationsList integrations={integrations} verify={verify} identifiers={identifiers} editors={editors} secrets={secrets} vaultHref="/agents#vault" />
-
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface px-4 py-3 text-[13px]">
-        <span className="font-medium">Google Calendar</span>
-        <span className="text-muted">— not in the lifecycle registry; verified on demand against Google (ADM-102).</span>
-        <VerifyCalendarForm lastVerifiedAt={calendarVerifiedAt} calendar={calendarVerifiedName} />
-        {/* SCR-070: the calendar's non-secret identifiers — the id is GOOGLE_CALENDAR_ID in the deployment
-            environment (presence only; not editable from the panel), the name is what Google answered. */}
-        <span className="basis-full text-xs text-muted">
-          Calendar id (GOOGLE_CALENDAR_ID): {envPresent('GOOGLE_CALENDAR_ID') ? 'set in the deployment environment' : 'unset'} — not editable from the panel.
-          {calendarVerifiedName ? ` Verified calendar: ${calendarVerifiedName}${effectiveOf('calendar_verified_calendar') ? ` (${effectiveOf('calendar_verified_calendar')})` : ''}.` : ''}
-        </span>
-      </div>
+      <IntegrationsList integrations={integrations} verifiedLabels={Object.fromEntries(integrations.filter((i) => i.lastVerifiedAt).map((i) => [i.id, clock.dateTime(i.lastVerifiedAt as string)]))} verify={verify} identifiers={identifiers} editors={editors} secrets={secrets} vaultHref="/agents#vault" />
 
       <p className="text-xs text-muted">
         A failed row means a live read did not succeed (DATA UNAVAILABLE) — not that the integration is definitely broken,

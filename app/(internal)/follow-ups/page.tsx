@@ -13,6 +13,8 @@ import { listReactivationCohort } from '@/modules/crm/reactivation-queries';
 import { isReactivationCohortFilter } from '@/modules/crm/reactivation-types';
 import { listInternalRoster } from '@/modules/projects/queries';
 import { SavedViewsBar } from '../saved-views-bar';
+import { listLeadsForTable } from '@/modules/crm/queries';
+import { ScheduleFollowUpButton } from './schedule-follow-up-button';
 import { ReactivationCohortSection } from './reactivation-cohort';
 import { SequenceControls } from './sequence-controls';
 import { SequenceDetailButton, type SequenceDetailView } from './sequence-drawer';
@@ -192,12 +194,13 @@ export default async function FollowUpsPage({
   // SCR-013 — the Reactivation cohort sub-screen: `cohort=` opens it on a chip.
   const cohortFilter = isReactivationCohortFilter(cohortParam) ? cohortParam : null;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
-  const [allSequences, rawSequences, savedViews, roster, cohort] = await Promise.all([
+  const [allSequences, rawSequences, savedViews, roster, cohort, scheduleLeads] = await Promise.all([
     listFollowUpSequencesDetailed({ q: q || undefined }),
     listFollowUpSequencesDetailed({ status, q: q || undefined }),
     listSavedViews('/follow-ups'),
     listInternalRoster(),
     listReactivationCohort(),
+    can(context, 'lead.write') ? listLeadsForTable(200) : Promise.resolve([]),
   ]);
   // Enrolment is the reactivation door's capability (`organization.settings`,
   // the same the lead page and the Import desk check); the section says so
@@ -282,7 +285,8 @@ export default async function FollowUpsPage({
             : `${sequences.length} sequence${sequences.length === 1 ? '' : 's'}${filtering ? ' matching the filters' : ''}. Stopping one here is a person's decision, recorded as its stop reason.`
         }
         actions={
-          <div className="flex flex-wrap gap-3 text-[13px]">
+          <div className="flex flex-wrap items-center gap-3 text-[13px]">
+            {can(context, 'lead.write') ? <ScheduleFollowUpButton leads={scheduleLeads.map((l) => ({ id: l.id, title: l.contact?.fullName ?? l.title }))} /> : null}
             <Link href={cohortHref('all')} className="text-brand hover:underline">
               Reactivation cohort →
             </Link>

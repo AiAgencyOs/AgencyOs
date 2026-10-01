@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import type { FormState } from '@/modules/identity/types';
 
-import { acknowledgeEscalation, escalateBlocker, startQaHandoff } from './development-events-service';
+import { acknowledgeEscalation, escalateBlocker, requestClientDependency, startQaHandoff } from './development-events-service';
 
 /** SCR-039 — "Escalate blocker to PM" and "Start QA handoff", recorded. */
 
@@ -24,6 +24,16 @@ export async function escalateBlockerAction(_prev: FormState, formData: FormData
   revalidateDevelopment(projectId);
   revalidatePath(`/projects/${projectId}/development/tasks/${taskId}`);
   return { status: 'success', message: 'Escalated to the PM and recorded.' };
+}
+
+export async function requestClientDependencyAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = str(formData, 'projectId');
+  const note = str(formData, 'note');
+  const result = await requestClientDependency({ projectId, dependencyId: str(formData, 'dependencyId'), ...(note ? { note } : {}) });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateDevelopment(projectId);
+  revalidatePath(`/projects/${projectId}/plan`);
+  return { status: 'success', message: 'Asked the PM to request it from the client.' };
 }
 
 export async function acknowledgeEscalationAction(_prev: FormState, formData: FormData): Promise<FormState> {

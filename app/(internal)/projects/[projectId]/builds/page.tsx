@@ -5,13 +5,17 @@ import { notFound } from 'next/navigation';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { listEnvironmentReadiness, readReleaseGates } from '@/modules/projects/environment-readiness-queries';
+import { listAttachedFiles } from '@/modules/projects/attached-files-queries';
+import { readDeliverableDetails } from '@/modules/projects/build-details-queries';
+import { listEnvironmentCheckRuns, listEnvironmentReadiness, readReleaseGates } from '@/modules/projects/environment-readiness-queries';
 import { READINESS_CHECK_LABEL, READINESS_CHECKS } from '@/modules/projects/environment-readiness-schema';
 import { listGitActions } from '@/modules/projects/git-queries';
 import { getProject, listDependencies, listDeliverables, listEnvironments, readPlanBoard } from '@/modules/projects/queries';
 import { getRepositoryLink } from '@/modules/projects/repository-link-queries';
-import { Badge, Card, CardHeader, EmptyState, humanize, IconIntegrations, IconProjects, PageHeader, Stat, StatGrid, statusTone, PermissionDenied } from '@/ui';
+import { Badge, buttonClass, Card, CardHeader, EmptyState, humanize, IconIntegrations, IconProjects, inputClass, labelClass, PageHeader, selectClass, Stat, StatGrid, statusTone, PermissionDenied } from '@/ui';
 
+import { AttachFileForm } from '../attach-file-form';
+import { AttachedFileLinks } from '../attached-file-links';
 import { AddBuildForm, SubmitDeliverableForm } from '../deliverables-panel';
 import {
   AddDependencyForm,
@@ -19,8 +23,11 @@ import {
   DependencyCard,
   EnvironmentCard,
 } from '../environments-panel';
+import { PreviewButton, PreviewDrawerProvider } from '../../../preview-drawer';
 import { ProjectSubNav } from '../project-subnav';
-import { PromoteBuildPanel, RecordCheckPanel, TriggerBuildPanel } from './environment-readiness-panels';
+import { BuildDetailsForm } from '../prototype/build-panels';
+import { describeCheckRun } from '@/modules/projects/environment-check-runs';
+import { PromoteBuildPanel, ReadCheckResultButton, RecordCheckPanel, RunChecksPanel, TriggerBuildPanel } from './environment-readiness-panels';
 
 export const metadata: Metadata = { title: 'Builds' };
 
@@ -42,8 +49,9 @@ export const metadata: Metadata = { title: 'Builds' };
  * records a `git_actions` row and dispatches the linked GitHub Actions
  * workflow when the Repository tab names one.
  */
-export default async function BuildsPage({ params }: { params: Promise<{ projectId: string }> }) {
+export default async function BuildsPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ q?: string; status?: string; dep?: string }> }) {
   const { projectId } = await params;
+  const { q: qRaw, status: statusRaw, dep: depRaw } = await searchParams;
 
   const context = await requireInternal(`/projects/${projectId}/builds`);
   if (!can(context, 'project.read')) return <PermissionDenied />;
@@ -53,7 +61,7 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
 
   const clock = await agencyClock();
   const canWrite = can(context, 'project.write');
-  const [deliverables, environments, dependencies, board, readiness, gates, link, gitActions] = await Promise.all([
+  const [deliverables, environments, dependencies, board, readiness, gates, link, gitActions, details, checkRuns, attachedFiles] = await Promise.all([
     listDeliverables(projectId),
     listEnvironments(projectId),
     listDependencies(projectId),
@@ -62,28 +70,39 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
     readReleaseGates(projectId),
     getRepositoryLink(projectId),
     listGitActions(projectId, 10),
+    readDeliverableDetails(projectId),
+    listEnvironmentCheckRuns(projectId),
+    // Q-C1: the build files uploaded against each build.
+    listAttachedFiles(projectId),
   ]);
-  const builds = deliverables.filter((d) => d.kind === 'build');
-  const liveBuilds = builds.filter((b) => b.status !== 'superseded').map((b) => ({ id: b.id, version: b.version, title: b.title, status: b.status }));
-  const latestBuild = builds[0] ?? null;
+  const allBuilds = deliverables.filter((d) => d.kind === 'build');
+  const q = (qRaw ?? '').trim().slice(0, 120).toLowerCase();
+  const statusFilter = ['draft', 'in_review', 'approved', 'changes_requested', 'superseded'].includes(statusRaw ?? '') ? (statusRaw as string) : '';
+  const depFilter = ['open', 'supplied', 'waived'].includes(depRaw ?? '') ? (depRaw as string) : '';
+  const builds = allBuilds.filter((b) => (!q || `${b.title} v${b.version} ${details.get(b.id)?.commitRef ?? ''} ${details.get(b.id)?.buildNumber ?? ''}`.toLowerCase().includes(q)) && (!statusFilter || b.status === statusFilter));
+  const shownDependencies = dependencies.filter((d) => (!q || `${d.name} ${d.reference ?? ''} ${d.notes ?? ''}`.toLowerCase().includes(q)) && (!depFilter || d.status === depFilter));
+  const compatible = readiness.filter((e) => e.checks.api_contract?.ok === true && e.checks.migrations?.ok === true).length;
+  const liveBuilds = allBuilds.filter((b) => b.status !== 'superseded').map((b) => ({ id: b.id, version: b.version, title: b.title, status: b.status }));
+  const latestBuild = allBuilds[0] ?? null;
   const blockingDependencies = board.dependencies.filter((d) => ['pending', 'requested', 'blocked'].includes(d.status));
   const openTechnical = dependencies.filter((d) => d.status === 'open');
   const readyEnvironments = readiness.filter((e) => e.ready).length;
   const redGates = gates.filter((g) => g.state === 'fail');
   const undecidedGates = gates.filter((g) => g.state === 'undecided');
   const buildTriggers = gitActions.filter((a) => a.action === 'build_triggered');
-  const buildById = new Map(builds.map((b) => [b.id, b]));
+  const buildById = new Map(allBuilds.map((b) => [b.id, b]));
 
   return (
+    <PreviewDrawerProvider>
     <div className="flex flex-col gap-5">
       <PageHeader
         title={`${project.name} — Builds`}
-        description={builds.length === 0 ? 'No builds yet.' : `${builds.length} version${builds.length === 1 ? '' : 's'}.`}
+        description={allBuilds.length === 0 ? 'No builds yet.' : `${allBuilds.length} version${allBuilds.length === 1 ? '' : 's'}.`}
       />
 
       <ProjectSubNav projectId={projectId} />
 
-      <StatGrid cols={6}>
+      <StatGrid cols={4}>
         <Stat
           label="Latest build"
           value={latestBuild ? `v${latestBuild.version}` : '—'}
@@ -96,6 +115,13 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
           value={environments.length === 0 ? '—' : `${readyEnvironments}/${environments.length}`}
           caption={environments.length === 0 ? 'none linked yet' : 'all three checks recorded and ok'}
           tone={environments.length > 0 && readyEnvironments === environments.length ? 'success' : environments.length > 0 ? 'warning' : 'neutral'}
+          href="#environments"
+        />
+        <Stat
+          label="Migration and API Compatibility"
+          value={environments.length === 0 ? '—' : `${compatible}/${environments.length}`}
+          caption={environments.length === 0 ? 'no environment linked yet' : 'environments with API contracts and migrations both checked ok'}
+          tone={environments.length > 0 && compatible === environments.length ? 'success' : environments.length > 0 ? 'warning' : 'neutral'}
           href="#environments"
         />
         <Stat
@@ -152,7 +178,7 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
       <Card id="environments" className="scroll-mt-4">
         <CardHeader
           title="Environment readiness"
-          description="Per environment: API contracts, DB migrations and external service configuration, each recorded by a person with evidence. Migration/API compatibility is these checks; promotion refuses until all three are ok and no release gate is red."
+          description="Per environment: API contracts, DB migrations and external service configuration, each recorded by a person with evidence, or by a GitHub workflow dispatched from here (the run's link is the evidence). Migration/API compatibility is these checks; promotion refuses until all three are ok and no release gate is red."
         />
         <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
           {readiness.length === 0 ? (
@@ -181,6 +207,29 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
                           <Badge tone={e.ready ? 'success' : 'warning'} dot={false} className="mt-1 w-fit">
                             {e.ready ? 'ready' : 'not ready'}
                           </Badge>
+                          {/* Owner decision 13: the contract and migration checks run as a GitHub workflow dispatched from here. */}
+                          {(checkRuns.get(e.id) ?? []).map((r) => (
+                            <span key={r.id} className="mt-1 flex flex-col text-xs text-muted">
+                              <span>
+                                {describeCheckRun(r)}
+                                {r.runUrl ? (
+                                  <>
+                                    {' '}
+                                    <a href={r.runUrl} target="_blank" rel="noreferrer noopener" className="underline underline-offset-2">
+                                      run
+                                    </a>
+                                  </>
+                                ) : null}
+                              </span>
+                              <span>{clock.dateTime(r.dispatchedAt)}</span>
+                            </span>
+                          ))}
+                          {canWrite ? (
+                            <span className="mt-2 flex flex-col gap-2">
+                              <RunChecksPanel projectId={projectId} environmentId={e.id} linked={Boolean(link)} />
+                              {link && (checkRuns.get(e.id) ?? []).some((r) => !r.recorded) ? <ReadCheckResultButton projectId={projectId} environmentId={e.id} /> : null}
+                            </span>
+                          ) : null}
                         </span>
                       </td>
                       {READINESS_CHECKS.map((c) => {
@@ -199,6 +248,7 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
                                     <span className="text-xs text-muted">no evidence link</span>
                                   )}
                                   {entry.checkedAt ? <span className="text-xs text-muted">{clock.dateTime(entry.checkedAt)}</span> : null}
+                                  {entry.source === 'workflow' ? <span className="text-xs text-muted">by GitHub workflow</span> : null}
                                 </span>
                               ) : (
                                 <Badge tone="neutral">not checked</Badge>
@@ -280,6 +330,34 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
       </Card>
 
       <div id="builds" className="scroll-mt-4" />
+      {allBuilds.length > 0 || dependencies.length > 0 ? (
+        <form method="get" action={`/projects/${projectId}/builds#builds`} className="flex flex-wrap items-end gap-2">
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Search builds and dependencies</span>
+            <input name="q" defaultValue={qRaw ?? ''} maxLength={120} placeholder="Title, version, commit or build number" className={`${inputClass} w-64`} />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Build status</span>
+            <select name="status" defaultValue={statusFilter} className={selectClass}>
+              <option value="">Any status</option>
+              {['draft', 'in_review', 'approved', 'changes_requested', 'superseded'].map((st) => (
+                <option key={st} value={st}>{humanize(st)}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Dependency status</span>
+            <select name="dep" defaultValue={depFilter} className={selectClass}>
+              <option value="">Any status</option>
+              {['open', 'supplied', 'waived'].map((st) => (
+                <option key={st} value={st}>{humanize(st)}</option>
+              ))}
+            </select>
+          </label>
+          <button type="submit" className={buttonClass('secondary', 'sm')}>Apply</button>
+          {q || statusFilter || depFilter ? <Link href={`/projects/${projectId}/builds`} className="pb-2 text-xs underline hover:text-foreground">Clear</Link> : null}
+        </form>
+      ) : null}
       {builds.length > 0 ? (
         <div className="flex flex-col gap-2">
           {builds.map((b) => (
@@ -289,6 +367,7 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
                   v{b.version} — {b.title}
                 </span>
                 <span className="flex items-center gap-2">
+                  <PreviewButton group="Build" id={b.id} />
                   {readiness.some((e) => e.promotedBuildId === b.id) ? (
                     <Badge tone="success">promoted to {readiness.filter((e) => e.promotedBuildId === b.id).map((e) => e.label).join(', ')}</Badge>
                   ) : null}
@@ -308,27 +387,75 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
                 </a>
               ) : null}
               <p className="mt-1 text-xs text-faint">Added {clock.dateTime(b.created_at)}</p>
+              <AttachedFileLinks projectId={projectId} files={attachedFiles.get(b.id)} label={`Build files of v${b.version}`} />
+              {(() => {
+                // SCR-043 — build reproducibility and rollback information, retained per build.
+                const d = details.get(b.id);
+                const target = d?.rollbackTargetId ? buildById.get(d.rollbackTargetId) : null;
+                return (
+                  <dl className="mt-2 grid gap-x-4 gap-y-1 text-[13px] sm:grid-cols-3">
+                    <div>
+                      <dt className="text-xs text-muted">Built from</dt>
+                      <dd>{d?.commitRef ? <span className="font-mono text-xs">{d.commitRef}</span> : <span className="text-warning">no commit or ref recorded</span>}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted">Build number</dt>
+                      <dd>{d?.buildNumber ?? <span className="text-muted">—</span>}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted">Roll back to</dt>
+                      <dd>{target ? `v${target.version} — ${target.title}` : <span className="text-warning">no rollback target recorded</span>}{d?.rollbackNote ? <span className="block text-xs text-muted">{d.rollbackNote}</span> : null}</dd>
+                    </div>
+                  </dl>
+                );
+              })()}
+              {canWrite ? (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs underline underline-offset-2">Edit commit, number and rollback</summary>
+                  <div className="pt-2">
+                    <BuildDetailsForm
+                      projectId={projectId}
+                      deliverableId={b.id}
+                      showPlatform={false}
+                      current={{ platform: null, commitRef: details.get(b.id)?.commitRef ?? null, buildNumber: details.get(b.id)?.buildNumber ?? null, rollbackTargetId: details.get(b.id)?.rollbackTargetId ?? null, rollbackNote: details.get(b.id)?.rollbackNote ?? null }}
+                      rollbackChoices={allBuilds.filter((x) => x.id !== b.id).map((x) => ({ id: x.id, label: `Build v${x.version} — ${x.title}` }))}
+                    />
+                  </div>
+                </details>
+              ) : null}
+              {canWrite ? (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs underline underline-offset-2">Attach a build file (.apk, .ipa, .zip)</summary>
+                  <div className="pt-2">
+                    <AttachFileForm projectId={projectId} subjectKind="build" subjectId={b.id} />
+                  </div>
+                </details>
+              ) : null}
               {canWrite && b.status === 'draft' ? (
                 <SubmitDeliverableForm deliverableId={b.id} projectId={projectId} />
               ) : null}
             </Card>
           ))}
         </div>
+      ) : allBuilds.length > 0 ? (
+        <EmptyState icon={<IconProjects size={22} />} title="No build matches" description="Nothing in the list fits that search or filter." action={<Link href={`/projects/${projectId}/builds`} className={buttonClass('secondary', 'sm')}>Clear filters</Link>} />
       ) : (
         <EmptyState
           icon={<IconProjects size={22} />}
           title="No builds yet"
           description="Add the first build below once it's ready to review."
+          action={<a href="#add-build" className={buttonClass('secondary', 'sm')}>Add a build</a>}
         />
       )}
 
       {canWrite ? (
-        <Card className="p-4">
-          <AddBuildForm projectId={projectId} />
+        <Card id="add-build" className="scroll-mt-4 p-4">
+          <AddBuildForm projectId={projectId} rollbackChoices={allBuilds.map((x) => ({ id: x.id, label: `Build v${x.version} — ${x.title}` }))} />
         </Card>
       ) : null}
 
       <PageHeader
+        as="h2"
         title="Environments"
         description={
           environments.length === 0
@@ -353,6 +480,7 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
 
       <div id="dependencies" className="scroll-mt-4" />
       <PageHeader
+        as="h2"
         title="Dependencies"
         description={
           dependencies.length === 0
@@ -360,9 +488,12 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
             : `${dependencies.length} dependenc${dependencies.length === 1 ? 'y' : 'ies'}.`
         }
       />
-      {dependencies.length > 0 ? (
+      {dependencies.length > 0 && shownDependencies.length === 0 ? (
+        <EmptyState icon={<IconIntegrations size={22} />} title="No dependency matches" description="Nothing in the list fits that search or filter." action={<Link href={`/projects/${projectId}/builds`} className={buttonClass('secondary', 'sm')}>Clear filters</Link>} />
+      ) : null}
+      {shownDependencies.length > 0 ? (
         <div className="flex flex-col gap-2">
-          {dependencies.map((d) => (
+          {shownDependencies.map((d) => (
             <DependencyCard key={d.id} dependency={{ ...d, suppliedAtLabel: d.suppliedAt ? clock.date(d.suppliedAt) : undefined }} projectId={projectId} editable={canWrite} />
           ))}
         </div>
@@ -375,5 +506,6 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
       )}
       {canWrite ? <AddDependencyForm projectId={projectId} /> : null}
     </div>
+    </PreviewDrawerProvider>
   );
 }

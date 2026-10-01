@@ -24,6 +24,7 @@ export async function uploadDesignAssetAction(_prev: FormState, formData: FormDa
       projectId,
       kind: (DESIGN_ASSET_KINDS as readonly string[]).includes(kind) ? (kind as DesignAssetKind) : ('' as DesignAssetKind),
       title: String(formData.get('title') ?? ''),
+      licence: String(formData.get('licence') ?? ''),
       parentAssetId: String(formData.get('parentAssetId') ?? '').trim() || undefined,
     },
     file instanceof File ? file : null,

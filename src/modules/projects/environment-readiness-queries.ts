@@ -18,6 +18,8 @@ export type ReadinessEntry = {
   note: string | null;
   checkedAt: string | null;
   checkedBy: string | null;
+  /** 'workflow' when a dispatched GitHub workflow recorded it (owner decision 13); null when a person did. */
+  source: string | null;
 };
 
 export type EnvironmentReadiness = {
@@ -56,6 +58,7 @@ export async function listEnvironmentReadiness(projectId: string): Promise<Envir
             note: typeof entry.note === 'string' ? entry.note : null,
             checkedAt: typeof entry.checked_at === 'string' ? entry.checked_at : null,
             checkedBy: typeof entry.checked_by === 'string' ? entry.checked_by : null,
+            source: typeof entry.source === 'string' ? entry.source : null,
           }
         : null;
     }
@@ -81,4 +84,48 @@ export async function readReleaseGates(projectId: string): Promise<ReleaseGate[]
     state: g.state === 'pass' ? 'pass' : g.state === 'fail' ? 'fail' : 'undecided',
     detail: g.detail,
   }));
+}
+
+export type EnvironmentCheckRun = {
+  id: string;
+  environmentId: string;
+  checks: string[];
+  workflowFile: string;
+  dispatchedAt: string;
+  status: 'dispatched' | 'in_progress' | 'completed';
+  conclusion: string | null;
+  runUrl: string | null;
+  /** True once the result was written onto the environment's readiness. */
+  recorded: boolean;
+};
+
+/** Owner decision 13 — the dispatches of the contract / migration check workflow, newest first, three per environment. */
+export async function listEnvironmentCheckRuns(projectId: string): Promise<Map<string, EnvironmentCheckRun[]>> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('environment_check_runs')
+    .select('id, environment_id, checks, workflow_file, dispatched_at, status, conclusion, run_url, applied_at')
+    .eq('project_id', projectId)
+    .order('dispatched_at', { ascending: false })
+    .limit(200);
+  if (error) unreadable('listEnvironmentCheckRuns', error);
+  const byEnvironment = new Map<string, EnvironmentCheckRun[]>();
+  for (const r of data ?? []) {
+    const list = byEnvironment.get(r.environment_id) ?? [];
+    if (list.length >= 3) continue;
+    list.push({
+      id: r.id,
+      environmentId: r.environment_id,
+      checks: r.checks,
+      workflowFile: r.workflow_file,
+      dispatchedAt: r.dispatched_at,
+      status: r.status === 'completed' ? 'completed' : r.status === 'in_progress' ? 'in_progress' : 'dispatched',
+      conclusion: r.conclusion,
+      runUrl: r.run_url,
+      recorded: r.applied_at !== null,
+    });
+    byEnvironment.set(r.environment_id, list);
+  }
+  return byEnvironment;
 }

@@ -6,7 +6,7 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { readClientName } from '@/lib/admin/clients';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { getProject } from '@/modules/projects/queries';
+import { getProject, readUiCoverage } from '@/modules/projects/queries';
 import { listMappableScopeItems, readScreenListState } from '@/modules/projects/screen-edit-queries';
 import { countScopeLinksByScreen } from '@/modules/projects/screen-inventory-queries';
 import { coverageOf, DEVICE_TARGETS } from '@/modules/projects/screen-states-schema';
@@ -74,13 +74,14 @@ export default async function ProjectScreensPage({
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const [allScreens, listState, scopeItems, scopeLinks, clock, clientName] = await Promise.all([
+  const [allScreens, listState, scopeItems, scopeLinks, clock, clientName, coverageFlags] = await Promise.all([
     listProjectScreens(projectId),
     readScreenListState(projectId),
     listMappableScopeItems(projectId),
     countScopeLinksByScreen(projectId),
     agencyClock(),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
+    readUiCoverage(projectId),
   ]);
   const mayEdit = can(context, 'project.write');
   // Add, merge and split change WHICH screens exist and follow the baseline;
@@ -105,7 +106,9 @@ export default async function ProjectScreensPage({
   );
   const screens = filtered;
   const roles = [...new Set(live.map((s) => s.user_role))].sort();
-  const grouped = group === 'role';
+  const grouped = group === 'role' ? 'role' : group === 'category' ? 'category' : null;
+  const UNCATEGORISED = 'Uncategorised';
+  const groupKeyOf = (s: ProjectScreen) => (grouped === 'category' ? (s.category ?? UNCATEGORISED) : s.user_role);
 
   const byStatus = new Map<string, number>();
   for (const s of live) byStatus.set(s.status, (byStatus.get(s.status) ?? 0) + 1);
@@ -115,6 +118,8 @@ export default async function ProjectScreensPage({
     .join(' · ');
 
   const approved = live.filter((s) => s.status === 'approved').length;
+  // SCR-034 — a screen an included requirement still needs (the coverage report's own flag), not a screen that exists.
+  const missingScreens = coverageFlags.filter((f) => f.flag === 'included_scope_item_has_no_screen').length;
   const missingStates = live.filter((s) => !fullyStated(s)).length;
   const drawn = live.filter((s) => s.design_state === 'drawn' || s.design_state === 'reviewed').length;
   const submitted = live.filter((s) => s.qa_status === 'submitted').length;
@@ -170,6 +175,7 @@ export default async function ProjectScreensPage({
         </span>
       ),
     },
+    { key: 'category', header: 'Category', desktopOnly: true, cell: (s) => (s.category ? <Badge tone="neutral" dot={false}>{s.category}</Badge> : <span className="text-muted">—</span>) },
     { key: 'key', header: 'Key', cellClassName: 'font-mono text-xs text-muted whitespace-nowrap', cell: (s) => s.screen_key },
     { key: 'status', header: 'Status', badge: true, cell: (s) => <StatusBadge status={s.status} dot={false} /> },
     {
@@ -183,7 +189,7 @@ export default async function ProjectScreensPage({
         ),
     },
     { key: 'qa', header: 'QA', desktopOnly: true, cell: (s) => (s.qa_status === 'submitted' ? <Badge tone="info" dot={false}>submitted</Badge> : <span className="text-muted">—</span>) },
-    ...(grouped ? [] : [{ key: 'role', header: 'Role', desktopOnly: true, cell: (s: ProjectScreen) => humanize(s.user_role) } satisfies Column<ProjectScreen>]),
+    ...(grouped === 'role' ? [] : [{ key: 'role', header: 'Role', desktopOnly: true, cell: (s: ProjectScreen) => humanize(s.user_role) } satisfies Column<ProjectScreen>]),
     {
       key: 'devices',
       header: 'Devices',
@@ -235,7 +241,7 @@ export default async function ProjectScreensPage({
   ];
 
   const groups = grouped
-    ? [...new Set(screens.map((s) => s.user_role))].sort().map((r) => ({ role: r, rows: screens.filter((s) => s.user_role === r) }))
+    ? [...new Set(screens.map(groupKeyOf))].sort().map((r) => ({ role: r, rows: screens.filter((s) => groupKeyOf(s) === r) }))
     : [{ role: null as string | null, rows: screens }];
 
   return (
@@ -244,11 +250,12 @@ export default async function ProjectScreensPage({
       <ProjectSubNav projectId={projectId} />
       <DesignSubNav projectId={projectId} />
 
-      <StatGrid cols={6}>
-        <Stat label="Screens" value={String(live.length)} caption={supersededCount > 0 ? `${supersededCount} superseded` : live.length > 0 ? statusCaption : 'None recorded'} tone="brand" icon={<IconFile size={16} />} href={base} />
+      <StatGrid cols={4}>
+        <Stat label="Planned Screens" value={String(live.length)} caption={supersededCount > 0 ? `${supersededCount} superseded` : live.length > 0 ? statusCaption : 'None recorded'} tone="brand" icon={<IconFile size={16} />} href={base} />
         <Stat label="Approved" value={String(approved)} caption={live.length > 0 ? `${live.length - approved} not yet` : undefined} tone={live.length > 0 && approved === live.length ? 'success' : 'info'} icon={<IconCheck size={16} />} href={`${base}?status=approved`} />
         <Stat label="Missing states" value={String(missingStates)} caption="not all four states recorded" tone={missingStates > 0 ? 'warning' : 'success'} icon={<IconList size={16} />} href={`${base}?missing=1`} />
-        <Stat label="Drawn or reviewed" value={String(drawn)} caption={live.length > 0 ? `${live.length - drawn} not yet` : undefined} tone={live.length > 0 && drawn < live.length ? 'warning' : 'success'} icon={<IconList size={16} />} />
+        <Stat label="Missing Screens" value={String(missingScreens)} caption="included requirements with no screen" tone={missingScreens > 0 ? 'warning' : 'success'} icon={<IconList size={16} />} />
+        <Stat label="Designed Screens" value={String(drawn)} caption={live.length > 0 ? `${live.length - drawn} not yet` : undefined} tone={live.length > 0 && drawn < live.length ? 'warning' : 'success'} icon={<IconList size={16} />} />
         <Stat label="Responsive coverage" value={withTargets.length === 0 ? '—' : `${fullyCovered}/${withTargets.length}`} caption={withTargets.length === 0 ? 'no device targets recorded' : `${unmapped} unmapped to scope`} tone={withTargets.length > 0 && fullyCovered < withTargets.length ? 'warning' : 'success'} icon={<IconCheck size={16} />} />
         <Stat label="Submitted for QA" value={String(submitted)} caption={listState.latest ? `Baseline v${listState.latest.version} · ${listState.latest.status}` : 'No screen baseline drafted'} tone="info" icon={<IconShare size={16} />} />
       </StatGrid>
@@ -281,8 +288,8 @@ export default async function ProjectScreensPage({
         {/* SCR-034 — role / device / status filters and grouping, as a GET form. */}
         <form method="get" className="flex flex-wrap items-end gap-2 px-4 pb-3 sm:px-5">
           {showSuperseded ? <input type="hidden" name="superseded" value="1" /> : null}
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Role</label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Role</span>
             <select name="role" defaultValue={roleFilter} className={selectClass}>
               <option value="">All roles</option>
               {roles.map((r) => (
@@ -291,9 +298,9 @@ export default async function ProjectScreensPage({
                 </option>
               ))}
             </select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Device</label>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Device</span>
             <select name="device" defaultValue={deviceFilter} className={selectClass}>
               <option value="">All devices</option>
               {DEVICE_TARGETS.map((d) => (
@@ -302,9 +309,9 @@ export default async function ProjectScreensPage({
                 </option>
               ))}
             </select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Status</label>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Status</span>
             <select name="status" defaultValue={statusFilter} className={selectClass}>
               <option value="">All statuses</option>
               {['draft', 'in_review', 'approved'].map((st) => (
@@ -313,14 +320,15 @@ export default async function ProjectScreensPage({
                 </option>
               ))}
             </select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Group</label>
-            <select name="group" defaultValue={grouped ? 'role' : ''} className={selectClass}>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Group</span>
+            <select name="group" defaultValue={grouped ?? ''} className={selectClass}>
               <option value="">No grouping</option>
               <option value="role">By role</option>
+              <option value="category">By category</option>
             </select>
-          </div>
+          </label>
           <label className="flex items-center gap-2 pb-2 text-[13px]">
             <input type="checkbox" name="missing" value="1" defaultChecked={missingOnly} /> missing states only
           </label>
@@ -347,7 +355,7 @@ export default async function ProjectScreensPage({
               <div key={g.role ?? 'all'} className="flex flex-col gap-2">
                 {g.role ? (
                   <h3 className="text-[13px] font-semibold tracking-tight">
-                    {humanize(g.role)} <span className="font-normal text-muted">({g.rows.length})</span>
+                    {grouped === 'category' ? g.role : humanize(g.role)} <span className="font-normal text-muted">({g.rows.length})</span>
                   </h3>
                 ) : null}
                 <DataTable dense rows={g.rows} columns={columns} getKey={(s) => s.id} />

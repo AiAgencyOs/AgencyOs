@@ -3,17 +3,20 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
+import { PROJECT_TRANSITIONS, type ProjectStatus } from '@/modules/projects/schema';
+import { ProjectStatusForm } from '../delivery-panel';
+import { readProjectActivity } from '@/modules/projects/project-activity-queries';
 import { readAuditLog } from '@/lib/audit/queries';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { getProject, listDevelopmentBreakdown, listInternalRoster, listPaymentPlan, readChangeRequests } from '@/modules/projects/queries';
+import { getProject, listDevelopmentBreakdown, listInternalRoster, listPaymentPlan } from '@/modules/projects/queries';
 import { readProjectDefaults } from '@/modules/projects/project-defaults-queries';
 import { getProjectTemplate, listProjectTemplates } from '@/modules/projects/project-template-queries';
 import { TemplateSelectForm } from './template-select-panel';
 import { Badge, Callout, Card, CardHeader, EmptyState, IconAudit, PageHeader, PermissionDenied, Stat, StatGrid, StatusBadge } from '@/ui';
 
-import { ProjectDetailsForm, ProjectVisibilityForm } from '../settings-panel';
-import { DefaultAssigneeForm, WatchersPanel } from './project-defaults-panel';
+import { ProjectClassificationForm, ProjectDetailsForm, ProjectVisibilityForm } from '../settings-panel';
+import { DefaultAssigneeForm, RoleDefaultAssigneesForm, WatchersPanel } from './project-defaults-panel';
 import { ProjectSubNav } from '../project-subnav';
 
 export const metadata: Metadata = { title: 'Settings' };
@@ -42,11 +45,10 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
   // Activity tab lists) and the audit rows whose subject IS this project.
   // `audit.audit_log` is gated to `audit.read`, so the card says so for
   // anyone who cannot see it rather than showing them an empty list.
-  const [clock, { tasks }, milestones, changeRequests, audit, defaults, roster] = await Promise.all([
+  const [clock, { tasks }, milestones, audit, defaults, roster] = await Promise.all([
     agencyClock(),
-    listDevelopmentBreakdown(projectId),
+    listDevelopmentBreakdown(projectId, { excludeCancelled: true }),
     listPaymentPlan(projectId),
-    readChangeRequests(projectId),
     canAudit ? readAuditLog({ subjectId: projectId, limit: 50 }) : Promise.resolve([]),
     readProjectDefaults(projectId),
     listInternalRoster(),
@@ -59,8 +61,8 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
   const mayManageWatchers = can(context, 'project.sign_off');
   const tasksCompleted = tasks.filter((t) => t.completedAt !== null).length;
   const milestonesMet = milestones.filter((m) => m.met_at !== null).length;
-  const changeRequestEvents = changeRequests.reduce((sum, cr) => sum + 1 + (cr.decidedAt ? 1 : 0), 0);
-  const activityCount = tasksCompleted + milestonesMet + changeRequestEvents;
+  // The same feed the Activity tab lists (audit trail + each record's own dates), so the count and the page agree.
+  const activityCount = (await readProjectActivity(projectId, { tasks, milestones })).length;
 
   return (
     <div className="flex flex-col gap-5">
@@ -69,7 +71,7 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
       <ProjectSubNav projectId={projectId} />
 
       <StatGrid>
-        <Stat label="Activity events" value={String(activityCount)} caption="Tasks, milestones, change requests" href={`/projects/${projectId}/activity`} />
+        <Stat label="Activity events" value={String(activityCount)} caption="Audit trail and each record’s own dates" href={`/projects/${projectId}/activity`} />
         <Stat label="Tasks completed" value={String(tasksCompleted)} />
         <Stat label="Milestones met" value={String(milestonesMet)} />
         <Stat label="Audit rows" value={canAudit ? String(audit.length) : '—'} caption={canAudit ? 'Subject: this project' : 'Owner / ops admin only'} />
@@ -91,9 +93,11 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
         ) : (
           <p className="text-[13px] text-muted">No reason recorded with the current status.</p>
         )}
-        <p className="text-xs text-muted">
-          Status is changed on the <Link href={`/projects/${projectId}`} className="underline underline-offset-2">Overview</Link>; a move to on hold or cancelled requires a reason.
-        </p>
+        {/* SCR-027 "Pause/cancel controls": the same door the Overview and the projects list use. */}
+        {canWrite ? (
+          <ProjectStatusForm projectId={projectId} current={project.status} allowed={PROJECT_TRANSITIONS[project.status as ProjectStatus] ?? []} />
+        ) : null}
+        <p className="text-xs text-muted">A move to on hold or cancelled requires a reason, recorded on the audit trail.</p>
       </section>
 
       {canWrite ? (
@@ -109,6 +113,14 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
             budgetMinor={project.budget_minor}
             currency={project.currency}
           />
+        </section>
+      ) : null}
+
+      {canWrite ? (
+        <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 shadow-xs sm:p-5">
+          <h2 className="text-sm font-semibold tracking-tight">Type, technology and tags</h2>
+          <p className="text-[13px] text-muted">What kind of project this is, from a fixed list, and the technology and tags the overview shows as chips.</p>
+          <ProjectClassificationForm projectId={projectId} type={project.project_type} technology={project.technology} tags={project.tags} />
         </section>
       ) : null}
 
@@ -162,6 +174,21 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
               ? `New tasks go to ${members.find((m) => m.userId === defaults.defaultAssigneeId)?.fullName ?? 'a member'}.`
               : 'New tasks start unassigned.'}{' '}
             You do not have permission to change it.
+          </p>
+        )}
+      </section>
+
+      {/* Q-B4: a default assignee for each project role. */}
+      <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 shadow-xs sm:p-5">
+        <h2 className="text-sm font-semibold tracking-tight">Default Assignees by Project Role</h2>
+        {canWrite ? (
+          <RoleDefaultAssigneesForm projectId={projectId} current={defaults.roleDefaults} roster={members} />
+        ) : (
+          <p className="text-[13px] text-muted">
+            {Object.keys(defaults.roleDefaults).length === 0
+              ? 'No project role has a default assignee.'
+              : `Defaults are set for ${Object.keys(defaults.roleDefaults).length} project role${Object.keys(defaults.roleDefaults).length === 1 ? '' : 's'}.`}{' '}
+            You do not have permission to change them.
           </p>
         )}
       </section>

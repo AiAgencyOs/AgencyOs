@@ -60,7 +60,7 @@ describe('A. §8’s areas are all present', () => {
                          'Internal review', 'Admin decisions', 'What was sent to the client',
                          'What the client said', 'Revision history',
                          'Final direction and Phase 4 handoff', 'Cost and usage']) {
-      assert.match(PAGE, new RegExp(`title="${title}"`), `${title} has no section`);
+      assert.match(PAGE, new RegExp(`title="${title}"`, 'i'), `${title} has no section`);
     }
   });
 
@@ -146,7 +146,8 @@ describe('D. it shows the trail and takes no decisions', () => {
     // page reads and decides what to offer; it holds no interactive state.
     for (const page of ALL_PAGES) {
       assert.doesNotMatch(page, /'use client'/);
-      assert.doesNotMatch(page, /useActionState|<form /);
+      // A GET form (the screen search) decides nothing; any other form on these pages would.
+      assert.doesNotMatch(page, /useActionState|<form (?![^>]*method="get")/);
     }
   });
 

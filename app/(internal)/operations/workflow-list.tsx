@@ -4,10 +4,14 @@ import Link from 'next/link';
 import { useState } from 'react';
 
 import type { Workflow } from '@/lib/admin/run-chain';
+import { planWorkflowCancel } from '@/lib/observability/cancel-workflow-plan';
 import { Badge, Drawer, StatusBadge, buttonClass } from '@/ui';
+
+import { EscalateControl, type EscalationView } from '../notifications/escalate-form';
 
 import { CancelJobForm } from './cancel-job-form';
 import { CancelRunningJobForm } from './cancel-running-form';
+import { CancelWorkflowForm } from './cancel-workflow-form';
 
 /**
  * Workflow runs by correlation id, with an "inspect event chain" drawer —
@@ -16,7 +20,18 @@ import { CancelRunningJobForm } from './cancel-running-form';
  * further, on the audit page filtered to the same id, rather than fetched
  * for every row up front.
  */
-export function WorkflowList({ workflows }: { workflows: Workflow[] }) {
+export function WorkflowList({
+  workflows,
+  canCancel = false,
+  canAnswerEscalation = false,
+  escalations = {},
+}: {
+  workflows: Workflow[];
+  canCancel?: boolean;
+  canAnswerEscalation?: boolean;
+  /** The escalation on a workflow, by `workflow-<correlation id>`, when a person raised one. */
+  escalations?: Record<string, EscalationView | null>;
+}) {
   const [openId, setOpenId] = useState<string | null>(null);
   const open = workflows.find((w) => w.correlationId === openId) ?? null;
 
@@ -41,9 +56,14 @@ export function WorkflowList({ workflows }: { workflows: Workflow[] }) {
               </span>
               <span className="truncate text-xs text-muted">{[...new Set(w.runs.map((r) => r.agentKey))].join(', ')}</span>
             </span>
-            <button type="button" onClick={() => setOpenId(w.correlationId)} className={buttonClass('secondary', 'sm')}>
-              Inspect chain
-            </button>
+            <span className="flex flex-wrap items-center gap-2">
+              {w.state === 'failed' ? (
+                <EscalateControl subjectType="workflow" subjectKey={`workflow-${w.correlationId}`} title={`Failed workflow ${w.correlationId.slice(0, 8)}: ${[...new Set(w.runs.map((r) => r.agentKey))].join(', ')}`} escalation={escalations[`workflow-${w.correlationId}`] ?? null} canAnswer={canAnswerEscalation} compact />
+              ) : null}
+              <button type="button" onClick={() => setOpenId(w.correlationId)} className={buttonClass('secondary', 'sm')}>
+                Inspect chain
+              </button>
+            </span>
           </li>
         ))}
       </ul>
@@ -108,6 +128,7 @@ export function WorkflowList({ workflows }: { workflows: Workflow[] }) {
                 ))}
               </ul>
             </div>
+            {canCancel ? <CancelWorkflowForm correlationId={open.correlationId} plan={planWorkflowCancel(open.jobs)} /> : null}
             {open.jobs.some((j) => j.status === 'dead') ? (
               <p className="text-xs text-muted">
                 A dead job in this chain can be requeued from the Dead letters list above.

@@ -138,6 +138,8 @@ export type TestRunDetail = {
   evidenceUrl: string | null;
   executedAt: string;
   recordedAt: string;
+  /** SCR-046: where the build ran (development, staging, production, other), when it was asked. */
+  environment: string | null;
   tester: { kind: 'person'; name: string } | { kind: 'agent'; key: string } | null;
 };
 
@@ -148,14 +150,14 @@ export async function listTestRunDetails(projectId: string, limit = 100): Promis
   const { data, error } = await supabase
     .schema('qa')
     .from('test_runs')
-    .select('id, deliverable_id, suite, total, passed, failed, skipped, evidence_url, executed_at, created_at, executed_by, executed_by_agent')
+    .select('id, deliverable_id, suite, total, passed, failed, skipped, evidence_url, executed_at, created_at, executed_by, executed_by_agent, environment, tester_id')
     .eq('project_id', projectId)
     .order('executed_at', { ascending: false })
     .limit(limit);
   if (error) unreadable('listTestRunDetails', error);
 
   const rows = data ?? [];
-  const userIds = [...new Set(rows.map((r) => r.executed_by).filter((id): id is string => id !== null))];
+  const userIds = [...new Set(rows.flatMap((r) => [r.tester_id ?? r.executed_by]).filter((id): id is string => id !== null))];
   const nameById = new Map<string, string>();
   if (userIds.length > 0) {
     const { data: members, error: membersError } = await supabase
@@ -180,10 +182,12 @@ export async function listTestRunDetails(projectId: string, limit = 100): Promis
     evidenceUrl: r.evidence_url,
     executedAt: r.executed_at,
     recordedAt: r.created_at,
+    environment: r.environment,
+    // The named tester, else whoever recorded it; an agent run is an agent.
     tester: r.executed_by_agent
       ? { kind: 'agent', key: r.executed_by_agent }
-      : r.executed_by
-        ? { kind: 'person', name: nameById.get(r.executed_by) ?? 'Unknown' }
+      : (r.tester_id ?? r.executed_by)
+        ? { kind: 'person', name: nameById.get((r.tester_id ?? r.executed_by)!) ?? 'Unknown' }
         : null,
   }));
 }

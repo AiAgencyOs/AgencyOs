@@ -1,9 +1,10 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useId, useState } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
 import { raiseClarificationAction, submitChangeRequestAction } from '@/modules/projects/actions';
+import { raiseRequirementClarificationAction } from '@/modules/projects/requirement-clarifications-actions';
 import type { RequirementsProjectPlan } from '@/modules/projects/requirements-recent-queries';
 import { buttonClass, FormMessage, inputClass, labelClass, selectClass, textareaClass } from '@/ui';
 
@@ -17,12 +18,69 @@ import { buttonClass, FormMessage, inputClass, labelClass, selectClass, textarea
  * or a baseline is disabled in the picker with the reason, because the
  * door would refuse it.
  */
-export function RequirementsDoors({ projects }: { projects: RequirementsProjectPlan[] }) {
+export function RequirementsDoors({ projects, mayAskClarification, mayRaise }: { projects: RequirementsProjectPlan[]; mayAskClarification: boolean; mayRaise: boolean }) {
   return (
-    <div className="grid gap-3 lg:grid-cols-2">
-      <ClarificationDoor projects={projects} />
-      <ChangeRequestDoor projects={projects} />
+    <div className="flex flex-col gap-3">
+      {mayAskClarification ? <RequirementClarificationDoor projects={projects} /> : null}
+      {mayRaise ? <ClarificationDoor projects={projects} /> : null}
+      {mayRaise ? <ChangeRequestDoor projects={projects} /> : null}
     </div>
+  );
+}
+
+/**
+ * "Request clarification" on a requirement (SCR-028): the question is written
+ * against one requirement of the project's scope, so it reaches that
+ * requirement — it shows on the requirement, in the open-question queue and in
+ * the open-clarification counts — and needs no plan.
+ */
+function RequirementClarificationDoor({ projects }: { projects: RequirementsProjectPlan[] }) {
+  const [projectId, setProjectId] = useState('');
+  const [state, action, pending] = useActionState(raiseRequirementClarificationAction, IDLE_STATE);
+  const projectSelectId = useId();
+  const itemSelectId = useId();
+  const questionId = useId();
+  const impactId = useId();
+  const picked = projects.find((p) => p.projectId === projectId) ?? null;
+  return (
+    <form action={action} key={state.status === 'success' ? 'asked' : 'ask'} className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-3">
+      <p className="text-[13px] font-semibold">Request clarification</p>
+      <p className="text-xs text-muted">A question about one requirement, asked of the client. It stays on the requirement and in the open-question queue until somebody records the answer.</p>
+      <input type="hidden" name="projectId" value={projectId} />
+      <label htmlFor={projectSelectId} className={labelClass}>Project</label>
+      <select id={projectSelectId} value={projectId} onChange={(e) => setProjectId(e.target.value)} required className={selectClass}>
+        <option value="" disabled>
+          Pick a project
+        </option>
+        {projects.map((p) => (
+          <option key={p.projectId} value={p.projectId} disabled={p.requirements.length === 0}>
+            {p.projectName}
+            {p.requirements.length === 0 ? ' — no requirements yet' : ''}
+          </option>
+        ))}
+      </select>
+      <label htmlFor={itemSelectId} className={labelClass}>Requirement</label>
+      <select id={itemSelectId} name="scopeItemId" required disabled={!picked} defaultValue="" className={selectClass} key={projectId}>
+        <option value="" disabled>
+          Pick a requirement
+        </option>
+        {(picked?.requirements ?? []).map((r) => (
+          <option key={r.id} value={r.id}>
+            {r.title}
+          </option>
+        ))}
+      </select>
+      <label htmlFor={questionId} className={labelClass}>The question for the client</label>
+      <input id={questionId} name="question" required maxLength={1000} className={inputClass} />
+      <label htmlFor={impactId} className={labelClass}>What it changes if the answer goes either way</label>
+      <input id={impactId} name="impact" required maxLength={1000} className={inputClass} />
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="submit" disabled={pending || !picked} className={buttonClass('secondary', 'sm')}>
+          {pending ? 'Requesting…' : 'Request Clarification'}
+        </button>
+        <FormMessage status={state.status} message={state.message} />
+      </div>
+    </form>
   );
 }
 
@@ -32,7 +90,7 @@ function ClarificationDoor({ projects }: { projects: RequirementsProjectPlan[] }
   const picked = projects.find((p) => p.projectId === projectId) ?? null;
   return (
     <form action={action} className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-3">
-      <p className="text-[13px] font-semibold">Request clarification</p>
+      <p className="text-[13px] font-semibold">Raise a plan question</p>
       <p className="text-xs text-muted">A question raised on the project’s plan — asked, not guessed. Somebody answers it on the Plan tab and the plan cannot activate until they do.</p>
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="planId" value={picked?.planId ?? ''} />

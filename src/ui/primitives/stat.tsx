@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { cx, TONE_CHIP, TONE_TEXT, type Tone } from '../tokens';
+import { cx, TONE_CHIP, type Tone } from '../tokens';
 import { Badge } from './badge';
 
 /**
@@ -25,6 +25,8 @@ export function Stat({
   trend,
   href,
   className,
+  compact = false,
+  ring,
 }: {
   label: React.ReactNode;
   value: React.ReactNode;
@@ -39,34 +41,19 @@ export function Stat({
    */
   trend?: { direction: 'up' | 'down'; label: React.ReactNode; tone?: 'success' | 'danger' };
   href?: string;
+  /** A small progress ring at the tile's right edge (the design dashboard's 88%): a share of something real, 0 to 100. */
+  ring?: { percent: number; label: string };
   className?: string;
+  /** Narrower chip and padding for a six-across KPI row (the project overview). */
+  compact?: boolean;
 }) {
   const trendTone = trend ? (trend.tone ?? (trend.direction === 'up' ? 'success' : 'danger')) : undefined;
 
-  const body = (
+  const figure = (
     <>
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</p>
-        {icon ? (
-          <span
-            className={cx(
-              'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
-              TONE_CHIP[tone],
-            )}
-          >
-            {icon}
-          </span>
-        ) : null}
-      </div>
-      <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <p
-          className={cx(
-            'tabular text-2xl font-semibold leading-none tracking-tight sm:text-[28px]',
-            tone === 'neutral' ? 'text-foreground' : TONE_TEXT[tone],
-          )}
-        >
-          {value}
-        </p>
+      <p className="text-[12.5px] font-medium leading-tight tracking-tight text-muted sm:text-[13px]">{label}</p>
+      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <p className="tabular max-w-full break-words text-[22px] font-bold leading-none tracking-tight text-foreground sm:whitespace-nowrap sm:text-xl">{value}</p>
         {trend && trendTone ? (
           <Badge tone={trendTone} className="gap-1">
             <span aria-hidden>{trend.direction === 'up' ? '↑' : '↓'}</span>
@@ -74,19 +61,40 @@ export function Stat({
           </Badge>
         ) : null}
       </div>
-      {caption ? <p className="mt-1.5 text-xs leading-relaxed text-muted">{caption}</p> : null}
+      {caption ? <p className="mt-1.5 text-xs leading-snug text-muted">{caption}</p> : null}
     </>
   );
 
+  // The reference's tile: a soft icon chip on the left, the label, the number
+  // (with its delta) and the caption stacked to its right.
+  const body = icon ? (
+    <div className="flex items-center gap-2.5 sm:gap-3">
+      <span
+        className={cx(
+          'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl [&>svg]:h-5 [&>svg]:w-5',
+          compact ? 'sm:h-11 sm:w-11' : 'sm:h-11 sm:w-11 sm:rounded-xl sm:[&>svg]:h-5 sm:[&>svg]:w-5',
+          TONE_CHIP[tone],
+        )}
+      >
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1">{figure}</div>
+      {ring ? <ProgressRing percent={ring.percent} label={ring.label} tone={tone} /> : null}
+    </div>
+  ) : (
+    figure
+  );
+
   const skin =
-    'rounded-xl border border-line bg-surface p-4 shadow-xs transition-colors sm:p-5';
+    'rounded-xl border border-line bg-surface p-4 shadow-xs transition-colors';
+  const pad = compact ? 'sm:p-3.5' : 'sm:p-4';
 
   return href ? (
-    <Link href={href} className={cx(skin, 'block hover:bg-surface-hover', className)}>
+    <Link href={href} className={cx(skin, pad, 'block hover:bg-surface-hover', className)}>
       {body}
     </Link>
   ) : (
-    <div className={cx(skin, className)}>{body}</div>
+    <div className={cx(skin, pad, className)}>{body}</div>
   );
 }
 
@@ -121,3 +129,29 @@ export function StatGrid({
     <div className={cx('grid grid-cols-2 gap-3', DESKTOP_COLS[cols], className)}>{children}</div>
   );
 }
+
+/** A donut ring with its percentage in the middle; `label` names what the percentage is of, for assistive tech. */
+function ProgressRing({ percent, label, tone }: { percent: number; label: string; tone: Tone }) {
+  const value = Math.max(0, Math.min(100, Math.round(percent)));
+  const r = 16;
+  const c = 2 * Math.PI * r;
+  return (
+    <span role="img" aria-label={`${value}% ${label}`} className={cx('relative hidden h-10 w-10 shrink-0 items-center justify-center 2xl:flex', TONE_TEXT_RING[tone])}>
+      <svg viewBox="0 0 40 40" className="absolute inset-0 -rotate-90" aria-hidden>
+        <circle cx="20" cy="20" r={r} fill="none" strokeWidth="4" className="stroke-line" />
+        <circle cx="20" cy="20" r={r} fill="none" strokeWidth="4" strokeLinecap="round" stroke="currentColor" strokeDasharray={c} strokeDashoffset={c * (1 - value / 100)} />
+      </svg>
+      <span className="tabular text-[9px] font-semibold text-foreground">{value}%</span>
+    </span>
+  );
+}
+
+const TONE_TEXT_RING: Record<Tone, string> = {
+  neutral: 'text-muted',
+  brand: 'text-brand',
+  accent: 'text-accent',
+  success: 'text-success',
+  warning: 'text-warning',
+  danger: 'text-danger',
+  info: 'text-info',
+};

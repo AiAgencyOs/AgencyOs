@@ -8,6 +8,7 @@ import { sendClientDocument, sendClientMessage } from '@/modules/crm/service';
 
 import { invoicePdfForInvoice } from './pdf-service';
 import { listPaymentAccounts } from './queries';
+import { verifiedOn } from './verified-basis';
 import { PAYMENT_ACCOUNT_FIELDS, type PaymentAccountKind } from './schema';
 import { invoiceMessage, sendInvoiceWhatsAppSchema, type SendInvoiceWhatsAppInput } from './whatsapp-send-schema';
 
@@ -60,7 +61,7 @@ export async function sendInvoiceWhatsApp(
   const { data: invoice, error: invoiceError } = await supabase
     .schema('finance')
     .from('invoices')
-    .select('id, number, status, currency, total_minor, paid_minor, due_at, client_account_id, project_id')
+    .select('id, number, status, currency, total_minor, paid_minor, verified_minor, due_at, client_account_id, project_id')
     .eq('id', parsed.data.invoiceId)
     .maybeSingle();
   if (invoiceError) {
@@ -108,7 +109,8 @@ export async function sendInvoiceWhatsApp(
     invoiceNumber: invoice.number,
     currency: invoice.currency,
     totalMinor: invoice.total_minor,
-    paidMinor: invoice.paid_minor,
+    // Owner decision 8 (2026-10-01): verified payments only.
+    paidMinor: verifiedOn(invoice),
     dueAt: invoice.due_at,
     timeZone: org.timezone ?? 'UTC',
     projectName: project.data?.name ?? null,

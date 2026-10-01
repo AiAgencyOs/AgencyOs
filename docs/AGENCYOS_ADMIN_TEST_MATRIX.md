@@ -530,6 +530,26 @@ routing, tool and usage pages, operations, overrides, incidents, settings,
 campaigns) answer the member with the permission-denied card and no data.
 Not done: a screen-reader pass through a harness (matrix §11, item 2).
 
+### 9l. Screen-reader pass (2026-09-30)
+
+axe-core (WCAG 2.0, 2.1 and 2.2, levels A and AA) plus the accessibility tree
+— headings, landmarks, accessible names, alt text, table headers, duplicate
+ids, tab order — were run over the 33 routes bucket F and G touched, as the
+owner at desktop width. It is not NVDA or VoiceOver, which cannot run in this
+environment; it is what those read from. First pass: five axe rule families
+(about ninety elements): 103 `<label>`s beside their control rather than tied
+to it, six selects with no name, `aria-pressed` on links, a sideways scroller
+and a table frame a keyboard could not reach, colour contrast on 31 routes
+(initials whose colours were decided by stylesheet order, pipeline labels
+faded by opacity), plus duplicate ids on the lead page, a second h1 on the
+builds page and a skipped heading level on the QA tab. All fixed at the root
+(an AST codemod for the labels; Avatar variants; PageHeader `as`; focusable
+named scroll frames; `useId` in the two repeated forms) and pinned by
+`tests/every-control-has-a-name-a-screen-reader-can-read.test.ts`, which
+parses every screen's syntax tree. Last pass: no axe violations. Advisory, not
+fixed: about six inputs are named only by their placeholder. Still not done: a
+pass with a real screen reader.
+
 ## 10. Regression
 
 Unit: the failure set is byte-identical before and after (Node 22, 52
@@ -542,5 +562,5 @@ transitions need their own seeded fixtures and were not driven.
 ## 11. Open items, in priority order
 
 1. Nothing element-level remains in `AGENCYOS_ADMIN_PDF_ELEMENT_AUDIT.md`: buckets F and G closed every PARTIAL, MISSING and DECLINED row (979 of 979 built, the shared rules all built).
-2. A screen-reader pass through the harness (axe is done: 10/10 screens clean).
+2. A pass with a real screen reader (NVDA or VoiceOver); the axe and accessibility-tree pass is done (§9l).
 3. `roadmap.json`'s test counts are CI's Node 26 figures (7058 / 1476 / 7058) and `check:record` is green in CI.

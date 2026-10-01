@@ -1,6 +1,5 @@
 import 'server-only';
 
-import { recordAudit } from '@/lib/audit';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
@@ -19,6 +18,10 @@ import {
  * decide again. Creating is an insert with a named audit row; publishing
  * and archiving go through `crm.set_announcement_status`, which stamps the
  * moment and audits inside the transaction. Nothing here sends anything.
+ *
+ * Drafting goes through `crm.create_announcement` (20261006500200), which
+ * checks the project belongs to the organization, takes the client from the
+ * project, and audits `announcement.drafted`.
  */
 export async function createAnnouncement(input: CreateAnnouncementInput): Promise<Result<{ announcementId: string }>> {
   const parsed = createAnnouncementSchema.safeParse(input);
@@ -29,33 +32,40 @@ export async function createAnnouncement(input: CreateAnnouncementInput): Promis
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .schema('crm')
-    .from('announcements')
-    .insert({
-      organization_id: context.organizationId,
-      title: parsed.data.title,
-      body: parsed.data.body,
-      audience: parsed.data.audience,
-      created_by: context.userId,
-    })
-    .select('id')
-    .maybeSingle();
+  const { data, error } = await supabase.schema('crm').rpc('create_announcement', {
+    p_title: parsed.data.title,
+    p_body: parsed.data.body,
+    p_audience: parsed.data.audience,
+    ...(parsed.data.projectId ? { p_project_id: parsed.data.projectId } : {}),
+    ...(parsed.data.clientAccountId ? { p_client_account_id: parsed.data.clientAccountId } : {}),
+    ...(parsed.data.templateId ? { p_template_id: parsed.data.templateId } : {}),
+  });
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'createAnnouncement', detail: error.message }));
     return err('INTERNAL', 'Could not save the announcement.');
   }
-  if (!data) return err('FORBIDDEN', 'The database refused the announcement.');
 
-  await recordAudit({
-    organizationId: context.organizationId,
-    action: 'announcement.drafted',
-    subjectType: 'announcement',
-    subjectId: data.id,
-    after: { title: parsed.data.title, audience: parsed.data.audience },
-  });
-
-  return ok({ announcementId: data.id });
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; id?: string | null } | undefined;
+  switch (row?.outcome) {
+    case 'drafted':
+      return row.id ? ok({ announcementId: row.id }) : err('INTERNAL', 'Could not save the announcement.');
+    case 'project_not_found':
+      return err('NOT_FOUND', 'That project is not in this organization.');
+    case 'client_not_found':
+      return err('NOT_FOUND', 'That client is not in this organization.');
+    case 'client_not_on_project':
+      return err('VALIDATION', 'That project belongs to a different client. Name the project alone and its client follows.');
+    case 'template_not_found':
+      return err('NOT_FOUND', 'That template is not in this organization.');
+    case 'bad_title':
+      return err('VALIDATION', 'A title is 1 to 160 characters.');
+    case 'bad_body':
+      return err('VALIDATION', 'A body is 1 to 5000 characters.');
+    case 'forbidden':
+      return err('FORBIDDEN', 'The database refused: owner only.');
+    default:
+      return err('INTERNAL', `The database refused the announcement (${row?.outcome ?? 'no answer'}).`);
+  }
 }
 
 export async function setAnnouncementStatus(input: SetAnnouncementStatusInput): Promise<Result<{ status: string }>> {

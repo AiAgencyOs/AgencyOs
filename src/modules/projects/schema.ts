@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { decoderSafeSchema } from '@/lib/ai/schema';
+import { PROJECT_ROLES } from './project-members-schema';
 
 /** Same vocabulary as the projects.projects status CHECK (migration 013). */
 export const PROJECT_STATUSES = [
@@ -361,6 +362,7 @@ export const PROJECT_FILE_CATEGORIES = [
   'deployment',
   'marketing',
   'documents',
+  'meetings',
   'assets',
   'builds',
   'other',
@@ -1104,7 +1106,7 @@ export const MODULE_STATUSES = [
   'not_started', 'planned', 'in_progress', 'code_review', 'qa', 'ready_for_client', 'approved',
 ] as const;
 export const FEATURE_STATUSES = ['not_started', 'in_progress', 'blocked', 'done'] as const;
-export const TASK_STATUSES = ['todo', 'in_progress', 'blocked', 'in_review', 'done'] as const;
+export const TASK_STATUSES = ['todo', 'in_progress', 'blocked', 'in_review', 'done', 'cancelled'] as const;
 
 export const createModuleSchema = z.object({
   projectId: z.uuid(),
@@ -1127,15 +1129,25 @@ export const createTaskSchema = z.object({
   description: z.string().trim().max(4000).optional(),
   // SCR-022: a task created from a calendar day carries that day.
   dueOn: z.iso.date().optional(),
+  /** The person the task is for; omitted, it goes to the project's default assignee. */
+  assigneeId: z.uuid().optional(),
+  /** Q-B4: the project role the task is for; with nobody named it goes to that role's default assignee. */
+  assigneeRole: z.enum(PROJECT_ROLES).optional(),
 });
 
 export const setModuleStatusSchema = z.object({ moduleId: z.uuid(), status: z.enum(MODULE_STATUSES) });
 export const setFeatureStatusSchema = z.object({ featureId: z.uuid(), status: z.enum(FEATURE_STATUSES) });
+export const setTaskArchivedSchema = z.object({ taskId: z.uuid(), archived: z.boolean() });
+export type SetTaskArchivedInput = z.infer<typeof setTaskArchivedSchema>;
 export const setTaskStatusSchema = z.object({
   taskId: z.uuid(),
   status: z.enum(TASK_STATUSES),
   /** Why the task is blocked — SCR-020/021. The service requires it when status is `blocked`. */
   reason: z.string().trim().max(1000).optional(),
+  /** SCR-020: what kind of blocker, who must act, and the next action. Required with `blocked` (task-blocker.ts). */
+  blockerType: z.string().trim().max(40).optional(),
+  blockerOwner: z.string().trim().max(120).optional(),
+  nextAction: z.string().trim().max(500).optional(),
 });
 
 export type CreateModuleInput = z.infer<typeof createModuleSchema>;
@@ -1186,9 +1198,11 @@ export const updateTaskSchema = z.object({
   description: z.string().trim().max(4000).nullable(),
   priority: z.enum(['p0', 'p1', 'p2', 'p3']),
   assigneeId: z.uuid().nullable(),
+  /** The day work is planned to begin (migration 20261004100000); never after the due date. */
+  startOn: z.iso.date().nullable().default(null),
   dueOn: z.iso.date().nullable(),
   estimateHours: z.number().nonnegative().max(10_000).nullable(),
-});
+}).refine((v) => !v.startOn || !v.dueOn || v.startOn <= v.dueOn, { message: 'The start date cannot be after the due date.', path: ['startOn'] });
 export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
 
 /** The project's own facts — name, description, dates and budget. Status is its own door. */

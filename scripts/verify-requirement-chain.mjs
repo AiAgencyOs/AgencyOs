@@ -234,6 +234,11 @@ try {
     check(afterTasks.length === 3, 'and the plan is still three tasks', `${afterTasks.length}`);
 
     // ── 7. coverage ───────────────────────────────────────────────────────
+    // Q-B1: a task reaches Completed only from In review.
+    const webhook = one(await rest('GET', 'projects', `tasks?project_id=eq.${e.projectId}&title=eq.Webhook&select=id,organization_id`));
+    await rest('PATCH', 'projects', `tasks?id=eq.${webhook.id}`, { status: 'in_progress' });
+    await rest('POST', 'projects', 'task_evidence', { organization_id: webhook.organization_id, task_id: webhook.id, kind: 'test', title: 'verifier evidence', note: 'ran' });
+    await rest('PATCH', 'projects', `tasks?id=eq.${webhook.id}`, { status: 'in_review' });
     await rest('PATCH', 'projects', `tasks?project_id=eq.${e.projectId}&title=eq.Webhook`, {
       status: 'done',
       completed_at: new Date().toISOString(),

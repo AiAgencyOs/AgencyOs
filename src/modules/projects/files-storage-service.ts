@@ -8,6 +8,7 @@ import { createClient } from '@/lib/db/server';
 import { filesBucket, MAX_UPLOAD_BYTES, objectPath, probeStorage, SIGNED_URL_SECONDS } from '@/lib/files/storage';
 import { err, ok, type Result } from '@/lib/result';
 
+import { fileCredentialProblem, SCAN_BYTES, SCANNABLE_TEXT } from './file-secrets-guard';
 import {
   createFileShareSchema,
   restoreProjectFileSchema,
@@ -54,6 +55,10 @@ export async function uploadProjectFile(
   const context = await requireInternal();
   if (!can(context, 'project.write')) return refused('upload a file');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+  // SCR-024: a credential is not a project file — by its name, its words and, for a small text file, what is inside it.
+  const text = SCANNABLE_TEXT.test(file.name) || file.type.startsWith('text/') ? await file.slice(0, SCAN_BYTES).text() : null;
+  const credential = fileCredentialProblem({ title: parsed.data.title, description: parsed.data.description, fileName: file.name, text });
+  if (credential) return err('VALIDATION', credential);
 
   const supabase = await createClient();
   const storage = await probeStorage(supabase, context.organizationId);

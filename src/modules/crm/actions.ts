@@ -216,6 +216,7 @@ export async function mergeLeadsAction(_prev: FormState, formData: FormData): Pr
 
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidateLead(formData);
+  revalidatePath('/leads');
   return { status: 'success', message: 'The duplicate lead was merged into this one.' };
 }
 

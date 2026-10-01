@@ -1,3 +1,5 @@
+import { ContractsTable } from '../../contracts/contracts-list';
+import { listContracts } from '@/modules/sales/contract-service';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -11,6 +13,8 @@ import { listClientUploads } from '@/lib/admin/client-uploads';
 import { readClientCommercialTimeline, type CommercialEvent } from '@/lib/admin/client-commercials';
 import { listClientMeetingNotes, readClientUnreadReplies } from '@/lib/admin/client-communication';
 import { listClientLeadThreads } from '@/lib/admin/client-threads';
+import { collaborationFeed, lastAnnouncement, meetingSignals } from '@/modules/crm/client-collaboration';
+import { maintenanceSentence, summariseCommercials } from '@/modules/sales/client-commercial-summary';
 import { readClientNextFollowUp } from '@/lib/admin/client-followups';
 import { listClientLeads, listClientOpportunities } from '@/lib/admin/client-leads';
 import { getClient } from '@/lib/admin/clients';
@@ -37,7 +41,9 @@ import {
   IconAlert,
   IconCalendar,
   IconCheck,
+  IconActivity,
   IconClock,
+  IconEdit,
   IconFile,
   IconInbox,
   IconInvoices,
@@ -45,6 +51,8 @@ import {
   IconMessage,
   IconPlus,
   IconProjects,
+  IconRefresh,
+  IconSettings,
   IconUser,
   PermissionDenied,
   ProgressBar,
@@ -55,6 +63,7 @@ import {
   type ActivityItem,
   type Column,
   type Tone,
+  RowActionsMenu,
 } from '@/ui';
 
 import { TrailLabel } from '../../trail-label';
@@ -74,6 +83,18 @@ type Tab = (typeof TABS)[number];
 function tabOf(value: string | undefined): Tab {
   return (TABS as readonly string[]).includes(value ?? '') ? (value as Tab) : 'overview';
 }
+
+const TAB_ICON: Record<Tab, React.ReactNode> = {
+  overview: <IconClock size={14} />,
+  projects: <IconProjects size={14} />,
+  quotations: <IconLeads size={14} />,
+  invoices: <IconInvoices size={14} />,
+  communication: <IconMessage size={14} />,
+  files: <IconFile size={14} />,
+  notes: <IconEdit size={14} />,
+  activity: <IconActivity size={14} />,
+  settings: <IconSettings size={14} />,
+};
 
 const EVENT_TONE: Record<CommercialEvent['kind'], Tone> = { quotation: 'info', milestone: 'brand', invoice: 'warning', payment: 'success' };
 const EVENT_ICON: Record<CommercialEvent['kind'], React.ReactNode> = {
@@ -161,12 +182,15 @@ export default async function ClientDetailPage({
     listEligibleMilestones(projectIds),
     listClientOpportunities(clientId),
   ]);
+  // Decision 10: the contracts on this client's won deals, shown beside its quotations.
+  const clientContracts = tab === 'quotations' ? await listContracts({ clientAccountId: clientId }) : [];
   const mayInvoice = can(context, 'invoice.create');
   const mayEditClient = can(context, 'project.write');
   // SCR-014 (owner select) and SCR-017 (announcements addressed to clients).
   const [roster, clientAnnouncements] = await Promise.all([
     mayEditClient ? listInternalRoster() : Promise.resolve([]),
-    listAnnouncements({ audience: 'clients', status: 'published', limit: 10 }),
+    // SCR-059: what is recorded against THIS client (or a project of theirs), plus the agency-wide ones — never another client's.
+    listAnnouncements({ audience: 'clients', status: 'published', limit: 10, clientAccountId: clientId }),
   ]);
   const rosterOptions = roster.map((m) => ({ userId: m.userId, fullName: m.fullName || m.email }));
   // SCR-015/016/017 (bucket F-B): the identity the edit door writes, the
@@ -191,6 +215,18 @@ export default async function ClientDetailPage({
   const tabHref = (t: Tab) => (t === 'overview' ? base : `${base}?tab=${t}`);
   const invoiceTarget = eligible.find((e) => e.eligible)?.projectId ?? null;
   const commercialFeed = commercialItems(commercialEvents, clock);
+  const newestAnnouncement = lastAnnouncement(clientAnnouncements);
+  const commercialSummary = summariseCommercials(client.commercials, client.currency, new Date().toISOString().slice(0, 10));
+  const maintenanceLine = maintenanceSentence(commercialSummary.maintenance);
+  const signals = meetingSignals(meetingNotes);
+  const collaboration = collaborationFeed({
+    clientName: client.name,
+    announcements: clientAnnouncements,
+    uploads,
+    meetingNotes,
+    internalNotes: client.notes,
+    unread: unread.threads,
+  });
   const followUpOverdue = nextFollowUp !== null && nextFollowUp.at < new Date().toISOString();
 
   const canWriteNotes = can(context, 'project.write');
@@ -209,7 +245,7 @@ export default async function ClientDetailPage({
       primary: true,
       cell: (p) => (
         <span className="flex items-center gap-2.5">
-          <Avatar name={p.name} size="sm" square tone="neutral" className="bg-sidebar-bg text-sidebar-fg ring-0" />
+          <Avatar name={p.name} size="sm" square tone="sidebar" />
           <span className="truncate">{p.name}</span>
         </span>
       ),
@@ -222,6 +258,10 @@ export default async function ClientDetailPage({
       cellClassName: 'tabular',
       cell: (p) => (p.budgetMinor === null ? '—' : money(p.budgetMinor, p.currency)),
     },
+    // SCR-016 "Open project finance" — the project's own finance view.
+    ...(canSeeMoney
+      ? ([{ key: 'finance', header: 'Finance', align: 'right', desktopOnly: true, cell: (p: ProjectRow) => <Link href={`/projects/${p.id}/finance`} className="text-xs font-medium text-brand hover:underline">Open finance</Link> }] as Column<ProjectRow>[])
+      : []),
   ];
 
   type InvoiceRow = (typeof client.invoices)[number];
@@ -246,43 +286,18 @@ export default async function ClientDetailPage({
     .slice(0, 6)
     .map(({ at, ...rest }) => ({ ...rest, when: clock.date(at) }));
 
-  return (
-    <div className="flex flex-col gap-5">
-      <TrailLabel name={client.name} />
-      <EntityHeader
-        name={client.name}
-        tile={<Avatar name={client.name} size="xl" />}
-        status={<Badge tone={client.status === 'active' ? 'success' : 'neutral'} dot>{humanize(client.status)} client</Badge>}
-        subtitle={`Client since ${clock.date(client.createdAt)}`}
-        facts={[
-          ...(client.billingEmail ? [{ label: 'Billing email', value: client.billingEmail, icon: <IconInbox size={14} /> }] : []),
-          { label: 'Currency', value: client.currency, icon: <IconInvoices size={14} /> },
-          { label: 'Projects', value: `${client.projectsActive} active · ${client.projectsTotal} total`, icon: <IconProjects size={14} /> },
-        ]}
-        actions={
-          <>
-            <Link href="/clients" className={buttonClass('secondary', 'sm')}>
-              All clients
-            </Link>
-            {canWriteNotes ? (
-              <Link href={`${base}?tab=notes#notes`} className={buttonClass('secondary', 'sm')}>
-                <IconPlus size={14} />
-                Add note
-              </Link>
-            ) : null}
-            {can(context, 'project.write') ? (
-              <ClientCreateButtons
-                clientAccountId={client.id}
-                opportunityId={opportunities.open?.id ?? null}
-                invoiceHref={invoiceTarget ? `/projects/${invoiceTarget}#billing` : `${base}?tab=invoices`}
-              />
-            ) : null}
-            {mayMessage ? <ClientMeetingForm leads={leadOptions} agencyZone={agencyZone} /> : null}
-          </>
-        }
-      />
+  // Deal Timeline: the milestones of the relationship that are on record, oldest first, with the
+  // next follow-up (if any) as the open step at the end. Every entry is a stored row's date.
+  const dealTimeline: { key: string; at: string; title: string; done: boolean }[] = [
+    ...leads.map((l) => ({ key: `lead-${l.id}`, at: l.createdAt, title: 'Lead created', done: true })),
+    ...client.meetings.filter((m) => m.startAt).map((m) => ({ key: `meeting-${m.id}`, at: m.startAt as string, title: m.status === 'completed' || m.status === 'held' ? 'Meeting held' : `Meeting ${humanize(m.status).toLowerCase()}`, done: m.status === 'completed' || m.status === 'held' })),
+    ...client.quotations.map((qn) => ({ key: `q-${qn.id}`, at: qn.createdAt, title: `Quotation v${qn.version} ${humanize(qn.status).toLowerCase()}`, done: true })),
+    { key: 'client', at: client.createdAt, title: 'Client account created', done: true },
+    ...(nextFollowUp ? [{ key: 'next', at: nextFollowUp.at, title: 'Next follow-up', done: false }] : []),
+  ].sort((a, b) => a.at.localeCompare(b.at));
 
-      <StatGrid>
+  const workTiles = (
+    <StatGrid>
         <Stat
           label="Next follow-up"
           value={nextFollowUp ? clock.date(nextFollowUp.at) : '—'}
@@ -322,20 +337,69 @@ export default async function ClientDetailPage({
           href={tabHref('notes')}
         />
       </StatGrid>
+  );
 
-      <div role="tablist" aria-label="Client sections" className="rounded-xl border border-line bg-surface shadow-xs">
+  return (
+    <div className="flex flex-col gap-5">
+      <TrailLabel name={client.name} />
+      <EntityHeader
+        name={client.name}
+        tile={<Avatar name={client.name} size="xl" />}
+        status={<Badge tone={client.status === 'active' ? 'success' : 'neutral'} dot>{humanize(client.status)} client</Badge>}
+        subtitle={`Client since ${clock.date(client.createdAt)}`}
+        facts={[
+          ...(client.billingEmail ? [{ label: 'Billing email', value: client.billingEmail, icon: <IconInbox size={14} /> }] : []),
+          { label: 'Currency', value: client.currency, icon: <IconInvoices size={14} /> },
+          { label: 'Projects', value: `${client.projectsActive} active · ${client.projectsTotal} total`, icon: <IconProjects size={14} /> },
+        ]}
+        actions={
+          <>
+            <Link href="/clients" className={buttonClass('secondary', 'sm')}>
+              All clients
+            </Link>
+            {canWriteNotes ? (
+              <Link href={`${base}?tab=notes#notes`} className={buttonClass('secondary', 'sm')}>
+                <IconPlus size={14} />
+                Add note
+              </Link>
+            ) : null}
+            {can(context, 'project.write') ? (
+              <ClientCreateButtons
+                clientAccountId={client.id}
+                opportunityId={opportunities.open?.id ?? null}
+                invoiceHref={invoiceTarget ? `/projects/${invoiceTarget}#billing` : `${base}?tab=invoices`}
+              />
+            ) : null}
+            {mayMessage ? <ClientMeetingForm leads={leadOptions} agencyZone={agencyZone} /> : null}
+            {/* The context header's overflow: the rest of this client's record. */}
+            <RowActionsMenu
+              label="More actions for this client"
+              actions={[
+                { key: 'communication', label: 'Communication', href: tabHref('communication') },
+                { key: 'files', label: 'Files', href: tabHref('files') },
+                { key: 'activity', label: 'Activity', href: tabHref('activity') },
+                { key: 'settings', label: 'Settings and billing details', href: tabHref('settings') },
+                { key: 'search', label: 'Find related records', href: `/search?q=${encodeURIComponent(client.name)}` },
+              ]}
+            />
+          </>
+        }
+      />
+
+
+      <nav aria-label="Client sections" className="rounded-xl border border-line bg-surface shadow-xs">
         <ul className="scrollbar-none flex overflow-x-auto px-2">
           {TABS.map((t) => (
             <li key={t} className="shrink-0">
               <Link
                 href={tabHref(t)}
-                role="tab"
-                aria-selected={t === tab}
+                aria-current={t === tab ? 'page' : undefined}
                 className={cx(
                   'relative flex h-11 items-center gap-2 px-3.5 text-[13px] font-medium transition-colors',
                   t === tab ? 'text-brand' : 'text-muted hover:text-foreground',
                 )}
               >
+                <span className="shrink-0">{TAB_ICON[t]}</span>
                 {humanize(t)}
                 {t === 'communication' && unread.total > 0 ? <Badge tone="warning">{unread.total}</Badge> : null}
                 {t === tab ? <span aria-hidden className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-brand" /> : null}
@@ -343,7 +407,9 @@ export default async function ClientDetailPage({
             </li>
           ))}
         </ul>
-      </div>
+      </nav>
+
+      {tab !== 'overview' && tab !== 'communication' ? workTiles : null}
 
       {tab === 'settings' ? (
         <div className="grid gap-4 xl:grid-cols-2">
@@ -351,12 +417,13 @@ export default async function ClientDetailPage({
           <Card>
             <CardHeader title="Billing details" description="Name, legal name, GSTIN, PAN and billing address — the account's identity on every document. The GSTIN's checksum is verified; a pass is not a registration. Audited." />
             <div className="px-4 pb-4 sm:px-5">
-              {mayEditClient && identity ? <ClientEditForm client={identity} /> : (
+              {mayEditClient && canSeeMoney && identity ? <ClientEditForm client={identity} /> : (
                 <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[13px]">
                   <dt className="text-muted">Legal name</dt><dd>{client.legalName ?? '—'}</dd>
-                  <dt className="text-muted">GSTIN</dt><dd className="font-mono">{client.gstin ?? '—'}</dd>
-                  <dt className="text-muted">PAN</dt><dd className="font-mono">{client.pan ?? '—'}</dd>
-                  <dt className="text-muted">Billing address</dt><dd className="whitespace-pre-wrap">{client.billingAddress ?? '—'}</dd>
+                  {/* SCR-015: GST/PAN and billing data need the finance capability, not just the right to see the client. */}
+                  <dt className="text-muted">GSTIN</dt><dd className="font-mono">{canSeeMoney ? (client.gstin ?? '—') : 'Restricted'}</dd>
+                  <dt className="text-muted">PAN</dt><dd className="font-mono">{canSeeMoney ? (client.pan ?? '—') : 'Restricted'}</dd>
+                  <dt className="text-muted">Billing address</dt><dd className="whitespace-pre-wrap">{canSeeMoney ? (client.billingAddress ?? '—') : 'Restricted'}</dd>
                 </dl>
               )}
             </div>
@@ -398,6 +465,31 @@ export default async function ClientDetailPage({
           {(['planning', 'active', 'on_hold', 'completed', 'cancelled'] as const).map((st) => (
             <Stat key={st} label={humanize(st)} value={String(byStatus[st] ?? 0)} tone={st === 'completed' ? 'success' : st === 'active' ? 'brand' : st === 'on_hold' ? 'warning' : 'neutral'} icon={<IconProjects size={16} />} href={`/projects?status=${st}&client=${client.id}`} />
           ))}
+        </StatGrid>
+        {/* SCR-016's other header figures: accepted quote value, paid against outstanding, maintenance and renewal. */}
+        <StatGrid>
+          <Stat
+            label="Accepted quote value"
+            value={money(commercialSummary.acceptedQuoteMinor, client.currency)}
+            caption={
+              commercialSummary.cited === 0
+                ? 'No project cites an accepted quotation'
+                : `${commercialSummary.cited} of ${commercialSummary.projects} project${commercialSummary.projects === 1 ? '' : 's'} cite one${commercialSummary.otherCurrency > 0 ? ` · ${commercialSummary.otherCurrency} in another currency, not added` : ''}`
+            }
+            tone="brand"
+            icon={<IconInvoices size={16} />}
+          />
+          {canSeeMoney ? (
+            <Stat
+              label="Paid vs outstanding"
+              value={<span className="text-lg">{money(client.paidMinor, client.currency)} <span className="text-muted">/ {money(client.outstandingMinor, client.currency)}</span></span>}
+              caption={`Verified payments against ${money(client.invoicedMinor, client.currency)} invoiced`}
+              tone={client.outstandingMinor > 0 ? 'warning' : 'success'}
+              icon={<IconCheck size={16} />}
+              href={tabHref('invoices')}
+            />
+          ) : null}
+          <Stat label="Maintenance and renewal" value={maintenanceLine.value} caption={maintenanceLine.caption} tone={commercialSummary.maintenance.lapsed > 0 ? 'warning' : 'neutral'} icon={<IconRefresh size={16} />} />
         </StatGrid>
         <Card>
           <CardHeader title="Client projects" description={`${client.projectsActive} active of ${client.projectsTotal}.`} actions={<ViewAll href="/projects" />} />
@@ -471,6 +563,7 @@ export default async function ClientDetailPage({
       ) : null}
 
       {tab === 'quotations' ? (
+        <>
         <Card>
           <CardHeader title="Quotations" description="Every quotation raised on this client's deals, newest first." actions={<ViewAll href="/quotations" />} />
           {client.quotations.length === 0 ? (
@@ -497,6 +590,15 @@ export default async function ClientDetailPage({
             </ul>
           )}
         </Card>
+        <Card>
+          <CardHeader title="Contracts" description="The contract recorded on each of this client's won deals: the file, who signed it and when." actions={<ViewAll href="/contracts" />} />
+          {clientContracts.length === 0 ? (
+            <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No contract has been recorded on this client's won deals.</p>
+          ) : (
+            <ContractsTable rows={clientContracts} clock={clock} mayWrite={false} showClient={false} />
+          )}
+        </Card>
+        </>
       ) : null}
 
       {tab === 'invoices' ? (
@@ -552,6 +654,38 @@ export default async function ClientDetailPage({
 
       {tab === 'communication' ? (
         <>
+          {/* SCR-017's header: unread replies, the last announcement, recent uploads, meeting decisions and open questions. */}
+          <StatGrid cols={4}>
+            <Stat
+              label="Unread client replies"
+              value={String(unread.total)}
+              caption={unread.total > 0 ? `${unread.threads.length} thread${unread.threads.length === 1 ? '' : 's'} waiting` : 'Every message answered'}
+              tone={unread.total > 0 ? 'warning' : 'success'}
+              icon={<IconMessage size={16} />}
+            />
+            <Stat
+              label="Last announcement"
+              value={<span className="text-lg">{newestAnnouncement?.publishedAt ? clock.date(newestAnnouncement.publishedAt) : '—'}</span>}
+              caption={newestAnnouncement ? newestAnnouncement.title : 'None published for this client'}
+              tone="info"
+              icon={<IconInbox size={16} />}
+            />
+            <Stat
+              label="Recent uploads"
+              value={String(uploads.length)}
+              caption={uploads[0] ? `Newest ${clock.date(uploads[0].uploadedAt)} · ${uploads[0].title}` : 'Nothing uploaded on its projects'}
+              tone="accent"
+              icon={<IconFile size={16} />}
+            />
+            <Stat
+              label="Meeting decisions / open questions"
+              value={`${signals.decisions} / ${signals.openQuestions}`}
+              caption={signals.analysed > 0 ? `Proposed by ${signals.analysed} analysed meeting${signals.analysed === 1 ? '' : 's'}; not agreed until a person says so` : `${signals.notes} meeting note${signals.notes === 1 ? '' : 's'}, none analysed yet`}
+              tone={signals.openQuestions > 0 ? 'warning' : 'neutral'}
+              icon={<IconCalendar size={16} />}
+              href={tabHref('notes')}
+            />
+          </StatGrid>
           <Card>
             <CardHeader title="Unread client replies" description="Inbound messages after the last outbound one on each thread — replies nobody has answered." />
             {unread.threads.length > 0 ? (
@@ -576,7 +710,10 @@ export default async function ClientDetailPage({
               <ul className="divide-y divide-line">
                 {clientAnnouncements.map((a) => (
                   <li key={a.id} className="flex flex-col gap-0.5 px-4 py-2.5 text-[13px] sm:px-5">
-                    <span className="font-medium text-foreground">{a.title}</span>
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-foreground">{a.title}</span>
+                      {a.projectName ? <Badge tone="brand">Project: {a.projectName}</Badge> : a.clientName ? <Badge tone="neutral">For this client</Badge> : <Badge tone="neutral">Agency-wide</Badge>}
+                    </span>
                     <span className="whitespace-pre-wrap text-muted">{a.body}</span>
                     <span className="text-xs text-faint">Published {a.publishedAt ? clock.dateTime(a.publishedAt) : '—'}</span>
                   </li>
@@ -659,12 +796,36 @@ export default async function ClientDetailPage({
       ) : null}
 
       {tab === 'activity' ? (
-        <ActivityFeed
-          title="Commercial timeline"
-          items={commercialFeed}
-          emptyTitle="No commercial history yet"
-          emptyDescription="An accepted quotation, a payment milestone, an invoice or a payment will appear here as each happens."
-        />
+        <>
+          <ActivityFeed
+            title="Commercial timeline"
+            items={commercialFeed}
+            emptyTitle="No commercial history yet"
+            emptyDescription="An accepted quotation, a payment milestone, an invoice or a payment will appear here as each happens."
+          />
+          {/* SCR-017 "Activity": every collaboration record with its author, time, source and linkage. */}
+          <ActivityFeed
+            title="Collaboration activity"
+            items={collaboration.map((e) => ({
+              id: e.key,
+              title: e.title,
+              detail: (
+                <span className="flex flex-col gap-0.5">
+                  {e.detail ? <span>{e.detail}</span> : null}
+                  <span className="text-xs text-faint">
+                    {e.by ? `By ${e.by} · ` : ''}Filed on {e.linkage}
+                    {e.internal ? ' · internal, never sent to the client' : ''}
+                  </span>
+                </span>
+              ),
+              when: clock.dateTime(e.at),
+              tone: e.kind === 'client_reply' ? ('warning' as const) : e.internal ? ('neutral' as const) : ('info' as const),
+              icon: e.kind === 'upload' ? <IconFile size={13} /> : e.kind === 'meeting_note' ? <IconCalendar size={13} /> : e.kind === 'announcement' ? <IconInbox size={13} /> : <IconMessage size={13} />,
+            }))}
+            emptyTitle="No collaboration yet"
+            emptyDescription="A client reply, an announcement, an upload, a meeting note or an internal note appears here with who wrote it and where it is filed."
+          />
+        </>
       ) : null}
 
       {tab === 'overview' || tab === 'files' || tab === 'notes' || tab === 'communication' ? (
@@ -680,10 +841,11 @@ export default async function ClientDetailPage({
             <Stat label="Outstanding" value={money(client.outstandingMinor, client.currency)} caption={pending > 0 ? `${pending} pending` : 'Nothing pending'} tone={client.outstandingMinor > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} />
           </>
         ) : null}
-        <Stat label="Client since" value={clock.date(client.createdAt)} caption={monthsSince === 0 ? 'This month' : `${monthsSince} month${monthsSince === 1 ? '' : 's'}`} tone="accent" icon={<IconCalendar size={16} />} />
+        <Stat label="Client since" value={<span className="text-lg">{clock.date(client.createdAt)}</span>} caption={monthsSince === 0 ? 'This month' : `${monthsSince} month${monthsSince === 1 ? '' : 's'}`} tone="accent" icon={<IconCalendar size={16} />} />
         <Stat label="Client health" value={healthy ? 'Good' : 'Attention'} caption={overdue > 0 ? `${overdue} overdue invoice${overdue === 1 ? '' : 's'}` : client.status !== 'active' ? humanize(client.status) : 'No overdue invoices'} tone={healthy ? 'success' : 'danger'} icon={healthy ? <IconCheck size={16} /> : <IconAlert size={16} />} />
       </StatGrid>
       ) : null}
+      {tab === 'overview' ? workTiles : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(19rem,1fr)]">
         <div className="flex min-w-0 flex-col gap-4">
@@ -937,8 +1099,8 @@ export default async function ClientDetailPage({
             rows={[
               { label: 'Company name', value: client.name },
               ...(client.legalName ? [{ label: 'Legal name', value: client.legalName }] : []),
-              ...(client.gstin ? [{ label: 'GSTIN', value: <span className="font-mono">{client.gstin}</span> }] : []),
-              ...(client.pan ? [{ label: 'PAN', value: <span className="font-mono">{client.pan}</span> }] : []),
+              ...(client.gstin && canSeeMoney ? [{ label: 'GSTIN', value: <span className="font-mono">{client.gstin}</span> }] : []),
+              ...(client.pan && canSeeMoney ? [{ label: 'PAN', value: <span className="font-mono">{client.pan}</span> }] : []),
               { label: 'Billing email', value: client.billingEmail ?? 'Not set' },
               { label: 'Currency', value: client.currency },
               { label: 'Status', value: <Badge tone={client.status === 'active' ? 'success' : 'neutral'}>{humanize(client.status)}</Badge> },
@@ -991,6 +1153,49 @@ export default async function ClientDetailPage({
                   </li>
                 ))}
               </ul>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader title="Assigned Team" actions={mayEditClient ? <Link href={tabHref('settings')} className="text-xs font-medium text-brand hover:underline">Manage</Link> : undefined} />
+            {team.length === 0 ? (
+              <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No one is assigned to this client yet.</p>
+            ) : (
+              <ul className="grid grid-cols-2 gap-3 px-4 pb-4 sm:px-5">
+                {team.map((id) => {
+                  const m = roster.find((r) => r.userId === id);
+                  return (
+                    <li key={id} className="flex min-w-0 items-center gap-2">
+                      <Avatar name={m?.fullName || m?.email || id} size="md" />
+                      <span className="min-w-0">
+                        <span className="block truncate text-[13px] font-medium text-foreground">{m?.fullName || m?.email?.split('@')[0] || id.slice(0, 8)}</span>
+                        <span className="block truncate text-xs text-muted">{m ? humanize(m.role) : ''}</span>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader title="Deal Timeline" actions={<ViewAll href={tabHref('activity')} />} />
+            {dealTimeline.length === 0 ? (
+              <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">Nothing recorded yet.</p>
+            ) : (
+              <ol className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+                {dealTimeline.slice(-6).map((e) => (
+                  <li key={e.key} className="flex items-start gap-3">
+                    <span className={cx('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full', e.done ? 'bg-success text-white' : 'border-2 border-line-strong')}>
+                      {e.done ? <IconCheck size={12} /> : null}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[13px] font-medium text-foreground">{e.title}</span>
+                      <span className="block text-xs text-muted">{clock.dateTime(e.at)}</span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
             )}
           </Card>
 

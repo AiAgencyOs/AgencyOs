@@ -8,6 +8,7 @@ import { addTestPlanItem } from '@/modules/qa/service';
 
 import {
   addScreenSchema,
+  draftNextScreenBaselineSchema,
   linkDesignAssetSchema,
   mergeScreensSchema,
   screenScopeItemSchema,
@@ -17,6 +18,7 @@ import {
   submitScreenForQaSchema,
   unlinkDesignAssetSchema,
   type AddScreenInput,
+  type DraftNextScreenBaselineInput,
   type LinkDesignAssetInput,
   type MergeScreensInput,
   type ScreenScopeItemInput,
@@ -391,4 +393,42 @@ export async function unlinkDesignAsset(input: UnlinkDesignAssetInput): Promise<
     return err('CONFLICT', `The database refused the change: ${error.message}`);
   }
   return ok({ removed: (data ?? []).length > 0 });
+}
+
+/**
+ * Q-B7 / SCR-035 — "Map requirement" on a screen whose baseline is finalized offers this:
+ * draft the next screen baseline version (`projects.draft_screen_baseline`, which re-checks
+ * the role, needs the reason from v2 and audits `project.screen_list_drafted`). Mapping
+ * then works again on the draft; the finalized baseline itself is never edited.
+ */
+export async function draftNextScreenBaseline(input: DraftNextScreenBaselineInput): Promise<Result<{ baselineId: string; version: number; alreadyDrafting: boolean }>> {
+  const parsed = draftNextScreenBaselineSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid request.');
+  const gated = await gate('draft the next screen baseline');
+  if (!gated.ok) return gated;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('draft_screen_baseline', {
+    p_project_id: parsed.data.projectId,
+    p_change_reason: parsed.data.changeReason,
+  });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'draftNextScreenBaseline', detail: error.message }));
+    return err('INTERNAL', 'Could not draft the next baseline.');
+  }
+  const row = first<{ outcome?: string; baseline_id?: string | null; version?: number | null }>(data);
+  switch (row?.outcome) {
+    case 'drafted':
+    case 'already_drafting':
+      if (!row.baseline_id || row.version === null || row.version === undefined) return err('INTERNAL', 'Could not draft the next baseline.');
+      return ok({ baselineId: row.baseline_id, version: row.version, alreadyDrafting: row.outcome === 'already_drafting' });
+    case 'no_phase_three':
+      return err('CONFLICT', 'This project has no Phase 3 workspace yet, so there is no screen baseline to draft.');
+    case 'no_scope':
+      return err('CONFLICT', 'There is no active scope baseline to draft the screens against.');
+    case 'needs_reason':
+      return err('VALIDATION', 'Say why the baseline is being reopened.');
+    default:
+      return err('FORBIDDEN', 'The database refused: your role may not draft a screen baseline.');
+  }
 }

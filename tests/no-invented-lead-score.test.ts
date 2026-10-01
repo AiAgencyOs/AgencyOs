@@ -205,11 +205,12 @@ describe('D. what is shown is what is stored', () => {
     assert.match(queries, /if \(!reasons\.success\) return null;/);
   });
 
-  test('the Lead 360 expands the reasons and the inputs beside the number', () => {
+  test('Lead 360 shows a Hot / Warm / Cold label with its reasons, and the list sorts by that label, not by the number (round 2, decision 1)', () => {
     const page = read('app/(internal)/leads/[leadId]/page.tsx');
-    assert.match(page, /leadScore\.reasons\.map\(/);
-    assert.match(page, /Object\.entries\(leadScore\.inputs\)/);
+    assert.match(page, /heatReading\.reasons\.map\(/);
+    assert.doesNotMatch(page, /leadScore/);
     const list = read('app/(internal)/leads/page.tsx');
-    assert.match(list, /sortKey: 'score'/);
+    assert.match(list, /sortKey: 'heat'/);
+    assert.doesNotMatch(list, /sortKey: 'score'/);
   });
 });

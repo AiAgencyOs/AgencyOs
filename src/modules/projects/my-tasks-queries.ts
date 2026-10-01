@@ -20,6 +20,8 @@ export type MyTaskDetail = {
   estimateHours: number | null;
   assigneeId: string | null;
   completedAt: string | null;
+  /** T1-1: set when the task is archived (only returned with `includeArchived`). */
+  archivedAt: string | null;
   createdAt: string;
   projectId: string;
   projectName: string;
@@ -27,16 +29,19 @@ export type MyTaskDetail = {
   moduleName: string | null;
 };
 
-export async function listMyTasksDetailed(userId: string): Promise<MyTaskDetail[]> {
+export async function listMyTasksDetailed(userId: string, options: { includeArchived?: boolean } = {}): Promise<MyTaskDetail[]> {
   const supabase = await createClient();
 
-  const { data: taskRows, error: tasksError } = await supabase
+  // T1-1: a cancelled task is not open work; an archived one is hidden unless asked for.
+  const open = supabase
     .schema('projects')
     .from('tasks')
-    .select('id, title, description, status, priority, due_on, estimate_hours, assignee_id, completed_at, created_at, project_id, module_id')
+    .select('id, title, description, status, priority, due_on, estimate_hours, assignee_id, completed_at, archived_at, created_at, project_id, module_id')
     .eq('assignee_id', userId)
     .neq('status', 'done')
+    .neq('status', 'cancelled')
     .order('due_on', { ascending: true, nullsFirst: false });
+  const { data: taskRows, error: tasksError } = await (options.includeArchived ? open : open.is('archived_at', null));
   if (tasksError) unreadable('listMyTasksDetailed.tasks', tasksError);
 
   const rows = taskRows ?? [];
@@ -67,10 +72,56 @@ export async function listMyTasksDetailed(userId: string): Promise<MyTaskDetail[
     estimateHours: t.estimate_hours === null ? null : Number(t.estimate_hours),
     assigneeId: t.assignee_id,
     completedAt: t.completed_at,
+    archivedAt: t.archived_at,
     createdAt: t.created_at,
     projectId: t.project_id,
     projectName: projectNameById.get(t.project_id) ?? 'Unknown project',
     moduleId: t.module_id,
     moduleName: t.module_id ? (moduleNameById.get(t.module_id) ?? null) : null,
   }));
+}
+
+/**
+ * My tasks' Completed column: what I finished most recently, and how many in
+ * all. `listMyTasksDetailed` leaves done work out on purpose (it is the open
+ * list); this is the other half, bounded so the column never grows unbounded.
+ */
+export async function listMyCompletedTasks(userId: string, limit = 8): Promise<{ tasks: MyTaskDetail[]; total: number }> {
+  const supabase = await createClient();
+  const { data, error, count } = await supabase
+    .schema('projects')
+    .from('tasks')
+    .select('id, title, description, status, priority, due_on, estimate_hours, assignee_id, completed_at, created_at, project_id, module_id', { count: 'exact' })
+    .eq('assignee_id', userId)
+    .eq('status', 'done')
+    .is('archived_at', null)
+    .order('completed_at', { ascending: false, nullsFirst: false })
+    .limit(limit);
+  if (error) unreadable('listMyCompletedTasks', error);
+  const rows = data ?? [];
+  if (rows.length === 0) return { tasks: [], total: count ?? 0 };
+  const projectIds = [...new Set(rows.map((t) => t.project_id))];
+  const { data: projects, error: projectsError } = await supabase.schema('projects').from('projects').select('id, name').in('id', projectIds);
+  if (projectsError) unreadable('listMyCompletedTasks.projects', projectsError);
+  const names = new Map((projects ?? []).map((p) => [p.id, p.name]));
+  return {
+    total: count ?? rows.length,
+    tasks: rows.map((t) => ({
+      id: t.id,
+      title: t.title,
+      description: t.description,
+      status: t.status,
+      priority: t.priority,
+      dueOn: t.due_on,
+      estimateHours: t.estimate_hours === null ? null : Number(t.estimate_hours),
+      assigneeId: t.assignee_id,
+      completedAt: t.completed_at,
+      archivedAt: null,
+      createdAt: t.created_at,
+      projectId: t.project_id,
+      projectName: names.get(t.project_id) ?? 'Unknown project',
+      moduleId: t.module_id,
+      moduleName: null,
+    })),
+  };
 }

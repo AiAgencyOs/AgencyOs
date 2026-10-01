@@ -110,11 +110,11 @@ describe('C. the reader shows what it can and says what it cannot', () => {
   });
 
   test('the overview mounts the state: an approved tile, upload, replace and mark-approved, and never a form the guard does not know', () => {
-    assert.match(OVERVIEW, /<Stat label="Approved assets" value=\{String\(assetLibrary\.approved\)\}/);
+    assert.match(OVERVIEW, /<Stat label="Approved Assets" value=\{String\(assetLibrary\.approved\)\}/);
     assert.match(OVERVIEW, /<UploadDesignAssetPanel projectId=\{projectId\} storage=\{assetLibrary\.storage\} \/>/);
     assert.match(OVERVIEW, /<ApproveAssetButton projectId=\{projectId\} assetId=\{asset\.id\} \/>/);
     assert.match(OVERVIEW, /parentAssetId=\{family\.familyId\} compact \/>/);
-    assert.doesNotMatch(OVERVIEW, /<form /);
+    assert.doesNotMatch(OVERVIEW, /<form (?![^>]*method="get")/);
     assert.match(PANELS, /if \(!storage\.reachable\) \{/);
     assert.match(PANELS, /Storage is not reachable, so nothing can be uploaded\./);
   });

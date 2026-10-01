@@ -3,6 +3,7 @@ import 'server-only';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
+import type { ProjectRole } from './project-members-schema';
 import { WATCH_PHASES, type WatchPhase } from './project-defaults-schema';
 
 /**
@@ -14,6 +15,8 @@ export type ProjectWatcher = { userId: string; fullName: string; phases: WatchPh
 
 export type ProjectDefaults = {
   defaultAssigneeId: string | null;
+  /** Q-B4: the default assignee of each project role that has one (project role → user id). */
+  roleDefaults: Partial<Record<ProjectRole, string>>;
   watchers: ProjectWatcher[];
 };
 
@@ -42,10 +45,12 @@ async function namesFor(userIds: string[]): Promise<Map<string, string>> {
 export async function readProjectDefaults(projectId: string): Promise<ProjectDefaults> {
   const supabase = await createClient();
 
-  const [project, watchers] = await Promise.all([
+  const [project, watchers, roleDefaults] = await Promise.all([
     supabase.schema('projects').from('projects').select('default_assignee_id').eq('id', projectId).is('deleted_at', null).maybeSingle(),
     supabase.schema('projects').from('project_watchers').select('user_id, phases').eq('project_id', projectId).order('created_at', { ascending: true }),
+    supabase.schema('projects').from('project_default_assignees').select('project_role, user_id').eq('project_id', projectId),
   ]);
+  if (roleDefaults.error) unreadable('readProjectDefaults.roleDefaults', roleDefaults.error);
   if (project.error) unreadable('readProjectDefaults.project', project.error);
   if (watchers.error) unreadable('readProjectDefaults.watchers', watchers.error);
 
@@ -54,6 +59,7 @@ export async function readProjectDefaults(projectId: string): Promise<ProjectDef
 
   return {
     defaultAssigneeId: project.data?.default_assignee_id ?? null,
+    roleDefaults: Object.fromEntries((roleDefaults.data ?? []).map((r) => [r.project_role, r.user_id])) as Partial<Record<ProjectRole, string>>,
     watchers: rows.map((w) => ({
       userId: w.user_id,
       fullName: names.get(w.user_id) ?? 'a member',

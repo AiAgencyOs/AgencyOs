@@ -6,6 +6,7 @@
  */
 
 import type { ExpenseRow, ReceiptRow, TaxReportInvoice } from './queries';
+import { isVerifiedPayment, type BasisPayment } from './verified-basis';
 
 export type TaxPeriod = { from: string | null; to: string | null; label: string };
 
@@ -94,6 +95,21 @@ export function invoicesInPeriod(rows: readonly TaxReportInvoice[], period: TaxP
 export function receiptsInPeriod(rows: readonly ReceiptRow[], period: TaxPeriod): ReceiptRow[] {
   return rows.filter((r) => inPeriod(r.issuedAt, period));
 }
+/**
+ * The money received in the window, on the ONE verified basis: payments a
+ * person verified, dated by the day they verified them. Receipts are issued on
+ * verification, so this is the same money a receipt records — but it needs no
+ * read of the receipts table, which the finance role could not always see, and
+ * it is the same figure Finance Overview calls Total Received.
+ */
+export function verifiedReceivedInPeriod(
+  rows: readonly BasisPayment[],
+  period: TaxPeriod,
+): { currency: string; amountMinor: number }[] {
+  return rows
+    .filter((p) => isVerifiedPayment(p) && inPeriod(p.verified_at, period))
+    .map((p) => ({ currency: p.currency, amountMinor: p.amount_minor }));
+}
 export function expensesInPeriod(rows: readonly ExpenseRow[], period: TaxPeriod): ExpenseRow[] {
   return rows.filter((r) => inPeriod(`${r.incurredOn}T00:00:00.000Z`, period));
 }
@@ -145,7 +161,8 @@ export type ProfitAndLoss = {
 
 export function profitAndLoss(
   invoices: readonly TaxReportInvoice[],
-  receipts: readonly ReceiptRow[],
+  /** Money received — verified payments (`verifiedReceivedInPeriod`) or receipts: anything with a currency and an amount. */
+  receipts: readonly { currency: string; amountMinor: number; [extra: string]: unknown }[],
   expenses: readonly ExpenseRow[],
 ): ProfitAndLoss[] {
   const by = new Map<string, ProfitAndLoss>();
@@ -179,7 +196,7 @@ function csvCell(v: string | number | null | undefined): string {
 
 /** The invoice register as CSV — one row per issued invoice, amounts in major units. */
 export function taxRegisterCsv(rows: readonly TaxReportInvoice[]): string {
-  const header = ['Invoice', 'Status', 'Issued', 'Billing mode', 'GSTIN', 'Currency', 'Subtotal', 'Tax', 'Total', 'Paid'];
+  const header = ['Invoice', 'Status', 'Issued', 'Billing mode', 'GSTIN', 'Currency', 'Subtotal', 'Tax', 'Total', 'Verified paid'];
   const lines = rows.map((r) =>
     [
       r.number,

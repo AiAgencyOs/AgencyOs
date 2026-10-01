@@ -10,6 +10,7 @@ import type { RosterMember } from '@/modules/projects/queries';
 import { emptyTaskCollab, type TaskCollab } from '@/modules/projects/task-collab-types';
 import { emptyTaskTime, type TaskTime } from '@/modules/projects/time-log-types';
 import { TASK_STATUSES } from '@/modules/projects/schema';
+import { selectableStatuses } from '@/modules/projects/task-transitions';
 import {
   Badge,
   Drawer,
@@ -105,7 +106,7 @@ export function TaskDrawerButton({
                 }
               }}
             >
-              {TASK_STATUSES.map((s) => (
+              {selectableStatuses(TASK_STATUSES, task.status).map((s) => (
                 <option key={s} value={s}>
                   {humanize(s)}
                 </option>

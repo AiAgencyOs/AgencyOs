@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import type { FormState } from '@/modules/identity/types';
+import { attachChosenFile } from '@/modules/projects/attached-files-form';
 
 import { markProductionReady, raiseDefect, settleDefect, draftTestPlan, addTestPlanItem, removeTestPlanItem, recordTestRun,
   triageDefect,
@@ -47,7 +48,12 @@ export async function raiseDefectAction(_prev: FormState, formData: FormData): P
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };
+  // Q-C6: the bug's evidence may be an uploaded file (a screenshot, a log), under the project-file rules.
+  const evidenceFile = await attachChosenFile(formData, 'defect', result.data.defectId);
   revalidateProject(formData);
+  if (evidenceFile.status === 'refused') {
+    return { status: 'error', message: `The defect was raised, but its evidence file was not saved: ${evidenceFile.message}` };
+  }
   return {
     status: 'success',
     // Said rather than implied: a blocker stops the next submission, and
@@ -144,7 +150,11 @@ export async function recordTestRunAction(_prev: FormState, formData: FormData):
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };
+  const evidenceFile = await attachChosenFile(formData, 'test_run', result.data.testRunId);
   revalidatePath(`/projects/${String(formData.get('projectId') ?? '')}/qa`);
+  if (evidenceFile.status === 'refused') {
+    return { status: 'error', message: `The test run was recorded, but its evidence file was not saved: ${evidenceFile.message}` };
+  }
   return { status: 'success', message: 'Test run recorded.' };
 }
 

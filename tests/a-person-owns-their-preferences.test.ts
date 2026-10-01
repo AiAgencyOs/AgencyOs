@@ -170,7 +170,7 @@ describe('4. /help lists every screen', () => {
       assert.ok(entry.status.length > 0, `${id} has no status`);
       assert.ok(entry.module.length > 0, `${id} has no module`);
     }
-    assert.equal(new Set(ids).size, 71, 'the 71-screen baseline');
+    assert.equal(new Set(ids).size, 72, 'the 71-screen baseline plus SCR-072 Contracts (owner decision 10)');
   });
 
   it('the page renders the generated list and the search box, and the shell links to it', () => {

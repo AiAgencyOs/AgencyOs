@@ -171,6 +171,19 @@ export function interpretEvidence(outcome: string | undefined): CommandDecision 
       return refuse('VALIDATION', 'The text is longer than 20,000 characters.');
     case 'invalid_size':
       return refuse('VALIDATION', 'A byte size must be positive.');
+    // Q-D3 — crm.add_meeting_evidence_file, the door for a stored recording, image, PDF or Word file.
+    case 'bad_type':
+      return refuse('VALIDATION', 'That file is not a recording, an image, a PDF or a Word file.');
+    case 'bad_name':
+      return refuse('VALIDATION', 'That file name cannot be kept.');
+    case 'credential_name':
+      return refuse('VALIDATION', 'That file’s name looks like a credentials file. Put credentials in Settings › Keys & secrets, which stores them encrypted.');
+    case 'too_big':
+      return refuse('VALIDATION', 'That file is over the 50 MB limit.');
+    case 'bad_path':
+      return refuse('VALIDATION', 'The stored file’s location did not match this meeting, so nothing was recorded.');
+    case 'no_actor':
+      return refuse('FORBIDDEN', FORBIDDEN);
     case 'unknown_actor':
       return refuse('FORBIDDEN', UNKNOWN_ACTOR);
     case 'forbidden':

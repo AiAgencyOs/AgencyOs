@@ -5,6 +5,7 @@ import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
+import { buildCredentialProblem } from './build-secrets-guard';
 import { setDependencyStatusSchema, type SetDependencyStatusInput } from './dependency-status-schema';
 
 /**
@@ -21,6 +22,10 @@ export async function setDependencyStatus(input: SetDependencyStatusInput): Prom
   if (!can(context, 'project.write')) {
     return err('FORBIDDEN', 'You do not have permission to change a dependency.');
   }
+
+  // SCR-043: the note on a dependency is read by the whole team; no credential goes in it.
+  const credential = buildCredentialProblem([{ label: 'Note', value: parsed.data.note }]);
+  if (credential) return err('VALIDATION', credential);
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('set_dependency_status', {

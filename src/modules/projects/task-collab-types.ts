@@ -23,7 +23,11 @@ export type TaskCollab = {
   /** Ticked / total, and the percentage the progress bar draws. */
   progress: { done: number; total: number; percent: number };
   attachments: TaskAttachment[];
-  blocked: { reason: string | null; at: string | null; sinceLabel: string | null };
+  blocked: { reason: string | null; at: string | null; sinceLabel: string | null; type: string | null; owner: string | null; nextAction: string | null };
+  /** SCR-021: evidence submitted for this task (`projects.task_evidence`) — the hand-off to review needs at least one. */
+  evidenceCount: number;
+  /** SCR-020: who produced the work, and whether an agent's work has been verified. */
+  origin: { kind: 'human' | 'agent'; verifiedAt: string | null; verifiedLabel: string | null; verifiedByName: string | null; note: string | null };
 };
 
 export function emptyTaskCollab(taskId: string): TaskCollab {
@@ -33,6 +37,8 @@ export function emptyTaskCollab(taskId: string): TaskCollab {
     checklist: [],
     progress: { done: 0, total: 0, percent: 0 },
     attachments: [],
-    blocked: { reason: null, at: null, sinceLabel: null },
+    blocked: { reason: null, at: null, sinceLabel: null, type: null, owner: null, nextAction: null },
+    evidenceCount: 0,
+    origin: { kind: 'human', verifiedAt: null, verifiedLabel: null, verifiedByName: null, note: null },
   };
 }

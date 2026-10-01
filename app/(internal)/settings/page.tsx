@@ -1,18 +1,19 @@
-import { configStatus, type ConfigArea, type ConfigItem } from '@/lib/admin/config-status';
+import { configStatusResolved } from '@/lib/admin/config-status-resolved';
+import type { ConfigArea, ConfigItem } from '@/lib/admin/config-status';
 import { requireInternal } from '@/lib/auth/session';
 import { createClient } from '@/lib/db/server';
 import { readCronAgeSeconds } from '@/lib/observability/queries';
+import { slotFor } from '@/lib/secrets/registry';
 
 import Link from 'next/link';
 
-import { agencyClock } from '@/lib/admin/agency-clock';
-import { readSettingHistory } from '@/lib/admin/settings-history';
 import { readSettingImpact } from '@/lib/admin/settings-impact';
 import { buttonClass } from '@/ui';
 
 import { QuotationContactForm } from './forms';
 import { OrganizationNameFormWithPreview, TimezoneFormWithPreview } from './high-risk-forms';
-import { SettingHistory, type SettingHistoryEntry } from './setting-history';
+import { SettingHistory } from './setting-history';
+import { loadSettingHistory } from './setting-history-entries';
 
 /**
  * Configuration, from the owner's chair — without the SQL or the .env file.
@@ -44,22 +45,30 @@ const AREAS: readonly ConfigArea[] = [
 ];
 
 function Dot({ item }: { item: ConfigItem }) {
-  if (item.present) return <span className="text-success">configured</span>;
+  if (item.present) {
+    const where = item.source === 'vault' ? ' (vault)' : item.source === 'env' ? ' (environment)' : '';
+    return <span className="text-success">configured{where}</span>;
+  }
+  // A key the vault can hold gets a way to add it; the rest are deployment settings.
+  const slot = slotFor(item.key);
+  const add =
+    slot && slot.storage !== 'env_only' ? (
+      <>
+        {' '}
+        — <Link href={`/security/keys#${slot.key}`} className="underline underline-offset-2">add it under Keys &amp; secrets</Link>
+      </>
+    ) : null;
   if (item.requiredInProduction)
-    return <span className="text-danger">not configured — required</span>;
-  return <span className="text-muted">not configured — optional</span>;
+    return <span className="text-danger">not configured — required{add}</span>;
+  return <span className="text-muted">not configured — optional{add}</span>;
 }
 
 export default async function SettingsGeneralPage() {
   await requireInternal('/settings');
 
-  const status = configStatus();
-  const clock = await agencyClock();
+  const status = await configStatusResolved();
   // SCR-071: what a high-risk change touches, and each setting's recorded history.
-  const [cronAge, impact, history] = await Promise.all([readCronAgeSeconds(), readSettingImpact(), readSettingHistory()]);
-  const show = (v: unknown) => (v === null || v === undefined ? '' : typeof v === 'string' ? v : JSON.stringify(v));
-  const historyOf = (key: string): SettingHistoryEntry[] =>
-    (history.get(key) ?? []).map((h) => ({ auditId: h.auditId, before: show(h.before), after: show(h.after), actor: `${h.actorType ?? 'unknown'} ${h.actorId ? h.actorId.slice(0, 8) : ''}`.trim(), atLabel: clock.dateTime(h.at) }));
+  const [cronAge, impact, historyOf] = await Promise.all([readCronAgeSeconds(), readSettingImpact(), loadSettingHistory()]);
 
   // The agency timezone is a business fact, not a secret, so it is shown. Null
   // by design until an owner sets it (G-137) — and until then nothing sends.
@@ -105,6 +114,7 @@ export default async function SettingsGeneralPage() {
           <Link href="/security/users" className={buttonClass('secondary', 'sm')}>Users &amp; roles</Link>
           <Link href="/security/incidents" className={buttonClass('secondary', 'sm')}>Incidents</Link>
           <Link href="/integrations" className={buttonClass('secondary', 'sm')}>Integrations</Link>
+          <Link href="/security/keys" className={buttonClass('primary', 'sm')}>Keys &amp; secrets</Link>
           <Link href="/agents#vault" className={buttonClass('secondary', 'sm')}>Provider key vault</Link>
           <Link href="/governance/overrides" className={buttonClass('secondary', 'sm')}>Overrides &amp; emergency controls</Link>
         </div>
@@ -161,7 +171,7 @@ export default async function SettingsGeneralPage() {
       */}
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-[13px] font-semibold tracking-tight">Agency name</h2>
+          <h2 id="agency-name" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Agency name</h2>
           <SettingHistory label="Agency name" entries={historyOf('name')} />
         </div>
         <p className="text-xs text-muted">
@@ -172,7 +182,7 @@ export default async function SettingsGeneralPage() {
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
-        <h2 className="text-[13px] font-semibold tracking-tight">Quotation contact details</h2>
+        <h2 id="quotation-contact" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Quotation contact details</h2>
         <p className="text-xs text-muted">
           Printed under the agency name on every quotation PDF, so a client who forwards the
           document to a partner can still reach you from it. Leave a field empty to clear it —
@@ -180,11 +190,12 @@ export default async function SettingsGeneralPage() {
           invented one.
         </p>
         <QuotationContactForm email={contactEmail} phone={contactPhone} location={contactLocation} />
+        <SettingHistory label="Quotation contact" entries={historyOf('quotation_contact_email', 'quotation_contact_phone', 'quotation_contact_location')} />
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-[13px] font-semibold tracking-tight">Agency timezone</h2>
+          <h2 id="agency-timezone" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Agency timezone</h2>
           <SettingHistory label="Agency timezone" entries={historyOf('timezone')} />
         </div>
         <p className="text-xs text-muted">

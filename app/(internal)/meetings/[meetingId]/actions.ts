@@ -2,9 +2,11 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { addMeetingEvidence, cancelMeeting, completeMeeting, recordNoShow, requestMeetingAnalysis, rescheduleMeeting, type Concluded } from '@/lib/scheduler/meeting-commands';
+import { addMeetingEvidence, addMeetingEvidenceFile, cancelMeeting, completeMeeting, recordNoShow, requestMeetingAnalysis, rescheduleMeeting, type Concluded } from '@/lib/scheduler/meeting-commands';
 import { bookProposedSlot, proposeSlots } from '@/lib/scheduling/booking';
 import type { Result } from '@/lib/result';
+import { uploadMeetingStoredFile } from '@/modules/crm/meeting-file-service';
+import { decideMeetingNoteFile, routeMeetingFile } from '@/modules/crm/meeting-note-file';
 import type { FormState } from '@/modules/identity/types';
 
 /**
@@ -46,6 +48,33 @@ export async function addEvidenceAction(_prev: FormState, formData: FormData): P
   return conclude(formData, (id) =>
     addMeetingEvidence(id, String(formData.get('kind') ?? 'notes'), String(formData.get('visibility') ?? 'internal'), String(formData.get('body') ?? '')),
   );
+}
+
+/**
+ * SCR-060 "Meeting note upload". A text file's text is read here, judged by the
+ * pure rules (size, credentials) and filed through the same door as typed
+ * evidence, keeping the human's own words verbatim. A recording, an image, a
+ * PDF or a Word file (Q-D3) is stored as it is under the project-file rules and
+ * filed through `crm.add_meeting_evidence_file`; the file's own words are not
+ * read, so nothing here rewrites or summarises it.
+ */
+export async function uploadEvidenceFileAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const file = formData.get('file');
+  if (typeof File === 'undefined' || !(file instanceof File) || file.size === 0) {
+    return { status: 'error', message: 'Choose a file to upload.' };
+  }
+  if (routeMeetingFile(file.name) === 'stored') {
+    const meetingId = String(formData.get('meetingId') ?? '');
+    const stored = await uploadMeetingStoredFile({ meetingId, visibility: String(formData.get('visibility') ?? 'internal') }, file);
+    if (!stored.ok) return { status: 'error', message: stored.error.message };
+    revalidatePath(`/meetings/${meetingId}`);
+    revalidatePath('/meetings');
+    if (stored.data.leadId) revalidatePath(`/leads/${stored.data.leadId}`);
+    return { status: 'success', message: stored.data.message };
+  }
+  const decision = decideMeetingNoteFile({ name: file.name, type: file.type, size: file.size, text: await file.text() });
+  if (!decision.ok) return { status: 'error', message: decision.message };
+  return conclude(formData, (id) => addMeetingEvidenceFile(id, String(formData.get('visibility') ?? 'internal'), decision));
 }
 
 export async function requestAnalysisAction(_prev: FormState, formData: FormData): Promise<FormState> {

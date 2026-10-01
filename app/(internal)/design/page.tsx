@@ -3,6 +3,7 @@ import Link from 'next/link';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
+import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
 import { readDesignReviewQueue, type DesignQueueRow } from '@/modules/projects/design-review-queries';
@@ -12,6 +13,7 @@ import {
   Card,
   CardHeader,
   DataTable,
+  DomainSearch,
   EmptyState,
   IconPalette,
   PageHeader,
@@ -27,8 +29,8 @@ export const metadata: Metadata = { title: 'Design & Prototype' };
 
 type Row = Awaited<ReturnType<typeof readDesignPortfolio>>[number];
 
-const WAITING_LABEL: Record<DesignQueueRow['waitingOn'], string> = { internal: 'internal reviewer', admin: 'Admin', client: 'the client' };
-const WAITING_TONE: Record<DesignQueueRow['waitingOn'], Tone> = { internal: 'info', admin: 'warning', client: 'neutral' };
+const WAITING_LABEL: Record<DesignQueueRow['waitingOn'], string> = { internal: 'internal reviewer', admin: 'Admin', client: 'the client', approval: 'an approval decision' };
+const WAITING_TONE: Record<DesignQueueRow['waitingOn'], Tone> = { internal: 'info', admin: 'warning', client: 'neutral', approval: 'warning' };
 
 /**
  * SCR-036 — the review queue: every theme option sitting at a gate, across
@@ -43,7 +45,7 @@ const queueColumnsFor = (clock: AgencyClock): Column<DesignQueueRow>[] => [
     cell: (r) => (
       <>
         <span className="block font-medium text-foreground">
-          {r.name} <span className="text-xs font-normal text-muted">#{r.optionIndex} · v{r.version}</span>
+          {r.name} <span className="text-xs font-normal text-muted">{r.kind === 'theme' ? `theme option #${r.optionIndex} · v${r.version}` : `${r.kind} · v${r.version}`}</span>
         </span>
         <span className="block text-xs text-muted">{r.projectName}</span>
       </>
@@ -55,9 +57,9 @@ const queueColumnsFor = (clock: AgencyClock): Column<DesignQueueRow>[] => [
     header: 'Gates',
     desktopOnly: true,
     cellClassName: 'text-xs text-muted',
-    cell: (r) => `internal ${r.internalReviewStatus.replace(/_/g, ' ')} · admin ${r.adminStatus.replace(/_/g, ' ')} · client ${r.clientStatus.replace(/_/g, ' ')}`,
+    cell: (r) => (r.kind === 'theme' ? `internal ${r.internalReviewStatus.replace(/_/g, ' ')} · admin ${r.adminStatus.replace(/_/g, ' ')} · client ${r.clientStatus.replace(/_/g, ' ')}` : 'in review'),
   },
-  { key: 'reviewer', header: 'Reviewer', desktopOnly: true, cell: (r) => (r.reviewerUserId ? <span className="text-muted">assigned</span> : <span className="text-warning">nobody assigned</span>) },
+  { key: 'reviewer', header: 'Reviewer', desktopOnly: true, cell: (r) => (r.kind !== 'theme' ? <span className="text-muted">—</span> : r.reviewerUserId ? <span className="text-muted">assigned</span> : <span className="text-warning">nobody assigned</span>) },
   { key: 'since', header: 'Since', align: 'right', cellClassName: 'tabular text-muted', cell: (r) => clock.dateTime(r.updatedAt) },
 ];
 
@@ -136,7 +138,9 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
  * reviewer, which have a client revision loop open — without opening each
  * project. Three reads, grouped in memory, no per-project fan-out.
  */
-export default async function DesignPortfolioPage() {
+export default async function DesignPortfolioPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+  const { q: qRaw } = await searchParams;
+  const q = normaliseSearch(qRaw);
   const context = await requireInternal('/design');
   if (!can(context, 'project.read')) return <PermissionDenied />;
 
@@ -147,6 +151,10 @@ export default async function DesignPortfolioPage() {
   const inReview = rows.reduce((n, r) => n + r.designs.inReview + r.prototypes.inReview, 0);
   const revisionsOpen = inDesign.filter((r) => r.clientRevisionsUsed > 0).length;
   const columns = columnsFor(clock);
+  // The dashboard lists every project, so it can be searched by project name (the review queue follows the same search).
+  const needle = q.toLowerCase();
+  const shownRows = needle ? rows.filter((r) => r.name.toLowerCase().includes(needle)) : rows;
+  const shownQueue = needle ? queue.rows.filter((r) => r.projectName.toLowerCase().includes(needle) || r.name.toLowerCase().includes(needle)) : queue.rows;
 
   return (
     <div className="flex flex-col gap-5">
@@ -166,22 +174,25 @@ export default async function DesignPortfolioPage() {
         </StatGrid>
       ) : null}
 
-      <StatGrid>
+      <StatGrid cols={4}>
         <Stat label="Awaiting internal review" value={String(queue.awaitingInternal)} tone={queue.awaitingInternal > 0 ? 'info' : 'success'} caption="the assigned reviewer's gate" />
         <Stat label="Awaiting Admin" value={String(queue.awaitingAdmin)} tone={queue.awaitingAdmin > 0 ? 'warning' : 'success'} caption="internal passed, Admin has not decided" />
         <Stat label="Awaiting the client" value={String(queue.awaitingClient)} tone="neutral" caption="shared, no answer recorded" />
+        <Stat label="Deliverables in review" value={String(queue.awaitingApproval)} tone={queue.awaitingApproval > 0 ? 'warning' : 'success'} caption="designs and prototypes awaiting a decision" />
       </StatGrid>
+
+      {rows.length > 0 ? <DomainSearch action="/design" value={q} placeholder="Search projects, options and deliverables…" label="Search the design dashboard" /> : null}
 
       <Card>
         <CardHeader
-          title={`Review queue (${queue.rows.length})`}
-          description="Every theme option sitting at a gate, longest first. Open the row to decide on the project's Themes tab."
+          title={`Review queue (${shownQueue.length}${needle ? ` of ${queue.rows.length}` : ''})`}
+          description="Every theme option at a gate and every design or prototype deliverable in review, longest first. Open the row to decide."
         />
-        {queue.rows.length === 0 ? (
-          <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No design option is waiting at any gate.</p>
+        {shownQueue.length === 0 ? (
+          <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">{needle ? 'No option or deliverable in the queue matches that search.' : 'No design option or deliverable is waiting for review.'}</p>
         ) : (
           <div className="px-4 pb-4 sm:px-5">
-            <DataTable dense rows={queue.rows} columns={queueColumns} getKey={(r) => r.themeOptionId} href={(r) => `/projects/${r.projectId}/design/themes`} />
+            <DataTable dense rows={shownQueue} columns={queueColumns} getKey={(r) => `${r.kind}:${r.themeOptionId}`} href={(r) => r.href} />
           </div>
         )}
       </Card>
@@ -193,8 +204,10 @@ export default async function DesignPortfolioPage() {
           description="Design work begins on a project once its deal is won and Phase 2 onboarding starts Phase 3. Won deals convert from the Lead 360 page."
           action={<Link href="/leads" className="text-brand hover:underline">Open leads</Link>}
         />
+      ) : shownRows.length === 0 ? (
+        <EmptyState icon={<IconPalette size={22} />} title="No project matches" description="Nothing in the portfolio fits that search." action={<Link href="/design" className="text-brand hover:underline">Clear the search</Link>} />
       ) : (
-        <DataTable rows={rows} columns={columns} getKey={(r) => r.id} href={(r) => `/projects/${r.id}/design`} />
+        <DataTable rows={shownRows} columns={columns} getKey={(r) => r.id} href={(r) => `/projects/${r.id}/design`} />
       )}
 
       <p className="text-xs text-muted">

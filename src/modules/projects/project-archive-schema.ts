@@ -40,13 +40,14 @@ export function lifecyclePhaseOf(facts: {
   hasPhaseTwo: boolean;
   hasPhaseThree: boolean;
   hasPhaseFour: boolean;
-  hasTestRun: boolean;
+  /** An OPEN test run (decision 9) — a closed run no longer keeps a project in QA. */
+  hasOpenTestRun: boolean;
   hasHandover: boolean;
 }): LifecyclePhase {
   if (facts.archivedAt) return 'archived';
   if (facts.status === 'completed') return 'completed';
   if (facts.hasHandover || facts.productionReadyAt) return 'release';
-  if (facts.hasTestRun) return 'qa';
+  if (facts.hasOpenTestRun) return 'qa';
   if (facts.hasPhaseFour) return 'development';
   if (facts.hasPhaseThree) return 'design';
   if (facts.hasPhaseTwo) return 'planning';

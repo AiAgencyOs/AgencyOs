@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { resolveSecret } from '@/lib/secrets/resolve';
+
 /**
  * Figma, read-only — Designer §8, §24; Master §20; G-301.
  *
@@ -32,9 +34,15 @@ import 'server-only';
  */
 
 /** Read at call time, not at module load: a token added later must work without a redeploy. */
-const token = () => process.env.FIGMA_ACCESS_TOKEN?.trim() || null;
+const token = async (): Promise<string | null> => {
+  try {
+    return await resolveSecret('FIGMA_ACCESS_TOKEN');
+  } catch {
+    return null; // an invalid environment is "no token", as it was when this read process.env
+  }
+};
 
-export const figmaConfigured = () => token() !== null;
+export const figmaConfigured = async (): Promise<boolean> => (await token()) !== null;
 
 export type FigmaLookup =
   | { ok: true; version: string; nodeName: string; lastModified: string | null }
@@ -49,7 +57,7 @@ export type FigmaLookup =
 const ENDPOINT = 'https://api.figma.com/v1/files';
 
 export async function lookupNode(fileKey: string, nodeId: string): Promise<FigmaLookup> {
-  const key = token();
+  const key = await token();
   if (!key) return { ok: false, reason: 'not_configured' };
 
   const file = encodeURIComponent(fileKey.trim());

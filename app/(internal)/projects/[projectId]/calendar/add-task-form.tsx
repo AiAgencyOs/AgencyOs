@@ -43,13 +43,13 @@ export function AddTaskOnDayForm({
     <form action={action} className="flex flex-col gap-2 rounded-md border border-line bg-surface p-2 text-left">
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="dueOn" value={dueOn} />
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Task due {dueOn}</label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Task due {dueOn}</span>
         <input name="title" required maxLength={200} className={inputClass} placeholder="What has to be done" autoFocus />
-      </div>
+      </label>
       {modules.length > 0 ? (
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Module</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Module</span>
           <select name="moduleId" className={selectClass} defaultValue="">
             <option value="">none</option>
             {modules.map((m) => (
@@ -58,7 +58,7 @@ export function AddTaskOnDayForm({
               </option>
             ))}
           </select>
-        </div>
+        </label>
       ) : null}
       <div className="flex items-center gap-2">
         <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>

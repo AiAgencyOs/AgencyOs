@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import type { FormState } from '@/modules/identity/types';
 
 import { MODEL_CAPABILITIES } from './models-schema';
-import { addModel, retireModel, setFallbackChain, setProviderBudget } from './models-service';
+import { addModel, retireModel, setFallbackChain, setModelBudget, setProviderBudget } from './models-service';
 
 /** SCR-064 — Decision 2026-09-30: ADM-84 reversed. The model registry's four owner doors, as forms. */
 
@@ -94,5 +94,23 @@ export async function setProviderBudgetAction(_prev: FormState, formData: FormDa
     message: result.data.cleared
       ? `No monthly cap for ${result.data.provider}. Audited.`
       : `${result.data.provider} capped at ₹${rupees.toFixed(2)} a month — the runner refuses calls past it. Audited.`,
+  };
+}
+
+export async function setModelBudgetAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const rupees = Number(String(formData.get('monthlyCapRupees') ?? '0').trim() || '0');
+  const result = await setModelBudget({
+    modelId: String(formData.get('modelId') ?? ''),
+    monthlyCapMinor: Number.isFinite(rupees) ? Math.round(rupees * 100) : Number.NaN,
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath('/agents/routing');
+  revalidatePath('/usage');
+  return {
+    status: 'success',
+    message: result.data.cleared
+      ? `No monthly cap for ${result.data.modelId}. Audited.`
+      : `${result.data.modelId} capped at ₹${rupees.toFixed(2)} a month — the runner refuses calls past it. Audited.`,
   };
 }

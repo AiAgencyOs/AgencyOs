@@ -3,10 +3,15 @@
 import Link from 'next/link';
 import { useState } from 'react';
 
-import { Avatar, DataTable, StatusBadge, humanize, type Column, type SortDirection, type SortState } from '@/ui';
+import { Avatar, Badge, Card, DataTable, StatusBadge, humanize, type Column, type SortDirection, type SortState } from '@/ui';
 
-import { BulkActionsBar, type BulkRoster } from './bulk-actions-bar';
+import type { LeadHeatLabel } from '@/modules/crm/lead-heat';
+import { LeadHeatBadge } from '@/modules/crm/lead-heat-badge';
+
 import { LeadPreviewButton } from './preview-drawer';
+import { BulkActionsBar, type BulkRoster } from './bulk-actions-bar';
+import { LeadFlags, type LeadFlagsData } from './lead-flags';
+import { MergeDuplicateButton } from './merge-duplicate-button';
 
 /**
  * The leads table with a selection column — SCR-006's multi-select.
@@ -22,6 +27,9 @@ export type BulkLeadRow = {
   name: string;
   subtitle: string;
   phone: string | null;
+  email: string | null;
+  /** The lead's recorded service — the reference's "Interested In". */
+  service: string | null;
   source: string;
   status: string;
   assigned: string;
@@ -31,8 +39,12 @@ export type BulkLeadRow = {
   created: string;
   budget: string | null;
   tags: string[];
-  /** ADM-88 (reversed 2026-09-29): the stored score, or null when unscored. */
-  score: number | null;
+  /** Owner decision 1 (round 2): Hot / Warm / Cold with its reasons as the hover title. Never a number. */
+  heat: { label: LeadHeatLabel; title: string } | null;
+  /** SCR-006: consent, handoff, reply-waiting and duplicate indicators. */
+  flags: LeadFlagsData;
+  /** The other live leads on the same contact, for the row's merge entry. */
+  duplicates: { id: string; title: string }[];
 };
 
 export function LeadBulkTable({
@@ -42,9 +54,11 @@ export function LeadBulkTable({
   nurtureReasons,
   canAssign,
   canWrite,
+  canMerge,
   sortKey,
   sortDirection,
   sortHrefPrefix,
+  detailsHrefPrefix,
 }: {
   rows: BulkLeadRow[];
   roster: BulkRoster;
@@ -52,10 +66,14 @@ export function LeadBulkTable({
   nurtureReasons: readonly string[];
   canAssign: boolean;
   canWrite: boolean;
+  /** `organization.settings` — the owner-only merge door. */
+  canMerge: boolean;
   sortKey?: string;
   sortDirection: SortDirection;
   /** The list URL with the kept filters and a trailing `?` or `&`, so `sort=…&dir=…` can be appended. */
   sortHrefPrefix: string;
+  /** The list URL with the kept filters and a trailing `?` or `&`, so `lead=<id>` selects a row for the Lead Details rail. */
+  detailsHrefPrefix: string;
 }) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   // Built here rather than passed: a function is not serialisable across
@@ -95,40 +113,84 @@ export function LeadBulkTable({
       primary: true,
       cell: (l) => (
         <span className="flex items-center gap-2.5">
-          <Avatar name={l.name} size="md" />
+          <Avatar name={l.name} size="sm" />
           <span className="min-w-0">
-            <Link href={`/leads/${l.id}`} className="block truncate hover:text-brand">
+            <Link href={`/leads/${l.id}`} className="block max-w-[5.5rem] truncate hover:text-brand">
               {l.name}
             </Link>
-            <span className="block truncate text-xs font-normal text-muted">{l.subtitle}</span>
+            <span className="block max-w-[5.5rem] truncate text-[11px] font-normal text-muted">{humanize(l.source)}</span>
           </span>
         </span>
       ),
     },
-    { key: 'phone', header: 'Phone', desktopOnly: true, cellClassName: 'font-mono text-xs text-muted', cell: (l) => l.phone ?? '—' },
-    { key: 'source', header: 'Source', desktopOnly: true, cellClassName: 'text-muted', cell: (l) => humanize(l.source) },
-    { key: 'status', header: 'Status', badge: true, cell: (l) => <StatusBadge status={l.status} /> },
-    { key: 'assigned', header: 'Assigned', desktopOnly: true, cellClassName: 'text-muted', cell: (l) => l.assigned },
     {
-      key: 'budget',
-      header: 'Budget',
-      align: 'right',
+      key: 'contact',
+      header: 'Contact Details',
       desktopOnly: true,
-      cellClassName: 'tabular text-muted',
-      cell: (l) => l.budget ?? '—',
+      cellClassName: 'text-[11px] text-muted',
+      cell: (l) => (
+        <span className="block min-w-0">
+          <span className="block max-w-[5.5rem] truncate">{l.email ?? '—'}</span>
+          <span className="block">{l.phone ?? ''}</span>
+        </span>
+      ),
     },
+    {
+      key: 'status',
+      header: 'Status',
+      badge: true,
+      sortKey: 'heat',
+      cell: (l) => (
+        <span className="flex flex-col items-start gap-1">
+          <StatusBadge status={l.status} />
+          {l.heat ? <LeadHeatBadge label={l.heat.label} title={l.heat.title} /> : null}
+        </span>
+      ),
+    },
+    { key: 'flags', header: 'Flags', desktopOnly: true, cell: (l) => <LeadFlags flags={l.flags} /> },
+    {
+      key: 'interest',
+      header: 'Interested In',
+      desktopOnly: true,
+      cellClassName: 'text-muted',
+      cell: (l) => (
+        <span className="block min-w-0">
+          <span className="block max-w-[5.5rem] truncate">{l.service ?? '—'}</span>
+        </span>
+      ),
+    },
+    { key: 'budget', header: 'Budget', desktopOnly: true, cellClassName: 'tabular whitespace-nowrap text-[12px] text-muted', cell: (l) => l.budget ?? 'Not recorded' },
     {
       key: 'tags',
       header: 'Tags',
       desktopOnly: true,
-      cellClassName: 'text-xs text-muted',
-      cell: (l) => (l.tags.length > 0 ? l.tags.join(', ') : '—'),
+      cell: (l) =>
+        l.tags.length === 0 ? (
+          <span className="text-muted">—</span>
+        ) : (
+          <span className="flex max-w-[4.5rem] gap-1 overflow-hidden">
+            {l.tags.slice(0, 1).map((t) => (
+              <Badge key={t} tone="info" dot={false}>{t}</Badge>
+            ))}
+            {l.tags.length > 1 ? <span className="text-xs text-muted">+{l.tags.length - 1}</span> : null}
+          </span>
+        ),
     },
-    { key: 'score', header: 'Score', align: 'right', cellClassName: 'tabular', cell: (l) => (l.score === null ? <span className="text-muted">—</span> : l.score), sortKey: 'score' },
-    { key: 'created', header: 'Created', align: 'right', cellClassName: 'text-muted', cell: (l) => l.created, sortKey: 'created' },
-    { key: 'activity', header: 'Last activity', align: 'right', cellClassName: 'text-muted', cell: (l) => l.lastActivity, sortKey: 'activity' },
-    // SCR-006 — the preview drawer, fetched on open (preview-actions.ts).
-    { key: 'preview', header: '', align: 'right', desktopOnly: true, cell: (l) => <LeadPreviewButton leadId={l.id} name={l.name} /> },
+    {
+      key: 'assigned',
+      header: 'Assigned To',
+      desktopOnly: true,
+      cell: (l) =>
+        l.assigned === 'Unassigned' ? (
+          <span className="text-muted">Unassigned</span>
+        ) : (
+          <span className="flex items-center gap-2">
+            <Avatar name={l.assigned} size="sm" />
+            <span className="hidden max-w-[5rem] truncate min-[1800px]:inline">{l.assigned.split('@')[0]}</span>
+          </span>
+        ),
+    },
+    { key: 'created', header: 'Created On', cellClassName: 'text-muted whitespace-nowrap', cell: (l) => l.created, sortKey: 'created' },
   ];
 
   return (
@@ -157,7 +219,25 @@ export function LeadBulkTable({
         </div>
       ) : null}
 
-      <DataTable rows={rows} columns={columns} getKey={(l) => l.id} sort={sort} />
+      <Card className="px-1 pb-1">
+      <DataTable
+        dense
+        tight
+        rows={rows}
+        columns={columns}
+        getKey={(l) => l.id}
+        sort={sort}
+        rowActions={(l) => [
+          { key: 'preview', label: 'Preview', node: <LeadPreviewButton leadId={l.id} name={l.name} /> },
+          { key: 'details', label: 'Show details', href: `${detailsHrefPrefix}lead=${l.id}` },
+          { key: 'open', label: 'Open lead', href: `/leads/${l.id}` },
+          { key: 'conversation', label: 'Open conversation', href: `/leads/${l.id}?tab=conversation` },
+          ...(canMerge && l.duplicates.length > 0 ? [{ key: 'merge', label: 'Merge duplicate', node: <MergeDuplicateButton leadId={l.id} name={l.name} duplicates={l.duplicates} /> }] : []),
+          { key: 'meeting', label: 'Request a meeting', href: `/leads/${l.id}#meetings` },
+          { key: 'quotation', label: 'Quotations', href: `/leads/${l.id}#quotations` },
+        ]}
+      />
+      </Card>
     </div>
   );
 }

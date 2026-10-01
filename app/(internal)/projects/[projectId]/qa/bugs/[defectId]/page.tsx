@@ -5,11 +5,14 @@ import { notFound } from 'next/navigation';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { listAttachedFiles } from '@/modules/projects/attached-files-queries';
 import { getProject, listDeliverables, listDevelopmentBreakdown, listInternalRoster } from '@/modules/projects/queries';
 import { readDefectHistory } from '@/modules/qa/dashboard-queries';
 import { readDefectDetail } from '@/modules/qa/defect-detail-queries';
 import { ActivityFeed, Badge, Card, CardHeader, DetailList, DetailRow, EmptyState, IconCheck, PageHeader, PermissionDenied, humanize, statusTone, type Tone } from '@/ui';
 
+import { AttachFileForm } from '../../../attach-file-form';
+import { AttachedFileLinks } from '../../../attached-file-links';
 import { ProjectSubNav } from '../../../project-subnav';
 import { DefectTriageForm, SettleDefectForm } from '../../../qa-panel';
 import { AttachEvidenceForm, LinkBuildForm } from './bug-detail-forms';
@@ -55,12 +58,14 @@ export default async function BugDetailPage({ params }: { params: Promise<{ proj
   const detail = await readDefectDetail(projectId, defectId);
   if (!detail) notFound();
 
-  const [clock, history, roster, deliverables, { tasks }] = await Promise.all([
+  const [clock, history, roster, deliverables, { tasks }, attachedFiles] = await Promise.all([
     agencyClock(),
     readDefectHistory([defectId]),
     listInternalRoster(),
     listDeliverables(projectId),
-    listDevelopmentBreakdown(projectId),
+    listDevelopmentBreakdown(projectId, { excludeCancelled: true }),
+    // Q-C6: the evidence files uploaded against this bug.
+    listAttachedFiles(projectId),
   ]);
   const canWrite = can(context, 'project.write');
   const canAttach = can(context, 'task.write');
@@ -149,6 +154,9 @@ export default async function BugDetailPage({ params }: { params: Promise<{ proj
                 </ul>
               )}
               {canAttach && (evidence.length > 0 || defect.evidence_url) ? <AttachEvidenceForm projectId={projectId} defectId={defectId} /> : null}
+              {/* Q-C6: the evidence may be an uploaded file — a screenshot or a log — under the project-file limits and credentials guard. */}
+              <AttachedFileLinks projectId={projectId} files={attachedFiles.get(defectId)} label="Evidence files of this bug" />
+              {canWrite ? <AttachFileForm projectId={projectId} subjectKind="defect" subjectId={defectId} /> : null}
             </div>
           </Card>
 
@@ -237,7 +245,7 @@ export default async function BugDetailPage({ params }: { params: Promise<{ proj
                   label="Found by run"
                   value={
                     run ? (
-                      <Link href={`/projects/${projectId}/qa#run-${run.id}`} className="underline underline-offset-2">
+                      <Link href={`/projects/${projectId}/qa/runs/${run.id}`} className="underline underline-offset-2">
                         {humanize(run.suite)} run · {run.status} · {clock.dateTime(run.executedAt)}
                       </Link>
                     ) : (

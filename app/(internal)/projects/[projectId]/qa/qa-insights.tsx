@@ -5,6 +5,7 @@ import type { DefectHistoryEntry, TestPlanVersion, TestRunDetail } from '@/modul
 import type { Defect } from '@/modules/qa/types';
 import { Badge, Card, CardHeader, FilterChips, humanize, Stat, StatGrid, statusTone, type Tone } from '@/ui';
 
+import { PreviewButton } from '../../../preview-drawer';
 import { DefectTriageForm, RaiseDefectForm, SettleDefectForm } from '../qa-panel';
 
 /**
@@ -208,6 +209,7 @@ export function QaInsights({
                   <span className="flex flex-wrap items-center gap-2">
                     <Badge tone={run.failed > 0 ? 'danger' : run.skipped > 0 ? 'warning' : 'success'}>{run.suite}</Badge>
                     <span className="text-muted">{buildLabel.get(run.deliverableId) ?? 'build'}</span>
+                    {run.environment ? <Badge tone="neutral">{run.environment}</Badge> : null}
                     <span className="tabular">
                       {run.passed}/{run.total} passed
                       {run.failed > 0 ? `, ${run.failed} failed` : ''}
@@ -228,6 +230,7 @@ export function QaInsights({
                         evidence
                       </a>
                     ) : null}
+                    <Link href={`/projects/${projectId}/qa/runs/${run.id}`} className="font-medium text-brand hover:underline">Open run</Link>
                   </span>
                 </div>
                 {mayWrite && run.failed > 0 ? (
@@ -291,8 +294,9 @@ export function QaInsights({
                         {d.title}
                       </Link>
                     </span>
-                    <span className="text-xs text-muted">
+                    <span className="flex items-center gap-2 text-xs text-muted">
                       {assignee ? assignee.fullName : 'unassigned'} · raised {clock.date(d.created_at)}
+                      <PreviewButton group="Bug" id={d.id} />
                     </span>
                   </div>
                   {d.task_id || d.build_id ? (

@@ -19,6 +19,8 @@ export * from './primitives/chart';
 export * from './primitives/calendar';
 export * from './primitives/kanban';
 export * from './primitives/empty-state';
+export * from './primitives/error-state';
+export * from './primitives/approval-banner';
 export * from './primitives/permission-denied';
 export * from './primitives/staleness';
 export * from './primitives/stale-data-warning';

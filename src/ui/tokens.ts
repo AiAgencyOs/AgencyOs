@@ -183,7 +183,7 @@ export const selectClass =
   'hover:border-line-strong focus:border-brand focus:ring-2 focus:ring-brand/20 ' +
   'disabled:opacity-50 md:h-9 md:text-sm';
 
-export const labelClass = 'text-xs font-semibold uppercase tracking-wider text-muted';
+export const labelClass = 'text-[13px] font-medium text-muted';
 
 export const cardClass = 'rounded-xl border border-line bg-surface shadow-xs';
 

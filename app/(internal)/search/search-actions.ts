@@ -1,10 +1,12 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 
-import { forgetSearch, listMySearches, normalizeFilters, recordSearch, saveSearch, type SavedSearch } from '@/lib/admin/saved-searches';
+import { editSearch, forgetSearch, listMySearches, normalizeFilters, recordSearch, saveSearch, type SavedSearch } from '@/lib/admin/saved-searches';
 import { getAuthContext } from '@/lib/auth/session';
 import { isInternalRole } from '@/lib/auth/claims';
+import { startBackfill, stopIndexing } from '@/lib/search/semantic-admin';
 import type { FormState } from '@/modules/identity/types';
 
 /**
@@ -12,7 +14,7 @@ import type { FormState } from '@/modules/identity/types';
  * results page after it renders (a GET must not write); the two forms and
  * the palette's read use the rest.
  */
-export async function recordSearchAction(query: string, filters: { type?: string; since?: string }): Promise<void> {
+export async function recordSearchAction(query: string, filters: { type?: string; since?: string; f?: string[] }): Promise<void> {
   const result = await recordSearch(query, normalizeFilters(filters));
   if (result.ok) revalidatePath('/search');
 }
@@ -25,7 +27,7 @@ export async function listMySearchesAction(): Promise<{ saved: SavedSearch[]; re
 
 export async function saveSearchAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const query = String(formData.get('q') ?? '');
-  const filters = normalizeFilters({ type: String(formData.get('type') ?? ''), since: String(formData.get('since') ?? '') });
+  const filters = normalizeFilters({ type: String(formData.get('type') ?? ''), since: String(formData.get('since') ?? ''), f: formData.getAll('f').map(String) });
   const result = await saveSearch(query, filters, String(formData.get('name') ?? ''));
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath('/search');
@@ -39,4 +41,31 @@ export async function forgetSearchAction(_prev: FormState, formData: FormData): 
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath('/search');
   return { status: 'success', message: 'Removed.' };
+}
+
+export async function editSearchAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await editSearch(String(formData.get('id') ?? ''), { name: String(formData.get('name') ?? ''), query: String(formData.get('q') ?? '') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/search');
+  return { status: 'success', message: 'Saved.' };
+}
+
+/**
+ * Search by meaning, the owner's two doors (decision 14). The backfill is only
+ * ever reached from the estimate screen, whose form carries the record count
+ * the estimate was made for; the door re-checks the owner and audits.
+ */
+export async function startSemanticBackfillAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const records = Number(formData.get('records'));
+  const result = await startBackfill(records);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/search');
+  redirect('/search?mode=meaning');
+}
+
+export async function stopSemanticAction(_prev: FormState, _formData: FormData): Promise<FormState> {
+  const result = await stopIndexing();
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/search');
+  return { status: 'success', message: 'Search by meaning is off.' };
 }

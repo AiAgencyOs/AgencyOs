@@ -3,8 +3,8 @@
 import { useActionState } from 'react';
 
 import { PROVIDER_IDS } from '@/lib/ai/model-provider';
-import { addModelAction, retireModelAction, setFallbackChainAction, setProviderBudgetAction } from '@/modules/agents/models-actions';
-import type { FallbackChainRow, ProviderBudgetRow } from '@/modules/agents/models-queries';
+import { addModelAction, retireModelAction, setFallbackChainAction, setModelBudgetAction, setProviderBudgetAction } from '@/modules/agents/models-actions';
+import type { FallbackChainRow, ModelBudgetRow, ProviderBudgetRow } from '@/modules/agents/models-queries';
 import { MODEL_CAPABILITIES } from '@/modules/agents/models-schema';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { Badge, FormMessage, buttonClass, inputClass, labelClass, selectClass } from '@/ui';
@@ -189,6 +189,64 @@ export function ProviderBudgetsPanel({ budgets, editable }: { budgets: ProviderB
               )}
             </span>
             {editable ? <ProviderBudgetForm row={row} /> : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function ModelBudgetForm({ row }: { row: ModelBudgetRow }) {
+  const [state, action, pending] = useActionState(setModelBudgetAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="modelId" value={row.modelId} />
+      <input
+        type="number"
+        name="monthlyCapRupees"
+        min={0}
+        step={0.01}
+        defaultValue={row.monthlyCapMinor === null ? '' : (row.monthlyCapMinor / 100).toFixed(2)}
+        placeholder="₹ per month · 0 clears"
+        aria-label={`Monthly cap for ${row.modelId}`}
+        className={`${inputClass} h-8 w-40 text-xs`}
+      />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Saving…' : 'Set cap'}
+      </button>
+      <FormMessage status={state.status} message={state.message} className="basis-full text-xs" />
+    </form>
+  );
+}
+
+/** SCR-064 "Set model budget/cap" — one row per registered model, the cap beside this month's spend. */
+export function ModelBudgetsPanel({ budgets, editable }: { budgets: ModelBudgetRow[]; editable: boolean }) {
+  if (budgets.length === 0) return <p className="px-4 py-4 text-[13px] text-muted sm:px-5">No model is registered, so there is nothing to cap. Add one to the registry first.</p>;
+  return (
+    <ul className="divide-y divide-line">
+      {budgets.map((row) => {
+        const over = row.monthlyCapMinor !== null && row.spentMinor !== null && row.spentMinor >= row.monthlyCapMinor;
+        const share = row.monthlyCapMinor !== null && row.spentMinor !== null && row.monthlyCapMinor > 0 ? Math.min(100, Math.round((row.spentMinor / row.monthlyCapMinor) * 100)) : null;
+        return (
+          <li key={row.modelId} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[13px] sm:px-5">
+            <span className="flex min-w-0 flex-wrap items-center gap-2">
+              <code className="text-xs font-medium">{row.modelId}</code>
+              {row.monthlyCapMinor === null ? (
+                <Badge tone="neutral">no cap</Badge>
+              ) : (
+                <>
+                  <span className="tabular text-muted">
+                    {INR.format((row.spentMinor ?? 0) / 100)} of {INR.format(row.monthlyCapMinor / 100)} this month
+                    {share !== null ? ` · ${share}%` : ''}
+                  </span>
+                  <Badge tone={over ? 'danger' : share !== null && share >= 80 ? 'warning' : 'success'} dot>
+                    {over ? 'over budget — calls refused' : 'within budget'}
+                  </Badge>
+                </>
+              )}
+            </span>
+            {editable ? <ModelBudgetForm row={row} /> : null}
           </li>
         );
       })}

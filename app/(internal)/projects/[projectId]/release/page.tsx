@@ -8,8 +8,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can, hasRole } from '@/lib/authz/permissions';
 import { listApprovalsForSubject } from '@/modules/approvals/queries';
 import { readPaymentLadder } from '@/modules/finance/queries';
-import { readHandoverRelease } from '@/modules/projects/handover-release-queries';
-import { readDeploymentDependencies } from '@/modules/projects/deployment-deps-queries';
+import { listReleaseVerifications, readReleaseRecord } from '@/modules/projects/handover-release-queries';
 import { listReleasePaymentOverrides, readFinalPaymentState } from '@/modules/projects/release-payment-queries';
 import { readPerformanceSummary, readSecuritySummary } from '@/modules/qa/summary-queries';
 import { readReleaseHold } from '@/modules/projects/release-hold-queries';
@@ -40,7 +39,7 @@ import {
 import { ProjectSubNav } from '../project-subnav';
 import { ProductionReadyForm } from '../qa-panel';
 import { WorkspaceHeader } from '../workspace-header';
-import { RollbackPlanForm, SmokeChecklist } from './release-panel';
+import { RollbackPlanForm, SmokeChecklist, VerificationForm } from './release-panel';
 import { HoldReleaseForm, LiftReleaseHoldForm } from './release-hold-panel';
 import { DeploymentDependencies } from './deployment-deps-panel';
 import { OverrideReleasePaymentForm } from './release-payment-panel';
@@ -115,7 +114,7 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
       readHandoverPackage(projectId),
       readProductionReadiness(projectId),
       readProductionReadyAt(projectId),
-      readHandoverRelease(projectId),
+      readReleaseRecord(projectId),
       // SCR-044 — a standing release hold, which the sign-off door refuses on.
       readReleaseHold(projectId),
     ]);
@@ -123,10 +122,10 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
   // Decision F1 (2026-09-30) and SCR-049 (bucket F): the payment gate as the
   // door reads it, the owner's overrides, deployment dependencies, and the
   // security and performance summaries beside the QA one.
-  const [paymentState, overrides, deployment, security, performance] = await Promise.all([
+  const [paymentState, overrides, verifications, security, performance] = await Promise.all([
     readFinalPaymentState(projectId),
     listReleasePaymentOverrides(projectId),
-    readDeploymentDependencies(projectId),
+    listReleaseVerifications(projectId),
     readSecuritySummary(projectId),
     readPerformanceSummary(projectId),
   ]);
@@ -287,36 +286,34 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
           : { mark: 'fail', fact: `Still ${humanize(handover.status)} — ${plural(handover.items.length, 'item')} in the package so far.` }),
   };
 
-  // SCR-049 — the smoke checklist and rollback plan, recorded on the
-  // handover (20260929170000). Reports, not gates: `mark_production_ready`
-  // reads neither, and the line says so by carrying no "gate" badge.
-  const smokeDone = release ? release.smokeChecklist.filter((i) => i.doneAt !== null).length : 0;
-  const smokeTotal = release ? release.smokeChecklist.length : 0;
+  // SCR-049 — the smoke checklist, rollback plan and deployment dependencies,
+  // recorded on the project's release record (20261006500100): no handover
+  // needed. Reports, not gates: `mark_production_ready` reads none of them,
+  // and the line says so by carrying no "gate" badge.
+  const smokeDone = release.smokeChecklist.filter((i) => i.doneAt !== null).length;
+  const smokeTotal = release.smokeChecklist.length;
+  const depsReady = release.dependencies.filter((d) => d.status === 'ready').length;
   const smokeItem: GateItem = {
     key: 'smoke',
     label: 'Smoke checklist complete',
     hardGate: false,
-    href: `${base}/release`,
+    href: `${base}/release#smoke`,
     hrefLabel: 'Release · smoke checklist',
-    ...(release === null
-      ? { mark: 'unknown', fact: 'No handover has been prepared, so there is no checklist to tick.' }
-      : smokeTotal === 0
-        ? { mark: 'unknown', fact: 'No smoke check has been listed on the handover.' }
-        : smokeDone === smokeTotal
-          ? { mark: 'pass', fact: `All ${plural(smokeTotal, 'smoke check')} ticked. A report beside the gate — the sign-off door does not read it.` }
-          : { mark: 'fail', fact: `${smokeDone} of ${plural(smokeTotal, 'smoke check')} ticked. A report beside the gate — the sign-off door does not read it.` }),
+    ...(smokeTotal === 0
+      ? { mark: 'unknown', fact: 'No smoke check has been listed yet.' }
+      : smokeDone === smokeTotal
+        ? { mark: 'pass', fact: `All ${plural(smokeTotal, 'smoke check')} ticked. A report beside the gate — the sign-off door does not read it.` }
+        : { mark: 'fail', fact: `${smokeDone} of ${plural(smokeTotal, 'smoke check')} ticked. A report beside the gate — the sign-off door does not read it.` }),
   };
   const rollbackItem: GateItem = {
     key: 'rollback',
     label: 'Rollback plan recorded',
     hardGate: false,
-    href: `${base}/release`,
+    href: `${base}/release#rollback`,
     hrefLabel: 'Release · rollback plan',
-    ...(release === null
-      ? { mark: 'unknown', fact: 'No handover has been prepared, so there is nowhere to record one.' }
-      : release.rollbackPlan
-        ? { mark: 'pass', fact: 'A rollback plan is written on the handover. A report, not a gate.' }
-        : { mark: 'fail', fact: 'No rollback plan has been written on the handover. A report, not a gate.' }),
+    ...(release.rollbackPlan
+      ? { mark: 'pass', fact: 'A rollback plan is written for this release. A report, not a gate.' }
+      : { mark: 'fail', fact: 'No rollback plan has been written for this release. A report, not a gate.' }),
   };
 
   const items: GateItem[] = [holdItem, blockersItem, majorsItem, buildItem, testsItem, planItem, paymentItem, handoverItem, rollbackItem, smokeItem];
@@ -342,7 +339,7 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
 
       <ProjectSubNav projectId={projectId} />
 
-      <StatGrid cols={5}>
+      <StatGrid cols={6}>
         <Stat
           label="Gate"
           value={`${counts.pass}/${items.length}`}
@@ -385,6 +382,19 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
           }
           tone={ladder === null ? 'neutral' : ladder.gate.open ? 'success' : ladder.measurable ? 'warning' : 'neutral'}
           icon={<IconRupee size={16} />}
+        />
+        {/* SCR-049 "Rollback readiness": the plan, and whether the deployment's dependencies are ready — a report, not a gate. */}
+        <Stat
+          label="Rollback readiness"
+          value={release.rollbackPlan ? 'Planned' : 'No plan'}
+          caption={
+            release.dependencies.length > 0
+              ? `${depsReady}/${release.dependencies.length} dependencies ready`
+              : 'No dependency listed'
+          }
+          tone={release.rollbackPlan ? (release.dependencies.length > 0 && depsReady < release.dependencies.length ? 'warning' : 'success') : 'danger'}
+          icon={<IconFlag size={16} />}
+          href="#rollback"
         />
       </StatGrid>
 
@@ -482,14 +492,14 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
             </Card>
           ) : null}
 
-          {/* SCR-049 (bucket F): deployment dependencies on the handover — a report beside the gate. */}
-          <Card>
-            <CardHeader title="Deployment dependencies" description="What the deployment waits on — DNS, a vendor key, a client sign-off. Recorded on the handover; the sign-off door does not read it." />
+          {/* SCR-049: deployment dependencies on the project's release record — a report beside the gate, recorded before any handover. */}
+          <Card id="dependencies">
+            <CardHeader title="Deployment dependencies" description="What the deployment waits on — DNS, a vendor key, a client sign-off. Recorded on the project's release record; the sign-off door does not read it." />
             <CardBody>
-              {deployment ? (
-                <DeploymentDependencies projectId={projectId} handoverId={deployment.handoverId} dependencies={deployment.dependencies} editable={mayWrite} />
+              {mayWrite || release.dependencies.length > 0 ? (
+                <DeploymentDependencies projectId={projectId} dependencies={release.dependencies} editable={mayWrite} />
               ) : (
-                <p className="text-[13px] text-muted">No handover has been prepared, so there is nowhere to record them yet.</p>
+                <p className="text-[13px] text-muted">No deployment dependency listed.</p>
               )}
             </CardBody>
           </Card>
@@ -583,44 +593,69 @@ export default async function ReleaseGatePage({ params }: { params: Promise<{ pr
             )}
           </Card>
 
-          <Card>
+          <Card id="rollback">
             <CardHeader
               title="Rollback plan"
-              description="How this release is undone if it fails. Recorded on the handover; the sign-off door does not read it."
+              description="How this release is undone if it fails. Recorded on the project's release record, before any handover; the sign-off door does not read it."
             />
-            {release ? (
-              <CardBody>
-                {mayWrite ? (
-                  <RollbackPlanForm projectId={projectId} handoverId={release.id} current={release.rollbackPlan} />
-                ) : release.rollbackPlan ? (
-                  <p className="whitespace-pre-line text-[13px] text-muted">{release.rollbackPlan}</p>
-                ) : (
-                  <p className="text-[13px] text-muted">No rollback plan recorded.</p>
-                )}
-              </CardBody>
-            ) : (
-              <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No handover prepared — a rollback plan is recorded on the handover.</p>
-            )}
+            <CardBody>
+              {mayWrite ? (
+                <RollbackPlanForm projectId={projectId} current={release.rollbackPlan} />
+              ) : release.rollbackPlan ? (
+                <p className="whitespace-pre-line text-[13px] text-muted">{release.rollbackPlan}</p>
+              ) : (
+                <p className="text-[13px] text-muted">No rollback plan recorded.</p>
+              )}
+            </CardBody>
           </Card>
 
-          <Card>
+          <Card id="smoke">
             <CardHeader
               title={`Smoke checklist${smokeTotal > 0 ? ` (${smokeDone}/${smokeTotal})` : ''}`}
               description="What is checked on the deployed candidate. A report the gate summary shows; not a gate."
             />
-            {release ? (
-              <CardBody>
-                <SmokeChecklist
-                  projectId={projectId}
-                  handoverId={release.id}
-                  items={release.smokeChecklist}
-                  editable={mayWrite}
-                  formatDate={Object.fromEntries(release.smokeChecklist.flatMap((i) => (i.doneAt ? [[i.doneAt, clock.dateTime(i.doneAt)]] : [])))}
-                />
-              </CardBody>
-            ) : (
-              <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No handover prepared — the checklist lives on the handover.</p>
-            )}
+            <CardBody>
+              <SmokeChecklist
+                projectId={projectId}
+                items={release.smokeChecklist}
+                editable={mayWrite}
+                formatDate={Object.fromEntries(release.smokeChecklist.flatMap((i) => (i.doneAt ? [[i.doneAt, clock.dateTime(i.doneAt)]] : [])))}
+              />
+            </CardBody>
+          </Card>
+
+          {/* SCR-049 "Record post-deploy verification": a dated statement that the deployed release was checked. */}
+          <Card id="verification">
+            <CardHeader
+              title={`Post-deploy verification${verifications.length > 0 ? ` (${verifications.length})` : ''}`}
+              description="Who checked the deployed release, when, against which build and environment, and what they found. Appended, never edited; a report beside the gate."
+            />
+            <CardBody className="flex flex-col gap-3">
+              {verifications.length === 0 ? (
+                <p className="text-[13px] text-muted">No verification recorded yet.</p>
+              ) : (
+                <ul className="flex flex-col divide-y divide-line rounded-lg border border-line">
+                  {verifications.map((v) => (
+                    <li key={v.id} className="flex flex-col gap-1 px-3 py-2 text-[13px]">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <Badge tone={v.outcome === 'passed' ? 'success' : v.outcome === 'partial' ? 'warning' : 'danger'}>{v.outcome === 'partial' ? 'Partly passed' : humanize(v.outcome)}</Badge>
+                        <span className="font-medium">{humanize(v.environment)}</span>
+                        {v.buildTitle ? <span className="text-muted">{v.buildTitle} v{v.buildVersion}</span> : null}
+                        <span className="text-xs text-muted">
+                          {clock.dateTime(v.verifiedAt)}
+                          {v.verifiedBy ? ` · ${v.verifiedBy}` : ''}
+                        </span>
+                      </span>
+                      {v.notes ? <p className="whitespace-pre-line text-muted">{v.notes}</p> : null}
+                      {v.evidenceUrl ? (
+                        <a href={v.evidenceUrl} target="_blank" rel="noreferrer" className="break-all text-xs text-brand hover:underline">{v.evidenceUrl}</a>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {mayWrite ? <VerificationForm projectId={projectId} builds={deliverables.filter((d) => d.kind === 'build').map((d) => ({ id: d.id, title: d.title, version: d.version }))} /> : null}
+            </CardBody>
           </Card>
 
           <Card>

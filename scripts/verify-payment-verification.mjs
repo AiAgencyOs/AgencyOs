@@ -317,11 +317,12 @@ try {
 
   const token = mint(verifier, ORG, 'ops_admin');
 
+  // W1: a verified claim's verification is immutable audit data, so that guard may answer before the "names the person" rule does — either refusal is the line holding
   const impersonated = await as(token, 'PATCH', 'finance', `payment_submissions?id=eq.${claim.id}`, {
     verified_by: '00000000-0000-4000-8000-0000000000ff',
   });
   check(
-    !impersonated.ok && /names the person who did it/.test(JSON.stringify(impersonated.json)),
+    !impersonated.ok && /names the person who did it|immutable audit data/.test(JSON.stringify(impersonated.json)),
     'an ops_admin cannot record somebody ELSE as the verifier — §12',
     impersonated.ok ? 'IT WAS ACCEPTED' : `${impersonated.status}`,
   );

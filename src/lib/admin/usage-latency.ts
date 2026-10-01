@@ -12,6 +12,8 @@ import { unreadable } from '@/lib/result';
 
 /** How many settled runs the figures are taken over — the most recent ones. */
 export const LATENCY_SAMPLE = 500;
+/** Run ids per request for the step read: 50 uuids is ~1.9 KB of query string. */
+const STEP_ID_CHUNK = 50;
 
 export type LatencyKpis = {
   /** Runs with a recorded latency in the sample. */
@@ -60,17 +62,20 @@ export async function readLatencyKpis(): Promise<LatencyKpis> {
   const runRows = runs ?? [];
   const ids = runRows.map((r) => r.id);
   let stepLatencies: number[] = [];
-  if (ids.length > 0) {
+  // The ids travel in the URL of a GET: five hundred of them is ~18 KB, past what
+  // PostgREST and the proxies in front of it accept, so the read fails the moment
+  // there are enough runs. Ask in chunks that fit.
+  for (let i = 0; i < ids.length; i += STEP_ID_CHUNK) {
     const { data: steps, error: stepsError } = await supabase
       .schema('ai')
       .from('agent_steps')
       .select('latency_ms')
       .eq('kind', 'model_call')
-      .in('run_id', ids)
+      .in('run_id', ids.slice(i, i + STEP_ID_CHUNK))
       .not('latency_ms', 'is', null)
       .limit(5_000);
     if (stepsError) unreadable('readLatencyKpis.steps', stepsError);
-    stepLatencies = (steps ?? []).map((s) => Number(s.latency_ms));
+    stepLatencies = stepLatencies.concat((steps ?? []).map((s) => Number(s.latency_ms)));
   }
 
   return summariseLatencies(

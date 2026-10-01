@@ -40,7 +40,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
   if (!feed || feed.project_id !== projectId) return notFound();
 
   const [tasks, milestones, project] = await Promise.all([
-    admin.schema('projects').from('tasks').select('id, title, status, due_on').eq('project_id', feed.project_id).not('due_on', 'is', null).neq('status', 'done'),
+    admin.schema('projects').from('tasks').select('id, title, status, due_on').eq('project_id', feed.project_id).not('due_on', 'is', null).neq('status', 'done').neq('status', 'cancelled').is('archived_at', null),
     admin.schema('projects').from('milestones').select('id, name, status, due_on, met_at').eq('project_id', feed.project_id).not('due_on', 'is', null),
     admin.schema('projects').from('projects').select('opportunity_id').eq('id', feed.project_id).maybeSingle(),
   ]);

@@ -7,7 +7,9 @@ import { useState } from 'react';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { setOpportunityStageAction } from '@/modules/sales/actions';
 import { OPPORTUNITY_TRANSITIONS, type OpportunityStage } from '@/modules/sales/schema';
-import { Callout, IconAlert, KanbanBoard, type KanbanColumn } from '@/ui';
+import { Callout, IconAlert, IconPlus, KanbanBoard, StatusBadge, type KanbanColumn } from '@/ui';
+
+import { openQuickCreate } from '../shell-controls';
 
 export type PipelineCard = {
   id: string;
@@ -15,11 +17,15 @@ export type PipelineCard = {
   leadId: string;
   name: string;
   valueLabel: string;
+  /** The lead's own title — the reference's second line on a deal card. */
+  contact: string | null;
+  /** "3d ago" — when the deal was opened. */
+  ago: string;
 };
 
 /**
  * The interactive half of the Sales Pipeline's open-deal board (SCR-005).
- * Scoped to the three OPEN stages only (discovery/proposal/negotiation) —
+ * Won and Lost are drawn as read-only columns (their cards cannot be dragged and nothing can be dropped on them) —
  * `won` and `lost` are reached through the Lead 360 sales panel's own guarded
  * flow (a mandatory reason+category for lost, the won-gate RPC and a
  * separate `convertToProject` capability/action for won), neither of which a
@@ -45,6 +51,11 @@ export function PipelineBoard({
     setError(null);
     const deal = deals.find((d) => d.id === opportunityId);
     if (!deal) return;
+
+    if (toStage === 'won' || toStage === 'lost') {
+      setError('Won and Lost are recorded from the lead\'s Sales panel, which asks for the reason and runs the won gate. Open the deal to do it.');
+      return;
+    }
 
     const allowed = OPPORTUNITY_TRANSITIONS[deal.columnId] as readonly string[];
     if (!allowed.includes(toStage)) {
@@ -76,20 +87,39 @@ export function PipelineBoard({
         columns={columns}
         items={deals}
         disabled={!canWrite}
+        isItemLocked={(d) => d.columnId === 'won' || d.columnId === 'lost'}
         onMove={handleMove}
+        emptyLabel="No deals"
+        renderColumnFooter={
+          canWrite
+            ? (column) => column.id === 'won' || column.id === 'lost' ? null : (
+                <button type="button" onClick={() => openQuickCreate('lead')} className="flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-[13px] font-medium text-brand transition-colors hover:bg-surface-hover">
+                  <IconPlus size={14} /> Add Lead
+                </button>
+              )
+            : undefined
+        }
         renderCard={(deal) => (
           <div className="rounded-lg border border-line bg-surface p-3 shadow-xs">
             {/* A drag only starts once the pointer moves past the 6px
                 threshold `KanbanBoard`'s `PointerSensor` requires, so an
                 ordinary click still reaches this link without any extra
                 handling here. */}
-            <Link
-              href={`/leads/${deal.leadId}`}
-              className="block truncate text-[13px] font-medium text-foreground hover:underline"
-            >
-              {deal.name}
+            <Link href={`/leads/${deal.leadId}`} className="block truncate text-sm font-semibold text-foreground hover:underline">
+              {deal.contact ?? deal.name}
             </Link>
-            <p className="mt-1 text-xs text-muted">{deal.valueLabel}</p>
+            {deal.contact ? <p className="truncate text-xs text-muted">{deal.name}</p> : null}
+            <p className="tabular mt-2 flex items-baseline justify-between gap-2 text-sm font-semibold text-foreground">
+              <span>{deal.valueLabel}</span>
+              {/* SCR-005 "Open lead or quotation from card": the lead is the name above, its quotations are here. */}
+              <Link href={`/leads/${deal.leadId}?tab=quotations`} className="text-xs font-medium text-brand hover:underline">
+                Quotations
+              </Link>
+            </p>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+              <span className="whitespace-nowrap text-xs text-muted">{deal.ago}</span>
+              <StatusBadge status={deal.columnId} dot={false} />
+            </div>
           </div>
         )}
       />

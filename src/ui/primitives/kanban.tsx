@@ -13,7 +13,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { useState, useId } from 'react';
 
-import { cx, TONE_CHIP, TONE_TEXT, type Tone } from '../tokens';
+import { cx, TONE_TEXT, type Tone } from '../tokens';
 
 /**
  * A drag-and-drop Kanban board — SCR-020's board mode, and the "column-per-
@@ -34,7 +34,7 @@ import { cx, TONE_CHIP, TONE_TEXT, type Tone } from '../tokens';
  * and an optional footer ("+ Add task") — both supplied by the caller.
  */
 
-export type KanbanColumn = { id: string; label: string; tone?: Tone; icon?: React.ReactNode };
+export type KanbanColumn = { id: string; label: string; tone?: Tone; icon?: React.ReactNode; /** A line under the name — the reference's column total ('₹12,50,000'). */ subtitle?: React.ReactNode };
 export type KanbanItem = { id: string; columnId: string };
 
 export function KanbanBoard<T extends KanbanItem>({
@@ -43,8 +43,10 @@ export function KanbanBoard<T extends KanbanItem>({
   renderCard,
   onMove,
   disabled = false,
+  isItemLocked,
   renderColumnAction,
   renderColumnFooter,
+  emptyLabel = 'No tasks',
   className,
 }: {
   columns: KanbanColumn[];
@@ -54,10 +56,14 @@ export function KanbanBoard<T extends KanbanItem>({
   onMove?: (itemId: string, toColumnId: string) => void | Promise<void>;
   /** Renders every card as a plain, non-draggable tile — for roles without write permission. */
   disabled?: boolean;
+  /** Renders one card as a plain tile even when the board is writable (a read-only column, e.g. Won / Lost). */
+  isItemLocked?: (item: T) => boolean;
   /** A control in the column header's right corner. */
   renderColumnAction?: (column: KanbanColumn) => React.ReactNode;
   /** A control under the column's cards. */
   renderColumnFooter?: (column: KanbanColumn) => React.ReactNode;
+  /** What an empty column says. */
+  emptyLabel?: string;
   className?: string;
 }) {
   // dnd-kit numbers its aria-describedby ids from a module counter, which
@@ -102,7 +108,7 @@ export function KanbanBoard<T extends KanbanItem>({
 
   return (
     <DndContext id={dndId} sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
-      <div className={cx('grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5', className)}>
+      <div className={cx('grid grid-cols-1 gap-3 sm:grid-cols-2', XL_COLS[columns.length] ?? 'xl:grid-cols-5', className)}>
         {columns.map((col) => (
           <KanbanColumnView
             key={col.id}
@@ -110,11 +116,12 @@ export function KanbanBoard<T extends KanbanItem>({
             count={items.filter((i) => columnIdFor(i) === col.id).length}
             action={renderColumnAction?.(col)}
             footer={renderColumnFooter?.(col)}
+            emptyLabel={emptyLabel}
           >
             {items
               .filter((i) => columnIdFor(i) === col.id)
               .map((item) => (
-                <KanbanCard key={item.id} id={item.id} disabled={disabled}>
+                <KanbanCard key={item.id} id={item.id} disabled={disabled || Boolean(isItemLocked?.(item))}>
                   {renderCard(item)}
                 </KanbanCard>
               ))}
@@ -124,6 +131,9 @@ export function KanbanBoard<T extends KanbanItem>({
     </DndContext>
   );
 }
+
+// Literal class names, so Tailwind's scanner emits them.
+const XL_COLS: Record<number, string> = { 1: 'xl:grid-cols-1', 2: 'xl:grid-cols-2', 3: 'xl:grid-cols-3', 4: 'xl:grid-cols-4', 5: 'xl:grid-cols-5' };
 
 const HEADER_TINT: Record<Tone, string> = {
   neutral: 'bg-surface-sunken',
@@ -140,12 +150,14 @@ function KanbanColumnView({
   count,
   action,
   footer,
+  emptyLabel,
   children,
 }: {
   column: KanbanColumn;
   count: number;
   action?: React.ReactNode;
   footer?: React.ReactNode;
+  emptyLabel: string;
   children: React.ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: column.id });
@@ -159,20 +171,21 @@ function KanbanColumnView({
         isOver ? 'border-brand/40 bg-brand-soft/30' : 'border-line',
       )}
     >
-      <div className={cx('flex items-center justify-between gap-2 rounded-t-xl px-3 py-2.5', HEADER_TINT[tone])}>
-        <span className={cx('flex min-w-0 items-center gap-2 text-[13px] font-semibold', TONE_TEXT[tone === 'neutral' ? 'neutral' : tone])}>
-          {column.icon ? (
-            <span className="shrink-0">{column.icon}</span>
-          ) : (
-            <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-current" />
-          )}
-          <span className="truncate text-foreground">{column.label}</span>
-          <span className={cx('tabular rounded-full px-1.5 py-0.5 text-[10px] font-semibold', TONE_CHIP[tone])}>{count}</span>
+      <div className={cx('flex items-start justify-between gap-2 rounded-t-xl px-3 py-2.5', HEADER_TINT[tone])}>
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span className={cx('flex min-w-0 items-center gap-2 text-[14px] font-semibold', TONE_TEXT[tone])}>
+            {column.icon ? <span className="shrink-0">{column.icon}</span> : null}
+            <span className="truncate">{column.label}</span>
+          </span>
+          {column.subtitle ? <span className="tabular text-[13px] font-semibold text-foreground">{column.subtitle}</span> : null}
         </span>
-        {action ? <span className="shrink-0">{action}</span> : null}
+        <span className="flex shrink-0 items-center gap-1.5">
+          <span className="tabular rounded-full bg-surface px-2 py-0.5 text-[11px] font-semibold text-foreground">{count}</span>
+          {action ? <span>{action}</span> : null}
+        </span>
       </div>
       <div className="flex min-h-[80px] flex-1 flex-col gap-2 p-2">
-        {count > 0 ? children : <p className="px-2 py-4 text-center text-xs text-faint">No tasks</p>}
+        {count > 0 ? children : <p className="px-2 py-4 text-center text-xs text-faint">{emptyLabel}</p>}
       </div>
       {footer ? <div className="px-2 pb-2">{footer}</div> : null}
     </div>
@@ -187,7 +200,8 @@ function KanbanCard({ id, disabled, children }: { id: string; disabled: boolean;
       ref={setNodeRef}
       style={transform ? { transform: CSS.Translate.toString(transform) } : undefined}
       className={cx(isDragging && 'z-10 opacity-60', !disabled && 'cursor-grab touch-none active:cursor-grabbing')}
-      {...(disabled ? {} : { ...attributes, ...listeners })}
+      // dnd-kit's default role="button" would nest the card's own links inside a button (axe: nested-interactive)
+      {...(disabled ? {} : { ...attributes, role: 'group', ...listeners })}
     >
       {children}
     </div>

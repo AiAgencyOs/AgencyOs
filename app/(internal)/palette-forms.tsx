@@ -228,10 +228,10 @@ export function RequestMeetingForm({ onCancel, onCreated, draft, onFields, conte
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-4 p-4">
-      <h2 className="text-sm font-semibold text-foreground">Request a meeting</h2>
+      <h2 className="text-sm font-semibold text-foreground">Schedule a meeting</h2>
       <p className="text-[13px] text-muted">
-        Records that the client asked to meet — the same door as the Lead 360. It proposes and books nothing; the offer that
-        follows reads the calendar.
+        Schedules by recording the meeting wanted — the same door as the Lead 360. It books nothing by itself; the time is
+        offered and booked from the calendar's live availability, never invented here.
       </p>
       <Field label="Lead" htmlFor="qc-meeting-lead" required hint={loadError ?? (leads === null ? 'Loading leads…' : context?.leadId && fields.leadId === context.leadId ? 'Pre-filled from the lead you are on.' : undefined)}>
         <select id="qc-meeting-lead" required value={fields.leadId} onChange={set('leadId')} className={selectClass} disabled={leads === null || Boolean(loadError)}>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useId, useState } from 'react';
 
 import {
   addLeadNoteAction,
@@ -547,15 +547,17 @@ export function AssignOwnerForm({
 /** The lead's tags, edited as a comma-separated list — `crm.leads.tags`. */
 export function LeadTagsForm({ leadId, tags }: { leadId: string; tags: string[] }) {
   const [state, action, pending] = useActionState(setLeadTagsAction, IDLE_STATE);
+  // Rendered more than once on a lead page: a fixed id would tie every label to the first field.
+  const tagsId = useId();
 
   return (
     <form action={action} className="flex flex-wrap items-end gap-2">
       <input type="hidden" name="leadId" value={leadId} />
       <div className="flex min-w-[12rem] flex-1 flex-col gap-1">
-        <label className={label} htmlFor="lead-tags">
+        <label className={label} htmlFor={tagsId}>
           Tags (comma-separated)
         </label>
-        <input id="lead-tags" name="tags" defaultValue={tags.join(', ')} maxLength={900} className={input} placeholder="hot lead, mobile, referral" />
+        <input id={tagsId} name="tags" defaultValue={tags.join(', ')} maxLength={900} className={input} placeholder="hot lead, mobile, referral" />
       </div>
       <button type="submit" disabled={pending} className={button}>
         {pending ? 'Saving…' : 'Save tags'}

@@ -1,7 +1,7 @@
 {
   "source": "docs/AGENCYOS_ADMIN_MASTER_SCREEN_INVENTORY.md",
-  "inventoryHash": "bc203f26d471f98e57ce0015c38d380200c06785a1dabd55903a12d69e700345",
-  "count": 71,
+  "inventoryHash": "94709e79a53a185234645381ed4a248b43a736f85de6051b66c32accc4059b56",
+  "count": 72,
   "screens": [
     {
       "id": "SCR-001",
@@ -44,7 +44,7 @@
       "id": "SCR-004",
       "title": "Quick Create / Command Palette",
       "module": "Global Control",
-      "route": "⌘K palette → New lead / New client",
+      "route": "⌘K palette → New lead / New client; type a setting or key name (“GST”, “window”, “github”) to jump to its section",
       "routes": [],
       "capability": "lead.write / project.write",
       "reads": "createLeadAction, createClientAccountAction",
@@ -86,7 +86,7 @@
         "/leads/[leadId]"
       ],
       "capability": "lead.read",
-      "reads": "lead + getLeadFacts, conversation, requirements, quotations, meetings, follow-ups, timeline (three panes: information · chat · deal)",
+      "reads": "lead + getLeadFacts, conversation, requirements, quotations, meetings, follow-ups, timeline (three panes: information · chat · deal), Files tab (crm.lead_files through crm.add_lead_file / remove_lead_file; links carried once to the project when the deal is converted), contracts on a won deal",
       "live": "—",
       "status": "COMPLETE"
     },
@@ -166,6 +166,19 @@
       ],
       "capability": "lead.read",
       "reads": "listFollowUpSequences",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-072",
+      "title": "Contracts",
+      "module": "Sales & CRM",
+      "route": "/contracts (+ the contracts on a won deal in Lead 360, and on Client 360 › Quotations)",
+      "routes": [
+        "/contracts"
+      ],
+      "capability": "lead.read (lead.write to record or move one)",
+      "reads": "sales.contracts through sales.create_contract / sales.update_contract_status (owner or ops admin; only a WON deal can have one; draft → sent → signed; signing names the signer and the day; audited); owner decision 10, no e-signature",
       "live": "—",
       "status": "COMPLETE"
     },
@@ -935,12 +948,13 @@
       "id": "SCR-071",
       "title": "Organization Settings & Business Rules",
       "module": "Organization Settings",
-      "route": "/settings (General, Commercial, Team, Communication, Approvals, Finance)",
+      "route": "/settings (General, Commercial, Team, Communication, Approvals, Finance), /security/keys (Keys & secrets)",
       "routes": [
-        "/settings"
+        "/settings",
+        "/security/keys"
       ],
       "capability": "organization.settings",
-      "reads": "core.organizations.settings through set_organization_setting (whitelist + audit); finance.payment_accounts (Doc 15 §9) through createPaymentAccount / setPaymentAccountStatus",
+      "reads": "core.organizations.settings through set_organization_setting (whitelist + audit); finance.payment_accounts (Doc 15 §9) through createPaymentAccount / setPaymentAccountStatus; core.secret_credentials (every integration key, encrypted) through core.store_secret / revoke_secret / secret_status / record_secret_check (owner stores and revokes, admin verifies); sales.quotation_clauses (Commercial › Quotation clauses — the four quotation clauses, versioned, appended and never edited) through core.publish_quotation_clause / list_quotation_clauses (owner / ops admin publish, every internal role reads), each issued quotation keeping the versions it printed in sales.proposals.clauses_printed",
       "live": "—",
       "status": "COMPLETE"
     }

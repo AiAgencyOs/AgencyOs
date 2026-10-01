@@ -4,6 +4,7 @@ import { ilikeAny, ilikePattern } from '@/lib/db/search';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
+import { billingReadiness } from './gstin';
 import { toLadderProgress, type LadderProgress } from './ladder';
 import { readBillingReadiness } from './service';
 
@@ -26,7 +27,7 @@ import type { InvoiceDetail, InvoiceItem, InvoiceListItem, InvoicePayment, Invoi
  */
 
 const LIST_SELECT =
-  'id, number, status, currency, total_minor, paid_minor, due_at, issued_at, project_id, milestone_id';
+  'id, number, status, kind, currency, total_minor, paid_minor, verified_minor, due_at, issued_at, project_id, milestone_id';
 const DETAIL_SELECT = `${LIST_SELECT}, client_account_id, subtotal_minor, tax_minor, paid_at, notes, created_at`;
 
 export async function listInvoices(limit = 100): Promise<InvoiceListItem[]> {
@@ -73,14 +74,11 @@ export async function getClientAccountName(clientAccountId: string): Promise<str
   const supabase = await createClient();
 
   const { data, error } = await supabase
-    .schema('core')
-    .from('client_accounts')
-    .select('name')
-    .eq('id', clientAccountId)
-    .maybeSingle();
+    .schema('finance')
+    .rpc('client_names', { p_ids: [clientAccountId] });
 
   if (error) unreadable('getClientAccountName', error);
-  return data?.name ?? null;
+  return data?.[0]?.name ?? null;
 }
 
 export async function listInvoiceItems(invoiceId: string): Promise<InvoiceItem[]> {
@@ -184,11 +182,10 @@ export async function listPayments(limit = 200, q?: string): Promise<PaymentLedg
 
   const nameByClient = new Map<string, string>();
   if (clientAccountIds.length > 0) {
+    // Decision 7 (2026-10-01): the finance role reads a client's NAME and nothing else, through finance.client_names.
     const { data: clients, error: clientsError } = await supabase
-      .schema('core')
-      .from('client_accounts')
-      .select('id, name')
-      .in('id', clientAccountIds);
+      .schema('finance')
+      .rpc('client_names', { p_ids: clientAccountIds });
     if (clientsError) unreadable('listPayments.clients', clientsError);
     for (const c of clients ?? []) nameByClient.set(c.id, c.name);
   }
@@ -246,6 +243,8 @@ export type PaymentClaim = {
   payer_name: string | null;
   paid_at: string | null;
   proof_url: string | null;
+  /** Set when the proof was uploaded rather than (or as well as) linked; open it through claimProofHref. */
+  proof_file_name?: string | null;
   status: string;
   submitted_at: string;
   verified_at: string | null;
@@ -253,6 +252,8 @@ export type PaymentClaim = {
   rejected_reason: string | null;
   mismatch_note: string | null;
   payment_id: string | null;
+  /** What a reviewer asked for when sending the claim back (status `evidence_requested`). */
+  evidence_request_note?: string | null;
 };
 
 export async function listPaymentClaims(projectId: string): Promise<PaymentClaim[]> {
@@ -280,7 +281,7 @@ export async function listPaymentClaims(projectId: string): Promise<PaymentClaim
     .schema('finance')
     .from('payment_submissions')
     .select(
-      'id, invoice_id, amount_minor, currency, method, reference, payer_name, paid_at, proof_url, status, submitted_at, verified_at, verification_evidence, rejected_reason, mismatch_note, payment_id',
+      'id, invoice_id, amount_minor, currency, method, reference, payer_name, paid_at, proof_url, proof_file_name, status, submitted_at, verified_at, verification_evidence, rejected_reason, mismatch_note, payment_id',
     )
     .in('invoice_id', ids)
     .order('submitted_at', { ascending: false });
@@ -299,6 +300,10 @@ export async function listPaymentClaims(projectId: string): Promise<PaymentClaim
  */
 export type PendingPaymentClaim = PaymentClaim & {
   invoiceNumber: string;
+  /** The invoice's own standing, so the queue shows the context inline (SCR-054 "Invoice/project context"). */
+  invoiceTotalMinor: number;
+  invoiceVerifiedMinor: number;
+  invoiceStatus: string;
   invoiceCurrency: string;
   projectId: string | null;
   projectName: string | null;
@@ -321,9 +326,9 @@ export async function listPendingPaymentClaims(limit = 200): Promise<PendingPaym
     .schema('finance')
     .from('payment_submissions')
     .select(
-      'id, invoice_id, amount_minor, currency, method, reference, payer_name, paid_at, proof_url, status, submitted_at, verified_at, verification_evidence, rejected_reason, mismatch_note, payment_id',
+      'id, invoice_id, amount_minor, currency, method, reference, payer_name, paid_at, proof_url, proof_file_name, status, submitted_at, verified_at, verification_evidence, rejected_reason, mismatch_note, payment_id, evidence_request_note',
     )
-    .in('status', ['pending_verification', 'mismatch'])
+    .in('status', ['pending_verification', 'mismatch', 'evidence_requested'])
     .order('submitted_at', { ascending: true })
     .limit(limit);
   if (claimsError) unreadable('listPendingPaymentClaims.claims', claimsError);
@@ -335,7 +340,7 @@ export async function listPendingPaymentClaims(limit = 200): Promise<PendingPaym
   const { data: invoices, error: invoicesError } = await supabase
     .schema('finance')
     .from('invoices')
-    .select('id, number, currency, project_id, client_account_id')
+    .select('id, number, status, currency, total_minor, verified_minor, project_id, client_account_id')
     .in('id', invoiceIds);
   if (invoicesError) unreadable('listPendingPaymentClaims.invoices', invoicesError);
   const invoiceRows = invoices ?? [];
@@ -347,7 +352,7 @@ export async function listPendingPaymentClaims(limit = 200): Promise<PendingPaym
     projectIds.length > 0
       ? supabase.schema('projects').from('projects').select('id, name').in('id', projectIds)
       : Promise.resolve({ data: [] as { id: string; name: string }[], error: null }),
-    supabase.schema('core').from('client_accounts').select('id, name').in('id', clientIds),
+    supabase.schema('finance').rpc('client_names', { p_ids: clientIds }),
   ]);
   if (projectsError) unreadable('listPendingPaymentClaims.projects', projectsError);
   if (clientsError) unreadable('listPendingPaymentClaims.clients', clientsError);
@@ -361,6 +366,9 @@ export async function listPendingPaymentClaims(limit = 200): Promise<PendingPaym
     return {
       ...c,
       invoiceNumber: invoice?.number ?? '—',
+      invoiceTotalMinor: invoice?.total_minor ?? 0,
+      invoiceVerifiedMinor: invoice?.verified_minor ?? 0,
+      invoiceStatus: invoice?.status ?? 'unknown',
       invoiceCurrency: invoice?.currency ?? c.currency,
       projectId: invoice?.project_id ?? null,
       projectName: invoice?.project_id ? (projectNameById.get(invoice.project_id) ?? null) : null,
@@ -545,6 +553,8 @@ export type ExpenseRow = {
   incurredOn: string;
   /** SCR-055 — the receipt's URL, when one was attached. Optional so callers that shape rows by hand (the tax-report tests) need not carry it. */
   receiptUrl?: string | null;
+  /** The uploaded receipt's file name, when the receipt was uploaded rather than (or as well as) linked. The object is fetched through /api/finance/attachment. */
+  receiptFileName?: string | null;
   createdAt: string;
 };
 
@@ -560,7 +570,7 @@ export async function listExpenses(limit = 500, q?: string): Promise<ExpenseRow[
   let query = supabase
     .schema('finance')
     .from('expenses')
-    .select('id, project_id, category, vendor, description, currency, amount_minor, incurred_on, receipt_url, created_at')
+    .select('id, project_id, category, vendor, description, currency, amount_minor, incurred_on, receipt_url, receipt_file_name, receipt_storage_path, created_at')
     .order('incurred_on', { ascending: false })
     .limit(limit);
   // Search within domain (bucket G-3): vendor, description or category, server-side.
@@ -579,6 +589,7 @@ export async function listExpenses(limit = 500, q?: string): Promise<ExpenseRow[
     amountMinor: e.amount_minor,
     incurredOn: e.incurred_on,
     receiptUrl: e.receipt_url,
+    receiptFileName: e.receipt_storage_path ? (e.receipt_file_name ?? 'receipt') : null,
     createdAt: e.created_at,
   }));
 }
@@ -637,6 +648,8 @@ export type InvoiceBillingProfile = {
   gstin: string | null;
   billingAddress: string | null;
   billingState: string | null;
+  /** The two-digit GST place-of-supply code derived from the state, when it resolved. */
+  billingStateCode: string | null;
   confirmedAt: string;
 };
 
@@ -654,7 +667,7 @@ export async function readInvoiceBillingProfile(projectId: string | null): Promi
   const { data, error: profileError } = await supabase
     .schema('finance')
     .from('billing_profiles')
-    .select('id, mode, version, legal_name, gstin, billing_address, billing_state, confirmed_at')
+    .select('id, mode, version, legal_name, gstin, billing_address, billing_state, billing_state_code, confirmed_at')
     .eq('project_id', projectId)
     .eq('status', 'active')
     .maybeSingle();
@@ -670,6 +683,7 @@ export async function readInvoiceBillingProfile(projectId: string | null): Promi
     gstin: data.gstin,
     billingAddress: data.billing_address,
     billingState: data.billing_state,
+    billingStateCode: data.billing_state_code,
     confirmedAt: data.confirmed_at,
   };
 }
@@ -686,7 +700,7 @@ export async function listInvoicePaymentClaims(invoiceId: string): Promise<Payme
     .schema('finance')
     .from('payment_submissions')
     .select(
-      'id, invoice_id, amount_minor, currency, method, reference, payer_name, paid_at, proof_url, status, submitted_at, verified_at, verification_evidence, rejected_reason, mismatch_note, payment_id',
+      'id, invoice_id, amount_minor, currency, method, reference, payer_name, paid_at, proof_url, proof_file_name, status, submitted_at, verified_at, verification_evidence, rejected_reason, mismatch_note, payment_id',
     )
     .eq('invoice_id', invoiceId)
     .order('submitted_at', { ascending: false });
@@ -754,6 +768,7 @@ export async function listPaymentAccounts(): Promise<PaymentAccount[]> {
 
 export type TaxReportInvoice = TaxInvoiceRow & {
   projectId: string | null;
+  /** What a person VERIFIED on this invoice (`verified_minor`), not what was recorded — the one basis every finance total uses. */
   paidMinor: number;
   /** The confirmed billing mode of the invoice's project, or null when none was confirmed. */
   billingMode: 'gst' | 'non_gst' | null;
@@ -772,7 +787,7 @@ export async function listTaxReportInvoices(limit = 1000): Promise<TaxReportInvo
   const { data, error: invoicesError } = await supabase
     .schema('finance')
     .from('invoices')
-    .select('id, number, status, currency, subtotal_minor, tax_minor, total_minor, paid_minor, issued_at, project_id')
+    .select('id, number, status, currency, subtotal_minor, tax_minor, total_minor, verified_minor, issued_at, project_id')
     .not('status', 'in', '("draft","void")')
     .order('issued_at', { ascending: false, nullsFirst: false })
     .limit(limit);
@@ -803,7 +818,7 @@ export async function listTaxReportInvoices(limit = 1000): Promise<TaxReportInvo
       subtotalMinor: i.subtotal_minor,
       taxMinor: i.tax_minor,
       totalMinor: i.total_minor,
-      paidMinor: i.paid_minor,
+      paidMinor: Math.min(i.verified_minor, i.total_minor),
       issuedAt: i.issued_at,
       projectId: i.project_id,
       billingMode: profile?.mode ?? null,
@@ -842,4 +857,72 @@ export async function listReceipts(limit = 1000): Promise<ReceiptRow[]> {
     currency: r.currency,
     issuedAt: r.issued_at,
   }));
+}
+
+export type ProjectBillingSummary = {
+  projectId: string;
+  projectName: string;
+  currency: string;
+  /** The confirmed billing mode, or null when no person has confirmed one. */
+  mode: 'gst' | 'non_gst' | null;
+  version: number | null;
+  legalName: string | null;
+  gstin: string | null;
+  billingState: string | null;
+  billingStateCode: string | null;
+  /** Whether the profile carries every field its mode requires (`billingReadiness`). */
+  complete: boolean;
+  missing: string[];
+};
+
+/**
+ * Every project with the billing profile an invoice on it would carry — the
+ * composer's picker (SCR-052). One read of the projects and one of the active
+ * profiles, joined here; readiness is `billingReadiness`, the same rule the
+ * milestone door applies, so the picker never offers what the door refuses.
+ */
+export async function listProjectBillingSummaries(limit = 300): Promise<ProjectBillingSummary[]> {
+  const supabase = await createClient();
+
+  const { data: projects, error: projectsError } = await supabase
+    .schema('projects')
+    .from('projects')
+    .select('id, name, currency')
+    .is('deleted_at', null)
+    .order('name', { ascending: true })
+    .limit(limit);
+  if (projectsError) unreadable('listProjectBillingSummaries.projects', projectsError);
+
+  const rows = projects ?? [];
+  if (rows.length === 0) return [];
+
+  const { data: profiles, error: profilesError } = await supabase
+    .schema('finance')
+    .from('billing_profiles')
+    .select('project_id, mode, version, legal_name, gstin, billing_address, billing_state, billing_state_code')
+    .eq('status', 'active')
+    .in('project_id', rows.map((p) => p.id));
+  if (profilesError) unreadable('listProjectBillingSummaries.profiles', profilesError);
+  const byProject = new Map((profiles ?? []).map((p) => [p.project_id, p]));
+
+  return rows.map((p) => {
+    const profile = byProject.get(p.id);
+    const mode = profile ? (profile.mode === 'gst' ? ('gst' as const) : ('non_gst' as const)) : null;
+    const readiness = profile
+      ? billingReadiness({ mode, legal_name: profile.legal_name, billing_address: profile.billing_address, billing_state: profile.billing_state, gstin: profile.gstin })
+      : null;
+    return {
+      projectId: p.id,
+      projectName: p.name,
+      currency: p.currency,
+      mode,
+      version: profile?.version ?? null,
+      legalName: profile?.legal_name ?? null,
+      gstin: profile?.gstin ?? null,
+      billingState: profile?.billing_state ?? null,
+      billingStateCode: profile?.billing_state_code ?? null,
+      complete: readiness?.complete ?? false,
+      missing: [...(readiness?.missing ?? [])],
+    };
+  });
 }

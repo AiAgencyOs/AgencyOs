@@ -1,13 +1,14 @@
 import type { Metadata } from 'next';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
-import { isLate, projectHealth } from '@/lib/admin/project-health';
+import { isLate } from '@/lib/admin/project-health';
+import { healthOfProject, overallProgress } from '@/modules/projects/project-health';
 import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
 import { listPendingPaymentClaims } from '@/modules/finance/queries';
-import { HEALTH_FILTERS, LIFECYCLE_PHASE_LABEL, LIFECYCLE_PHASES, healthOf, type HealthFilter, type LifecyclePhase } from '@/modules/projects/project-archive-schema';
+import { HEALTH_FILTERS, LIFECYCLE_PHASE_LABEL, LIFECYCLE_PHASES, type HealthFilter, type LifecyclePhase } from '@/modules/projects/project-archive-schema';
 import { readProjectFilterFacets } from '@/modules/projects/project-filters-queries';
 import { readProjectLifecycles } from '@/modules/projects/project-lifecycle-queries';
 import { listPhaseFourEscalations, listProjectsForTable } from '@/modules/projects/queries';
@@ -47,6 +48,7 @@ import {
 } from '@/ui';
 
 import { ArchiveProjectButton } from './archive-button';
+import { PauseResumeButton } from './pause-resume-button';
 
 export const metadata: Metadata = { title: 'Projects' };
 
@@ -56,19 +58,30 @@ function money(minor: number | null, currency: string): string {
     .format(minor / 100);
 }
 
-type Row = Awaited<ReturnType<typeof listProjectsForTable>>[number] & { phase: LifecyclePhase; health: HealthFilter; archivedAt: string | null };
+type Row = Awaited<ReturnType<typeof listProjectsForTable>>[number] & {
+  phase: LifecyclePhase;
+  health: HealthFilter;
+  healthReasons: string[];
+  archivedAt: string | null;
+  inQa: boolean;
+  /** One progress figure (milestones met, else tasks done) — the same one every project screen shows. */
+  progress: number | null;
+  ownerName: string | null;
+  /** Payment claims waiting on verification; null when this role cannot see money. */
+  claimsWaiting: number | null;
+};
 
 const HEALTH_LABEL: Record<HealthFilter, string> = { healthy: 'Healthy', at_risk: 'At risk', blocked: 'Blocked' };
 const HEALTH_TONE: Record<HealthFilter, 'success' | 'warning' | 'danger'> = { healthy: 'success', at_risk: 'warning', blocked: 'danger' };
 
-const columnsFor = (clock: AgencyClock, mayArchive: boolean): Column<Row>[] => [
+const columnsFor = (clock: AgencyClock, mayArchive: boolean, mayPay: boolean): Column<Row>[] => [
   {
     key: 'name',
     header: 'Project name',
     primary: true,
     cell: (p) => (
       <span className="flex items-center gap-2.5">
-        <Avatar name={p.name} size="md" square tone="neutral" className="bg-sidebar-bg text-sidebar-fg ring-0" />
+        <Avatar name={p.name} size="md" square tone="sidebar" />
         <span className="min-w-0">
           <span className="block truncate">{p.name}</span>
           <span className="block truncate font-mono text-[11px] font-normal text-muted">{p.code}</span>
@@ -77,13 +90,19 @@ const columnsFor = (clock: AgencyClock, mayArchive: boolean): Column<Row>[] => [
     ),
   },
   { key: 'client', header: 'Client', desktopOnly: true, cellClassName: 'text-muted', cell: (p) => p.clientName ?? 'Internal' },
+  // SCR-018: who owns the project (its delivery lead).
+  { key: 'owner', header: 'Owner', desktopOnly: true, cellClassName: 'text-muted', cell: (p) => p.ownerName ?? 'Unassigned' },
   {
     key: 'status',
     header: 'Stage',
     badge: true,
     // SCR-018: the pause/cancel reason rides on the chip's title.
     cell: (p) =>
-      p.statusReason ? (
+      p.inQa ? (
+        <Badge tone="info" dot={false}>
+          In QA
+        </Badge>
+      ) : p.statusReason ? (
         <span title={p.statusReason} className="inline-flex cursor-help">
           <StatusBadge status={p.status} dot={false} />
         </span>
@@ -93,14 +112,26 @@ const columnsFor = (clock: AgencyClock, mayArchive: boolean): Column<Row>[] => [
   },
   // SCR-018: the lifecycle phase (derived from the phase tables) and health.
   { key: 'phase', header: 'Phase', badge: true, cell: (p) => <Badge tone={p.phase === 'archived' ? 'neutral' : 'info'}>{LIFECYCLE_PHASE_LABEL[p.phase]}</Badge> },
-  { key: 'health', header: 'Health', badge: true, desktopOnly: true, cell: (p) => <Badge tone={HEALTH_TONE[p.health]} dot>{HEALTH_LABEL[p.health]}</Badge> },
+  { key: 'health', header: 'Health', badge: true, desktopOnly: true, cell: (p) => <span title={p.healthReasons.join(' · ') || undefined} className="inline-flex"><Badge tone={HEALTH_TONE[p.health]} dot>{HEALTH_LABEL[p.health]}</Badge></span> },
+  // SCR-018: the payment gate — a claim somebody said they paid that nobody has verified yet.
+  ...(mayPay
+    ? [
+        {
+          key: 'gate',
+          header: 'Payment gate',
+          badge: true,
+          desktopOnly: true,
+          cell: (p: Row) => (p.claimsWaiting ? <Badge tone="warning" dot>{`${p.claimsWaiting} to verify`}</Badge> : <span className="text-xs text-muted">Clear</span>),
+        } satisfies Column<Row>,
+      ]
+    : []),
   {
     key: 'progress',
     header: 'Progress',
     width: '11rem',
     cell: (p) =>
-      p.milestonesTotal > 0 ? (
-        <ProgressBar value={(p.milestonesMet / p.milestonesTotal) * 100} label={`${p.name} milestones met`} />
+      p.progress !== null ? (
+        <ProgressBar value={p.progress} label={`${p.name} progress`} />
       ) : (
         <span className="text-xs text-muted">No plan yet</span>
       ),
@@ -136,8 +167,15 @@ const columnsFor = (clock: AgencyClock, mayArchive: boolean): Column<Row>[] => [
           key: 'archive',
           header: '',
           align: 'right' as const,
-          // SCR-018: archive a COMPLETED project. The door refuses any other status.
-          cell: (p: Row) => (p.status === 'completed' && !p.archivedAt ? <ArchiveProjectButton projectId={p.id} projectName={p.name} compact /> : p.archivedAt ? <span className="text-xs text-muted">archived {clock.date(p.archivedAt)}</span> : null),
+          // SCR-018: archive a COMPLETED project (the door refuses any other status); pause or resume an open one, with its reason.
+          cell: (p: Row) =>
+            p.status === 'completed' && !p.archivedAt ? (
+              <ArchiveProjectButton projectId={p.id} projectName={p.name} compact />
+            ) : p.archivedAt ? (
+              <span className="text-xs text-muted">archived {clock.date(p.archivedAt)}</span>
+            ) : p.status === 'active' || p.status === 'onboarding' || p.status === 'on_hold' ? (
+              <PauseResumeButton projectId={p.id} projectName={p.name} paused={p.status === 'on_hold'} />
+            ) : null,
         },
       ]
     : []),
@@ -173,20 +211,21 @@ function isHealth(value: string | undefined): value is HealthFilter {
 export default async function ProjectsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; client?: string; owner?: string; phase?: string; health?: string; archived?: string; q?: string }>;
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; client?: string; owner?: string; phase?: string; health?: string; archived?: string; q?: string; view?: string }>;
 }) {
   const context = await requireInternal('/projects');
   const clock = await agencyClock();
   if (!can(context, 'project.read')) return <PermissionDenied />;
 
-  const { page: pageParam, sort: sortKey, dir, status, client, owner, phase: rawPhase, health: rawHealth, archived, q: qRaw } = await searchParams;
+  const { page: pageParam, sort: sortKey, dir, status, client, owner, phase: rawPhase, health: rawHealth, archived, q: qRaw, view: rawView } = await searchParams;
+  const view = rawView === 'cards' ? 'cards' : 'table';
   // Search within domain (bucket G-3): `?q=` goes to the reader, which filters server-side.
   const q = normaliseSearch(qRaw);
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
   const phase = isPhase(rawPhase) ? rawPhase : undefined;
   const health = isHealth(rawHealth) ? rawHealth : undefined;
   const showArchived = archived === '1' || phase === 'archived';
-  const facetQuery = [q ? `q=${encodeURIComponent(q)}` : '', client ? `client=${client}` : '', owner ? `owner=${owner}` : '', phase ? `phase=${phase}` : '', health ? `health=${health}` : '', showArchived && phase !== 'archived' ? 'archived=1' : '']
+  const facetQuery = [view === 'cards' ? 'view=cards' : '', q ? `q=${encodeURIComponent(q)}` : '', client ? `client=${client}` : '', owner ? `owner=${owner}` : '', phase ? `phase=${phase}` : '', health ? `health=${health}` : '', showArchived && phase !== 'archived' ? 'archived=1' : '']
     .filter(Boolean)
     .join('&');
   const currentQuery = [status ? `status=${status}` : '', facetQuery, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
@@ -200,45 +239,64 @@ export default async function ProjectsPage({
     readProjectFilterFacets(),
     readProjectLifecycles(),
   ]);
-  // The one at-risk rule, shared with the Command Center's project health
-  // column (bucket F): escalated, or past its end date while still open.
+  // ONE health rule (`healthOfProject`), the same one the project Overview and
+  // Reports end in: blocked work, unmet dependencies, escalations and holds make
+  // a project Blocked; past-due work, release-blocking defects and payment
+  // claims waiting make it At risk. Filters, chips, KPI tiles and the badge all
+  // read this, so a project cannot be "On track" on one screen and "Blocked" on another.
   const todayKey = clock.dayKey(new Date());
   const escalatedIds = new Set(escalations.map((e) => e.projectId));
+  const claimsBy = new Map<string, number>();
+  for (const c of pendingClaims) if (c.projectId) claimsBy.set(c.projectId, (claimsBy.get(c.projectId) ?? 0) + 1);
   const late = rawProjects.filter((p) => isLate({ status: p.status, endsOn: p.endsOn, todayKey }));
-  const atRiskIds = new Set(
-    rawProjects.filter((p) => projectHealth({ status: p.status, endsOn: p.endsOn, escalated: escalatedIds.has(p.id), todayKey }) === 'at_risk').map((p) => p.id),
-  );
-  const paymentBlockedIds = new Set(pendingClaims.map((c) => c.projectId));
+  const mayPay = can(context, 'invoice.issue');
+  const ownerNameById = new Map(facets.owners.map((o) => [o.id, o.name]));
+  const EMPTY_FACTS = { blockedTasks: 0, unmetDependencies: 0, overdueTasks: 0, overdueMilestones: 0, blockingDefects: 0, tasksTotal: 0, tasksDone: 0 };
 
   const everything: Row[] = rawProjects.map((p) => {
     const life = lifecycles.get(p.id);
+    const facts = life ?? EMPTY_FACTS;
+    const h = healthOfProject(p, facts, { escalated: escalatedIds.has(p.id), pendingClaims: claimsBy.get(p.id) ?? 0, todayKey });
+    const ownerId = facets.byProject.get(p.id)?.deliveryLeadId ?? null;
+    const progress = p.milestonesTotal > 0 || facts.tasksTotal > 0 ? overallProgress({ milestonesTotal: p.milestonesTotal, milestonesMet: p.milestonesMet, tasksTotal: facts.tasksTotal, tasksDone: facts.tasksDone }) : null;
     return {
       ...p,
       phase: life?.phase ?? (p.status === 'completed' ? 'completed' : 'onboarding'),
       archivedAt: life?.archivedAt ?? null,
-      health: healthOf({ atRisk: atRiskIds.has(p.id) || paymentBlockedIds.has(p.id), blocked: life?.blocked ?? false }),
+      inQa: life?.inQa ?? false,
+      health: h.level === 'healthy' ? 'healthy' : h.level === 'blocked' ? 'blocked' : 'at_risk',
+      healthReasons: h.reasons,
+      progress,
+      ownerName: ownerId ? (ownerNameById.get(ownerId) ?? 'Unknown member') : null,
+      claimsWaiting: mayPay ? (claimsBy.get(p.id) ?? 0) : null,
     };
   });
+  const atRiskIds = new Set(everything.filter((p) => p.health === 'at_risk').map((p) => p.id));
+  const paymentBlockedIds = new Set(pendingClaims.map((c) => c.projectId).filter((id): id is string => id !== null));
   // Archived projects stay out of every count and chip unless asked for.
   const allProjects = showArchived ? everything : everything.filter((p) => p.archivedAt === null);
   const archivedCount = everything.filter((p) => p.archivedAt !== null).length;
   const countByStatus = new Map<string, number>();
-  for (const p of allProjects) countByStatus.set(p.status, (countByStatus.get(p.status) ?? 0) + 1);
+  // Decision 9: a project in QA is counted once, under In QA, not under its stored status.
+  for (const p of allProjects) if (!p.inQa) countByStatus.set(p.status, (countByStatus.get(p.status) ?? 0) + 1);
   const countByPhase = new Map<LifecyclePhase, number>();
   for (const p of allProjects) countByPhase.set(p.phase, (countByPhase.get(p.phase) ?? 0) + 1);
   const blocked = allProjects.filter((p) => p.health === 'blocked');
+  const atRiskCount = allProjects.filter((p) => p.health === 'at_risk').length;
 
   const filtered =
     status === 'at_risk'
       ? allProjects.filter((p) => atRiskIds.has(p.id))
       : status === 'payment_blocked'
         ? allProjects.filter((p) => paymentBlockedIds.has(p.id))
+        : status === 'in_qa'
+          ? allProjects.filter((p) => p.inQa)
         : status === 'open'
           ? // Bucket F: the Command Center's "Active projects" tile — every
             // project not yet finished or abandoned, the same set it counts.
             allProjects.filter((p) => OPEN_STATUSES.has(p.status))
           : status
-            ? allProjects.filter((p) => p.status === status)
+            ? allProjects.filter((p) => p.status === status && !p.inQa)
             : allProjects;
   const faceted = filtered.filter((p) => {
     const f = facets.byProject.get(p.id);
@@ -253,6 +311,7 @@ export default async function ProjectsPage({
   const chipHref = (s: string | null) => `/projects?${[s ? `status=${s}` : '', facetQuery].filter(Boolean).join('&')}`;
   const { page, pageCount, rows: pageRows } = paginate(projects, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
   const mayArchive = can(context, 'project.write');
+  const cardsHref = (v: 'cards' | 'table') => `/projects?${[status ? `status=${status}` : '', ...facetQuery.split('&').filter((x) => x && !x.startsWith('view=')), v === 'cards' ? 'view=cards' : ''].filter(Boolean).join('&')}`.replace(/\?$/, '');
 
   return (
     <div className="flex flex-col gap-5">
@@ -273,7 +332,7 @@ export default async function ProjectsPage({
           <Stat label="Active" value={String(countByStatus.get('active') ?? 0)} tone={statusTone('active')} href="/projects?status=active" />
           {/* SCR-018: a blocked count — a blocked task, an unmet plan dependency, an escalation or a hold. */}
           <Stat label="Blocked" value={String(blocked.length)} caption="Blocked work or an unmet dependency" tone={blocked.length > 0 ? 'danger' : 'success'} icon={<IconAlert size={16} />} href="/projects?health=blocked" />
-          <Stat label="At risk" value={String(atRiskIds.size)} caption={`${escalations.length} escalated · ${late.length} past due`} tone={atRiskIds.size > 0 ? 'warning' : 'success'} icon={<IconAlert size={16} />} href="/projects?status=at_risk" />
+          <Stat label="At risk" value={String(atRiskCount)} caption={`${escalations.length} escalated · ${late.length} past due`} tone={atRiskCount > 0 ? 'warning' : 'success'} icon={<IconAlert size={16} />} href="/projects?health=at_risk" />
           <Stat label="Completed" value={String(countByStatus.get('completed') ?? 0)} caption={archivedCount > 0 ? `${archivedCount} archived` : undefined} tone={statusTone('completed')} href="/projects?status=completed" />
           {can(context, 'invoice.issue') ? (
             <Stat label="Payment to verify" value={String(paymentBlockedIds.size)} caption={`${pendingClaims.length} claim${pendingClaims.length === 1 ? '' : 's'} waiting`} tone={paymentBlockedIds.size > 0 ? 'warning' : 'neutral'} icon={<IconInvoices size={16} />} href="/projects?status=payment_blocked" />
@@ -300,7 +359,8 @@ export default async function ProjectsPage({
           <FilterChips
             options={[
               { key: 'all', label: 'All', href: chipHref(null), active: !status },
-              { key: 'at_risk', label: `At risk (${atRiskIds.size})`, href: chipHref('at_risk'), active: status === 'at_risk' },
+              { key: 'at_risk', label: `At risk (${atRiskCount})`, href: chipHref('at_risk'), active: status === 'at_risk' },
+              { key: 'in_qa', label: `In QA (${allProjects.filter((p) => p.inQa).length})`, href: chipHref('in_qa'), active: status === 'in_qa' },
               ...PROJECT_STATUSES.map((s) => ({
                 key: s,
                 label: `${humanize(s)} (${countByStatus.get(s) ?? 0})`,
@@ -371,13 +431,51 @@ export default async function ProjectsPage({
         </FilterBar>
       ) : null}
 
-      <SavedViewsBar page="/projects" currentQuery={currentQuery} views={savedViews} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SavedViewsBar page="/projects" currentQuery={currentQuery} views={savedViews} />
+        {/* SCR-018: "Project table/cards" — the same rows, drawn either way. */}
+        <nav aria-label="Projects layout" className="flex items-center gap-1 text-[13px]">
+          <Link href={cardsHref('table')} aria-current={view === 'table' ? 'page' : undefined} className={buttonClass(view === 'table' ? 'secondary' : 'ghost', 'sm')}>Table</Link>
+          <Link href={cardsHref('cards')} aria-current={view === 'cards' ? 'page' : undefined} className={buttonClass(view === 'cards' ? 'secondary' : 'ghost', 'sm')}>Cards</Link>
+        </nav>
+      </div>
 
       {projects.length > 0 ? (
         <>
+          {view === 'cards' ? (
+            <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {pageRows.map((p) => (
+                <li key={p.id} className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 shadow-xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <Link href={`/projects/${p.id}`} className="flex min-w-0 items-center gap-2.5 font-semibold text-foreground hover:underline">
+                      <Avatar name={p.name} size="md" square tone="sidebar" />
+                      <span className="min-w-0">
+                        <span className="block truncate">{p.name}</span>
+                        <span className="block truncate font-mono text-[11px] font-normal text-muted">{p.code}</span>
+                      </span>
+                    </Link>
+                    <span title={p.healthReasons.join(' · ') || undefined} className="inline-flex shrink-0"><Badge tone={HEALTH_TONE[p.health]} dot>{HEALTH_LABEL[p.health]}</Badge></span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {p.inQa ? <Badge tone="info" dot={false}>In QA</Badge> : <StatusBadge status={p.status} dot={false} />}
+                    <Badge tone={p.phase === 'archived' ? 'neutral' : 'info'}>{LIFECYCLE_PHASE_LABEL[p.phase]}</Badge>
+                    {p.claimsWaiting ? <Badge tone="warning" dot>{`${p.claimsWaiting} to verify`}</Badge> : null}
+                  </div>
+                  {p.progress !== null ? <ProgressBar value={p.progress} label={`${p.name} progress`} /> : <p className="text-xs text-muted">No plan yet</p>}
+                  <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[12px]">
+                    <dt className="text-muted">Client</dt><dd className="truncate text-right">{p.clientName ?? 'Internal'}</dd>
+                    <dt className="text-muted">Owner</dt><dd className="truncate text-right">{p.ownerName ?? 'Unassigned'}</dd>
+                    <dt className="text-muted">Due</dt><dd className="text-right">{p.endsOn ? clock.date(p.endsOn) : '—'}</dd>
+                    <dt className="text-muted">Budget</dt><dd className="tabular text-right">{money(p.budget_minor, p.currency)}</dd>
+                  </dl>
+                  {mayArchive && (p.status === 'active' || p.status === 'onboarding' || p.status === 'on_hold') && !p.archivedAt ? <PauseResumeButton projectId={p.id} projectName={p.name} paused={p.status === 'on_hold'} /> : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
           <DataTable
             rows={pageRows}
-            columns={columnsFor(clock, mayArchive)}
+            columns={columnsFor(clock, mayArchive, mayPay)}
             getKey={(p) => p.id}
             href={(p) => `/projects/${p.id}`}
             sort={{
@@ -386,6 +484,7 @@ export default async function ProjectsPage({
               makeHref: (key, nextDirection) => qs(`sort=${key}&dir=${nextDirection}`),
             }}
           />
+          )}
           <Pagination
             page={page}
             pageCount={pageCount}

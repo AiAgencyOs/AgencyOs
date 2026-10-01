@@ -19,6 +19,9 @@ export type InvoiceFilter = {
   days?: number;
   clientId?: string;
   projectId?: string;
+  /** A custom range (YYYY-MM-DD, inclusive both ends) — SCR-050's date filter; wins over `days`. */
+  from?: string;
+  to?: string;
 };
 
 /** `tax_minor` joined bucket F's GST filter on the list (SCR-051). */
@@ -32,12 +35,16 @@ export async function listInvoicesFiltered(filter: InvoiceFilter = {}, limit = 5
     .schema('finance')
     .from('invoices')
     .select(
-      'id, number, status, currency, total_minor, paid_minor, tax_minor, due_at, issued_at, project_id, milestone_id, client_account_id',
+      'id, number, status, kind, currency, total_minor, paid_minor, verified_minor, tax_minor, due_at, issued_at, project_id, milestone_id, client_account_id',
     )
     .order('created_at', { ascending: false })
     .limit(limit);
 
-  if (filter.days && Number.isFinite(filter.days) && filter.days > 0) {
+  const day = /^\d{4}-\d{2}-\d{2}$/;
+  const validDay = (v: string | undefined): v is string => Boolean(v && day.test(v) && !Number.isNaN(new Date(`${v}T00:00:00Z`).getTime()));
+  if (validDay(filter.from)) query = query.gte('created_at', `${filter.from}T00:00:00Z`);
+  if (validDay(filter.to)) query = query.lt('created_at', new Date(new Date(`${filter.to}T00:00:00Z`).getTime() + 86_400_000).toISOString());
+  if (!(validDay(filter.from) || validDay(filter.to)) && filter.days && Number.isFinite(filter.days) && filter.days > 0) {
     const since = new Date(Date.now() - filter.days * 86_400_000).toISOString();
     query = query.gte('created_at', since);
   }
@@ -59,12 +66,8 @@ export type BillingClient = { id: string; name: string };
 export async function listBillingClients(): Promise<BillingClient[]> {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .schema('core')
-    .from('client_accounts')
-    .select('id, name')
-    .order('name', { ascending: true })
-    .limit(500);
+  // Names only, through finance.client_names, so the finance role filters by client too (decision 7, 2026-10-01).
+  const { data, error } = await supabase.schema('finance').rpc('client_names', {});
 
   if (error) unreadable('listBillingClients', error);
   return data ?? [];
@@ -124,6 +127,7 @@ export type PaymentSubmissionRow = {
   payerName: string | null;
   paidAt: string | null;
   proofUrl: string | null;
+  proofFileName: string | null;
   status: string;
   submittedAt: string;
   verifiedAt: string | null;
@@ -135,7 +139,7 @@ export type PaymentSubmissionRow = {
 };
 
 const SUBMISSION_SELECT =
-  'id, invoice_id, amount_minor, currency, method, reference, payer_name, paid_at, proof_url, status, submitted_at, verified_at, verified_by, verification_evidence, rejected_reason, mismatch_note, payment_id';
+  'id, invoice_id, amount_minor, currency, method, reference, payer_name, paid_at, proof_url, proof_file_name, status, submitted_at, verified_at, verified_by, verification_evidence, rejected_reason, mismatch_note, payment_id';
 
 /**
  * Payment claims across every invoice — the queue's other half. `settled`
@@ -175,7 +179,7 @@ export async function listPaymentSubmissions(
 
   const [{ data: clients, error: clientsError }, { data: users, error: usersError }] = await Promise.all([
     clientIds.length > 0
-      ? supabase.schema('core').from('client_accounts').select('id, name').in('id', clientIds)
+      ? supabase.schema('finance').rpc('client_names', { p_ids: clientIds })
       : Promise.resolve({ data: [] as { id: string; name: string }[], error: null }),
     verifierIds.length > 0
       ? supabase.schema('core').from('users').select('id, full_name, email').in('id', verifierIds)
@@ -201,6 +205,7 @@ export async function listPaymentSubmissions(
       payerName: c.payer_name,
       paidAt: c.paid_at,
       proofUrl: c.proof_url,
+      proofFileName: c.proof_file_name,
       status: c.status,
       submittedAt: c.submitted_at,
       verifiedAt: c.verified_at,

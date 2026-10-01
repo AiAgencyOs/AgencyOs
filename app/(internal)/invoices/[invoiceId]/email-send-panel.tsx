@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState } from 'react';
 
 import { sendInvoiceEmailAction } from '@/modules/finance/email-send-actions';
@@ -28,7 +29,8 @@ export function SendInvoiceEmailForm({
   if (!transport.configured) {
     return (
       <Callout tone="info" title="Email is not configured">
-        {transport.reason} Until then, open the PDF, send it yourself, and record the send below.
+        {transport.reason} You can add the key at{' '}
+        <Link href="/security/keys#email" className="underline underline-offset-2">Governance &amp; Security › Keys &amp; secrets</Link>. Until then, open the PDF, send it yourself, and record the send below.
       </Callout>
     );
   }

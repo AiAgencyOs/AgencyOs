@@ -454,7 +454,7 @@ export async function listMeetingEvidence(meetingId: string): Promise<MeetingEvi
   const { data, error } = await supabase
     .schema('crm')
     .from('meeting_evidence')
-    .select('id, kind, visibility, artifact_ref, body, media_type, byte_size, uploaded_by, uploaded_at')
+    .select('id, kind, visibility, artifact_ref, body, media_type, byte_size, uploaded_by, uploaded_at, storage_path, file_name')
     .eq('meeting_id', meetingId)
     .order('uploaded_at', { ascending: false });
 
@@ -602,7 +602,11 @@ export async function readInternalRecipient(): Promise<{ conversationId: string;
 
 export type ConversationOverviewRow = {
   id: string;
-  leadId: string;
+  /** Null for a project or internal group: only a direct thread has a lead. */
+  leadId: string | null;
+  /** The project a project group belongs to; null for every other kind. */
+  projectId: string | null;
+  kind: 'direct' | 'project_group' | 'internal_group';
   leadTitle: string;
   channel: string;
   status: string;
@@ -631,7 +635,7 @@ export async function listActiveConversations(limit = 100): Promise<Conversation
   const { data: convRows, error: convError } = await supabase
     .schema('crm')
     .from('conversations')
-    .select('id, lead_id, channel, status, agent_paused_at, agent_paused_reason, updated_at, leads(title)')
+    .select('id, lead_id, project_id, kind, title, channel, status, agent_paused_at, agent_paused_reason, updated_at, leads(title)')
     .eq('status', 'active')
     .order('agent_paused_at', { ascending: true, nullsFirst: false })
     .order('updated_at', { ascending: false })
@@ -641,7 +645,10 @@ export async function listActiveConversations(limit = 100): Promise<Conversation
 
   const rows = (convRows ?? []) as unknown as {
     id: string;
-    lead_id: string;
+    lead_id: string | null;
+    project_id: string | null;
+    kind: 'direct' | 'project_group' | 'internal_group';
+    title: string | null;
     channel: string;
     status: string;
     agent_paused_at: string | null;
@@ -673,7 +680,9 @@ export async function listActiveConversations(limit = 100): Promise<Conversation
     return {
       id: c.id,
       leadId: c.lead_id,
-      leadTitle: c.leads?.title ?? 'Unknown lead',
+      projectId: c.project_id,
+      kind: c.kind,
+      leadTitle: c.leads?.title ?? c.title ?? (c.kind === 'internal_group' ? 'Internal group' : c.kind === 'project_group' ? 'Project group' : 'Unknown lead'),
       channel: c.channel,
       status: c.status,
       agentPausedAt: c.agent_paused_at,

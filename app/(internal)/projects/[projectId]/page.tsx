@@ -44,6 +44,9 @@ import {
   type ActivityItem,
   type Column,
   type TimelineStep,
+  DonutChart,
+  QuickActions,
+  TrendChart,
 } from '@/ui';
 import { readClientName } from '@/lib/admin/clients';
 
@@ -80,7 +83,7 @@ import {
   type InvoiceStatus,
   type MilestoneBillingEntry,
 } from '@/modules/finance/schema';
-import { getProject, listPaymentPlan, readGroupSetup, readPhaseTwo, readPhaseFourOverview, readProjectGroupName } from '@/modules/projects/queries';
+import { listPhaseFourEscalations, getProject, listPaymentPlan, readGroupSetup, readPhaseTwo, readPhaseFourOverview, readProjectGroupName } from '@/modules/projects/queries';
 import { listApprovalsForSubject } from '@/modules/approvals/queries';
 import { listDefects, readProjectQuality } from '@/modules/qa/queries';
 import { blocksDelivery, type DefectSeverity, type DefectStatus } from '@/modules/qa/schema';
@@ -115,12 +118,21 @@ import { ProposeMeetingOnDayForm } from './calendar/propose-meeting-form';
 import { QuickTaskForm } from './create-in-place';
 import { AddProjectFileForm } from './files-panel';
 import { ProjectLinksPanel } from './links-panel';
+import { ProjectNotesPanel } from './project-notes-panel';
+import { listProjectNotes } from '@/modules/projects/project-notes-queries';
+import { progressSeries, topLevelTasks } from '@/modules/projects/project-view-derive';
+import { healthOfProject, overallProgress, overallProgressLabel } from '@/modules/projects/project-health';
+import { readProjectLifecycles } from '@/modules/projects/project-lifecycle-queries';
+import { LIFECYCLE_PHASE_LABEL } from '@/modules/projects/project-archive-schema';
+import { countPeriods, periodDelta, trendOf } from '@/lib/admin/period-delta';
 import { ProjectUpdatePanel } from './project-update-form';
 import { readMyWatch } from '@/modules/projects/project-defaults-queries';
 import { RecordClaimForm, VerifyClaimForm } from './claims-panel';
 import { ProjectGroupPanel } from './group-panel';
 import { PhaseTwoPanel } from './phase-two-panel';
 import { PhaseFourPanel } from './phase-four-panel';
+import { PhaseCompletionPanel } from './phase-completion-panel';
+import { readPhaseCompletions } from '@/modules/projects/phase-completion-queries';
 import { ONBOARDING_MARK, OnboardingItemForm } from './onboarding-panel';
 
 export default async function ProjectPage({
@@ -202,6 +214,8 @@ export default async function ProjectPage({
   const groupCard = await readGroupSetup(projectId);
   const phaseTwo = await readPhaseTwo(projectId);
   const phaseFour = await readPhaseFourOverview(projectId);
+  // Q-PH56: where Phase 5 and Phase 6 stand, read from Development and QA data.
+  const phaseCompletions = await readPhaseCompletions(projectId);
   /**
    * G-268 — where this project is on Finance §12's ladder.
    *
@@ -285,8 +299,8 @@ export default async function ProjectPage({
     project.client_account_id ? listClientLeads(project.client_account_id) : Promise.resolve([]),
     getAgencyTimeZone(),
   ]);
-  const [{ tasks, modules }, team, files, roster, clientName, assignedAgents, myWatch] = await Promise.all([
-    listDevelopmentBreakdown(projectId),
+  const [{ tasks: allTasks, modules }, team, files, roster, clientName, assignedAgents, myWatch, notes] = await Promise.all([
+    listDevelopmentBreakdown(projectId, { excludeCancelled: true }),
     listProjectTeam(projectId),
     listProjectFiles(projectId),
     listInternalRoster(),
@@ -295,7 +309,11 @@ export default async function ProjectPage({
     listAssignedAgents(projectId),
     // SCR-027 — whether this person watches the project's phase changes.
     readMyWatch(projectId, context.userId),
+    // The Project Notes card (20261004100000).
+    listProjectNotes(projectId, 4),
   ]);
+  // A subtask is counted and drawn under its parent (task page), never as a task of its own.
+  const tasks = topLevelTasks(allTasks);
   const nameByUser = new Map(team.map((m) => [m.userId, m.fullName]));
   const todayKey = new Date().toISOString().slice(0, 10);
   const taskCounts = {
@@ -309,8 +327,20 @@ export default async function ProjectPage({
   const daysLeft = project.ends_on
     ? Math.ceil((new Date(`${project.ends_on}T00:00:00Z`).getTime() - new Date(`${todayKey}T00:00:00Z`).getTime()) / 86_400_000)
     : null;
-  const overallProgress = plan.length > 0 ? pctOf(summary.milestones_met, summary.milestones_total) : pctOf(taskCounts.done, taskCounts.total);
-  const healthy = quality.open_blockers === 0 && taskCounts.overdue === 0 && status !== 'on_hold';
+  // One progress figure for every project screen (milestones met, else tasks done).
+  const overall = overallProgress({ milestonesTotal: plan.length, milestonesMet: plan.filter((m) => m.met_at).length, tasksTotal: taskCounts.total, tasksDone: taskCounts.done });
+  const totalTasksTrend = trendOf(periodDelta(countPeriods(tasks.map((t) => t.createdAt), new Date())));
+  const seriesDay = (key: string) => new Date(`${key}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+  const progressData = progressSeries(tasks, { start: project.starts_on, end: project.ends_on }, todayKey).map((p) => ({ day: seriesDay(p.key), Actual: p.actual, Planned: p.planned }));
+  // One health rule: the same facts and the same function as the projects list and Reports.
+  const [lifecycles, escalationRows] = await Promise.all([readProjectLifecycles(todayKey), listPhaseFourEscalations()]);
+  const life = lifecycles.get(projectId);
+  const health = healthOfProject(
+    { status: project.status, endsOn: project.ends_on },
+    life ?? { blockedTasks: 0, unmetDependencies: 0, overdueTasks: taskCounts.overdue, overdueMilestones: 0, blockingDefects: quality.open_blockers },
+    { escalated: escalationRows.some((e) => e.projectId === projectId), pendingClaims: claims.filter((c) => c.status === 'pending').length, todayKey },
+  );
+  const healthy = health.level === 'healthy';
 
   // The current milestone is the first one not yet met; everything before it
   // is done, everything after it is upcoming. `met_at` is the only fact read.
@@ -326,6 +356,7 @@ export default async function ProjectPage({
 
   const recentTasks = [...tasks].reverse().slice(0, 5);
   const taskColumns: Column<DevelopmentTask>[] = [
+    { key: 'index', header: '#', width: '2.5rem', desktopOnly: true, cellClassName: 'tabular text-muted', cell: (t) => recentTasks.indexOf(t) + 1 },
     { key: 'title', header: 'Task name', primary: true, cell: (t) => t.title },
     {
       key: 'assignee',
@@ -382,6 +413,18 @@ export default async function ProjectPage({
           { label: 'Project code', value: <span className="font-mono">{project.code}</span>, icon: <IconList size={14} /> },
           { label: 'Start date', value: project.starts_on ? clock.date(project.starts_on) : 'Not set', icon: <IconCalendar size={14} /> },
           { label: 'Due date', value: project.ends_on ? clock.date(project.ends_on) : 'Not set', icon: <IconCalendar size={14} /> },
+          // SCR-019 header: the lifecycle phase beside the status, and the milestone payment status
+          // (verified share of the plan, from the same ladder the billing section prints).
+          ...(life ? [{ label: 'Phase', value: LIFECYCLE_PHASE_LABEL[life.phase], icon: <IconFlag size={14} /> }] : []),
+          ...(progress
+            ? [{
+                label: 'Milestone payments',
+                value: progress.measurable
+                  ? `${progress.verifiedPercent ?? 0}% verified · ${progress.verifiedMilestones} of ${progress.milestones} paid`
+                  : 'No payment plan',
+                icon: <IconInvoices size={14} />,
+              }]
+            : []),
           ...(project.budget_minor !== null ? [{ label: 'Budget', value: money(project.budget_minor, project.currency), icon: <IconInvoices size={14} /> }] : []),
           // SCR-018: why it is paused or cancelled, beside the status it explains.
           ...(project.status_reason && (project.status === 'on_hold' || project.status === 'cancelled')
@@ -412,95 +455,44 @@ export default async function ProjectPage({
           </>
         }
         aside={
-          <HeaderFigure value={`${overallProgress}%`} label="Overall progress">
-            <ProgressBar value={overallProgress} showValue={false} label="Overall progress" tone="brand" />
+          <HeaderFigure value={`${overall}%`} label={overallProgressLabel({ milestonesTotal: plan.length, tasksTotal: taskCounts.total })}>
+            <ProgressBar value={overall} showValue={false} label="Overall progress" tone="brand" />
           </HeaderFigure>
         }
       >
-        <div className="mt-4 border-t border-line pt-4">
-          <StatusStepper
-            status={status}
-            happyPath={['planning', 'onboarding', 'active', 'completed']}
-            offRamps={['on_hold', 'cancelled']}
-          />
-        </div>
       </EntityHeader>
 
       <ProjectSubNav projectId={projectId} />
 
       <StatGrid cols={6}>
-        <Stat label="Total tasks" href={`/projects/${projectId}/development`} value={String(taskCounts.total)} caption={`${taskCounts.done} completed · ${pctOf(taskCounts.done, taskCounts.total)}%`} tone="brand" icon={<IconList size={16} />} />
-        <Stat label="In progress" href={`/projects/${projectId}/board`} value={String(taskCounts.inProgress)} caption={`${pctOf(taskCounts.inProgress, taskCounts.total)}%`} tone="info" icon={<IconClock size={16} />} />
-        <Stat label="Pending" href={`/projects/${projectId}/board`} value={String(taskCounts.pending)} caption={`${pctOf(taskCounts.pending, taskCounts.total)}%`} tone="warning" icon={<IconClock size={16} />} />
-        <Stat label="Overdue" href={`/projects/${projectId}/board`} value={String(taskCounts.overdue)} caption={`${pctOf(taskCounts.overdue, taskCounts.total)}%`} tone={taskCounts.overdue > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} />
-        <Stat label="Days left" href={`/projects/${projectId}/calendar`} value={daysLeft === null ? '—' : String(daysLeft)} caption={project.ends_on ? `Due ${clock.date(project.ends_on)}` : 'No due date set'} tone={daysLeft !== null && daysLeft < 0 ? 'danger' : 'accent'} icon={<IconCalendar size={16} />} />
+        <Stat compact label="Total tasks" href={`/projects/${projectId}/tasks`} value={String(taskCounts.total)} caption={`${taskCounts.done} completed · ${pctOf(taskCounts.done, taskCounts.total)}%`} tone="brand" icon={<IconList size={16} />} trend={totalTasksTrend} />
+        <Stat compact label="In progress" href={`/projects/${projectId}/board`} value={String(taskCounts.inProgress)} caption={`${pctOf(taskCounts.inProgress, taskCounts.total)}%`} tone="info" icon={<IconClock size={16} />} />
+        <Stat compact label="Pending" href={`/projects/${projectId}/board`} value={String(taskCounts.pending)} caption={`${pctOf(taskCounts.pending, taskCounts.total)}%`} tone="warning" icon={<IconClock size={16} />} />
+        <Stat compact label="Overdue" href={`/projects/${projectId}/board`} value={String(taskCounts.overdue)} caption={`${pctOf(taskCounts.overdue, taskCounts.total)}%`} tone={taskCounts.overdue > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} />
+        <Stat compact label="Days left" href={`/projects/${projectId}/calendar`} value={daysLeft === null ? '—' : String(daysLeft)} caption={project.ends_on ? `Due ${clock.date(project.ends_on)}` : 'No due date set'} tone={daysLeft !== null && daysLeft < 0 ? 'danger' : 'accent'} icon={<IconCalendar size={16} />} />
         <Stat
+          compact
           label="Project health"
-          href={`/projects/${projectId}/qa`}
-          value={healthy ? 'On track' : 'At risk'}
-          caption={
-            healthy
-              ? 'No blockers, nothing overdue'
-              : [quality.open_blockers > 0 ? `${quality.open_blockers} blocker${quality.open_blockers === 1 ? '' : 's'}` : null, taskCounts.overdue > 0 ? `${taskCounts.overdue} overdue` : null, status === 'on_hold' ? 'on hold' : null].filter(Boolean).join(' · ')
-          }
-          tone={healthy ? 'success' : 'danger'}
+          href={`/projects/${projectId}/reports`}
+          value={health.label}
+          caption={healthy ? 'No blocked work, nothing overdue' : health.reasons.join(' · ')}
+          tone={health.level === 'healthy' ? 'success' : health.level === 'at_risk' ? 'warning' : 'danger'}
           icon={<IconCheck size={16} />}
         />
       </StatGrid>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {[
-          {
-            label: 'Phase 3 · Design',
-            href: `/projects/${projectId}/design`,
-            value: designTrail.phase ? humanize(designTrail.phase.state) : 'Not started',
-            caption: designTrail.phase
-              ? `${designTrail.themes.length} theme option${designTrail.themes.length === 1 ? '' : 's'} · ${designTrail.phase.revisionCount} of ${designTrail.phase.revisionLimit} revisions${designTrail.baseline ? ` · ${designTrail.baseline.screenCount} screens` : ''}`
-              : 'No design phase opened',
-            tone: designTrail.phase ? statusTone(designTrail.phase.state) : 'neutral',
-          },
-          {
-            label: 'Phase 5 · Plan',
-            href: `/projects/${projectId}/plan`,
-            value: planBoard.plan ? `v${planBoard.plan.version} ${humanize(planBoard.plan.status)}` : 'No plan',
-            caption: planBoard.plan ? `${planBoard.deliverables.length} deliverables · ${planBoard.milestones.length} milestones` : 'The kickoff gate waits on one',
-            tone: planBoard.plan ? statusTone(planBoard.plan.status) : 'neutral',
-          },
-          {
-            label: 'Phase 6 · QA',
-            href: `/projects/${projectId}/qa`,
-            value: latestRun ? `${latestRun.passed}/${latestRun.total} passed` : quality.total > 0 ? `${quality.total} defect${quality.total === 1 ? '' : 's'}` : 'No runs',
-            caption: latestRun ? `${testRuns.length} run${testRuns.length === 1 ? '' : 's'} · latest ${clock.date(latestRun.executedAt)} · ${quality.open_blockers} blocker${quality.open_blockers === 1 ? '' : 's'}` : 'Nothing executed yet',
-            tone: latestRun ? (latestRun.failed > 0 ? 'warning' : 'success') : 'neutral',
-          },
-          {
-            label: 'Phase 7 · Handover',
-            href: `/projects/${projectId}/release`,
-            value: handover ? humanize(handover.status) : 'Not prepared',
-            caption: handover ? `${handover.items.length} package item${handover.items.length === 1 ? '' : 's'}${handover.accepted_at ? ` · accepted ${clock.date(handover.accepted_at)}` : handover.delivered_at ? ` · delivered ${clock.date(handover.delivered_at)}` : ''}` : 'Prepared on the Release tab',
-            tone: handover ? statusTone(handover.status) : 'neutral',
-          },
-        ].map((tile) => (
-          <Link key={tile.label} href={tile.href} className="flex flex-col gap-1 rounded-xl border border-line bg-surface p-4 shadow-xs transition-colors hover:bg-surface-hover">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{tile.label}</span>
-            <span className="flex items-center gap-2">
-              <span className="text-base font-semibold">{tile.value}</span>
-              <Badge tone={tile.tone as never} dot>{tile.tone === 'neutral' ? 'pending' : 'evidence'}</Badge>
-            </span>
-            <span className="text-xs text-muted">{tile.caption}</span>
-          </Link>
-        ))}
-      </div>
-
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(19rem,1fr)]">
       <div className="flex min-w-0 flex-col gap-4 [&>section]:rounded-xl [&>section]:border [&>section]:border-line [&>section]:bg-surface [&>section]:p-4 [&>section]:shadow-xs sm:[&>section]:p-5">
       <Card>
-        <CardHeader title="Project timeline" description={plan.length === 0 ? 'No milestones planned yet.' : `${summary.milestones_met} of ${summary.milestones_total} milestones met.`} actions={<ViewAll href={`/projects/${projectId}/plan`} label="View full plan" />} />
+        <CardHeader title="Project timeline" actions={<ViewAll href={`/projects/${projectId}/plan`} label="View full plan" />} />
         {timelineSteps.length > 0 ? (
           <div className="p-4 sm:p-5">
             <Timeline steps={timelineSteps} />
+            <p className="mt-3 text-xs text-muted">{summary.milestones_met} of {summary.milestones_total} milestones met.</p>
           </div>
-        ) : null}
+        ) : (
+          <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No milestones planned yet.</p>
+        )}
       </Card>
 
       <Card>
@@ -523,6 +515,203 @@ export default async function ProjectPage({
         </div>
       </Card>
 
+
+      <div className="grid gap-4 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+      <Card>
+        <CardHeader title="Progress overview" description="Share of the project's tasks completed, against the share due by each day." />
+        <div className="px-4 pb-4 sm:px-5">
+          {progressData.length === 0 ? (
+            <p className="text-[13px] text-muted">No tasks yet, so there is no progress to plot.</p>
+          ) : (
+            <TrendChart
+              data={progressData}
+              xKey="day"
+              height={190}
+              yDomain={[0, 100]}
+              unit="%"
+              series={[
+                { key: 'Actual', label: 'Actual progress', color: 'var(--brand)' },
+                { key: 'Planned', label: 'Planned progress', color: 'var(--faint)', dashed: true },
+              ]}
+            />
+          )}
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader title="Task status" actions={<ViewAll href={`/projects/${projectId}/board`} label="Board" />} />
+        <div className="px-4 pb-4 sm:px-5">
+          {taskCounts.total === 0 ? (
+            <p className="text-[13px] text-muted">No tasks yet.</p>
+          ) : (
+            <DonutChart
+              data={[
+                { label: 'Completed', value: taskCounts.done },
+                { label: 'In progress', value: taskCounts.inProgress },
+                { label: 'To do', value: taskCounts.pending },
+                { label: 'Other (review, blocked)', value: taskCounts.total - taskCounts.done - taskCounts.inProgress - taskCounts.pending },
+              ]}
+              height={150}
+              totalLabel="Total tasks"
+            />
+          )}
+        </div>
+      </Card>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
+        <Card>
+          <CardHeader title={`Team members (${team.length})`} actions={<ViewAll href={`/projects/${projectId}/team`} label="Manage" />} />
+          {team.length === 0 ? (
+            <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No one assigned yet.</p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {team.slice(0, 5).map((m) => (
+                <li key={m.userId} className="flex items-center gap-3 px-4 py-2.5 sm:px-5">
+                  <Avatar name={m.fullName} size="md" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-medium text-foreground">{m.fullName}</span>
+                    <span className="block truncate text-xs text-muted">{m.tasksDone}/{m.tasksTotal} tasks</span>
+                  </span>
+                  <Badge tone="info">{humanize(m.role)}</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Recent files"
+            actions={<ViewAll href={`/projects/${projectId}/files`} />}
+          />
+          {/* SCR-019: link a file in place — the Files tab's own door. */}
+          {mayWriteProject ? (
+            <details className="border-b border-line px-4 py-2 sm:px-5">
+              <summary className="cursor-pointer text-xs text-muted hover:underline">+ Link a file</summary>
+              <div className="pt-2 [&>section]:border-0 [&>section]:p-0 [&>section]:shadow-none">
+                <AddProjectFileForm projectId={projectId} />
+              </div>
+            </details>
+          ) : null}
+          {files.length === 0 ? (
+            <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No files yet.</p>
+          ) : (
+            <ul className="divide-y divide-line">
+              <li className="hidden grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.9fr)] gap-3 bg-surface-sunken px-4 py-1.5 text-[11px] font-semibold text-muted sm:grid sm:px-5">
+                <span>Name</span>
+                <span>Uploaded by</span>
+                <span>Date</span>
+              </li>
+              {files.slice(0, 5).map((f) => (
+                <li key={f.id}>
+                  <a href={f.url} target="_blank" rel="noreferrer noopener" className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-hover sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.9fr)] sm:px-5">
+                    <span className="flex min-w-0 items-center gap-2.5">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand">
+                        <IconFile size={15} />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-[13px] font-medium text-foreground">{f.title}</span>
+                        <span className="block truncate text-xs text-muted sm:hidden">
+                          {humanize(f.category)}{f.uploadedByName ? ` · ${f.uploadedByName}` : ''} · {clock.date(f.createdAt)}
+                        </span>
+                        <span className="hidden truncate text-xs text-muted sm:block">{humanize(f.category)}</span>
+                      </span>
+                    </span>
+                    <span className="hidden truncate text-[13px] text-muted sm:block">{f.uploadedByName ?? '—'}</span>
+                    <span className="hidden truncate text-[13px] text-muted sm:block">{clock.date(f.createdAt)}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader title="Project notes" />
+        <ProjectNotesPanel
+          projectId={projectId}
+          editable={can(context, 'task.write')}
+          notes={notes.map((n) => ({ id: n.id, title: n.title, body: n.body, whenLabel: clock.dateTime(n.createdAt), byName: n.createdByName }))}
+        />
+      </Card>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          {
+            label: 'Phase 1 · Lead to Close',
+            href: project.opportunity_id ? `/handoffs/${project.opportunity_id}` : `/projects/${projectId}`,
+            value: project.opportunity_id ? 'Won deal' : 'No deal',
+            caption: project.opportunity_id ? (quotation ? `Accepted quotation · ${quotation.title} v${quotation.version}` : 'Handoff packet on file') : 'Created without a lead or a won deal',
+            tone: project.opportunity_id ? 'success' : 'neutral',
+          },
+          {
+            label: 'Phase 2 · Onboarding',
+            href: `/projects/${projectId}`,
+            value: phaseTwo.phase ? humanize(phaseTwo.phase.state) : 'Not started',
+            caption: phaseTwo.phase
+              ? `${phaseTwo.readiness?.ready ? 'Ready to kick off' : `${phaseTwo.readiness?.unmet.length ?? 0} gate${phaseTwo.readiness?.unmet.length === 1 ? '' : 's'} unmet`}${phaseTwo.phase.kickoffAt ? ` · kicked off ${clock.date(phaseTwo.phase.kickoffAt)}` : ''} · ${onboarding.filter((i) => i.status !== 'pending').length}/${onboarding.length} checklist items`
+              : 'Phase 2 has not opened',
+            tone: phaseTwo.phase ? statusTone(phaseTwo.phase.state) : 'neutral',
+          },
+          {
+            label: 'Phase 3 · Design',
+            href: `/projects/${projectId}/design`,
+            value: designTrail.phase ? humanize(designTrail.phase.state) : 'Not started',
+            caption: designTrail.phase
+              ? `${designTrail.themes.length} theme option${designTrail.themes.length === 1 ? '' : 's'} · ${designTrail.phase.revisionCount} of ${designTrail.phase.revisionLimit} revisions${designTrail.baseline ? ` · ${designTrail.baseline.screenCount} screens` : ''}`
+              : 'No design phase opened',
+            tone: designTrail.phase ? statusTone(designTrail.phase.state) : 'neutral',
+          },
+          {
+            label: 'Phase 4 · UI and Prototype',
+            href: phaseFour.uiVersion ? `/projects/${projectId}/ui-versions/${phaseFour.uiVersion.id}` : `/projects/${projectId}/prototype`,
+            value: phaseFour.workspace ? humanize(phaseFour.workspace.state) : 'Not started',
+            caption: phaseFour.workspace
+              ? `${phaseFour.uiVersion ? `UI v${phaseFour.uiVersion.version} ${humanize(phaseFour.uiVersion.status)}` : 'No UI version yet'} · ${phaseFour.workspace.uiRevisionCount} of ${phaseFour.workspace.uiRevisionLimit} UI rounds${phaseFour.prototype ? ' · prototype built' : ''}`
+              : 'No UI or prototype phase opened',
+            tone: phaseFour.workspace ? statusTone(phaseFour.workspace.state) : 'neutral',
+          },
+          {
+            label: 'Phase 5 · Development',
+            href: `/projects/${projectId}/plan`,
+            value: planBoard.plan ? `v${planBoard.plan.version} ${humanize(planBoard.plan.status)}` : 'No plan',
+            caption: planBoard.plan ? `${planBoard.deliverables.length} deliverables · ${planBoard.milestones.length} milestones · ${taskCounts.done}/${taskCounts.total} tasks done` : 'The kickoff gate waits on one',
+            tone: planBoard.plan ? statusTone(planBoard.plan.status) : 'neutral',
+          },
+          {
+            label: 'Phase 6 · QA',
+            href: `/projects/${projectId}/qa`,
+            value: latestRun ? `${latestRun.passed}/${latestRun.total} passed` : quality.total > 0 ? `${quality.total} defect${quality.total === 1 ? '' : 's'}` : 'No runs',
+            caption: latestRun ? `${testRuns.length} run${testRuns.length === 1 ? '' : 's'} · latest ${clock.date(latestRun.executedAt)} · ${quality.open_blockers} blocker${quality.open_blockers === 1 ? '' : 's'}` : 'Nothing executed yet',
+            tone: latestRun ? (latestRun.failed > 0 ? 'warning' : 'success') : 'neutral',
+          },
+          {
+            label: 'Phase 7 · Handover and Deployment',
+            href: `/projects/${projectId}/release`,
+            value: handover ? humanize(handover.status) : 'Not prepared',
+            caption: handover ? `${handover.items.length} package item${handover.items.length === 1 ? '' : 's'}${handover.accepted_at ? ` · accepted ${clock.date(handover.accepted_at)}` : handover.delivered_at ? ` · delivered ${clock.date(handover.delivered_at)}` : ''}` : 'Deployment readiness and handover are prepared on the Release tab',
+            tone: handover ? statusTone(handover.status) : 'neutral',
+          },
+          {
+            label: 'Phase 8 · Customer Success',
+            href: project.client_account_id ? `/clients/${project.client_account_id}` : `/projects/${projectId}`,
+            value: freeMaintenance.length > 0 ? `${freeMaintenance.length} maintenance item${freeMaintenance.length === 1 ? '' : 's'}` : project.status === 'completed' ? 'Completed' : 'Not started',
+            caption: freeMaintenance.length > 0 ? 'Maintenance that came with the project' : 'Begins once the project is handed over',
+            tone: freeMaintenance.length > 0 ? 'info' : 'neutral',
+          },
+        ].map((tile) => (
+          <Link key={tile.label} href={tile.href} className="flex flex-col gap-1 rounded-xl border border-line bg-surface p-4 shadow-xs transition-colors hover:bg-surface-hover">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{tile.label}</span>
+            <span className="flex items-center gap-2">
+              <span className="text-base font-semibold">{tile.value}</span>
+              <Badge tone={tile.tone as never} dot>{tile.tone === 'neutral' ? 'pending' : 'evidence'}</Badge>
+            </span>
+            <span className="text-xs text-muted">{tile.caption}</span>
+          </Link>
+        ))}
+      </div>
 
       {/* ── Onboarding (G-017, ADM-06) ───────────────────────────────── */}
       {onboarding.length > 0 ? (
@@ -638,10 +827,22 @@ export default async function ProjectPage({
 
       <PhaseFourPanel view={phaseFour} projectId={projectId} />
 
+      <PhaseCompletionPanel
+        projectId={projectId}
+        readings={phaseCompletions}
+        mayComplete={mayWriteProject}
+        whenOf={Object.fromEntries(phaseCompletions.map((r) => [r.phase, r.completedAt ? `Completed ${clock.dateTime(r.completedAt)}` : null]))}
+      />
+
       <ProjectGroupPanel group={group} card={groupCard} projectId={projectId} />
 
       <section className="flex flex-col gap-3">
         <h2 className="text-[13px] font-semibold tracking-tight">Delivery status</h2>
+        <StatusStepper
+          status={status}
+          happyPath={['planning', 'onboarding', 'active', 'completed']}
+          offRamps={['on_hold', 'cancelled']}
+        />
         {mayWriteProject ? (
           <>
             {/*
@@ -1164,6 +1365,9 @@ export default async function ProjectPage({
             { label: 'Start date', value: project.starts_on ? clock.date(project.starts_on) : 'Not set' },
             { label: 'Due date', value: project.ends_on ? clock.date(project.ends_on) : 'Not set' },
             { label: 'Status', value: <StatusBadge status={project.status} /> },
+            { label: 'Project type', value: project.project_type ? <Badge tone="brand">{project.project_type}</Badge> : <span className="font-normal text-muted">Not set</span> },
+            { label: 'Technology', value: project.technology.length > 0 ? <span className="flex flex-wrap gap-1.5">{project.technology.map((c) => <Badge key={c} tone="info">{c}</Badge>)}</span> : <span className="font-normal text-muted">Not set</span> },
+            { label: 'Tags', value: project.tags.length > 0 ? <span className="flex flex-wrap gap-1.5">{project.tags.map((c) => <Badge key={c} tone="neutral">{c}</Badge>)}</span> : <span className="font-normal text-muted">None</span> },
             ...(project.status_reason ? [{ label: 'Status reason', value: <span className="whitespace-pre-wrap">{project.status_reason}</span> }] : []),
             { label: 'Budget', value: project.budget_minor === null ? 'Not set' : money(project.budget_minor, project.currency) },
             ...(can(context, 'invoice.read')
@@ -1180,25 +1384,16 @@ export default async function ProjectPage({
           ]}
         />
 
-        <Card>
-          <CardHeader title={`Team members (${team.length})`} actions={<ViewAll href={`/projects/${projectId}/team`} label="Manage" />} />
-          {team.length === 0 ? (
-            <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No one assigned yet.</p>
-          ) : (
-            <ul className="divide-y divide-line">
-              {team.slice(0, 5).map((m) => (
-                <li key={m.userId} className="flex items-center gap-3 px-4 py-2.5 sm:px-5">
-                  <Avatar name={m.fullName} size="md" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium text-foreground">{m.fullName}</span>
-                    <span className="block truncate text-xs text-muted">{humanize(m.role)}</span>
-                  </span>
-                  <Badge tone="info">{m.tasksDone}/{m.tasksTotal} tasks</Badge>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+        <ActivityFeed items={activity} viewAllHref={`/projects/${projectId}/activity`} emptyTitle="No activity yet" emptyDescription="Completed tasks, met milestones, versions and files appear here." compact />
+
+        <QuickActions
+          actions={[
+            ...(can(context, 'task.write') ? [{ label: 'Add task', href: `/projects/${projectId}/board`, icon: <IconList size={14} /> }] : []),
+            { label: 'Upload file', href: `/projects/${projectId}/files`, icon: <IconUpload size={14} /> },
+            { label: 'Schedule meeting', href: `/projects/${projectId}/calendar`, icon: <IconCalendar size={14} /> },
+            { label: 'View plan', href: `/projects/${projectId}/plan`, icon: <IconFlag size={14} /> },
+          ]}
+        />
 
         <Card>
           <CardHeader title={`Assigned agents (${assignedAgents.length})`} description="The owner's record on each agent's page; the runner does not read it yet." />
@@ -1264,7 +1459,7 @@ export default async function ProjectPage({
         </Card>
 
         {/* SCR-019: send a project update — through the client thread chokepoint, or as an internal note. */}
-        <Card>
+        <Card id="project-updates">
           <CardHeader title="Project updates" />
           <ProjectUpdatePanel
             projectId={projectId}
@@ -1275,46 +1470,6 @@ export default async function ProjectPage({
             hasClientThread={group.linked !== null}
           />
         </Card>
-
-        <Card>
-          <CardHeader
-            title="Recent files"
-            actions={<ViewAll href={`/projects/${projectId}/files`} />}
-          />
-          {/* SCR-019: link a file in place — the Files tab's own door. */}
-          {mayWriteProject ? (
-            <details className="border-b border-line px-4 py-2 sm:px-5">
-              <summary className="cursor-pointer text-xs text-muted hover:underline">+ Link a file</summary>
-              <div className="pt-2 [&>section]:border-0 [&>section]:p-0 [&>section]:shadow-none">
-                <AddProjectFileForm projectId={projectId} />
-              </div>
-            </details>
-          ) : null}
-          {files.length === 0 ? (
-            <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No files yet.</p>
-          ) : (
-            <ul className="divide-y divide-line">
-              {files.slice(0, 5).map((f) => (
-                <li key={f.id}>
-                  <a href={f.url} target="_blank" rel="noreferrer noopener" className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-hover sm:px-5">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand">
-                      <IconFile size={15} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium text-foreground">{f.title}</span>
-                      <span className="block truncate text-xs text-muted">
-                        {humanize(f.category)}
-                        {f.uploadedByName ? ` · ${f.uploadedByName}` : ''} · {clock.date(f.createdAt)}
-                      </span>
-                    </span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-
-        <ActivityFeed items={activity} viewAllHref={`/projects/${projectId}/activity`} emptyTitle="No activity yet" emptyDescription="Completed tasks, met milestones, versions and files appear here." compact />
 
         {team.length > 0 ? (
           <div className="flex items-center gap-2 px-1 text-xs text-muted">

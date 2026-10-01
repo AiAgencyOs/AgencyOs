@@ -320,6 +320,8 @@ export async function readWonHandoffPacket(opportunityId: string): Promise<Hando
 
 export type PaymentStructureRow = {
   name: string;
+  /** The seeded 30/20/30/20: applies only when no other structure matches the amount. */
+  isDefault: boolean;
   minAmountMinor: number | null;
   maxAmountMinor: number | null;
   milestones: Array<{ label: string; pct: number }>;
@@ -336,13 +338,14 @@ export async function listPaymentStructures(): Promise<PaymentStructureRow[]> {
   const { data, error } = await supabase
     .schema('sales')
     .from('payment_structures')
-    .select('name, min_amount_minor, max_amount_minor, payment_milestones(position, label, pct)')
+    .select('name, is_default, min_amount_minor, max_amount_minor, payment_milestones(position, label, pct)')
     .eq('active', true)
     .order('name');
   if (error) unreadable('listPaymentStructures', error);
 
   return (data ?? []).map((row) => ({
     name: row.name,
+    isDefault: row.is_default,
     minAmountMinor: row.min_amount_minor,
     maxAmountMinor: row.max_amount_minor,
     milestones: [...(row.payment_milestones ?? [])]

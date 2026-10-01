@@ -68,7 +68,7 @@ function PageLink({
 
   if (disabled) {
     return (
-      <span className={cls} {...rest}>
+      <span className={cls} aria-disabled="true" {...rest}>
         {children}
       </span>
     );

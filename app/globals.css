@@ -74,6 +74,7 @@
      can grep for.
      ─────────────────────────────────────────────────────────────────────── */
   --wa-header: #008069; /* WhatsApp Web's header teal */
+  --wa-sender: #00705b; /* a sender name inside a bubble: the header teal fails 4.5:1 on the bubble */
   --wa-header-fg: #ffffff;
   --wa-deep: #075e54;
   --wa-accent: #00a884; /* WhatsApp's own send-button green */
@@ -85,7 +86,7 @@
   --wa-bubble-in: #ffffff;
   --wa-bubble-out: #d9fdd3;
   --wa-bubble-fg: #111b21;
-  --wa-meta: rgb(17 27 33 / 0.5); /* timestamp + tick row inside a bubble */
+  --wa-meta: rgb(17 27 33 / 0.62); /* timestamp + tick row inside a bubble */
   --wa-tick-read: #53bdeb; /* the blue double tick */
   --wa-divider: rgb(17 27 33 / 0.08);
   --wa-system: rgb(255 255 255 / 0.9); /* date pills, encryption notice */

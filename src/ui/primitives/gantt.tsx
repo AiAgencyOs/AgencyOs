@@ -12,6 +12,12 @@ export type GanttRow = {
   /** 0–100, printed on the bar when given. */
   progress?: number;
   href?: string;
+  /** The reference's "#" column: `3`, `3.1`. */
+  index?: string;
+  /** 0 for a phase, 1 for a task under it: indented, lighter, thinner bar. */
+  depth?: 0 | 1;
+  /** A short status word drawn at the row's right edge of the label column ("Completed"). */
+  statusLabel?: string;
 };
 
 const BAR: Record<GanttRow['state'], string> = {
@@ -38,7 +44,7 @@ function monthLabel(key: string): string {
  * dates; the component only scales them onto one axis, marks the months and
  * draws today's line. It stores nothing and invents no duration.
  */
-export function Gantt({ rows, todayKey, className }: { rows: readonly GanttRow[]; todayKey?: string; className?: string }) {
+export function Gantt({ rows, todayKey, className, heading = 'Milestone' }: { rows: readonly GanttRow[]; todayKey?: string; className?: string; heading?: string }) {
   if (rows.length === 0) return null;
   const starts = rows.map((r) => dayIndex(r.start));
   const ends = rows.map((r) => dayIndex(r.end));
@@ -62,7 +68,7 @@ export function Gantt({ rows, todayKey, className }: { rows: readonly GanttRow[]
     <div className={cx('overflow-x-auto', className)}>
       <div className="min-w-[36rem]">
         <div className="grid grid-cols-[minmax(11rem,16rem)_1fr] border-b border-line text-[11px] font-semibold uppercase tracking-wider text-muted">
-          <div className="px-3 py-2">Milestone</div>
+          <div className="px-3 py-2">{heading}</div>
           <div className="relative h-8">
             {/* The range's own month, unless the first boundary is so close the two labels would collide. */}
             {(ticks[0]?.left ?? 100) > 22 ? (
@@ -81,7 +87,7 @@ export function Gantt({ rows, todayKey, className }: { rows: readonly GanttRow[]
             const width = Math.max(1.5, pct(dayIndex(r.end) + 1) - left);
             const bar = (
               <span
-                className={cx('absolute top-1/2 flex h-5 -translate-y-1/2 items-center rounded-md px-2 text-[11px] font-semibold', BAR[r.state], r.state === 'upcoming' ? 'text-muted' : 'text-white')}
+                className={cx('absolute top-1/2 flex -translate-y-1/2 items-center rounded-md px-2 text-[11px] font-semibold', r.depth === 1 ? 'h-3 opacity-80' : 'h-5', BAR[r.state], r.state === 'upcoming' ? 'text-muted' : 'text-white')}
                 style={{ left: `${left}%`, width: `${width}%` }}
                 title={`${r.label}: ${r.start} → ${r.end}`}
               >
@@ -90,8 +96,9 @@ export function Gantt({ rows, todayKey, className }: { rows: readonly GanttRow[]
             );
             return (
               <li key={r.id} className="grid grid-cols-[minmax(11rem,16rem)_1fr] border-b border-line last:border-0">
-                <div className="flex items-center gap-2 px-3 py-2.5">
-                  <span aria-hidden className={cx('h-2.5 w-2.5 shrink-0 rounded-full', DOT_CLASS[DOT[r.state]])} />
+                <div className={cx('flex items-center gap-2 px-3', r.depth === 1 ? 'py-1.5 pl-8' : 'py-2.5')}>
+                  {r.index ? <span className="tabular w-6 shrink-0 text-[11px] text-muted">{r.index}</span> : null}
+                  <span aria-hidden className={cx('shrink-0 rounded-full', r.depth === 1 ? 'h-1.5 w-1.5' : 'h-2.5 w-2.5', DOT_CLASS[DOT[r.state]])} />
                   <span className="min-w-0">
                     {r.href ? (
                       <a href={r.href} className="block truncate text-[13px] font-medium text-foreground hover:text-brand">
@@ -102,8 +109,9 @@ export function Gantt({ rows, todayKey, className }: { rows: readonly GanttRow[]
                     )}
                     {r.caption ? <span className="block truncate text-[11px] text-muted">{r.caption}</span> : null}
                   </span>
+                  {r.statusLabel ? <span className="ml-auto shrink-0 rounded-full bg-surface-sunken px-2 py-0.5 text-[10px] font-medium text-muted">{r.statusLabel}</span> : null}
                 </div>
-                <div className="relative h-11">
+                <div className={cx('relative', r.depth === 1 ? 'h-8' : 'h-11')}>
                   {ticks.map((t) => (
                     <span key={t.key} aria-hidden className="absolute inset-y-0 border-l border-dashed border-line" style={{ left: `${t.left}%` }} />
                   ))}

@@ -1,10 +1,10 @@
 /**
  * Operational settings the product reads with a default behind them.
  *
- * Two values that were constants in code and are now the owner's to set
+ * Four values that were constants in code and are now the owner's to set
  * (Admin Manageability Matrix, screen architecture §7: "Payment schedule
  * templates … Outreach frequency caps"; and the configurability audit,
- * docs/AGENCYOS_ADMIN_CONFIGURABILITY_AUDIT.md, items B-1 and B-2). Each
+ * docs/AGENCYOS_ADMIN_CONFIGURABILITY_AUDIT.md, items B-1 to B-4). Each
  * reader takes the organization's `settings` JSON as already read by the
  * caller — no round trip of its own — and answers the CONFIGURED value or
  * the default the code always used. Unset means "as before", never "zero".
@@ -18,6 +18,12 @@ export const DEFAULT_QUOTATION_VALIDITY_DAYS = 15;
 
 /** The hours (inclusive start, exclusive end, agency-local) inside which follow-ups are sent — ADM-69. */
 export const DEFAULT_OUTREACH_WINDOW = { startHour: 10, endHour: 19 } as const;
+
+/** How many days ahead the calendar is read when a lead named no window — B-3. */
+export const DEFAULT_MEETING_OFFER_HORIZON_DAYS = 7;
+
+/** How many leads the funnel needs in its window before it names the stage that leaks most — B-4. */
+export const DEFAULT_FUNNEL_MIN_LEADS_TO_NAME_LEAK = 20;
 
 export type OutreachWindow = { startHour: number; endHour: number };
 
@@ -50,4 +56,16 @@ export function outreachWindow(settings: Settings): OutreachWindow {
   if (start === null || end === null) return { ...DEFAULT_OUTREACH_WINDOW };
   if (start < 0 || start > 22 || end < 1 || end > 23 || start >= end) return { ...DEFAULT_OUTREACH_WINDOW };
   return { startHour: start, endHour: end };
+}
+
+/** `meeting_offer_horizon_days`, 1–60, or the default of 7. */
+export function meetingOfferHorizonDays(settings: Settings): number {
+  const n = wholeNumber(settings?.meeting_offer_horizon_days);
+  return n !== null && n >= 1 && n <= 60 ? n : DEFAULT_MEETING_OFFER_HORIZON_DAYS;
+}
+
+/** `funnel_min_leads_to_name_leak`, 5–500, or the default of 20. */
+export function funnelMinLeadsToNameLeak(settings: Settings): number {
+  const n = wholeNumber(settings?.funnel_min_leads_to_name_leak);
+  return n !== null && n >= 5 && n <= 500 ? n : DEFAULT_FUNNEL_MIN_LEADS_TO_NAME_LEAK;
 }

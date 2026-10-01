@@ -163,6 +163,9 @@ export type RevisionAllowance = {
   prototype: { used: number; limit: number } | null;
 };
 
+/** The limit a new phase row carries (the column default of client_revision_limit / ui_revision_limit / prototype_revision_limit). */
+export const DEFAULT_REVISION_LIMIT = 3;
+
 export async function readRevisionAllowance(projectId: string): Promise<RevisionAllowance> {
   const supabase = await createClient();
 

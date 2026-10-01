@@ -9,7 +9,7 @@ import type { FormState } from '@/modules/identity/types';
 
 import { listProjectTemplates, type ProjectTemplateSummary } from './project-template-queries';
 import type { CreateProjectFromTemplateInput } from './project-template-schema';
-import { createProjectFromTemplate, createProjectTemplateFromProject, deleteProjectTemplate, type FromTemplateOutcome } from './project-template-service';
+import { cloneProjectTemplate, createProjectFromTemplate, createProjectTemplateFromProject, deleteProjectTemplate, type FromTemplateOutcome } from './project-template-service';
 
 /**
  * Project templates — the doors as Server Actions. Decision: reversed by
@@ -63,4 +63,11 @@ export async function deleteProjectTemplateAction(_prev: FormState, formData: Fo
 
   revalidatePath('/settings/templates');
   return { status: 'success', message: 'Template deleted.' };
+}
+
+export async function cloneProjectTemplateAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await cloneProjectTemplate({ templateId: String(formData.get('templateId') ?? ''), name: String(formData.get('name') ?? '') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings/templates');
+  return { status: 'success', message: 'Cloned. The copy is in the list.' };
 }

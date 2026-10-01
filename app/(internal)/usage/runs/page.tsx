@@ -92,7 +92,7 @@ export default async function AgentRunsPage({ searchParams }: { searchParams: Pr
     agent: raw.agent || undefined,
     status: raw.status || undefined,
     model: raw.model || undefined,
-    project: raw.project && /^[0-9a-f-]{36}$/i.test(raw.project) ? raw.project : undefined,
+    project: raw.project === 'none' || (raw.project && /^[0-9a-f-]{36}$/i.test(raw.project)) ? raw.project : undefined,
     provider: raw.provider || undefined,
     // Search within domain (bucket G-3): agent, trigger, model or error text, filtered by the reader.
     q: normaliseSearch(raw.q) || undefined,
@@ -181,10 +181,11 @@ export default async function AgentRunsPage({ searchParams }: { searchParams: Pr
           <FilterChips options={chips('status', facets.statuses, filters, 'All statuses')} />
           {facets.models.length > 0 ? <FilterChips options={chips('model', facets.models, filters, 'All models')} /> : null}
           {providerFacets.length > 0 ? <FilterChips options={chips('provider', providerFacets, filters, 'All providers')} /> : null}
-          {projectFacets.length > 0 ? (
+          {projectFacets.length > 0 || filters.project === 'none' ? (
             <FilterChips
               options={[
                 { key: 'project-all', label: 'All projects', href: runsHref(filters, { project: undefined }), active: !filters.project },
+                { key: 'project-none', label: 'No project', href: runsHref(filters, { project: 'none' }), active: filters.project === 'none' },
                 ...projectFacets.map((p) => ({ key: `project-${p.id}`, label: p.name, href: runsHref(filters, { project: p.id }), active: filters.project === p.id })),
               ]}
             />

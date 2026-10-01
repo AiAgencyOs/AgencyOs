@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { GstIdentity } from '@/modules/finance/gstr';
 import { describeStateCode } from '@/modules/finance/gstr';
 import { SUGGESTED_SAC } from '@/modules/finance/gst-identity-schema';
+import { GST_FILING_LABEL, GST_PERIOD_LABEL, GST_REGISTRATION_LABEL, type GstSetup } from '@/modules/finance/gst-settings';
 import { Badge, Callout, Card, CardHeader, IconSettings } from '@/ui';
 
 import { GstIdentityForm } from '../../settings/finance/gst-identity-form';
@@ -15,16 +16,22 @@ import { GstIdentityForm } from '../../settings/finance/gst-identity-form';
  * and new). The form is the SAME `GstIdentityForm` Settings › Finance
  * mounts — one component, one door — so the two screens cannot disagree.
  *
- * What the profile does NOT carry is said, not invented: registration type
- * (regular / composition), tax-period basis and filing frequency have no
- * column and no door here; the return period is chosen per export above.
+ * Registration type, filing frequency and period basis are organization
+ * settings (owner decision 9, 2026-10-01: regular, monthly, calendar month;
+ * unset reads as that). They are shown here with whether the owner saved them
+ * or the default applies, and set on Settings › Finance.
  */
 export function GstConfigurationCard({
+  setup,
+  nextReturnLabel,
   identity,
   issues,
   mayConfigure,
   effectiveSince,
 }: {
+  setup: GstSetup;
+  /** The return period due next under the saved setup, e.g. "September 2026". */
+  nextReturnLabel: string;
   identity: GstIdentity;
   /** From `gstIdentityIssues` — what the exports refuse on. */
   issues: readonly { reason: string }[];
@@ -51,6 +58,11 @@ export function GstConfigurationCard({
         }
       />
       <div className="flex flex-col gap-3 px-4 py-3 sm:px-5">
+        {/* SCR-056 guardrail: the figures follow what is configured; nothing here decides what the law requires. */}
+        <p className="text-xs text-muted">
+          Every figure on this page follows the profile and the rules recorded here. AgencyOS does not decide whether a sale is taxable, which return
+          applies or whether the agency is compliant beyond them; an invoice whose project never confirmed a billing mode stays in its own &ldquo;Unconfirmed mode&rdquo; line instead of being guessed.
+        </p>
         <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-[13px] sm:grid-cols-4">
           <dt className="text-muted">Legal name</dt>
           <dd className="font-medium">{identity.legalName || '—'}</dd>
@@ -62,16 +74,21 @@ export function GstConfigurationCard({
           <dd className="font-mono">{identity.defaultSac ?? <span className="text-warning">Not configured</span>}</dd>
           <dt className="text-muted">Effective since</dt>
           <dd>{effectiveSince ?? <span className="text-muted">never set from the panel</span>}</dd>
-          <dt className="text-muted">Registration type · period basis · filing frequency</dt>
-          <dd className="text-muted sm:col-span-3">
-            Not recorded — the profile carries no such fields, so nothing is inferred. The return period is chosen per export above.
-          </dd>
+          <dt className="text-muted">Registration type</dt>
+          <dd>{GST_REGISTRATION_LABEL[setup.registrationType]}{setup.explicit.registrationType ? '' : <span className="text-muted"> · default</span>}</dd>
+          <dt className="text-muted">Filing frequency</dt>
+          <dd>{GST_FILING_LABEL[setup.filingFrequency]}{setup.explicit.filingFrequency ? '' : <span className="text-muted"> · default</span>}</dd>
+          <dt className="text-muted">Tax period</dt>
+          <dd>{GST_PERIOD_LABEL[setup.periodBasis]}{setup.explicit.periodBasis ? '' : <span className="text-muted"> · default</span>}</dd>
+          <dt className="text-muted">Return due next</dt>
+          <dd>{nextReturnLabel}</dd>
         </dl>
         <p className="text-xs text-muted">
           The state code decides whether a line is split CGST+SGST (client in the same state) or IGST (any other state); it is the first two
           characters of the GSTIN and is taken from it when left blank. The default SAC ({SUGGESTED_SAC} is IT design and development services)
           classifies every line in the HSN summary until a per-line code exists. Nothing here verifies a registration with the GST portal; it
-          records what the owner states.
+          records what the owner states. Registration type, filing frequency and period are set on{' '}
+          <Link href="/settings/finance#gst-setup" className="font-medium text-brand hover:underline">Settings › Finance</Link>.
         </p>
         {issues.length > 0 ? <Callout tone="warning">The GSTR exports refuse until this is complete: {issues.map((i) => i.reason).join(' ')}</Callout> : null}
         {mayConfigure ? (

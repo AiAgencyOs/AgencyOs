@@ -6,7 +6,10 @@ import { listSavedViews } from '@/lib/admin/saved-views';
 import { readSettingHistory } from '@/lib/admin/settings-history';
 import { requireInternal } from '@/lib/auth/session';
 import { can, hasRole } from '@/lib/authz/permissions';
-import { listExpenses, listReceipts, listTaxReportInvoices } from '@/modules/finance/queries';
+import { listExpenses, listPayments, listReceipts, listTaxReportInvoices } from '@/modules/finance/queries';
+import { EXPORT_KIND_LABEL, listReportExports } from '@/modules/finance/export-log';
+import { listPeriodReports } from '@/modules/finance/period-report-queries';
+import { describeSnapshot, reportsOfPeriod } from '@/modules/finance/period-report-schema';
 import {
   expensesInPeriod,
   invoicesInPeriod,
@@ -14,6 +17,7 @@ import {
   receiptsInPeriod,
   resolveTaxPeriod,
   splitByMode,
+  verifiedReceivedInPeriod,
   taxPeriodOptions,
   type TaxTotals,
 } from '@/modules/finance/tax-report';
@@ -21,6 +25,11 @@ import { listTaxPeriodLocks, lockStateFor } from '@/modules/finance/tax-lock-que
 import { describeStateCode, gstIdentityIssues, returnPeriodFor, selectForReturn } from '@/modules/finance/gstr';
 import { listGstrInvoices, readGstIdentity } from '@/modules/finance/gstr-queries';
 import { listGstExports } from '@/modules/finance/gst-export-queries';
+import { currentReturnPeriod, filingCheck, GST_FILING_LABEL, gstSetupFrom } from '@/modules/finance/gst-settings';
+import { readOrganizationSettingsRow } from '@/modules/finance/numbering';
+import { createClient } from '@/lib/db/server';
+import { categoryLabel } from '@/modules/finance/expense-categories';
+import { listExpenseCategories } from '@/modules/finance/expense-category-queries';
 import { SavedViewsBar } from '../../saved-views-bar';
 import {
   Badge,
@@ -32,7 +41,6 @@ import {
   DEFAULT_PAGE_SIZE,
   DonutChart,
   EmptyState,
-  humanize,
   IconDownload,
   IconFile,
   IconInvoices,
@@ -54,7 +62,7 @@ import {
 
 import { GstConfigurationCard } from './gst-configuration-card';
 import { PeriodSelect } from './period-select';
-import { LockPeriodForm, UnlockPeriodForm } from './period-lock';
+import { GeneratePeriodReportForm, LockPeriodForm, UnlockPeriodForm } from './period-lock';
 
 export const metadata: Metadata = { title: 'GST & tax' };
 
@@ -78,7 +86,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
   { key: 'subtotal', header: 'Taxable', align: 'right', cellClassName: 'tabular', cell: (i) => money(i.subtotalMinor, i.currency), sortKey: 'subtotal' },
   { key: 'tax', header: 'Tax', align: 'right', cellClassName: 'tabular font-medium', cell: (i) => money(i.taxMinor, i.currency), sortKey: 'tax' },
   { key: 'total', header: 'Total', align: 'right', cellClassName: 'tabular', cell: (i) => money(i.totalMinor, i.currency), sortKey: 'total' },
-  { key: 'paid', header: 'Paid', align: 'right', cellClassName: 'tabular text-success', cell: (i) => money(i.paidMinor, i.currency), sortKey: 'paid' },
+  { key: 'paid', header: 'Verified paid', align: 'right', cellClassName: 'tabular text-success', cell: (i) => money(i.paidMinor, i.currency), sortKey: 'paid' },
   { key: 'issued', header: 'Issued', align: 'right', cellClassName: 'text-muted', cell: (i) => (i.issuedAt ? clock.date(i.issuedAt) : '—'), sortKey: 'issued' },
 ];
 
@@ -101,7 +109,7 @@ function TotalsCard({ title, totals, currency, tone }: { title: string; totals: 
         <dd className="text-right font-medium tabular">{money(totals.tax, currency)}</dd>
         <dt className="text-muted">Invoice total</dt>
         <dd className="text-right font-semibold tabular">{money(totals.total, currency)}</dd>
-        <dt className="text-muted">Paid</dt>
+        <dt className="text-muted">Verified paid</dt>
         <dd className="text-right tabular text-success">{money(totals.paid, currency)}</dd>
       </dl>
     </Card>
@@ -142,10 +150,14 @@ export default async function TaxReportPage({
   };
   const currentQuery = qs({}).slice(1);
 
-  const [allInvoices, allReceipts, allExpenses, savedViews, locks, gstIdentity, gstrRows, gstExports, settingHistory] = await Promise.all([
+  const [allInvoices, allReceipts, allExpenses, allPayments, reportExports, savedViews, locks, gstIdentity, gstrRows, gstExports, settingHistory, orgSettings, expenseCategories, periodReports] = await Promise.all([
     listTaxReportInvoices(),
     listReceipts(),
     listExpenses(),
+    // The money received is the verified payments (the ONE basis — verified-basis.ts), not a count of receipts.
+    listPayments(2000),
+    // SCR-056: every CSV / PDF download, beside the GSTR files below.
+    listReportExports(),
     listSavedViews('/finance/tax'),
     listTaxPeriodLocks(),
     readGstIdentity(),
@@ -154,6 +166,12 @@ export default async function TaxReportPage({
     listGstExports(),
     // SCR-056: when the tax profile was last set — `organization.gst_identity_set` in the audit trail.
     readSettingHistory(),
+    // Owner decision 9 (2026-10-01): the saved GST setup; unset reads as regular, monthly, calendar month.
+    createClient().then((c) => readOrganizationSettingsRow(c)),
+    // The owner's labels for the expense categories the P&L names (decision 6, 2026-10-01).
+    listExpenseCategories(),
+    // Q-D2: the dated snapshots "Generate period report" stored, listed in the export history and nameable by a lock.
+    listPeriodReports(),
   ]);
   const gstIdentitySetAt = settingHistory.get('gst_identity')?.[0]?.at ?? null;
   // The door's own rule (core.set_gst_identity checks is_owner): owner only.
@@ -163,7 +181,11 @@ export default async function TaxReportPage({
   const returnPeriod = returnPeriodFor(period);
   const identityIssues = gstIdentityIssues(gstIdentity);
   const gstrSelection = selectForReturn(gstrRows, period);
-  const gstrReady = returnPeriod !== null && identityIssues.length === 0;
+  const gstSetup = gstSetupFrom(orgSettings);
+  const nextReturn = currentReturnPeriod(gstSetup, today);
+  // The two files are offered only for a window the saved setup says the agency files (GSTR-1 first: both share the rule).
+  const filing = filingCheck(gstSetup, period, 'GSTR-1');
+  const gstrReady = returnPeriod !== null && identityIssues.length === 0 && filing.ok;
   // SCR-056: the lock state of THIS window. The resolver's half-open ISO
   // instants become calendar days, the shape finance.tax_period_locks holds.
   const lockWindow = period.from && period.to ? { start: period.from.slice(0, 10), end: period.to.slice(0, 10) } : null;
@@ -174,7 +196,7 @@ export default async function TaxReportPage({
   const receipts = receiptsInPeriod(allReceipts, period);
   const expenses = expensesInPeriod(allExpenses, period);
   const splits = splitByMode(periodInvoices);
-  const pnl = profitAndLoss(periodInvoices, receipts, expenses);
+  const pnl = profitAndLoss(periodInvoices, verifiedReceivedInPeriod(allPayments, period), expenses);
 
   const filtered = modeFilter
     ? periodInvoices.filter((i) => (modeFilter === 'unconfirmed' ? i.billingMode === null : i.billingMode === modeFilter))
@@ -183,6 +205,26 @@ export default async function TaxReportPage({
   const { page, pageCount, rows: pageRows } = paginate(invoices, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
 
   const unconfirmedCount = periodInvoices.filter((i) => i.billingMode === null).length;
+
+  // SCR-056 "Report status": locked when the window carries an exact lock,
+  // exported when any file was produced for exactly this period label, else open.
+  const exportedForPeriod =
+    gstExports.some((e) => e.periodLabel === period.label) || reportExports.some((e) => e.periodLabel === period.label) || periodReports.some((r) => r.periodLabel === period.label);
+  const reportStatus: { label: string; tone: 'danger' | 'success' | 'warning' | 'neutral'; caption: string } = lockState?.exact
+    ? { label: 'Locked', tone: 'danger', caption: `locked ${clock.date(lockState.exact.lockedAt)}` }
+    : lockState && lockState.overlapping.length > 0
+      ? { label: 'Locked', tone: 'danger', caption: 'inside a wider lock' }
+      : exportedForPeriod
+        ? { label: 'Exported', tone: 'success', caption: 'a file was produced for this period' }
+        : { label: 'Open', tone: 'neutral', caption: lockWindow ? 'not locked, not exported' : 'pick a month or quarter to lock it' };
+  const principal = splits[0];
+  // One merged, newest-first history: GSTR files and every other download.
+  const exportHistory = [
+    ...gstExports.map((e) => ({ id: e.id, at: e.createdAt, kind: e.kind === 'gstr1' ? 'GSTR-1' : 'GSTR-3B', period: `${e.periodLabel} · ${e.returnPeriod.slice(0, 2)}/${e.returnPeriod.slice(2)}`, detail: Object.entries(e.counts).filter(([, n]) => n > 0).map(([k, n]) => `${k} ${n}`).join(' · ') || '—', omitted: e.omitted.length, by: e.exportedByName })),
+    ...reportExports.map((e) => ({ id: e.id, at: e.createdAt, kind: EXPORT_KIND_LABEL[e.kind] ?? e.kind, period: e.periodLabel, detail: `${e.rowCount} row${e.rowCount === 1 ? '' : 's'}`, omitted: 0, by: e.exportedByName })),
+    // Q-D2: every stored period report, dated, with the figures it held.
+    ...periodReports.map((r) => ({ id: r.id, at: r.generatedAt, kind: 'Period report', period: `${r.periodLabel} · ${r.periodStart} to ${r.periodEnd}`, detail: describeSnapshot(r.snapshot, r.invoiceCount, money), omitted: 0, by: r.generatedByName })),
+  ].sort((a, b) => b.at.localeCompare(a.at));
 
   return (
     <div className="flex flex-col gap-5">
@@ -217,10 +259,18 @@ export default async function TaxReportPage({
         }
       />
 
+      {/* SCR-056's header: GST invoice totals, non-GST totals, tax period, report status. */}
+      <StatGrid cols={4}>
+        <Stat label="GST Invoice Totals" value={principal ? money(principal.gst.total, principal.currency) : '—'} caption={principal ? `${principal.gst.count} invoice${principal.gst.count === 1 ? '' : 's'} · ${money(principal.gst.tax, principal.currency)} tax` : 'nothing issued in this period'} tone="brand" icon={<IconInvoices size={16} />} />
+        <Stat label="Non-GST Totals" value={principal ? money(principal.nonGst.total, principal.currency) : '—'} caption={principal ? `${principal.nonGst.count} invoice${principal.nonGst.count === 1 ? '' : 's'}${principal.unconfirmed.count > 0 ? ` · ${principal.unconfirmed.count} unconfirmed` : ''}` : 'nothing issued in this period'} icon={<IconInvoices size={16} />} />
+        <Stat label="Tax Period" value={<span className="text-xl">{period.label}</span>} caption={lockWindow ? `${lockWindow.start} to ${lockWindow.end}` : 'no fixed window'} icon={<IconFile size={16} />} />
+        <Stat label="Report Status" value={<span className="text-xl">{reportStatus.label}</span>} caption={reportStatus.caption} tone={reportStatus.tone} icon={<IconLock size={16} />} />
+      </StatGrid>
+
       <SavedViewsBar page="/finance/tax" currentQuery={currentQuery} views={savedViews} />
 
       {/* SCR-056: GST configuration — the tax profile, on the tax page, through the Settings form and door. */}
-      <GstConfigurationCard identity={gstIdentity} issues={identityIssues} mayConfigure={mayConfigureTax} effectiveSince={gstIdentitySetAt ? clock.dateTime(gstIdentitySetAt) : null} />
+      <GstConfigurationCard setup={gstSetup} nextReturnLabel={nextReturn.label} identity={gstIdentity} issues={identityIssues} mayConfigure={mayConfigureTax} effectiveSince={gstIdentitySetAt ? clock.dateTime(gstIdentitySetAt) : null} />
 
       {/*
         Period lock — SCR-056. A filed return is a number reported; the lock
@@ -260,11 +310,18 @@ export default async function TaxReportPage({
                 {l.note ? <> — “{l.note}”</> : null}.
               </p>
             ))}
+            {/* Q-D2 "Generate period report": a dated snapshot of this window, listed in the export history. */}
+            <GeneratePeriodReportForm periodStart={lockWindow.start} periodEnd={lockWindow.end} label={period.label} />
             {mayLock ? (
               lockState.exact ? (
                 <UnlockPeriodForm lockId={lockState.exact.id} label={period.label} />
               ) : (
-                <LockPeriodForm periodStart={lockWindow.start} periodEnd={lockWindow.end} label={period.label} />
+                <LockPeriodForm
+                  periodStart={lockWindow.start}
+                  periodEnd={lockWindow.end}
+                  label={period.label}
+                  reports={reportsOfPeriod(periodReports, lockWindow.start, lockWindow.end).map((r) => ({ id: r.id, label: `${r.periodLabel} — generated ${clock.dateTime(r.generatedAt)}` }))}
+                />
               )
             ) : (
               <p className="text-[13px] text-muted">Only an owner or ops admin can lock or unlock a period.</p>
@@ -281,6 +338,16 @@ export default async function TaxReportPage({
                 { key: 'state', header: 'State', badge: true, cell: (l) => (l.unlockedAt ? <Badge>unlocked</Badge> : <Badge tone="danger">locked</Badge>) },
                 { key: 'locked', header: 'Locked', cellClassName: 'text-muted', cell: (l) => `${clock.date(l.lockedAt)} · ${l.lockedByName ?? '—'}` },
                 { key: 'note', header: 'Note', desktopOnly: true, cellClassName: 'text-muted', cell: (l) => l.note ?? '—' },
+                {
+                  key: 'report',
+                  header: 'Report',
+                  desktopOnly: true,
+                  cellClassName: 'text-muted',
+                  cell: (l) => {
+                    const r = l.periodReportId ? periodReports.find((p) => p.id === l.periodReportId) : null;
+                    return r ? `${r.periodLabel} · ${clock.date(r.generatedAt)}` : '—';
+                  },
+                },
                 {
                   key: 'unlocked',
                   header: 'Unlocked',
@@ -317,18 +384,32 @@ export default async function TaxReportPage({
           description={
             returnPeriod
               ? `Return period ${returnPeriod.slice(0, 2)}/${returnPeriod.slice(2)} — ${gstrSelection.ready.length} GST invoice${gstrSelection.ready.length === 1 ? '' : 's'} in the file${gstrSelection.voided.length > 0 ? `, ${gstrSelection.voided.length} void counted as cancelled documents` : ''}${gstrSelection.excluded.nonGst > 0 ? `, ${gstrSelection.excluded.nonGst} non-GST left out` : ''}${gstrSelection.excluded.unconfirmed > 0 ? `, ${gstrSelection.excluded.unconfirmed} unconfirmed left out` : ''}. GSTR-3B states ITC and inward supplies as nil: no purchase register exists here.`
-              : 'A return is for one month or one quarter. Pick either above to export GSTR-1 and GSTR-3B; a financial year, a custom range and "All time" are not return periods.'
+              : `The agency files ${GST_FILING_LABEL[gstSetup.filingFrequency].toLowerCase()}. Pick ${gstSetup.filingFrequency === 'quarterly' ? 'a quarter' : 'a month'} above to export GSTR-1 and GSTR-3B; a financial year, a custom range and "All time" are not return periods.`
           }
           actions={
             identityIssues.length > 0 ? (
               <Badge tone="warning" dot>identity incomplete</Badge>
             ) : gstrSelection.unresolved.length > 0 ? (
               <Badge tone="warning" dot>{gstrSelection.unresolved.length} unresolved</Badge>
+            ) : returnPeriod && !filing.ok ? (
+              <Badge tone="warning" dot>not a filing period</Badge>
             ) : returnPeriod ? (
               <Badge tone="success" dot>ready</Badge>
             ) : null
           }
         />
+        {!filing.ok ? (
+          <div className="px-4 py-3 sm:px-5">
+            <Callout tone="warning">{filing.message}</Callout>
+          </div>
+        ) : null}
+        {returnPeriod === null || !filing.ok ? (
+          <div className="px-4 py-3 sm:px-5">
+            <Link href={`/finance/tax?period=${nextReturn.value}`} className="text-[13px] font-medium text-brand hover:underline">
+              Open the return period due next: {nextReturn.label}
+            </Link>
+          </div>
+        ) : null}
         {identityIssues.length > 0 ? (
           <div className="px-4 py-3 sm:px-5">
             <Callout tone="warning">
@@ -358,24 +439,24 @@ export default async function TaxReportPage({
         ) : null}
       </Card>
 
-      {/* SCR-056: export history — every GSTR file the panel produced, from finance.gst_exports. */}
+      {/* SCR-056: export history — every GSTR file and every CSV / PDF download: who, when, which period, how many rows. */}
       <Card>
         <CardHeader
           icon={<IconDownload size={16} />}
           title="Export history"
-          description={gstExports.length === 0 ? 'No GSTR file has been exported yet.' : `${gstExports.length} export${gstExports.length === 1 ? '' : 's'}, newest first — which return period, what the file held, what it left out.`}
+          description={exportHistory.length === 0 ? 'Nothing has been exported yet. Every CSV, PDF and GSTR download, and every period report generated, is logged here.' : `${exportHistory.length} entr${exportHistory.length === 1 ? 'y' : 'ies'}, newest first — which file or report, which period, what it held, who pulled it.`}
         />
-        {gstExports.length > 0 ? (
+        {exportHistory.length > 0 ? (
           <DataTable
-            rows={gstExports}
+            rows={exportHistory.slice(0, 50)}
             dense
             columns={[
-              { key: 'when', header: 'Exported', primary: true, cell: (e) => clock.dateTime(e.createdAt) },
-              { key: 'kind', header: 'File', badge: true, cell: (e) => <Badge tone="brand" mono>{e.kind === 'gstr1' ? 'GSTR-1' : 'GSTR-3B'}</Badge> },
-              { key: 'period', header: 'Period', cellClassName: 'text-muted', cell: (e) => `${e.periodLabel} · ${e.returnPeriod.slice(0, 2)}/${e.returnPeriod.slice(2)}` },
-              { key: 'counts', header: 'In the file', desktopOnly: true, cellClassName: 'text-muted', cell: (e) => Object.entries(e.counts).filter(([, n]) => n > 0).map(([k, n]) => `${k} ${n}`).join(' · ') || '—' },
-              { key: 'omitted', header: 'Omitted', align: 'right', cell: (e) => (e.omitted.length > 0 ? <span className="text-warning" title={e.omitted.join(', ')}>{e.omitted.length}</span> : <span className="text-muted">0</span>) },
-              { key: 'by', header: 'By', desktopOnly: true, cellClassName: 'text-muted', cell: (e) => e.exportedByName ?? '—' },
+              { key: 'when', header: 'Exported', primary: true, cell: (e) => clock.dateTime(e.at) },
+              { key: 'kind', header: 'File', badge: true, cell: (e) => <Badge tone="brand" mono>{e.kind}</Badge> },
+              { key: 'period', header: 'Period', cellClassName: 'text-muted', cell: (e) => e.period },
+              { key: 'counts', header: 'In the file', desktopOnly: true, cellClassName: 'text-muted', cell: (e) => e.detail },
+              { key: 'omitted', header: 'Omitted', align: 'right', cell: (e) => (e.omitted > 0 ? <span className="text-warning">{e.omitted}</span> : <span className="text-muted">0</span>) },
+              { key: 'by', header: 'By', desktopOnly: true, cellClassName: 'text-muted', cell: (e) => e.by ?? '—' },
             ]}
             getKey={(e) => e.id}
           />
@@ -383,7 +464,7 @@ export default async function TaxReportPage({
       </Card>
 
       {splits.length === 0 ? (
-        <EmptyState icon={<IconInvoices size={22} />} title="Nothing issued in this period" description="Pick a wider period, or issue an invoice. Tax figures appear once an invoice is issued." />
+        <EmptyState icon={<IconInvoices size={22} />} title="Nothing issued in this period" description="Pick a wider period, or issue an invoice. Tax figures appear once an invoice is issued." action={<Link href="/invoices" className={buttonClass('secondary', 'sm')}>Open invoices</Link>} />
       ) : (
         splits.map((split) => (
           <section key={split.currency} className="flex flex-col gap-4">
@@ -428,7 +509,7 @@ export default async function TaxReportPage({
               <dl className="grid grid-cols-2 gap-x-3 gap-y-2 px-4 py-3 text-[13px] sm:px-5">
                 <dt className="text-muted">Invoiced</dt>
                 <dd className="text-right tabular">{money(row.invoiced, row.currency)}</dd>
-                <dt className="text-muted">Received (receipts)</dt>
+                <dt className="text-muted">Received (verified payments)</dt>
                 <dd className="text-right tabular text-success">{money(row.received, row.currency)}</dd>
                 <dt className="text-muted">Expenses</dt>
                 <dd className="text-right tabular text-danger">− {money(row.expenses, row.currency)}</dd>
@@ -439,7 +520,7 @@ export default async function TaxReportPage({
                 <ul className="flex flex-wrap gap-1.5 border-t border-line px-4 py-3 sm:px-5">
                   {row.expensesByCategory.map((c) => (
                     <li key={c.category}>
-                      <Badge mono>{humanize(c.category)} · {money(c.amount, row.currency)}</Badge>
+                      <Badge mono>{categoryLabel(expenseCategories, c.category)} · {money(c.amount, row.currency)}</Badge>
                     </li>
                   ))}
                 </ul>

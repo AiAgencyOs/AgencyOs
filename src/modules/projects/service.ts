@@ -1,5 +1,8 @@
 import 'server-only';
 
+import { blockerProblem } from './task-blocker';
+import { buildCredentialProblem } from './build-secrets-guard';
+import { fileCredentialProblem } from './file-secrets-guard';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
@@ -37,12 +40,14 @@ import {
   createTaskSchema,
   setModuleStatusSchema,
   setFeatureStatusSchema,
+  setTaskArchivedSchema,
   setTaskStatusSchema,
   type CreateModuleInput,
   type CreateFeatureInput,
   type CreateTaskInput,
   type SetModuleStatusInput,
   type SetFeatureStatusInput,
+  type SetTaskArchivedInput,
   type SetTaskStatusInput,
   openScopeVersionSchema,
   addScopeItemSchema,
@@ -82,6 +87,10 @@ import {
 import type { BillableMilestone } from './types';
 import { LOCKED_PAYMENT_STRUCTURE, lockedAmountsFor } from './payment-structure';
 import { resolveOnboardingContext, type ContextMatrix } from './onboarding-context';
+import { taskAcceptanceProblem } from './task-acceptance';
+import { projectRoleDbProblem } from './project-role-guard';
+import { projectRoleRefusal } from './project-role-service';
+import { ARCHIVE_FORBIDDEN_MESSAGE, archivedTaskProblem, cancelOrArchiveDbProblem, cancelReasonProblem, cancellingProblem, completingProblem, COMPLETION_DB_ERROR, COMPLETION_MESSAGE, enteringReviewProblem, REVIEW_HAND_OFF_DB_ERROR, REVIEW_HAND_OFF_MESSAGE } from './task-transitions';
 
 /**
  * Writes for the projects module — its only public surface.
@@ -702,6 +711,15 @@ export async function addDeliverable(
     return err('FORBIDDEN', 'You do not have permission to add deliverables.');
   }
 
+  // SCR-043: a build's text is read by the whole team; a credential is not recorded in it.
+  const credentialInBuild = buildCredentialProblem([
+    { label: 'Title', value: parsed.data.title },
+    { label: 'Build link', value: parsed.data.artifactUrl, isLink: true },
+    { label: 'What changed', value: parsed.data.changelog },
+    { label: 'Known issues', value: parsed.data.knownIssues },
+  ]);
+  if (credentialInBuild) return err('VALIDATION', credentialInBuild);
+
   const supabase = await createClient();
 
   const { data, error } = await supabase.schema('projects').rpc('add_deliverable', {
@@ -753,6 +771,9 @@ export async function addProjectFile(input: AddProjectFileInput): Promise<Result
     return err('FORBIDDEN', 'You do not have permission to add a file.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+  // SCR-024: a credential is not a project file.
+  const credential = fileCredentialProblem({ title: parsed.data.title, url: parsed.data.url, description: parsed.data.description });
+  if (credential) return err('VALIDATION', credential);
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -877,6 +898,14 @@ export async function addEnvironment(input: AddEnvironmentInput): Promise<Result
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
+  // SCR-043: an environment is described, never given its keys, here.
+  const credentialInEnvironment = buildCredentialProblem([
+    { label: 'Label', value: parsed.data.label },
+    { label: 'Address', value: parsed.data.url, isLink: true },
+    { label: 'Notes', value: parsed.data.notes },
+  ]);
+  if (credentialInEnvironment) return err('VALIDATION', credentialInEnvironment);
+
   const supabase = await createClient();
   const { data, error } = await supabase
     .schema('projects')
@@ -937,6 +966,15 @@ export async function addDependency(input: AddDependencyInput): Promise<Result<{
     return err('FORBIDDEN', 'You do not have permission to add a dependency.');
   }
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  // SCR-043: a dependency is named and referenced, never given its keys, here.
+  const credentialInDependency = buildCredentialProblem([
+    { label: 'Name', value: parsed.data.name },
+    { label: 'Version', value: parsed.data.version },
+    { label: 'Reference', value: parsed.data.reference },
+    { label: 'Notes', value: parsed.data.notes },
+  ]);
+  if (credentialInDependency) return err('VALIDATION', credentialInDependency);
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -1046,6 +1084,12 @@ export async function submitDeliverable(
 
     case 'settled':
       return err('CONFLICT', `This version is already ${settled.status}.`);
+
+    case 'not_qa_passed':
+      return err('CONFLICT', 'A prototype goes to the client only after QA passed it. Use the build page to send it through the gate.');
+
+    case 'not_admin_approved':
+      return err('CONFLICT', 'A prototype goes to the client only after Admin approved it. Use the build page to send it through the gate.');
 
     case 'no_policy':
       return err(
@@ -1829,6 +1873,29 @@ export async function createTask(input: CreateTaskInput): Promise<Result<{ taskI
   }
   if (!defaults) return err('NOT_FOUND', 'Project not found.');
 
+  // Q-B4: with a project role chosen and nobody named, the task goes to that role's default assignee,
+  // then to the project's one default assignee, then to nobody.
+  let roleDefault: string | null = null;
+  if (!parsed.data.assigneeId && parsed.data.assigneeRole) {
+    const { data: row, error: roleError } = await supabase
+      .schema('projects')
+      .from('project_default_assignees')
+      .select('user_id')
+      .eq('project_id', parsed.data.projectId)
+      .eq('project_role', parsed.data.assigneeRole)
+      .maybeSingle();
+    if (roleError) {
+      console.error(JSON.stringify({ level: 'error', scope: 'createTask.roleDefault', detail: roleError.message }));
+      return err('INTERNAL', 'Could not read the project’s default assignees.');
+    }
+    roleDefault = row?.user_id ?? null;
+  }
+  const assigneeId = parsed.data.assigneeId ?? roleDefault ?? defaults.default_assignee_id;
+
+  // Q-B2: an observer adds nothing; a contributor adds only a task for themself.
+  const roleRefusal = await projectRoleRefusal(context, parsed.data.projectId, assigneeId);
+  if (roleRefusal) return roleRefusal;
+
   const { data, error } = await supabase
     .schema('projects')
     .from('tasks')
@@ -1840,13 +1907,15 @@ export async function createTask(input: CreateTaskInput): Promise<Result<{ taskI
       title: parsed.data.title,
       description: parsed.data.description ?? null,
       due_on: parsed.data.dueOn ?? null,
-      assignee_id: defaults.default_assignee_id,
+      assignee_id: assigneeId,
     })
     .select('id')
     .single();
 
   if (error || !data) {
     console.error(JSON.stringify({ level: 'error', scope: 'createTask', detail: error?.message }));
+    const roleProblem = projectRoleDbProblem(error?.message);
+    if (roleProblem) return err('FORBIDDEN', roleProblem);
     return err('INTERNAL', 'Could not add the task.');
   }
 
@@ -1914,11 +1983,40 @@ export async function setTaskStatus(input: SetTaskStatusInput): Promise<Result<{
   // way out — by the `tasks_stamp_blocked` trigger, so no caller has to
   // remember to.
   const reason = parsed.data.reason?.trim() || null;
-  if (parsed.data.status === 'blocked' && !reason) {
-    return err('VALIDATION', 'Say what the task is blocked on before marking it blocked.');
+  if (parsed.data.status === 'blocked') {
+    // SCR-020: a blocker is a type, an owner and a next action as well as a reason.
+    const problem = blockerProblem({ reason, blockerType: parsed.data.blockerType, blockerOwner: parsed.data.blockerOwner, nextAction: parsed.data.nextAction });
+    if (problem) return err('VALIDATION', problem);
   }
 
   const supabase = await createClient();
+
+  // SCR-020/021: Review is entered only through the evidence-gated hand-off. The
+  // database trigger refuses it as well; this answers in words before the write.
+  const { data: before } = await supabase.schema('projects').from('tasks').select('status, archived_at').eq('id', parsed.data.taskId).maybeSingle();
+  // U1-1: an archived task is read-only.
+  const archivedProblem = archivedTaskProblem(before);
+  if (archivedProblem) return err('CONFLICT', archivedProblem);
+  const reviewProblem = enteringReviewProblem(before?.status, parsed.data.status);
+  if (reviewProblem && before) return err('CONFLICT', reviewProblem);
+  // Q-B1: Completed is reached only from In review.
+  const completionProblem = completingProblem(before?.status, parsed.data.status);
+  if (completionProblem && before) return err('CONFLICT', completionProblem);
+  // T1-1: Cancelled only from an open status; out of Cancelled only back to To do (the trigger also decides who).
+  const cancelProblem = cancellingProblem(before?.status, parsed.data.status);
+  if (cancelProblem && before) return err('CONFLICT', cancelProblem);
+  // U1-2: a cancel carries its reason (the trigger refuses one without).
+  const reasonProblem = cancelReasonProblem(before?.status, parsed.data.status, reason);
+  if (reasonProblem && before) return err('VALIDATION', reasonProblem);
+  // Q-B2: the caller's project role (observer read-only, contributor own tasks only).
+  if (before) {
+    const { data: held } = await supabase.schema('projects').from('tasks').select('project_id, assignee_id').eq('id', parsed.data.taskId).maybeSingle();
+    if (held) {
+      const roleRefusal = await projectRoleRefusal(context, held.project_id, held.assignee_id);
+      if (roleRefusal) return roleRefusal;
+    }
+  }
+
   const { error, count } = await supabase
     .schema('projects')
     .from('tasks')
@@ -1926,17 +2024,60 @@ export async function setTaskStatus(input: SetTaskStatusInput): Promise<Result<{
       {
         status: parsed.data.status,
         completed_at: parsed.data.status === 'done' ? new Date().toISOString() : null,
-        ...(parsed.data.status === 'blocked' ? { blocked_reason: reason } : {}),
+        ...(parsed.data.status === 'blocked'
+          ? { blocked_reason: reason, blocker_type: parsed.data.blockerType ?? null, blocker_owner: parsed.data.blockerOwner ?? null, blocker_next_action: parsed.data.nextAction ?? null }
+          : {}),
+        ...(parsed.data.status === 'cancelled' ? { cancel_reason: reason } : {}),
       },
       { count: 'exact' },
     )
     .eq('id', parsed.data.taskId);
 
   if (error) {
+    // SCR-020: the verification gate (trigger projects.refuse_unverified_agent_done) refuses an unverified agent task.
+    if (error.message.includes(REVIEW_HAND_OFF_DB_ERROR)) return err('CONFLICT', REVIEW_HAND_OFF_MESSAGE);
+    if (error.message.includes(COMPLETION_DB_ERROR)) return err('CONFLICT', COMPLETION_MESSAGE);
+    const cancelDb = cancelOrArchiveDbProblem(error.message);
+    if (cancelDb) return err('CONFLICT', cancelDb);
+    const roleProblem = projectRoleDbProblem(error.message);
+    if (roleProblem) return err('FORBIDDEN', roleProblem);
+    // SCR-041: a task is accepted as done only by a delivery role, with evidence, and no unverified defect.
+    const acceptance = taskAcceptanceProblem(error.message);
+    if (acceptance) return err('CONFLICT', acceptance);
+    if (error.message.includes('agent_task_unverified')) {
+      return err('CONFLICT', 'This task was produced by an agent. It is not done until somebody has verified it — verify it from the task drawer first.');
+    }
     console.error(JSON.stringify({ level: 'error', scope: 'setTaskStatus', detail: error.message }));
     return err('INTERNAL', 'Could not change the task’s status.');
   }
   return ok({ updated: (count ?? 0) > 0 });
+}
+
+/** T1-1: archive or restore a task through the audited door `projects.set_task_archived` (owner, ops admin, delivery lead). */
+export async function setTaskArchived(input: SetTaskArchivedInput): Promise<Result<{ archived: boolean }>> {
+  const parsed = setTaskArchivedSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid task.');
+
+  const context = await requireInternal();
+  if (!can(context, 'task.write')) return err('FORBIDDEN', 'You do not have permission to archive a task.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('set_task_archived', { p_task_id: parsed.data.taskId, p_archived: parsed.data.archived });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setTaskArchived', detail: error.message }));
+    return err('INTERNAL', 'Could not change the task’s archive state.');
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+  switch (row?.outcome) {
+    case 'archived':
+    case 'unarchived':
+    case 'unchanged':
+      return ok({ archived: parsed.data.archived });
+    case 'not_found':
+      return err('NOT_FOUND', 'That task is not visible to you.');
+    default:
+      return err('FORBIDDEN', ARCHIVE_FORBIDDEN_MESSAGE);
+  }
 }
 
 /**
@@ -2115,11 +2256,17 @@ export async function updateTask(input: UpdateTaskInput): Promise<Result<{ taskI
   const { data: task } = await supabase
     .schema('projects')
     .from('tasks')
-    .select('id, organization_id, project_id')
+    .select('id, organization_id, project_id, assignee_id, archived_at')
     .eq('id', parsed.data.taskId)
     .eq('project_id', parsed.data.projectId)
     .maybeSingle();
   if (!task) return err('NOT_FOUND', 'Task not found.');
+  // U1-1: an archived task is read-only.
+  const archivedProblem = archivedTaskProblem(task);
+  if (archivedProblem) return err('CONFLICT', archivedProblem);
+  // Q-B2: observer read-only, contributor own tasks only.
+  const roleRefusal = await projectRoleRefusal(context, task.project_id, task.assignee_id);
+  if (roleRefusal) return roleRefusal;
 
   if (parsed.data.assigneeId) {
     const { data: member } = await supabase
@@ -2132,6 +2279,22 @@ export async function updateTask(input: UpdateTaskInput): Promise<Result<{ taskI
     if (!member) return err('VALIDATION', 'That person is not a member of this organisation.');
   }
 
+  // The two dates travel together through their own door (20261004100000):
+  // "start is never after due" is one rule and two separate writes can each be
+  // fine and together wrong. The door audits it as task.schedule_set.
+  const { data: scheduled, error: scheduleError } = await supabase.schema('projects').rpc('set_task_schedule', {
+    p_task_id: task.id,
+    p_start_on: parsed.data.startOn as string,
+    p_due_on: parsed.data.dueOn as string,
+  });
+  if (scheduleError) {
+    const heldProblem = projectRoleDbProblem(scheduleError.message);
+    return heldProblem ? err('CONFLICT', heldProblem) : err('INTERNAL', 'Could not save the task’s dates.');
+  }
+  const outcome = ((Array.isArray(scheduled) ? scheduled[0] : scheduled) as { outcome?: string } | undefined)?.outcome;
+  if (outcome === 'start_after_due') return err('VALIDATION', 'The start date cannot be after the due date.');
+  if (outcome !== 'set') return err('INTERNAL', 'Could not save the task’s dates.');
+
   const { error } = await supabase
     .schema('projects')
     .from('tasks')
@@ -2140,7 +2303,6 @@ export async function updateTask(input: UpdateTaskInput): Promise<Result<{ taskI
       description: parsed.data.description,
       priority: parsed.data.priority,
       assignee_id: parsed.data.assigneeId,
-      due_on: parsed.data.dueOn,
       estimate_hours: parsed.data.estimateHours,
     })
     .eq('id', task.id);

@@ -408,6 +408,8 @@ export async function recordTestRun(input: RecordTestRunInput): Promise<Result<{
     ...(parsed.data.browser ? { p_browser: parsed.data.browser } : {}),
     ...(parsed.data.os ? { p_os: parsed.data.os } : {}),
     ...(parsed.data.perfNotes ? { p_perf_notes: parsed.data.perfNotes } : {}),
+    ...(parsed.data.environment ? { p_environment: parsed.data.environment } : {}),
+    ...(parsed.data.testerId ? { p_tester_id: parsed.data.testerId } : {}),
   });
 
   if (error) {
@@ -427,6 +429,10 @@ export async function recordTestRun(input: RecordTestRunInput): Promise<Result<{
       return err('VALIDATION', 'Not a testing suite this system recognises.');
     case 'bad_counts':
       return err('VALIDATION', 'Passed, failed and skipped must add up to the total.');
+    case 'bad_environment':
+      return err('VALIDATION', 'That is not a deployment environment: choose development, staging, production or other.');
+    case 'tester_not_found':
+      return err('VALIDATION', 'That tester is not on the team.');
     case 'not_found':
       return err('NOT_FOUND', 'Build deliverable not found.');
     default:

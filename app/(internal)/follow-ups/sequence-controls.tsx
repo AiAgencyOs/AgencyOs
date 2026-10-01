@@ -40,7 +40,7 @@ export function SequenceControls({ sequenceId, status, leadId }: { sequenceId: s
         ) : null}
         {status === 'active' ? (
           <button type="button" onClick={() => setMode('stop')} className={buttonClass('ghost', 'sm')}>
-            Stop
+            Pause
           </button>
         ) : null}
         <button type="button" onClick={() => setMode('reschedule')} className={buttonClass('ghost', 'sm')}>
@@ -63,7 +63,7 @@ export function SequenceControls({ sequenceId, status, leadId }: { sequenceId: s
         <input type="hidden" name="sequenceId" value={sequenceId} />
         <input name="reason" required maxLength={200} placeholder="Why" aria-label="Why stop this sequence" className={`${inputClass} w-44`} />
         <button type="submit" disabled={stopping} className={buttonClass('danger', 'sm')}>
-          {stopping ? 'Stopping…' : 'Stop'}
+          {stopping ? 'Pausing…' : 'Pause'}
         </button>
         <button type="button" onClick={() => setMode(null)} className={buttonClass('ghost', 'sm')}>
           Back

@@ -47,3 +47,10 @@ export const setProviderBudgetSchema = z.object({
   monthlyCapMinor: z.number().int().min(0).max(100_000_000_000),
 });
 export type SetProviderBudgetInput = z.infer<typeof setProviderBudgetSchema>;
+
+export const setModelBudgetSchema = z.object({
+  modelId: modelId,
+  /** Minor units; 0 clears the cap. */
+  monthlyCapMinor: z.number().int().min(0).max(100_000_000_000),
+});
+export type SetModelBudgetInput = z.infer<typeof setModelBudgetSchema>;

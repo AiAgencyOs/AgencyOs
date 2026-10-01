@@ -76,14 +76,14 @@ describe('each tile opens the list filtered to exactly its number', () => {
     ['Deals won', /\/sales-funnel\?days=\$\{sinceDays\}/, 'the same window the funnel counts'],
     ['Invoices issued', /\/invoices\?issuedFrom=\$\{windowFrom\}/, 'issued inside the window'],
     ['Meetings completed', /\/meetings\?window=past&status=completed/, 'completed meetings, not every past one'],
-    ['Active projects', /\/projects\?status=open/, 'every project not finished or abandoned — the four statuses it counts'],
+    ['Active Projects', /\/projects\?status=open/, 'every project not finished or abandoned — the four statuses it counts'],
     ['Projects on hold', /\/projects\?status=on_hold/, 'on hold, not every project'],
-    ['Blocked projects', /\/projects\/escalations/, 'the escalations list'],
-    ['Failed deliveries', /\/operations#failed-deliveries/, 'the failed-deliveries section'],
+    ['Blocked Projects', /\/projects\?health=blocked/, 'the projects list filtered by the ONE health rule (W3)'],
+    ['Failed Deliveries', /\/operations#failed-deliveries/, 'the failed-deliveries section'],
     ['Dead jobs', /\/operations#dead-letters/, 'the dead-letters section'],
-    ['Pending approvals', /"\/approvals"/, 'the queue — pending is its default'],
-    ['Payments to verify', /\/invoices\/verify/, 'the verification queue'],
-    ['Total leads', /"\/leads"/, 'all time — the unfiltered list IS the number'],
+    ['Pending Approvals', /"\/approvals"/, 'the queue — pending is its default'],
+    ['Payment Verification', /\/invoices\/verify/, 'the verification queue'],
+    ['Total Leads', /"\/leads"/, 'all time — the unfiltered list IS the number'],
   ];
 
   for (const [label, filter, why] of EXPECT) {
@@ -94,7 +94,7 @@ describe('each tile opens the list filtered to exactly its number', () => {
 
   it('"Active projects" counts the four open statuses, not the five rows the table shows', () => {
     assert.match(dashboard, /const openProjects = projectCounts \? \['planning', 'onboarding', 'active', 'on_hold'\]/);
-    assert.match(tagFor('Active projects'), /value=\{openProjects === null \? 'DATA UNAVAILABLE' : String\(openProjects\)\}/);
+    assert.match(tagFor('Active Projects'), /value=\{openProjects === null \? 'DATA UNAVAILABLE' : String\(openProjects\)\}/);
   });
 });
 
@@ -132,9 +132,11 @@ describe('the list on the other end honours the filter', () => {
 
 describe('the project health column is the projects list\'s own rule', () => {
   it('both pages import project-health.ts, and neither restates the rule', () => {
-    assert.match(dashboard, /from '@\/lib\/admin\/project-health'/);
+    // W2/W3: the dashboard and the list both use the ONE project rule.
+    assert.match(dashboard, /from '@\/modules\/projects\/project-health'/);
     const projects = read('app/(internal)/projects/page.tsx');
-    assert.match(projects, /from '@\/lib\/admin\/project-health'/);
+    // W2: the list now ends in the ONE project rule (healthOfProject), shared with the Overview and Reports.
+    assert.match(projects, /from '@\/modules\/projects\/project-health'/);
     assert.doesNotMatch(projects, /p\.endsOn < todayKey/, 'the late rule lives in project-health.ts now');
   });
 
@@ -151,8 +153,8 @@ describe('the project health column is the projects list\'s own rule', () => {
     assert.equal(projectHealthReason({ status: 'active', endsOn: null, escalated: false, todayKey: today }), null);
   });
 
-  it('the dashboard renders it as a column', () => {
-    assert.match(dashboard, /key: 'health',\s*header: 'Health'/);
+  it('the dashboard renders it beside the stage', () => {
+    assert.match(dashboard, /healthOfProject\(p, /);
   });
 });
 

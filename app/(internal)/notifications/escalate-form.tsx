@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useState } from 'react';
+import { useActionState, useEffect, useId, useState } from 'react';
 
 import { ESCALATION_ROLES, type Escalation } from '@/lib/admin/escalation-types';
 import { IDLE_STATE } from '@/modules/identity/types';
@@ -39,6 +39,7 @@ export function EscalateControl({
   canAnswer: boolean;
   compact?: boolean;
 }) {
+  const id = useId();
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState(escalateAction, IDLE_STATE);
   useEffect(() => {
@@ -76,7 +77,8 @@ export function EscalateControl({
           <input type="hidden" name="subjectType" value={subjectType} />
           <input type="hidden" name="subjectKey" value={subjectKey} />
           <input type="hidden" name="title" value={title} />
-          <select name="toRole" defaultValue="owner" aria-label="Escalate to" className={cx(selectClass, 'h-8 w-36 text-[13px]')}>
+          <label htmlFor={`${id}-to`} className="text-xs text-muted">Send to</label>
+          <select id={`${id}-to`} name="toRole" defaultValue="owner" className={cx(selectClass, 'h-8 w-36 text-[13px]')}>
             {ESCALATION_ROLES.map((r) => (
               <option key={r} value={r}>
                 to {r.replace('_', ' ')}
@@ -87,6 +89,7 @@ export function EscalateControl({
           <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
             {pending ? 'Escalating…' : 'Escalate'}
           </button>
+          <p className="w-full text-xs text-muted">The owner or the ops admin sees it in their Command Center and inbox, and can acknowledge or resolve it; it is recorded in the audit log.</p>
         </form>
       ) : null}
       <FormMessage status={state.status} message={state.message} className="text-xs" />

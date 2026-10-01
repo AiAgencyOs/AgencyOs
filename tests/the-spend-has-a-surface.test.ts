@@ -42,7 +42,7 @@ describe('A. the door G-297 built has a caller', () => {
   test('the section is still named when there is nothing to show', () => {
     // §8 asks for cost "where available". A section that vanished would read
     // as an oversight rather than a state.
-    assert.match(PAGE, /title="Cost and usage"/);
+    assert.match(PAGE, /title="Cost and Usage"/);
     assert.match(PAGE, /No agent run has been attributed to this project yet\./);
   });
 });

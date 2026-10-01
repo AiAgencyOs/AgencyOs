@@ -30,7 +30,7 @@ export async function readBlockersAcrossProjects(): Promise<ProjectBlockers[]> {
   const [projects, plans, tasks] = await Promise.all([
     supabase.schema('projects').from('projects').select('id, name').is('deleted_at', null),
     supabase.schema('projects').from('project_plans').select('id, project_id, version').neq('status', 'superseded').order('version', { ascending: false }),
-    supabase.schema('projects').from('tasks').select('id, project_id, title, priority').eq('status', 'blocked').order('created_at', { ascending: true }),
+    supabase.schema('projects').from('tasks').select('id, project_id, title, priority').eq('status', 'blocked').is('archived_at', null).order('created_at', { ascending: true }),
   ]);
   if (projects.error) unreadable('readBlockersAcrossProjects.projects', projects.error);
   if (plans.error) unreadable('readBlockersAcrossProjects.plans', plans.error);

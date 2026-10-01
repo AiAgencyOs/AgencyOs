@@ -88,7 +88,7 @@ describe('taxRegisterCsv', () => {
     const csv = taxRegisterCsv([inv({ number: 'INV, odd', billingMode: 'gst', gstin: '29ABCDE1234F1ZW', paidMinor: 118_00 })]);
     const lines = csv.trimEnd().split('\n');
     assert.equal(lines.length, 2);
-    assert.equal(lines[0], 'Invoice,Status,Issued,Billing mode,GSTIN,Currency,Subtotal,Tax,Total,Paid');
+    assert.equal(lines[0], 'Invoice,Status,Issued,Billing mode,GSTIN,Currency,Subtotal,Tax,Total,Verified paid');
     assert.equal(lines[1], '"INV, odd",issued,2026-09-10,GST,29ABCDE1234F1ZW,INR,100.00,18.00,118.00,118.00');
   });
 });

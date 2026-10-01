@@ -108,8 +108,10 @@ export async function checkRunGates(admin: Admin, args: { jobId: string; organiz
  */
 export async function refuseIfOverBudget(
   admin: Admin,
-  args: { organizationId: string; agentKey: string; provider: string; runId: string | null },
+  args: { organizationId: string; agentKey: string; provider: string; runId: string | null; model?: string | null },
 ): Promise<void> {
+  // The model's own monthly cap, when the owner set one (SCR-064), is asked first.
+  if (args.model) await refuseIfOverModelBudget(admin, { ...args, model: args.model });
   const budget = await admin
     .schema('ai')
     .from('provider_budgets')
@@ -150,6 +152,47 @@ export async function refuseIfOverBudget(
     severity: 'critical',
     summary: `AI provider ${args.provider} is over its monthly budget — agent runs on it are refused until the cap is raised or the month turns.`,
     fingerprint: `provider-budget:${args.provider}`,
+  });
+
+  throw new AgentBudgetRefusal({ agentKey: args.agentKey, provider: args.provider, runId: args.runId, capMinor, spentMinor, reason });
+}
+
+/**
+ * A model's monthly budget (`ai.model_budgets`), with the same fail-closed
+ * reading as the provider's: an unreadable cap is not "no cap".
+ */
+async function refuseIfOverModelBudget(
+  admin: Admin,
+  args: { organizationId: string; agentKey: string; provider: string; runId: string | null; model: string },
+): Promise<void> {
+  const budget = await admin.schema('ai').from('model_budgets').select('monthly_cap_minor').eq('organization_id', args.organizationId).eq('model_id', args.model).maybeSingle();
+  if (budget.error) throw new Error(`model budget could not be read: ${budget.error.message}`);
+  if (!budget.data) return;
+
+  const spent = await admin.schema('ai').rpc('model_spend_this_month', { p_organization_id: args.organizationId, p_model_id: args.model });
+  if (spent.error) throw new Error(`model spend could not be read: ${spent.error.message}`);
+
+  const capMinor = Number(budget.data.monthly_cap_minor);
+  const spentMinor = Number(spent.data ?? 0);
+  if (withinBudget(capMinor, spentMinor)) return;
+
+  const reason = `model "${args.model}" has reached its monthly budget: ₹${(spentMinor / 100).toFixed(2)} spent of ₹${(capMinor / 100).toFixed(2)}`;
+  const recorded = await admin.schema('ai').rpc('record_agent_policy_refusal', {
+    p_organization_id: args.organizationId,
+    p_agent_key: args.agentKey,
+    p_kind: 'model_budget_exceeded',
+    p_reason: reason,
+    ...(args.runId ? { p_run_id: args.runId } : {}),
+  });
+  if (recorded.error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'refuseIfOverModelBudget.record', detail: recorded.error.message }));
+  }
+  await raiseAlert(admin, {
+    organizationId: args.organizationId,
+    source: 'ai',
+    severity: 'critical',
+    summary: `AI model ${args.model} is over its monthly budget — agent runs on it are refused until the cap is raised or the month turns.`,
+    fingerprint: `model-budget:${args.model}`,
   });
 
   throw new AgentBudgetRefusal({ agentKey: args.agentKey, provider: args.provider, runId: args.runId, capMinor, spentMinor, reason });

@@ -38,6 +38,7 @@ export async function lockTaxPeriod(input: LockTaxPeriodInput): Promise<Result<{
     p_period_start: parsed.data.periodStart,
     p_period_end: parsed.data.periodEnd,
     ...(parsed.data.note ? { p_note: parsed.data.note } : {}),
+    ...(parsed.data.reportId ? { p_report_id: parsed.data.reportId } : {}),
   });
 
   if (error) {
@@ -56,6 +57,8 @@ export async function lockTaxPeriod(input: LockTaxPeriodInput): Promise<Result<{
       return ok({ lockId: row.lock_id, alreadyLocked: true });
     case 'not_a_period':
       return err('VALIDATION', 'The period must end after it starts.');
+    case 'report_mismatch':
+      return err('VALIDATION', 'That report is not a snapshot of exactly this period, so the lock cannot refer to it.');
     case 'no_actor':
       return err('UNAUTHORIZED', 'No signed-in person to record this against.');
     default:

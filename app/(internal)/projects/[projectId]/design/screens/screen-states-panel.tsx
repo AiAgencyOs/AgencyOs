@@ -55,10 +55,10 @@ export function ScreenStatesPanel({
         </div>
       </fieldset>
 
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>User role</label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>User role</span>
         <input name="userRole" maxLength={100} defaultValue={current.userRole} className={inputClass} />
-      </div>
+      </label>
 
       <fieldset className="flex flex-col gap-1">
         <legend className={labelClass}>Device targets</legend>
@@ -83,10 +83,10 @@ export function ScreenStatesPanel({
         <p className="text-xs text-muted">Only a device in the targets counts; coverage is targets covered over all targets.</p>
       </fieldset>
 
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Components — one per line</label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Components — one per line</span>
         <textarea name="components" rows={3} maxLength={2000} defaultValue={current.components.join('\n')} className={textareaClass} placeholder="Header, Search bar, Result list…" />
-      </div>
+      </label>
 
       <div className="flex items-center gap-3">
         <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>

@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { serverEnv } from '@/lib/env';
+import { resolveSecret, secretConfigured } from '@/lib/secrets/resolve';
 
 /**
  * Live Git, read-only — Decision: reversed by the owner on 2026-09-29.
@@ -26,8 +26,8 @@ import { serverEnv } from '@/lib/env';
  *      the only thing stored in the database is the link itself
  *      (`projects.repository_links`).
  *
- * The token is `GITHUB_TOKEN` through `serverEnv()` — the same validated
- * environment everything else reads — and its absence is a supported state
+ * The token is `GITHUB_TOKEN` through `resolveSecret()` — the deployment
+ * environment first, the key vault second — and its absence is a supported state
  * (`githubConfigured()` is false, the fetcher answers `not_configured`),
  * never a crash.
  */
@@ -84,9 +84,9 @@ export type GithubReadResult =
   | { ok: false; reason: GithubReadReason; detail: string };
 
 /** True when a token is present. NEVER the value. */
-export function githubConfigured(): boolean {
+export async function githubConfigured(): Promise<boolean> {
   try {
-    return typeof serverEnv().GITHUB_TOKEN === 'string' && serverEnv().GITHUB_TOKEN!.trim().length > 0;
+    return await secretConfigured('GITHUB_TOKEN');
   } catch {
     return false;
   }
@@ -201,7 +201,7 @@ export async function readGithubRepository(link: {
 }): Promise<GithubReadResult> {
   let token: string | undefined;
   try {
-    token = serverEnv().GITHUB_TOKEN?.trim() || undefined;
+    token = (await resolveSecret('GITHUB_TOKEN')) ?? undefined;
   } catch (error) {
     return { ok: false, reason: 'unexpected', detail: error instanceof Error ? error.message : String(error) };
   }
@@ -268,9 +268,9 @@ export async function readGithubRepository(link: {
 //
 // The token itself, resolved per call and never returned to a page.
 
-export function githubToken(): string | null {
+export async function githubToken(): Promise<string | null> {
   try {
-    return serverEnv().GITHUB_TOKEN?.trim() || null;
+    return await resolveSecret('GITHUB_TOKEN');
   } catch {
     return null;
   }
@@ -288,6 +288,8 @@ export type GithubTokenScopes = {
 export type GithubScopesResult = { ok: true; data: GithubTokenScopes } | { ok: false; reason: GithubReadReason; detail: string };
 
 let scopesOnce: Promise<GithubScopesResult> | null = null;
+/** The token the cached scopes were read for — a token changed in the vault must not inherit the old one's scopes. */
+let scopesFor: string | null = null;
 
 /**
  * Which scopes the deployment's token carries — read ONCE per process
@@ -296,10 +298,11 @@ let scopesOnce: Promise<GithubScopesResult> | null = null;
  * pressed rather than after. A fine-grained token sends no such header; it is
  * reported as "scopes not stated" and a write is attempted, GitHub deciding.
  */
-export function readGithubTokenScopes(): Promise<GithubScopesResult> {
-  if (scopesOnce) return scopesOnce;
-  const token = githubToken();
-  if (!token) return Promise.resolve({ ok: false, reason: 'not_configured', detail: 'GITHUB_TOKEN is unset' });
+export async function readGithubTokenScopes(): Promise<GithubScopesResult> {
+  const token = await githubToken();
+  if (!token) return { ok: false, reason: 'not_configured', detail: 'GITHUB_TOKEN is unset' };
+  if (scopesOnce && scopesFor === token) return scopesOnce;
+  scopesFor = token;
   scopesOnce = (async (): Promise<GithubScopesResult> => {
     const user = await githubGet<{ login?: string }>(token, '/user');
     if (!user.ok) {
@@ -324,6 +327,7 @@ export function readGithubTokenScopes(): Promise<GithubScopesResult> {
 /** Test seam: forget the once-read scopes. */
 export function forgetGithubTokenScopes(): void {
   scopesOnce = null;
+  scopesFor = null;
 }
 
 export type GithubCheckRun = {
@@ -357,7 +361,7 @@ export async function readGithubChecks(
   link: { owner: string; repo: string },
   ref: string,
 ): Promise<{ ok: true; data: GithubChecksRead } | { ok: false; reason: GithubReadReason; detail: string }> {
-  const token = githubToken();
+  const token = await githubToken();
   if (!token) return { ok: false, reason: 'not_configured', detail: 'GITHUB_TOKEN is unset' };
   const base = `/repos/${encodeURIComponent(link.owner)}/${encodeURIComponent(link.repo)}`;
   const runs = await githubGet<CheckRunsBody>(token, `${base}/commits/${encodeURIComponent(ref)}/check-runs?per_page=100`);
@@ -409,7 +413,7 @@ export async function readGithubReviewFindings(
   link: { owner: string; repo: string },
   pullNumbers: readonly number[],
 ): Promise<{ ok: true; data: { findings: GithubReviewFinding[]; readAt: string } } | { ok: false; reason: GithubReadReason; detail: string }> {
-  const token = githubToken();
+  const token = await githubToken();
   if (!token) return { ok: false, reason: 'not_configured', detail: 'GITHUB_TOKEN is unset' };
   const base = `/repos/${encodeURIComponent(link.owner)}/${encodeURIComponent(link.repo)}`;
   const findings: GithubReviewFinding[] = [];
@@ -441,7 +445,7 @@ export async function readGithubBranches(link: {
   owner: string;
   repo: string;
 }): Promise<{ ok: true; data: { branches: GithubBranch[]; readAt: string } } | { ok: false; reason: GithubReadReason; detail: string }> {
-  const token = githubToken();
+  const token = await githubToken();
   if (!token) return { ok: false, reason: 'not_configured', detail: 'GITHUB_TOKEN is unset' };
   const base = `/repos/${encodeURIComponent(link.owner)}/${encodeURIComponent(link.repo)}`;
   const branches = await githubGet<{ name: string; commit: { sha: string }; protected: boolean }[]>(token, `${base}/branches?per_page=100`);
@@ -478,7 +482,7 @@ export async function readGithubPullRequest(
   link: { owner: string; repo: string },
   pullNumber: number,
 ): Promise<{ ok: true; data: GithubPullHead } | { ok: false; reason: GithubReadReason; detail: string }> {
-  const token = githubToken();
+  const token = await githubToken();
   if (!token) return { ok: false, reason: 'not_configured', detail: 'GITHUB_TOKEN is unset' };
   const base = `/repos/${encodeURIComponent(link.owner)}/${encodeURIComponent(link.repo)}`;
   const pull = await githubGet<PullBody & { state: string; merged: boolean; head: { ref: string; sha: string } }>(token, `${base}/pulls/${pullNumber}`);
@@ -496,5 +500,69 @@ export async function readGithubPullRequest(
       baseBranch: pull.body.base?.ref ?? '',
       url: pull.body.html_url,
     },
+  };
+}
+
+/**
+ * The reviews on a pull request, for the merge policy: how many reviewers'
+ * latest word is APPROVED. A GET like every read in this file — nothing here
+ * writes to GitHub.
+ */
+export async function readGithubPullReviews(
+  link: { owner: string; repo: string },
+  pullNumber: number,
+): Promise<{ ok: true; data: { user: string | null; state: string }[] } | { ok: false; reason: GithubReadReason; detail: string }> {
+  const token = await githubToken();
+  if (!token) return { ok: false, reason: 'not_configured', detail: 'GITHUB_TOKEN is unset' };
+  const base = `/repos/${encodeURIComponent(link.owner)}/${encodeURIComponent(link.repo)}`;
+  const reviews = await githubGet<{ user: { login: string } | null; state: string }[]>(token, `${base}/pulls/${pullNumber}/reviews?per_page=100`);
+  if (!reviews.ok) return reviews;
+  if (!Array.isArray(reviews.body)) return { ok: false, reason: 'unexpected', detail: 'reviews did not answer with a list' };
+  return { ok: true, data: reviews.body.map((r) => ({ user: r.user?.login ?? null, state: r.state })) };
+}
+
+export type GithubWorkflowRun = {
+  id: number;
+  /** queued | in_progress | completed (GitHub's own words). */
+  status: string;
+  /** success | failure | cancelled | skipped | timed_out | … — null until completed. */
+  conclusion: string | null;
+  url: string;
+  createdAt: string;
+  /** The run's title; a workflow whose `run-name` includes the dispatch key makes a run matchable exactly. */
+  displayTitle: string;
+  headBranch: string;
+};
+
+/**
+ * Recent `workflow_dispatch` runs of one workflow file on one branch — the
+ * status read behind the environment checks (owner decision 13). A GET like
+ * every read in this file. GitHub's dispatch answers 204 with no run id, so
+ * the run is found afterwards, newest first.
+ */
+export async function readGithubWorkflowRuns(
+  link: { owner: string; repo: string },
+  workflowFile: string,
+  branch: string,
+): Promise<{ ok: true; data: GithubWorkflowRun[] } | { ok: false; reason: GithubReadReason; detail: string }> {
+  const token = await githubToken();
+  if (!token) return { ok: false, reason: 'not_configured', detail: 'GITHUB_TOKEN is unset' };
+  const base = `/repos/${encodeURIComponent(link.owner)}/${encodeURIComponent(link.repo)}`;
+  const runs = await githubGet<{
+    workflow_runs?: { id: number; status: string; conclusion: string | null; html_url: string; created_at: string; display_title?: string; head_branch?: string }[];
+  }>(token, `${base}/actions/workflows/${encodeURIComponent(workflowFile)}/runs?event=workflow_dispatch&branch=${encodeURIComponent(branch)}&per_page=30`);
+  if (!runs.ok) return runs;
+  if (!Array.isArray(runs.body?.workflow_runs)) return { ok: false, reason: 'unexpected', detail: 'workflow runs did not answer with a list' };
+  return {
+    ok: true,
+    data: runs.body.workflow_runs.map((r) => ({
+      id: r.id,
+      status: r.status,
+      conclusion: r.conclusion,
+      url: r.html_url,
+      createdAt: r.created_at,
+      displayTitle: r.display_title ?? '',
+      headBranch: r.head_branch ?? '',
+    })),
   };
 }

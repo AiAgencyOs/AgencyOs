@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState } from 'react';
+import { SECRETS_WARNING } from '@/modules/projects/file-secrets-guard';
 
 import { addProjectFileAction, removeProjectFileAction, updateProjectFileAction } from '@/modules/projects/actions';
 import { PROJECT_FILE_CATEGORIES } from '@/modules/projects/schema';
@@ -18,12 +19,12 @@ export function AddProjectFileForm({ projectId }: { projectId: string }) {
       <form action={action} className="flex flex-col gap-3">
         <input type="hidden" name="projectId" value={projectId} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Title</label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Title</span>
             <input name="title" required maxLength={200} className={inputClass} placeholder="Requirements v2.pdf" />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Category</label>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Category</span>
             <select name="category" defaultValue="documents" className={selectClass}>
               {PROJECT_FILE_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
@@ -31,10 +32,10 @@ export function AddProjectFileForm({ projectId }: { projectId: string }) {
                 </option>
               ))}
             </select>
-          </div>
+          </label>
         </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Link</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Link</span>
           <input
             name="url"
             type="url"
@@ -43,11 +44,12 @@ export function AddProjectFileForm({ projectId }: { projectId: string }) {
             className={inputClass}
             placeholder="https://drive.google.com/…"
           />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Description (optional)</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Description (optional)</span>
           <textarea name="description" maxLength={1000} className={textareaClass} rows={2} />
-        </div>
+        </label>
+        <p className="text-[11px] text-muted">{SECRETS_WARNING}</p>
         <div className="flex items-center gap-3">
           <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
             {pending ? 'Adding…' : 'Add file'}

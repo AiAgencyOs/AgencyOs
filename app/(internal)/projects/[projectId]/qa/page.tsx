@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { agencyClock } from '@/lib/admin/agency-clock';
+import { listAttachedFiles } from '@/modules/projects/attached-files-queries';
 import { getProject, listDeliverables, listInternalRoster, readScopeBaseline, listDevelopmentBreakdown } from '@/modules/projects/queries';
 import { listTestPlanVersions, listTestRunDetails, readDefectHistory } from '@/modules/qa/dashboard-queries';
 import { listTestCaseResults } from '@/modules/qa/case-results-queries';
@@ -13,15 +14,27 @@ import { readBaselineComparison } from '@/modules/qa/baseline-queries';
 import { describeCron } from '@/modules/qa/cron';
 import { compareToBudgets, listMetricResults, listPerformanceBudgets, listStabilityIncidents } from '@/modules/qa/performance-queries';
 import { listSuiteSchedules } from '@/modules/qa/schedule-queries';
-import { Badge, Card, CardHeader } from '@/ui';
+import { readClientName } from '@/lib/admin/clients';
+import { mergeDeviceCards } from '@/modules/qa/device-config';
+import { listDeviceConfigurations } from '@/modules/qa/device-queries';
+import { readRequirementCoverage } from '@/modules/qa/coverage-queries';
+import { deviceTiles, PLATFORMS, type Platform } from '@/modules/qa/device-tiles';
+import { DeviceTestingCard, QaTeamCard } from '@/modules/qa/qa-device-view';
+import { listDeviceRuns, readQaTeam } from '@/modules/qa/qa-team-queries';
+import { Badge, Card, CardHeader, IconAlert, IconCheck as IconOk, IconClock, IconList, Stat, StatGrid } from '@/ui';
 
 import { BudgetForm, CloseRunForm, MetricForm, OpenIncidentForm, OpenRunForm, RerunButton, ResolveIncidentForm, ScheduleSuiteForm } from './run-lifecycle-panel';
-import { EmptyState, IconCheck, PageHeader, PermissionDenied } from '@/ui';
+import { EmptyState, IconCheck, PermissionDenied } from '@/ui';
 
+import { PreviewButton, PreviewDrawerProvider } from '../../../preview-drawer';
 import { ProjectSubNav } from '../project-subnav';
+import { WorkspaceHeader } from '../workspace-header';
+import { AttachFileForm } from '../attach-file-form';
+import { AttachedFileLinks } from '../attached-file-links';
 import { RaiseDefectForm } from '../qa-panel';
 import { DraftTestPlanForm, TestPlanCard, TestRunsCard } from '../test-plan-panel';
 import { QaInsights } from './qa-insights';
+import { AddDeviceForm, DeviceSupportForm } from '../../../qa/device-forms';
 
 export const metadata: Metadata = { title: 'Test plan' };
 
@@ -30,10 +43,11 @@ export const metadata: Metadata = { title: 'Test plan' };
  * baseline to point at (Doc 14 §3); if none is active yet, this page sends
  * the reader to the Scope tab rather than rendering a dead end.
  */
-export default async function TestPlanPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ compare?: string; baseline?: string; defects?: string; severity?: string }> }) {
+export default async function TestPlanPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ compare?: string; baseline?: string; defects?: string; severity?: string; platform?: string; runs?: string; suite?: string }> }) {
   const { projectId } = await params;
   // SCR-047: ?defects=open|fixed|reopened and ?severity= filter the bug list — the KPI tiles' own links.
-  const { compare, baseline, defects: defectsFilter, severity: severityFilter } = await searchParams;
+  const { compare, baseline, defects: defectsFilter, severity: severityFilter, platform: platformRaw, runs: runsFilter, suite: suiteFilter } = await searchParams;
+  const platform = (PLATFORMS as readonly string[]).includes(platformRaw ?? '') ? (platformRaw as Platform) : null;
 
   const context = await requireInternal(`/projects/${projectId}/qa`);
   if (!can(context, 'project.read')) return <PermissionDenied />;
@@ -41,6 +55,7 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
   const project = await getProject(projectId);
   if (!project) notFound();
 
+  const clientName = project.client_account_id ? await readClientName(project.client_account_id) : null;
   const [{ active }, plan, deliverables, runs, runDetails, planVersions, defects, roster, clock, caseResults, { tasks }] = await Promise.all([
     readScopeBaseline(projectId),
     readTestPlan(projectId),
@@ -53,10 +68,12 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
     agencyClock(),
     listTestCaseResults(projectId),
     // SCR-047 — the tasks a defect can be linked to.
-    listDevelopmentBreakdown(projectId),
+    listDevelopmentBreakdown(projectId, { excludeCancelled: true }),
   ]);
   // SCR-047 — the fix / retest trail, one read for every defect on the project.
   const history = await readDefectHistory(defects.map((d) => d.id));
+  // Q-C6: the evidence files uploaded against each run and bug.
+  const attachedFiles = await listAttachedFiles(projectId);
   const canWrite = can(context, 'project.write');
   const canRecordRuns = can(context, 'task.write');
   // SCR-045 — approving the plan is the QA sign-off's own role (owner, ops admin).
@@ -72,12 +89,40 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
     compare && /^[0-9a-f-]{36}$/i.test(compare) ? readBaselineComparison(projectId, compare, baseline && /^[0-9a-f-]{36}$/i.test(baseline) ? baseline : undefined) : Promise.resolve(null),
   ]);
   const budgetLines = compareToBudgets(budgets, metrics);
+  const [deviceRuns, qaTeam, deviceConfigs, coverage] = await Promise.all([
+    listDeviceRuns(projectId),
+    readQaTeam(projectId),
+    listDeviceConfigurations(),
+    // SCR-045: every requirement of the baseline, with its cases or the reason it has none.
+    plan && active ? readRequirementCoverage(plan.id, plan.scopeVersionId) : Promise.resolve(undefined),
+  ]);
+  const tiles = mergeDeviceCards(deviceTiles(deviceRuns), deviceConfigs);
+  const testers = roster.map((m) => ({ userId: m.userId, fullName: m.fullName }));
+  // SCR-046: the run list is filterable by status and suite (links, so a filter is a URL).
+  const shownRuns = runs.filter((r) => (!runsFilter || (runsFilter === 'open' ? r.status === 'open' : runsFilter === 'failed' ? r.failed > 0 || r.blocked > 0 : runsFilter === 'closed' ? r.status === 'closed' : true)) && (!suiteFilter || r.suite === suiteFilter));
+  const runFilterHref = (over: { runs?: string | null; suite?: string | null }) => {
+    const next = new URLSearchParams();
+    const r = over.runs === undefined ? runsFilter : over.runs;
+    const su = over.suite === undefined ? suiteFilter : over.suite;
+    if (r) next.set('runs', r);
+    if (su) next.set('suite', su);
+    const q = next.toString();
+    return `/projects/${projectId}/qa${q ? `?${q}` : ''}#run-lifecycle`;
+  };
 
   return (
+    <PreviewDrawerProvider>
     <div className="flex flex-col gap-5">
-      <PageHeader title={`${project.name} — Test plan`} description="What this project is to be tested for, against its frozen scope baseline." />
+      <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={canWrite} />
 
       <ProjectSubNav projectId={projectId} />
+
+      <StatGrid cols={4}>
+        <Stat label="Test runs" value={String(runs.length)} caption={`${runs.filter((r) => r.status === 'open').length} open`} tone="brand" icon={<IconList size={16} />} />
+        <Stat label="Passed" value={String(runs.reduce((n, r) => n + r.passed, 0))} caption={runs.reduce((n, r) => n + r.passed + r.failed + r.blocked, 0) > 0 ? `${Math.round((runs.reduce((n, r) => n + r.passed, 0) / runs.reduce((n, r) => n + r.passed + r.failed + r.blocked, 0)) * 100)}% of recorded results` : 'No results recorded'} tone="success" icon={<IconOk size={16} />} />
+        <Stat label="Failed" value={String(runs.reduce((n, r) => n + r.failed, 0))} caption={`${runs.reduce((n, r) => n + r.blocked, 0)} blocked`} tone={runs.some((r) => r.failed > 0) ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} />
+        <Stat label="Open defects" value={String(defects.filter((d) => d.status !== 'verified' && d.status !== 'wontfix').length)} caption="Not yet verified" tone="warning" icon={<IconClock size={16} />} />
+      </StatGrid>
 
       {!active ? (
         <EmptyState
@@ -94,7 +139,7 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
           }
         />
       ) : plan ? (
-        <TestPlanCard projectId={projectId} plan={plan} scopeItems={active.items} editable={canWrite} canApprove={canApprove} tasks={tasks.map((t) => ({ id: t.id, title: t.title, status: t.status }))} />
+        <TestPlanCard projectId={projectId} plan={plan} scopeItems={active.items} editable={canWrite} canApprove={canApprove} tasks={tasks.map((t) => ({ id: t.id, title: t.title, status: t.status }))} coverage={coverage} />
       ) : (
         <>
           <EmptyState icon={<IconCheck size={22} />} title="No test plan yet" description={`Baseline v${active.version} is frozen and ready to plan against.`} />
@@ -102,25 +147,63 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
         </>
       )}
 
-      <TestRunsCard projectId={projectId} runs={runs} builds={builds} editable={canRecordRuns} planItems={plan?.items ?? []} results={caseResults} />
+      <TestRunsCard projectId={projectId} runs={runs} builds={builds} editable={canRecordRuns} planItems={plan?.items ?? []} results={caseResults} testers={testers} />
+
+      {/* SCR-044: device tiles (from the runs' own device / evidence) and the QA roster (project role qa). */}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(19rem,1fr)]">
+        <DeviceTestingCard
+          tiles={tiles}
+          active={platform}
+          hrefFor={(p) => (p ? `/projects/${projectId}/qa?platform=${p}#device-testing` : `/projects/${projectId}/qa#device-testing`)}
+          addHref={`/projects/${projectId}/qa#run-lifecycle`}
+          date={(iso) => clock.date(iso)}
+          addForm={canWrite ? <AddDeviceForm /> : undefined}
+          renderSupport={canWrite ? (t) => (t.configId ? <DeviceSupportForm deviceId={t.configId} status={t.state === 'unsupported' ? 'unsupported' : 'supported'} name={t.name} /> : null) : undefined}
+        />
+        <QaTeamCard team={qaTeam} manageHref={`/projects/${projectId}/team`} />
+      </div>
 
       {/* SCR-046 (bucket F): a run has a life — open it, close it once with its counts (blocked is its own column), rerun what failed. */}
-      <Card>
+      <Card id="run-lifecycle">
         <CardHeader title="Run lifecycle" description="Open a run against a build; close it once with passed, failed, skipped and blocked; rerun a closed run's failed cases as a new run that points back at it. A closed run is evidence and never changes." />
         <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
-          {canRecordRuns ? <OpenRunForm projectId={projectId} builds={builds} /> : null}
+          {canRecordRuns ? <OpenRunForm projectId={projectId} builds={builds} testers={testers} /> : null}
+          {runs.length > 0 ? (
+            <nav aria-label="Filter runs" className="flex flex-wrap items-center gap-2 text-[13px]">
+              {[
+                { label: 'All', key: null },
+                { label: 'Open', key: 'open' },
+                { label: 'Closed', key: 'closed' },
+                { label: 'Failed or blocked', key: 'failed' },
+              ].map((f) => (
+                <Link key={f.label} href={runFilterHref({ runs: f.key })} aria-current={(runsFilter ?? null) === f.key ? 'true' : undefined} className={`rounded-lg border px-3 py-1 ${(runsFilter ?? null) === f.key ? 'border-brand/40 bg-brand-soft text-brand' : 'border-line bg-surface text-muted hover:bg-surface-hover'}`}>
+                  {f.label}
+                </Link>
+              ))}
+              <span aria-hidden className="text-faint">·</span>
+              {[null, ...[...new Set(runs.map((r) => r.suite))].sort()].map((su) => (
+                <Link key={su ?? 'all-suites'} href={runFilterHref({ suite: su })} aria-current={(suiteFilter ?? null) === su ? 'true' : undefined} className={`rounded-lg border px-3 py-1 ${(suiteFilter ?? null) === su ? 'border-brand/40 bg-brand-soft text-brand' : 'border-line bg-surface text-muted hover:bg-surface-hover'}`}>
+                  {su ?? 'Every suite'}
+                </Link>
+              ))}
+            </nav>
+          ) : null}
           {runs.length === 0 ? (
-            <p className="text-[13px] text-muted">No run yet.</p>
+            <p className="text-[13px] text-muted">No run yet. Open one above, against a build, to start recording evidence.</p>
+          ) : shownRuns.length === 0 ? (
+            <p className="text-[13px] text-muted">No run matches that filter. <Link href={`/projects/${projectId}/qa#run-lifecycle`} className="text-brand hover:underline">Show every run</Link></p>
           ) : (
             <ul className="flex flex-col gap-2">
-              {runs.slice(0, 30).map((run) => (
+              {shownRuns.slice(0, 30).map((run) => (
                 <li key={run.id} id={`run-${run.id}`} className="flex flex-col gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="flex flex-wrap items-center gap-2">
                       <Badge tone={run.status === 'open' ? 'warning' : run.failed > 0 || run.blocked > 0 ? 'danger' : 'success'}>{run.status}</Badge>
                       <span className="font-medium">{run.suite}</span>
                       <span className="text-muted">v{builds.find((b) => b.id === run.deliverableId)?.version ?? '?'}</span>
-                      {run.rerunOf ? <span className="text-xs text-muted">rerun of an earlier run</span> : null}
+                      {run.environment ? <Badge tone="neutral">{run.environment}</Badge> : null}
+                      {run.testerId ? <span className="text-xs text-muted">tester {testers.find((t) => t.userId === run.testerId)?.fullName ?? 'on the team'}</span> : null}
+                      {run.rerunOf ? <Link href={`/projects/${projectId}/qa/runs/${run.rerunOf}`} className="text-xs text-brand hover:underline">rerun of an earlier run</Link> : null}
                     </span>
                     <span className="text-xs text-muted">
                       {run.startedAt ? `started ${clock.dateTime(run.startedAt)}` : `recorded ${clock.dateTime(run.executedAt)}`}
@@ -131,13 +214,24 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
                   {(metrics.get(run.id) ?? []).length > 0 ? (
                     <p className="text-xs text-muted">Metrics: {(metrics.get(run.id) ?? []).map((m) => `${m.metric} ${m.value} ${m.unit}`).join(' · ')}</p>
                   ) : null}
+                  <AttachedFileLinks projectId={projectId} files={attachedFiles.get(run.id)} label="Evidence files of this run" />
                   {canRecordRuns && run.status === 'open' ? <CloseRunForm projectId={projectId} runId={run.id} /> : null}
                   <div className="flex flex-wrap items-center gap-3">
                     {canRecordRuns && run.status === 'closed' && (run.failed > 0 || run.blocked > 0) ? <RerunButton projectId={projectId} runId={run.id} /> : null}
                     {canRecordRuns ? <MetricForm projectId={projectId} runId={run.id} /> : null}
                     {run.status === 'closed' ? <Link href={`/projects/${projectId}/qa?compare=${run.id}#baseline`} className="text-xs text-brand hover:underline">Compare against baseline</Link> : null}
+                    <PreviewButton group="Test Run" id={run.id} />
+                    <Link href={`/projects/${projectId}/qa/runs/${run.id}`} className="text-xs font-medium text-brand hover:underline">Open run</Link>
                     <span className="text-xs text-muted">{defects.filter((d) => d.run_id === run.id).length} defect{defects.filter((d) => d.run_id === run.id).length === 1 ? '' : 's'} from this run</span>
                   </div>
+                  {canRecordRuns ? (
+                    <details className="text-xs">
+                      <summary className="cursor-pointer text-brand">Attach an evidence file (screenshot, log)</summary>
+                      <div className="mt-2">
+                        <AttachFileForm projectId={projectId} subjectKind="test_run" subjectId={run.id} />
+                      </div>
+                    </details>
+                  ) : null}
                   {canWrite ? (
                     <details className="text-xs">
                       <summary className="cursor-pointer text-brand">Raise a defect from this run</summary>
@@ -280,5 +374,6 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
         filter={{ defects: defectsFilter, severity: severityFilter }}
       />
     </div>
+    </PreviewDrawerProvider>
   );
 }

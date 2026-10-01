@@ -5,7 +5,9 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { getSecurityPosture } from '@/lib/admin/security';
 import { isClean, securityChecks } from '@/lib/admin/security-eval';
 import { countAuditEntries } from '@/lib/audit/count-queries';
-import { readAuditLog } from '@/lib/audit/queries';
+import { actorNames, readAuditPage } from '@/lib/audit/queries';
+import { PRIVILEGED_ACTIONS } from '@/lib/audit/links';
+import { attachReasons, CHANGE_REASON_ACTION } from '@/lib/audit/privileged';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { countOpenIncidents } from '@/modules/identity/incidents-queries';
@@ -37,14 +39,20 @@ export default async function SecurityPage() {
   // trail under its `membership.` actions, the trail's own count). The
   // roster read is admin-scoped by RLS; a non-admin sees the posture alone.
   const isAdmin = can(context, 'organization.settings');
-  const [posture, roster, auditCount, privileged, openIncidents] = await Promise.all([
+  const [posture, roster, auditCount, privileged, reasonEntries, openIncidents] = await Promise.all([
     getSecurityPosture(),
     isAdmin ? listInternalRosterWithRoles() : Promise.resolve([]),
     countAuditEntries(),
-    readAuditLog({ actionPrefix: 'membership', limit: 20 }),
+    readAuditPage({ actions: PRIVILEGED_ACTIONS, pageSize: 20 }).then((r) => r.entries),
+    // The reason each author gave, appended beside the change (the doors themselves take none).
+    readAuditPage({ actions: [CHANGE_REASON_ACTION], pageSize: 100, withCount: false }).then((r) => r.entries),
     // SCR-069: incidents a person opened and has not resolved.
     countOpenIncidents(),
   ]);
+  // Actor and subject as people: the actor by name, the subject membership by its holder's name.
+  const actorLabel = await actorNames(privileged.map((e) => e.actorId));
+  const memberName = new Map(roster.map((m) => [m.membershipId, m.fullName]));
+  const reasonOf = attachReasons(privileged, reasonEntries);
   const checks = securityChecks(posture);
   const clean = isClean(posture);
   const failing = checks.filter((c) => !c.ok).length;
@@ -105,8 +113,8 @@ export default async function SecurityPage() {
               <p className="mt-1.5 pl-[18px] text-[13px] leading-relaxed text-muted">{c.meaning}</p>
               {!c.ok ? (
                 <ul className="mt-3 flex flex-col gap-1 rounded-lg bg-danger-soft p-3">
-                  {c.offenders.map((o) => (
-                    <li key={o} className="font-mono text-xs break-all text-danger">
+                  {c.offenders.map((o, i) => (
+                    <li key={`${i}-${o}`} className="font-mono text-xs break-all text-danger">
                       {o}
                     </li>
                   ))}
@@ -120,9 +128,9 @@ export default async function SecurityPage() {
       <Card>
         <CardHeader
           title="Recent privileged changes"
-          description="Membership and role changes from the audit trail — who was suspended, reinstated, or granted a second role."
+          description="Who was suspended, reinstated, or had a second role added or removed — by whom, the change itself, and the reason when one was recorded. Department edits are not listed here."
           actions={
-            <Link href="/audit?action=membership" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
+            <Link href="/audit?action=membership." className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
               Full trail
             </Link>
           }
@@ -131,23 +139,39 @@ export default async function SecurityPage() {
           <p className="px-4 py-4 text-[13px] text-muted sm:px-5">No membership or role change has been recorded.</p>
         ) : (
           <ul className="divide-y divide-line">
-            {privileged.map((e) => (
-              <li key={e.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[13px] sm:px-5">
-                <span className="flex flex-wrap items-center gap-2">
-                  <code className="text-xs">{e.action}</code>
-                  {e.subjectId ? <span className="font-mono text-xs text-muted">{e.subjectId.slice(0, 8)}</span> : null}
-                  {e.after && typeof e.after.role === 'string' ? <Badge tone="info">{String(e.after.role).replace('_', ' ')}</Badge> : null}
-                  {e.after && typeof e.after.status === 'string' ? <Badge tone={e.after.status === 'active' ? 'success' : 'warning'}>{String(e.after.status)}</Badge> : null}
-                </span>
-                <span className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                  by {e.actorType ?? 'unknown'} {e.actorId ? e.actorId.slice(0, 8) : ''} · {clock.dateTime(e.createdAt)}
-                  {/* SCR-069: investigate a security event — open an incident with this entry as evidence. */}
-                  <Link href={`/security/incidents?audit=${e.id}&evidence=${encodeURIComponent(`Audit #${e.id}: ${e.action} on ${e.subjectType ?? 'unknown'} ${e.subjectId ?? ''}`)}`} className="font-medium text-brand underline-offset-2 hover:underline">
-                    Investigate
-                  </Link>
-                </span>
-              </li>
-            ))}
+            {privileged.map((e) => {
+              const reason = reasonOf.get(e.id) ?? null;
+              const who = e.subjectId ? (memberName.get(e.subjectId) ?? `membership ${e.subjectId.slice(0, 8)}`) : 'a member';
+              const change =
+                e.action === 'membership.status_changed'
+                  ? `${String(e.before?.status ?? '—')} → ${String(e.after?.status ?? '—')}`
+                  : e.action === 'membership.secondary_role_granted'
+                    ? `role added: ${String(e.after?.role ?? '—').replace('_', ' ')}`
+                    : e.action === 'membership.secondary_role_revoked'
+                      ? `role removed: ${String(e.before?.role ?? e.after?.role ?? '—').replace('_', ' ')}`
+                      : e.action;
+              return (
+                <li key={e.id} className="flex flex-wrap items-start justify-between gap-2 px-4 py-2.5 text-[13px] sm:px-5">
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{who}</span>
+                      <Badge tone="info">{change}</Badge>
+                    </span>
+                    <span className="text-xs text-muted">{reason ? `Reason: ${reason}` : 'No reason recorded'}</span>
+                  </span>
+                  <span className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                    by {e.actorId ? (actorLabel.get(e.actorId) ?? `${e.actorId.slice(0, 8)} (account removed)`) : (e.actorType ?? 'the system')} · {clock.dateTime(e.createdAt)}
+                    {/* SCR-069: investigate a security event — open an incident with this entry as evidence. */}
+                    <Link href={`/security/incidents?audit=${e.id}&evidence=${encodeURIComponent(`Audit #${e.id}: ${e.action} on ${e.subjectType ?? 'unknown'} ${e.subjectId ?? ''}`)}`} className="font-medium text-brand underline-offset-2 hover:underline">
+                      Investigate
+                    </Link>
+                    <Link href={`/audit?q=${encodeURIComponent(e.action)}`} className="font-medium text-brand underline-offset-2 hover:underline">
+                      In the audit log
+                    </Link>
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </Card>

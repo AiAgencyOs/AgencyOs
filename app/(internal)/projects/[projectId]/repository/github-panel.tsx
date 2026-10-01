@@ -10,7 +10,9 @@ import {
   readGithubReviewFindings,
   readGithubTokenScopes,
 } from '@/lib/git/github';
-import type { GitAction } from '@/modules/projects/git-queries';
+import { mapCommitToTask, taskForBranch, summariseMapping } from '@/modules/projects/code-task-mapping';
+import { listCommitLinks, type GitAction } from '@/modules/projects/git-queries';
+import { accessAllows, accessRefusal } from '@/modules/projects/repository-policy';
 import type { RepositoryLink } from '@/modules/projects/repository-link-queries';
 import { Badge, Callout, Card, CardHeader, EmptyState, humanize, IconIntegrations } from '@/ui';
 
@@ -41,6 +43,7 @@ export async function GithubPanel({
   mayWriteTask,
   tasks,
   gitActions,
+  q = '',
 }: {
   projectId: string;
   link: RepositoryLink | null;
@@ -48,9 +51,10 @@ export async function GithubPanel({
   mayWriteTask: boolean;
   tasks: { id: string; title: string; status: string }[];
   gitActions: GitAction[];
+  q?: string;
 }) {
   const clock = await agencyClock();
-  const configured = githubConfigured();
+  const configured = await githubConfigured();
   const scopes = configured ? await readGithubTokenScopes() : null;
 
   return (
@@ -61,7 +65,7 @@ export async function GithubPanel({
           {configured ? (
             <span className="text-success">GITHUB_TOKEN configured</span>
           ) : (
-            <span className="text-warning">GITHUB_TOKEN not configured</span>
+            <span className="text-warning">GITHUB_TOKEN not configured — <Link href="/security/keys#GITHUB_TOKEN" className="underline underline-offset-2">add it</Link></span>
           )}
           {scopes?.ok ? (
             <>
@@ -78,7 +82,7 @@ export async function GithubPanel({
 
       {!configured ? (
         <Callout tone="warning">
-          GitHub is not configured in this deployment: set <code>GITHUB_TOKEN</code> (with the <code>repo</code> scope for the write doors) and the linked
+          GitHub is not configured in this deployment: add <code>GITHUB_TOKEN</code> under <Link href="/security/keys" className="underline underline-offset-2">Governance &amp; Security › Keys &amp; secrets</Link> (or set it in the deployment environment; with the <code>repo</code> scope for the write doors) and the linked
           repository&apos;s commits, open pull requests, branches, checks and review findings are read here. Until then only the link is kept.
         </Callout>
       ) : null}
@@ -127,7 +131,7 @@ export async function GithubPanel({
         />
       )}
 
-      {link && configured ? <LiveRead projectId={projectId} link={link} editable={editable} mayWriteTask={mayWriteTask} tasks={tasks} /> : null}
+      {link && configured ? <LiveRead projectId={projectId} link={link} editable={editable} mayWriteTask={mayWriteTask} tasks={tasks} q={q} /> : null}
 
       {link ? (
         <Card>
@@ -177,12 +181,14 @@ async function LiveRead({
   editable,
   mayWriteTask,
   tasks,
+  q,
 }: {
   projectId: string;
   link: RepositoryLink;
   editable: boolean;
   mayWriteTask: boolean;
   tasks: { id: string; title: string; status: string }[];
+  q: string;
 }) {
   const clock = await agencyClock();
   const read = await readGithubRepository({ owner: link.owner, repo: link.repo, branch: link.defaultBranch });
@@ -195,7 +201,13 @@ async function LiveRead({
     );
   }
 
-  const { repository, branch, commits, pullRequests, branchesCount, readAt } = read.data;
+  const { repository, branch, commits: allCommits, pullRequests: allPulls, branchesCount, readAt } = read.data;
+  // SCR-042 search: commits by message, sha or author, pull requests by title or branch, branches by name.
+  const needle = q.trim().toLowerCase();
+  const commits = allCommits.filter((c) => !needle || `${c.message} ${c.shortSha} ${c.author ?? ''}`.toLowerCase().includes(needle));
+  const pullRequests = allPulls.filter((p) => !needle || `${p.title} ${p.headBranch} ${p.author ?? ''}`.toLowerCase().includes(needle));
+  const commitLinks = await listCommitLinks(projectId, 200);
+  const mapping = summariseMapping({ commits: allCommits.map((c) => ({ sha: c.sha, message: c.message, branch })), pullRequests: allPulls, links: commitLinks, tasks });
   const [branches, checks, findings] = await Promise.all([
     readGithubBranches({ owner: link.owner, repo: link.repo }),
     readGithubChecks({ owner: link.owner, repo: link.repo }, branch),
@@ -214,6 +226,10 @@ async function LiveRead({
             {checks.data.pending.length > 0 ? ` · ${checks.data.pending.length} running` : ''}
           </Badge>
         ) : null}
+        {/* SCR-042 guardrail: every code artifact maps to a task — said plainly, including what does not. */}
+        <Badge tone={mapping.commits.mapped < mapping.commits.total || mapping.pullRequests.mapped < mapping.pullRequests.total ? 'warning' : 'success'}>
+          {mapping.commits.mapped}/{mapping.commits.total} commits and {mapping.pullRequests.mapped}/{mapping.pullRequests.total} pull requests map to a task
+        </Badge>
         {repository.private ? <Badge tone="warning">private</Badge> : null}
         <span>
           read {clock.dateTime(readAt)} · GitHub&apos;s default branch is <code>{repository.defaultBranch}</code>
@@ -245,6 +261,18 @@ async function LiveRead({
                   <span className="text-xs text-muted">
                     {c.author ?? 'unknown author'}
                     {c.authoredAt ? ` · ${clock.dateTime(c.authoredAt)}` : ''}
+                    {(() => {
+                      const m = mapCommitToTask({ sha: c.sha, message: c.message, branch }, commitLinks, tasks);
+                      return m ? (
+                        <>
+                          {' · task '}
+                          <Link href={`/projects/${projectId}/development/tasks/${m.task.id}`} className="underline-offset-2 hover:underline">{m.task.title}</Link>
+                          {m.via === 'link' ? '' : ` (mapped from the ${m.via === 'branch' ? 'branch' : 'message'})`}
+                        </>
+                      ) : (
+                        ' · not linked to a task'
+                      );
+                    })()}
                   </span>
                 </li>
               ))}
@@ -278,6 +306,17 @@ async function LiveRead({
                   <span className="text-xs text-muted">
                     {p.author ?? 'unknown author'} · <code>{p.headBranch}</code> → <code>{p.baseBranch}</code> · updated{' '}
                     {clock.dateTime(p.updatedAt)}
+                    {(() => {
+                      const t = taskForBranch(p.headBranch, tasks);
+                      return t ? (
+                        <>
+                          {' · task '}
+                          <Link href={`/projects/${projectId}/development/tasks/${t.id}`} className="underline-offset-2 hover:underline">{t.title}</Link>
+                        </>
+                      ) : (
+                        ' · branch is not a task branch'
+                      );
+                    })()}
                   </span>
                 </li>
               ))}
@@ -366,7 +405,7 @@ async function LiveRead({
             </Callout>
           ) : (
             <ul className="grid gap-1 rounded-lg border border-line bg-surface p-2 sm:grid-cols-2 lg:grid-cols-3">
-              {branches.data.branches.map((b) => (
+              {branches.data.branches.filter((b) => !needle || b.name.toLowerCase().includes(needle)).map((b) => (
                 <li key={b.name} className="flex items-center justify-between gap-2 px-2 py-1 text-[13px]">
                   <a href={b.url} target="_blank" rel="noreferrer noopener" className="min-w-0 truncate font-mono text-xs underline-offset-2 hover:underline">
                     {b.name}
@@ -388,20 +427,28 @@ async function LiveRead({
           {mayWriteTask ? (
             <Card className="p-4">
               <h3 className="mb-2 text-[13px] font-semibold tracking-tight">Create task branch</h3>
-              <CreateTaskBranchPanel projectId={projectId} tasks={tasks.filter((t) => t.status !== 'done')} />
+              {accessAllows(link.accessLevel, 'branch') ? <CreateTaskBranchPanel projectId={projectId} tasks={tasks.filter((t) => t.status !== 'done')} /> : <p className="text-[13px] text-muted">{accessRefusal(link.accessLevel, 'branch')}</p>}
             </Card>
           ) : null}
           {editable ? (
             <Card className="p-4">
               <h3 className="mb-2 text-[13px] font-semibold tracking-tight">Submit review</h3>
-              <SubmitReviewPanel projectId={projectId} pulls={pulls} />
+              {accessAllows(link.accessLevel, 'review') ? <SubmitReviewPanel projectId={projectId} pulls={pulls} /> : <p className="text-[13px] text-muted">{accessRefusal(link.accessLevel, 'review')}</p>}
             </Card>
           ) : null}
           {editable ? (
             <Card className="p-4">
               <h3 className="mb-2 text-[13px] font-semibold tracking-tight">Approve / reject merge</h3>
-              <MergePullRequestPanel projectId={projectId} pulls={pulls} />
-              <p className="mt-2 text-xs text-muted">Rejecting is a review that requests changes; merging is the squash above.</p>
+              {accessAllows(link.accessLevel, 'merge') ? (
+                <>
+                  <MergePullRequestPanel projectId={projectId} pulls={pulls} />
+                  <p className="mt-2 text-xs text-muted">
+                    Policy: {link.mergeMinApprovals} approving review{link.mergeMinApprovals === 1 ? '' : 's'}, green checks, and {link.mergeRole === 'owner' ? 'the owner' : link.mergeRole === 'admin' ? 'an owner or ops admin' : 'an owner, ops admin or delivery lead'}. Rejecting is a review that requests changes; merging is the squash above.
+                  </p>
+                </>
+              ) : (
+                <p className="text-[13px] text-muted">{accessRefusal(link.accessLevel, 'merge')}</p>
+              )}
             </Card>
           ) : null}
         </div>

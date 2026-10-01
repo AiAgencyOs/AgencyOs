@@ -16,21 +16,34 @@ import {
 
 /**
  * Project members — SCR-025's three doors. `project.write` (owner,
- * ops_admin, delivery_lead — the set `project_members_write` names again
- * through `core.can_manage_delivery()`). The audit row is the table's own
- * trigger (`projects.record_stream_fc_change`), so it commits with the
- * change. A trigger also insists the person holds an active internal
- * membership; its refusal is shown verbatim.
+ * ops_admin, delivery_lead). T1-2: every write goes through an audited
+ * security-definer door (`projects.add_project_member`,
+ * `change_project_member_role`, `remove_project_member`) that re-checks the
+ * roster-manager role union, tenancy and the active internal membership;
+ * the table has no write policy for a signed-in person any more.
  */
 
 function log(scope: string, detail: string | undefined) {
   console.error(JSON.stringify({ level: 'error', scope, detail }));
 }
 
-function refusal(message: string): string {
-  if (/active internal membership/.test(message)) return 'That person is not an active member of this organisation, so they cannot be put on a project.';
-  if (/project_members_project_id_user_id_key|duplicate key/.test(message)) return 'That person is already on this project.';
-  return message;
+type DoorRow = { outcome?: string; member_id?: string | null } | undefined;
+const first = (data: unknown): DoorRow => (Array.isArray(data) ? data[0] : data) as DoorRow;
+
+/** The sentence for a door outcome that is not a success. */
+function doorRefusal(outcome: string | undefined): Result<never> {
+  switch (outcome) {
+    case 'not_internal':
+      return err('VALIDATION', 'That person is not an active member of this organisation, so they cannot be put on a project.');
+    case 'already_member':
+      return err('CONFLICT', 'That person is already on this project.');
+    case 'bad_role':
+      return err('VALIDATION', 'Not a project role this system recognises.');
+    case 'not_found':
+      return err('NOT_FOUND', 'That project or member is not visible to you.');
+    default:
+      return err('FORBIDDEN', 'The database refused: only an owner, an ops admin or a delivery lead changes a project’s team.');
+  }
 }
 
 export async function addProjectMember(input: AddProjectMemberInput): Promise<Result<{ memberId: string }>> {
@@ -42,23 +55,18 @@ export async function addProjectMember(input: AddProjectMemberInput): Promise<Re
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .schema('projects')
-    .from('project_members')
-    .insert({
-      organization_id: context.organizationId,
-      project_id: parsed.data.projectId,
-      user_id: parsed.data.userId,
-      project_role: parsed.data.projectRole,
-      added_by: context.userId,
-    })
-    .select('id')
-    .single();
-  if (error || !data) {
-    log('addProjectMember', error?.message);
-    return err(error?.code === '23505' ? 'CONFLICT' : 'INTERNAL', refusal(error?.message ?? 'Could not add the member.'));
+  const { data, error } = await supabase.schema('projects').rpc('add_project_member', {
+    p_project_id: parsed.data.projectId,
+    p_user_id: parsed.data.userId,
+    p_project_role: parsed.data.projectRole,
+  });
+  if (error) {
+    log('addProjectMember', error.message);
+    return err('INTERNAL', 'Could not add the member.');
   }
-  return ok({ memberId: data.id });
+  const row = first(data);
+  if (row?.outcome !== 'added' || !row.member_id) return doorRefusal(row?.outcome);
+  return ok({ memberId: row.member_id });
 }
 
 export async function setProjectMemberRole(input: SetProjectMemberRoleInput): Promise<Result<{ memberId: string }>> {
@@ -69,19 +77,17 @@ export async function setProjectMemberRole(input: SetProjectMemberRoleInput): Pr
   if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to change a project’s team.');
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .schema('projects')
-    .from('project_members')
-    .update({ project_role: parsed.data.projectRole })
-    .eq('id', parsed.data.memberId)
-    .select('id')
-    .maybeSingle();
+  const { data, error } = await supabase.schema('projects').rpc('change_project_member_role', {
+    p_member_id: parsed.data.memberId,
+    p_project_role: parsed.data.projectRole,
+  });
   if (error) {
     log('setProjectMemberRole', error.message);
     return err('INTERNAL', 'Could not change the role.');
   }
-  if (!data) return err('NOT_FOUND', 'That member is not visible to you.');
-  return ok({ memberId: data.id });
+  const row = first(data);
+  if ((row?.outcome !== 'changed' && row?.outcome !== 'unchanged') || !row.member_id) return doorRefusal(row?.outcome);
+  return ok({ memberId: row.member_id });
 }
 
 export async function removeProjectMember(input: RemoveProjectMemberInput): Promise<Result<{ removed: true }>> {
@@ -92,11 +98,12 @@ export async function removeProjectMember(input: RemoveProjectMemberInput): Prom
   if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to change a project’s team.');
 
   const supabase = await createClient();
-  const { data, error } = await supabase.schema('projects').from('project_members').delete().eq('id', parsed.data.memberId).select('id').maybeSingle();
+  const { data, error } = await supabase.schema('projects').rpc('remove_project_member', { p_member_id: parsed.data.memberId });
   if (error) {
     log('removeProjectMember', error.message);
     return err('INTERNAL', 'Could not remove the member.');
   }
-  if (!data) return err('NOT_FOUND', 'That member is not visible to you.');
+  const row = first(data);
+  if (row?.outcome !== 'removed') return doorRefusal(row?.outcome);
   return ok({ removed: true });
 }

@@ -8,7 +8,10 @@ import { can, type Capability, type RoleSubject } from '@/lib/authz/permissions'
  * "Implement left navigation exactly as the organized modules — Command
  * Center; Sales & CRM; Clients; Projects; Requirements; Design & Prototype;
  * Development; QA & Release; Finance; Communication; AI Workforce;
- * Operations; Governance & Security; Integrations; Settings." Every screen
+ * Operations; Governance & Security; Integrations; Settings." The owner then
+ * chose the reference screenshots' own list over the PDF's grouping (2026-10-03):
+ * Communications; Approvals; Operations; Analytics & Costs; Integrations;
+ * Security & Audit; Organization — each of the 71 screens keeps its one home. Every screen
  * of the 71-screen baseline lives under exactly one of these modules, so a
  * person never has to remember which unrelated page a control is buried in.
  *
@@ -56,6 +59,7 @@ export const NAV_MODULES: readonly NavModule[] = [
       { href: '/quotations', label: 'Quotations', capability: 'lead.read', screens: ['SCR-011'] },
       { href: '/meetings', label: 'Meetings', capability: 'lead.read', screens: ['SCR-010'] },
       { href: '/follow-ups', label: 'Follow-ups', capability: 'lead.read', screens: ['SCR-013'] },
+      { href: '/contracts', label: 'Contracts', capability: 'lead.read', screens: ['SCR-072'] },
     ],
   },
   {
@@ -72,7 +76,6 @@ export const NAV_MODULES: readonly NavModule[] = [
     items: [
       { href: '/projects', label: 'All projects', capability: 'project.read', screens: ['SCR-018', 'SCR-019', 'SCR-020', 'SCR-022', 'SCR-023', 'SCR-024', 'SCR-025', 'SCR-027'] },
       { href: '/projects/escalations', label: 'Escalations', capability: 'project.read', screens: ['SCR-019'] },
-      { href: '/reports', label: 'Reports', capability: 'project.read', screens: ['SCR-026'] },
     ],
   },
   {
@@ -118,7 +121,7 @@ export const NAV_MODULES: readonly NavModule[] = [
   },
   {
     key: 'communication',
-    title: 'Communication',
+    title: 'Communications',
     items: [
       { href: '/communication', label: 'Conversations', capability: 'lead.read', screens: ['SCR-057', 'SCR-058'] },
       { href: '/settings/communication', label: 'Templates', capability: 'organization.settings', screens: ['SCR-059'] },
@@ -133,7 +136,14 @@ export const NAV_MODULES: readonly NavModule[] = [
       { href: '/agents', label: 'Agents', capability: 'audit.read', screens: ['SCR-061', 'SCR-062', 'SCR-063'] },
       { href: '/agents/routing', label: 'Model routing', capability: 'audit.read', screens: ['SCR-064'] },
       { href: '/agents/automations', label: 'Automations', capability: 'audit.read', screens: ['SCR-065'] },
-      { href: '/usage', label: 'Usage & costs', capability: 'audit.read', screens: ['SCR-065'] },
+    ],
+  },
+  {
+    key: 'approvals',
+    title: 'Approvals',
+    items: [
+      { href: '/approvals', label: 'Approvals', screens: ['SCR-068'] },
+      { href: '/governance/overrides', label: 'Overrides & controls', capability: 'audit.read', screens: ['SCR-068'] },
     ],
   },
   {
@@ -144,15 +154,11 @@ export const NAV_MODULES: readonly NavModule[] = [
     ],
   },
   {
-    key: 'governance',
-    title: 'Governance & Security',
+    key: 'analytics',
+    title: 'Analytics & Costs',
     items: [
-      { href: '/approvals', label: 'Approvals', screens: ['SCR-068'] },
-      { href: '/security', label: 'Security', capability: 'audit.read', screens: ['SCR-069'] },
-      { href: '/security/users', label: 'Users & roles', capability: 'audit.read', screens: ['SCR-069'] },
-      { href: '/security/incidents', label: 'Incidents', capability: 'audit.read', screens: ['SCR-069'] },
-      { href: '/governance/overrides', label: 'Overrides & controls', capability: 'audit.read', screens: ['SCR-068'] },
-      { href: '/audit', label: 'Audit log', capability: 'audit.read', screens: ['SCR-069'] },
+      { href: '/reports', label: 'Reports', capability: 'project.read', screens: ['SCR-026'] },
+      { href: '/usage', label: 'Usage & costs', capability: 'audit.read', screens: ['SCR-065'] },
     ],
   },
   {
@@ -164,8 +170,19 @@ export const NAV_MODULES: readonly NavModule[] = [
     ],
   },
   {
-    key: 'settings',
-    title: 'Settings',
+    key: 'security',
+    title: 'Security & Audit',
+    items: [
+      { href: '/security', label: 'Security', capability: 'audit.read', screens: ['SCR-069'] },
+      { href: '/security/users', label: 'Users & roles', capability: 'audit.read', screens: ['SCR-069'] },
+      { href: '/security/incidents', label: 'Incidents', capability: 'audit.read', screens: ['SCR-069'] },
+      { href: '/security/keys', label: 'Keys & secrets', capability: 'audit.read', screens: ['SCR-071'] },
+      { href: '/audit', label: 'Audit log', capability: 'audit.read', screens: ['SCR-069'] },
+    ],
+  },
+  {
+    key: 'organization',
+    title: 'Organization',
     items: [{ href: '/settings', label: 'Organization settings', capability: 'organization.settings', screens: ['SCR-071'] }],
   },
 ];

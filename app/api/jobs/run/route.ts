@@ -23,6 +23,8 @@ import { markOverdueInvoices } from '@/lib/finance/overdue';
 import { mayAgentRun } from '@/lib/ai/autonomy';
 import { alertOnBacklog } from '@/lib/observability/alert';
 import { stampAgentDefinitions } from '@/modules/agents/stamp';
+import { runSemanticIndexing } from '@/lib/search/semantic-indexer';
+import { AGENT_DEFINITIONS } from '@/modules/agents/registry';
 import { settlementFor } from '@/lib/jobs/retry';
 import {
   handleApprovalRequested,
@@ -39,6 +41,8 @@ import {
   announcePrototypeSubmitted,
   announcePrototypeChangeRequested,
   announceTask2Complete,
+  announceTask3Complete,
+  announceTask4Complete,
   announceM2PaymentVerified,
 } from '@/modules/crm/handlers';
 import {
@@ -51,7 +55,7 @@ import {
   type HandlerResult,
   type UnlockJob,
 } from '@/modules/projects/handlers';
-import { handleBillingModeConfirmed, handlePhaseFourCompletedForFinance } from '@/modules/finance/handlers';
+import { handleBillingModeConfirmed, handlePhaseFourCompletedForFinance, handlePhaseFiveCompletedForFinance, handlePhaseSixCompletedForFinance } from '@/modules/finance/handlers';
 import { learnFromDecision, learnFromRevision } from '@/modules/sales/handlers';
 import { handleRouteTask2Design, handleRequestUIVersionAdminReview } from '@/modules/orchestrator/handlers';
 import { handleReviewUIVersion, handleReviewPrototypeBuild } from '@/modules/qa/handlers';
@@ -327,6 +331,18 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    * costs one select per tick and no write at all.
    */
   const stamps = await stampAgentDefinitions(admin);
+
+  /**
+   * ── search by meaning (decision 14) ────────────────────────────────────
+   *
+   * For an organisation whose owner turned it on: embed new and changed
+   * records, a bounded page at a time, under the monthly budget gates. A
+   * failure is logged inside and never stops the tick.
+   */
+  const semantic = await runSemanticIndexing(admin, AGENT_DEFINITIONS).catch((error) => {
+    console.error(JSON.stringify({ level: 'error', scope: 'jobs/run.semantic', detail: error instanceof Error ? error.message : String(error) }));
+    return null;
+  });
 
   const alerted = await alertOnBacklog(admin);
 
@@ -707,6 +723,38 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   }
 
   /**
+   * ── M3 / M4 invoice auto-generation (Q-PH56) ────────────────────────────
+   *
+   * Exactly as M2 above: pure database work, drained right after the phase
+   * completion that triggers it.
+   */
+  for (const [kind, handler, label] of [
+    [M3_INVOICE_JOB_KIND, handlePhaseFiveCompletedForFinance, 'runM3InvoiceJobs'],
+    [M4_INVOICE_JOB_KIND, handlePhaseSixCompletedForFinance, 'runM4InvoiceJobs'],
+  ] as const) {
+    const later = await runEventJobs(admin, kind, handler, label);
+    if (later.claimed > 0) {
+      return NextResponse.json({
+        claimed: later.claimed,
+        kind,
+        dispatched,
+        reaped,
+        alerted,
+        expired,
+        lapsed,
+        upsell,
+        followUps,
+        invoiceReminders,
+        campaigns,
+        overdue,
+        stamps,
+        laterInvoices: later.results,
+        correlationId,
+      });
+    }
+  }
+
+  /**
    * ── scope-escalation change requests (Doc 11 §16–§17; Master §17) ───────
    *
    * Same tier as the invoice above it: pure database work, no model call, no
@@ -858,6 +906,10 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     announceTask2Complete,
     'runTask2CompleteAnnouncementJobs',
   );
+
+  // Q-PH56: the PM's Task 3 / Task 4 Complete messages, beside Task 2's.
+  const task3CompleteAnnouncements = await runEventJobs(admin, TASK3_COMPLETE_JOB_KIND, announceTask3Complete, 'runTask3CompleteAnnouncementJobs');
+  const task4CompleteAnnouncements = await runEventJobs(admin, TASK4_COMPLETE_JOB_KIND, announceTask4Complete, 'runTask4CompleteAnnouncementJobs');
 
   const m2PaymentVerifiedAnnouncements = await runEventJobs(
     admin,
@@ -1055,6 +1107,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     campaigns,
     dueAnnouncements,
     suiteSchedules,
+    semantic,
     unlocks: unlocks.results,
     announcements: announcements.results,
     escalations: escalations.results,
@@ -1067,6 +1120,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     prototypeSubmittedAnnouncements: prototypeSubmittedAnnouncements.results,
     prototypeChangeRequestedAnnouncements: prototypeChangeRequestedAnnouncements.results,
     task2CompleteAnnouncements: task2CompleteAnnouncements.results,
+    task3CompleteAnnouncements: task3CompleteAnnouncements.results,
+    task4CompleteAnnouncements: task4CompleteAnnouncements.results,
     m2PaymentVerifiedAnnouncements: m2PaymentVerifiedAnnouncements.results,
     dispatches: dispatches.results,
     offerNotices: offerNotices.results,
@@ -1191,6 +1246,8 @@ const PROTOTYPE_QA_JOB_KIND = HANDLER_JOB_KIND['quality_assurance:reviewPrototyp
 const M1_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM1Invoice'];
 const PHASE_FOUR_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['projects:completePhaseFourOnPrototypeApproval'];
 const M2_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM2Invoice'];
+const M3_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM3Invoice'];
+const M4_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM4Invoice'];
 const SCOPE_CHANGE_REQUEST_JOB_KIND = HANDLER_JOB_KIND['projects:openChangeRequestFromScopeEscalation'];
 const ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceApproval'];
 const ESCALATION_JOB_KIND = HANDLER_JOB_KIND['crm:announceEscalation'];
@@ -1208,6 +1265,8 @@ const UI_VERSION_LOCKED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceUiVers
 const PROTOTYPE_SUBMITTED_JOB_KIND = HANDLER_JOB_KIND['crm:announcePrototypeSubmitted'];
 const PROTOTYPE_CHANGE_REQUESTED_JOB_KIND = HANDLER_JOB_KIND['crm:announcePrototypeChangeRequested'];
 const TASK2_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['crm:announceTask2Complete'];
+const TASK3_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['crm:announceTask3Complete'];
+const TASK4_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['crm:announceTask4Complete'];
 const M2_PAYMENT_VERIFIED_JOB_KIND = HANDLER_JOB_KIND['crm:announceM2PaymentVerified'];
 
 /**

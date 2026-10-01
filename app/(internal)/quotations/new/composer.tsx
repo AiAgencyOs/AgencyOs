@@ -3,10 +3,10 @@
 import Link from 'next/link';
 import { useActionState, useMemo, useState } from 'react';
 
+import { amountInWords } from '@/lib/money/amount-in-words';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { composeQuotationAction, type ComposeQuotationState } from '@/modules/sales/actions';
-import { COMMERCIAL_TERMS } from '@/modules/sales/quotation-standards';
-import { Avatar, Badge, buttonClass, Callout, Card, CardHeader, cx, FormMessage, IconAlert, IconCheck, IconPlus, inputClass, labelClass, selectClass, textareaClass } from '@/ui';
+import { Avatar, Badge, buttonClass, Callout, Card, CardHeader, cx, FormMessage, IconAlert, IconCheck, IconFile, IconPlus, IconSend, PageHeader, inputClass, labelClass, selectClass, textareaClass } from '@/ui';
 
 export type ComposerDeal = {
   opportunityId: string;
@@ -41,6 +41,7 @@ export function QuotationComposer({
   deals,
   defaultValidUntil,
   validityDays,
+  defaultTerms,
   taxRatePercent,
   initialOpportunityId,
   charges,
@@ -50,21 +51,30 @@ export function QuotationComposer({
   deals: ComposerDeal[];
   defaultValidUntil: string;
   validityDays: number;
+  /** The standard commercial terms as they would print today — the owner's clause wording where they have set it (audit B-6). */
+  defaultTerms: readonly string[];
   taxRatePercent: number | null;
   initialOpportunityId?: string;
   /** G-207 — the Admin-maintained third-party charges; the only figures a quotation may cite for them. */
   charges?: readonly { service: string; charge: string; source: string | null; checkedOn: string; stale: boolean }[];
   /** The agency's payment structures, for the schedule preview. */
-  structures?: readonly { name: string; minAmountMinor: number | null; maxAmountMinor: number | null; milestones: { label: string; pct: number }[] }[];
+  structures?: readonly { name: string; isDefault?: boolean; minAmountMinor: number | null; maxAmountMinor: number | null; milestones: { label: string; pct: number }[] }[];
   /** SCR-012 — who may own the deal; present only when the caller may assign (`lead.assign`). */
   roster?: readonly { userId: string; fullName: string; role: string }[];
 }) {
-  const [state, action, pending] = useActionState<ComposeQuotationState, FormData>(composeQuotationAction, IDLE_STATE);
+  // Two submit buttons share this action: "Save as Draft" (intent=draft) keeps the
+  // quotation a draft; "Send to Client" (intent=send) runs the whole governed walk
+  // and submits it for the owner's approval, which is the only way it reaches the client.
+  const [state, action, pending] = useActionState<ComposeQuotationState, FormData>(async (previous, formData) => {
+    const intent = String(formData.get('intent') ?? '');
+    if (intent === 'draft') formData.delete('submit');
+    else if (intent === 'send') formData.set('submit', 'on');
+    return composeQuotationAction(previous, formData);
+  }, IDLE_STATE);
   const [opportunityId, setOpportunityId] = useState(initialOpportunityId ?? deals[0]?.opportunityId ?? '');
   const [lines, setLines] = useState<Line[]>([{ key: 1, description: '', quantity: '1', unitPrice: '' }]);
   const [discount, setDiscount] = useState('');
   const [tax, setTax] = useState('');
-  const [submit, setSubmit] = useState(true);
   const [structureName, setStructureName] = useState('');
   // SCR-012 — GST toggle. Starts on when the deal's project has a confirmed
   // GST billing mode, off when it is confirmed non-GST, and manual (off)
@@ -88,7 +98,9 @@ export function QuotationComposer({
     setLines((ls) => [...ls, { key: Date.now(), description: `${service} — ${charge} (third-party, at cost)`, quantity: '1', unitPrice: price }]);
   };
   const structure = (structures ?? []).find((st) => st.name === structureName) ?? null;
-  const suggestedStructure = (structures ?? []).find((st) => (st.minAmountMinor === null || total * 100 >= st.minAmountMinor) && (st.maxAmountMinor === null || total * 100 <= st.maxAmountMinor)) ?? null;
+  // The seeded 30/20/30/20 is the default (owner decision 2, round 2): a structure the owner set that fits wins, the default applies when nothing else does.
+  const fitting = (structures ?? []).filter((st) => (st.minAmountMinor === null || total * 100 >= st.minAmountMinor) && (st.maxAmountMinor === null || total * 100 < st.maxAmountMinor));
+  const suggestedStructure = fitting.find((st) => !st.isDefault) ?? fitting[0] ?? null;
   const suggestedTax = taxRatePercent !== null ? Math.round((Math.max(0, subtotal - discountN) * taxRatePercent) / 100) : null;
   const gstRate = taxRatePercent ?? 18;
   const gstTax = Math.round((Math.max(0, subtotal - discountN) * gstRate) / 100);
@@ -112,6 +124,27 @@ export function QuotationComposer({
 
   return (
     <form action={action} className="flex flex-col gap-4">
+      <PageHeader
+        title="Create Quotation"
+        description="Create a professional quotation for your client"
+        actions={
+          <>
+            <button type="submit" name="intent" value="draft" disabled={pending || !deal} className={buttonClass('secondary', 'sm')}>
+              <IconFile size={14} />
+              Save as Draft
+            </button>
+            <button type="submit" formAction="/api/quotations/preview" formMethod="post" formTarget="_blank" disabled={pending || !deal} className={buttonClass('secondary', 'sm')}>
+              Preview
+            </button>
+            {/* Owner decision #13: Share (copy link) is offered only once the owner has approved the quotation — on the quotations list, not here. */}
+            <button type="submit" name="intent" value="send" disabled={pending || !deal} title="Prices it and sends it to the owner for approval; it reaches the client once approved" className={buttonClass('primary', 'sm')}>
+              <IconSend size={14} />
+              {pending ? 'Working…' : 'Send to Client'}
+            </button>
+          </>
+        }
+      />
+
       {deal ? <input type="hidden" name="leadId" value={deal.leadId} /> : null}
 
       {state.status === 'error' && state.leadId ? (
@@ -126,7 +159,7 @@ export function QuotationComposer({
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_minmax(16rem,0.9fr)]">
         <Card>
-          <CardHeader title="Client information" />
+          <CardHeader title="Client Information" />
           <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
             <label className="flex flex-col gap-1">
               <span className={labelClass}>Deal</span>
@@ -174,7 +207,7 @@ export function QuotationComposer({
         </Card>
 
         <Card>
-          <CardHeader title="Quotation details" />
+          <CardHeader title="Quotation Details" />
           <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2 sm:px-5">
             <label className="flex flex-col gap-1 sm:col-span-2">
               <span className={labelClass}>Title</span>
@@ -241,20 +274,77 @@ export function QuotationComposer({
         </Card>
 
         <Card>
-          <CardHeader title="Quotation summary" />
-          <dl className="flex flex-col gap-2 px-4 pb-4 text-[13px] sm:px-5">
-            <div className="flex justify-between"><dt className="text-muted">Subtotal</dt><dd className="tabular">{money(subtotal, currency)}</dd></div>
-            <div className="flex justify-between"><dt className="text-muted">Discount</dt><dd className="tabular">− {money(discountN, currency)}</dd></div>
-            <div className="flex justify-between"><dt className="text-muted">Tax</dt><dd className="tabular">{money(shownTaxN, currency)}</dd></div>
-            <div className="flex justify-between border-t border-line pt-2 text-base font-semibold"><dt>Total</dt><dd className="tabular">{money(total, currency)}</dd></div>
-          </dl>
-          <p className="px-4 pb-4 text-[11px] text-muted sm:px-5">Shown as you type. The stored total is computed by the pricing step from the saved lines.</p>
+          <CardHeader title="Template & Settings" description="Amounts in the deal's currency." />
+          <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+            {structures && structures.length > 0 ? (
+              <label className="flex flex-col gap-1">
+                <span className={labelClass}>Quotation template</span>
+                <select value={structureName || suggestedStructure?.name || ''} onChange={(e) => setStructureName(e.target.value)} className={selectClass}>
+                  {structures.map((st) => (
+                    <option key={st.name} value={st.name}>
+                      {st.name}
+                      {st === suggestedStructure ? ' (fits this total)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[11px] text-muted">One of the agency&apos;s payment structures; it sets the payment schedule below.</span>
+              </label>
+            ) : null}
+            <label className="flex flex-col gap-1">
+              <span className={labelClass}>Discount</span>
+              <input name="discount" type="number" min="0" step="0.01" value={discount} onChange={(e) => setDiscount(e.target.value)} className={inputClass} placeholder="0" />
+            </label>
+            <div className="flex flex-col gap-1">
+            <label className="flex flex-col gap-1">
+              <span className={labelClass}>Tax{taxRatePercent !== null ? ` (GST ${taxRatePercent}%)` : ''}</span>
+              <input
+                name="tax"
+                type="number"
+                min="0"
+                step="0.01"
+                value={shownTax}
+                onChange={(e) => {
+                  setTax(e.target.value);
+                  setGst(false);
+                }}
+                className={inputClass}
+                placeholder="0"
+              />
+            </label>
+              <label className="flex items-center gap-2 text-[12px] text-muted">
+                <input
+                  type="checkbox"
+                  checked={gstOn}
+                  onChange={(e) => {
+                    setGst(e.target.checked);
+                    if (e.target.checked) setTax(String(gstTax));
+                  }}
+                  className="h-4 w-4 rounded border-line-strong"
+                />
+                GST {gstRate}% on the discounted subtotal (untick for Non-GST)
+                {deal?.billingMode === 'gst'
+                  ? ' — pre-filled from the project’s confirmed GST billing mode'
+                  : deal?.billingMode === 'non_gst'
+                    ? ' — the project’s confirmed mode is non-GST; left off'
+                    : ' — no confirmed billing mode on this deal yet; manual'}
+              </label>
+              {!gstOn && suggestedTax !== null && suggestedTax > 0 && Number(tax) !== suggestedTax ? (
+                <button type="button" onClick={() => setTax(String(suggestedTax))} className="self-start text-[11px] font-medium text-brand hover:underline">
+                  Apply {taxRatePercent}% → {money(suggestedTax, currency)}
+                </button>
+              ) : (
+                <span className="text-[11px] text-muted">Every quotation says GST is extra; enter the tax this one carries.</span>
+              )}
+            </div>
+          </div>
         </Card>
+
       </div>
 
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
       <Card>
         <CardHeader
-          title="Services / items"
+          title="Services / Items"
           actions={
             <button type="button" onClick={() => setLines((ls) => [...ls, { key: Date.now(), description: '', quantity: '1', unitPrice: '' }])} className={buttonClass('primary', 'sm')}>
               <IconPlus size={14} />
@@ -312,70 +402,30 @@ export function QuotationComposer({
           </div>
         ) : null}
       </Card>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card>
-          <CardHeader title="Pricing" description="Amounts in the deal's currency." />
-          <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2 sm:px-5">
-            <label className="flex flex-col gap-1">
-              <span className={labelClass}>Discount</span>
-              <input name="discount" type="number" min="0" step="0.01" value={discount} onChange={(e) => setDiscount(e.target.value)} className={inputClass} placeholder="0" />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className={labelClass}>Tax{taxRatePercent !== null ? ` (GST ${taxRatePercent}%)` : ''}</span>
-              <input
-                name="tax"
-                type="number"
-                min="0"
-                step="0.01"
-                value={shownTax}
-                onChange={(e) => {
-                  setTax(e.target.value);
-                  setGst(false);
-                }}
-                className={inputClass}
-                placeholder="0"
-              />
-              <span className="flex items-center gap-2 text-[12px] text-muted">
-                <input
-                  type="checkbox"
-                  checked={gstOn}
-                  onChange={(e) => {
-                    setGst(e.target.checked);
-                    if (e.target.checked) setTax(String(gstTax));
-                  }}
-                  className="h-4 w-4 rounded border-line-strong"
-                />
-                GST {gstRate}% on the discounted subtotal
-                {deal?.billingMode === 'gst'
-                  ? ' — pre-filled from the project’s confirmed GST billing mode'
-                  : deal?.billingMode === 'non_gst'
-                    ? ' — the project’s confirmed mode is non-GST; left off'
-                    : ' — no confirmed billing mode on this deal yet; manual'}
-              </span>
-              {!gstOn && suggestedTax !== null && suggestedTax > 0 && Number(tax) !== suggestedTax ? (
-                <button type="button" onClick={() => setTax(String(suggestedTax))} className="self-start text-[11px] font-medium text-brand hover:underline">
-                  Apply {taxRatePercent}% → {money(suggestedTax, currency)}
-                </button>
-              ) : (
-                <span className="text-[11px] text-muted">Every quotation says GST is extra; enter the tax this one carries.</span>
-              )}
-            </label>
-          </div>
+      <Card>
+          <CardHeader title="Quotation Summary" />
+          <dl className="flex flex-col gap-2 px-4 pb-4 text-[13px] sm:px-5">
+            <div className="flex justify-between"><dt className="text-muted">Subtotal</dt><dd className="tabular">{money(subtotal, currency)}</dd></div>
+            <div className="flex justify-between"><dt className="text-muted">Discount</dt><dd className="tabular">− {money(discountN, currency)}</dd></div>
+            <div className="flex justify-between"><dt className="text-muted">Tax</dt><dd className="tabular">{money(shownTaxN, currency)}</dd></div>
+            <div className="flex justify-between border-t border-line pt-2 text-base font-semibold"><dt>Total</dt><dd className="tabular">{money(total, currency)}</dd></div>
+          </dl>
+          {amountInWords(Math.round(total * 100), currency) ? (
+            <div className="mx-4 mb-3 rounded-lg bg-surface-sunken px-3 py-2 sm:mx-5">
+              <p className="text-[12px] font-medium text-muted">Amount in Words</p>
+              <p className="text-[13px] font-medium text-foreground">{amountInWords(Math.round(total * 100), currency)}</p>
+            </div>
+          ) : null}
+          <p className="px-4 pb-4 text-[11px] text-muted sm:px-5">Shown as you type. The stored total is computed by the pricing step from the saved lines.</p>
         </Card>
+      </div>
 
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+        <div className="flex min-w-0 flex-col gap-4">
         {structures && structures.length > 0 ? (
           <Card>
-            <CardHeader title="Payment schedule preview" description="How the total splits under the agency's payment terms. A preview only — the plan is set on the project once the deal is won." />
+            <CardHeader title="Payment Schedule" description="How the total splits under the agency's payment terms. A preview only — the plan is set on the project once the deal is won." />
             <div className="flex flex-col gap-2 px-4 pb-4 sm:px-5">
-              <select value={structureName || suggestedStructure?.name || ''} onChange={(e) => setStructureName(e.target.value)} aria-label="Payment structure" className={selectClass}>
-                {structures.map((st) => (
-                  <option key={st.name} value={st.name}>
-                    {st.name}
-                    {st === suggestedStructure ? ' (fits this total)' : ''}
-                  </option>
-                ))}
-              </select>
               {(() => {
                 const chosen = structure ?? suggestedStructure ?? structures[0] ?? null;
                 if (!chosen) return null;
@@ -395,31 +445,31 @@ export function QuotationComposer({
         ) : null}
 
         <Card>
-          <CardHeader title="Terms & conditions" description="One clause per line. Printed on the PDF as the commercial terms; the standard clauses are pre-filled and every edit is what the owner approves." />
+          <CardHeader title="Approval" description="A quotation reaches the client only after the owner approves it." />
+          <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+            <label className="flex flex-col gap-1">
+              <span className={labelClass}>Note for the owner (optional)</span>
+              <input name="summary" maxLength={500} className={inputClass} placeholder="Why this price" />
+              <span className="text-[11px] text-muted">Sent with Send to Client. Save as Draft keeps the quotation a draft and sends nothing.</span>
+            </label>
+          </div>
+        </Card>
+        </div>
+        <Card>
+          <CardHeader title="Terms & Conditions" description="One clause per line. Printed on the PDF as the commercial terms; the standard clauses are pre-filled and every edit is what the owner approves." />
           <div className="flex flex-col gap-2 px-4 pb-4 sm:px-5">
-            <textarea name="commercialTerms" rows={6} maxLength={15000} defaultValue={COMMERCIAL_TERMS.join('\n')} className={textareaClass} aria-label="Commercial terms, one per line" />
+            <textarea name="commercialTerms" rows={6} maxLength={15000} defaultValue={defaultTerms.join('\n')} className={textareaClass} aria-label="Commercial terms, one per line" />
             <span className="text-[11px] text-muted">The validity clause is printed from the date above; leave it as it is unless this quotation's terms differ.</span>
           </div>
         </Card>
 
-        <Card>
-          <CardHeader title="Approval" description="A quotation reaches the client only after the owner approves it." />
-          <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
-            <label className="flex items-center gap-2 text-[13px]">
-              <input type="checkbox" name="submit" checked={submit} onChange={(e) => setSubmit(e.target.checked)} className="h-4 w-4 rounded border-line-strong" />
-              Send to the owner for approval as soon as it is priced
-            </label>
-            {submit ? (
-              <label className="flex flex-col gap-1">
-                <span className={labelClass}>Note for the owner (optional)</span>
-                <input name="summary" maxLength={500} className={inputClass} placeholder="Why this price" />
-              </label>
-            ) : null}
-          </div>
-        </Card>
       </div>
 
-      <div className="flex flex-wrap items-center justify-end gap-2 rounded-xl border border-line bg-surface p-3 shadow-xs">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface p-3 shadow-xs">
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-semibold text-foreground">Preview</p>
+          <p className="text-xs text-muted">See how your quotation will look to the client</p>
+        </div>
         <FormMessage status={state.status} message={state.status === 'error' && !state.leadId ? state.message : undefined} />
         <Link href="/quotations" className={buttonClass('ghost', 'md')}>
           Cancel
@@ -427,10 +477,13 @@ export function QuotationComposer({
         {/* SCR-012 — the document as it would render, before anything is
             saved: the same form posts to the preview route in a new tab. */}
         <button type="submit" formAction="/api/quotations/preview" formMethod="post" formTarget="_blank" disabled={pending || !deal} className={buttonClass('secondary', 'md')}>
-          Preview PDF
+          Preview Quotation
         </button>
-        <button type="submit" disabled={pending || !deal} className={buttonClass('primary', 'md')}>
-          {pending ? 'Creating…' : submit ? 'Create and send for approval' : 'Save as draft'}
+        <button type="submit" name="intent" value="draft" disabled={pending || !deal} className={buttonClass('secondary', 'md')}>
+          Save as Draft
+        </button>
+        <button type="submit" name="intent" value="send" disabled={pending || !deal} className={buttonClass('primary', 'md')}>
+          {pending ? 'Working…' : 'Send to Client'}
         </button>
       </div>
     </form>

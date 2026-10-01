@@ -35,13 +35,15 @@ export async function listProjectMeetings(projectId: string): Promise<ProjectMee
     .is('deleted_at', null)
     .maybeSingle();
   if (projectError) unreadable('listProjectMeetings.project', projectError);
-  if (!project?.opportunity_id) return [];
+  if (!project) return [];
 
+  // The meetings on the deal this project was won from, and the ones made from this project
+  // (`crm.meetings.project_id`, written by `projects.attach_meeting_to_project`).
   const { data, error } = await supabase
     .schema('crm')
     .from('meetings')
     .select('id, lead_id, status, outcome, booked_mode, requested_mode, confirmed_start_at, requested_start_at, meeting_url')
-    .eq('opportunity_id', project.opportunity_id)
+    .or(project.opportunity_id ? `opportunity_id.eq.${project.opportunity_id},project_id.eq.${projectId}` : `project_id.eq.${projectId}`)
     .neq('status', 'cancelled')
     .order('confirmed_start_at', { ascending: true, nullsFirst: false });
   if (error) unreadable('listProjectMeetings.meetings', error);

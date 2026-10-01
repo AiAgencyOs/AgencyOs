@@ -10,13 +10,21 @@
  * authority decision here, only text matching.
  */
 
-export type Command = { href: string; label: string; group: string };
+export type Command = {
+  href: string;
+  label: string;
+  group: string;
+  /** Other words that find it ("gst" finds the GST identity form). Matched as well as the label and section. */
+  keywords?: readonly string[];
+  /** Offered only once something is typed: the settings catalogue is too long to list unprompted. */
+  searchOnly?: boolean;
+};
 
 export function filterCommands(commands: readonly Command[], query: string): Command[] {
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (terms.length === 0) return [...commands];
+  if (terms.length === 0) return commands.filter((c) => !c.searchOnly);
   return commands.filter((c) => {
-    const hay = `${c.label} ${c.group}`.toLowerCase();
+    const hay = `${c.label} ${c.group} ${(c.keywords ?? []).join(' ')}`.toLowerCase();
     return terms.every((t) => hay.includes(t));
   });
 }

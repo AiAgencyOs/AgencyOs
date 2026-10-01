@@ -5,6 +5,8 @@ import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
+import { dbRoleRefusal, taskRoleRefusal } from './project-role-service';
+
 import {
   addTimeLogSchema,
   deleteTimeLogSchema,
@@ -42,6 +44,8 @@ export async function addTimeLog(input: AddTimeLogInput): Promise<Result<{ timeL
   const context = await requireInternal();
   if (!can(context, 'task.write')) return refused('log time');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+  const roleRefusal = await taskRoleRefusal(context, parsed.data.taskId);
+  if (roleRefusal) return roleRefusal;
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -61,6 +65,8 @@ export async function addTimeLog(input: AddTimeLogInput): Promise<Result<{ timeL
 
   if (error || !data) {
     log('addTimeLog', error?.message);
+    const dbRefusal = dbRoleRefusal(error?.message);
+    if (dbRefusal) return dbRefusal;
     if (error?.message.includes('not on this project')) return err('VALIDATION', 'That task is not on this project.');
     return err('INTERNAL', 'Could not log the time.');
   }
@@ -78,7 +84,7 @@ export async function updateTimeLog(input: UpdateTimeLogInput): Promise<Result<{
   const { data: row, error: readError } = await supabase
     .schema('projects')
     .from('time_logs')
-    .select('id, person_id')
+    .select('id, person_id, task_id')
     .eq('id', parsed.data.timeLogId)
     .maybeSingle();
   if (readError) {
@@ -87,6 +93,8 @@ export async function updateTimeLog(input: UpdateTimeLogInput): Promise<Result<{
   }
   if (!row) return err('NOT_FOUND', 'Time entry not found.');
   if (row.person_id !== context.userId) return err('FORBIDDEN', 'Only the person who logged an entry can edit it.');
+  const roleRefusal = await taskRoleRefusal(context, row.task_id);
+  if (roleRefusal) return roleRefusal;
 
   const { data, error } = await supabase
     .schema('projects')
@@ -96,6 +104,8 @@ export async function updateTimeLog(input: UpdateTimeLogInput): Promise<Result<{
     .select('id');
   if (error) {
     log('updateTimeLog', error.message);
+    const dbRefusal = dbRoleRefusal(error.message);
+    if (dbRefusal) return dbRefusal;
     return err('INTERNAL', 'Could not save the time entry.');
   }
   if (!data || data.length === 0) return err('FORBIDDEN', 'The database refused the edit.');
@@ -113,7 +123,7 @@ export async function deleteTimeLog(input: DeleteTimeLogInput): Promise<Result<{
   const { data: row, error: readError } = await supabase
     .schema('projects')
     .from('time_logs')
-    .select('id, person_id')
+    .select('id, person_id, task_id')
     .eq('id', parsed.data.timeLogId)
     .maybeSingle();
   if (readError) {
@@ -124,10 +134,14 @@ export async function deleteTimeLog(input: DeleteTimeLogInput): Promise<Result<{
   if (row.person_id !== context.userId && !can(context, 'project.write')) {
     return err('FORBIDDEN', 'Only the person who logged an entry, or a project lead, can delete it.');
   }
+  const roleRefusal = await taskRoleRefusal(context, row.task_id);
+  if (roleRefusal) return roleRefusal;
 
   const { data, error } = await supabase.schema('projects').from('time_logs').delete().eq('id', row.id).select('id');
   if (error) {
     log('deleteTimeLog', error.message);
+    const dbRefusal = dbRoleRefusal(error.message);
+    if (dbRefusal) return dbRefusal;
     return err('INTERNAL', 'Could not delete the time entry.');
   }
   if (!data || data.length === 0) return err('FORBIDDEN', 'The database refused the delete.');

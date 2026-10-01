@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { logReportExport } from '@/modules/finance/export-log';
 import { listTaxReportInvoices } from '@/modules/finance/queries';
 import { invoicesInPeriod, resolveTaxPeriod, taxRegisterCsv } from '@/modules/finance/tax-report';
 
@@ -22,6 +23,8 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const period = resolveTaxPeriod(url.searchParams.get('period') ?? undefined, new Date());
   const rows = invoicesInPeriod(await listTaxReportInvoices(), period);
+
+  await logReportExport('tax_register_csv', period.label, rows.length);
 
   const slug = period.label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
   return new NextResponse(taxRegisterCsv(rows), {

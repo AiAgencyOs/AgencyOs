@@ -6,6 +6,7 @@ import { IDLE_STATE } from '@/modules/identity/types';
 import { addProjectMemberAction, removeProjectMemberAction, setProjectMemberRoleAction } from '@/modules/projects/project-members-actions';
 import type { ProjectMember } from '@/modules/projects/project-members-queries';
 import { PROJECT_ROLE_LABEL, PROJECT_ROLES } from '@/modules/projects/project-members-schema';
+import { DepartmentSelect } from './department-select';
 import { Avatar, Badge, buttonClass, FormMessage, humanize, labelClass, selectClass } from '@/ui';
 
 /**
@@ -21,6 +22,8 @@ export function ProjectMembersPanel({
   lastActive,
   lastActiveLabels,
   mayEdit,
+  departments,
+  mayAssignDepartment,
 }: {
   projectId: string;
   members: ProjectMember[];
@@ -29,6 +32,10 @@ export function ProjectMembersPanel({
   /** Pre-formatted "last active" labels keyed by user id. */
   lastActiveLabels: Record<string, string>;
   mayEdit: boolean;
+  /** Department per user (owner decision 2); null = not set. */
+  departments: Record<string, string | null>;
+  /** An owner or an ops admin may set it. */
+  mayAssignDepartment: boolean;
 }) {
   const onProject = new Set(members.map((m) => m.userId));
   const candidates = roster.filter((r) => !onProject.has(r.userId));
@@ -46,10 +53,12 @@ export function ProjectMembersPanel({
                 <span className="block truncate font-medium text-foreground">{m.fullName}</span>
                 <span className="block truncate text-xs text-muted">
                   {humanize(m.orgRole)}
+                  {departments[m.userId] ? ` · ${departments[m.userId]}` : ''}
                   {' · '}
                   {lastActive.visible ? (lastActiveLabels[m.userId] ? `last active ${lastActiveLabels[m.userId]}` : 'no recorded activity') : 'activity not visible to your role'}
                 </span>
               </span>
+              {mayAssignDepartment ? <DepartmentSelect projectId={projectId} userId={m.userId} name={m.fullName} current={departments[m.userId] ?? null} /> : null}
               {mayEdit ? <RoleForm projectId={projectId} memberId={m.id} current={m.projectRole} /> : <Badge tone="info">{PROJECT_ROLE_LABEL[m.projectRole]}</Badge>}
               {mayEdit ? <RemoveMemberButton projectId={projectId} memberId={m.id} name={m.fullName} /> : null}
             </li>

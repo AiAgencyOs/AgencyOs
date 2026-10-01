@@ -5,7 +5,7 @@ import { notFound } from 'next/navigation';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject, readDesignMessages, readDesignTrail } from '@/modules/projects/queries';
-import { Badge, PageHeader, PermissionDenied } from '@/ui';
+import { Badge, PageHeader, PermissionDenied, Stat, StatGrid } from '@/ui';
 
 import { ProjectSubNav } from '../../project-subnav';
 import { DesignSubNav } from '../design-subnav';
@@ -47,6 +47,8 @@ export default async function ProjectFinalSelectionPage({
   const trail = await readDesignTrail(projectId);
   const { phase } = trail;
   const mayDecide = can(context, 'project.write');
+  // PM sends to the client only after Admin approval: the door refuses a non-delivery role and any option Admin has not confirmed.
+  const maySend = can(context, 'milestone.write');
 
   if (!phase) {
     return (
@@ -113,12 +115,31 @@ export default async function ProjectFinalSelectionPage({
       <ProjectSubNav projectId={projectId} />
       <DesignSubNav projectId={projectId} />
 
+      {/* SCR-036 — the header figures: where each option waits, and the revision count. */}
+      <StatGrid cols={4}>
+        <Stat label="Awaiting Internal Review" value={String(trail.themes.filter((t) => t.internalReviewStatus === 'in_review').length)} caption="the assigned reviewer's gate" tone="info" />
+        <Stat label="Awaiting Admin" value={String(trail.themes.filter((t) => t.internalReviewStatus === 'passed' && t.adminStatus !== 'approved').length)} caption="internal passed, not yet confirmed" tone={trail.themes.some((t) => t.internalReviewStatus === 'passed' && t.adminStatus !== 'approved') ? 'warning' : 'success'} />
+        <Stat label="Awaiting the Client" value={String(trail.themes.filter((t) => t.clientStatus === 'shared').length)} caption="sent, no answer recorded" tone="neutral" />
+        <Stat label="Revision Count" value={`${phase.revisionCount} of ${phase.revisionLimit}`} caption="client rounds used" tone="info" />
+      </StatGrid>
+
       {/* §8 — Client Shares. The row §8 marks *very important*. */}
       <Section
         title="What was sent to the client"
         hint="Exactly which options were sent, and when — without reading WhatsApp. Each round is a frozen snapshot, so revising an option later does not rewrite what the client saw."
       >
-        {mayDecide ? <RecordShareForm projectId={projectId} options={approvedOptions} /> : null}
+        <div className="flex flex-col gap-1 rounded-md border border-line bg-surface-sunken px-3 py-2 text-[13px]">
+          <span className="font-medium">
+            {approvedOptions.length} of {trail.themes.length} option{trail.themes.length === 1 ? '' : 's'} approved by Admin and ready to send
+          </span>
+          {trail.themes.filter((t) => t.adminStatus !== 'approved').map((t) => (
+            <span key={t.id} className="text-muted">
+              {t.name}: waiting for {t.internalReviewStatus !== 'passed' ? 'internal review, then Admin' : 'Admin'} — cannot be sent yet.
+            </span>
+          ))}
+          <span className="text-xs text-muted">Only a delivery role (owner, ops admin, delivery lead) records the send, and only for options Admin has approved.</span>
+        </div>
+        {maySend ? <RecordShareForm projectId={projectId} options={approvedOptions} /> : mayDecide ? <p className="text-[13px] text-muted">Recording a send to the client takes a delivery role (owner, ops admin or delivery lead).</p> : null}
         {trail.shares.length === 0 ? (
           <Nothing>Nothing has been sent to the client.</Nothing>
         ) : (

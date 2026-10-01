@@ -4,6 +4,7 @@ import { connect as netConnect, type Socket } from 'node:net';
 import { connect as tlsConnect } from 'node:tls';
 
 import { serverEnv } from '@/lib/env';
+import { resolveSecret, secretConfigured } from '@/lib/secrets/resolve';
 
 /**
  * The one way an email leaves AgencyOS — bucket F, SCR-051 "Send by email".
@@ -38,22 +39,22 @@ export type EmailSendResult = { ok: true; kind: 'resend' | 'smtp'; messageRef: s
 
 const RESEND_API = 'https://api.resend.com/emails';
 
-export function emailTransportState(): EmailTransportState {
+export async function emailTransportState(): Promise<EmailTransportState> {
   const env = serverEnv();
   if (!env.EMAIL_FROM) {
     return { configured: false, reason: 'EMAIL_FROM is not set — the sender address every email needs.' };
   }
-  if (env.RESEND_API_KEY) {
+  if (await secretConfigured('RESEND_API_KEY')) {
     return { configured: true, kind: 'resend', from: env.EMAIL_FROM, label: `Resend, from ${env.EMAIL_FROM}` };
   }
   if (env.SMTP_HOST) {
     return { configured: true, kind: 'smtp', from: env.EMAIL_FROM, label: `SMTP via ${env.SMTP_HOST}, from ${env.EMAIL_FROM}` };
   }
-  return { configured: false, reason: 'No email transport is configured. Set RESEND_API_KEY, or SMTP_HOST with SMTP_PORT, SMTP_USER and SMTP_PASS, in the deployment environment.' };
+  return { configured: false, reason: 'No email transport is configured. Set RESEND_API_KEY, or SMTP_HOST with SMTP_PORT, SMTP_USER and SMTP_PASS, in the deployment environment, or add them under Security & Audit › Keys & secrets.' };
 }
 
 export async function sendEmail(message: EmailMessage): Promise<EmailSendResult> {
-  const state = emailTransportState();
+  const state = await emailTransportState();
   if (!state.configured) return { ok: false, reason: state.reason };
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(message.to)) return { ok: false, reason: `"${message.to}" is not an email address.` };
 
@@ -69,10 +70,10 @@ export async function sendEmail(message: EmailMessage): Promise<EmailSendResult>
 // ── Resend ──────────────────────────────────────────────────────────────────
 
 async function sendViaResend(from: string, message: EmailMessage): Promise<EmailSendResult> {
-  const env = serverEnv();
+  const apiKey = await resolveSecret('RESEND_API_KEY');
   const response = await fetch(RESEND_API, {
     method: 'POST',
-    headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, 'content-type': 'application/json' },
+    headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({
       from,
       to: [message.to],
@@ -197,6 +198,7 @@ function wrap(base64: string): string {
 
 async function sendViaSmtp(from: string, message: EmailMessage): Promise<EmailSendResult> {
   const env = serverEnv();
+  const smtpPass = (await resolveSecret('SMTP_PASS')) ?? '';
   const host = env.SMTP_HOST!;
   const secure = env.SMTP_SECURE === 'true';
   const port = env.SMTP_PORT ?? (secure ? 465 : 587);
@@ -229,9 +231,9 @@ async function sendViaSmtp(from: string, message: EmailMessage): Promise<EmailSe
       if (offersLogin || !offersPlain) {
         await session.command('AUTH LOGIN', [334]);
         await session.command(Buffer.from(env.SMTP_USER, 'utf8').toString('base64'), [334]);
-        await session.command(Buffer.from(env.SMTP_PASS ?? '', 'utf8').toString('base64'), [235]);
+        await session.command(Buffer.from(smtpPass, 'utf8').toString('base64'), [235]);
       } else {
-        const token = Buffer.from(`\0${env.SMTP_USER}\0${env.SMTP_PASS ?? ''}`, 'utf8').toString('base64');
+        const token = Buffer.from(`\0${env.SMTP_USER}\0${smtpPass}`, 'utf8').toString('base64');
         await session.command(`AUTH PLAIN ${token}`, [235]);
       }
     }

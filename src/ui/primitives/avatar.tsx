@@ -11,6 +11,20 @@ import { cx, type Tone } from '../tokens';
 
 const AVATAR_TONES: Tone[] = ['brand', 'info', 'success', 'warning', 'danger', 'accent'];
 
+/**
+ * Two fixed looks besides the tinted tones. They are variants rather than
+ * class overrides because a `className` cannot reliably beat the tint (both
+ * are utilities of equal weight and the stylesheet's order decides): light
+ * initials landed on a light tint, and warning-tint text on the dark sidebar
+ * at 2.5:1. Each pair here is at least 4.5:1.
+ */
+const AVATAR_FIXED = {
+  /** On the dark sidebar and the dark project tiles. */
+  sidebar: 'bg-sidebar-bg text-sidebar-fg',
+  /** The organisation's own mark — white on the brand colour, 6.3:1. */
+  solid: 'bg-brand text-brand-fg',
+} as const;
+
 const AVATAR_TINT: Record<Tone, string> = {
   neutral: 'bg-surface-sunken text-muted ring-1 ring-inset ring-line',
   brand: 'bg-brand-soft text-brand',
@@ -54,7 +68,7 @@ export function Avatar({
 }: {
   name: string | null | undefined;
   size?: keyof typeof AVATAR_SIZE;
-  tone?: Tone;
+  tone?: Tone | keyof typeof AVATAR_FIXED;
   /** A rounded square — for an organisation or a project rather than a person. */
   square?: boolean;
   className?: string;
@@ -67,7 +81,7 @@ export function Avatar({
         'inline-flex shrink-0 select-none items-center justify-center font-semibold uppercase leading-none',
         square ? 'rounded-lg' : 'rounded-full',
         AVATAR_SIZE[size],
-        AVATAR_TINT[tone ?? toneFor(name)],
+        tone === 'sidebar' || tone === 'solid' ? AVATAR_FIXED[tone] : AVATAR_TINT[tone ?? toneFor(name)],
         className,
       )}
     >

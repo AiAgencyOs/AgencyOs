@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react';
 
-import { acknowledgeEscalationAction, escalateBlockerAction, startQaHandoffAction } from '@/modules/projects/development-events-actions';
+import { acknowledgeEscalationAction, escalateBlockerAction, requestClientDependencyAction, startQaHandoffAction } from '@/modules/projects/development-events-actions';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { buttonClass, FormMessage, inputClass } from '@/ui';
 
@@ -57,6 +57,22 @@ export function StartQaHandoffPanel({ projectId, blocked, notReady }: { projectI
           gate: {blocked} blocked · {notReady} not yet in review
         </span>
       ) : null}
+      <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** SCR-040 — ask the PM to request an outstanding client dependency from the client. Recorded; the plan row is not edited. */
+export function RequestClientDependencyForm({ projectId, dependencyId }: { projectId: string; dependencyId: string }) {
+  const [state, action, pending] = useActionState(requestClientDependencyAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="dependencyId" value={dependencyId} />
+      <input name="note" maxLength={4000} className={inputClass} placeholder="Why it is needed now (optional)" aria-label="Why this client dependency is needed now" />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Asking…' : 'Ask the PM to request it'}
+      </button>
       <FormMessage status={state.status} message={state.message} />
     </form>
   );

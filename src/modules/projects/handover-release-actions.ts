@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import type { FormState } from '@/modules/identity/types';
 
-import { setHandoverRollbackPlan, setHandoverSmokeItem } from './handover-release-service';
+import { recordReleaseVerification, setHandoverRollbackPlan, setHandoverSmokeItem } from './handover-release-service';
 
 /** SCR-049 — the Release tab's two writes. */
 
@@ -16,7 +16,7 @@ function revalidateRelease(formData: FormData) {
 
 export async function setRollbackPlanAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const result = await setHandoverRollbackPlan({
-    handoverId: String(formData.get('handoverId') ?? ''),
+    projectId: String(formData.get('projectId') ?? ''),
     rollbackPlan: String(formData.get('rollbackPlan') ?? ''),
   });
   if (!result.ok) return { status: 'error', message: result.error.message };
@@ -27,7 +27,7 @@ export async function setRollbackPlanAction(_prev: FormState, formData: FormData
 
 export async function setSmokeItemAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const result = await setHandoverSmokeItem({
-    handoverId: String(formData.get('handoverId') ?? ''),
+    projectId: String(formData.get('projectId') ?? ''),
     label: String(formData.get('label') ?? ''),
     done: formData.get('done') === 'true',
     remove: formData.get('remove') === 'true',
@@ -36,4 +36,21 @@ export async function setSmokeItemAction(_prev: FormState, formData: FormData): 
 
   revalidateRelease(formData);
   return { status: 'success', message: result.data.removed ? 'Check removed.' : 'Checklist updated.' };
+}
+
+/** SCR-049 — "Record post-deploy verification". */
+export async function recordVerificationAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const text = (name: string) => String(formData.get(name) ?? '').trim();
+  const result = await recordReleaseVerification({
+    projectId: text('projectId'),
+    environment: text('environment') as never,
+    outcome: text('outcome') as never,
+    ...(text('deliverableId') ? { deliverableId: text('deliverableId') } : {}),
+    ...(text('notes') ? { notes: text('notes') } : {}),
+    ...(text('evidenceUrl') ? { evidenceUrl: text('evidenceUrl') } : {}),
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidateRelease(formData);
+  return { status: 'success', message: 'Verification recorded.' };
 }

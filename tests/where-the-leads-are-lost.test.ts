@@ -52,9 +52,11 @@ describe('A. the rates, and what a percentage of nothing is', () => {
   });
 
   test('it will not name a leak from too few leads', () => {
-    const floor = Number(/MIN_LEADS_TO_NAME_A_LEAK = (\d+)/.exec(READER)?.[1] ?? 0);
+    // The floor is the owner's to set (audit B-4); what unset means is still a real one.
+    const defaults = read('src/lib/admin/operational-defaults.ts');
+    const floor = Number(/DEFAULT_FUNNEL_MIN_LEADS_TO_NAME_LEAK = (\d+)/.exec(defaults)?.[1] ?? 0);
     assert.ok(floor >= 20, `the floor must be a real one, found ${floor}`);
-    assert.match(READER, /if \(counts\.leads >= MIN_LEADS_TO_NAME_A_LEAK\)/);
+    assert.match(READER, /if \(counts\.leads >= minLeadsToNameLeak\)/);
     // …and it says so where a reader can see it, rather than showing nothing.
     assert.match(PAGE, /the biggest drop is noise/);
   });

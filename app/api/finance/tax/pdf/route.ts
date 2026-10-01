@@ -5,9 +5,10 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { renderTaxReportPdf, taxReportPdfFilename } from '@/lib/pdf/tax-report';
+import { logReportExport } from '@/modules/finance/export-log';
 import { readGstIdentity } from '@/modules/finance/gstr-queries';
-import { listExpenses, listReceipts, listTaxReportInvoices } from '@/modules/finance/queries';
-import { expensesInPeriod, invoicesInPeriod, profitAndLoss, receiptsInPeriod, resolveTaxPeriod, splitByMode } from '@/modules/finance/tax-report';
+import { listExpenses, listPayments, listTaxReportInvoices } from '@/modules/finance/queries';
+import { expensesInPeriod, invoicesInPeriod, profitAndLoss, resolveTaxPeriod, splitByMode, verifiedReceivedInPeriod } from '@/modules/finance/tax-report';
 
 /**
  * The GST & tax report as a PDF — SCR-056 "Export PDF". Same readers, same
@@ -28,9 +29,9 @@ export async function GET(request: Request) {
   const period = resolveTaxPeriod(url.searchParams.get('period') ?? undefined, new Date());
 
   const supabase = await createClient();
-  const [invoices, receipts, expenses, identity, clock, orgRes] = await Promise.all([
+  const [invoices, payments, expenses, identity, clock, orgRes] = await Promise.all([
     listTaxReportInvoices(),
-    listReceipts(),
+    listPayments(2000),
     listExpenses(2000),
     readGstIdentity(),
     agencyClock(),
@@ -41,7 +42,8 @@ export async function GET(request: Request) {
   }
 
   const periodInvoices = invoicesInPeriod(invoices, period);
-  const periodReceipts = receiptsInPeriod(receipts, period);
+  // Received = verified payments, the same basis the screen and Finance Overview use.
+  const periodReceived = verifiedReceivedInPeriod(payments, period);
   const periodExpenses = expensesInPeriod(expenses, period);
 
   try {
@@ -51,7 +53,7 @@ export async function GET(request: Request) {
       periodLabel: period.label,
       generatedAt: clock.dateTime(new Date().toISOString()),
       splits: splitByMode(periodInvoices),
-      pnl: profitAndLoss(periodInvoices, periodReceipts, periodExpenses),
+      pnl: profitAndLoss(periodInvoices, periodReceived, periodExpenses),
       register: periodInvoices.map((r) => ({
         number: r.number,
         status: r.status,
@@ -65,6 +67,7 @@ export async function GET(request: Request) {
         paidMinor: r.paidMinor,
       })),
     });
+    await logReportExport('tax_report_pdf', period.label, periodInvoices.length);
     return new NextResponse(Buffer.from(rendered.bytes), {
       status: 200,
       headers: {

@@ -7,10 +7,13 @@ import { z } from 'zod';
 import { requireInternal } from '@/lib/auth/session';
 import { can, hasRole } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
+import { ilikeAny } from '@/lib/db/search';
 import { err, ok, unreadable, type Result } from '@/lib/result';
 
 import { markLeadConverted, sendClientDocument, sendClientMessage } from '@/modules/crm/service';
 import { createProject, seedOnboarding } from '@/modules/projects/service';
+import { carryLeadFilesToProject } from './lead-files-carry';
+import { clientIdentityMatches, describeIdentityMatches, type ClientCandidate, type ContactCandidate } from './client-identity';
 
 import {
   addProposalItemSchema,
@@ -63,6 +66,7 @@ import {
  * service.ts, never a sibling's schema.
  */
 import { quotationValidityDays } from '@/lib/admin/operational-defaults';
+import { clausesForProposal } from './quotation-clauses';
 import { quotationSectionsFor } from './quotation-standards';
 
 export { quotationMessage } from './schema';
@@ -501,6 +505,9 @@ export async function convertToProject(
   if (alreadyConverted) {
     // A second click is also the repair path: a handoff the first conversion
     // could not bind is bound now, or found already bound.
+    // Decision 11: any lead link not yet carried (a link added after the first
+    // conversion, or one whose copy failed) is carried now — once, by claim.
+    if (opportunity.lead_id) await carryLeadFilesToProject(opportunity.lead_id, alreadyConverted.id);
     return ok({
       projectId: alreadyConverted.id,
       clientAccountId: alreadyConverted.client_account_id,
@@ -593,6 +600,7 @@ export async function convertToProject(
         .maybeSingle();
 
       if (raced) {
+        if (opportunity.lead_id) await carryLeadFilesToProject(opportunity.lead_id, raced.id);
         return ok({
           projectId: raced.id,
           clientAccountId: raced.client_account_id,
@@ -654,6 +662,12 @@ export async function convertToProject(
   // must not pass silently.
   const handoffRecorded = await recordWonHandoff(supabase, opportunity.id, project.data.projectId);
 
+  // ── the lead's files, visible on the project — decision 11 ──────────────
+  //
+  // The links kept on the lead are copied once as project file links. A
+  // shortfall is logged inside and repaired by re-running conversion.
+  if (opportunity.lead_id) await carryLeadFilesToProject(opportunity.lead_id, project.data.projectId);
+
   return ok({
     projectId: project.data.projectId,
     clientAccountId,
@@ -687,6 +701,18 @@ export async function createClientAccount(
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
+
+  // SCR-014: identity must deduplicate against client, contact and lead records. A match stops
+  // the create once, names the record, and a confirmed re-submit goes through.
+  if (!parsed.data.confirmDuplicate) {
+    const candidates = await readIdentityCandidates(parsed.data.name, parsed.data.billingEmail || null);
+    if (!candidates.ok) return candidates;
+    const matches = clientIdentityMatches({ name: parsed.data.name, billingEmail: parsed.data.billingEmail }, candidates.data);
+    if (matches.length > 0) {
+      return err('CONFLICT', describeIdentityMatches(matches), { details: { matches: matches.map((m) => JSON.stringify(m)) } });
+    }
+  }
+
   const { data: account, error } = await supabase
     .schema('core')
     .from('client_accounts')
@@ -1289,8 +1315,16 @@ export async function quotationPdfForProposal(
       // so a line drafted before the column existed draws exactly as it did.
       ...(Array.isArray(i.serves) ? { serves: i.serves as string[] } : {}),
     }));
+    // Audit B-6 — the clause wording this quotation prints: today's for a
+    // draft, and for anything issued the snapshot it took when first rendered,
+    // so a re-render never reads today's clauses. A failed read blocks the
+    // render (like the surroundings) rather than printing defaults over the
+    // owner's own words.
+    const clauses = await clausesForProposal(supabase, proposal.id);
+    if (!clauses.ok) throw new SurroundingsUnreadable(clauses.error.message);
     const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems, {
       validityDays: surroundings.validityDays,
+      clauses: clauses.data,
     });
     const rendered = await renderQuotationPdf({
       ...surroundings,
@@ -1504,8 +1538,16 @@ export async function sendProposal(
       // so a line drafted before the column existed draws exactly as it did.
       ...(Array.isArray(i.serves) ? { serves: i.serves as string[] } : {}),
     }));
+    // Audit B-6 — the clause wording this quotation prints: today's for a
+    // draft, and for anything issued the snapshot it took when first rendered,
+    // so a re-render never reads today's clauses. A failed read blocks the
+    // render (like the surroundings) rather than printing defaults over the
+    // owner's own words.
+    const clauses = await clausesForProposal(supabase, proposal.id);
+    if (!clauses.ok) throw new SurroundingsUnreadable(clauses.error.message);
     const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems, {
       validityDays: surroundings.validityDays,
+      clauses: clauses.data,
     });
     const rendered = await renderQuotationPdf({
       ...surroundings,
@@ -1954,6 +1996,8 @@ export async function readPaymentStructures(): Promise<
   Result<
     Array<{
       name: string;
+      /** The seeded 30/20/30/20, until the owner edits it or sets their own. */
+      isDefault: boolean;
       minAmountMinor: number | null;
       maxAmountMinor: number | null;
       milestones: Array<{ label: string; pct: number }>;
@@ -1965,7 +2009,7 @@ export async function readPaymentStructures(): Promise<
   const { data, error } = await supabase
     .schema('sales')
     .from('payment_structures')
-    .select('name, min_amount_minor, max_amount_minor, payment_milestones(position, label, pct)')
+    .select('name, is_default, min_amount_minor, max_amount_minor, payment_milestones(position, label, pct)')
     .eq('active', true)
     .order('name');
 
@@ -1974,6 +2018,7 @@ export async function readPaymentStructures(): Promise<
   return ok(
     (data ?? []).map((row) => ({
       name: row.name,
+      isDefault: row.is_default,
       minAmountMinor: row.min_amount_minor ?? null,
       maxAmountMinor: row.max_amount_minor ?? null,
       milestones: (row.payment_milestones ?? [])
@@ -2455,4 +2500,48 @@ export async function recordPlanSetResponse(
     default:
       return err('INTERNAL', 'Could not record the response.');
   }
+}
+
+
+/**
+ * The rows `clientIdentityMatches` judges: clients with this name or billing
+ * email, contacts with this email or a name or company like it, and the lead
+ * each contact came in on. Read under the caller's own session, so it can only
+ * ever name what the caller may already open. A failed read refuses the create
+ * (a duplicate check that silently passed would be worse than none).
+ */
+async function readIdentityCandidates(name: string, billingEmail: string | null): Promise<Result<{ clients: ClientCandidate[]; contacts: ContactCandidate[] }>> {
+  const supabase = await createClient();
+  const clientFilter = [ilikeAny(['name'], name), billingEmail ? ilikeAny(['billing_email'], billingEmail) : null].filter(Boolean).join(',');
+  const contactFilter = [ilikeAny(['full_name', 'company'], name), billingEmail ? ilikeAny(['email'], billingEmail) : null].filter(Boolean).join(',');
+  const [clients, contacts] = await Promise.all([
+    supabase.schema('core').from('client_accounts').select('id, name, billing_email').or(clientFilter).limit(25),
+    supabase.schema('crm').from('contacts').select('id, full_name, email, company, client_account_id').or(contactFilter).limit(25),
+  ]);
+  if (clients.error || contacts.error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'createClientAccount.identity', detail: (clients.error ?? contacts.error)?.message }));
+    return err('INTERNAL', 'Could not check whether this client already exists, so it was not created.');
+  }
+  const contactRows = contacts.data ?? [];
+  const leadByContact = new Map<string, { id: string; title: string }>();
+  if (contactRows.length > 0) {
+    const leads = await supabase.schema('crm').from('leads').select('id, title, contact_id').in('contact_id', contactRows.map((c) => c.id));
+    if (leads.error) {
+      console.error(JSON.stringify({ level: 'error', scope: 'createClientAccount.identity.leads', detail: leads.error.message }));
+      return err('INTERNAL', 'Could not check whether this client already exists, so it was not created.');
+    }
+    for (const l of leads.data ?? []) if (l.contact_id && !leadByContact.has(l.contact_id)) leadByContact.set(l.contact_id, { id: l.id, title: l.title });
+  }
+  return ok({
+    clients: (clients.data ?? []).map((c) => ({ id: c.id, name: c.name, billingEmail: c.billing_email })),
+    contacts: contactRows.map((c) => ({
+      id: c.id,
+      fullName: c.full_name,
+      email: c.email,
+      company: c.company,
+      clientAccountId: c.client_account_id,
+      leadId: leadByContact.get(c.id)?.id ?? null,
+      leadTitle: leadByContact.get(c.id)?.title ?? null,
+    })),
+  });
 }

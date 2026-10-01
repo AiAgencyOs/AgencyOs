@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useActionState, useEffect, useRef, type FormEvent } from 'react';
+import { useActionState, useEffect, useId, useRef, type FormEvent } from 'react';
 
 import { IDLE_STATE, type FormState } from '@/modules/identity/types';
 import { setTaskStatusAction } from '@/modules/projects/actions';
@@ -13,10 +13,13 @@ import {
   removeTaskAttachmentAction,
   setChecklistItemDoneAction,
 } from '@/modules/projects/task-collab-actions';
+import { markTaskAgentAction, verifyAgentTaskAction } from '@/modules/projects/task-origin-actions';
+import { ReadyForQaButton, StartTaskButton, SubmitEvidencePanel } from './projects/[projectId]/development/tasks/[taskId]/task-doors-panel';
 import { TASK_EVIDENCE_KINDS } from '@/modules/projects/task-collab-schema';
 import type { TaskCollab } from '@/modules/projects/task-collab-types';
 import {
   Avatar,
+  Badge,
   buttonClass,
   Callout,
   cx,
@@ -31,8 +34,10 @@ import {
   inputClass,
   labelClass,
   ProgressBar,
+  selectClass,
   textareaClass,
 } from '@/ui';
+import { BLOCKER_TYPE_LABEL, BLOCKER_TYPES, type BlockerType } from '@/modules/projects/task-blocker';
 
 /**
  * The collaborative half of a task — SCR-020 / SCR-021 / SCR-041: the
@@ -76,6 +81,8 @@ export function TaskCollabPanel({
   return (
     <div className={cx('flex flex-col', compact ? 'gap-4' : 'gap-5')}>
       {status === 'blocked' ? <BlockedSection projectId={projectId} taskId={taskId} collab={collab} canWrite={canWrite} /> : null}
+      <ReviewSection projectId={projectId} taskId={taskId} status={status} collab={collab} canWrite={canWrite} />
+      <AgentWorkSection projectId={projectId} taskId={taskId} status={status} collab={collab} canWrite={canWrite} />
       <ChecklistSection projectId={projectId} taskId={taskId} collab={collab} canWrite={canWrite} compact={compact} />
       <CommentsSection projectId={projectId} taskId={taskId} collab={collab} canWrite={canWrite} compact={compact} />
       <AttachmentsSection projectId={projectId} taskId={taskId} collab={collab} canWrite={canWrite} compact={compact} />
@@ -103,6 +110,112 @@ function TaskKeys({ projectId, taskId }: { projectId: string; taskId: string }) 
   );
 }
 
+// ── Hand-off to review ─────────────────────────────────────────────────────
+
+/**
+ * SCR-020/021 — "Submit for review" asks for evidence. The hand-off is the
+ * evidence-gated door (`mark_task_ready_for_qa`: needs evidence, never while
+ * blocked), not a bare status change; start is its own door too. Drawn only
+ * where the next step is one of these, so an ordinary click is not a refusal.
+ */
+function ReviewSection({ projectId, taskId, status, collab, canWrite }: { projectId: string; taskId: string; status: string; collab: TaskCollab; canWrite: boolean }) {
+  if (!canWrite || (status !== 'todo' && status !== 'in_progress')) return null;
+  return (
+    <section className="flex flex-col gap-2 rounded-lg border border-line p-3 text-[13px]" aria-label="Hand-off to review">
+      <SectionHeading icon={<IconCheck size={13} />} title={status === 'todo' ? 'Start work' : 'Submit for review'} meta={status === 'in_progress' ? <span className="tabular text-xs text-muted">{collab.evidenceCount} evidence</span> : null} />
+      {status === 'todo' ? (
+        <StartTaskButton projectId={projectId} taskId={taskId} />
+      ) : (
+        <>
+          <p className="text-muted">A task goes to review with evidence of what was done. Add it, then hand the task off.</p>
+          <details>
+            <summary className="cursor-pointer text-xs font-medium text-brand">Add evidence</summary>
+            <div className="mt-2">
+              <SubmitEvidencePanel projectId={projectId} taskId={taskId} />
+            </div>
+          </details>
+          <ReadyForQaButton projectId={projectId} taskId={taskId} evidenceCount={collab.evidenceCount} />
+        </>
+      )}
+    </section>
+  );
+}
+
+// ── Agent-generated work ───────────────────────────────────────────────────
+
+/**
+ * SCR-020 — "Agent-generated work is not complete until required verification
+ * passes". Marks where the work came from and holds the gate: the database
+ * refuses to move an unverified agent task to Done, so this is where it is verified.
+ */
+function AgentWorkSection({ projectId, taskId, status, collab, canWrite }: { projectId: string; taskId: string; status: string; collab: TaskCollab; canWrite: boolean }) {
+  const [markState, markAction, markPending] = useActionState(markTaskAgentAction, IDLE_STATE);
+  const [verifyState, verifyAction, verifyPending] = useActionState(verifyAgentTaskAction, IDLE_STATE);
+  useRefreshOnSuccess(markState);
+  useRefreshOnSuccess(verifyState);
+  const noteId = useId();
+  const { origin } = collab;
+
+  if (origin.kind === 'human') {
+    if (!canWrite || status === 'done') return null;
+    return (
+      <form action={markAction} className="flex items-center gap-2">
+        <TaskKeys projectId={projectId} taskId={taskId} />
+        <input type="hidden" name="agent" value="true" />
+        <button type="submit" disabled={markPending} className={buttonClass('ghost', 'sm')}>
+          {markPending ? 'Marking…' : 'Mark as agent-generated'}
+        </button>
+        <FormMessage status={markState.status} message={markState.message} />
+      </form>
+    );
+  }
+
+  return (
+    <section className="flex flex-col gap-2 rounded-lg border border-line p-3 text-[13px]" aria-label="Agent-generated work">
+      <SectionHeading
+        icon={<IconCheck size={13} />}
+        title="Agent-generated work"
+        meta={origin.verifiedAt ? <Badge tone="success">Verified</Badge> : <Badge tone="warning">Unverified</Badge>}
+      />
+      {origin.verifiedAt ? (
+        <p className="text-muted">
+          Verified by {origin.verifiedByName ?? 'a member'} on {origin.verifiedLabel}
+          {origin.note ? <>: <span className="text-foreground">{origin.note}</span></> : null}
+        </p>
+      ) : (
+        <>
+          <p className="text-muted">Produced by an agent. It cannot be completed until a person has checked it.</p>
+          {canWrite ? (
+            <form action={verifyAction} className="flex flex-col gap-1.5">
+              <TaskKeys projectId={projectId} taskId={taskId} />
+              <label className={labelClass} htmlFor={noteId}>
+                What did you check?
+              </label>
+              <textarea id={noteId} name="note" required maxLength={1000} rows={2} className={textareaClass} placeholder="The tests you ran, the output you read" />
+              <div>
+                <button type="submit" disabled={verifyPending} className={buttonClass('secondary', 'sm')}>
+                  {verifyPending ? 'Verifying…' : 'Verify this work'}
+                </button>
+              </div>
+              <FormMessage status={verifyState.status} message={verifyState.message} />
+            </form>
+          ) : null}
+        </>
+      )}
+      {canWrite && !origin.verifiedAt && status !== 'done' ? (
+        <form action={markAction} className="flex items-center gap-2">
+          <TaskKeys projectId={projectId} taskId={taskId} />
+          <input type="hidden" name="agent" value="false" />
+          <button type="submit" disabled={markPending} className="text-xs text-muted underline-offset-2 hover:underline">
+            Not agent work
+          </button>
+          <FormMessage status={markState.status} message={markState.message} />
+        </form>
+      ) : null}
+    </section>
+  );
+}
+
 // ── Blocked ────────────────────────────────────────────────────────────────
 
 function BlockedSection({ projectId, taskId, collab, canWrite }: { projectId: string; taskId: string; collab: TaskCollab; canWrite: boolean }) {
@@ -116,6 +229,18 @@ function BlockedSection({ projectId, taskId, collab, canWrite }: { projectId: st
         ) : (
           <p className="text-muted">No reason was recorded when this task was blocked.</p>
         )}
+        {collab.blocked.type || collab.blocked.owner || collab.blocked.nextAction ? (
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[13px]">
+            <dt className="text-muted">Kind</dt>
+            <dd>{collab.blocked.type ? (BLOCKER_TYPE_LABEL[collab.blocked.type as BlockerType] ?? collab.blocked.type) : '—'}</dd>
+            <dt className="text-muted">Owner</dt>
+            <dd>{collab.blocked.owner ?? '—'}</dd>
+            <dt className="text-muted">Next action</dt>
+            <dd>{collab.blocked.nextAction ?? '—'}</dd>
+          </dl>
+        ) : (
+          <p className="text-xs text-muted">No type, owner or next action was recorded when this task was blocked.</p>
+        )}
         {collab.blocked.sinceLabel ? <p className="text-xs text-muted">Since {collab.blocked.sinceLabel}</p> : null}
         {canWrite ? (
           <form action={action} className="flex flex-col gap-1.5">
@@ -126,6 +251,9 @@ function BlockedSection({ projectId, taskId, collab, canWrite }: { projectId: st
             </label>
             <div className="flex items-start gap-2">
               <input id={`blocked-reason-${taskId}`} name="reason" required maxLength={1000} defaultValue={collab.blocked.reason ?? ''} className={inputClass} placeholder="What is it waiting on?" />
+            </div>
+            <BlockerFields taskId={`update-${taskId}`} defaults={collab.blocked} />
+            <div>
               <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
                 {pending ? 'Saving…' : 'Save'}
               </button>
@@ -159,9 +287,47 @@ export function BlockReasonField({ taskId, autoFocus = true }: { taskId: string;
         className={inputClass}
         placeholder="The thing this task is waiting for"
       />
-      <p className="text-[11px] text-muted">A task is not moved to Blocked without saying why; the reason is shown on the card and recorded on the audit trail.</p>
+      <BlockerFields taskId={taskId} />
+      <p className="text-[11px] text-muted">A task is not moved to Blocked without a type, an owner and a next action; they are shown on the card and recorded on the audit trail.</p>
     </div>
   );
+}
+
+/** SCR-020: the blocker's type, who has to act, and what happens next. */
+export function BlockerFields({ taskId, defaults }: { taskId: string; defaults?: { type: string | null; owner: string | null; nextAction: string | null } }) {
+  return (
+    <>
+      <label className={labelClass} htmlFor={`block-type-${taskId}`}>
+        Kind of blocker
+      </label>
+      <select id={`block-type-${taskId}`} name="blockerType" required defaultValue={defaults?.type ?? ''} className={selectClass}>
+        <option value="" disabled>
+          Choose…
+        </option>
+        {BLOCKER_TYPES.map((t) => (
+          <option key={t} value={t}>
+            {BLOCKER_TYPE_LABEL[t]}
+          </option>
+        ))}
+      </select>
+      <label className={labelClass} htmlFor={`block-owner-${taskId}`}>
+        Who has to act
+      </label>
+      <input id={`block-owner-${taskId}`} name="blockerOwner" required maxLength={120} defaultValue={defaults?.owner ?? ''} className={inputClass} placeholder="A person or a role, e.g. the client’s PM" />
+      <label className={labelClass} htmlFor={`block-next-${taskId}`}>
+        Next action
+      </label>
+      <input id={`block-next-${taskId}`} name="nextAction" required maxLength={500} defaultValue={defaults?.nextAction ?? ''} className={inputClass} placeholder="What happens next to unblock it" />
+    </>
+  );
+}
+
+/** The blocker a form carries, or null while any part is missing — for the client-side Board prompts. */
+export function readBlocker(form: HTMLFormElement): { reason: string; blockerType: string; blockerOwner: string; nextAction: string } | null {
+  const data = new FormData(form);
+  const pick = (key: string) => String(data.get(key) ?? '').trim();
+  const blocker = { reason: pick('reason'), blockerType: pick('blockerType'), blockerOwner: pick('blockerOwner'), nextAction: pick('nextAction') };
+  return blocker.reason && blocker.blockerType && blocker.blockerOwner && blocker.nextAction ? blocker : null;
 }
 
 // ── Checklist ──────────────────────────────────────────────────────────────

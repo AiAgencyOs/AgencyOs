@@ -35,6 +35,8 @@ export async function listReportTasks(projectId: string, range: ReportRange): Pr
     .from('tasks')
     .select('id, title, status, priority, assignee_id, module_id, due_on, created_at, completed_at')
     .eq('project_id', projectId)
+    .is('archived_at', null)
+    .neq('status', 'cancelled')
     .or(`completed_at.is.null,and(completed_at.gte.${range.from}T00:00:00Z,completed_at.lt.${range.to}T23:59:59.999Z)`)
     .order('created_at', { ascending: true });
   if (error) unreadable('listReportTasks', error);

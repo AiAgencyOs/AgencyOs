@@ -42,7 +42,7 @@ export function EntityHeader({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 flex-1 items-start gap-4">
           <span className="shrink-0">
-            {tile ?? <Avatar name={name} size="xl" square tone="neutral" className="bg-sidebar-bg text-sidebar-fg ring-0" />}
+            {tile ?? <Avatar name={name} size="xl" square tone="sidebar" />}
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">

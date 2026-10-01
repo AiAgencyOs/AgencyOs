@@ -7,6 +7,8 @@ import { createClient } from '@/lib/db/server';
 import { gstIdentityIssues, gstr1, gstr3b, returnPeriodFor } from '@/modules/finance/gstr';
 import { listGstrInvoices, readGstIdentity } from '@/modules/finance/gstr-queries';
 import { resolveTaxPeriod } from '@/modules/finance/tax-report';
+import { filingCheck, gstSetupFrom } from '@/modules/finance/gst-settings';
+import { readOrganizationSettingsRow } from '@/modules/finance/numbering';
 
 /**
  * The one path both GSTR downloads take — bucket E5. Same reader and the
@@ -31,6 +33,11 @@ export async function exportGstr(kind: 'gstr1' | 'gstr3b', request: Request): Pr
   if (!fp) {
     return NextResponse.json({ error: `A ${kind === 'gstr1' ? 'GSTR-1' : 'GSTR-3B'} is for one month or one quarter. "${period.label}" is neither — pick a month or a quarter on the GST & tax page.` }, { status: 400 });
   }
+
+  // Owner decision 9 (2026-10-01): the agency's saved GST setup (unset = regular, monthly, calendar month) decides which windows are returns it files.
+  const setup = gstSetupFrom(await readOrganizationSettingsRow(await createClient()));
+  const filing = filingCheck(setup, period, kind === 'gstr1' ? 'GSTR-1' : 'GSTR-3B');
+  if (!filing.ok) return NextResponse.json({ error: filing.message }, { status: 409 });
 
   const [identity, rows] = await Promise.all([readGstIdentity(), listGstrInvoices()]);
   const issues = gstIdentityIssues(identity);

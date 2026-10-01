@@ -33,7 +33,7 @@ export async function sendInvoiceByEmail(
   const context = await requireInternal();
   if (!can(context, 'invoice.issue')) return err('FORBIDDEN', 'You do not have permission to send invoices.');
 
-  const transport = emailTransportState();
+  const transport = await emailTransportState();
   if (!transport.configured) return err('CONFLICT', `Email is not configured on this deployment. ${transport.reason}`);
 
   const supabase = await createClient();

@@ -6,6 +6,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, unreadable, type Result } from '@/lib/result';
+import { isLiveInvoice, verifiedOn } from '@/lib/finance/verified-basis';
 
 /**
  * `core.client_accounts` has no owning module (ARCHITECTURE.md §2 — core
@@ -169,15 +170,16 @@ export async function listClients(limit = 200): Promise<ClientListItem[]> {
   const { data: invoices, error: invoicesError } = await supabase
     .schema('finance')
     .from('invoices')
-    .select('client_account_id, total_minor, paid_minor')
+    .select('client_account_id, status, total_minor, verified_minor')
     .in('client_account_id', ids);
   if (invoicesError) unreadable('listClients.invoices', invoicesError);
 
   return accountRows.map((a) => {
     const clientProjects = (projects ?? []).filter((p) => p.client_account_id === a.id);
-    const clientInvoices = (invoices ?? []).filter((i) => i.client_account_id === a.id);
+    // The ONE basis (verified-basis.ts): live invoices are what was billed, VERIFIED money is what was paid.
+    const clientInvoices = (invoices ?? []).filter((i) => i.client_account_id === a.id && isLiveInvoice(i.status));
     const invoicedMinor = clientInvoices.reduce((sum, i) => sum + i.total_minor, 0);
-    const paidMinor = clientInvoices.reduce((sum, i) => sum + i.paid_minor, 0);
+    const paidMinor = clientInvoices.reduce((sum, i) => sum + verifiedOn(i), 0);
     return {
       id: a.id,
       name: a.name,
@@ -226,7 +228,7 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
   const { data: invoices, error: invoicesError } = await supabase
     .schema('finance')
     .from('invoices')
-    .select('id, number, status, total_minor, paid_minor, currency, project_id')
+    .select('id, number, status, total_minor, verified_minor, currency, project_id')
     .eq('client_account_id', clientAccountId)
     .order('created_at', { ascending: false });
   if (invoicesError) unreadable('getClient.invoices', invoicesError);
@@ -282,8 +284,10 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
 
   const projectRows = projects ?? [];
   const invoiceRows = invoices ?? [];
-  const invoicedMinor = invoiceRows.reduce((sum, i) => sum + i.total_minor, 0);
-  const paidMinor = invoiceRows.reduce((sum, i) => sum + i.paid_minor, 0);
+  // The ONE basis (verified-basis.ts): live invoices are what was billed, VERIFIED money is what was paid.
+  const liveInvoiceRows = invoiceRows.filter((i) => isLiveInvoice(i.status));
+  const invoicedMinor = liveInvoiceRows.reduce((sum, i) => sum + i.total_minor, 0);
+  const paidMinor = liveInvoiceRows.reduce((sum, i) => sum + verifiedOn(i), 0);
 
   // SCR-017's files half — rolled up here rather than duplicated as a
   // client-scoped table, the same "read from the owning module" rule the
@@ -434,8 +438,10 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
   for (const i of invoiceRows) {
     if (!i.project_id) continue;
     const row = invoicedByProject.get(i.project_id) ?? { invoiced: 0, paid: 0 };
-    if (i.status !== 'void') row.invoiced += i.total_minor;
-    row.paid += i.paid_minor;
+    if (isLiveInvoice(i.status)) {
+      row.invoiced += i.total_minor;
+      row.paid += verifiedOn(i);
+    }
     invoicedByProject.set(i.project_id, row);
   }
   const commercials: ClientProjectCommercials[] = projectRows.map((p) => {
@@ -496,7 +502,7 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
       number: i.number,
       status: i.status,
       totalMinor: i.total_minor,
-      paidMinor: i.paid_minor,
+      paidMinor: verifiedOn(i),
       currency: i.currency,
     })),
     commercials,

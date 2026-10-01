@@ -3,12 +3,17 @@ import Link from 'next/link';
 
 import { formatCostMinor, whyNotRun, wouldRun } from '@/lib/admin/agent-eval';
 import { readRunMetrics } from '@/lib/admin/agent-metrics';
+import { workflowDefinitions } from '@/lib/admin/automation-workflows-eval';
 import { aiStatus, listHandoffs, listRecentAgentRuns } from '@/lib/admin/agent-status';
+import { getAgentActivity } from '@/lib/admin/dashboard-deltas';
+import { periodDelta, trendOf } from '@/lib/admin/period-delta';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
 import { getAgentUsage } from '@/lib/admin/usage';
+import { listModels } from '@/lib/admin/model-registry';
 import { providerOfModel } from '@/lib/ai/model-provider';
 import { providerCredentialStatus } from '@/lib/ai/vault';
+import { AGENT_KEYS } from '@/modules/agents/registry';
 import { boundToolKeysFor, listToolDefinitions } from '@/modules/agents/permissions-schema';
 import { listLatestAgentValidations } from '@/modules/agents/validation-queries';
 import { requireInternal } from '@/lib/auth/session';
@@ -26,7 +31,6 @@ import {
   DonutChart,
   IconAgents,
   IconAlert,
-  IconCheck,
   IconClock,
   IconRupee,
   IconSettings,
@@ -39,6 +43,7 @@ import {
   Stat,
   StatGrid,
   StatusBadge,
+  TabStrip,
   TrendChart,
   ViewAll,
   humanize,
@@ -78,14 +83,18 @@ export default async function AgentsPage() {
   const clock = await agencyClock();
   if (!can(context, 'audit.read')) return <PermissionDenied />;
 
-  const [{ providerConfigured, providers, agents }, settings, usage, recentRuns, metrics, handoffs] = await Promise.all([
+  const [{ providerConfigured, providers, agents }, settings, usage, recentRuns, metrics, handoffs, activity, registeredModels] = await Promise.all([
     aiStatus(),
     readOperationalSettings(),
     getAgentUsage(),
     listRecentAgentRuns(8),
     readRunMetrics(),
     listHandoffs(6),
+    getAgentActivity(new Date()),
+    listModels(),
   ]);
+  // A model page exists only for a model the registry holds; a run's model that is not registered is shown as plain text.
+  const registeredModelIds = new Set(registeredModels.map((m) => m.modelId));
   const providerVerifiedAt = settingInstant(settings, 'ai_provider_verified_at');
   const providerVerifiedModel = settingText(settings, 'ai_provider_verified_model');
   const enabledCount = agents.filter((a) => a.enabled).length;
@@ -94,6 +103,7 @@ export default async function AgentsPage() {
   const disabled = agents.length - enabledCount;
 
   const isAdmin = can(context, 'organization.settings');
+  const workflowCount = workflowDefinitions(AGENT_KEYS).length;
   const vaultStatus = isAdmin ? await providerCredentialStatus(await createClient()) : null;
   // SCR-062: the last time a person validated each agent (ai.agent_validations).
   const personValidations = await listLatestAgentValidations();
@@ -105,7 +115,7 @@ export default async function AgentsPage() {
   const failedRecent = recentRuns.filter((r) => r.status === 'failed').length;
   const avgSteps = recentRuns.length > 0 ? Math.round(recentRuns.reduce((n, r) => n + r.stepCount, 0) / recentRuns.length) : null;
 
-  const trend = usage.dailyTrend.map((d) => ({ day: clock.date(`${d.day}T12:00:00Z`), runs: d.runs, cost: d.costMinor / 100 }));
+  const trend = usage.dailyTrend.map((d) => ({ day: clock.date(`${d.day}T12:00:00Z`), runs: d.runs, failed: activity.failedByDay[d.day] ?? 0, cost: d.costMinor / 100 }));
 
   const statusData = [
     { label: 'Would run', value: runnable },
@@ -178,11 +188,38 @@ export default async function AgentsPage() {
     { key: 'cost', header: 'Cost', align: 'right', desktopOnly: true, cellClassName: 'tabular text-muted', cell: (a) => { const c = formatCostMinor(usageByAgent.get(a.key)?.costMinor ?? 0); return c ? `₹${c}` : '—'; } },
   ];
 
+  const compactColumns: Column<AgentRow>[] = [
+    { key: 'n', header: '#', desktopOnly: true, cellClassName: 'tabular text-muted', cell: (a) => agents.indexOf(a) + 1 },
+    {
+      key: 'name',
+      header: 'Agent Name',
+      primary: true,
+      cell: (a) => (
+        <span className="flex items-center gap-2.5">
+          <Avatar name={a.displayName} size="sm" square />
+          <span className="block truncate">{a.displayName}</span>
+        </span>
+      ),
+    },
+    { key: 'role', header: 'Role', desktopOnly: true, cellClassName: 'max-w-[14rem] truncate text-muted', cell: (a) => a.description ?? '—' },
+    { key: 'model', header: 'Model', desktopOnly: true, cellClassName: 'whitespace-nowrap text-xs text-muted', cell: (a) => a.defaultModel ?? '—' },
+    {
+      key: 'status',
+      header: 'Status',
+      badge: true,
+      cell: (a) => {
+        const blocked = whyNotRun(a, providerConfigured);
+        return <Badge tone={blocked ? (a.enabled ? 'warning' : 'neutral') : 'success'} dot>{blocked ? (a.enabled ? 'Blocked' : 'Disabled') : 'Active'}</Badge>;
+      },
+    },
+    { key: 'runs', header: 'Tasks', align: 'right', cellClassName: 'tabular', cell: (a) => String(usageByAgent.get(a.key)?.runs ?? 0) },
+  ];
+
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         title="AI Workforce"
-        description="Your AI agents, models, tools and automation workflows — what is enforced, and what they actually did. The owner enables or disables an agent and sets its caps on the agent's own page (ADM-82 reversed 2026-09-29); every change is audited."
+        description="Manage your AI agents, models, tools and automation workflows."
         actions={
           <>
             <Link href="/usage" className={buttonClass('secondary', 'sm')}>
@@ -208,16 +245,154 @@ export default async function AgentsPage() {
 
       {!providerConfigured ? (
         <Callout tone="warning" icon={<IconAlert size={16} />} title="AI provider not configured">
-          Set ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY or OPENROUTER_API_KEY (ADM-85), or store a key in the vault below. Until then no agent can run and nothing is faked.
+          Add ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY or OPENROUTER_API_KEY (ADM-85) under <Link href="/security/keys" className="underline underline-offset-2">Governance &amp; Security › Keys &amp; secrets</Link> (or set it in the deployment environment), or store a key in the vault below. Until then no agent can run and nothing is faked.
         </Callout>
       ) : null}
+      <StatGrid cols={5}>
+        <Stat label="Total Agents" value={String(agents.length)} caption={`${enabledCount} enabled · ${runnable} would run`} tone="brand" icon={<IconAgents size={16} />} />
+        <Stat label="Total Tasks Executed" value={compact(totalRuns)} caption={usage.capped ? 'Ledger capped' : 'All time'} trend={trendOf(periodDelta(activity.runs))} tone="accent" icon={<IconSparkle size={16} />} href="/usage" />
+        <Stat label="Total Tokens Used" value={compact(usage.totals.inputTokens + usage.totals.outputTokens)} caption={`${compact(usage.totals.inputTokens)} in · ${compact(usage.totals.outputTokens)} out`} trend={trendOf(periodDelta(activity.tokens))} tone="info" icon={<IconUsage size={16} />} href="/usage" />
+        <Stat label="AI Cost" value={`₹${formatCostMinor(usage.totals.costMinor) ?? '0'}`} caption="From the cost ledger" trend={trendOf(periodDelta(activity.cost), true)} tone="danger" icon={<IconRupee size={16} />} href="/usage" />
+        <Stat label="Avg. Task Time" value={seconds(metrics.averageSeconds)} caption={metrics.timedRuns > 0 ? `Median ${seconds(metrics.medianSeconds)} · ${metrics.timedRuns} settled runs` : 'No settled run yet'} tone="info" icon={<IconClock size={16} />} />
+      </StatGrid>
 
-      <StatGrid cols={6}>
-        <Stat label="Total agents" value={String(agents.length)} caption={`${enabledCount} enabled`} tone="brand" icon={<IconAgents size={16} />} />
+      <TabStrip
+        label="AI Workforce"
+        tabs={[
+          { href: '/agents', label: 'Overview', icon: <IconAgents size={15} />, exact: true },
+          { href: '/agents#agents', label: 'Agents', icon: <IconAgents size={15} /> },
+          { href: '/usage/runs', label: 'Task Runs', icon: <IconSparkle size={15} /> },
+          { href: '/usage', label: 'Model Usage', icon: <IconUsage size={15} /> },
+          { href: '/agents/tools', label: 'Tools & Integrations', icon: <IconSettings size={15} /> },
+          { href: '/agents/automations', label: 'Automations', icon: <IconSparkle size={15} /> },
+          ...(isAdmin ? [{ href: '/agents/routing', label: 'Settings', icon: <IconSettings size={15} /> }] : []),
+        ]}
+      />
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)]">
+        <Card>
+          <CardHeader title="Agent Activity" />
+          <div className="p-4 sm:p-5">
+            {trend.length === 0 ? (
+              <p className="py-6 text-center text-[13px] text-muted">No runs recorded yet.</p>
+            ) : (
+              <TrendChart data={trend} xKey="day" series={[{ key: 'runs', label: 'Runs' }, { key: 'failed', label: 'Failed', color: 'var(--danger)' }]} height={200} />
+            )}
+          </div>
+        </Card>
+        <Card>
+          <CardHeader title="Agent Status" />
+          <div className="p-4 sm:p-5">
+            {statusData.length === 0 ? (
+              <p className="py-6 text-center text-[13px] text-muted">No agents registered.</p>
+            ) : (
+              <DonutChart data={statusData} colors={['var(--success)', 'var(--warning)', 'var(--faint)']} totalLabel="Total agents" height={150} />
+            )}
+          </div>
+        </Card>
+        <Card>
+          <CardHeader title="Top Agents by Usage" actions={<ViewAll href="/usage" />} />
+          {topAgents.length === 0 ? (
+            <p className="px-4 py-4 text-[13px] text-muted sm:px-5">No runs recorded yet.</p>
+          ) : (
+            <ul className="flex flex-col gap-3 p-4 sm:p-5">
+              {topAgents.map((u) => (
+                <li key={u.agentKey} className="flex items-center gap-3">
+                  <Avatar name={nameByKey.get(u.agentKey) ?? u.agentKey} size="md" square />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-baseline justify-between gap-2">
+                      <Link href={`/agents/${u.agentKey}`} className="truncate text-[13px] font-medium text-foreground hover:text-brand">
+                        {nameByKey.get(u.agentKey) ?? u.agentKey}
+                      </Link>
+                      <span className="tabular shrink-0 text-xs text-muted">{u.runs} runs</span>
+                    </span>
+                    <ProgressBar value={totalRuns > 0 ? (u.runs / totalRuns) * 100 : 0} tone="brand" size="sm" label={`${nameByKey.get(u.agentKey) ?? u.agentKey} share of runs`} className="mt-1 w-full" />
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(19rem,1fr)]">
+        <Card id="agents">
+          <CardHeader title="AI Agents" actions={<ViewAll href="/agents/routing" />} />
+          <div className="px-4 pb-4 sm:px-5">
+            <DataTable dense rows={agents} columns={compactColumns} getKey={(a) => a.key} rowActions={(a) => [{ key: 'open', label: 'Open agent', href: `/agents/${a.key}` }]} />
+          </div>
+        </Card>
+          <ActivityFeed
+            title="Recent Agent Activity"
+            viewAllHref="/usage"
+            emptyTitle="No runs yet"
+            emptyDescription="Every run an agent makes is recorded here, with its outcome."
+            compact
+            items={recentRuns.map((r) => ({
+              id: r.id,
+              title: `${nameByKey.get(r.agentKey) ?? r.agentKey} · ${humanize(r.trigger)}`,
+              detail: r.error ? r.error : `${r.stepCount} step${r.stepCount === 1 ? '' : 's'}${r.model ? ` · ${r.model}` : ''}${r.subjectType ? ` · ${humanize(r.subjectType)}` : ''}`,
+              when: clock.dateTime(r.createdAt),
+              tone: r.status === 'failed' ? 'danger' : r.status === 'succeeded' || r.status === 'completed' ? 'success' : 'info',
+              icon: r.status === 'failed' ? <IconAlert size={13} /> : <IconSparkle size={13} />,
+              href: `/agents/${r.agentKey}`,
+            }))}
+          />
+      </div>
+
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1fr)]">
+        <Card>
+          <CardHeader title="Model Usage" actions={<ViewAll href="/usage" />} />
+          {metrics.byModel.length > 0 ? (
+            <ul className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+              {metrics.byModel.slice(0, 5).map((m) => (
+                <li key={m.model} className="grid grid-cols-[minmax(0,8rem)_1fr_2.5rem] items-center gap-3 text-[13px]">
+                  {registeredModelIds.has(m.model) ? (
+                    <Link href={`/agents/models/${encodeURIComponent(m.model)}`} className="truncate font-medium hover:text-brand">{m.model}</Link>
+                  ) : (
+                    <span className="truncate font-medium" title="Not in the model registry">{m.model}</span>
+                  )}
+                  <ProgressBar value={m.share * 100} showValue={false} tone="brand" size="sm" label={`${m.model} share of spend`} className="w-full" />
+                  <span className="tabular text-right text-muted">{Math.round(m.share * 100)}%</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No run has settled into the ledger yet.</p>
+          )}
+        </Card>
+        <Card>
+          <CardHeader title="Automation Workflows" description={`${workflowCount} defined in code; handoffs below`} actions={<ViewAll href="/agents/automations" />} />
+          {handoffs.length > 0 ? (
+            <ul className="divide-y divide-line">
+              {handoffs.map((h) => (
+                <li key={h.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[13px] sm:px-5">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Link href={`/agents/${h.fromAgent}`} className="underline-offset-2 hover:underline">{h.fromAgent}</Link>
+                    <span className="text-muted">→</span>
+                    <Link href={`/agents/${h.toAgent}`} className="underline-offset-2 hover:underline">{h.toAgent}</Link>
+                  </span>
+                  <StatusBadge status={h.status} />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No handoff has been recorded yet.</p>
+          )}
+        </Card>
+        <QuickActions
+          actions={[
+            { label: 'View Logs', icon: <IconUsage size={13} />, href: '/usage' },
+            ...(isAdmin ? [{ label: 'Configure Model', icon: <IconSettings size={13} />, href: '/agents/routing' }] : []),
+            { label: 'View Automations', icon: <IconSparkle size={13} />, href: '/agents/automations' },
+            { label: 'Integrations', icon: <IconAgents size={13} />, href: '/integrations' },
+          ]}
+        />
+      </div>
+
+      <h2 className="mt-2 text-base font-bold tracking-tight text-foreground">Governance and detail</h2>
+      <StatGrid cols={4}>
         <Stat label="Would run now" value={String(runnable)} caption={providerConfigured ? `Provider: ${providers.join(', ')}` : 'No provider'} tone={runnable > 0 ? 'success' : 'neutral'} icon={<IconSparkle size={16} />} />
-        <Stat label="Runs recorded" value={compact(totalRuns)} caption={usage.capped ? 'Ledger capped' : 'All time'} tone="info" icon={<IconCheck size={16} />} href="/usage" />
-        <Stat label="Tokens used" value={compact(usage.totals.inputTokens + usage.totals.outputTokens)} caption={`${compact(usage.totals.inputTokens)} in · ${compact(usage.totals.outputTokens)} out`} tone="accent" icon={<IconUsage size={16} />} href="/usage" />
-        <Stat label="AI cost" value={`₹${formatCostMinor(usage.totals.costMinor) ?? '0'}`} caption="From the cost ledger" tone="warning" icon={<IconRupee size={16} />} href="/usage" />
         <Stat label="Recent failures" value={String(failedRecent)} caption={avgSteps === null ? 'No runs yet' : `avg ${avgSteps} steps · last ${recentRuns.length}`} tone={failedRecent > 0 ? 'danger' : 'neutral'} icon={<IconClock size={16} />} />
       </StatGrid>
 
@@ -245,53 +420,6 @@ export default async function AgentsPage() {
         <Stat label="Failed (sample)" value={String(metrics.failedRuns)} caption={`Of the last ${metrics.timedRuns || 0} settled runs`} tone={metrics.failedRuns > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} />
       </StatGrid>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card>
-          <CardHeader title="Model usage" description="Runs and cost per model, from the ledger the runtime writes as runs settle." />
-          {metrics.byModel.length > 0 ? (
-            <ul className="divide-y divide-line">
-              {metrics.byModel.map((m) => (
-                <li key={m.model} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[13px] sm:px-5">
-                  <span className="flex min-w-0 items-center gap-2">
-                    {/* SCR-061: each model opens its detail — registry row, routes, runs. */}
-                    <Link href={`/agents/models/${encodeURIComponent(m.model)}`} className="min-w-0 underline-offset-2 hover:underline">
-                      <code className="truncate text-xs">{m.model}</code>
-                    </Link>
-                    <span className="tabular text-muted">{m.runs} run{m.runs === 1 ? '' : 's'}</span>
-                  </span>
-                  <span className="tabular flex items-center gap-3">
-                    <span>₹{formatCostMinor(m.costMinor) ?? '0.00'}</span>
-                    <span className="w-10 text-right text-muted">{Math.round(m.share * 100)}%</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No run has settled into the ledger yet.</p>
-          )}
-        </Card>
-        <Card>
-          <CardHeader title="Automation" description="The latest agent-to-agent handoffs." actions={<ViewAll href="/agents/automations" label="All handoffs" />} />
-          {handoffs.length > 0 ? (
-            <ul className="divide-y divide-line">
-              {handoffs.map((h) => (
-                <li key={h.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[13px] sm:px-5">
-                  <span className="flex min-w-0 items-center gap-2">
-                    <Link href={`/agents/${h.fromAgent}`} className="underline-offset-2 hover:underline">{h.fromAgent}</Link>
-                    <span className="text-muted">→</span>
-                    <Link href={`/agents/${h.toAgent}`} className="underline-offset-2 hover:underline">{h.toAgent}</Link>
-                    <StatusBadge status={h.status} />
-                  </span>
-                  <span className="text-xs text-muted">{clock.dateTime(h.createdAt)}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No handoff has been recorded yet.</p>
-          )}
-        </Card>
-      </div>
-
       {/* SCR-061 (bucket G-3): the tools, each opening its detail — what it
           does, who is bound to it, how often it was called and failed. */}
       <Card>
@@ -316,65 +444,23 @@ export default async function AgentsPage() {
         </ul>
       </Card>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)]">
-        <Card>
-          <CardHeader title="Agent activity" description="Runs per day from the cost ledger." />
-          <div className="p-4 sm:p-5">
-            {trend.length === 0 ? (
-              <p className="py-6 text-center text-[13px] text-muted">No runs recorded yet.</p>
-            ) : (
-              <TrendChart data={trend} xKey="day" series={[{ key: 'runs', label: 'Runs' }]} height={200} />
-            )}
-          </div>
-        </Card>
-        <Card>
-          <CardHeader title="Agent status" />
-          <div className="p-4 sm:p-5">
-            {statusData.length === 0 ? (
-              <p className="py-6 text-center text-[13px] text-muted">No agents registered.</p>
-            ) : (
-              <DonutChart data={statusData} colors={['var(--success)', 'var(--warning)', 'var(--faint)']} totalLabel="Total agents" height={150} />
-            )}
-          </div>
-        </Card>
-        <Card>
-          <CardHeader title="Top agents by usage" actions={<ViewAll href="/usage" />} />
-          {topAgents.length === 0 ? (
-            <p className="px-4 py-4 text-[13px] text-muted sm:px-5">No runs recorded yet.</p>
-          ) : (
-            <ul className="flex flex-col gap-3 p-4 sm:p-5">
-              {topAgents.map((u) => (
-                <li key={u.agentKey} className="flex items-center gap-3">
-                  <Avatar name={nameByKey.get(u.agentKey) ?? u.agentKey} size="md" square />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-baseline justify-between gap-2">
-                      <Link href={`/agents/${u.agentKey}`} className="truncate text-[13px] font-medium text-foreground hover:text-brand">
-                        {nameByKey.get(u.agentKey) ?? u.agentKey}
-                      </Link>
-                      <span className="tabular shrink-0 text-xs text-muted">{u.runs} runs</span>
-                    </span>
-                    <ProgressBar value={totalRuns > 0 ? (u.runs / totalRuns) * 100 : 0} tone="brand" size="sm" label={`${nameByKey.get(u.agentKey) ?? u.agentKey} share of runs`} className="mt-1 w-full" />
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(19rem,1fr)]">
-        <div className="flex min-w-0 flex-col gap-4">
-          <Card>
-            <CardHeader title="AI agents" description="The registry, as enforced. Open an agent for its runs and limits." />
+      {/* The registry in full — every governance column the compact table above leaves out. */}
+      <Card>
+            <CardHeader title="Agent registry" description="As enforced — autonomy, caps, validation and capabilities. Open an agent for its runs and limits. Admin and Client are people, and WhatsApp is a channel the agents use as a tool, so none of the three is an agent here." />
             <div className="px-4 pb-4 sm:px-5">
               <DataTable dense rows={agents} columns={columns} getKey={(a) => a.key} href={(a) => `/agents/${a.key}`} />
             </div>
           </Card>
 
-          <Card>
+      <Card>
             <CardHeader
               title="AI provider"
-              actions={<Badge tone={providerConfigured ? 'success' : 'warning'} dot>{providerConfigured ? 'Configured' : 'Not configured'}</Badge>}
+              actions={
+                <span className="flex items-center gap-2">
+                  <Badge tone={providerConfigured ? 'success' : 'warning'} dot>{providerConfigured ? 'Configured' : 'Not configured'}</Badge>
+                  {providerConfigured ? null : <Link href="/security/keys#ai" className="text-xs underline underline-offset-2">Add a key</Link>}
+                </span>
+              }
               description={
                 providerConfigured
                   ? providerVerifiedAt
@@ -409,26 +495,7 @@ export default async function AgentsPage() {
               </div>
             ) : null}
           </Card>
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-4">
-          <ActivityFeed
-            title="Recent agent activity"
-            viewAllHref="/usage"
-            emptyTitle="No runs yet"
-            emptyDescription="Every run an agent makes is recorded here, with its outcome."
-            compact
-            items={recentRuns.map((r) => ({
-              id: r.id,
-              title: `${nameByKey.get(r.agentKey) ?? r.agentKey} · ${humanize(r.trigger)}`,
-              detail: r.error ? r.error : `${r.stepCount} step${r.stepCount === 1 ? '' : 's'}${r.model ? ` · ${r.model}` : ''}${r.subjectType ? ` · ${humanize(r.subjectType)}` : ''}`,
-              when: clock.dateTime(r.createdAt),
-              tone: r.status === 'failed' ? 'danger' : r.status === 'succeeded' || r.status === 'completed' ? 'success' : 'info',
-              icon: r.status === 'failed' ? <IconAlert size={13} /> : <IconSparkle size={13} />,
-              href: `/agents/${r.agentKey}`,
-            }))}
-          />
-          <Card>
+      <Card>
             <CardHeader title="Run outcomes" description="The last few runs, by status." />
             <ul className="flex flex-wrap gap-2 px-4 pb-4 sm:px-5">
               {[...new Set(recentRuns.map((r) => r.status))].map((s) => (
@@ -440,16 +507,6 @@ export default async function AgentsPage() {
               {recentRuns.length === 0 ? <li className="text-[13px] text-muted">Nothing recorded.</li> : null}
             </ul>
           </Card>
-          <QuickActions
-            actions={[
-              { label: 'Agent logs', icon: <IconUsage size={13} />, href: '/usage' },
-              ...(isAdmin ? [{ label: 'Model routing', icon: <IconSettings size={13} />, href: '/agents/routing' }] : []),
-              { label: 'Automations', icon: <IconSparkle size={13} />, href: '/agents/automations' },
-              { label: 'Integrations', icon: <IconAgents size={13} />, href: '/integrations' },
-            ]}
-          />
-        </div>
-      </div>
     </div>
   );
 }

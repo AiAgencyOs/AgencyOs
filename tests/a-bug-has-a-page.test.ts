@@ -157,7 +157,8 @@ describe('D. the page: every element the PDF lists under Bug detail', () => {
   test('the links open the Development page, the Builds page and the run', () => {
     assert.match(page, /href=\{`\/projects\/\$\{projectId\}\/development\/tasks\/\$\{task\.id\}`\}/);
     assert.match(page, /href=\{`\/projects\/\$\{projectId\}\/builds`\}/);
-    assert.match(page, /href=\{`\/projects\/\$\{projectId\}\/qa#run-\$\{run\.id\}`\}/);
+    // W5: the run now has its own detail page
+    assert.match(page, /href=\{`\/projects\/\$\{projectId\}\/qa\/runs\/\$\{run\.id\}`\}/);
   });
 
   test('the doors are the QA tab’s own components plus attach-evidence and link-build; the empty evidence state offers the form', () => {
@@ -214,7 +215,7 @@ describe('E. every bug row links to the page, and every tile opens the list it c
     assert.match(insights, /if \(severityFilter && d\.severity !== severityFilter\) return false;/);
     assert.match(insights, /\{visibleDefects\.map\(\(d\) => \{/);
     assert.match(insights, /<FilterChips/);
-    assert.match(tab, /defects\?: string; severity\?: string \}>/);
+    assert.match(tab, /defects\?: string; severity\?: string(?:; platform\?: string)?(?:; runs\?: string)?(?:; suite\?: string)? \}>/);
     assert.match(tab, /filter=\{\{ defects: defectsFilter, severity: severityFilter \}\}/);
   });
 });

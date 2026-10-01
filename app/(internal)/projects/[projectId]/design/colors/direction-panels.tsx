@@ -29,19 +29,19 @@ export function RecordDirectionPanel({ projectId, nextIndex, limit, taken }: { p
         </span>
       </p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-[6rem_1fr]">
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Option</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Option</span>
           <input name="optionIndex" type="number" min={1} max={5} defaultValue={nextIndex} required className={inputClass} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Name</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Name</span>
           <input name="name" required maxLength={120} className={inputClass} placeholder="e.g. Quiet editorial" />
-        </div>
+        </label>
       </div>
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Direction</label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Direction</span>
         <textarea name="directionSummary" required maxLength={2000} rows={3} className={textareaClass} placeholder="What the direction is, in a few sentences." />
-      </div>
+      </label>
       <div className="flex items-center gap-3">
         <button type="submit" disabled={pending || full} className={buttonClass('primary', 'sm')}>
           {pending ? 'Recording…' : 'Record direction'}
@@ -61,8 +61,8 @@ export function RecordVariantPanel({ projectId, themes }: { projectId: string; t
       <input type="hidden" name="projectId" value={projectId} />
       <p className="text-[13px] font-medium">Record a colour variant</p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_6rem_1fr]">
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Direction</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Direction</span>
           <select name="themeOptionId" className={selectClass} required>
             {themes.map((t) => (
               <option key={t.id} value={t.id}>
@@ -70,34 +70,34 @@ export function RecordVariantPanel({ projectId, themes }: { projectId: string; t
               </option>
             ))}
           </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Palette</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Palette</span>
           <input name="optionIndex" type="number" min={1} max={5} defaultValue={themes[0]?.nextIndex ?? 1} required className={inputClass} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Name</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Name</span>
           <input name="paletteName" required maxLength={120} className={inputClass} placeholder="e.g. Warm neutrals" />
-        </div>
+        </label>
       </div>
       <div className="grid grid-cols-3 gap-3">
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Primary</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Primary</span>
           <input name="primaryHex" required pattern="#[0-9a-fA-F]{6}" className={inputClass} placeholder="#1A2B3C" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Secondary</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Secondary</span>
           <input name="secondaryHex" pattern="#[0-9a-fA-F]{6}" className={inputClass} placeholder="optional" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Accent</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Accent</span>
           <input name="accentHex" pattern="#[0-9a-fA-F]{6}" className={inputClass} placeholder="optional" />
-        </div>
+        </label>
       </div>
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Contrast notes</label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Contrast notes</span>
         <input name="contrastNotes" maxLength={2000} className={inputClass} placeholder="Optional — what was checked, not a WCAG claim" />
-      </div>
+      </label>
       <div className="flex items-center gap-3">
         <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
           {pending ? 'Recording…' : 'Record variant'}

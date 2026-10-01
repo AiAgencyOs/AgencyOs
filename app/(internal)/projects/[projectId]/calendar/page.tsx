@@ -10,6 +10,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { clientEnv } from '@/lib/env';
 import { readMyCalendarFeed } from '@/modules/projects/calendar-feed-queries';
+import { describeScheduleMove, listScheduleChanges, SCHEDULE_KIND_LABEL, scheduleChangeHref } from '@/modules/projects/schedule-changes-queries';
 import { listProjectMeetings } from '@/modules/projects/calendar-queries';
 import { getProject, listDevelopmentBreakdown, listPaymentPlan } from '@/modules/projects/queries';
 import {
@@ -18,8 +19,6 @@ import {
   CardHeader,
   cx,
   EmptyState,
-  FilterBar,
-  FilterChips,
   humanize,
   IconCalendar,
   IconCheck,
@@ -47,7 +46,7 @@ export const metadata: Metadata = { title: 'Calendar' };
 
 const VIEWS = ['month', 'week', 'day', 'list'] as const;
 type View = (typeof VIEWS)[number];
-const KINDS = ['task', 'milestone', 'meeting'] as const;
+const KINDS = ['task', 'milestone', 'meeting', 'deadline'] as const;
 type Kind = (typeof KINDS)[number];
 
 type CalendarEntry = { id: string; date: string; label: string; kind: Kind; status: string; overdue: boolean; time: string | null; href: string };
@@ -103,8 +102,8 @@ export default async function ProjectCalendarPage({
   if (!project) notFound();
 
   const clock = await agencyClock();
-  const [{ tasks, modules }, milestones, clientName, meetings, clientLeads, agencyZone, feed] = await Promise.all([
-    listDevelopmentBreakdown(projectId),
+  const [{ tasks, modules }, milestones, clientName, meetings, clientLeads, agencyZone, feed, scheduleChanges] = await Promise.all([
+    listDevelopmentBreakdown(projectId, { excludeCancelled: true }),
     listPaymentPlan(projectId),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
     listProjectMeetings(projectId),
@@ -113,6 +112,8 @@ export default async function ProjectCalendarPage({
     getAgencyTimeZone(),
     // SCR-022 — "Sync supported calendars": the caller's own ICS feed, if one exists.
     readMyCalendarFeed(projectId),
+    // SCR-022 "Changes must preserve history": every date that moved on this project, from the audit trail.
+    listScheduleChanges({ projectId, limit: 8 }),
   ]);
   const mayProposeMeeting = can(context, 'lead.write');
   // SCR-022 — "create a milestone on this day": an unpriced one, through milestone.write.
@@ -135,14 +136,18 @@ export default async function ProjectCalendarPage({
   if (kinds.has('task')) {
     for (const t of tasks) {
       if (!t.dueOn || t.status === 'done') continue;
-      entries.push({ id: `task-${t.id}`, date: t.dueOn, label: t.title, kind: 'task', status: t.status, overdue: t.dueOn < today, time: null, href: `/projects/${projectId}/board` });
+      entries.push({ id: `task-${t.id}`, date: t.dueOn, label: t.title, kind: 'task', status: t.status, overdue: t.dueOn < today, time: null, href: `/projects/${projectId}/development/tasks/${t.id}` });
     }
   }
   if (kinds.has('milestone')) {
     for (const m of milestones) {
       if (!m.due_on || m.status === 'met') continue;
-      entries.push({ id: `milestone-${m.id}`, date: m.due_on, label: m.name, kind: 'milestone', status: m.status, overdue: m.due_on < today, time: null, href: `/projects/${projectId}/plan` });
+      entries.push({ id: `milestone-${m.id}`, date: m.due_on, label: m.name, kind: 'milestone', status: m.status, overdue: m.due_on < today, time: null, href: `/projects/${projectId}/milestones?milestone=${m.id}` });
     }
+  }
+  // SCR-022 "deadline": the project's own due date, the one deadline that is not a task or a milestone.
+  if (kinds.has('deadline') && project.ends_on && project.status !== 'completed' && project.status !== 'cancelled') {
+    entries.push({ id: `deadline-${projectId}`, date: project.ends_on, label: `${project.name} is due`, kind: 'deadline', status: project.status, overdue: project.ends_on < today, time: null, href: `/projects/${projectId}` });
   }
   if (kinds.has('meeting')) {
     for (const m of meetings) {
@@ -189,7 +194,7 @@ export default async function ProjectCalendarPage({
   for (const [date, dayEntries] of byDate) {
     gridEntriesByDate[date] = dayEntries.map((e) => ({
       label: e.time ? `${e.time} ${e.label}` : e.label,
-      tone: e.overdue ? 'danger' : e.kind === 'milestone' ? 'brand' : e.kind === 'meeting' ? 'accent' : 'info',
+      tone: e.overdue || e.kind === 'deadline' ? 'danger' : e.kind === 'milestone' ? 'brand' : e.kind === 'meeting' ? 'accent' : 'info',
       href: e.href,
     }));
   }
@@ -197,33 +202,33 @@ export default async function ProjectCalendarPage({
   const upcoming = entries.filter((e) => e.date >= today).slice(0, 6);
   const overdueCount = entries.filter((e) => e.overdue).length;
 
+  const toolbar = (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <Link href={link(view, today)} className="inline-flex h-9 items-center rounded-lg border border-line bg-surface px-3 text-[13px] font-medium text-foreground hover:bg-surface-hover">Today</Link>
+      <div className="inline-flex overflow-hidden rounded-lg border border-line text-[13px] font-medium" role="group" aria-label="Calendar view">
+        {VIEWS.map((v) => (
+          <Link
+            key={v}
+            href={link(v, anchor)}
+            aria-current={v === view ? 'true' : undefined}
+            className={cx('px-3.5 py-2 transition-colors', v === view ? 'bg-brand text-brand-fg' : 'bg-surface text-muted hover:bg-surface-hover')}
+          >
+            {humanize(v)}
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-5">
       <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={can(context, 'project.write')} />
 
       <ProjectSubNav projectId={projectId} />
 
-      <FilterBar>
-        <FilterChips options={VIEWS.map((v) => ({ key: v, label: humanize(v), href: link(v, anchor), active: v === view }))} />
-        <div className="flex flex-wrap items-center gap-2">
-          {KINDS.map((k) => (
-            <Link
-              key={k}
-              href={link(view, anchor, toggleKind(k))}
-              aria-pressed={kinds.has(k)}
-              className={cx(
-                'rounded-full px-3 py-1.5 text-xs font-medium ring-1 ring-inset transition-colors',
-                kinds.has(k) ? 'bg-surface text-foreground ring-line-strong' : 'bg-surface-sunken text-faint ring-line line-through',
-              )}
-            >
-              {humanize(k)}s
-            </Link>
-          ))}
-        </div>
-      </FilterBar>
-
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(18rem,1fr)]">
         <div className="flex min-w-0 flex-col gap-4">
+          {view !== 'month' ? toolbar : null}
           {view === 'week' ? (
             <Card>
               <CardHeader
@@ -253,7 +258,7 @@ export default async function ProjectCalendarPage({
                     <ul className="mt-1.5 flex flex-col gap-1">
                       {(byDate.get(key) ?? []).map((e) => (
                         <li key={`${e.id}-${key}`}>
-                          <Link href={e.href} className={cx('block w-full truncate rounded px-1.5 py-0.5 text-xs', e.overdue ? 'bg-danger-soft text-danger' : e.kind === 'milestone' ? 'bg-brand-soft text-brand' : e.kind === 'meeting' ? 'bg-accent-soft text-accent' : 'bg-info-soft text-info')}>
+                          <Link href={e.href} className={cx('block w-full truncate rounded px-1.5 py-0.5 text-xs', e.overdue || e.kind === 'deadline' ? 'bg-danger-soft text-danger' : e.kind === 'milestone' ? 'bg-brand-soft text-brand' : e.kind === 'meeting' ? 'bg-accent-soft text-accent' : 'bg-info-soft text-info')}>
                             {e.time ? <span className="mr-1 tabular opacity-80">{e.time}</span> : null}
                             {e.label}
                           </Link>
@@ -308,17 +313,19 @@ export default async function ProjectCalendarPage({
           {view === 'month' ? (
           <Card>
             <CardHeader
-              title="Project calendar"
+              title="Project Calendar"
               description="View all project tasks, milestones and important dates in one place."
               actions={
                 <span className="flex items-center gap-2 text-xs text-muted">
                   <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-info" /> Task</span>
                   <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-brand" /> Milestone</span>
+                  <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-danger" /> Deadline</span>
                   <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-danger" /> Overdue</span>
                 </span>
               }
             />
-            <div className="p-3 sm:p-4">
+            <div className="flex flex-col gap-3 p-3 sm:p-4">
+              {toolbar}
               <MonthGrid month={month} entriesByDate={gridEntriesByDate} todayKey={today} monthHref={(m) => `/projects/${projectId}/calendar?month=${m}${typesParam}`} />
               {mayWrite ? (
                 <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[13px] text-muted">
@@ -389,7 +396,7 @@ export default async function ProjectCalendarPage({
 
         <div className="flex min-w-0 flex-col gap-4">
           <Card>
-            <CardHeader title="Upcoming" actions={<ViewAll href={`/projects/${projectId}/board`} />} />
+            <CardHeader title="Upcoming Events" actions={<ViewAll href={`/projects/${projectId}/board`} />} />
             {upcoming.length === 0 ? (
               <p className="px-4 py-3 text-[13px] text-muted sm:px-5">Nothing dated ahead.</p>
             ) : (
@@ -401,7 +408,7 @@ export default async function ProjectCalendarPage({
                       <span className="tabular text-base font-semibold leading-tight">{e.date.slice(8, 10)}</span>
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium text-foreground">{e.label}</span>
+                      <Link href={e.href} className="block truncate text-[13px] font-medium text-foreground hover:underline">{e.label}</Link>
                       <span className="block text-xs text-muted">{humanize(e.kind)} · {e.status.replace('_', ' ')}{e.time ? ` · ${e.time}` : ''}</span>
                     </span>
                   </li>
@@ -411,7 +418,7 @@ export default async function ProjectCalendarPage({
           </Card>
 
           <Card>
-            <CardHeader title="Milestones on calendar" actions={<ViewAll href={`/projects/${projectId}/plan`} />} />
+            <CardHeader title="Milestones on Calendar" actions={<ViewAll href={`/projects/${projectId}/plan`} />} />
             {milestones.length === 0 ? (
               <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No milestones planned.</p>
             ) : (
@@ -434,6 +441,24 @@ export default async function ProjectCalendarPage({
             )}
           </Card>
 
+          {/* SCR-022 "Changes must preserve history and notify affected owners": the dates that moved, who moved them, from the audit trail. The people they concern see them in Notifications. */}
+          <Card>
+            <CardHeader title="Schedule Changes" description="Every due date that moved on this project, newest first. The people it concerns are told in Notifications." />
+            {scheduleChanges.length === 0 ? (
+              <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No date has moved on this project.</p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {scheduleChanges.map((c) => (
+                  <li key={c.auditId} className="flex flex-col gap-0.5 px-4 py-2.5 text-[13px] sm:px-5">
+                    <Link href={scheduleChangeHref(c)} className="truncate font-medium text-foreground hover:underline">{c.label}</Link>
+                    <span className="text-xs text-muted">{SCHEDULE_KIND_LABEL[c.kind]}: {describeScheduleMove(c, (d) => clock.date(d))}</span>
+                    <span className="text-xs text-muted">{c.actorName ? `by ${c.actorName} · ` : ''}{clock.dateTime(c.changedAt)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
           {/* SCR-022 "Sync supported calendars": a subscribable ICS feed — the honest sync without OAuth. */}
           <Card>
             <CardHeader title="Sync to your calendar" description="A private feed URL Google Calendar, Apple Calendar and Outlook can subscribe to." />
@@ -441,6 +466,7 @@ export default async function ProjectCalendarPage({
           </Card>
 
           <QuickActions
+            title="Quick Actions"
             actions={[
               ...(can(context, 'task.write') ? [{ label: 'Add task', icon: <IconPlus size={13} />, href: `/projects/${projectId}/board` }] : []),
               ...(can(context, 'milestone.write') ? [{ label: 'Plan milestones', icon: <IconFlag size={13} />, href: `/projects/${projectId}/plan` }] : []),
@@ -450,6 +476,22 @@ export default async function ProjectCalendarPage({
           />
         </div>
       </div>
+
+      <Card>
+        <CardHeader title="Calendar Filters" />
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 pb-4 text-[13px] sm:px-5">
+          {KINDS.map((k) => (
+            <Link key={k} href={link(view, anchor, toggleKind(k))} className="inline-flex items-center gap-2 text-foreground">
+              <span aria-hidden className={cx('flex h-4 w-4 items-center justify-center rounded border', kinds.has(k) ? 'border-brand bg-brand text-brand-fg' : 'border-line-strong bg-surface')}>
+                {kinds.has(k) ? <IconCheck size={11} /> : null}
+              </span>
+              Show {humanize(k)}s
+              <span className="sr-only">{kinds.has(k) ? '(on)' : '(off)'}</span>
+            </Link>
+          ))}
+          {kinds.size !== KINDS.length ? <Link href={link(view, anchor, new Set(KINDS))} className="text-brand hover:underline">Reset</Link> : null}
+        </div>
+      </Card>
     </div>
   );
 }

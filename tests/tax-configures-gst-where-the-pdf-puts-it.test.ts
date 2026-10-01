@@ -36,7 +36,7 @@ describe('SCR-056 · the tax page carries the GST configuration section and the 
 
   it('mounts the GST configuration card and offers "Configure tax profile" in the header, pointing at it', () => {
     assert.match(page, /import \{ GstConfigurationCard \} from '\.\/gst-configuration-card'/);
-    assert.match(page, /<GstConfigurationCard identity=\{gstIdentity\} issues=\{identityIssues\} mayConfigure=\{mayConfigureTax\}/);
+    assert.match(page, /<GstConfigurationCard setup=\{gstSetup\} nextReturnLabel=\{nextReturn\.label\} identity=\{gstIdentity\} issues=\{identityIssues\} mayConfigure=\{mayConfigureTax\}/);
     assert.match(page, /href="#gst-configuration"[^>]*>\s*<IconSettings size=\{14\} \/> Configure tax profile/);
   });
 
@@ -98,10 +98,15 @@ describe('SCR-056 · the profile says what it holds and what it does not', () =>
     assert.match(card, /never set from the panel/);
   });
 
-  it('does not invent registration type, tax-period basis or filing frequency', () => {
-    assert.match(card, /Registration type · period basis · filing frequency/);
-    assert.match(card, /Not recorded — the profile carries no such fields, so nothing is inferred/);
-    assert.doesNotMatch(codeOnly(card), /composition|monthly|quarterly/i, 'no value for a field the door does not carry');
+  it('shows registration type, filing frequency and tax period from the saved setup, saying when it is the default', () => {
+    // Owner decision 9 (2026-10-01): regular / monthly / calendar month, as organization settings. The card
+    // reads them through the pure reader (unset = the decision) and never hard-codes a value.
+    for (const label of ['Registration type', 'Filing frequency', 'Tax period', 'Return due next']) {
+      assert.match(card, new RegExp(`<dt className="text-muted">${label}</dt>`), `${label} is a row`);
+    }
+    assert.match(card, /GST_REGISTRATION_LABEL\[setup\.registrationType\]/);
+    assert.match(card, /setup\.explicit\.filingFrequency \? '' : <span className="text-muted"> · default<\/span>/);
+    assert.doesNotMatch(codeOnly(card), /composition|monthly|quarterly/i, 'no value is written into the card: they come from the setup');
   });
 
   it('tells a non-owner who configures it instead of hiding the section', () => {

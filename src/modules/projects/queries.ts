@@ -20,7 +20,7 @@ const LIST_SELECT = 'id, name, code, status, currency, budget_minor, created_at'
 // quotation's presence — or absence — to be *visible*, not merely auditable.
 // It was written by conversion since G-017 and read by nothing until G-114.
 // SCR-018/027 (20261001120000): the archive mark and the template followed.
-const DETAIL_SELECT = `${LIST_SELECT}, description, client_account_id, opportunity_id, proposal_id, starts_on, ends_on, visibility, delivery_lead_id, status_reason, status_changed_at, archived_at, template_id`;
+const DETAIL_SELECT = `${LIST_SELECT}, description, client_account_id, opportunity_id, proposal_id, starts_on, ends_on, visibility, delivery_lead_id, status_reason, status_changed_at, archived_at, template_id, project_type, technology, tags`;
 
 export async function listProjects(limit = 100): Promise<ProjectListItem[]> {
   const supabase = await createClient();
@@ -122,6 +122,18 @@ export type DevelopmentTask = {
   dueOn: string | null;
   completedAt: string | null;
   estimateHours: number | null;
+  /** The payment milestone ("phase") the task is filed under. */
+  milestoneId: string | null;
+  /** Planned first day of work (migration 20261004100000). */
+  startOn: string | null;
+  /** The task this is a subtask of; null for a top-level task. */
+  parentTaskId: string | null;
+  labels: string[];
+  /** The sprint of this project the task is placed in (migration 20261005100000). */
+  sprintId: string | null;
+  /** T1-1: set when a roster manager archived the task; null otherwise. */
+  archivedAt: string | null;
+  createdAt: string;
 };
 
 /**
@@ -137,9 +149,19 @@ export type DevelopmentTask = {
  */
 export async function listDevelopmentBreakdown(
   projectId: string,
+  /** T1-1: archived tasks are hidden unless the caller asks for them (a "Show archived" toggle). */
+  options: { includeArchived?: boolean; /** T1-1: leave cancelled tasks out (every figure and overview; the Board, Tasks and Development lists keep them so they can be found and reopened). */ excludeCancelled?: boolean } = {},
 ): Promise<{ modules: DevelopmentModule[]; features: DevelopmentFeature[]; tasks: DevelopmentTask[] }> {
   const supabase = await createClient();
 
+  const allTasks = supabase
+    .schema('projects')
+    .from('tasks')
+    .select('id, module_id, feature_id, title, description, status, priority, assignee_id, due_on, completed_at, estimate_hours, milestone_id, start_on, parent_task_id, labels, sprint_id, archived_at, created_at')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: true });
+  const unarchived = options.includeArchived ? allTasks : allTasks.is('archived_at', null);
+  const taskQuery = options.excludeCancelled ? unarchived.neq('status', 'cancelled') : unarchived;
   const [{ data: moduleRows, error: modulesError }, { data: featureRows, error: featuresError }, { data: taskRows, error: tasksError }] =
     await Promise.all([
       supabase
@@ -154,12 +176,7 @@ export async function listDevelopmentBreakdown(
         .select('id, module_id, name, description, status, position')
         .eq('project_id', projectId)
         .order('position', { ascending: true }),
-      supabase
-        .schema('projects')
-        .from('tasks')
-        .select('id, module_id, feature_id, title, description, status, priority, assignee_id, due_on, completed_at, estimate_hours')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: true }),
+      taskQuery,
     ]);
 
   if (modulesError) unreadable('listDevelopmentBreakdown.modules', modulesError);
@@ -196,6 +213,13 @@ export async function listDevelopmentBreakdown(
       dueOn: t.due_on,
       completedAt: t.completed_at,
       estimateHours: t.estimate_hours === null ? null : Number(t.estimate_hours),
+      milestoneId: t.milestone_id,
+      startOn: t.start_on,
+      parentTaskId: t.parent_task_id,
+      labels: t.labels ?? [],
+      sprintId: t.sprint_id,
+      archivedAt: t.archived_at,
+      createdAt: t.created_at,
     })),
   };
 }
@@ -828,6 +852,9 @@ export type PlanBoard = {
     status: string;
     objective: string | null;
     scopeVersionId: string | null;
+    /** SCR-040: the internal approval of a draft plan (migration 20261006400200). */
+    approvedAt?: string | null;
+    approvalNote?: string | null;
   } | null;
   deliverables: {
     id: string;
@@ -844,7 +871,7 @@ export type PlanBoard = {
   dependencies: { id: string; kind: string; description: string; neededByPhase: string; ownerRole: string; status: string }[];
   notes: { id: string; kind: string; statement: string; ownerRole: string | null }[];
   clarifications: { id: string; question: string; status: string; answer: string | null }[];
-  scopeItems: { id: string; title: string; inclusion: string }[];
+  scopeItems: { id: string; title: string; inclusion: string; acceptanceCriteria: string | null }[];
   /**
    * §10's second ending needs somewhere to send the question. The picker
    * offers the project's own change requests and nothing else — routing a
@@ -863,7 +890,7 @@ export async function readPlanBoard(projectId: string): Promise<PlanBoard> {
   const { data: planRow, error: planError } = await supabase
     .schema('projects')
     .from('project_plans')
-    .select('id, version, status, objective, scope_version_id')
+    .select('id, version, status, objective, scope_version_id, approved_at, approval_note')
     .eq('project_id', projectId)
     .in('status', ['draft', 'active'])
     .order('version', { ascending: false })
@@ -875,7 +902,7 @@ export async function readPlanBoard(projectId: string): Promise<PlanBoard> {
   const { data: scopeRows, error: scopeError } = await supabase
     .schema('projects')
     .from('scope_items')
-    .select('id, title, inclusion, scope_version_id')
+    .select('id, title, inclusion, scope_version_id, acceptance_criteria')
     .eq('scope_version_id', planRow?.scope_version_id ?? '00000000-0000-0000-0000-000000000000');
 
   if (scopeError) unreadable('readPlanBoard.scope', scopeError);
@@ -934,6 +961,8 @@ export async function readPlanBoard(projectId: string): Promise<PlanBoard> {
       status: planRow.status,
       objective: planRow.objective,
       scopeVersionId: planRow.scope_version_id,
+      approvedAt: planRow.approved_at,
+      approvalNote: planRow.approval_note,
     },
     deliverables: (deliverables.data ?? []).map((row) => ({
       id: row.id,
@@ -978,6 +1007,7 @@ export async function readPlanBoard(projectId: string): Promise<PlanBoard> {
       id: row.id,
       title: row.title,
       inclusion: row.inclusion,
+      acceptanceCriteria: row.acceptance_criteria ?? null,
     })),
     changeRequests: (changeRequests.data ?? []).map((row) => ({
       id: row.id,
@@ -1169,6 +1199,8 @@ export type DesignTrailView = {
   }[];
   clientDecisions: {
     id: string;
+    /** The share the client was answering: it carries a snapshot of the exact theme options and versions that were sent. */
+    shareId: string;
     decision: string;
     clientWords: string;
     evidenceRef: string | null;
@@ -1252,7 +1284,7 @@ export async function readDesignTrail(projectId: string): Promise<DesignTrailVie
     supabase
       .schema('projects')
       .from('client_design_decisions')
-      .select('id, decision, client_words, evidence_ref, selected_theme_option_id, selected_color_option_id, created_at')
+      .select('id, share_id, decision, client_words, evidence_ref, selected_theme_option_id, selected_color_option_id, created_at')
       .eq('phase_three_id', phase.id)
       .order('created_at', { ascending: false }),
     supabase
@@ -1397,6 +1429,7 @@ export async function readDesignTrail(projectId: string): Promise<DesignTrailVie
     })),
     clientDecisions: ((clientDecisions ?? []) as Record<string, unknown>[]).map((c) => ({
       id: c.id as string,
+      shareId: c.share_id as string,
       decision: c.decision as string,
       clientWords: c.client_words as string,
       evidenceRef: (c.evidence_ref as string | null) ?? null,
@@ -1609,6 +1642,8 @@ export async function listProjectTeam(projectId: string): Promise<ProjectTeamMem
     .from('tasks')
     .select('assignee_id, status')
     .eq('project_id', projectId)
+    .is('archived_at', null)
+    .neq('status', 'cancelled')
     .not('assignee_id', 'is', null);
   if (error) unreadable('listProjectTeam.tasks', error);
 
@@ -2146,6 +2181,8 @@ export async function listMyTasks(userId: string): Promise<MyTaskRow[]> {
     .select('id, title, status, priority, due_on, project_id')
     .eq('assignee_id', userId)
     .neq('status', 'done')
+    .neq('status', 'cancelled')
+    .is('archived_at', null)
     .order('due_on', { ascending: true, nullsFirst: false });
 
   if (tasksError) unreadable('listMyTasks.tasks', tasksError);
@@ -2590,6 +2627,8 @@ export async function listMilestoneTaskCounts(projectId: string): Promise<Milest
     .from('tasks')
     .select('milestone_id, status')
     .eq('project_id', projectId)
+    .is('archived_at', null)
+    .neq('status', 'cancelled')
     .not('milestone_id', 'is', null);
   if (tasksError) unreadable('listMilestoneTaskCounts', tasksError);
 
@@ -2710,7 +2749,7 @@ export async function readDevelopmentPortfolio(): Promise<DevelopmentPortfolioRo
   const [projects, modules, tasks, builds] = await Promise.all([
     listProjects(200),
     supabase.schema('projects').from('modules').select('project_id, status'),
-    supabase.schema('projects').from('tasks').select('project_id, status'),
+    supabase.schema('projects').from('tasks').select('project_id, status').is('archived_at', null).neq('status', 'cancelled'),
     supabase
       .schema('projects')
       .from('deliverables')
@@ -2858,14 +2897,16 @@ export type RequirementsOverview = {
 export async function readRequirementsOverview(): Promise<RequirementsOverview> {
   const supabase = await createClient();
 
-  const [{ data: projects, error: projectsError }, { data: scopes, error: scopesError }, { data: crs, error: crsError }, { data: planQs, error: planQsError }, { data: uiQs, error: uiQsError }] =
+  const [{ data: projects, error: projectsError }, { data: scopes, error: scopesError }, { data: crs, error: crsError }, { data: planQs, error: planQsError }, { data: uiQs, error: uiQsError }, { data: reqQs, error: reqQsError }] =
     await Promise.all([
       supabase.schema('projects').from('projects').select('id, name').is('deleted_at', null).limit(500),
       supabase.schema('projects').from('scope_versions').select('project_id, version, status').order('version', { ascending: false }).limit(2000),
       supabase.schema('projects').from('change_requests').select('project_id, status').limit(2000),
       supabase.schema('projects').from('plan_clarifications').select('plan_id, status, project_plans:plan_id(project_id)').limit(2000),
       supabase.schema('projects').from('clarification_requests').select('project_id, status').limit(2000),
+      supabase.schema('projects').from('requirement_clarifications').select('project_id').eq('status', 'open').limit(2000),
     ]);
+  if (reqQsError) unreadable('readRequirementsOverview.requirementClarifications', reqQsError);
   if (projectsError) unreadable('readRequirementsOverview.projects', projectsError);
   if (scopesError) unreadable('readRequirementsOverview.scopes', scopesError);
   if (crsError) unreadable('readRequirementsOverview.changeRequests', crsError);
@@ -2890,9 +2931,10 @@ export async function readRequirementsOverview(): Promise<RequirementsOverview> 
     if (pid && OPEN_Q.has(q.status)) qByProject.set(pid, (qByProject.get(pid) ?? 0) + 1);
   }
   for (const q of uiQs ?? []) if (q.status === 'open') qByProject.set(q.project_id, (qByProject.get(q.project_id) ?? 0) + 1);
+  for (const q of reqQs ?? []) qByProject.set(q.project_id, (qByProject.get(q.project_id) ?? 0) + 1);
 
   return {
-    frozenScopes: (scopes ?? []).filter((sv) => sv.status !== 'draft').length,
+    frozenScopes: new Set((scopes ?? []).filter((sv) => sv.status !== 'draft').map((sv) => sv.project_id)).size,
     openChangeRequests: (crs ?? []).filter((cr) => OPEN_CR.has(cr.status)).length,
     pendingApprovalChangeRequests: (crs ?? []).filter((cr) => cr.status === 'pending_approval').length,
     openClarifications: [...qByProject.values()].reduce((n, c) => n + c, 0),

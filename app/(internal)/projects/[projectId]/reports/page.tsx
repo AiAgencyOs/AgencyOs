@@ -11,6 +11,7 @@ import { can } from '@/lib/authz/permissions';
 import { readProjectMargin } from '@/modules/finance/margin-queries';
 import { readProjectBudgetVariance } from '@/modules/finance/budget-variance-queries';
 import { listExpenses, listProjectInvoices } from '@/modules/finance/queries';
+import { verifiedOn } from '@/modules/finance/verified-basis';
 import {
   getProject,
   listDevelopmentBreakdown,
@@ -19,10 +20,12 @@ import {
   readProjectSpend,
 } from '@/modules/projects/queries';
 import { listReportTasks, weekStartOf, weeksBetween } from '@/modules/projects/report-queries';
+import { composeRecentActivity, resourceBars } from '@/modules/projects/report-cards';
+import { listProjectFiles } from '@/modules/projects/queries';
 import { readProjectTime } from '@/modules/projects/time-log-queries';
 import { listPaymentClaims } from '@/modules/finance/queries';
 import { readBlockersAcrossProjects } from '@/modules/projects/blockers-queries';
-import { projectHealth } from '@/modules/projects/project-health';
+import { overallProgress, projectHealth } from '@/modules/projects/project-health';
 import { listPhaseFourEscalations } from '@/modules/projects/queries';
 import { listDefects } from '@/modules/qa/queries';
 import { blocksDelivery, type DefectSeverity, type DefectStatus } from '@/modules/qa/schema';
@@ -32,7 +35,6 @@ import {
   Card,
   CardHeader,
   DonutChart,
-  FilterBar,
   humanize,
   IconAlert,
   IconCheck,
@@ -45,6 +47,7 @@ import {
   labelClass,
   PermissionDenied,
   ProgressBar,
+  Avatar,
   Stat,
   StatGrid,
   cx,
@@ -99,7 +102,7 @@ export default async function ProjectReportPage({
   const mayReadMoney = can(context, 'invoice.read');
   const [plan, breakdown, defects, invoices, expenses, spend, roster, clock, clientName, time, margin] = await Promise.all([
     listPaymentPlan(projectId),
-    listDevelopmentBreakdown(projectId),
+    listDevelopmentBreakdown(projectId, { excludeCancelled: true }),
     listDefects(projectId),
     mayReadMoney ? listProjectInvoices(projectId) : Promise.resolve([]),
     mayReadMoney ? listExpenses(1000) : Promise.resolve([]),
@@ -152,7 +155,7 @@ export default async function ProjectReportPage({
   const csvHref = `/api/projects/${projectId}/report?from=${from}&to=${to}`;
   const tasksOverdue = tasks.filter((t) => t.status !== 'done' && t.dueOn && t.dueOn < today).length;
   const milestonesMet = plan.filter((m) => m.met_at).length;
-  const completion = plan.length > 0 ? Math.round((milestonesMet / plan.length) * 100) : tasks.length > 0 ? Math.round((tasksDone / tasks.length) * 100) : 0;
+  const completion = overallProgress({ milestonesTotal: plan.length, milestonesMet, tasksTotal: tasks.length, tasksDone });
 
   const byStatus = new Map<string, number>();
   for (const t of tasks) byStatus.set(t.status, (byStatus.get(t.status) ?? 0) + 1);
@@ -174,7 +177,8 @@ export default async function ProjectReportPage({
   for (const d of openDefects) bySeverity.set(d.severity, (bySeverity.get(d.severity) ?? 0) + 1);
 
   const invoiced = invoices.reduce((n, i) => n + (i.status === 'void' ? 0 : i.total_minor), 0);
-  const paid = invoices.reduce((n, i) => n + i.paid_minor, 0);
+  // verified, not recorded: the same basis as the margin below (verified-basis.ts)
+  const paid = invoices.reduce((n, i) => n + (i.status === 'void' || i.status === 'draft' ? 0 : verifiedOn(i)), 0);
   const projectExpenses = expenses.filter((e) => e.projectId === projectId);
   const spent = projectExpenses.reduce((n, e) => n + e.amountMinor, 0);
   const aiCost = spend.reduce((n, r) => n + r.costMinor, 0);
@@ -191,8 +195,18 @@ export default async function ProjectReportPage({
     blockingDefects: blocking,
     escalations: escalations.filter((e) => e.projectId === projectId).length,
     pendingClaims: claims.filter((c) => c.status === 'pending').length,
+    pastDue: project.ends_on !== null && project.ends_on < today,
   });
   const overdueTasks = tasks.filter((t) => t.status !== 'done' && t.dueOn && t.dueOn < today);
+  // Recent Activity — a timeline of what each table already timestamps (not the audit log); Resource Usage — hours per person.
+  const projectFiles = await listProjectFiles(projectId);
+  const activity = composeRecentActivity({
+    tasks: tasks.map((t) => ({ id: t.id, title: t.title, completedAt: t.completedAt ?? null, assigneeName: t.assigneeId ? nameOf(t.assigneeId) : null })),
+    milestones: plan,
+    defects,
+    files: projectFiles,
+  }, 5, projectId);
+  const resources = resourceBars(time.people);
 
   return (
     <div className="flex flex-col gap-5">
@@ -200,7 +214,12 @@ export default async function ProjectReportPage({
 
       <ProjectSubNav projectId={projectId} />
 
-      <FilterBar>
+      <section aria-labelledby="reports-title" className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="reports-title" className="text-xl font-bold tracking-tight text-foreground">Project Reports</h2>
+          <p className="text-[13px] text-muted">Track progress, performance, team activity and key insights</p>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
         <form action={reportBase} method="GET" className="flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1">
             <span className={labelClass}>From</span>
@@ -228,31 +247,8 @@ export default async function ProjectReportPage({
           <IconDownload size={14} />
           Export PDF
         </a>
-      </FilterBar>
-
-      {/* SCR-026: project health — one rule (projectHealth) shared with the projects list and the PDF; each reason links to where it is fixed. */}
-      <Card>
-        <CardHeader
-          title={`Project health: ${health.label}`}
-          description={health.reasons.length === 0 ? 'No blocked work, nothing past due, no release-blocking defect.' : `${health.reasons.length} reason${health.reasons.length === 1 ? '' : 's'}.`}
-        />
-        {health.reasons.length > 0 ? (
-          <ul className="flex flex-wrap gap-2 px-4 pb-4 sm:px-5">
-            {health.reasons.map((r) => (
-              <li key={r}>
-                <Link
-                  href={
-                    /task/.test(r) ? `/projects/${projectId}/board` : /milestone/.test(r) ? `/projects/${projectId}/plan` : /defect/.test(r) ? `/projects/${projectId}/qa` : /claim/.test(r) ? `/projects/${projectId}` : /escalation/.test(r) ? '/projects/escalations' : `/projects/${projectId}/plan`
-                  }
-                  className={cx('inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset', health.level === 'blocked' ? 'bg-danger-soft text-danger ring-danger/25' : 'bg-warning-soft text-warning ring-warning/30')}
-                >
-                  {r}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </Card>
+        </div>
+      </section>
 
       <StatGrid cols={5}>
         <Stat label="Completion" value={`${completion}%`} caption={plan.length > 0 ? `${milestonesMet} of ${plan.length} milestones met` : `${tasksDone} of ${tasks.length} tasks done`} tone="brand" icon={<IconFlag size={16} />} href={`/projects/${projectId}/plan`} />
@@ -266,9 +262,10 @@ export default async function ProjectReportPage({
         <Stat label="AI cost" value={aiCost > 0 ? money(aiCost, 'INR') : '—'} caption={aiRuns > 0 ? `${aiRuns} agent runs` : 'No runs attributed'} tone="accent" icon={<IconUsage size={16} />} href={`/projects/${projectId}/design`} />
       </StatGrid>
 
-      <Card>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]">
+        <Card>
         <CardHeader
-          title="Completion trend"
+          title="Task Completion Trend"
           description={`Tasks completed per week (Monday start), ${clock.date(`${from}T00:00:00`)} – ${clock.date(`${to}T00:00:00`)} · ${completedInRange.length} in range.`}
           actions={<ViewAll href={`/projects/${projectId}/board`} label="Board" />}
         />
@@ -281,13 +278,12 @@ export default async function ProjectReportPage({
         )}
       </Card>
 
-      <div className="grid gap-4 xl:grid-cols-2">
         <Card>
-          <CardHeader title="Task distribution" description="Every task on the Board by status and priority." actions={<ViewAll href={`/projects/${projectId}/board`} label="Board" />} />
+          <CardHeader title="Task Distribution" actions={<ViewAll href={`/projects/${projectId}/board`} label="Board" />} />
           {tasks.length === 0 ? (
             <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No tasks yet.</p>
           ) : (
-            <div className="grid gap-4 px-4 pb-4 sm:grid-cols-2 sm:px-5">
+            <div className="grid gap-4 px-4 pb-4 sm:px-5">
               <DonutChart data={[...byStatus.entries()].map(([label, value]) => ({ label: humanize(label), value }))} totalLabel="Tasks" height={170} />
               <BarChart data={[...byPriority.entries()].map(([label, value]) => ({ label: humanize(label), value }))} height={170} />
             </div>
@@ -295,7 +291,7 @@ export default async function ProjectReportPage({
         </Card>
 
         <Card>
-          <CardHeader title="Work by person" description="Tasks assigned and finished, per team member." actions={<ViewAll href={`/projects/${projectId}/team`} label="Team" />} />
+          <CardHeader title="Team Activity" actions={<ViewAll href={`/projects/${projectId}/team`} label="Team" />} />
           {byAssignee.size === 0 ? (
             <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">Nothing assigned yet.</p>
           ) : (
@@ -315,8 +311,11 @@ export default async function ProjectReportPage({
           )}
         </Card>
 
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-3">
         <Card>
-          <CardHeader title="Milestones" description="The payment plan's milestones, met or not." actions={<ViewAll href={`/projects/${projectId}/plan`} label="Plan" />} />
+          <CardHeader title="Phase Progress" actions={<ViewAll href={`/projects/${projectId}/plan`} label="Plan" />} />
           {plan.length === 0 ? (
             <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No payment plan yet.</p>
           ) : (
@@ -335,63 +334,91 @@ export default async function ProjectReportPage({
         </Card>
 
         <Card>
-          <CardHeader
-            title="Time"
-            description={
-              time.entryCount > 0
-                ? `${time.totalHours} h logged in ${time.entryCount} entr${time.entryCount === 1 ? 'y' : 'ies'} by ${time.people.length} ${time.people.length === 1 ? 'person' : 'people'}.${
-                    mayReadMoney
-                      ? ` Cost ${money(time.costMinor, 'INR')} at each person's rate on the day of the log${time.uncostedHours > 0 ? `; ${time.uncostedHours} h uncosted — no rate on those days` : ''}. Cost, not billing.`
-                      : ' Nothing here is billed.'
-                  }`
-                : 'No time logged yet. Hours are logged per task from the task drawer (decision 4 of 2026-09-29).'
-            }
-            actions={
-              <a href={timeCsvHref} className={buttonClass('ghost', 'sm')}>
-                <IconDownload size={14} />
-                Time CSV
-              </a>
-            }
-          />
-          {time.entryCount === 0 ? null : (
-            <div className="grid gap-4 px-4 pb-4 sm:grid-cols-2 sm:px-5">
-              <div>
-                <p className="mb-1 text-xs font-medium text-muted">Per person</p>
-                <ul className="flex flex-col gap-1 text-[13px]">
-                  {time.people.map((p) => (
-                    <li key={p.personId} className="flex items-baseline justify-between gap-2">
-                      <span className="truncate">{p.personName}</span>
-                      <span className="tabular text-muted">
-                        {p.hours} h · {p.entries}
-                        {mayReadMoney ? ` · ${money(p.costMinor, 'INR')}` : ''}
-                        {mayReadMoney && p.uncostedHours > 0 ? <span className="ml-1 text-warning">{p.uncostedHours} h uncosted</span> : null}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <p className="mb-1 text-xs font-medium text-muted">Per task</p>
-                <ul className="flex flex-col gap-1 text-[13px]">
-                  {time.tasks.slice(0, 12).map((t) => (
-                    <li key={t.taskId} className="flex items-baseline justify-between gap-2">
-                      <Link href={`/projects/${projectId}/development/tasks/${t.taskId}`} className="truncate underline-offset-2 hover:underline">{t.taskTitle}</Link>
-                      <span className="tabular text-muted">
-                        {t.hours} h · {t.entries}
-                        {mayReadMoney ? ` · ${money(t.costMinor, 'INR')}` : ''}
-                        {mayReadMoney && t.uncostedHours > 0 ? <span className="ml-1 text-warning">{t.uncostedHours} h uncosted</span> : null}
-                      </span>
-                    </li>
-                  ))}
-                  {time.tasks.length > 12 ? <li className="text-xs text-muted">and {time.tasks.length - 12} more in the CSV.</li> : null}
-                </ul>
-              </div>
-            </div>
+          <CardHeader title="Upcoming Deadlines" actions={<ViewAll href={`/projects/${projectId}/plan`} />} />
+          {plan.filter((m) => !m.met_at && m.due_on).length === 0 ? (
+            <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">Nothing dated ahead.</p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {plan.filter((m) => !m.met_at && m.due_on).slice(0, 5).map((m) => (
+                <li key={m.id} className="flex items-center justify-between gap-2 px-4 py-2 text-[13px] sm:px-5">
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium text-foreground">{m.name}</span>
+                    <span className="block text-xs text-muted">{m.due_on ? clock.date(m.due_on) : ''}</span>
+                  </span>
+                  <span className={cx('shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium', m.due_on && m.due_on < today ? 'bg-danger-soft text-danger' : 'bg-info-soft text-info')}>{m.due_on && m.due_on < today ? 'Late' : 'Upcoming'}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+        <Card>
+          <CardHeader title="Recent Activity" description="Tasks done, milestones met, defects raised and files added — from each table's own dates, not the audit log." />
+          {activity.length === 0 ? (
+            <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">Nothing has happened on this project yet.</p>
+          ) : (
+            <ul className="flex flex-col gap-2.5 px-4 pb-4 sm:px-5">
+              {activity.map((e) => (
+                <li key={e.key} className="flex items-start gap-2.5 text-[13px]">
+                  <span className={cx('mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', e.tone === 'success' ? 'bg-success-soft text-success' : e.tone === 'warning' ? 'bg-warning-soft text-warning' : e.tone === 'info' ? 'bg-info-soft text-info' : 'bg-brand-soft text-brand')}>
+                    <IconCheck size={13} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block break-words">{e.who ? <span className="font-medium">{e.who} </span> : null}{e.verb} {e.href ? <Link href={e.href} className="font-medium hover:underline">{e.subject}</Link> : <span className="font-medium">{e.subject}</span>}</span>
+                    <span className="block text-xs text-muted">{clock.dateTime(e.at)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
         </Card>
 
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-3">
         <Card>
-          <CardHeader title="Risks and quality" description="Open defects by severity, and what would stop a release." actions={<ViewAll href={`/projects/${projectId}/qa`} label="QA" />} />
+          <CardHeader title="Resource Usage" description="Hours logged per person — the busiest is the full bar." actions={<ViewAll href={`/projects/${projectId}/team`} label="Team" />} />
+          {resources.length === 0 ? (
+            <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No time logged yet. Hours are logged per task from the task drawer.</p>
+          ) : (
+            <ul className="flex flex-col gap-2.5 px-4 pb-4 sm:px-5">
+              {resources.map((r) => (
+                <li key={r.name} className="flex items-center gap-2.5 text-[13px]">
+                  <Avatar name={r.name} size="sm" />
+                  <span className="w-28 shrink-0 truncate">{r.name}</span>
+                  <ProgressBar value={r.percentOfBusiest} tone="brand" showValue={false} label={`${r.name}: ${r.hours} hours`} className="flex-1" />
+                  <span className="tabular w-14 shrink-0 text-right text-xs text-muted">{r.hours} h</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+        <Card>
+          <CardHeader title="Project Health" />
+          <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+            <div className={cx('rounded-xl px-4 py-3', health.level === 'blocked' ? 'bg-danger-soft text-danger' : health.level === 'at_risk' ? 'bg-warning-soft text-warning' : 'bg-success-soft text-success')}>
+              <p className="text-lg font-bold">{health.label}</p>
+              <p className="text-[13px]">{health.reasons.length === 0 ? 'No blocked work, nothing past due, no release-blocking defect.' : `${health.reasons.length} reason${health.reasons.length === 1 ? '' : 's'}.`}</p>
+            </div>
+        {health.reasons.length > 0 ? (
+          <ul className="flex flex-wrap gap-2 ">
+            {health.reasons.map((r) => (
+              <li key={r}>
+                <Link
+                  href={
+                    /task/.test(r) ? `/projects/${projectId}/board` : /milestone/.test(r) ? `/projects/${projectId}/plan` : /defect/.test(r) ? `/projects/${projectId}/qa` : /claim/.test(r) ? `/projects/${projectId}` : /escalation/.test(r) ? '/projects/escalations' : `/projects/${projectId}/plan`
+                  }
+                  className={cx('inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset', health.level === 'blocked' ? 'bg-danger-soft text-danger ring-danger/25' : 'bg-warning-soft text-warning ring-warning/30')}
+                >
+                  {r}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+          </div>
+        </Card>
+        <Card>
+          <CardHeader title="Risks & Issues" actions={<ViewAll href={`/projects/${projectId}/qa`} label="QA" />} />
           {openDefects.length === 0 ? (
             <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No open defects.</p>
           ) : (
@@ -432,8 +459,66 @@ export default async function ProjectReportPage({
           ) : null}
         </Card>
 
+      </div>
+
+      <Card>
+        <CardHeader
+          title="Time"
+          description={
+            time.entryCount > 0
+              ? `${time.totalHours} h logged in ${time.entryCount} entr${time.entryCount === 1 ? 'y' : 'ies'} by ${time.people.length} ${time.people.length === 1 ? 'person' : 'people'}.${
+                  mayReadMoney
+                    ? ` Cost ${money(time.costMinor, 'INR')} at each person's rate on the day of the log${time.uncostedHours > 0 ? `; ${time.uncostedHours} h uncosted — no rate on those days` : ''}. Cost, not billing.`
+                    : ' Nothing here is billed.'
+                }`
+              : 'No time logged yet. Hours are logged per task from the task drawer (decision 4 of 2026-09-29).'
+          }
+          actions={
+            <a href={timeCsvHref} className={buttonClass('ghost', 'sm')}>
+              <IconDownload size={14} />
+              Time CSV
+            </a>
+          }
+        />
+        {time.entryCount === 0 ? null : (
+          <div className="grid gap-4 px-4 pb-4 sm:grid-cols-2 sm:px-5">
+            <div>
+              <p className="mb-1 text-xs font-medium text-muted">Per person</p>
+              <ul className="flex flex-col gap-1 text-[13px]">
+                {time.people.map((p) => (
+                  <li key={p.personId} className="flex items-baseline justify-between gap-2">
+                    <span className="truncate">{p.personName}</span>
+                    <span className="tabular text-muted">
+                      {p.hours} h · {p.entries}
+                      {mayReadMoney ? ` · ${money(p.costMinor, 'INR')}` : ''}
+                      {mayReadMoney && p.uncostedHours > 0 ? <span className="ml-1 text-warning">{p.uncostedHours} h uncosted</span> : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="mb-1 text-xs font-medium text-muted">Per task</p>
+              <ul className="flex flex-col gap-1 text-[13px]">
+                {time.tasks.slice(0, 12).map((t) => (
+                  <li key={t.taskId} className="flex items-baseline justify-between gap-2">
+                    <Link href={`/projects/${projectId}/development/tasks/${t.taskId}`} className="truncate underline-offset-2 hover:underline">{t.taskTitle}</Link>
+                    <span className="tabular text-muted">
+                      {t.hours} h · {t.entries}
+                      {mayReadMoney ? ` · ${money(t.costMinor, 'INR')}` : ''}
+                      {mayReadMoney && t.uncostedHours > 0 ? <span className="ml-1 text-warning">{t.uncostedHours} h uncosted</span> : null}
+                    </span>
+                  </li>
+                ))}
+                {time.tasks.length > 12 ? <li className="text-xs text-muted">and {time.tasks.length - 12} more in the CSV.</li> : null}
+              </ul>
+            </div>
+          </div>
+        )}
+      </Card>
+
         {mayReadMoney ? (
-          <Card className="xl:col-span-2">
+          <Card>
             {/* Margin — decision: reversed by the owner on 2026-09-29. Cash-basis estimate: paid − (expenses + AI cost + time cost); time costed per person by decision E2 of 2026-09-30. */}
             <CardHeader title="Money" description="Invoiced and paid against budget and recorded cost, and the margin between what was paid and what was spent — a cash-basis estimate." actions={<ViewAll href="/finance/expenses" label="Expenses" />} />
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 px-4 pb-4 text-[13px] sm:grid-cols-6 sm:px-5">
@@ -498,7 +583,6 @@ export default async function ProjectReportPage({
             ) : null}
           </Card>
         ) : null}
-      </div>
     </div>
   );
 }

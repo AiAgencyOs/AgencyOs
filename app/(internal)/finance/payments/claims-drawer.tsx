@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 
+import { isClaimAwaiting } from '@/modules/finance/schema';
 import { Badge, DetailList, DetailRow, Drawer, StatusBadge, buttonClass, humanize } from '@/ui';
 
 export type ClaimView = {
@@ -15,7 +16,10 @@ export type ClaimView = {
   reference: string | null;
   payerName: string | null;
   paidAtLabel: string | null;
+  /** The link to open: the uploaded file's route when one was uploaded, else the pasted link (claimProofHref). */
   proofUrl: string | null;
+  proofIsImage: boolean;
+  proofUploaded: boolean;
   status: string;
   submittedAtLabel: string;
   verifiedAtLabel: string | null;
@@ -26,7 +30,6 @@ export type ClaimView = {
   paymentId: string | null;
 };
 
-const IMAGE_EXT = /\.(png|jpe?g|gif|webp)(\?.*)?$/i;
 
 /**
  * The claim behind a payment, inspected without leaving the ledger — SCR-053.
@@ -74,7 +77,7 @@ export function ClaimsDrawerList({ claims }: { claims: ClaimView[] }) {
               <Link href={`/invoices/${open.invoiceId}`} className={buttonClass('secondary', 'sm')}>
                 Open invoice
               </Link>
-              {open.status === 'pending_verification' || open.status === 'mismatch' ? (
+              {isClaimAwaiting(open.status) ? (
                 <Link href="/invoices/verify" className={buttonClass('primary', 'sm')}>
                   Decide on the queue
                 </Link>
@@ -96,7 +99,7 @@ export function ClaimsDrawerList({ claims }: { claims: ClaimView[] }) {
                 value={
                   open.proofUrl ? (
                     <a href={open.proofUrl} target="_blank" rel="noreferrer" className="text-brand underline-offset-2 hover:underline">
-                      Open link
+                      {open.proofUploaded ? 'Open uploaded file' : 'Open link'}
                     </a>
                   ) : (
                     'none attached'
@@ -105,7 +108,7 @@ export function ClaimsDrawerList({ claims }: { claims: ClaimView[] }) {
               />
             </DetailList>
 
-            {open.proofUrl && IMAGE_EXT.test(open.proofUrl) ? (
+            {open.proofUrl && open.proofIsImage ? (
               <img src={open.proofUrl} alt="Payment proof" className="max-h-72 w-full rounded-lg border border-line object-contain" />
             ) : null}
 

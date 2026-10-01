@@ -50,6 +50,12 @@ export type ConfigItem = {
   requiredInProduction: boolean;
   /** Set and non-empty in this environment. NEVER the value. */
   present: boolean;
+  /**
+   * Where a stored-key slot's value comes from when `configStatusResolved()`
+   * built the item: the deployment environment, the vault, or nowhere.
+   * Absent on the env-only `configStatus()`. Presence only, never a value.
+   */
+  source?: 'env' | 'vault' | 'none';
   /** Safe, value-free explanation of what it does and what "missing" costs. */
   note: string;
 };
@@ -78,7 +84,7 @@ const ITEMS: readonly Omit<ConfigItem, 'present'>[] = [
   { key: 'OPENAI_BASE_URL', area: 'Speech to text', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
   { key: 'GOOGLE_SERVICE_ACCOUNT_EMAIL', area: 'Calendar', secret: false, requiredInProduction: false, note: 'The Google service account’s client_email (ADM-102). Unset ⇒ availability answers unconfigured and nothing can be booked (BLK-005).' },
   { key: 'GOOGLE_SERVICE_ACCOUNT_KEY', area: 'Calendar', secret: true, requiredInProduction: false, note: 'The service account’s private key (PEM). Server-only; signs one short-lived request at a time.' },
-  { key: 'GOOGLE_CALENDAR_ID', area: 'Calendar', secret: false, requiredInProduction: false, note: 'The calendar the agency books against, e.g. meetings@agency. Not a secret.' },
+  { key: 'GOOGLE_CALENDAR_ID', area: 'Calendar', secret: false, requiredInProduction: false, note: 'The calendar the agency books against, e.g. meetings@agency. Not a secret. The fallback: the id saved on Integrations (organization setting google_calendar_id) is read first.' },
   { key: 'GOOGLE_IMPERSONATE', area: 'Calendar', secret: false, requiredInProduction: false, note: 'Workspace only: the user the account acts as, via domain-wide delegation (needed for a Meet link). Leave unset for a plain Gmail calendar shared with the service account — then no Meet link is created.' },
   { key: 'GOOGLE_OAUTH_BASE_URL', area: 'Calendar', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
   { key: 'GOOGLE_CALENDAR_BASE_URL', area: 'Calendar', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },

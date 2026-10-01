@@ -16,6 +16,12 @@ export const createAnnouncementSchema = z.object({
   title: z.string().trim().min(1, 'A title is required.').max(160),
   body: z.string().trim().min(1, 'A body is required.').max(5000),
   audience: z.enum(ANNOUNCEMENT_AUDIENCES),
+  /** SCR-059: the project this is about — it fixes the client, and is where the timeline records it. */
+  projectId: z.uuid().optional(),
+  /** SCR-059: one client alone, when no project is named. */
+  clientAccountId: z.uuid().optional(),
+  /** The template it was written from, when it was. */
+  templateId: z.uuid().optional(),
 });
 
 export const setAnnouncementStatusSchema = z.object({

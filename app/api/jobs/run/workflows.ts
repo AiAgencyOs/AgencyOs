@@ -6723,7 +6723,7 @@ async function paymentStructureFor(
   const { data, error } = await admin
     .schema('sales')
     .from('payment_structures')
-    .select('id, name, min_amount_minor, max_amount_minor, payment_milestones(position, label, pct)')
+    .select('id, name, is_default, min_amount_minor, max_amount_minor, payment_milestones(position, label, pct)')
     .eq('organization_id', organizationId)
     .eq('active', true);
 
@@ -6736,16 +6736,22 @@ async function paymentStructureFor(
 
   type Row = {
     name: string;
+    is_default: boolean;
     min_amount_minor: number | null;
     max_amount_minor: number | null;
     payment_milestones: { position: number; label: string; pct: number | string }[] | null;
   };
 
-  const matching = ((data ?? []) as unknown as Row[]).filter(
+  const inBand = ((data ?? []) as unknown as Row[]).filter(
     (row) =>
       (row.min_amount_minor === null || totalMinor >= row.min_amount_minor) &&
       (row.max_amount_minor === null || totalMinor < row.max_amount_minor),
   );
+  // Owner decision 2 (round 2): the seeded 30/20/30/20 is the default for an
+  // agency that has configured nothing. Anything the owner configured that
+  // matches beats it, whatever the band widths; it applies only when nothing
+  // else does.
+  const matching = inBand.some((row) => !row.is_default) ? inBand.filter((row) => !row.is_default) : inBand;
   if (matching.length === 0) return null;
 
   // Narrowest first: a bounded band beats an open one, and a smaller band

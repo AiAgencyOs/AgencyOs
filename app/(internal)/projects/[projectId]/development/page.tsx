@@ -7,6 +7,7 @@ import { can } from '@/lib/authz/permissions';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { listDevelopmentEvents } from '@/modules/projects/development-events-queries';
 import { listCommitLinks, listGitActions } from '@/modules/projects/git-queries';
+import { isCountedTask } from '@/modules/projects/task-transitions';
 import { getProject, listDependencies, listDevelopmentBreakdown, readPlanBoard } from '@/modules/projects/queries';
 import { Badge, Card, CardHeader, EmptyState, IconProjects, PageHeader, PermissionDenied, Stat, StatGrid, buttonClass, humanize } from '@/ui';
 
@@ -31,8 +32,9 @@ export const metadata: Metadata = { title: 'Development' };
  * commits (linked to tasks) and Git actions are listed from the rows the
  * panel wrote.
  */
-export default async function DevelopmentPage({ params }: { params: Promise<{ projectId: string }> }) {
+export default async function DevelopmentPage({ params, searchParams }: { params: Promise<{ projectId: string }>; searchParams: Promise<{ archived?: string }> }) {
   const { projectId } = await params;
+  const showArchived = (await searchParams).archived === '1';
 
   const context = await requireInternal(`/projects/${projectId}/development`);
   if (!can(context, 'project.read')) return <PermissionDenied />;
@@ -41,7 +43,7 @@ export default async function DevelopmentPage({ params }: { params: Promise<{ pr
   if (!project) notFound();
 
   const [{ modules, features, tasks }, board, recordedDependencies, events, commits, gitActions, clock] = await Promise.all([
-    listDevelopmentBreakdown(projectId),
+    listDevelopmentBreakdown(projectId, { includeArchived: showArchived }),
     readPlanBoard(projectId),
     listDependencies(projectId),
     listDevelopmentEvents(projectId),
@@ -49,10 +51,10 @@ export default async function DevelopmentPage({ params }: { params: Promise<{ pr
     listGitActions(projectId, 10),
     agencyClock(),
   ]);
-  const openEscalations = events.filter((e) => e.kind === 'blocker_escalated' && e.status === 'open');
-  const escalatedTaskIds = new Set(openEscalations.map((e) => e.taskId));
+  const openEscalations = events.filter((e) => (e.kind === 'blocker_escalated' || e.kind === 'dependency_requested') && e.status === 'open');
+  const escalatedTaskIds = new Set(openEscalations.filter((e) => e.kind === 'blocker_escalated').map((e) => e.taskId));
   const handoffs = events.filter((e) => e.kind === 'qa_handoff_started');
-  const notReady = tasks.filter((t) => t.status === 'todo' || t.status === 'in_progress').length;
+  const notReady = tasks.filter((t) => isCountedTask(t) && (t.status === 'todo' || t.status === 'in_progress')).length;
   const mayManage = can(context, 'project.write');
   const canWrite = can(context, 'milestone.write') || can(context, 'task.write');
 
@@ -64,7 +66,7 @@ export default async function DevelopmentPage({ params }: { params: Promise<{ pr
   const unmetDependencies = board.dependencies.filter((d) => ['pending', 'requested', 'blocked'].includes(d.status));
   // SCR-043: the technical register's open rows — closed from the Builds tab.
   const openTechnical = recordedDependencies.filter((d) => d.status === 'open');
-  const blockedTasks = tasks.filter((t) => t.status === 'blocked');
+  const blockedTasks = tasks.filter((t) => isCountedTask(t) && t.status === 'blocked');
   const blockedFeatures = features.filter((f) => f.status === 'blocked');
   const openQuestions = board.clarifications.filter((c) => c.status !== 'resolved' && c.status !== 'routed_to_change_request');
 
@@ -75,7 +77,12 @@ export default async function DevelopmentPage({ params }: { params: Promise<{ pr
         description={
           modules.length === 0
             ? 'No modules broken down yet.'
-            : `${modules.length} module${modules.length === 1 ? '' : 's'}, ${tasks.length} task${tasks.length === 1 ? '' : 's'}.`
+            : `${modules.length} module${modules.length === 1 ? '' : 's'}, ${tasks.filter(isCountedTask).length} task${tasks.filter(isCountedTask).length === 1 ? '' : 's'}.`
+        }
+        actions={
+          <Link href={showArchived ? `/projects/${projectId}/development` : `/projects/${projectId}/development?archived=1`} className={buttonClass('ghost', 'sm')}>
+            {showArchived ? 'Hide archived tasks' : 'Show archived tasks'}
+          </Link>
         }
       />
 
@@ -194,7 +201,7 @@ export default async function DevelopmentPage({ params }: { params: Promise<{ pr
                       </span>
                       {e.reason ? <span className="text-muted">{e.reason}</span> : null}
                     </span>
-                    {mayManage && e.kind === 'blocker_escalated' && e.status === 'open' ? <AcknowledgeEscalationButton projectId={projectId} eventId={e.id} /> : null}
+                    {mayManage && (e.kind === 'blocker_escalated' || e.kind === 'dependency_requested') && e.status === 'open' ? <AcknowledgeEscalationButton projectId={projectId} eventId={e.id} /> : null}
                   </li>
                 ))}
               </ul>

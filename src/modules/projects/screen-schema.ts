@@ -107,3 +107,10 @@ export const unlinkDesignAssetSchema = z.object({
   linkId: z.uuid(),
 });
 export type UnlinkDesignAssetInput = z.infer<typeof unlinkDesignAssetSchema>;
+
+/** Q-B7 / SCR-035 — draft the next screen baseline from a screen whose baseline is finalized. From v2 a reason is required (the door says so). */
+export const draftNextScreenBaselineSchema = z.object({
+  projectId: z.uuid(),
+  changeReason: z.string().trim().min(1, 'Say why the baseline is being reopened.').max(2000),
+});
+export type DraftNextScreenBaselineInput = z.infer<typeof draftNextScreenBaselineSchema>;

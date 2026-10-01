@@ -16,7 +16,7 @@ import { hasConfiguredProvider } from '@/lib/ai/router';
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can, hasRole } from '@/lib/authz/permissions';
-import { Badge, Callout, Card, CardHeader, DetailList, DetailRow, EmptyState, IconAgents, PageHeader, StatusBadge, PermissionDenied } from '@/ui';
+import { Badge, Callout, Card, CardHeader, DetailList, DetailRow, EmptyState, IconAgents, PageHeader, StatusBadge, PermissionDenied, ViewAll } from '@/ui';
 
 import { AgentCapsForm, AgentStatusForm } from './controls-form';
 import { ProjectAssignments, ToolPermissionsList } from './policy-panel';
@@ -160,15 +160,23 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ ag
         )}
       </Card>
 
+      {/* SCR-063 "Responsibilities": what the registry says this agent is for, apart from what it may not do. */}
       <Card>
-        <CardHeader title="Guardrails" description="What this agent may and may not do, as the registry states it. The ceilings above are enforced by the runtime per run." />
+        <CardHeader title="Responsibilities" description="What this agent is for, as the registry states it. It is a statement of duty, not a grant: the limits below decide what it may actually do." />
         <div className="px-4 pb-4 text-[13px] leading-relaxed sm:px-5">
           {agent.description ? <p className="whitespace-pre-line">{agent.description}</p> : <p className="text-muted">The registry holds no description for this agent.</p>}
-          <p className="mt-3 text-xs text-muted">
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader title="Guardrails" description="What this agent may and may not do. The ceilings are enforced by the runtime per run; the agent cannot change any of them itself." />
+        <div className="px-4 pb-4 text-[13px] leading-relaxed sm:px-5">
+          <p className="text-xs text-muted">
             Autonomy <span className="text-foreground">{agent.autonomyLevel}</span> · at most{' '}
             <span className="text-foreground">{agent.maxSteps ?? '—'}</span> steps and{' '}
-            <span className="text-foreground">{agent.maxCostMinor !== null ? money(agent.maxCostMinor) : '—'}</span> per run. Tool permissions and project
-            assignments are this organisation's policy record, below.
+            <span className="text-foreground">{agent.maxCostMinor !== null ? money(agent.maxCostMinor) : '—'}</span> per run. Work classes:{' '}
+            <span className="text-foreground">{agent.allowedWorkClasses.length === 0 ? 'every class its autonomy admits' : agent.allowedWorkClasses.map((w) => w.replace('_', ' ')).join(', ')}</span>.
+            Tool permissions and project assignments are this organisation&apos;s policy record, below, and only the owner changes them (the owner&apos;s change is audited); an agent has no way to widen its own.
           </p>
         </div>
       </Card>
@@ -279,7 +287,7 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ ag
       </Card>
 
       <Card>
-        <CardHeader title="Recent runs" description={runs.length === 0 ? undefined : `${runs.length} most recent`} />
+        <CardHeader title="Recent runs" description={runs.length === 0 ? undefined : `${runs.length} most recent`} actions={<ViewAll href={`/usage/runs?agent=${encodeURIComponent(agent.key)}`} label="All runs of this agent" />} />
         {runs.length > 0 ? (
           <ul className="divide-y divide-line">
             {runs.map((r) => (

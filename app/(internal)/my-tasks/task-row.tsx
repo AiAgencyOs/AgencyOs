@@ -4,6 +4,7 @@ import { useActionState, useState } from 'react';
 
 import { setTaskStatusAction } from '@/modules/projects/actions';
 import { TASK_STATUSES } from '@/modules/projects/schema';
+import { selectableStatuses } from '@/modules/projects/task-transitions';
 import type { MyTaskRow } from '@/modules/projects/queries';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { buttonClass, selectClass } from '@/ui';
@@ -25,6 +26,7 @@ export function MyTaskStatusSelect({ task }: { task: MyTaskRow }) {
       <input type="hidden" name="taskId" value={task.id} />
       <select
         name="status"
+        aria-label={`Status of ${task.title}`}
         defaultValue={task.status}
         className={`${selectClass} py-1 text-xs`}
         disabled={pending}
@@ -36,7 +38,7 @@ export function MyTaskStatusSelect({ task }: { task: MyTaskRow }) {
           }
         }}
       >
-        {TASK_STATUSES.map((s) => (
+        {selectableStatuses(TASK_STATUSES, task.status).map((s) => (
           <option key={s} value={s}>
             {s.replace('_', ' ')}
           </option>

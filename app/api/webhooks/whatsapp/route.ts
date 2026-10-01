@@ -2,7 +2,7 @@ import { after, NextResponse, type NextRequest } from 'next/server';
 
 import { nudgeRunner } from '@/lib/jobs/nudge';
 import { createAdminClient } from '@/lib/db/admin';
-import { serverEnv } from '@/lib/env';
+import { resolveSecret } from '@/lib/secrets/resolve';
 import { newCorrelationId } from '@/lib/errors';
 import { parseDelivery } from '@/lib/whatsapp/payload';
 import {
@@ -115,7 +115,7 @@ async function readBoundedBody(
  * verbatim, so a JSON-encoded challenge fails verification.
  */
 export async function GET(request: NextRequest) {
-  const { WHATSAPP_VERIFY_TOKEN } = serverEnv();
+  const WHATSAPP_VERIFY_TOKEN = (await resolveSecret('WHATSAPP_VERIFY_TOKEN')) ?? undefined;
 
   const auth = authorizeSubscription(request.nextUrl.searchParams, WHATSAPP_VERIFY_TOKEN);
 
@@ -162,7 +162,7 @@ export async function GET(request: NextRequest) {
  * carried nothing to store, and `rejected` is content that did not survive.
  */
 export async function POST(request: NextRequest) {
-  const { WHATSAPP_APP_SECRET } = serverEnv();
+  const WHATSAPP_APP_SECRET = (await resolveSecret('WHATSAPP_APP_SECRET')) ?? undefined;
   const correlationId = newCorrelationId();
 
   // Read the body with a hard byte ceiling, streaming, so an oversized POST is

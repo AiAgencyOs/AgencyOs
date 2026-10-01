@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState } from 'react';
 
 import {
@@ -730,7 +731,13 @@ export function FigmaReferenceForm({
         <p className="max-w-2xl text-xs text-muted">
           {configured
             ? 'The reference is checked against the file and the version is read from Figma. AgencyOS does not create Figma artwork — a designer does, and this records where it is.'
-            : 'No Figma token is configured, so this records what you paste without checking it. AgencyOS does not create Figma artwork either way.'}
+            : (
+              <>
+                No Figma token is configured (add it under{' '}
+                <Link href="/security/keys#design" className="underline underline-offset-2">Governance &amp; Security › Keys &amp; secrets</Link>
+                ), so this records what you paste without checking it. AgencyOS does not create Figma artwork either way.
+              </>
+            )}
         </p>
         <div className="flex flex-wrap gap-2">
           <label className="flex flex-col gap-1">

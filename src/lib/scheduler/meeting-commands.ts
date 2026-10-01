@@ -3,7 +3,7 @@ import 'server-only';
 import { z } from 'zod';
 
 import { requireInternal } from '@/lib/auth/session';
-import { createGoogleCalendar } from '@/lib/scheduling/google';
+import { resolveGoogleCalendar } from '@/lib/scheduling/google';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
@@ -209,7 +209,7 @@ export async function rescheduleMeeting(
 /** The adapter cancels the old booking's event, and says so on its own audit row. Null when there was nothing to take back. */
 async function takeProviderEventBack(meetingIdValue: string, providerEventId: string | null): Promise<string | null> {
   if (!providerEventId) return null;
-  const calendar = createGoogleCalendar();
+  const calendar = await resolveGoogleCalendar();
   if (!calendar) return `The calendar event ${providerEventId} was NOT cancelled at the provider: no calendar is configured here.`;
   const taken = await calendar.cancelEvent(providerEventId);
   const supabase = await createClient();
@@ -266,6 +266,45 @@ export async function addMeetingEvidence(id: string, kind: string, visibility: s
     'crm.add_meeting_evidence',
     { p_meeting_id: parsed.data.id, p_kind: parsed.data.kind, p_body: parsed.data.body, p_visibility: parsed.data.visibility },
     'Could not attach the evidence.',
+    (row) => interpretEvidence(row?.outcome),
+  );
+}
+
+/**
+ * SCR-060: an uploaded text file kept as evidence. The caller has already read
+ * the file and judged it (`decideMeetingNoteFile`); this goes through the SAME
+ * door as typed notes, so the audit row, the capability and the named refusals
+ * are the same, and adds the file's name, media type and size to the row.
+ */
+export async function addMeetingEvidenceFile(
+  id: string,
+  visibility: string,
+  file: { kind: 'notes' | 'transcript'; body: string; reference: string; mediaType: string; byteSize: number },
+): Promise<Result<Concluded>> {
+  const parsed = z
+    .object({
+      id: meetingId,
+      kind: z.enum(['notes', 'transcript']),
+      visibility: z.enum(EVIDENCE_VISIBILITIES),
+      body: z.string().min(1).max(20000),
+      reference: z.string().min(1).max(260),
+      mediaType: z.string().max(100),
+      byteSize: z.number().int().positive(),
+    })
+    .safeParse({ id, visibility, ...file });
+  if (!parsed.success) return err('VALIDATION', 'That file cannot be kept as evidence: choose a text file under 20,000 characters, internal or client-visible.');
+  return throughDoor(
+    'crm.add_meeting_evidence',
+    {
+      p_meeting_id: parsed.data.id,
+      p_kind: parsed.data.kind,
+      p_body: parsed.data.body,
+      p_visibility: parsed.data.visibility,
+      p_artifact_ref: parsed.data.reference,
+      p_media_type: parsed.data.mediaType,
+      p_byte_size: String(parsed.data.byteSize),
+    },
+    'Could not attach the file.',
     (row) => interpretEvidence(row?.outcome),
   );
 }

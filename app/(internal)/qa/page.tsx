@@ -7,6 +7,11 @@ import { normaliseSearch } from '@/lib/db/search';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
 import { listPerformanceNotes, readCompatibilityMatrix } from '@/modules/qa/compatibility-queries';
+import { mergeDeviceCards, unsupportedFor } from '@/modules/qa/device-config';
+import { listDeviceConfigurations } from '@/modules/qa/device-queries';
+import { deviceTiles, PLATFORMS, type Platform } from '@/modules/qa/device-tiles';
+import { DeviceTestingCard, QaTeamCard } from '@/modules/qa/qa-device-view';
+import { listDeviceRuns, readQaTeam } from '@/modules/qa/qa-team-queries';
 import { listReleaseHolds } from '@/modules/projects/release-hold-queries';
 import { listRetestQueue, readCoverageMatrix } from '@/modules/qa/dashboard-queries';
 import { listOpenDefects, readOrgTestCoverage, readSuiteCoverage, type OpenDefect } from '@/modules/qa/queries';
@@ -15,6 +20,8 @@ import { describeCron } from '@/modules/qa/cron';
 import { listSuiteSchedules } from '@/modules/qa/schedule-queries';
 import { listRecentRuns, listReleaseCandidates, readBugTrend, readOrgEvidenceSummary } from '@/modules/qa/summary-queries';
 
+import { AddDeviceForm, DeviceSupportForm } from './device-forms';
+import { PreviewButton, PreviewDrawerProvider } from '../preview-drawer';
 import { AssignRetestForm, BlockReleaseFromDashboard } from './qa-forms';
 import {
   buttonClass,
@@ -70,12 +77,13 @@ function countBy(defects: OpenDefect[], severity: string): number {
  * no new capability, and no client ever reaches this (Doc 14: "a client is
  * told what was fixed, not what is currently broken").
  */
-export default async function QaDashboardPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+export default async function QaDashboardPage({ searchParams }: { searchParams: Promise<{ q?: string; platform?: string }> }) {
   const context = await requireInternal('/qa');
   const clock = await agencyClock();
   if (!can(context, 'project.read')) return <PermissionDenied />;
   // Search within domain (bucket G-3): the bug list, by title or environment, filtered by the reader.
-  const { q: qRaw } = await searchParams;
+  const { q: qRaw, platform: platformRaw } = await searchParams;
+  const platform = (PLATFORMS as readonly string[]).includes(platformRaw ?? '') ? (platformRaw as Platform) : null;
   const q = normaliseSearch(qRaw);
 
   const [defects, coverage, suiteCoverage, matrix, retest, compat, perfNotes, holds] = await Promise.all([
@@ -93,7 +101,7 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
   // project, org-wide evidence, schedules, and the roster the retest form needs.
   const mayWrite = can(context, 'project.write');
   const maySignOff = can(context, 'project.sign_off');
-  const [recentRuns, trend, candidates, evidence, schedules, roster, projects] = await Promise.all([
+  const [recentRuns, trend, candidates, evidence, schedules, roster, projects, deviceRuns, qaTeam, deviceConfigs] = await Promise.all([
     listRecentRuns(25),
     readBugTrend(12),
     listReleaseCandidates(),
@@ -101,7 +109,15 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
     listSuiteSchedules(),
     mayWrite ? listInternalRoster() : Promise.resolve([]),
     maySignOff ? listProjects(500) : Promise.resolve([]),
+    listDeviceRuns(),
+    readQaTeam(),
+    listDeviceConfigurations(),
   ]);
+  // SCR-044/048: registered devices (and the ones explicitly unsupported) sit beside what runs recorded.
+  const tiles = mergeDeviceCards(deviceTiles(deviceRuns), deviceConfigs);
+  // The matrix grows by every registered device and browser, so a refused cell can be drawn as refused.
+  const matrixDevices = [...new Set([...compat.devices, ...deviceConfigs.map((c) => c.name)])].sort();
+  const matrixBrowsers = [...new Set([...compat.browsers, ...deviceConfigs.flatMap((c) => (c.browser ? [c.browser] : []))])].sort();
   const candidateByProject = new Map(candidates.map((c) => [c.projectId, c]));
   const trendRows = trend.map((p) => ({ week: p.week.slice(5), raised: p.raised, settled: p.settled }));
   const blockers = countBy(defects, 'blocker');
@@ -130,7 +146,7 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
       desktopOnly: true,
       cell: (d) => (
         <span className="flex items-center gap-2 text-muted">
-          <Avatar name={d.projectName} size="sm" square tone="neutral" className="bg-sidebar-bg text-sidebar-fg ring-0" />
+          <Avatar name={d.projectName} size="sm" square tone="sidebar" />
           <span className="truncate">{d.projectName}</span>
         </span>
       ),
@@ -138,12 +154,14 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
     { key: 'severity', header: 'Severity', badge: true, cell: (d) => <Badge tone={SEVERITY_TONE[d.severity] ?? 'neutral'}>{humanize(d.severity)}</Badge> },
     { key: 'environment', header: 'Environment', desktopOnly: true, cellClassName: 'text-muted', cell: (d) => d.environment ?? '—' },
     { key: 'raised', header: 'Raised', align: 'right', cellClassName: 'text-muted whitespace-nowrap', cell: (d) => clock.date(d.created_at) },
+    { key: 'quick', header: '', align: 'right', cell: (d) => <PreviewButton group="Bug" id={d.id} /> },
   ];
 
   return (
+    <PreviewDrawerProvider>
     <div className="flex flex-col gap-5">
       <PageHeader
-        title="QA & testing"
+        title="QA & Testing"
         description="Test runs, suite coverage and every open defect across all projects — most severe first."
         actions={<LiveRefresh topics={['qa', 'deliverables']} />}
       />
@@ -158,6 +176,98 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(19rem,1fr)]">
         <div className="flex min-w-0 flex-col gap-4">
+          {/* SCR-044 (bucket F): recent runs, org-wide — open first, each linking to its run, its build and its project. */}
+          <Card>
+            <CardHeader title="Test Runs" description={`${evidence.openRuns} open across every project. A run is opened against a build, closed once with its counts, and rerun by pointing a new run at it.`} />
+            {recentRuns.length === 0 ? (
+              <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No test run recorded yet.</p>
+            ) : (
+              <div className="px-4 pb-4 sm:px-5">
+                <DataTable
+                  dense
+                  rows={recentRuns}
+                  columns={[
+                    {
+                      key: 'run',
+                      header: 'Run',
+                      primary: true,
+                      cell: (r) => (
+                        <span className="flex flex-wrap items-center gap-2">
+                          <Badge tone={r.status === 'open' ? 'warning' : r.failed > 0 || r.blocked > 0 ? 'danger' : 'success'}>{r.status}</Badge>
+                          <Link href={`/projects/${r.projectId}/qa#run-${r.id}`} className="font-medium hover:underline">{humanize(r.suite)}</Link>
+                          {r.rerunOf ? <span className="text-xs text-muted">rerun</span> : null}
+                        </span>
+                      ),
+                    },
+                    { key: 'project', header: 'Project', desktopOnly: true, cellClassName: 'text-muted', cell: (r) => <Link href={`/projects/${r.projectId}/qa`} className="hover:underline">{r.projectName}</Link> },
+                    { key: 'build', header: 'Build', cellClassName: 'text-muted', cell: (r) => <Link href={`/projects/${r.projectId}/builds`} className="font-mono text-xs hover:underline">{r.deliverableVersion !== null ? `v${r.deliverableVersion}` : 'build'}</Link> },
+                    { key: 'counts', header: 'Pass / fail / blocked', align: 'right', cellClassName: 'tabular', cell: (r) => (r.status === 'open' ? <span className="text-muted">in progress</span> : `${r.passed} / ${r.failed} / ${r.blocked}${r.skipped > 0 ? ` (+${r.skipped} skipped)` : ''}`) },
+                    { key: 'quick', header: '', align: 'right', cell: (r) => <PreviewButton group="Test Run" id={r.id} /> },
+                    { key: 'when', header: 'Started · ended', align: 'right', desktopOnly: true, cellClassName: 'text-muted whitespace-nowrap', cell: (r) => `${clock.dateTime(r.startedAt ?? r.executedAt)}${r.endedAt ? ` · ${clock.dateTime(r.endedAt)}` : ''}` },
+                  ]}
+                  getKey={(r) => r.id}
+                />
+              </div>
+            )}
+          </Card>
+
+          <DeviceTestingCard
+            tiles={tiles}
+            active={platform}
+            hrefFor={(p) => (p ? `/qa?platform=${p}#device-testing` : '/qa#device-testing')}
+            addHref="/qa#device-testing"
+            date={(iso) => clock.date(iso)}
+            addForm={mayWrite ? <AddDeviceForm /> : undefined}
+            renderSupport={mayWrite ? (t) => (t.configId ? <DeviceSupportForm deviceId={t.configId} status={t.state === 'unsupported' ? 'unsupported' : 'supported'} name={t.name} /> : null) : undefined}
+          />
+
+          {matrixDevices.length > 0 ? (
+            <Card>
+              <CardHeader
+                title="Device × Browser"
+                description={`From compatibility-suite runs in the last 90 days. Each cell is runs recorded and tests failed — a report, not a gate. A cell the agency has recorded as unsupported says so, with its reason; a dash is untested.${compat.unplaced > 0 ? ` ${compat.unplaced} run${compat.unplaced === 1 ? '' : 's'} recorded no device or browser and sit${compat.unplaced === 1 ? 's' : ''} outside the grid.` : ''}`}
+              />
+              <div className="overflow-x-auto px-4 pb-4 sm:px-5">
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-wider text-muted">
+                      <th className="py-2 pr-3">Device</th>
+                      {matrixBrowsers.map((b) => (
+                        <th key={b} className="py-2 pr-3 text-right">{b}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matrixDevices.map((d) => (
+                      <tr key={d} className="border-b border-line last:border-0">
+                        <td className="py-2 pr-3 font-medium">{d}</td>
+                        {matrixBrowsers.map((b) => {
+                          const cell = compat.cells.get(`${d}|${b}`);
+                          const refused = unsupportedFor(deviceConfigs, d, b);
+                          return (
+                            <td key={b} className="py-2 pr-3 text-right tabular">
+                              {refused ? (
+                                <span className="text-muted" title={refused.reason ?? undefined}>
+                                  Unsupported{refused.reason ? ` — ${refused.reason}` : ''}
+                                </span>
+                              ) : cell ? (
+                                <span className={cell.failed > 0 ? 'text-danger' : 'text-success'}>
+                                  {cell.runs} run{cell.runs === 1 ? '' : 's'} · {cell.failed} failed
+                                </span>
+                              ) : (
+                                <span className="text-muted">—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+          </Card>
+          ) : null}
+
           <Card>
             <CardHeader title="Test suites" description="Regression, compatibility and performance — the last 30 days, across every project." />
             <ul className="divide-y divide-line">
@@ -184,53 +294,6 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
             </ul>
           </Card>
 
-          {/* SCR-044 (bucket F): recent runs, org-wide — open first, each linking to its run, its build and its project. */}
-          <Card>
-            <CardHeader title="Recent runs" description={`${evidence.openRuns} open across every project. A run is opened against a build, closed once with its counts, and rerun by pointing a new run at it.`} />
-            {recentRuns.length === 0 ? (
-              <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No test run recorded yet.</p>
-            ) : (
-              <div className="px-4 pb-4 sm:px-5">
-                <DataTable
-                  dense
-                  rows={recentRuns}
-                  columns={[
-                    {
-                      key: 'run',
-                      header: 'Run',
-                      primary: true,
-                      cell: (r) => (
-                        <span className="flex flex-wrap items-center gap-2">
-                          <Badge tone={r.status === 'open' ? 'warning' : r.failed > 0 || r.blocked > 0 ? 'danger' : 'success'}>{r.status}</Badge>
-                          <Link href={`/projects/${r.projectId}/qa#run-${r.id}`} className="font-medium hover:underline">{humanize(r.suite)}</Link>
-                          {r.rerunOf ? <span className="text-xs text-muted">rerun</span> : null}
-                        </span>
-                      ),
-                    },
-                    { key: 'project', header: 'Project', desktopOnly: true, cellClassName: 'text-muted', cell: (r) => <Link href={`/projects/${r.projectId}/qa`} className="hover:underline">{r.projectName}</Link> },
-                    { key: 'build', header: 'Build', cellClassName: 'text-muted', cell: (r) => <Link href={`/projects/${r.projectId}/builds`} className="font-mono text-xs hover:underline">{r.deliverableVersion !== null ? `v${r.deliverableVersion}` : 'build'}</Link> },
-                    { key: 'counts', header: 'Pass / fail / blocked', align: 'right', cellClassName: 'tabular', cell: (r) => (r.status === 'open' ? <span className="text-muted">in progress</span> : `${r.passed} / ${r.failed} / ${r.blocked}${r.skipped > 0 ? ` (+${r.skipped} skipped)` : ''}`) },
-                    { key: 'when', header: 'Started · ended', align: 'right', desktopOnly: true, cellClassName: 'text-muted whitespace-nowrap', cell: (r) => `${clock.dateTime(r.startedAt ?? r.executedAt)}${r.endedAt ? ` · ${clock.dateTime(r.endedAt)}` : ''}` },
-                  ]}
-                  getKey={(r) => r.id}
-                />
-              </div>
-            )}
-          </Card>
-
-          {/* SCR-044 (bucket F): bug trend — raised and settled per week, from qa.defects; the two lines are direct-labelled by the legend and read as counts. */}
-          <Card>
-            <CardHeader title="Bug trend" description="Defects raised and settled (verified or won't-fix) per week, last 12 weeks. Counts of rows, UTC weeks starting Monday." />
-            <div className="p-4 sm:p-5">
-              {trend.every((p) => p.raised === 0 && p.settled === 0) ? (
-                <p className="text-[13px] text-muted">No defect raised or settled in the last 12 weeks.</p>
-              ) : (
-                <TrendChart data={trendRows} xKey="week" series={[{ key: 'raised', label: 'Raised', color: 'var(--danger)' }, { key: 'settled', label: 'Settled', color: 'var(--success)' }]} height={200} />
-              )}
-              <p className="mt-2 text-xs text-muted">Open at the end of the last week: {trend[trend.length - 1]?.openAtEnd ?? 0}.</p>
-            </div>
-          </Card>
-
           <Card>
             <CardHeader title={`Open bugs (${defects.length})`} description="Open a bug for its page — reproduction, evidence, linked task and build, and its fix / retest history (SCR-047)." actions={<ViewAll href="/projects" label="Projects" />} />
             {/* Search within domain (bucket G-3): the bug list by title or environment, filtered by the reader. */}
@@ -250,6 +313,19 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
                 action={q ? <Link href="/qa" className={buttonClass('secondary', 'sm')}>Clear search</Link> : <Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>}
               />
             )}
+          </Card>
+
+          {/* SCR-044 (bucket F): bug trend — raised and settled per week, from qa.defects; the two lines are direct-labelled by the legend and read as counts. */}
+          <Card>
+            <CardHeader title="Bug trend" description="Defects raised and settled (verified or won't-fix) per week, last 12 weeks. Counts of rows, UTC weeks starting Monday." />
+            <div className="p-4 sm:p-5">
+              {trend.every((p) => p.raised === 0 && p.settled === 0) ? (
+                <p className="text-[13px] text-muted">No defect raised or settled in the last 12 weeks.</p>
+              ) : (
+                <TrendChart data={trendRows} xKey="week" series={[{ key: 'raised', label: 'Raised', color: 'var(--danger)' }, { key: 'settled', label: 'Settled', color: 'var(--success)' }]} height={200} />
+              )}
+              <p className="mt-2 text-xs text-muted">Open at the end of the last week: {trend[trend.length - 1]?.openAtEnd ?? 0}.</p>
+            </div>
           </Card>
 
           <Card>
@@ -311,50 +387,6 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
           </Card>
 
           <Card>
-            <CardHeader
-              title="Compatibility matrix"
-              description={`Device × browser, from compatibility-suite runs in the last 90 days. Each cell is runs recorded and tests failed — a report, not a gate.${compat.unplaced > 0 ? ` ${compat.unplaced} run${compat.unplaced === 1 ? '' : 's'} recorded no device or browser and sit${compat.unplaced === 1 ? 's' : ''} outside the grid.` : ''}`}
-            />
-            {compat.devices.length === 0 ? (
-              <EmptyState icon={<IconList size={22} />} title="No placed compatibility run" description="A cell appears once a compatibility run records the device and browser it ran on." action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>} />
-            ) : (
-              <div className="overflow-x-auto px-4 pb-4 sm:px-5">
-                <table className="w-full text-[13px]">
-                  <thead>
-                    <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-wider text-muted">
-                      <th className="py-2 pr-3">Device</th>
-                      {compat.browsers.map((b) => (
-                        <th key={b} className="py-2 pr-3 text-right">{b}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {compat.devices.map((d) => (
-                      <tr key={d} className="border-b border-line last:border-0">
-                        <td className="py-2 pr-3 font-medium">{d}</td>
-                        {compat.browsers.map((b) => {
-                          const cell = compat.cells.get(`${d}|${b}`);
-                          return (
-                            <td key={b} className="py-2 pr-3 text-right tabular">
-                              {cell ? (
-                                <span className={cell.failed > 0 ? 'text-danger' : 'text-success'}>
-                                  {cell.runs} run{cell.runs === 1 ? '' : 's'} · {cell.failed} failed
-                                </span>
-                              ) : (
-                                <span className="text-muted">—</span>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Card>
-
-          <Card>
             <CardHeader title="Performance notes" description="What performance-suite runs measured, in the tester's words. No target is applied — Doc 14 §16 says targets are project-specific and none is configured." />
             {perfNotes.length === 0 ? (
               <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No performance run has recorded notes.</p>
@@ -400,7 +432,7 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
 
         <div className="flex min-w-0 flex-col gap-4">
           <Card>
-            <CardHeader title="QA progress" description={`Item results across ${runs} run${runs === 1 ? '' : 's'} in the last 30 days.`} />
+            <CardHeader title="QA Progress" description={`Item results across ${runs} run${runs === 1 ? '' : 's'} in the last 30 days.`} />
             <div className="p-4 sm:p-5">
               {outcomes === 0 ? (
                 <p className="text-[13px] text-muted">No test results recorded in the last 30 days.</p>
@@ -418,6 +450,8 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
             </div>
           </Card>
 
+          <QaTeamCard team={qaTeam} manageHref={qaTeam[0]?.projects[0] ? `/projects/${qaTeam[0].projects[0].id}/team` : null} />
+
           <Card>
             <CardHeader title="Defects by severity" />
             <ul className="flex flex-col gap-2 px-4 pb-4 sm:px-5">
@@ -430,6 +464,15 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
             </ul>
           </Card>
 
+          <QuickActions
+            title="Quick Actions"
+            actions={[
+              { label: 'Projects', icon: <IconProjects size={13} />, href: '/projects' },
+              { label: 'Production readiness', icon: <IconCheck size={13} />, href: '/production-readiness' },
+              { label: 'Approvals', icon: <IconClock size={13} />, href: '/approvals' },
+              { label: 'Reports', icon: <IconList size={13} />, href: '/reports' },
+            ]}
+          />
           {/* SCR-044 (bucket F): the org-wide QA evidence summary — every figure a count of rows; the per-project CSV stays on each project's QA page. */}
           <Card>
             <CardHeader title="QA evidence summary" description="Org-wide, all time. The per-project evidence CSV is on each project's QA page." />
@@ -484,14 +527,6 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
             </Card>
           ) : null}
 
-          <QuickActions
-            actions={[
-              { label: 'Projects', icon: <IconProjects size={13} />, href: '/projects' },
-              { label: 'Production readiness', icon: <IconCheck size={13} />, href: '/production-readiness' },
-              { label: 'Approvals', icon: <IconClock size={13} />, href: '/approvals' },
-              { label: 'Reports', icon: <IconList size={13} />, href: '/reports' },
-            ]}
-          />
           {defects[0] ? (
             <Card>
               <CardHeader title="Most severe open" />
@@ -506,5 +541,6 @@ export default async function QaDashboardPage({ searchParams }: { searchParams: 
         </div>
       </div>
     </div>
+    </PreviewDrawerProvider>
   );
 }

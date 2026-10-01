@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
+import { verifiedOn } from '@/lib/finance/verified-basis';
 
 /**
  * The finance gate queue — SCR-001 "Finance gate queue" (bucket F, stream
@@ -39,7 +40,7 @@ export async function listUnpaidMilestoneInvoices(limit = 25): Promise<UnpaidMil
   const { data, error } = await supabase
     .schema('finance')
     .from('invoices')
-    .select('id, number, status, currency, total_minor, paid_minor, due_at, project_id, milestone_id')
+    .select('id, number, status, currency, total_minor, verified_minor, due_at, project_id, milestone_id')
     .not('milestone_id', 'is', null)
     .in('status', UNPAID)
     .order('due_at', { ascending: true, nullsFirst: false })
@@ -72,7 +73,8 @@ export async function listUnpaidMilestoneInvoices(limit = 25): Promise<UnpaidMil
       status: r.status,
       currency: r.currency,
       totalMinor: r.total_minor,
-      paidMinor: r.paid_minor,
+      // verified payments only — what has actually been checked (verified-basis.ts)
+      paidMinor: verifiedOn(r),
       dueAt: r.due_at,
       projectId: r.project_id,
       projectName: r.project_id ? (projectById.get(r.project_id) ?? null) : null,

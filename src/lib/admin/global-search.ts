@@ -79,6 +79,7 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
         .from('tasks')
         .select('id, title, project_id')
         .ilike('title', like)
+        .is('archived_at', null)
         .limit(RESULTS_PER_ENTITY)
         .then(({ data }) => (data ?? []).map((t) => ({ id: t.id, label: t.title, group: 'Task', href: `/projects/${t.project_id}/board` }))),
     );

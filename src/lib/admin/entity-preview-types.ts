@@ -4,7 +4,7 @@
  * and the ⌘K palette; the reader in `entity-preview.ts` is server-only.
  */
 
-export const PREVIEW_GROUPS = ['Lead', 'Client', 'Project', 'Invoice', 'Quotation', 'Meeting', 'Task'] as const;
+export const PREVIEW_GROUPS = ['Lead', 'Client', 'Project', 'Invoice', 'Quotation', 'Meeting', 'Task', 'Build', 'Test Run', 'Bug', 'Payment'] as const;
 export type PreviewGroup = (typeof PREVIEW_GROUPS)[number];
 
 export function isPreviewGroup(value: string | undefined): value is PreviewGroup {

@@ -1,9 +1,12 @@
 import 'server-only';
 
+import { fileCredentialProblem } from './file-secrets-guard';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
+
+import { attachmentRoleRefusal, checklistItemRoleRefusal, dbRoleRefusal, taskRoleRefusal } from './project-role-service';
 
 import {
   addChecklistItemSchema,
@@ -46,6 +49,8 @@ export async function addTaskComment(input: AddTaskCommentInput): Promise<Result
   const context = await requireInternal();
   if (!can(context, 'task.write')) return refused('comment on a task');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+  const roleRefusal = await taskRoleRefusal(context, parsed.data.taskId);
+  if (roleRefusal) return roleRefusal;
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -62,6 +67,8 @@ export async function addTaskComment(input: AddTaskCommentInput): Promise<Result
 
   if (error || !data) {
     console.error(JSON.stringify({ level: 'error', scope: 'addTaskComment', detail: error?.message }));
+    const dbRefusal = dbRoleRefusal(error?.message);
+    if (dbRefusal) return dbRefusal;
     return err('INTERNAL', 'Could not add the comment.');
   }
   return ok({ commentId: data.id });
@@ -74,6 +81,8 @@ export async function addChecklistItem(input: AddChecklistItemInput): Promise<Re
   const context = await requireInternal();
   if (!can(context, 'task.write')) return refused('edit a task’s checklist');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+  const roleRefusal = await taskRoleRefusal(context, parsed.data.taskId);
+  if (roleRefusal) return roleRefusal;
 
   const supabase = await createClient();
 
@@ -107,6 +116,8 @@ export async function addChecklistItem(input: AddChecklistItemInput): Promise<Re
 
   if (error || !data) {
     console.error(JSON.stringify({ level: 'error', scope: 'addChecklistItem', detail: error?.message }));
+    const dbRefusal = dbRoleRefusal(error?.message);
+    if (dbRefusal) return dbRefusal;
     return err('INTERNAL', 'Could not add the checklist item.');
   }
   return ok({ itemId: data.id });
@@ -118,6 +129,8 @@ export async function setChecklistItemDone(input: SetChecklistItemDoneInput): Pr
 
   const context = await requireInternal();
   if (!can(context, 'task.write')) return refused('tick a checklist item');
+  const roleRefusal = await checklistItemRoleRefusal(context, parsed.data.itemId);
+  if (roleRefusal) return roleRefusal;
 
   const supabase = await createClient();
   const { error, count } = await supabase
@@ -133,6 +146,8 @@ export async function setChecklistItemDone(input: SetChecklistItemDoneInput): Pr
 
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'setChecklistItemDone', detail: error.message }));
+    const dbRefusal = dbRoleRefusal(error.message);
+    if (dbRefusal) return dbRefusal;
     return err('INTERNAL', 'Could not update the checklist item.');
   }
   if ((count ?? 0) === 0) return err('NOT_FOUND', 'Checklist item not found.');
@@ -145,11 +160,15 @@ export async function removeChecklistItem(input: RemoveChecklistItemInput): Prom
 
   const context = await requireInternal();
   if (!can(context, 'task.write')) return refused('edit a task’s checklist');
+  const roleRefusal = await checklistItemRoleRefusal(context, parsed.data.itemId);
+  if (roleRefusal) return roleRefusal;
 
   const supabase = await createClient();
   const { error } = await supabase.schema('projects').from('task_checklist_items').delete().eq('id', parsed.data.itemId);
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'removeChecklistItem', detail: error.message }));
+    const dbRefusal = dbRoleRefusal(error.message);
+    if (dbRefusal) return dbRefusal;
     return err('INTERNAL', 'Could not remove the checklist item.');
   }
   return ok({ removed: true });
@@ -162,6 +181,10 @@ export async function addTaskAttachment(input: AddTaskAttachmentInput): Promise<
   const context = await requireInternal();
   if (!can(context, 'task.write')) return refused('attach a link to a task');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+  const roleRefusal = await taskRoleRefusal(context, parsed.data.taskId);
+  if (roleRefusal) return roleRefusal;
+  const credential = fileCredentialProblem({ title: parsed.data.title, url: parsed.data.url });
+  if (credential) return err('VALIDATION', credential);
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -180,6 +203,8 @@ export async function addTaskAttachment(input: AddTaskAttachmentInput): Promise<
 
   if (error || !data) {
     console.error(JSON.stringify({ level: 'error', scope: 'addTaskAttachment', detail: error?.message }));
+    const dbRefusal = dbRoleRefusal(error?.message);
+    if (dbRefusal) return dbRefusal;
     return err('INTERNAL', 'Could not add the attachment.');
   }
   return ok({ attachmentId: data.id });
@@ -191,11 +216,15 @@ export async function removeTaskAttachment(input: RemoveTaskAttachmentInput): Pr
 
   const context = await requireInternal();
   if (!can(context, 'task.write')) return refused('remove a task attachment');
+  const roleRefusal = await attachmentRoleRefusal(context, parsed.data.attachmentId);
+  if (roleRefusal) return roleRefusal;
 
   const supabase = await createClient();
   const { error } = await supabase.schema('projects').from('task_attachments').delete().eq('id', parsed.data.attachmentId);
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'removeTaskAttachment', detail: error.message }));
+    const dbRefusal = dbRoleRefusal(error.message);
+    if (dbRefusal) return dbRefusal;
     return err('INTERNAL', 'Could not remove the attachment.');
   }
   return ok({ removed: true });

@@ -1,22 +1,31 @@
 import type { Metadata } from 'next';
 
+import { readSettingImpact } from '@/lib/admin/settings-impact';
+import { impactEffects } from '@/lib/admin/settings-impact-copy';
 import { requireInternal } from '@/lib/auth/session';
+import { hasRole } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 
 import {
   ApprovedOfferForm,
+  FunnelSampleFloorForm,
   NegotiationLimitsForm,
   PaymentTermsForm,
   QuotationValidityForm,
   PricingModelForm,
   ThirdPartyChargesForm,
 } from '../forms';
+import { ImpactGate } from '../impact-gate';
+import { SettingHistory } from '../setting-history';
+import { loadSettingHistory } from '../setting-history-entries';
+import { QuotationClausesPanel, type ClauseCard } from './clauses-panel';
 
 export const metadata: Metadata = { title: 'Settings — Commercial' };
 
 export default async function SettingsCommercialPage() {
-  await requireInternal('/settings');
+  const context = await requireInternal('/settings');
 
+  const [historyOf, impact] = await Promise.all([loadSettingHistory(), readSettingImpact()]);
   const supabase = await createClient();
   const { data: orgRows } = await supabase.schema('core').from('organizations').select('settings').limit(1);
   const orgSettings = (orgRows?.[0]?.settings ?? {}) as Record<string, unknown>;
@@ -69,12 +78,42 @@ export default async function SettingsCommercialPage() {
 
   const { readPaymentStructures } = await import('@/modules/sales/service');
   const termsResult = await readPaymentStructures();
-  const paymentTerms = termsResult.ok ? (termsResult.data[0] ?? null) : null;
+  // The seeded 30/20/30/20 is the default (owner decision 2, round 2); a structure the owner set comes first.
+  const paymentTerms = termsResult.ok ? (termsResult.data.find((t) => !t.isDefault) ?? termsResult.data[0] ?? null) : null;
+
+  // Audit B-6 — the four quotation clauses and every version of each. A read
+  // that failed refuses (G-054): an empty list would say "never edited" over
+  // wording the owner published.
+  const { readQuotationClauses } = await import('@/modules/sales/clauses-service');
+  const { CLAUSE_KEYS, CLAUSE_LABELS, CLAUSE_HINTS, DEFAULT_CLAUSES } = await import('@/modules/sales/quotation-clauses');
+  const clauseRead = await readQuotationClauses();
+  if (!clauseRead.ok) throw new Error(clauseRead.error.message);
+  const canEditClauses = hasRole(context, 'owner') || hasRole(context, 'ops_admin');
+  const clauseCards: ClauseCard[] = CLAUSE_KEYS.map((key) => {
+    const versions = clauseRead.data.filter((v) => v.key === key).sort((a, b) => b.version - a.version);
+    const current = versions[0];
+    const row = (v: (typeof versions)[number]) => ({
+      version: v.version,
+      body: v.body,
+      by: v.createdByName,
+      when: v.effectiveFrom.slice(0, 10),
+    });
+    return {
+      key,
+      label: CLAUSE_LABELS[key],
+      hint: CLAUSE_HINTS[key],
+      body: current?.body ?? DEFAULT_CLAUSES[key],
+      version: current?.version ?? null,
+      by: current?.createdByName ?? null,
+      when: current ? current.effectiveFrom.slice(0, 10) : null,
+      history: versions.map(row),
+    };
+  });
 
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
-        <h2 className="text-[13px] font-semibold tracking-tight">What the work costs</h2>
+        <h2 id="pricing-model" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">What the work costs</h2>
         <p className="text-xs text-muted">
           {pricingModelConfigured
             ? 'Set. A quotation drafted below your minimum band shows the owner what it cost to produce and what your bands are. A client never sees any of it.'
@@ -91,38 +130,59 @@ export default async function SettingsCommercialPage() {
             {spendSentence}
           </p>
         ) : null}
-        <PricingModelForm
+        <ImpactGate title="Changing the pricing model affects" effects={impactEffects('pricing', impact)}>
+          <PricingModelForm
           dayRate={dayRate}
           aiDayRate={aiDayRate}
           multiplierMin={multiplierMin}
           multiplierTarget={multiplierTarget}
           multiplierMax={multiplierMax}
         />
+        </ImpactGate>
+        <SettingHistory
+          label="Pricing model"
+          entries={historyOf('pricing_day_rate_rupees', 'pricing_ai_day_rate_rupees', 'pricing_multiplier_min', 'pricing_multiplier_target', 'pricing_multiplier_max')}
+        />
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
-        <h2 className="text-[13px] font-semibold tracking-tight">When the client pays</h2>
+        <h2 id="payment-terms" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">When the client pays</h2>
         <p className="text-xs text-muted">
-          {paymentTerms
+          {paymentTerms?.isDefault
+            ? 'Standard — quotations start as 30% / 20% / 30% / 20%, released by Phases 2, 4, 5 and 6. Change the milestones below to use your own; any split that totals 100% is allowed.'
+            : paymentTerms
             ? `Set — “${paymentTerms.name}”, ${paymentTerms.milestones.length} milestone${paymentTerms.milestones.length === 1 ? '' : 's'}. New quotations carry it; ones already drafted keep the terms they were drafted with.`
-            : 'Not set — quotations use the two standard schedules: 40/30/30 under ₹1,00,000 and 30/30/25/15 at or above it. Fill this in to use your own.'}
+            : 'Not set — fill this in to use your own milestones; any split that totals 100% is allowed.'}
         </p>
         <p className="text-xs text-muted">
           Milestones must add up to 100%. Name what has to <em>happen</em> for each payment rather
           than when it falls due — a demo is a promise about work, a date is a promise about a
           calendar.
         </p>
-        <PaymentTermsForm structure={paymentTerms} />
+        <ImpactGate title="Changing the payment terms affects" effects={impactEffects('terms', impact)}>
+          <PaymentTermsForm structure={paymentTerms} />
+        </ImpactGate>
 
-        <h3 className="mt-6 text-sm font-medium">How long a quotation stands</h3>
+        <h3 id="quotation-validity" className="mt-6 scroll-mt-24 text-sm font-medium">How long a quotation stands</h3>
         <p className="text-xs text-muted">
           {setting('quotation_validity_days')
             ? `Set — every new quotation says it is valid for ${setting('quotation_validity_days')} days from its date.`
             : 'Not set — quotations say 15 days, the figure most of the agency’s own past quotations used. Whole days, 1 to 90.'}
         </p>
-        <QuotationValidityForm current={setting('quotation_validity_days')} />
+        <ImpactGate title="Changing how long a quotation stands affects" effects={impactEffects('validity', impact)}>
+          <QuotationValidityForm current={setting('quotation_validity_days')} />
+        </ImpactGate>
+        <SettingHistory label="Quotation validity" entries={historyOf('quotation_validity_days')} />
 
-        <h3 className="mt-6 text-sm font-medium">Third-party charges</h3>
+        <h3 className="mt-6 text-sm font-medium">Quotation clauses</h3>
+        <p className="text-xs text-muted">
+          {clauseCards.some((c) => c.version !== null)
+            ? 'Some of these are in your own words. A quotation prints the wording in force when it was first issued and keeps it — editing here never rewrites one already sent.'
+            : 'Standard wording — none of these has been edited. Publish your own and every quotation issued from then on prints it; ones already issued keep what they printed.'}
+        </p>
+        <QuotationClausesPanel clauses={clauseCards} canEdit={canEditClauses} />
+
+        <h3 id="third-party-charges" className="mt-6 scroll-mt-24 text-sm font-medium">Third-party charges</h3>
         <p className="text-xs text-muted">
           What a quotation is allowed to say a gateway, store or service costs. The agent may cite
           one of these and cannot write a figure of its own.
@@ -131,22 +191,43 @@ export default async function SettingsCommercialPage() {
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
-        <h2 className="text-[13px] font-semibold tracking-tight">Limits on what the agent may do alone</h2>
+        <h2 id="negotiation-limits" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Limits on what the agent may do alone</h2>
         <p className="text-xs text-muted">
           {anyLimitSet
             ? 'Set. These bound what happens with nobody looking. None of them can refuse a decision you make yourself.'
             : 'None set — nothing bounds the agent beyond the rules already built in. Every box is optional; fill in the ones you have a number for.'}
         </p>
-        <NegotiationLimitsForm
+        <ImpactGate title="Changing the negotiation limits affects" effects={impactEffects('limits', impact)}>
+          <NegotiationLimitsForm
           maxRounds={maxRounds}
           minPrice={minPrice}
           maxDiscount={maxDiscount}
           maxAutonomous={maxAutonomous}
         />
+        </ImpactGate>
+        <SettingHistory
+          label="Negotiation limits"
+          entries={historyOf('negotiation_max_rounds', 'negotiation_min_price_rupees', 'negotiation_max_discount_pct', 'negotiation_max_autonomous_quote_rupees')}
+        />
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
-        <h2 className="text-[13px] font-semibold tracking-tight">An offer the agent may apply</h2>
+        <h2 className="text-[13px] font-semibold tracking-tight">How many leads before the funnel names a leak</h2>
+        <p className="text-xs text-muted">
+          {setting('funnel_min_leads_to_name_leak')
+            ? `Set — the funnel names its biggest drop once a window holds ${setting('funnel_min_leads_to_name_leak')} leads.`
+            : 'Not set — the funnel names its biggest drop once a window holds 20 leads. Whole leads, 5 to 500.'}
+        </p>
+        <p className="text-xs text-muted">
+          Below this the biggest drop is noise, so the report says it does not have enough rather
+          than point at a stage. It changes when the report speaks, never a count.
+        </p>
+        <FunnelSampleFloorForm current={setting('funnel_min_leads_to_name_leak')} />
+        <SettingHistory label="Funnel sample floor" entries={historyOf('funnel_min_leads_to_name_leak')} />
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
+        <h2 id="approved-offer" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">An offer the agent may apply</h2>
         <p className="text-xs text-muted">
           {offer
             ? `Authorised: ${offer.label} — ${offer.discountPct}% off, because ${offer.condition}.${
@@ -160,12 +241,14 @@ export default async function SettingsCommercialPage() {
           once per deal, never below your own minimum band, and never past its date — without the
           agent coming back to you. You are told each time. Clear all three fields to withdraw it.
         </p>
-        <ApprovedOfferForm
+        <ImpactGate title="Changing the standing offer affects" effects={impactEffects('offer', impact)}>
+          <ApprovedOfferForm
           label={offer?.label ?? null}
           condition={offer?.condition ?? null}
           discountPct={offer?.discountPct ?? null}
           validUntil={offer?.validUntil ?? null}
         />
+        </ImpactGate>
       </div>
     </div>
   );

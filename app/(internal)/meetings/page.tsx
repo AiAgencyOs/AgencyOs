@@ -87,6 +87,9 @@ export default async function MeetingsPage({
   const q = normaliseSearch(params.q);
 
   const rows = await listMeetings({ from: window.from, to: window.to, status, mode, owner, newestFirst: window.key === 'past', limit: LIMIT, q: q || undefined });
+  // The count behind the "Upcoming" tile: agreed (booked) meetings from the agency's today onward, with the same owner and mode filters.
+  const upcomingFrom = meetingWindow('today', now, agencyZone).from;
+  const upcoming = await listMeetings({ from: upcomingFrom, to: new Date(upcomingFrom.getTime() + 366 * 86_400_000), status: 'booked', mode, owner, limit: LIMIT });
   const jobs = await listJobsForMeetings(rows.map((r) => r.id));
   // SCR-010 — the project each meeting is about, when it is about one.
   const projectLinks = await readMeetingProjects(rows.map((r) => r.id));
@@ -94,7 +97,7 @@ export default async function MeetingsPage({
   for (const j of jobs) if (j.kind === 'meeting.reminder') byMeeting.set(j.meetingId, [...(byMeeting.get(j.meetingId) ?? []), j]);
   const owners = [...new Set(rows.map((r) => r.lead?.assigned_to).filter((id): id is string => Boolean(id)))];
 
-  const googleCalendar = googleCalendarConfig();
+  const googleCalendar = await googleCalendarConfig();
   const settings = await readOperationalSettings();
   const calendarVerifiedAt = settingInstant(settings, 'calendar_verified_at');
   const calendarVerified = settingText(settings, 'calendar_verified_calendar');
@@ -150,7 +153,8 @@ export default async function MeetingsPage({
       />
 
       <StatGrid cols={6}>
-        <Stat label="In this window" value={String(rows.length)} caption={window.chip} tone="brand" icon={<IconCalendar size={16} />} />
+        {/* SCR-010 "Upcoming": agreed meetings from today on, whatever window the list shows; the window's own count is the caption. */}
+        <Stat label="Upcoming" value={String(upcoming.length)} caption={`Booked, from today on · ${rows.length} in ${window.chip.toLowerCase()}`} tone="brand" icon={<IconCalendar size={16} />} href={href({ window: 'month', status: 'booked' })} />
         {(['requested', 'booked', 'completed', 'cancelled', 'no_show'] as const).map((s) => {
           const n = rows.filter((r) => r.status === s).length;
           return <Stat key={s} label={humanize(s)} value={String(n)} tone={n === 0 ? 'neutral' : statusTone(s)} icon={<IconClock size={16} />} href={href({ status: s })} />;
@@ -171,9 +175,9 @@ export default async function MeetingsPage({
         </Callout>
       ) : (
         <Callout tone="warning" title="Nothing can be proposed or booked from here yet">
-          No calendar credential is in the deployment environment (BLK-005), so availability answers{' '}
+          No calendar credential is configured (BLK-005), so availability answers{' '}
           <em>unconfigured</em> and the system refuses to invent a slot. ADM-102 chose Google Calendar + Meet;
-          the adapter registers the moment the owner places the service-account values (Configuration → Calendar).
+          the adapter registers the moment the owner adds the service-account key under <Link href="/security/keys" className="underline underline-offset-2">Governance &amp; Security › Keys &amp; secrets</Link> (or sets the service-account values in the deployment environment).
         </Callout>
       )}
 

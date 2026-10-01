@@ -206,16 +206,18 @@ async function waitForText(page, text, timeout = PUSH_MS) {
 /** The value under a `Stat` label (src/ui/primitives/stat.tsx: label <p>, value <p> in the next row). */
 async function statValue(page, label) {
   return page.evaluate((want) => {
-    const p = [...document.querySelectorAll('p')].find((e) => (e.textContent ?? '').trim() === want);
-    const value = p?.parentElement?.nextElementSibling?.querySelector('p');
+    // The tile's label is a <p>; its figure is the `tabular` <p> in the same block. Labels are matched case-insensitively
+    // (the panel's headings are Title Case) and the older layout, where the figure sat in the next sibling, still reads.
+    const p = [...document.querySelectorAll('p')].find((e) => (e.textContent ?? '').trim().toLowerCase() === want.toLowerCase());
+    const value = p?.parentElement?.querySelector('p.tabular') ?? p?.parentElement?.nextElementSibling?.querySelector('p');
     return value ? (value.textContent ?? '').trim() : null;
   }, label);
 }
 async function waitForStat(page, label, expected, timeout = PUSH_MS) {
   await page.waitForFunction(
     ([want, exp]) => {
-      const p = [...document.querySelectorAll('p')].find((e) => (e.textContent ?? '').trim() === want);
-      const value = p?.parentElement?.nextElementSibling?.querySelector('p');
+      const p = [...document.querySelectorAll('p')].find((e) => (e.textContent ?? '').trim().toLowerCase() === want.toLowerCase());
+      const value = p?.parentElement?.querySelector('p.tabular') ?? p?.parentElement?.nextElementSibling?.querySelector('p');
       return value ? (value.textContent ?? '').trim() === exp : false;
     },
     [label, String(expected)],
@@ -539,9 +541,10 @@ try {
     await shot(a, 'claim-pending-A');
 
     await b.goto(`${APP}/invoices/verify`, { waitUntil: 'networkidle' });
-    await b.locator(`#claim-decision-${claim.id}`).selectOption('confirm');
-    await b.locator(`#claim-evidence-${claim.id}`).fill(`bank statement line ${reference}`);
-    await b.locator(`#claim-decision-${claim.id}`).locator('xpath=ancestor::form').getByRole('button', { name: 'Answer the claim' }).click();
+    // W1 (SCR-054): the decision is four explicit buttons over one note; PAYMENT VERIFIED is the confirm.
+    const decisionForm = b.locator('form', { has: b.locator(`input[name="submissionId"][value="${claim.id}"]`) });
+    await decisionForm.getByLabel('Verification note').fill(`bank statement line ${reference}`);
+    await decisionForm.getByRole('button', { name: 'PAYMENT VERIFIED' }).click();
     let verified = null;
     for (let i = 0; i < 60 && verified?.status !== 'verified'; i += 1) {
       verified = one(await rest('GET', 'finance', `payment_submissions?id=eq.${claim.id}&select=id,status,verified_at,verified_by,verification_evidence`));

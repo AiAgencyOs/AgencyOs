@@ -1,14 +1,15 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useId } from 'react';
 
 import { recordExpenseAction } from '@/modules/finance/actions';
-import { EXPENSE_CATEGORIES } from '@/modules/finance/schema';
+import type { ExpenseCategory } from '@/modules/finance/expense-categories';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { FormMessage, buttonClass, inputClass, labelClass, selectClass } from '@/ui';
 
-export function RecordExpenseForm({ projects }: { projects: { id: string; name: string }[] }) {
+export function RecordExpenseForm({ projects, categories }: { projects: { id: string; name: string }[]; categories: readonly ExpenseCategory[] }) {
   const [state, action, pending] = useActionState(recordExpenseAction, IDLE_STATE);
+  const receiptFileId = useId();
 
   return (
     <form action={action} className="flex flex-col gap-3 rounded-lg border border-dashed border-line p-4">
@@ -21,9 +22,9 @@ export function RecordExpenseForm({ projects }: { projects: { id: string; name: 
             <option value="" disabled>
               Choose…
             </option>
-            {EXPENSE_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
+            {categories.map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.label}
               </option>
             ))}
           </select>
@@ -71,6 +72,13 @@ export function RecordExpenseForm({ projects }: { projects: { id: string; name: 
           Receipt link (optional)
         </label>
         <input id="expense-receipt" name="receiptUrl" type="url" maxLength={2000} className={inputClass} placeholder="https://drive.google.com/…" />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className={labelClass} htmlFor={receiptFileId}>
+          Or upload the receipt (optional)
+        </label>
+        <input id={receiptFileId} name="receiptFile" type="file" className={inputClass} />
+        <span className="text-xs text-muted">Up to 50 MB, and never a password or key. A link above works too.</span>
       </div>
       <button type="submit" disabled={pending} className={`${buttonClass('primary', 'sm')} self-start`}>
         {pending ? 'Recording…' : 'Record expense'}

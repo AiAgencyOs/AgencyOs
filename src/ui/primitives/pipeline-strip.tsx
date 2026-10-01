@@ -6,12 +6,12 @@ export type PipelineStage = { label: string; count: number; tone?: Tone; href?: 
 
 const STAGE_TINT: Record<Tone, string> = {
   neutral: 'bg-surface-sunken text-foreground',
-  brand: 'bg-brand-soft text-brand',
+  brand: 'bg-brand-soft text-foreground',
   accent: 'bg-accent-soft text-foreground',
-  success: 'bg-success-soft text-success',
-  warning: 'bg-warning-soft text-warning',
-  danger: 'bg-danger-soft text-danger',
-  info: 'bg-info-soft text-info',
+  success: 'bg-success-soft text-foreground',
+  warning: 'bg-warning-soft text-foreground',
+  danger: 'bg-danger-soft text-foreground',
+  info: 'bg-info-soft text-foreground',
 };
 
 /**
@@ -31,11 +31,11 @@ export function PipelineStrip({ stages, className }: { stages: readonly Pipeline
             : 'polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%, 12px 50%)';
         const body = (
           <span
-            className={cx('flex h-14 min-w-[5.25rem] flex-1 flex-col items-center justify-center', STAGE_TINT[s.tone ?? 'neutral'], first ? 'rounded-l-lg' : '', last ? 'rounded-r-lg' : '')}
+            className={cx('flex h-16 min-w-[5.25rem] flex-1 flex-col items-center justify-center', STAGE_TINT[s.tone ?? 'neutral'], first ? 'rounded-l-lg' : '', last ? 'rounded-r-lg' : '')}
             style={{ clipPath: shape }}
           >
-            <span className="tabular text-lg font-semibold leading-none">{s.count}</span>
-            <span className="mt-1 text-[11px] font-medium opacity-80">{s.label}</span>
+            <span className="tabular text-xl font-semibold leading-none">{s.count}</span>
+            <span className="mt-1.5 text-xs font-medium">{s.label}</span>
           </span>
         );
         return (

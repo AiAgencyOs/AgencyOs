@@ -46,11 +46,11 @@ export function PermissionMatrix() {
                   {ROLES.map((r) => (
                     <td key={r} className="px-2 py-1.5 text-center">
                       {can(r, cap as (typeof CAPABILITIES)[number]) ? (
-                        <span className="inline-flex text-success" aria-label={`${r} may ${cap}`}>
+                        <span role="img" className="inline-flex text-success" aria-label={`${r} may ${cap}`}>
                           <IconCheck size={14} />
                         </span>
                       ) : (
-                        <span className="text-faint" aria-label={`${r} may not ${cap}`}>
+                        <span role="img" className="text-faint" aria-label={`${r} may not ${cap}`}>
                           ·
                         </span>
                       )}

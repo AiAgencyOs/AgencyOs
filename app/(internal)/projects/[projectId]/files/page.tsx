@@ -7,12 +7,14 @@ import { readClientName } from '@/lib/admin/clients';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { clientEnv } from '@/lib/env';
-import { listProjectFileTree, listTrashedFiles, readStorageStatus, type ProjectFileHead } from '@/modules/projects/files-storage-queries';
+import { listProjectFolders } from '@/modules/projects/project-folder-queries';
+import { folderNodes, parentFolder } from '@/modules/projects/project-folder-schema';
+import { listProjectFileTree, listTrashedFiles, readStorageStatus } from '@/modules/projects/files-storage-queries';
 import { listProjectMembers } from '@/modules/projects/project-members-queries';
 import { PROJECT_ROLE_LABEL } from '@/modules/projects/project-members-schema';
 import { getProject } from '@/modules/projects/queries';
 import { PROJECT_FILE_CATEGORIES } from '@/modules/projects/schema';
-import { ActivityFeed, Card, CardHeader, cx, EmptyState, humanize, IconAttach, IconFile, IconUpload, PermissionDenied, Stat, StatGrid, TONE_CHIP, type Tone } from '@/ui';
+import { ActivityFeed, Card, CardHeader, cx, DonutChart, EmptyState, humanize, IconAttach, IconFile, IconSearch, IconUpload, PermissionDenied, ViewAll } from '@/ui';
 
 import { AddProjectFileForm, EditFileForm } from '../files-panel';
 import { StorageNotice, StoredFileRow, TrashList, UploadFileForm, type FileLabels } from '../files-storage-panel';
@@ -20,30 +22,27 @@ import { ProjectSubNav } from '../project-subnav';
 import { WorkspaceHeader } from '../workspace-header';
 
 import { FilePreviewButton } from './file-preview-drawer';
+import { FileIntoFolderForm, NewFolderForm } from './folder-forms';
 
 export const metadata: Metadata = { title: 'Files' };
 
-const FOLDER_TONES: Tone[] = ['info', 'accent', 'success', 'warning', 'danger', 'brand', 'neutral'];
+/** The reference's folder colours, one per category in order. Palette entries are the app's own tone variables. */
+const FOLDER_COLORS = ['var(--info)', 'var(--brand)', 'var(--success)', 'var(--warning)', 'var(--danger)', 'var(--accent)', 'var(--info)', 'var(--brand)', 'var(--success)', 'var(--warning)'];
+
+function FolderGlyph({ color }: { color: string }) {
+  return (
+    <svg viewBox="0 0 48 40" className="h-10 w-12" aria-hidden>
+      <path d="M2 8a4 4 0 0 1 4-4h11l5 5h20a4 4 0 0 1 4 4v21a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8Z" fill={color} opacity="0.32" />
+      <path d="M2 14a4 4 0 0 1 4-4h36a4 4 0 0 1 4 4v20a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V14Z" fill={color} opacity="0.55" />
+    </svg>
+  );
+}
 
 function bytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
   if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
-
-/** The folder tree inside one category: every folder path and its ancestors, with file counts. */
-function folderTree(files: readonly ProjectFileHead[]): { path: string; depth: number; count: number }[] {
-  const counts = new Map<string, number>();
-  for (const f of files) {
-    if (!f.folder) continue;
-    const parts = f.folder.split('/');
-    for (let i = 1; i <= parts.length; i += 1) {
-      const path = parts.slice(0, i).join('/');
-      counts.set(path, (counts.get(path) ?? 0) + (i === parts.length ? 1 : 0));
-    }
-  }
-  return [...counts.keys()].sort().map((path) => ({ path, depth: path.split('/').length - 1, count: files.filter((f) => f.folder === path || f.folder.startsWith(`${path}/`)).length }));
 }
 
 /**
@@ -68,10 +67,11 @@ export default async function ProjectFilesPage({
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ category?: string; folder?: string; view?: string }>;
+  searchParams: Promise<{ category?: string; folder?: string; view?: string; q?: string; sort?: string; layout?: string }>;
 }) {
   const { projectId } = await params;
-  const { category, folder, view } = await searchParams;
+  const { category, folder, view, q, sort, layout: layoutRaw } = await searchParams;
+  const layout: 'grid' | 'list' = layoutRaw === 'grid' ? 'grid' : 'list';
 
   const context = await requireInternal(`/projects/${projectId}/files`);
   if (!can(context, 'project.read')) return <PermissionDenied />;
@@ -80,19 +80,37 @@ export default async function ProjectFilesPage({
   if (!project) notFound();
 
   const editable = can(context, 'project.write');
-  const [allFiles, trashed, storage, clock, clientName, members] = await Promise.all([
+  const [allFiles, trashed, storage, clock, clientName, members, folderRecords] = await Promise.all([
     listProjectFileTree(projectId),
     listTrashedFiles(projectId),
     context.organizationId ? readStorageStatus(context.organizationId) : Promise.resolve({ reachable: false as const, bucket: 'project-files', reason: 'No organization on this session.' }),
     agencyClock(),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
     listProjectMembers(projectId),
+    listProjectFolders(projectId),
   ]);
   const inCategory = category ? allFiles.filter((f) => f.category === category) : allFiles;
-  const files = folder ? inCategory.filter((f) => f.folder === folder || f.folder.startsWith(`${folder}/`)) : inCategory;
+  const inFolder = folder ? inCategory.filter((f) => f.folder === folder || f.folder.startsWith(`${folder}/`)) : inCategory;
+  const needle = q?.trim().toLowerCase() ?? '';
+  const matched = needle ? inFolder.filter((f) => f.title.toLowerCase().includes(needle)) : inFolder;
+  const files = sort === 'name' ? [...matched].sort((a, b) => a.title.localeCompare(b.title)) : matched;
   const countBy = (c: string) => allFiles.filter((f) => f.category === c).length;
   const showTrash = view === 'trash';
-  const tree = folderTree(inCategory);
+  // Owner decision 7: folders are records, so an empty folder is drawn; the count is the files filed in it.
+  const tree = folderNodes(category ? folderRecords.filter((f) => f.category === category) : folderRecords, allFiles);
+  const foldersOf = (c: string) => folderRecords.filter((f) => f.category === c).map((f) => f.path);
+  // Grid: the folders directly inside where the person is (only meaningful once a category is chosen).
+  const childFolders = category ? tree.filter((n) => parentFolder(n.path) === (folder ?? '')) : [];
+  const viewHref = (l: 'grid' | 'list') => {
+    const p = new URLSearchParams();
+    if (category) p.set('category', category);
+    if (folder) p.set('folder', folder);
+    if (q) p.set('q', q);
+    if (sort) p.set('sort', sort);
+    if (l === 'grid') p.set('layout', 'grid');
+    const qs = p.toString();
+    return qs ? `${base}?${qs}` : base;
+  };
 
   // Pre-formatted dates, keyed by row id, for the client rows.
   const labels: FileLabels = {};
@@ -107,8 +125,11 @@ export default async function ProjectFilesPage({
   const stored = allFiles.filter((f) => f.stored).length;
   // SCR-024 "Total files/storage": every stored version's recorded size.
   const storageBytes = allFiles.reduce((n, f) => n + f.versions.reduce((m, v) => m + (v.sizeBytes ?? 0), 0), 0);
-  const versionCount = allFiles.reduce((n, f) => n + f.versions.length, 0);
   const liveShares = allFiles.reduce((n, f) => n + f.shares.filter((s) => s.live).length, 0);
+  const sizeByCategory = PROJECT_FILE_CATEGORIES.map((c) => ({
+    label: humanize(c),
+    value: allFiles.filter((f) => f.category === c).reduce((n, f) => n + f.versions.reduce((m, v) => m + (v.sizeBytes ?? 0), 0), 0),
+  })).filter((d) => d.value > 0);
   const href = (c?: string, dir?: string) => `${base}${[c ? `category=${c}` : '', dir ? `folder=${encodeURIComponent(dir)}` : ''].filter(Boolean).length ? `?${[c ? `category=${c}` : '', dir ? `folder=${encodeURIComponent(dir)}` : ''].filter(Boolean).join('&')}` : ''}`;
 
   return (
@@ -132,64 +153,118 @@ export default async function ProjectFilesPage({
 
       <StorageNotice status={storage} />
 
-      {/* SCR-024: total files and storage — real sums over real rows; each tile opens the list it counts. */}
-      <StatGrid cols={4}>
-        <Stat label="Total files" value={String(allFiles.length)} caption={`${stored} stored · ${allFiles.length - stored} linked`} tone="brand" icon={<IconAttach size={16} />} href={base} />
-        <Stat label="Storage used" value={storageBytes > 0 ? bytes(storageBytes) : '—'} caption={stored > 0 ? `${versionCount} stored version${versionCount === 1 ? '' : 's'}` : 'No stored file yet; links take no storage'} tone="info" icon={<IconUpload size={16} />} />
-        <Stat label="Public share links" value={String(liveShares)} caption="live, not expired or revoked" tone={liveShares > 0 ? 'warning' : 'neutral'} icon={<IconFile size={16} />} />
-        <Stat label="Trash" value={String(trashed.length)} caption="restorable" tone="neutral" icon={<IconAttach size={16} />} href={`${base}?view=trash`} />
-      </StatGrid>
+      <section aria-labelledby="files-title" className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 id="files-title" className="text-xl font-bold tracking-tight text-foreground">Project Files</h2>
+            <p className="text-[13px] text-muted">Manage all project files, documents, designs, code and resources</p>
+          </div>
+          {editable ? (
+            <a href="#add-file" className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-[13px] font-semibold text-brand-fg shadow-xs hover:opacity-90">
+              <IconUpload size={15} />
+              Upload Files
+            </a>
+          ) : null}
+        </div>
+        {editable ? <NewFolderForm projectId={projectId} categories={PROJECT_FILE_CATEGORIES} defaultCategory={category ?? 'documents'} parent={folder ?? ''} /> : null}
+        <form action={base} method="GET" className="flex flex-wrap items-center gap-2">
+          {folder ? <input type="hidden" name="folder" value={folder} /> : null}
+          {layout === 'grid' ? <input type="hidden" name="layout" value="grid" /> : null}
+          <label className="relative min-w-[220px] flex-1">
+            <span className="sr-only">Search files and folders</span>
+            <span aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><IconSearch size={15} /></span>
+            <input type="search" name="q" defaultValue={q ?? ''} placeholder="Search files and folders..." className="h-10 w-full rounded-lg border border-line bg-surface pl-9 pr-3 text-[13px] text-foreground placeholder:text-faint" />
+          </label>
+          <label>
+            <span className="sr-only">Type</span>
+            <select name="category" defaultValue={category ?? ''} className="h-10 rounded-lg border border-line bg-surface px-3 text-[13px] text-foreground">
+              <option value="">All Types</option>
+              {PROJECT_FILE_CATEGORIES.map((c) => (
+                <option key={c} value={c}>{humanize(c)}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="sr-only">Sort</span>
+            <select name="sort" defaultValue={sort ?? 'modified'} className="h-10 rounded-lg border border-line bg-surface px-3 text-[13px] text-foreground">
+              <option value="modified">Last Modified</option>
+              <option value="name">Name</option>
+            </select>
+          </label>
+          <button type="submit" className="h-10 rounded-lg border border-line bg-surface px-4 text-[13px] font-medium text-foreground hover:bg-surface-hover">Apply</button>
+        </form>
+      </section>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(18rem,1fr)]">
         <div className="flex min-w-0 flex-col gap-4">
           <div>
-            <div className="mb-2 flex items-baseline justify-between">
-              <h2 className="text-sm font-semibold tracking-tight">Folders</h2>
-              <p className="text-xs text-muted">
-                {allFiles.length} file{allFiles.length === 1 ? '' : 's'} · {stored} stored, {allFiles.length - stored} linked ·{' '}
-                <Link href={`${base}?view=trash`} className={cx('underline-offset-2 hover:underline', showTrash ? 'text-foreground' : '')}>
-                  Trash ({trashed.length})
-                </Link>
-              </p>
-            </div>
-            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              <li>
-                <Link href={base} className={cx('flex flex-col gap-2 rounded-xl border bg-surface p-3 shadow-xs transition-colors hover:bg-surface-hover', !category && !showTrash ? 'border-brand/40' : 'border-line')}>
-                  <span className={cx('flex h-9 w-9 items-center justify-center rounded-lg', TONE_CHIP.brand)}><IconAttach size={16} /></span>
-                  <span className="text-[13px] font-medium">All files</span>
-                  <span className="text-xs text-muted">{allFiles.length} file{allFiles.length === 1 ? '' : 's'}</span>
-                </Link>
-              </li>
+            <p className="mb-2 text-xs text-muted">
+              {allFiles.length} file{allFiles.length === 1 ? '' : 's'} · {stored} stored, {allFiles.length - stored} linked ·{' '}
+              <Link href={`${base}?view=trash`} className={cx('underline-offset-2 hover:underline', showTrash ? 'text-foreground' : '')}>
+                Trash ({trashed.length})
+              </Link>
+            </p>
+            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
               {PROJECT_FILE_CATEGORIES.map((c, i) => (
                 <li key={c}>
-                  <Link href={href(c)} className={cx('flex flex-col gap-2 rounded-xl border bg-surface p-3 shadow-xs transition-colors hover:bg-surface-hover', category === c ? 'border-brand/40' : 'border-line')}>
-                    <span className={cx('flex h-9 w-9 items-center justify-center rounded-lg', TONE_CHIP[FOLDER_TONES[i % FOLDER_TONES.length] ?? 'neutral'])}><IconFile size={16} /></span>
-                    <span className="text-[13px] font-medium">{humanize(c)}</span>
-                    <span className="text-xs text-muted">{countBy(c)} file{countBy(c) === 1 ? '' : 's'}</span>
+                  <Link href={href(c)} className={cx('flex flex-col gap-3 rounded-xl border bg-surface p-3.5 shadow-xs transition-colors hover:bg-surface-hover', category === c ? 'border-brand/60' : 'border-line')}>
+                    <FolderGlyph color={FOLDER_COLORS[i % FOLDER_COLORS.length] ?? 'var(--info)'} />
+                    <span>
+                      <span className="block truncate text-[12px] font-semibold text-foreground">{String(i + 1).padStart(2, '0')}_{humanize(c).replace(/ /g, '_')}</span>
+                      <span className="block text-xs text-muted">{countBy(c)} file{countBy(c) === 1 ? '' : 's'}</span>
+                    </span>
                   </Link>
                 </li>
               ))}
             </ul>
-            {/* SCR-024 "Folder tree": the folders inside the chosen category (or every category), as a tree. */}
-            {tree.length > 0 ? (
-              <nav aria-label="Folder tree" className="mt-3 rounded-xl border border-line bg-surface p-3 shadow-xs">
-                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted">{category ? `${humanize(category)} folders` : 'Folders across categories'}</p>
-                <ul className="flex flex-col gap-0.5 text-[13px]">
-                  <li>
-                    <Link href={href(category)} className={cx('inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-surface-hover', !folder ? 'font-medium text-foreground' : 'text-muted')}>
-                      <IconFile size={12} /> {category ? humanize(category) : 'All'} (root)
-                    </Link>
-                  </li>
-                  {tree.map((node) => (
-                    <li key={node.path} style={{ paddingLeft: `${node.depth * 1.25 + 0.75}rem` }}>
-                      <Link href={href(category, node.path)} className={cx('inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-surface-hover', folder === node.path ? 'font-medium text-foreground' : 'text-muted')}>
-                        <IconFile size={12} /> {node.path.split('/').pop()} <span className="text-xs text-faint">({node.count})</span>
-                      </Link>
+            {/* SCR-024 "Folder tree": every category expands into its folders, and a folder into the folders inside it. */}
+            <nav aria-label="Folder tree" className="mt-3 rounded-xl border border-line bg-surface p-3 shadow-xs">
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted">Folder tree</p>
+              <ul className="flex flex-col gap-0.5 text-[13px]">
+                {PROJECT_FILE_CATEGORIES.map((c) => {
+                  const inside = folderRecords.filter((f) => f.category === c);
+                  const nodes = folderNodes(inside, allFiles);
+                  const branch = (parent: string): React.ReactNode => {
+                    const kids = nodes.filter((n) => parentFolder(n.path) === parent);
+                    if (kids.length === 0) return null;
+                    return (
+                      <ul className="ml-3 border-l border-line pl-2">
+                        {kids.map((n) => {
+                          const below = nodes.some((m) => parentFolder(m.path) === n.path);
+                          const link = (
+                            <Link href={href(c, n.path)} className={cx('inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-surface-hover', folder === n.path && category === c ? 'font-medium text-foreground' : 'text-muted')}>
+                              <IconFile size={12} /> {n.path.split('/').pop()} <span className="text-xs text-faint">({n.files})</span>
+                            </Link>
+                          );
+                          return below ? (
+                            <li key={n.path}>
+                              <div>
+                                {link}
+                                {branch(n.path)}
+                              </div>
+                            </li>
+                          ) : (
+                            <li key={n.path}>{link}</li>
+                          );
+                        })}
+                      </ul>
+                    );
+                  };
+                  return (
+                    <li key={c}>
+                      <div>
+                        <div>
+                          <Link href={href(c)} className={cx('inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-surface-hover', category === c && !folder ? 'font-medium text-foreground' : 'text-foreground')}>
+                            <IconFile size={12} /> {humanize(c)} <span className="text-xs text-faint">({countBy(c)})</span>
+                          </Link>
+                        </div>
+                        {branch('') ?? <p className="ml-6 text-xs text-muted">No folders inside yet.</p>}
+                      </div>
                     </li>
-                  ))}
-                </ul>
-              </nav>
-            ) : null}
+                  );
+                })}
+              </ul>
+            </nav>
           </div>
 
           {showTrash ? (
@@ -204,10 +279,46 @@ export default async function ProjectFilesPage({
           ) : (
             <Card>
               <CardHeader
-                title={folder ? `${humanize(category ?? 'all')} / ${folder}` : category ? `${humanize(category)} files` : 'Recent files'}
+                title={folder ? `${humanize(category ?? 'all')} / ${folder}` : category ? `${humanize(category)} files` : 'Recent Files'}
                 description={`${files.length} file${files.length === 1 ? '' : 's'}, newest first. A stored file opens its latest version; expand a row for its versions, the internal share and the public share links.`}
+                actions={
+                  <span role="group" aria-label="Layout" className="inline-flex overflow-hidden rounded-lg border border-line text-[13px] font-medium">
+                    <Link href={viewHref('grid')} aria-current={layout === 'grid' ? 'page' : undefined} className={cx('px-3 py-1.5', layout === 'grid' ? 'bg-brand-soft text-brand' : 'text-muted hover:text-foreground')}>Grid</Link>
+                    <Link href={viewHref('list')} aria-current={layout === 'list' ? 'page' : undefined} className={cx('border-l border-line px-3 py-1.5', layout === 'list' ? 'bg-brand-soft text-brand' : 'text-muted hover:text-foreground')}>List</Link>
+                  </span>
+                }
               />
-              {files.length > 0 ? (
+              {layout === 'grid' && (files.length > 0 || childFolders.length > 0) ? (
+                <ul className="grid grid-cols-2 gap-3 px-4 pb-4 sm:grid-cols-3 sm:px-5 xl:grid-cols-4">
+                  {childFolders.map((n) => (
+                    <li key={`${n.category}/${n.path}`}>
+                      <Link href={`${href(n.category, n.path)}${href(n.category, n.path).includes('?') ? '&' : '?'}layout=grid`} className="flex h-full flex-col gap-2 rounded-xl border border-line bg-surface p-3 shadow-xs hover:bg-surface-hover">
+                        <FolderGlyph color="var(--brand)" />
+                        <span className="min-w-0">
+                          <span className="block truncate text-[13px] font-semibold text-foreground">{n.path.split('/').pop()}</span>
+                          <span className="block text-xs text-muted">{n.files} file{n.files === 1 ? '' : 's'}</span>
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                  {files.map((f) => (
+                    <li key={f.id}>
+                      <a
+                        href={f.stored ? `/api/projects/${projectId}/files/${f.latest.id}/download` : (f.url ?? viewHref('list'))}
+                        {...(f.stored || f.url ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
+                        className="flex h-full flex-col gap-2 rounded-xl border border-line bg-surface p-3 shadow-xs hover:bg-surface-hover"
+                      >
+                        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-soft text-brand"><IconFile size={18} /></span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-[13px] font-semibold text-foreground">{f.title}</span>
+                          <span className="block truncate text-xs text-muted">{humanize(f.category)}{f.folder ? ` / ${f.folder}` : ''}</span>
+                          <span className="block truncate text-xs text-muted">{[f.stored && f.latest.sizeBytes ? bytes(f.latest.sizeBytes) : f.stored ? '' : 'Link', clock.date(f.latest.createdAt)].filter(Boolean).join(' · ')}</span>
+                        </span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              ) : layout === 'list' && files.length > 0 ? (
                 <ul className="divide-y divide-line">
                   {files.map((f) => (
                     <StoredFileRow
@@ -241,6 +352,7 @@ export default async function ProjectFilesPage({
                         ) : null
                       }
                     >
+                      {editable ? <FileIntoFolderForm projectId={projectId} fileId={f.id} title={f.title} current={f.folder} folders={foldersOf(f.category)} /> : null}
                       {editable ? (
                         <EditFileForm
                           file={{ id: f.id, category: f.category, title: f.title, ...(f.url ? { url: f.url } : {}), description: f.description, uploadedByName: f.uploadedByName, createdAt: f.createdAt }}
@@ -263,7 +375,19 @@ export default async function ProjectFilesPage({
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
+          <Card>
+            <CardHeader title="Storage Usage" />
+            <div className="px-4 pb-4 sm:px-5">
+              {sizeByCategory.length > 0 ? (
+                <DonutChart data={sizeByCategory.map((d) => ({ label: d.label, value: d.value }))} height={130} totalLabel={bytes(storageBytes)} />
+              ) : (
+                <p className="text-[13px] text-muted">No stored file yet; links take no storage.</p>
+              )}
+              <p className="mt-2 text-xs text-muted">{allFiles.length} file{allFiles.length === 1 ? '' : 's'} · {liveShares} live public share link{liveShares === 1 ? '' : 's'}</p>
+            </div>
+          </Card>
           <ActivityFeed
+            title="Recent Activity"
             compact
             emptyTitle="Nothing added yet"
             items={allFiles.slice(0, 6).map((f) => ({
@@ -292,6 +416,19 @@ export default async function ProjectFilesPage({
               </Card>
             </>
           ) : null}
+          <Card>
+            <CardHeader title="Quick Links" actions={<ViewAll href="/integrations" label="Integrations" />} />
+            <ul className="grid grid-cols-2 gap-2 p-3 sm:p-4">
+              {['Google Drive', 'Figma', 'GitHub', 'Firebase'].map((n) => (
+                <li key={n}>
+                  <Link href="/integrations" className="flex flex-col rounded-lg border border-line bg-surface px-3 py-2 text-[13px] font-medium text-foreground hover:bg-surface-hover">
+                    {n}
+                    <span className="text-xs font-normal text-brand">Connect</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </Card>
         </div>
       </div>
     </div>

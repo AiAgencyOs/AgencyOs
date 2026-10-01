@@ -27,8 +27,8 @@ export function LinkRepositoryForm({
       <form action={action} className="flex flex-col gap-3">
         <input type="hidden" name="projectId" value={projectId} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-[2fr_1fr]">
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>GitHub repository</label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>GitHub repository</span>
             <input
               name="repository"
               required
@@ -37,9 +37,9 @@ export function LinkRepositoryForm({
               placeholder="owner/name or https://github.com/owner/name"
               defaultValue={current ? `${current.owner}/${current.repo}` : ''}
             />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Branch to read</label>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Branch to read</span>
             <input
               name="defaultBranch"
               maxLength={200}
@@ -47,7 +47,7 @@ export function LinkRepositoryForm({
               placeholder="main"
               defaultValue={current?.defaultBranch ?? ''}
             />
-          </div>
+          </label>
         </div>
         <div className="flex items-center gap-3">
           <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>

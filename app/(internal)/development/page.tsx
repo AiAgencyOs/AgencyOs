@@ -8,6 +8,7 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { readBlockersAcrossProjects } from '@/modules/projects/blockers-queries';
 import { listOpenTechnicalDependencies } from '@/modules/projects/dependency-status-queries';
 import { listOpenEscalations } from '@/modules/projects/development-events-queries';
+import { listActiveDeveloperTasks, listRecentBuilds } from '@/modules/projects/development-activity-queries';
 import { listRecentCommitLinks, listRecentGitActions } from '@/modules/projects/git-queries';
 import { readDevelopmentPortfolio, readPlanCoverageByProject, type PlanCoverage } from '@/modules/projects/queries';
 import {
@@ -23,6 +24,8 @@ import {
   StatGrid,
   StatusBadge,
   buttonClass,
+  DomainSearch,
+  cx,
   humanize,
   type Column,
 } from '@/ui';
@@ -110,6 +113,18 @@ const COLUMNS: Column<Row>[] = [
     cell: (p) => (p.coverage.hasTestPlan ? <Badge tone="success">test plan drafted</Badge> : <Badge tone="neutral">no test plan</Badge>),
   },
   {
+    key: 'open',
+    header: 'Open',
+    desktopOnly: true,
+    cell: (p) => (
+      <span className="flex flex-wrap gap-x-2 text-xs">
+        <Link href={`/projects/${p.id}/plan`} className="text-brand hover:underline">Plan</Link>
+        <Link href={`/projects/${p.id}/repository`} className="text-brand hover:underline">Repository</Link>
+        <Link href={`/projects/${p.id}/builds`} className="text-brand hover:underline">Builds</Link>
+      </span>
+    ),
+  },
+  {
     key: 'build',
     header: 'Latest build',
     desktopOnly: true,
@@ -138,11 +153,12 @@ const COLUMNS: Column<Row>[] = [
  * the same panels the project's Development tab mounts (one door, one
  * component). The handoff gate is the database's.
  */
-export default async function DevelopmentPortfolioPage() {
+export default async function DevelopmentPortfolioPage({ searchParams }: { searchParams: Promise<{ q?: string; show?: string }> }) {
+  const { q: qRaw, show: showRaw } = await searchParams;
   const context = await requireInternal('/development');
   if (!can(context, 'project.read')) return <PermissionDenied />;
 
-  const [portfolio, coverage, blockers, openTechnical, escalations, recentCommits, recentActions, clock] = await Promise.all([
+  const [portfolio, coverage, blockers, openTechnical, escalations, recentCommits, recentActions, clock, activeTasks, recentBuilds] = await Promise.all([
     readDevelopmentPortfolio(),
     readPlanCoverageByProject(),
     readBlockersAcrossProjects(),
@@ -151,13 +167,15 @@ export default async function DevelopmentPortfolioPage() {
     listRecentCommitLinks(10),
     listRecentGitActions(10),
     agencyClock(),
+    listActiveDeveloperTasks(12),
+    listRecentBuilds(8),
   ]);
   const mayManage = can(context, 'project.write');
   const mayWriteTask = can(context, 'task.write');
-  const escalatedTaskIds = new Set(escalations.map((e) => e.taskId));
+  const escalatedTaskIds = new Set(escalations.filter((e) => e.kind === 'blocker_escalated').map((e) => e.taskId));
   // Tasks still todo or in progress: the count the handoff gate refuses on.
   const notReadyOf = (projectId: string) => {
-    const r = rows.find((row) => row.id === projectId);
+    const r = allRows.find((row) => row.id === projectId);
     return r ? Math.max(0, r.tasks.total - r.tasks.done - r.tasks.inReview - r.tasks.blocked) : 0;
   };
   // SCR-043: the technical register's open rows, grouped per project beside
@@ -169,11 +187,24 @@ export default async function DevelopmentPortfolioPage() {
     technicalByProject.set(d.projectId, entry);
   }
   const technicalOnlyProjects = [...technicalByProject.entries()].filter(([projectId]) => !blockers.some((b) => b.projectId === projectId));
-  const rows: Row[] = portfolio.map((r) => ({ ...r, coverage: coverage.get(r.id) ?? { planStatus: null, planVersion: null, hasTestPlan: false } }));
-  const inBuild = rows.filter((r) => r.tasks.total > 0 && r.tasks.done < r.tasks.total);
-  const blocked = rows.reduce((n, r) => n + r.tasks.blocked, 0);
-  const inReview = rows.reduce((n, r) => n + r.tasks.inReview, 0);
-  const blockedProjects = rows.filter((r) => r.tasks.blocked > 0).length;
+  const allRows: Row[] = portfolio.map((r) => ({ ...r, coverage: coverage.get(r.id) ?? { planStatus: null, planVersion: null, hasTestPlan: false } }));
+  const q = (qRaw ?? '').trim().slice(0, 120).toLowerCase();
+  const SHOW = { all: 'All projects', build: 'In build', blocked: 'Blocked', noplan: 'No active plan' } as const;
+  type Show = keyof typeof SHOW;
+  const show: Show = showRaw && showRaw in SHOW ? (showRaw as Show) : 'all';
+  const matchesShow = (r: Row) => (show === 'all' ? true : show === 'build' ? r.tasks.total > 0 && r.tasks.done < r.tasks.total : show === 'blocked' ? r.tasks.blocked > 0 : r.coverage.planStatus !== 'active');
+  const rows: Row[] = allRows.filter((r) => matchesShow(r) && (!q || `${r.name} ${r.code ?? ''}`.toLowerCase().includes(q)));
+  const showHref = (next: Show) => {
+    const sp = new URLSearchParams();
+    if (q) sp.set('q', q);
+    if (next !== 'all') sp.set('show', next);
+    const str = sp.toString();
+    return str ? `/development?${str}` : '/development';
+  };
+  const inBuild = allRows.filter((r) => r.tasks.total > 0 && r.tasks.done < r.tasks.total);
+  const blocked = allRows.reduce((n, r) => n + r.tasks.blocked, 0);
+  const inReview = allRows.reduce((n, r) => n + r.tasks.inReview, 0);
+  const blockedProjects = allRows.filter((r) => r.tasks.blocked > 0).length;
 
   return (
     <div className="flex flex-col gap-5">
@@ -184,14 +215,14 @@ export default async function DevelopmentPortfolioPage() {
         actions={<LiveRefresh topics={['tasks', 'deliverables', 'projects']} />}
       />
 
-      {rows.length > 0 ? (
+      {allRows.length > 0 ? (
         <StatGrid cols={6}>
           <Stat label="Projects in build" value={String(inBuild.length)} tone="brand" icon={<IconCode size={16} />} caption="tasks planned and not all done" />
           <Stat label="Blocked tasks" value={String(blocked)} tone={blocked > 0 ? 'danger' : 'neutral'} caption={blockedProjects > 0 ? `across ${blockedProjects} project${blockedProjects === 1 ? '' : 's'}` : 'nothing blocked'} />
           <Stat label="Tasks in review" value={String(inReview)} tone={inReview > 0 ? 'info' : 'neutral'} caption="awaiting QA or a reviewer" />
-          <Stat label="Builds recorded" value={String(rows.reduce((n, r) => n + r.builds.total, 0))} tone="neutral" caption="build deliverables across projects" />
-          <Stat label="Without an active plan" value={String(rows.filter((r) => r.coverage.planStatus !== 'active').length)} tone={rows.some((r) => r.coverage.planStatus !== 'active') ? 'warning' : 'success'} caption="Phase 2 blueprint not active" />
-          <Stat label="Without a test plan" value={String(rows.filter((r) => !r.coverage.hasTestPlan).length)} tone={rows.some((r) => !r.coverage.hasTestPlan) ? 'warning' : 'success'} caption="QA handoff not drafted" />
+          <Stat label="Builds recorded" value={String(allRows.reduce((n, r) => n + r.builds.total, 0))} tone="neutral" caption="build deliverables across projects" />
+          <Stat label="Without an active plan" value={String(allRows.filter((r) => r.coverage.planStatus !== 'active').length)} tone={allRows.some((r) => r.coverage.planStatus !== 'active') ? 'warning' : 'success'} caption="Phase 2 blueprint not active" />
+          <Stat label="Without a test plan" value={String(allRows.filter((r) => !r.coverage.hasTestPlan).length)} tone={allRows.some((r) => !r.coverage.hasTestPlan) ? 'warning' : 'success'} caption="QA handoff not drafted" />
         </StatGrid>
       ) : null}
 
@@ -287,10 +318,32 @@ export default async function DevelopmentPortfolioPage() {
         )}
       </Card>
 
+      {/* SCR-039 — the developer tasks that are active now, and who holds them. */}
+      <Card>
+        <CardHeader title={`Active Developer Tasks (${activeTasks.length})`} description="Tasks in progress, in review or blocked across every project, most recently touched first." />
+        {activeTasks.length === 0 ? (
+          <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No task is active on any project.</p>
+        ) : (
+          <ul className="divide-y divide-line">
+            {activeTasks.map((t) => (
+              <li key={t.id} className="flex flex-wrap items-center gap-2 px-4 py-2 text-[13px] sm:px-5">
+                <StatusBadge status={t.status} dot={false} />
+                <Link href={`/projects/${t.projectId}/development/tasks/${t.id}`} className="min-w-0 flex-1 truncate font-medium hover:underline">
+                  {t.title}
+                </Link>
+                <span className="text-xs text-muted">{t.projectName}</span>
+                <span className="text-xs text-muted">{t.priority}</span>
+                <span className={t.assigneeName ? 'text-xs' : 'text-xs text-warning'}>{t.assigneeName ?? 'unassigned'}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
       {/* SCR-039 — escalations waiting on the PM, and recent commits / builds across projects. */}
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader title={`Waiting on the PM (${escalations.length})`} description="Blockers escalated and not yet acknowledged, oldest first." />
+          <CardHeader title={`Waiting on the PM (${escalations.length})`} description="Blockers escalated and client dependencies the plan needs requested, not yet acknowledged, oldest first." />
           <div className="px-4 pb-4 sm:px-5">
             {escalations.length === 0 ? (
               <p className="text-[13px] text-muted">No open escalation.</p>
@@ -308,6 +361,11 @@ export default async function DevelopmentPortfolioPage() {
                             {e.taskTitle ?? 'task'}
                           </Link>
                         ) : null}
+                        {e.kind === 'dependency_requested' ? (
+                          <Link href={`/projects/${e.projectId}/plan`} className="underline-offset-2 hover:underline">
+                            Client dependency{typeof e.detail.description === 'string' ? `: ${e.detail.description}` : ''}
+                          </Link>
+                        ) : null}
                         <span className="text-xs text-muted">{clock.dateTime(e.createdAt)}</span>
                       </span>
                       {e.reason ? <span className="text-muted">{e.reason}</span> : null}
@@ -320,12 +378,24 @@ export default async function DevelopmentPortfolioPage() {
           </div>
         </Card>
         <Card>
-          <CardHeader title={`Recent commits and builds (${recentCommits.length + recentActions.length})`} description="Commits linked to tasks and what the panel did on GitHub, across every project." />
+          <CardHeader title={`Recent commits and builds (${recentCommits.length + recentActions.length + recentBuilds.length})`} description="Commits linked to tasks and what the panel did on GitHub, across every project." />
           <div className="px-4 pb-4 sm:px-5">
-            {recentCommits.length === 0 && recentActions.length === 0 ? (
+            {recentCommits.length === 0 && recentActions.length === 0 && recentBuilds.length === 0 ? (
               <p className="text-[13px] text-muted">No commit linked and no Git action recorded on any project yet.</p>
             ) : (
               <ul className="flex flex-col gap-1">
+                {recentBuilds.map((b) => (
+                  <li key={b.id} className="flex flex-wrap items-center gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
+                    <Badge tone="brand">build</Badge>
+                    <Link href={`/projects/${b.projectId}/builds#builds`} className="min-w-0 flex-1 truncate hover:underline">
+                      {b.projectName} · v{b.version} {b.title}
+                    </Link>
+                    {b.commitRef ? <span className="font-mono text-xs">{b.commitRef}</span> : null}
+                    {b.buildNumber ? <span className="text-xs text-muted">#{b.buildNumber}</span> : null}
+                    <StatusBadge status={b.status} dot={false} />
+                    <span className="text-xs text-muted">{clock.dateTime(b.createdAt)}</span>
+                  </li>
+                ))}
                 {recentActions.map((a) => (
                   <li key={a.id} className="flex flex-wrap items-center gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
                     <Badge tone={a.action === 'merged' ? 'success' : 'info'}>{humanize(a.action)}</Badge>
@@ -364,7 +434,7 @@ export default async function DevelopmentPortfolioPage() {
         </Card>
       </div>
 
-      {rows.length === 0 ? (
+      {allRows.length === 0 ? (
         <EmptyState
           icon={<IconCode size={22} />}
           title="No projects yet"
@@ -372,7 +442,23 @@ export default async function DevelopmentPortfolioPage() {
           action={<Link href="/projects" className="text-brand hover:underline">Open projects</Link>}
         />
       ) : (
-        <DataTable rows={rows} columns={COLUMNS} getKey={(r) => r.id} href={(r) => `/projects/${r.id}/development`} />
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <DomainSearch action="/development" value={qRaw ?? ''} placeholder="Search projects…" label="Search projects" preserve={{ show: show === 'all' ? undefined : show }} />
+            <nav aria-label="Project filter" className="flex flex-wrap gap-1.5">
+              {(Object.keys(SHOW) as Show[]).map((k) => (
+                <Link key={k} href={showHref(k)} aria-current={k === show ? 'page' : undefined} className={cx('inline-flex items-center rounded-lg border px-2.5 py-1 text-[13px] font-medium', k === show ? 'border-brand bg-brand-soft text-brand' : 'border-line text-muted hover:text-foreground')}>
+                  {SHOW[k]}
+                </Link>
+              ))}
+            </nav>
+          </div>
+          {rows.length === 0 ? (
+            <EmptyState icon={<IconCode size={22} />} title="No project matches" description="Nothing in the list fits that search or filter." action={<Link href="/development" className={buttonClass('secondary', 'sm')}>Clear filters</Link>} />
+          ) : (
+            <DataTable rows={rows} columns={COLUMNS} getKey={(r) => r.id} href={(r) => `/projects/${r.id}/development`} />
+          )}
+        </div>
       )}
     </div>
   );

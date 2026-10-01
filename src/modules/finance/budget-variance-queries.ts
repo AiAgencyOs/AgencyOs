@@ -3,6 +3,7 @@ import 'server-only';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
+import { readAiCostBuckets } from './ai-cost-queries';
 import { computeBudgetVariance, monthlyCostsFrom, type BudgetVariance } from './budget-variance';
 
 export { computeBudgetVariance, type BudgetVariance, type MonthlyBurn } from './budget-variance';
@@ -43,18 +44,8 @@ async function readStreams(projectIds: readonly string[] | null) {
         return q;
       })(),
     ),
-    scoped(
-      (() => {
-        let q = supabase
-          .schema('ai')
-          .from('agent_runs')
-          .select('project_id, cost_minor, created_at' as never)
-          .not('project_id' as never, 'is', null)
-          .limit(20_000);
-        if (projectIds) q = q.in('project_id' as never, [...projectIds]);
-        return q;
-      })(),
-    ),
+    // The AI term comes from the totals function, not the runs table: the finance role cannot read the table, and a margin must not depend on who is looking.
+    readAiCostBuckets().then((data) => ({ data, error: null as null })),
     scoped(
       (() => {
         let q = supabase.schema('projects').from('time_log_costs').select('project_id, logged_on, cost_minor, hours, rate_missing').limit(20_000);
@@ -64,12 +55,13 @@ async function readStreams(projectIds: readonly string[] | null) {
     ),
   ]);
   if (expensesRes.error) unreadable('readBudgetVariance.expenses', expensesRes.error);
-  if (runsRes.error) unreadable('readBudgetVariance.aiRuns', runsRes.error);
   if (timeRes.error) unreadable('readBudgetVariance.timeCost', timeRes.error);
 
   return {
     expenses: (expensesRes.data ?? []) as { project_id: string | null; amount_minor: number; incurred_on: string }[],
-    runs: (runsRes.data ?? []) as unknown as AttributedRun[],
+    runs: (runsRes.data ?? [])
+      .filter((b) => b.project_id !== null && (!projectIds || projectIds.includes(b.project_id)))
+      .map((b): AttributedRun => ({ project_id: b.project_id, cost_minor: b.cost_minor, created_at: `${b.month}-01T00:00:00Z` })),
     logs: (timeRes.data ?? []) as CostedLog[],
   };
 }

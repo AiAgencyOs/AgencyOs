@@ -137,3 +137,23 @@ export async function setClientOwner(input: z.input<typeof setClientOwnerSchema>
 
   return ok({ ownerId: parsed.data.ownerId });
 }
+
+/**
+ * Adds ONE tag to a client without disturbing the tags it already has —
+ * SCR-014's bulk "Add tags". `setClientTags` replaces the list, so the bulk
+ * path reads the current tags and writes the union through the same door.
+ */
+export async function addClientTag(input: { clientAccountId: string; tag: string }): Promise<Result<{ tags: string[] }>> {
+  const id = z.uuid().safeParse(input.clientAccountId);
+  if (!id.success) return err('VALIDATION', 'Invalid client.');
+  const added = normalizeTags([input.tag]);
+  if (added.length === 0) return err('VALIDATION', `A tag is one to ${MAX_TAG_LENGTH} characters.`);
+  await requireInternal();
+  const supabase = await createClient();
+  const { client, failed } = await loadClient(supabase, id.data);
+  if (failed) return err('INTERNAL', 'Could not load the client.');
+  if (!client) return err('NOT_FOUND', 'Client not found.');
+  const merged = normalizeTags([...(client.tags ?? []), ...added]);
+  if (merged.length === (client.tags ?? []).length && added.every((t) => (client.tags ?? []).includes(t))) return ok({ tags: merged });
+  return setClientTags({ clientAccountId: id.data, tags: merged });
+}

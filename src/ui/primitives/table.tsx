@@ -60,8 +60,12 @@ export function DataTable<T>({
   className,
   stickyHeader,
   dense,
+  tight,
   rowActions,
+  ariaLabel,
 }: {
+  /** What the table lists, for a reader landing on its scrollable frame. */
+  ariaLabel?: string;
   rows: readonly T[];
   columns: ReadonlyArray<Column<T>>;
   getKey: (row: T) => string;
@@ -85,6 +89,8 @@ export function DataTable<T>({
   stickyHeader?: boolean;
   /** Tighter rows and a smaller type size — for a table inside a dashboard card. */
   dense?: boolean;
+  /** With `dense`: 8px instead of 12px column padding, for a table that shares its row with a side rail. */
+  tight?: boolean;
 }) {
   const primary = columns.find((c) => c.primary) ?? columns[0];
   const badges = columns.filter((c) => c.badge);
@@ -111,8 +117,13 @@ export function DataTable<T>({
           768px, not by inspection. `lg` (1024px) gives the table a width
           worth switching for. */}
       <div
+        // A wide table scrolls sideways inside its frame, so the frame must take keyboard focus.
+        tabIndex={0}
+        role="region"
+        aria-label={ariaLabel ?? 'Table'}
         className={cx(
-          'hidden overflow-x-auto rounded-xl border border-line bg-surface shadow-xs lg:block',
+          'hidden overflow-x-auto bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand lg:block',
+          !dense && 'rounded-xl border border-line shadow-xs',
           sticky && 'max-h-[calc(100vh-11rem)] overflow-y-auto',
         )}
       >
@@ -131,7 +142,7 @@ export function DataTable<T>({
                     aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}
                     className={cx(
                       'text-[11px] font-semibold uppercase tracking-wider text-muted whitespace-nowrap',
-                      dense ? 'px-3 py-2' : 'px-4 py-2.5',
+                      dense ? (tight ? 'px-2 py-2' : 'px-3 py-2') : 'px-4 py-2.5',
                       c.align === 'right' ? 'text-right' : 'text-left',
                       sticky && 'sticky top-0 z-10 bg-surface-sunken shadow-[inset_0_-1px_0_var(--line)]',
                     )}
@@ -160,7 +171,7 @@ export function DataTable<T>({
                 );
               })}
               {rowActions ? <th className={cx('w-12', sticky && 'sticky top-0 z-10 bg-surface-sunken')}><span className="sr-only">Actions</span></th> : null}
-              {href ? <th className={cx('w-10', sticky && 'sticky top-0 z-10 bg-surface-sunken')} /> : null}
+              {href && !rowActions ? <th className={cx('w-10', sticky && 'sticky top-0 z-10 bg-surface-sunken')} /> : null}
             </tr>
           </thead>
           <tbody>
@@ -176,7 +187,7 @@ export function DataTable<T>({
                       key={c.key}
                       className={cx(
                         'align-middle',
-                        dense ? 'px-3 py-2' : 'px-4 py-3',
+                        dense ? (tight ? 'px-2 py-2' : 'px-3 py-2') : 'px-4 py-3',
                         c.align === 'right' ? 'text-right' : 'text-left',
                         c.cellClassName,
                       )}
@@ -201,7 +212,7 @@ export function DataTable<T>({
                       <RowActionsMenu actions={rowActions(row)} />
                     </td>
                   ) : null}
-                  {href ? (
+                  {href && !rowActions ? (
                     <td className="pr-3 text-right" aria-hidden>
                       <IconChevronRight
                         size={16}

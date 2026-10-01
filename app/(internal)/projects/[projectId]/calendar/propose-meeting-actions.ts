@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
+import { createClient } from '@/lib/db/server';
 import { getAgencyTimeZone } from '@/lib/admin/agency-clock';
 import { zonedDateTimeToIso } from '@/lib/admin/zoned-time';
 import { requestMeeting } from '@/lib/scheduler/meeting-commands';
@@ -40,11 +41,19 @@ export async function proposeMeetingOnDayAction(_prev: FormState, formData: Form
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };
+  // SCR-022: a meeting made from a project belongs to it, so it shows on this calendar.
+  let attached = true;
+  if (projectId && result.data.meetingId) {
+    const supabase = await createClient();
+    const { data, error } = await supabase.schema('projects').rpc('attach_meeting_to_project', { p_meeting_id: result.data.meetingId, p_project_id: projectId });
+    attached = !error && ['attached', 'unchanged'].includes((Array.isArray(data) ? data[0] : data)?.outcome ?? '');
+  }
   if (projectId) revalidatePath(`/projects/${projectId}/calendar`);
+  if (projectId) revalidatePath(`/projects/${projectId}`);
   if (result.data.leadId) revalidatePath(`/leads/${result.data.leadId}`);
   revalidatePath('/meetings');
   return {
     status: 'success',
-    message: result.data.meetingId ? `${result.data.message} Open it under Meetings to offer times.` : result.data.message,
+    message: result.data.meetingId ? `${result.data.message} Open it under Meetings to offer times.${attached ? '' : ' It could not be linked to this project, so it will not show on this calendar.'}` : result.data.message,
   };
 }

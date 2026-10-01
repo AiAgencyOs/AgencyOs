@@ -12,6 +12,7 @@ import { listProposals } from '@/modules/sales/queries';
 import { readProjectsForOpportunities } from '@/modules/sales/quotation-project-queries';
 import Link from 'next/link';
 
+import { QuotationManageButton } from './row-actions';
 import { VersionHistoryButton, type VersionRow } from './version-drawer';
 
 import { SavedViewsBar } from '../saved-views-bar';
@@ -220,6 +221,8 @@ export default async function QuotationsPage({
     listProposals({ status, limit: 200 }),
     listSavedViews('/quotations'),
   ]);
+  const mayDraft = can(context, 'proposal.draft');
+  const maySend = can(context, 'proposal.send');
   const todayKey = clock.dayKey(new Date());
   const soonKey = clock.dayKey(new Date(Date.now() + 7 * 86_400_000));
   const needle = (q ?? '').trim().toLowerCase();
@@ -243,7 +246,9 @@ export default async function QuotationsPage({
   // SCR-011 — the overall total: every quotation in the list's currency,
   // and beside it the live ones (sent or approved) as the figure in play.
   const currency = all[0]?.currency ?? 'INR';
-  const totalValue = all.filter((p) => p.currency === currency).reduce((n, p) => n + p.total_minor, 0);
+  // A superseded version is the same deal's earlier draft of this one; counting it
+  // would sum a price that was replaced, so the headline leaves it out.
+  const totalValue = all.filter((p) => p.currency === currency && p.status !== 'superseded').reduce((n, p) => n + p.total_minor, 0);
   const projectOptions = [...new Map([...projectsByDeal.values()].map((p) => [p.projectId, p.projectName])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const quotations = sortRows(filteredRows, sortKey, direction, COMPARATORS);
   const countBy = (s: string) => all.filter((p) => p.status === s).length;
@@ -302,7 +307,7 @@ export default async function QuotationsPage({
       {all.length > 0 ? (
         <StatGrid cols={6}>
           <Stat label="Quotations" value={String(all.length)} caption={`${countBy('draft')} draft · ${countBy('superseded')} superseded`} tone="brand" icon={<IconInvoices size={16} />} href="/quotations" />
-          <Stat label="Total value" value={money(totalValue, currency)} caption={`${money(sumBy((p) => p.status === 'sent' || p.status === 'approved'), currency)} live (sent or approved)${currencyMixed ? ` · ${currency} only` : ''}`} tone="accent" icon={<IconInvoices size={16} />} href="/quotations" />
+          <Stat label="Total value" value={money(totalValue, currency)} caption={`Excludes ${countBy('superseded')} superseded · ${money(sumBy((p) => p.status === 'sent' || p.status === 'approved'), currency)} live (sent or approved)${currencyMixed ? ` · ${currency} only` : ''}`} tone="accent" icon={<IconInvoices size={16} />} href="/quotations" />
           <Stat label="Awaiting approval" value={String(countBy('pending_approval'))} caption={money(sumBy((p) => p.status === 'pending_approval'), currency)} tone={countBy('pending_approval') > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/quotations?status=pending_approval" />
           <Stat label="Sent to clients" value={String(countBy('sent'))} caption={money(sumBy((p) => p.status === 'sent'), currency)} tone="info" icon={<IconSend size={16} />} href="/quotations?status=sent" />
           <Stat label="Accepted" value={String(countBy('accepted'))} caption={money(sumBy((p) => p.status === 'accepted'), currency)} tone="success" icon={<IconCheck size={16} />} href="/quotations?status=accepted" />
@@ -310,7 +315,7 @@ export default async function QuotationsPage({
         </StatGrid>
       ) : null}
 
-      <FilterBar>
+      <FilterBar clearHref="/quotations" filtered={Boolean(status || q || expiring || expired || client || project || service)}>
         <FilterChips
           options={[
             { key: 'all', label: 'All', href: `/quotations?${keep.filter((k) => !k.startsWith('status=')).join('&')}`, active: !status },
@@ -384,6 +389,15 @@ export default async function QuotationsPage({
             columns={columnsFor(clock, clientName, versionsOf, deliveryOf)}
             getKey={(p) => p.id}
             href={(p) => `/leads/${p.leadId}`}
+            rowActions={(p) => [
+              { key: 'open', label: 'Open the lead', href: `/leads/${p.leadId}#quotations` },
+              { key: 'pdf', label: 'Open the PDF', href: `/api/quotations/${p.id}/pdf` },
+              {
+                key: 'manage',
+                label: 'Submit, send or record an answer',
+                node: <QuotationManageButton leadId={p.leadId} proposalId={p.id} title={`${p.title} v${p.version}`} status={p.status} lapsed={isExpired(p)} inPlanSet={p.plan_set_id !== null} mayDraft={mayDraft} maySend={maySend} />,
+              },
+            ]}
             sort={{
               key: sortKey,
               direction,

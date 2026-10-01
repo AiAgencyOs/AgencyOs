@@ -1648,8 +1648,10 @@ try {
   // drafted quotation rather than against the function alone.
   console.log('\n15. The payment terms the owner chooses (G-196)');
 
-  const noneYet = (await rest('GET', 'sales', `payment_structures?organization_id=eq.${ORG}&select=id`)).json ?? [];
-  check(noneYet.length === 0, 'this agency has configured no terms — the state every deployment starts in', `${noneYet.length} row(s)`);
+  // Owner decision 2 (round 2): an agency that has configured nothing starts with the seeded
+  // 30/20/30/20 structure (is_default), and nothing of its own.
+  const noneYet = ((await rest('GET', 'sales', `payment_structures?organization_id=eq.${ORG}&select=id,is_default`)).json ?? []).filter((row) => row.is_default !== true);
+  check(noneYet.length === 0, 'this agency has configured no terms of its own — only the seeded default is there', `${noneYet.length} row(s)`);
 
   // A direct write is refused before the setter is even tried: the owner is
   // the person most able to sidestep the audit row and the 100% rule, so the
@@ -1816,7 +1818,8 @@ try {
 
   // ── another agency sees none of it ───────────────────────────────────────
   const otherTerms = (await rest('GET', 'sales',
-    `payment_structures?organization_id=neq.${ORG}&select=id`)).json ?? [];
+    `payment_structures?organization_id=neq.${ORG}&is_default=eq.false&select=id`)).json ?? [];
+  // every organization is seeded its own default (30/20/30/20, X2); what must not exist is a structure this agency MADE
   check(otherTerms.length === 0, 'no other tenant has terms of this agency’s making', `${otherTerms.length} row(s)`);
 
   const withdrawn = one(await call(owner, 'POST', 'sales', 'rpc/clear_payment_structure', {
@@ -1854,9 +1857,9 @@ try {
   // for a version that was never drafted.
   check(Boolean(withdrawnV2), 'a second version is drafted with the terms withdrawn', withdrawnV2 ? 'drafted' : 'no v2');
   check(
-    (withdrawnV2?.document?.paymentStructure ?? null) === null,
-    'and with the terms withdrawn a draft goes back to the two corpus families — the twin the whole feature rests on',
-    JSON.stringify(withdrawnV2?.document?.paymentStructure ?? null),
+    (withdrawnV2?.document?.paymentStructure?.milestones ?? []).map((m) => Number(m.pct)).join('/') === '30/20/30/20',
+    'and with the owner’s terms withdrawn a draft falls back to the seeded 30/20/30/20 default — the twin the whole feature rests on',
+    JSON.stringify((withdrawnV2?.document?.paymentStructure?.milestones ?? []).map((m) => m.pct)),
   );
 
 

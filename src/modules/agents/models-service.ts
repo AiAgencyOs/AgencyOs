@@ -9,10 +9,12 @@ import {
   addModelSchema,
   retireModelSchema,
   setFallbackChainSchema,
+  setModelBudgetSchema,
   setProviderBudgetSchema,
   type AddModelInput,
   type RetireModelInput,
   type SetFallbackChainInput,
+  type SetModelBudgetInput,
   type SetProviderBudgetInput,
 } from './models-schema';
 
@@ -171,5 +173,38 @@ export async function setProviderBudget(input: SetProviderBudgetInput): Promise<
       return err('VALIDATION', 'Not a provider this system serves.');
     default:
       return err('FORBIDDEN', 'Only the owner may set a provider budget.');
+  }
+}
+
+export async function setModelBudget(input: SetModelBudgetInput): Promise<Result<{ modelId: string; cleared: boolean }>> {
+  const parsed = setModelBudgetSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid budget.');
+
+  const gate = await requireOwner('set a model budget');
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('ai').rpc('set_model_budget', {
+    p_model_id: parsed.data.modelId,
+    p_monthly_cap_minor: parsed.data.monthlyCapMinor,
+  });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setModelBudget', detail: error.message }));
+    return err('INTERNAL', 'Could not save the model budget.');
+  }
+
+  switch (outcomeOf(data)) {
+    case 'set':
+      return ok({ modelId: parsed.data.modelId, cleared: false });
+    case 'cleared':
+      return ok({ modelId: parsed.data.modelId, cleared: true });
+    case 'unchanged':
+      return err('CONFLICT', 'That is already the budget.');
+    case 'bad_cap':
+      return err('VALIDATION', 'The cap must be between ₹0 and ₹1,00,00,00,000.');
+    case 'unknown_model':
+      return err('VALIDATION', 'Only a model in the registry above can be given a budget — add it there first.');
+    default:
+      return err('FORBIDDEN', 'Only the owner may set a model budget.');
   }
 }

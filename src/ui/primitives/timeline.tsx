@@ -7,9 +7,56 @@ export type TimelineStep = { label: string; caption?: string; state: 'done' | 'c
  * steps filled, the current one ringed, the rest hollow. Labels sit under
  * the dots. Scrolls sideways on a phone.
  */
-export function Timeline({ steps, className }: { steps: readonly TimelineStep[]; className?: string }) {
+export function Timeline({
+  steps,
+  className,
+  label = 'Milestone timeline',
+  orientation = 'horizontal',
+}: {
+  steps: readonly TimelineStep[];
+  className?: string;
+  label?: string;
+  /** `vertical` is the board rail's stacked phase list — dot and rule on the left, label and dates beside. */
+  orientation?: 'horizontal' | 'vertical';
+}) {
+  if (orientation === 'vertical') {
+    return (
+      <ol aria-label={label} className={cx('flex flex-col', className)}>
+        {steps.map((s, i) => {
+          const last = i === steps.length - 1;
+          const tone: Tone = s.state === 'done' ? 'success' : s.state === 'current' ? 'brand' : 'neutral';
+          return (
+            <li key={`${s.label}-${i}`} className="flex gap-3">
+              <div className="flex flex-col items-center">
+                <span
+                  aria-hidden
+                  className={cx(
+                    'flex h-5 w-5 shrink-0 items-center justify-center rounded-full ring-2',
+                    s.state === 'upcoming' ? 'bg-surface ring-line-strong' : cx(TONE_DOT[tone], 'ring-transparent'),
+                    s.state === 'current' && 'ring-4 ring-brand/30',
+                  )}
+                >
+                  {s.state === 'done' ? (
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12l5 5L20 7" />
+                    </svg>
+                  ) : null}
+                </span>
+                {!last ? <span aria-hidden className={cx('my-1 w-0.5 flex-1', s.state === 'done' ? 'bg-success' : 'bg-line-strong')} /> : null}
+              </div>
+              <span className={cx('min-w-0 pb-4', last && 'pb-0')}>
+                <span className={cx('block text-[13px] font-medium', s.state === 'upcoming' ? 'text-muted' : 'text-foreground')}>{s.label}</span>
+                {s.caption ? <span className="block text-xs text-muted">{s.caption}</span> : null}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    );
+  }
   return (
-    <ol className={cx('scrollbar-none flex overflow-x-auto pb-1', className)}>
+    // A region that scrolls sideways must be reachable from the keyboard, and named.
+    <ol tabIndex={0} aria-label={label} className={cx('scrollbar-none flex overflow-x-auto pb-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand', className)}>
       {steps.map((s, i) => {
         const last = i === steps.length - 1;
         const tone: Tone = s.state === 'done' ? 'success' : s.state === 'current' ? 'brand' : 'neutral';

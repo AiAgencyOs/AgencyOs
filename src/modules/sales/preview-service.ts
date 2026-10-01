@@ -33,7 +33,7 @@ export const quotationPreviewSchema = z.object({
   lines: z.array(z.object({ description: z.string().trim().min(1).max(500), quantity: z.number().positive().max(1_000_000), unitPriceMinor: z.number().int().nonnegative() })).min(1).max(100),
   discountMinor: z.number().int().nonnegative().default(0),
   taxMinor: z.number().int().nonnegative().default(0),
-  commercialTerms: z.array(z.string().trim().min(1).max(500)).max(30).default([]),
+  commercialTerms: z.array(z.string().trim().min(1).max(1200)).max(30).default([]),
 });
 export type QuotationPreviewInput = z.input<typeof quotationPreviewSchema>;
 

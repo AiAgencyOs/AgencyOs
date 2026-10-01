@@ -22,6 +22,8 @@ export type RetryAttempt = {
 export type RetryHistory = {
   attempts: number;
   last: RetryAttempt | null;
+  /** SCR-060: the reason given for the most recent retry, when one was kept. */
+  lastReason: string | null;
 };
 
 function str(value: unknown): string | null {
@@ -44,12 +46,25 @@ export async function readRetryHistory(originalIds: readonly string[]): Promise<
   for (const row of data ?? []) {
     if (!row.retry_of) continue;
     const meta = (row.metadata ?? {}) as Record<string, unknown>;
-    const entry = history.get(row.retry_of) ?? { attempts: 0, last: null };
+    const entry = history.get(row.retry_of) ?? { attempts: 0, last: null, lastReason: null };
     entry.attempts += 1;
     if (!entry.last) {
       entry.last = { messageId: row.id, at: row.occurred_at, delivery: str(meta.delivery), error: str(meta.error) };
     }
     history.set(row.retry_of, entry);
+  }
+
+  // The reasons people gave, newest first — only the latest per original is shown.
+  const { data: reasons, error: reasonsError } = await supabase
+    .schema('crm')
+    .from('delivery_retry_reasons')
+    .select('original_id, reason, created_at')
+    .in('original_id', [...originalIds])
+    .order('created_at', { ascending: false });
+  if (reasonsError) unreadable('readRetryHistory.reasons', reasonsError);
+  for (const r of reasons ?? []) {
+    const entry = history.get(r.original_id);
+    if (entry && entry.lastReason === null) entry.lastReason = r.reason;
   }
   return history;
 }

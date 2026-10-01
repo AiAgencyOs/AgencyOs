@@ -5,6 +5,7 @@ import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
+import { buildCredentialProblem } from './build-secrets-guard';
 import {
   promoteBuildSchema,
   recordEnvironmentCheckSchema,
@@ -30,6 +31,13 @@ export async function recordEnvironmentCheck(input: RecordEnvironmentCheckInput)
 
   const context = await requireInternal();
   if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to record a readiness check.');
+
+  // SCR-043: the evidence on an environment check is read by the whole team; no credential goes in it.
+  const credential = buildCredentialProblem([
+    { label: 'Evidence link', value: parsed.data.evidenceUrl, isLink: true },
+    { label: 'Note', value: parsed.data.note },
+  ]);
+  if (credential) return err('VALIDATION', credential);
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('record_environment_check', {

@@ -428,10 +428,14 @@ export type MeetingDetail = MeetingRow & {
   contact: { full_name: string } | null;
 };
 
-/** One evidence row — a reference, never a URL (G-229: no store is chosen to sign one). */
+/**
+ * One evidence row — text, or a reference to a stored file. A stored file
+ * (Q-D3) carries `storage_path`, which is never rendered: the page links the
+ * signed-download route, which reads the row and signs the object.
+ */
 export type MeetingEvidenceItem = Pick<
   MeetingEvidenceRow,
-  'id' | 'kind' | 'visibility' | 'artifact_ref' | 'body' | 'media_type' | 'byte_size' | 'uploaded_by' | 'uploaded_at'
+  'id' | 'kind' | 'visibility' | 'artifact_ref' | 'body' | 'media_type' | 'byte_size' | 'uploaded_by' | 'uploaded_at' | 'storage_path' | 'file_name'
 >;
 
 /** A reminder or analysis job for one meeting, as core.jobs holds it. */

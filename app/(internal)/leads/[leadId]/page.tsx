@@ -20,10 +20,14 @@ import {
 } from '@/modules/crm/queries';
 import { readConversationWindow, readProjectGroupForLead } from '@/modules/crm/window-queries';
 import { listLeadServiceSuggestions, readLeadService } from '@/modules/crm/lead-service-queries';
-import { readLeadScore } from '@/modules/crm/lead-score-queries';
-import { readLeadScoreOverride } from '@/modules/crm/lead-score-override-queries';
+import { heatTitle } from '@/modules/crm/lead-heat';
+import { LeadHeatBadge } from '@/modules/crm/lead-heat-badge';
+import { readLeadHeatReading } from '@/modules/crm/lead-heat-queries';
+import { describeBudget } from '@/modules/crm/budget-bands';
+import { readBudgetBands } from '@/modules/crm/budget-bands-queries';
 import { listSequencesForLead } from '@/modules/crm/lead-sequence-queries';
 import { readRequirementQuestionSends } from '@/modules/crm/requirement-question-queries';
+import { readProjectsForRequirementVersions } from '@/modules/projects/requirements-tab-queries';
 import { situationFor } from '@/modules/crm/follow-up-situations';
 import { readRetryHistory } from '@/lib/observability/retry-queries';
 import {
@@ -33,14 +37,20 @@ import {
   type LeadStatus,
 } from '@/modules/crm/schema';
 import { timezonePair, whenOf } from '@/modules/crm/meetings-view';
+import { readLeadFiles } from '@/modules/crm/lead-files-service';
+import { listContracts } from '@/modules/sales/contract-service';
 import {
   listDisqualificationHistory,
   listRequirementSourceRefs,
   readQualificationCoverage,
 } from '@/modules/crm/lead-insight-queries';
+import { handoffHeaderValue, requirementHeaderValue } from '@/modules/crm/requirement-header';
 import { readDealBillingMode, readOpportunityOwner } from '@/modules/sales/composer-queries';
 
 import { SalesOwnerForm } from './composer-extras';
+import { LeadTabs } from './lead-tabs';
+import { LeadStageStrip } from './stage-strip';
+import { listTasksForLead } from '@/modules/crm/lead-task-queries';
 import { listInternalRoster } from '@/modules/projects/queries';
 
 import { MeetingRequestForm } from './meeting-request-form';
@@ -80,6 +90,7 @@ import {
   IconPlus,
   IconRupee,
   IconUser,
+  IconChevronDown,
   QuickActions,
   ChatCanvas,
   ChatHeader,
@@ -90,21 +101,30 @@ import {
   IconInfo,
   IconLock,
   IconSparkle,
+  IconActivity,
+  IconAttach,
+  IconEdit,
+  IconFile,
+  IconList,
+  IconTarget,
   StatusBadge,
-  StatusStepper,
   SystemNote,
   humanize,
   PermissionDenied,
+  RowActionsMenu,
 } from '@/ui';
 
 import { ExtractionForm, MessageForm, SendToClientForm } from './message-form';
 import { SendTemplateForm } from './template-send-form';
+import { AddLeadFileForm, RemoveLeadFileButton } from './lead-files-forms';
+import { ContractsTable } from '../../contracts/contracts-list';
+import { NewContractForm } from '../../contracts/contract-forms';
 import { listWhatsAppTemplates } from '@/modules/crm/template-queries';
 import { RequirementDecisionForm } from './requirement-decision-form';
 import { RequirementSetPanel } from './requirement-set-panel';
 import { RequirementReviseForm } from './requirement-revise-form';
 import { LeadServiceForm } from './service-form';
-import { OverrideScoreForm, RescoreLeadForm } from './score-panel';
+import { HeatOverrideForm } from './heat-override-form';
 import { SequenceControls } from '../../follow-ups/sequence-controls';
 import { RetryDeliveryForm } from '../../operations/retry-delivery-form';
 import {
@@ -206,11 +226,10 @@ export default async function LeadConversationPage({
   const roster = await listInternalRoster();
   // SCR-006 — the service the lead asked about, and the values already in use.
   const [service, serviceSuggestions] = await Promise.all([readLeadService(leadId), listLeadServiceSuggestions()]);
-  // ADM-88 — Decision: reversed by the owner on 2026-09-29: the score with
-  // the reasons and inputs it was computed from, or null when never scored.
-  const leadScore = await readLeadScore(leadId);
-  // SCR-008 — the human decision beside it, or null when the computed score stands.
-  const scoreOverride = await readLeadScoreOverride(leadId);
+  // Owner decision 1 (round 2, ADM-88): Hot / Warm / Cold from recorded reasons; the stored score is never read.
+  const heatReading = await readLeadHeatReading({ id: leadId, status: lead.status });
+  // Q-BAND: the owner's budget bands.
+  const budgetBands = await readBudgetBands();
 
   const conversation = await getLatestConversation(leadId);
   const messages = conversation ? await listMessages(conversation.id) : [];
@@ -260,8 +279,14 @@ export default async function LeadConversationPage({
     readRequirementLinks(versionIds),
     versionIds.length > 0 ? readRequirementLinkTargets({ opportunityId: opportunity?.id ?? null, projectIds: projectGroup ? [projectGroup.projectId] : [] }) : Promise.resolve({ quotations: [], designs: [], tasks: [] }),
   ]);
+  // SCR-029: the project scope(s) frozen from these versions — the way to the project's requirement list.
+  const requirementProjects = await readProjectsForRequirementVersions(versionIds);
+  const leadTasks = await listTasksForLead(opportunity?.id ?? null);
   const openObjections = await listOpenObjectionsForLead(leadId);
   const meetings = await listMeetingsForLead(leadId);
+  // Decision 11: the links kept on this lead. Decision 10: the contracts on its won deal.
+  const leadFiles = await readLeadFiles(leadId);
+  const dealContracts = opportunity ? await listContracts({ opportunityIds: [opportunity.id] }) : [];
   // SCR-007 — the follow-up sequences running against this lead, its proposals and its meetings.
   const sequences = await listSequencesForLead({ leadId, proposalIds: proposals.map((p) => p.id), meetingIds: meetings.map((m) => m.id) });
   // SCR-012 — the composer's owner select and GST pre-fill. The billing mode
@@ -305,7 +330,7 @@ export default async function LeadConversationPage({
   /* ── Pane one: the conversation ─────────────────────────────────────── */
 
   const chat = (
-    <div className="flex h-[68dvh] min-h-[420px] flex-col overflow-hidden rounded-xl border border-line shadow-sm lg:sticky lg:top-[4.75rem] lg:h-[calc(100dvh-11.5rem)]">
+    <div id="conversation" className="scroll-mt-24 flex h-[68dvh] min-h-[420px] flex-col overflow-hidden rounded-xl border border-line shadow-sm lg:sticky lg:top-[4.75rem] lg:h-[calc(100dvh-11.5rem)]">
       <ChatHeader
         name={lead.title}
         status={
@@ -491,6 +516,8 @@ export default async function LeadConversationPage({
   const lastMessage = messages.length > 0 ? messages[messages.length - 1]! : null;
   const lastInbound = [...messages].reverse().find(isIncoming) ?? null;
   const budget = qualification.success && qualification.data.budgetMinor !== undefined ? money(qualification.data.budgetMinor, 'INR') : null;
+  // Q-BAND: the band the budget falls in, then the figure; "Not recorded" when there is none.
+  const budgetShown = describeBudget(qualification.success ? qualification.data.budgetMinor : undefined, budgetBands.bands, (m) => money(m, 'INR'));
 
   const quickActions = (
     <QuickActions
@@ -507,7 +534,7 @@ export default async function LeadConversationPage({
   );
 
   const side = (
-    <div className="flex flex-col gap-4">
+    <div id="overview" className="scroll-mt-24 flex flex-col gap-4">
       <DetailPanel
         title="Lead information"
         actions={mayWrite ? <a href="#sales" className="text-xs font-medium text-brand hover:underline">Edit</a> : undefined}
@@ -522,7 +549,7 @@ export default async function LeadConversationPage({
           { label: 'Status', value: <StatusBadge status={leadStatus} /> },
           ...(opportunity ? [{ label: 'Deal stage', value: <StatusBadge status={dealStage} /> }] : []),
           { label: 'Assigned to', value: facts?.assignedEmail ? facts.assignedEmail.split('@')[0] : 'Unassigned' },
-          { label: 'Budget', value: budget ?? 'Not qualified yet' },
+          { label: 'Budget', value: budgetShown.text },
           ...(qualification.success && qualification.data.timelineNote ? [{ label: 'Timeline', value: qualification.data.timelineNote }] : []),
           ...(qualification.success && qualification.data.isDecisionMaker !== undefined ? [{ label: 'Decision maker', value: qualification.data.isDecisionMaker ? 'Yes' : 'No' }] : []),
           ...(facts ? [{ label: 'Created on', value: clock.dateTime(facts.createdAt) }] : []),
@@ -531,65 +558,26 @@ export default async function LeadConversationPage({
           ...(facts ? [{ label: 'Row last updated', value: clock.dateTime(facts.updatedAt) }] : []),
         ]}
       />
-      {/* ADM-88 — Decision: reversed by the owner on 2026-09-29. */}
+      {/* Owner decision 1 (round 2): a Hot / Warm / Cold label with its reasons — never a number. */}
       <Card>
-        <CardHeader
-          title="Lead score"
-          description={leadScore ? `Computed ${clock.dateTime(leadScore.scoredAt)} from the facts below.` : 'Not scored yet. A score is computed from recorded facts and stored with its reasons; nothing is typed.'}
-          actions={mayWrite ? <RescoreLeadForm leadId={leadId} scored={leadScore !== null} /> : undefined}
-        />
-        {leadScore ? (
-          <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
-            {/* SCR-008 — AI suggestion vs human decision: two numbers, side by
-                side, never one overwriting the other. The override is a
-                person's, with their reason; the computed score stays. */}
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-lg border border-line bg-surface-sunken p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-faint">Computed (model)</p>
-                <p className="text-2xl tabular font-semibold">{leadScore.score}<span className="text-sm text-muted">/100</span></p>
-                <p className="text-xs text-muted">{leadScore.reasons.length} reasons, below</p>
-              </div>
-              <div className={`rounded-lg border p-3 ${scoreOverride ? 'border-brand/40 bg-brand-soft' : 'border-line bg-surface-sunken'}`}>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-faint">Human decision</p>
-                {scoreOverride ? (
-                  <>
-                    <p className="text-2xl tabular font-semibold">{scoreOverride.score}<span className="text-sm text-muted">/100</span></p>
-                    <p className="text-xs text-muted">
-                      &ldquo;{scoreOverride.reason}&rdquo; — {roster.find((m) => m.userId === scoreOverride.byUserId)?.fullName ?? scoreOverride.byUserId.slice(0, 8)}, {clock.dateTime(scoreOverride.at)}
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-[13px] text-muted">None — the computed score stands.</p>
-                )}
-              </div>
-            </div>
-            {mayAssign ? <OverrideScoreForm leadId={leadId} current={scoreOverride ? { score: scoreOverride.score, reason: scoreOverride.reason } : null} /> : null}
-            <ul className="divide-y divide-line rounded-lg border border-line">
-              {leadScore.reasons.map((r) => (
-                <li key={r.code} className="flex items-start justify-between gap-3 px-3 py-1.5 text-[13px]">
-                  <span className="min-w-0">
-                    <span className="font-medium">{humanize(r.code)}</span>
-                    <span className="block text-xs text-muted">{r.detail}</span>
-                  </span>
-                  <span className={`shrink-0 tabular ${r.points < 0 ? 'text-danger' : r.points === 0 ? 'text-muted' : 'text-success'}`}>
-                    {r.points > 0 ? `+${r.points}` : r.points}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <details className="text-xs text-muted">
-              <summary className="cursor-pointer">Inputs the score was computed from</summary>
-              <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                {Object.entries(leadScore.inputs).map(([key, value]) => (
-                  <div key={key} className="contents">
-                    <dt className="font-mono">{key}</dt>
-                    <dd className="break-words">{value === null ? 'null' : typeof value === 'object' ? JSON.stringify(value) : String(value)}</dd>
-                  </div>
-                ))}
-              </dl>
-            </details>
+        <CardHeader title="Lead Heat" description="Worked out from the stage, the last reply and whether a budget is recorded. A person may set the label beside it, with a reason." />
+        <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+          <div className="flex items-center gap-2">
+            <LeadHeatBadge label={heatReading.label} title={heatTitle(heatReading)} />
+            <span className="text-xs text-muted">{heatReading.override ? 'Set by a person; the computed label is kept below.' : heatReading.label === 'Hot' ? 'Qualified or beyond, and replied in the last 7 days.' : heatReading.label === 'Warm' ? 'At least one good sign, not yet hot.' : 'No good sign on record.'}</span>
           </div>
-        ) : null}
+          <ul className="divide-y divide-line rounded-lg border border-line">
+            {heatReading.reasons.map((r) => (
+              <li key={r} className="px-3 py-1.5 text-[13px]">{r}</li>
+            ))}
+          </ul>
+          {heatReading.override ? (
+            <p className="rounded-lg border border-line bg-surface-hover px-3 py-2 text-[13px]">
+              Set by a person to <span className="font-medium">{heatReading.override.label}</span> on {clock.dateTime(heatReading.override.at)}; the computed label is <span className="font-medium">{heatReading.computed}</span>. Reason: {heatReading.override.reason}
+            </p>
+          ) : null}
+          {mayWrite ? <HeatOverrideForm leadId={leadId} current={heatReading.override?.label ?? null} /> : null}
+        </div>
       </Card>
       {facts && (facts.tags.length > 0 || mayWrite) ? (
         <Card>
@@ -608,6 +596,28 @@ export default async function LeadConversationPage({
           </div>
         </Card>
       ) : null}
+      {/* Tasks belong to projects; a lead's are the open tasks of the project its deal became. */}
+      <Card>
+        <CardHeader title={`Tasks (${leadTasks.length})`} />
+        {leadTasks.length === 0 ? (
+          <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">
+            {opportunity ? 'No open task yet. Tasks appear here once the deal becomes a project.' : 'No deal yet, so no project and no tasks.'}
+          </p>
+        ) : (
+          <ul className="divide-y divide-line px-4 pb-2 sm:px-5">
+            {leadTasks.map((t) => (
+              <li key={t.id} className="flex items-start justify-between gap-2 py-2.5 text-[13px]">
+                <span className="min-w-0">
+                  <Link href={`/projects/${t.projectId}`} className="block truncate font-medium text-foreground hover:text-brand">{t.title}</Link>
+                  <span className="block truncate text-xs text-muted">{t.projectName}{t.dueOn ? ` · due ${clock.date(`${t.dueOn}T12:00:00Z`)}` : ''}</span>
+                </span>
+                <Badge tone={t.priority === 'p0' || t.priority === 'p1' ? 'danger' : 'neutral'} dot={false}>{t.priority.toUpperCase()}</Badge>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+      <div id="activity" className="scroll-mt-24">
       <ActivityFeed
         title="Recent activity"
         compact
@@ -620,6 +630,7 @@ export default async function LeadConversationPage({
           tone: /lost|disqualif|fail|reject/.test(e.event_type) ? ('danger' as const) : /won|convert|accept|approv/.test(e.event_type) ? ('success' as const) : ('brand' as const),
         }))}
       />
+      </div>
     </div>
   );
 
@@ -776,10 +787,13 @@ export default async function LeadConversationPage({
               <AssignOwnerForm leadId={leadId} current={facts?.assignedTo ?? null} roster={roster.map((r) => ({ userId: r.userId, fullName: r.fullName }))} />
               {conversation && !conversation.agent_paused_at ? <PauseAgentForm conversationId={conversation.id} leadId={leadId} /> : null}
 
-              <details className="rounded-lg border border-line bg-surface px-3 py-2">
+              <details id="qualification" className="scroll-mt-24 rounded-lg border border-line bg-surface px-3 py-2">
                 <summary className="cursor-pointer text-[13px] font-semibold">
                   Qualification
                 </summary>
+                <p className="pt-2 text-xs text-muted">
+                  <Link href={`/leads/${leadId}/qualification`} className="font-medium text-brand hover:underline">Open the full Qualification screen</Link>
+                </p>
                 <div className="pt-3">
                   <QualificationForm
                     leadId={leadId}
@@ -834,7 +848,9 @@ export default async function LeadConversationPage({
                 </>
               )}
 
-              <LeadNoteForm leadId={leadId} />
+              <div id="notes" className="scroll-mt-24">
+                <LeadNoteForm leadId={leadId} />
+              </div>
             </>
           ) : null}
 
@@ -1178,6 +1194,66 @@ export default async function LeadConversationPage({
         </CardBody>
       </Card>
 
+      {/* ── Files (decision 11): links kept on the lead; they carry over to the project when the deal is won ── */}
+      <Card id="files">
+        <CardHeader
+          title="Files"
+          description="Links to what the lead has shared or you have promised — brand guidelines, briefs, references. When the deal is won they appear on the project."
+        />
+        <CardBody>
+          <div className="flex flex-col gap-3">
+            {leadFiles.length === 0 ? (
+              <p className="text-[13px] text-muted">No file has been kept on this lead yet.{mayWrite ? ' Add a link below.' : ''}</p>
+            ) : (
+              <ul className="flex flex-col divide-y divide-line">
+                {leadFiles.map((f) => (
+                  <li key={f.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 first:pt-0 text-[13px]">
+                    <a href={f.url} target="_blank" rel="noopener noreferrer" className="min-w-0 max-w-full truncate font-medium text-brand hover:underline">
+                      {f.title}
+                    </a>
+                    <span className="text-xs text-muted">
+                      {f.addedByName ?? 'Someone'} · {clock.dateTime(f.addedAt)}
+                    </span>
+                    {f.carriedToProjectId ? (
+                      <Link href={`/projects/${f.carriedToProjectId}/files`} className="text-xs text-success hover:underline">
+                        On the project
+                      </Link>
+                    ) : null}
+                    {mayWrite ? (
+                      <span className="ml-auto">
+                        <RemoveLeadFileButton leadId={leadId} fileId={f.id} title={f.title} />
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {mayWrite ? <AddLeadFileForm leadId={leadId} /> : null}
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* ── Contracts (decision 10): only a won deal has one ───────────── */}
+      {opportunity && dealStage === 'won' ? (
+        <Card id="contracts">
+          <CardHeader
+            title="Contracts"
+            description="The contract for this won deal: where the file is kept, who signed it and when."
+            actions={
+              <Link href="/contracts" className="text-xs text-muted underline underline-offset-2 hover:text-foreground">
+                All contracts
+              </Link>
+            }
+          />
+          <CardBody>
+            <div className="flex flex-col gap-4">
+              {dealContracts.length === 0 ? <p className="text-[13px] text-muted">No contract has been recorded for this deal.</p> : <ContractsTable rows={dealContracts} clock={clock} mayWrite={mayWrite} showDeal={false} showClient={false} />}
+              {mayWrite ? <NewContractForm deals={[]} fixedOpportunityId={opportunity.id} leadId={leadId} clientId={opportunity.client_account_id ?? null} /> : null}
+            </div>
+          </CardBody>
+        </Card>
+      ) : null}
+
       {/* ── Follow-up sequences (SCR-007) ────────────────────────────── */}
       <Card id="sequences">
         <CardHeader
@@ -1216,7 +1292,7 @@ export default async function LeadConversationPage({
 
       {/* ── Extracted requirements ───────────────────────────────────── */}
       {conversation ? (
-        <Card>
+        <Card id="requirements">
           <CardHeader
             title="Extracted requirements"
             icon={<IconSparkle size={16} />}
@@ -1243,6 +1319,19 @@ export default async function LeadConversationPage({
             }
           />
           <CardBody className="flex flex-col gap-3">
+            {requirementProjects.length > 0 ? (
+              <p className="text-[13px] text-muted">
+                Frozen as project scope:{' '}
+                {requirementProjects.map((p, i) => (
+                  <span key={p.projectId}>
+                    {i > 0 ? ', ' : ''}
+                    <Link href={`/projects/${p.projectId}/requirements`} className="font-medium text-brand hover:underline">
+                      {p.projectName} (scope v{p.scopeVersion})
+                    </Link>
+                  </span>
+                ))}
+              </p>
+            ) : null}
             {versions.length === 0 ? (
               <p className="text-[13px] text-muted">
                 None yet. Extraction runs as a queued job and records a version here.
@@ -1433,12 +1522,27 @@ export default async function LeadConversationPage({
         }
         facts={[
           ...(facts?.contactCompany ? [{ label: 'Company', value: facts.contactCompany, icon: <IconUser size={14} /> }] : []),
-          ...(budget ? [{ label: 'Budget', value: budget, icon: <IconInvoices size={14} /> }] : []),
+          ...(budget ? [{ label: 'Budget', value: budgetShown.text, icon: <IconInvoices size={14} /> }] : []),
           { label: 'Assigned to', value: facts?.assignedEmail ? facts.assignedEmail.split('@')[0] : 'Unassigned', icon: <IconUser size={14} /> },
           ...(opportunity ? [{ label: 'Deal', value: humanize(dealStage), icon: <IconFlag size={14} /> }, { label: 'Deal value', value: money(opportunity.value_minor, opportunity.currency), icon: <IconRupee size={14} /> }] : []),
+          // SCR-007's header: the requirement version that stands, and who is answering the thread.
+          ...(conversation ? [{ label: 'Requirements', value: requirementHeaderValue(versions), icon: <IconFile size={14} /> }] : []),
+          ...(handoffHeaderValue(conversation) ? [{ label: 'Hand-off', value: handoffHeaderValue(conversation) as string, icon: <IconUser size={14} /> }] : []),
         ]}
         actions={
           <>
+            {mayWrite ? (
+              <a href="#sales" className={buttonClass('secondary', 'sm')}>
+                <IconUser size={14} />
+                Assign
+              </a>
+            ) : null}
+            {mayWrite ? (
+              <a href="#sales" className={buttonClass('secondary', 'sm')}>
+                Move to
+                <IconChevronDown size={14} />
+              </a>
+            ) : null}
             <Link href="/leads" className={buttonClass('secondary', 'sm')}>
               <IconArrowLeft size={14} />
               Leads
@@ -1449,6 +1553,18 @@ export default async function LeadConversationPage({
                 Send message
               </a>
             ) : null}
+            {/* The context header's overflow: where else this lead's work lives. */}
+            <RowActionsMenu
+              label="More actions for this lead"
+              actions={[
+                { key: 'qualification', label: 'Open the qualification screen', href: `/leads/${leadId}/qualification` },
+                { key: 'meetings', label: 'Meetings', href: `/leads/${leadId}?tab=meetings` },
+                { key: 'quotations', label: 'Quotations', href: `/leads/${leadId}?tab=quotations` },
+                { key: 'followups', label: 'Follow-ups', href: `/leads/${leadId}?tab=sequences` },
+                { key: 'activity', label: 'Activity', href: `/leads/${leadId}?tab=activity` },
+                { key: 'search', label: 'Find related records', href: `/search?q=${encodeURIComponent(lead.title)}` },
+              ]}
+            />
           </>
         }
         aside={
@@ -1465,13 +1581,25 @@ export default async function LeadConversationPage({
         }
       >
         <div className="mt-4 border-t border-line pt-4">
-          <StatusStepper
-            status={leadStatus}
-            happyPath={['new', 'qualifying', 'qualified', 'converted']}
-            offRamps={['nurture', 'disqualified']}
-          />
+          <LeadStageStrip leadStatus={leadStatus} dealStage={opportunity ? dealStage : null} />
         </div>
       </EntityHeader>
+
+      <LeadTabs
+        initial="conversation"
+        tabs={[
+          { id: 'overview', label: 'Overview', icon: <IconList size={14} /> },
+          { id: 'conversation', label: 'Conversation', icon: <IconMessage size={14} /> },
+          { id: 'qualification', label: 'Qualification', icon: <IconTarget size={14} /> },
+          { id: 'requirements', label: 'Requirements', icon: <IconFile size={14} /> },
+          { id: 'quotations', label: 'Quote', icon: <IconInvoices size={14} /> },
+          { id: 'meetings', label: 'Meetings', icon: <IconCalendar size={14} /> },
+          { id: 'sequences', label: 'Follow-ups', icon: <IconCalendar size={14} /> },
+          { id: 'files', label: 'Files', icon: <IconAttach size={14} /> },
+          { id: 'activity', label: 'Activity', icon: <IconActivity size={14} /> },
+          { id: 'notes', label: 'Notes', icon: <IconEdit size={14} /> },
+        ]}
+      />
 
       <LeadWorkspace
         chat={

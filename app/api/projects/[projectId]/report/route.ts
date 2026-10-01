@@ -48,7 +48,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
 
   const [tasks, { modules }, roster] = await Promise.all([
     listReportTasks(projectId, { from, to }),
-    listDevelopmentBreakdown(projectId),
+    listDevelopmentBreakdown(projectId, { excludeCancelled: true }),
     listInternalRoster(),
   ]);
   const moduleName = new Map(modules.map((m) => [m.id, m.name]));

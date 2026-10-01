@@ -194,7 +194,7 @@ What still stays open, and why:
 
 | Item | Why |
 |---|---|
-| File storage, versions, trash, share links | The product's file model is link-based by decision (SCR-024); storage would be a platform choice, not a screen. |
+| File storage, versions, trash, share links | **Decided and built, not open.** The owner's decision of 2026-09-29 (bucket D, decision 5) moved files to Supabase Storage: `projects.project_files` (migration `20260930110000`) carries a `storage_path` beside an optional `url`, every upload is its own version row (`parent_file_id`, `version`), deletion is a soft delete with a restore door (trash), and `projects.project_file_shares` holds expiring, revocable share links. A link-only file still works beside an uploaded one. What stays open is only what cannot run without a live bucket: browser verification of upload, preview and download is unreachable on a local stack, so those flows are proven through the existing fakes and tests (see `docs/pdf-gap/B.md`, SCR-024). Emptying the trash (deleting the object) is not built. |
 | Invoice reminders that actually send | Recording exists; a WhatsApp document send for invoices is a governed door nobody has specified (the quotation one is agent-driven). |
 | Bank import for reconciliation | Statement lines are typed in; no import format was decided. |
 | Runner enforcement of agent tool permissions / assignments | The rows are a policy record; the orchestrator does not read them yet — stated on the page. |

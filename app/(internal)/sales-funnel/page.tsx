@@ -4,7 +4,6 @@ import {
   getLeadSourceBreakdown,
   getPricingReflex,
   getSalesFunnel,
-  MIN_LEADS_TO_NAME_A_LEAK,
 } from '@/lib/admin/sales-funnel';
 import { agencyClock, getAgencyTimeZone } from '@/lib/admin/agency-clock';
 import { meetingsToday } from '@/lib/admin/overview';
@@ -18,13 +17,14 @@ import { listInternalRoster } from '@/modules/projects/queries';
 import { can } from '@/lib/authz/permissions';
 import Link from 'next/link';
 
-import { BarChart, buttonClass, Card, CardHeader, DonutChart, FilterChips, humanize, IconCheck, IconDownload, IconRupee, IconTarget, IconTrendUp, IconUsers, PageHeader, Stat, StatGrid, statusTone, StatusBadge, type KanbanColumn, PermissionDenied } from '@/ui';
+import { SalesTabs } from '../sales-tabs';
+import { Avatar, BarChart, buttonClass, Card, CardHeader, DonutChart, EmptyState, FilterChips, humanize, IconCheck, IconDownload, ViewAll, IconRupee, IconTarget, IconTrendUp, IconUsers, PageHeader, Stat, StatGrid, statusTone, type KanbanColumn, PermissionDenied } from '@/ui';
 
 import { TodayCard } from '../today-card';
 import { PipelineBoard, type PipelineCard } from './pipeline-board';
 import { SalesActions } from './sales-actions';
 
-export const metadata: Metadata = { title: 'Sales funnel' };
+export const metadata: Metadata = { title: 'Sales & CRM' };
 
 /**
  * Where the leads are lost — Document 09 §37, and the Sales Dashboard of §30.
@@ -73,19 +73,30 @@ const hours = (h: number | null): string => {
   return `${Math.round(h / 24)}d`;
 };
 
+/** "3d ago" — the reference's deal-card age. */
+function ago(at: string, now: Date): string {
+  const secs = Math.max(0, Math.round((now.getTime() - new Date(at).getTime()) / 1000));
+  if (secs < 3600) return `${Math.max(1, Math.floor(secs / 60))}m ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  const d = Math.floor(secs / 86400);
+  return `${d} day${d === 1 ? '' : 's'} ago`;
+}
+
 const WINDOWS = [30, 90, 180, 365] as const;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export default async function SalesFunnelPage({ searchParams }: { searchParams: Promise<{ days?: string; source?: string; owner?: string }> }) {
+export default async function SalesFunnelPage({ searchParams }: { searchParams: Promise<{ days?: string; source?: string; owner?: string; view?: string }> }) {
   const context = await requireInternal('/sales-funnel');
   if (!can(context, 'lead.read')) return <PermissionDenied />;
 
-  const { days: daysParam, source: sourceParam, owner: ownerParam } = await searchParams;
+  const { days: daysParam, source: sourceParam, owner: ownerParam, view: viewParam } = await searchParams;
+  // SCR-005: the board can show deal stages (default) or the lead statuses New → Nurture.
+  const leadView = viewParam === 'leads';
   const days = (WINDOWS as readonly number[]).includes(Number(daysParam)) ? Number(daysParam) : 90;
 
   const canWritePipeline = can(context, 'lead.write');
-  const { counts, steps, biggestDrop, outOfOrder, lostReasons } = await getSalesFunnel(days);
+  const { counts, steps, biggestDrop, outOfOrder, lostReasons, minLeadsToNameLeak } = await getSalesFunnel(days);
   const reflex = await getPricingReflex(days);
   const leadSources = await getLeadSourceBreakdown(days);
   const widest = Math.max(...steps.map((s) => s.count), 1);
@@ -104,8 +115,8 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
   const nameOf = (id: string) => roster.find((m) => m.userId === id)?.fullName ?? id.slice(0, 8);
   const filtering = Boolean(source || owner);
   const opportunities = allOpportunities.filter((o) => (!source || o.lead?.source === source) && (!owner || o.ownerId === owner));
-  const filterHref = (over: Partial<{ source: string; owner: string }>) => {
-    const next = { days: String(days), source: source ?? '', owner: ownerParam === 'mine' ? 'mine' : (owner ?? ''), ...over };
+  const filterHref = (over: Partial<{ source: string; owner: string; view: string }>) => {
+    const next = { days: String(days), source: source ?? '', owner: ownerParam === 'mine' ? 'mine' : (owner ?? ''), view: leadView ? 'leads' : '', ...over } as Record<string, string>;
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(next)) if (v && !(k === 'days' && v === '90')) q.set(k, v);
     const qs = q.toString();
@@ -127,7 +138,7 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
     listMyTasks(context.userId),
     listUpcomingMeetings(now),
     listRecentSalesActivity(10),
-    canWritePipeline ? listLeadsForTable(200) : Promise.resolve([]),
+    canWritePipeline || leadView ? listLeadsForTable(200) : Promise.resolve([]),
   ]);
   const dueToday = myTasks.filter((t) => t.dueOn === todayKey);
   const overdueMine = myTasks.filter((t) => t.dueOn !== null && t.dueOn < todayKey).length;
@@ -148,15 +159,16 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
   const winRate = decided > 0 ? Math.round((counts.won / decided) * 100) : null;
   const wonValue = valueByStage.get('won') ?? 0;
 
-  const pipelineColumns: KanbanColumn[] = openStages.map((stage) => ({
+  const pipelineColumns: KanbanColumn[] = OPPORTUNITY_STAGES.map((stage) => ({
     id: stage,
     label: STAGE_LABEL[stage],
-    tone: statusTone(stage),
+    tone: (({ discovery: 'info', proposal: 'success', negotiation: 'warning', won: 'success', lost: 'danger' }) as Record<string, KanbanColumn['tone']>)[stage] ?? statusTone(stage),
+    subtitle: money(opportunities.filter((o) => o.stage === stage && o.currency === currency).reduce((n, o) => n + o.value_minor, 0), currency),
   }));
   // An open opportunity's lead link is expected but the column is nullable
   // in the schema; skip the rare row without one rather than render a card
   // whose "open the lead" click would have nowhere to go.
-  const pipelineDeals: PipelineCard[] = open
+  const pipelineDeals: PipelineCard[] = opportunities
     .filter((o): o is typeof o & { lead_id: string } => o.lead_id !== null)
     .map((o) => ({
       id: o.id,
@@ -164,30 +176,49 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
       leadId: o.lead_id,
       name: o.name,
       valueLabel: money(o.value_minor, o.currency),
+      contact: o.lead?.title ?? null,
+      ago: ago(o.created_at, now),
     }));
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
-        title="Sales funnel"
-        description={`Leads created in the last ${days} days, and how far each got. Every number is a row somebody wrote.`}
+        title="Sales & CRM"
+        description="Track your leads, manage pipeline, close deals and grow your business."
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex gap-1 rounded-lg border border-line bg-surface p-0.5">
-              {WINDOWS.map((w) => (
-                <Link key={w} href={`/sales-funnel?days=${w}`} className={buttonClass(days === w ? 'primary' : 'ghost', 'sm')} aria-current={days === w ? 'page' : undefined}>
-                  {w}d
-                </Link>
-              ))}
-            </div>
-            {/* SCR-005 — the export carries the page's own filters. */}
-            <a href={exportHref} className={buttonClass('secondary', 'sm')}>
-              <IconDownload size={14} /> Export CSV{filtering ? ' (filtered)' : ''}
-            </a>
-            <SalesActions leads={leadsForActions.map((l) => ({ id: l.id, title: l.contact?.fullName ?? l.title, conversationId: null }))} agencyZone={agencyZone} canWrite={canWritePipeline} />
+          <div className="flex gap-1 rounded-lg border border-line bg-surface p-0.5" role="group" aria-label="Date range">
+            {WINDOWS.map((w) => (
+              <Link key={w} href={`/sales-funnel?days=${w}`} className={buttonClass(days === w ? 'primary' : 'ghost', 'sm')} aria-current={days === w ? 'page' : undefined}>
+                {w}d
+              </Link>
+            ))}
           </div>
         }
       />
+
+      <StatGrid cols={5}>
+        <Stat label="Qualified Leads" value={String(counts.qualified)} caption={`${counts.leads} leads in the window`} tone="brand" icon={<IconUsers size={16} />} href="/leads?status=qualified" />
+        <Stat label="Proposals Sent" value={String(counts.quoted)} caption={`${open.length} open deal${open.length === 1 ? '' : 's'}${filtering ? ' · filtered' : ''}`} tone="info" icon={<IconTarget size={16} />} href="/quotations?status=sent" />
+        <Stat label="Pipeline Value" value={money(openValue, currency)} caption={filtering ? 'Sum of open deal values matching the filters' : `Sum of open deal values · ${openStages.map((st) => `${money(valueByStage.get(st) ?? 0, currency)} ${STAGE_LABEL[st].toLowerCase()}`).join(' · ')}`} tone="accent" icon={<IconRupee size={16} />} />
+        <Stat label="Deals Closed" value={String(counts.won)} caption={decided > 0 ? `${counts.lost} lost · win rate ${winRate}%` : `${counts.lost} lost · nothing decided in the window`} tone="success" icon={<IconCheck size={16} />} />
+        <Stat label="Closed Revenue" value={money(wonValue, currency)} caption={wonValue > 0 ? 'Across all won deals' : 'No won deal yet'} tone="success" icon={<IconTrendUp size={16} />} />
+      </StatGrid>
+
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
+        <div className="flex flex-wrap items-center gap-3">
+          <SalesTabs />
+          <div className="flex gap-1 rounded-lg border border-line bg-surface p-0.5" role="group" aria-label="Board shows">
+            <Link href={filterHref({ view: '' })} className={buttonClass(leadView ? 'ghost' : 'primary', 'sm')} aria-current={leadView ? undefined : 'page'}>Deal stages</Link>
+            <Link href={filterHref({ view: 'leads' })} className={buttonClass(leadView ? 'primary' : 'ghost', 'sm')} aria-current={leadView ? 'page' : undefined}>Lead status</Link>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <a href={exportHref} className={buttonClass('secondary', 'sm')}>
+            <IconDownload size={14} /> Export CSV{filtering ? ' (filtered)' : ''}
+          </a>
+          <SalesActions leads={leadsForActions.map((l) => ({ id: l.id, title: l.contact?.fullName ?? l.title, conversationId: null }))} agencyZone={agencyZone} canWrite={canWritePipeline} />
+        </div>
+      </div>
 
       <nav aria-label="Pipeline filters" className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-line bg-surface px-3 py-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -216,98 +247,147 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
         ) : null}
       </nav>
 
-      <StatGrid cols={5}>
-        <Stat label="Leads in window" value={String(counts.leads)} caption={`${counts.qualified} qualified · ${counts.quoted} quoted`} tone="brand" icon={<IconUsers size={16} />} href="/leads" />
-        <Stat label="Open deals" value={String(open.length)} caption={`${openStages.map((st) => `${valueByStage.has(st) ? money(valueByStage.get(st) ?? 0, currency) : '₹0'} ${STAGE_LABEL[st].toLowerCase()}`).join(' · ')}${filtering ? ' · filtered' : ''}`} tone="info" icon={<IconTarget size={16} />} />
-        <Stat label="Pipeline value" value={money(openValue, currency)} caption={filtering ? 'Sum of open deal values matching the filters' : 'Sum of open deal values'} tone="accent" icon={<IconRupee size={16} />} />
-        <Stat label="Won" value={String(counts.won)} caption={wonValue > 0 ? `${money(wonValue, currency)} across all won deals` : `${counts.lost} lost`} tone="success" icon={<IconCheck size={16} />} />
-        <Stat label="Win rate" value={winRate === null ? '—' : `${winRate}%`} caption={decided > 0 ? `${counts.won} won of ${decided} decided` : 'Nothing decided in the window'} tone={winRate !== null && winRate >= 50 ? 'success' : 'neutral'} icon={<IconTrendUp size={16} />} />
-      </StatGrid>
-
-      {/* SCR-005 — pipeline value by stage. One measure (money), ordered
-          categories, a single series: a bar chart in one hue, the figures
-          in a table beneath for anyone who cannot read the colour or wants
-          the number. Only the open stages are open value; won and lost are
-          shown as what they are, beside. */}
-      <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4">
-        <p className="text-sm font-medium">Pipeline value by stage</p>
-        <p className="text-[12.5px] text-muted">
-          The sum of deal values in each stage{filtering ? ', matching the filters' : ''}, in {currency}. Won and lost are the settled ends of the same line.
-        </p>
-        {opportunities.length === 0 ? (
-          <p className="mt-1 text-sm text-muted">No deals yet, so nothing to sum.</p>
-        ) : (
-          <>
-            <div className="mt-2">
-              <BarChart
-                data={OPPORTUNITY_STAGES.map((st) => ({ label: STAGE_LABEL[st], value: Math.round((valueByStage.get(st) ?? 0) / 100) }))}
-                colors={OPPORTUNITY_STAGES.map((st) => (isOpenOpportunity(st) ? 'var(--brand)' : st === 'won' ? 'var(--success)' : 'var(--muted)'))}
-                currency={currency}
-                height={200}
-              />
-            </div>
-            <details className="text-[12.5px]">
-              <summary className="cursor-pointer text-muted">The figures as a table</summary>
-              <table className="mt-2 w-full max-w-md text-[12.5px]">
-                <thead>
-                  <tr className="text-left text-[11px] uppercase tracking-wide text-faint">
-                    <th className="py-1">Stage</th>
-                    <th className="py-1 text-right">Deals</th>
-                    <th className="py-1 text-right">Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {OPPORTUNITY_STAGES.map((st) => (
-                    <tr key={st} className="border-t border-line">
-                      <td className="py-1">{STAGE_LABEL[st]}</td>
-                      <td className="py-1 text-right tabular">{opportunities.filter((o) => o.stage === st).length}</td>
-                      <td className="py-1 text-right tabular">{money(valueByStage.get(st) ?? 0, currency)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </details>
-          </>
-        )}
-      </section>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="flex min-w-0 flex-col gap-4">
+          {leadView ? (
+            <Card>
+              <CardHeader title="Lead status" description="Where each lead stands before it becomes a deal. A status moves on the lead, with its reason." />
+              <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2 sm:px-5 2xl:grid-cols-4">
+                {(['new', 'qualifying', 'qualified', 'nurture'] as const).map((st) => {
+                  const inColumn = leadsForActions.filter((l) => l.status === st && (!source || l.source === source) && (!owner || l.assigned_to === owner));
+                  return (
+                    <section key={st} aria-label={`${humanize(st)} leads`} className="flex min-w-0 flex-col gap-2 rounded-xl border border-line bg-surface-sunken p-2">
+                      <h3 className="flex items-center justify-between px-1 text-[13px] font-semibold">
+                        <Link href={`/leads?status=${st}`} className="hover:text-brand">{humanize(st)}</Link>
+                        <span className="tabular text-xs text-muted">{inColumn.length}</span>
+                      </h3>
+                      {inColumn.length === 0 ? (
+                        <p className="px-1 py-2 text-xs text-muted">No leads</p>
+                      ) : (
+                        inColumn.slice(0, 12).map((l) => (
+                          <Link key={l.id} href={`/leads/${l.id}`} className="rounded-lg border border-line bg-surface p-2.5 text-[13px] shadow-xs hover:border-brand/40">
+                            <span className="block truncate font-medium">{l.contact?.fullName ?? l.title}</span>
+                            <span className="block truncate text-xs text-muted">{humanize(l.source)}{l.assignedEmail ? ` · ${l.assignedEmail.split('@')[0]}` : ''}</span>
+                          </Link>
+                        ))
+                      )}
+                      {inColumn.length > 12 ? <Link href={`/leads?status=${st}`} className="px-1 text-xs font-medium text-brand hover:underline">All {inColumn.length} →</Link> : null}
+                    </section>
+                  );
+                })}
+              </div>
+            </Card>
+          ) : open.length === 0 ? (
+            <Card>
+              <CardHeader title="Open pipeline" />
+              <EmptyState title="No open deals right now" description="A deal appears here when a lead is quoted or moved into a stage." action={<Link href="/leads" className={buttonClass('secondary', 'sm')}>Open leads</Link>} />
+            </Card>
+          ) : (
+            <>
+              <PipelineBoard columns={pipelineColumns} deals={pipelineDeals} canWrite={canWritePipeline} />
+              <p className="px-1 text-[12.5px] text-muted">
+                {canWritePipeline ? 'Drag a card to move it to the next stage. ' : ''}{open.length} open deal{open.length === 1 ? '' : 's'}{filtering ? ' matching the filters' : ''}.
+              </p>
+            </>
+          )}
+        </div>
+        <div className="flex min-w-0 flex-col gap-4">
+          <TodayCard clock={clock} now={now} meetings={todayMeetings} dueToday={dueToday} overdueCount={overdueMine} paymentsToVerify={null} />
+          <Card>
+            <CardHeader title="Upcoming Meetings" actions={<ViewAll href="/meetings?window=week" />} />
+            <ul className="flex flex-col">
+              {upcoming.length === 0 ? (
+                <li className="px-4 pb-4 text-[13px] text-muted sm:px-5">Nothing agreed or requested ahead.</li>
+              ) : (
+                upcoming.map((m) => {
+                  const d = new Date(m.at);
+                  return (
+                    <li key={m.id}>
+                      <Link href={`/meetings/${m.id}`} className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
+                        <span className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-lg bg-brand-soft text-brand">
+                          <span className="text-[10px] font-semibold uppercase leading-none">{new Intl.DateTimeFormat('en-GB', { month: 'short', timeZone: agencyZone }).format(d)}</span>
+                          <span className="tabular text-base font-bold leading-tight">{new Intl.DateTimeFormat('en-GB', { day: 'numeric', timeZone: agencyZone }).format(d)}</span>
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium text-foreground">{m.leadTitle}</span>
+                          <span className="block truncate text-xs text-muted">{clock.clock(m.at)} · {humanize(m.mode)}{m.agreed ? '' : ' (requested)'}</span>
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          </Card>
+        </div>
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <TodayCard clock={clock} now={now} meetings={todayMeetings} dueToday={dueToday} overdueCount={overdueMine} paymentsToVerify={null} />
-
         <Card>
-          <CardHeader title="Upcoming meetings" description="Agreed or requested, soonest first." actions={<Link href="/meetings?window=week" className="text-xs text-muted underline underline-offset-2 hover:text-foreground">All meetings</Link>} />
-          <ul className="divide-y divide-line">
-            {upcoming.length === 0 ? (
-              <li className="px-4 py-3 text-[13px] text-muted sm:px-5">Nothing agreed or requested ahead.</li>
+          <CardHeader title="Leads by Source" actions={<ViewAll href="/leads" />} />
+          <div className="px-4 pb-4 sm:px-5">
+            {leadSources.length === 0 ? (
+              <p className="text-sm text-muted">No leads were created in this window.</p>
             ) : (
-              upcoming.map((m) => (
-                <li key={m.id}>
-                  <Link href={`/meetings/${m.id}`} className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
-                    <span className="min-w-0 flex-1 truncate text-foreground">{m.leadTitle}</span>
-                    <span className="shrink-0 text-xs text-muted">{humanize(m.mode)}</span>
-                    <span className="shrink-0 text-xs tabular text-muted">{clock.dateTime(m.at)}{m.agreed ? '' : ' (requested)'}</span>
-                  </Link>
-                </li>
-              ))
+              <DonutChart data={leadSources.map((s) => ({ label: humanize(s.source), value: s.count }))} totalLabel="Total Leads" height={170} />
             )}
-          </ul>
+          </div>
         </Card>
 
         <Card>
-          <CardHeader title="Recent sales activity" description="The newest rows on any lead: notes, status changes, messages, calls, agent runs, assignments." />
-          <ul className="divide-y divide-line">
-            {activity.length === 0 ? (
-              <li className="px-4 py-3 text-[13px] text-muted sm:px-5">Nothing recorded on any lead yet.</li>
+          <CardHeader title="Pipeline Value" actions={<ViewAll href="/sales-funnel" />} />
+          <div className="px-4 pb-4 sm:px-5">
+            {opportunities.length === 0 ? (
+              <p className="text-sm text-muted">No deals yet, so nothing to sum.</p>
             ) : (
-              activity.map((a) => (
+              <>
+                <BarChart
+                  data={OPPORTUNITY_STAGES.map((st) => ({ label: STAGE_LABEL[st], value: Math.round((valueByStage.get(st) ?? 0) / 100) }))}
+                  colors={OPPORTUNITY_STAGES.map((st) => (isOpenOpportunity(st) ? 'var(--brand)' : st === 'won' ? 'var(--success)' : 'var(--muted)'))}
+                  currency={currency}
+                  height={190}
+                />
+                <details className="text-[12.5px]">
+                  <summary className="cursor-pointer text-muted">The figures as a table</summary>
+                  <table className="mt-2 w-full text-[12.5px]">
+                    <thead>
+                      <tr className="text-left text-[11px] uppercase tracking-wide text-faint">
+                        <th className="py-1">Stage</th>
+                        <th className="py-1 text-right">Deals</th>
+                        <th className="py-1 text-right">Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {OPPORTUNITY_STAGES.map((st) => (
+                        <tr key={st} className="border-t border-line">
+                          <td className="py-1">{STAGE_LABEL[st]}</td>
+                          <td className="py-1 text-right tabular">{opportunities.filter((o) => o.stage === st).length}</td>
+                          <td className="py-1 text-right tabular">{money(valueByStage.get(st) ?? 0, currency)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </details>
+              </>
+            )}
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Recent Activities" actions={<ViewAll href="/leads" />} />
+          <ul className="flex flex-col">
+            {activity.length === 0 ? (
+              <li className="px-4 pb-4 text-[13px] text-muted sm:px-5">Nothing recorded on any lead yet.</li>
+            ) : (
+              activity.slice(0, 6).map((a) => (
                 <li key={a.id}>
-                  <Link href={`/leads/${a.leadId}`} className="flex flex-col gap-0.5 px-4 py-2 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
-                    <span className="flex items-center gap-2">
-                      <StatusBadge status={a.kind} dot={false} />
-                      <span className="min-w-0 flex-1 truncate font-medium text-foreground">{a.leadTitle}</span>
-                      <span className="shrink-0 text-[11px] text-faint">{clock.dateTime(a.occurredAt)}</span>
+                  <Link href={`/leads/${a.leadId}`} className="flex items-start gap-3 px-4 py-2 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
+                    <Avatar name={a.leadTitle} size="sm" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium text-foreground">{a.leadTitle}</span>
+                      <span className="block truncate text-xs text-muted">{humanize(a.kind)}{a.body ? ` · ${a.body}` : ''}</span>
+                      <span className="block text-[11px] text-faint">{ago(a.occurredAt, now)}</span>
                     </span>
-                    {a.body ? <span className="truncate text-xs text-muted">{a.body}</span> : null}
                   </Link>
                 </li>
               ))
@@ -316,37 +396,7 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
         </Card>
       </div>
 
-      <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4">
-        <p className="text-sm font-medium">Open pipeline</p>
-        <p className="text-[12.5px] text-muted">
-          Every deal currently open, grouped by stage.{' '}
-          {canWritePipeline ? 'Drag a card to move it to the next stage.' : ''} {open.length} open deal
-          {open.length === 1 ? '' : 's'}{filtering ? ' matching the filters' : ''}.
-        </p>
-        {open.length === 0 ? (
-          <p className="mt-1 text-sm text-muted">No open deals right now.</p>
-        ) : (
-          <div className="mt-2">
-            <PipelineBoard columns={pipelineColumns} deals={pipelineDeals} canWrite={canWritePipeline} />
-          </div>
-        )}
-      </section>
-
-      {leadSources.length > 0 ? (
-        <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4">
-          <p className="text-sm font-medium">Lead source breakdown</p>
-          <p className="text-[12.5px] text-muted">
-            Leads created in the last {days} days, by how they reached us.
-          </p>
-          <div className="mt-2">
-            <DonutChart
-              data={leadSources.map((s) => ({ label: humanize(s.source), value: s.count }))}
-              totalLabel="Leads"
-            />
-          </div>
-        </section>
-      ) : null}
-
+      <h2 className="mt-2 text-base font-bold tracking-tight text-foreground">Funnel analytics</h2>
       {counts.leads === 0 ? (
         <p className="rounded-lg border border-line bg-surface p-4 text-sm text-muted">
           No leads were created in this window, so there is nothing to measure yet. This page
@@ -357,7 +407,7 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
           <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4">
             {steps.map((step) => (
               <div key={step.key} className="flex items-center gap-3">
-                <div className="w-44 shrink-0">
+                <div className="w-32 shrink-0 sm:w-44">
                   <p className="text-sm font-medium">{step.label}</p>
                   <p className="text-[11.5px] leading-tight text-muted">{step.evidence}</p>
                 </div>
@@ -370,10 +420,10 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
                 </div>
 
                 <p className="w-14 shrink-0 text-right text-sm tabular">{step.count}</p>
-                <p className="w-28 shrink-0 text-right text-[12.5px] tabular text-muted">
+                <p className="hidden w-28 shrink-0 text-right text-[12.5px] tabular text-muted sm:block">
                   {step.rate === null ? '' : `${step.rate}% of previous`}
                 </p>
-                <p className="w-24 shrink-0 text-right text-[12.5px] tabular text-muted">
+                <p className="hidden w-24 shrink-0 text-right text-[12.5px] tabular text-muted sm:block">
                   {step.ofLeads === null ? '' : `${step.ofLeads}% of leads`}
                 </p>
               </div>
@@ -403,7 +453,7 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
             ) : (
               <p className="rounded-lg border border-line bg-surface p-4 text-sm text-muted">
                 Not enough leads yet to say where the losses are. Below{' '}
-                {MIN_LEADS_TO_NAME_A_LEAK} in the window, the biggest drop is noise — naming a
+                {minLeadsToNameLeak} in the window, the biggest drop is noise — naming a
                 stage on that evidence would be a guess wearing a number.
               </p>
             )}
