@@ -59,16 +59,16 @@ export async function startTask(input: TaskIdInput): Promise<Result<{ started: t
     if (roleProblem) return err('FORBIDDEN', roleProblem);
     return err('INTERNAL', 'Could not start the task.');
   }
-  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; detail?: string | null } | undefined;
   switch (row?.outcome) {
     case 'started':
       return ok({ started: true });
     case 'wrong_state':
       return err('CONFLICT', 'Only a task that is still to do can be started.');
     case 'no_requirement':
-      return err('CONFLICT', START_REQUIREMENT_MESSAGE);
+      return err('CONFLICT', row.detail || START_REQUIREMENT_MESSAGE);
     case 'dependencies_open':
-      return err('CONFLICT', START_DEPENDENCY_MESSAGE);
+      return err('CONFLICT', row.detail || START_DEPENDENCY_MESSAGE);
     case 'project_role_observer_read_only':
     case 'project_role_contributor_own_tasks':
       return err('FORBIDDEN', projectRoleDbProblem(row.outcome) ?? 'Your project role does not allow this.');

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { deriveLeadHeat, heatRank, heatTitle } from '../src/modules/crm/lead-heat.ts';
-import { isHotLead } from '../src/modules/crm/lead-quick-filters.ts';
+import { applyHeatOverride, deriveLeadHeat, heatRank, heatTitle, matchesLeadQuickFilter, type HeatOverride } from '../src/modules/crm/lead-heat.ts';
+import { hasNoResponse, isHotLead } from '../src/modules/crm/lead-quick-filters.ts';
 
 /**
  * Owner decision 1, round 2 (2026-10-01): no number, a Hot / Warm / Cold label
@@ -58,5 +58,41 @@ describe('a lead is Hot, Warm or Cold from recorded reasons', () => {
 
   test('the sort rank puts Hot above Warm above Cold', () => {
     assert.ok(heatRank('Hot') > heatRank('Warm') && heatRank('Warm') > heatRank('Cold'));
+  });
+});
+
+describe('R1-4: the Hot Leads filter and its count follow the manual override', () => {
+  const override = (label: 'Hot' | 'Warm' | 'Cold', computed: 'Hot' | 'Warm' | 'Cold'): HeatOverride => ({ label, computed, reason: 'a person said so', at: NOW.toISOString(), byUserId: 'u1' });
+  const reading = (lead: typeof base, o?: HeatOverride) => applyHeatOverride(deriveLeadHeat(lead, NOW), o);
+  const cold = { ...base, status: 'new' };
+  const hot = { ...base, status: 'qualified', lastInboundAt: daysAgo(2) };
+
+  test('with no override the filter is exactly the computed Hot (nothing changed)', () => {
+    for (const lead of [cold, hot, { ...base, status: 'qualified', lastInboundAt: daysAgo(8) }]) {
+      assert.equal(matchesLeadQuickFilter('hot_leads', lead, reading(lead), NOW), isHotLead(lead, NOW));
+    }
+  });
+
+  test('a lead overridden to Hot is in the filter though it computes Cold, and the badge agrees', () => {
+    const r = reading(cold, override('Hot', 'Cold'));
+    assert.equal(r.label, 'Hot');
+    assert.equal(matchesLeadQuickFilter('hot_leads', cold, r, NOW), true);
+  });
+
+  test('a lead overridden down from Hot leaves the filter, and the count', () => {
+    const r = reading(hot, override('Warm', 'Hot'));
+    assert.equal(matchesLeadQuickFilter('hot_leads', hot, r, NOW), false);
+    const leads = [
+      { lead: hot, reading: r },
+      { lead: cold, reading: reading(cold, override('Hot', 'Cold')) },
+      { lead: hot, reading: reading(hot) },
+    ];
+    assert.equal(leads.filter((l) => matchesLeadQuickFilter('hot_leads', l.lead, l.reading, NOW)).length, 2);
+    assert.equal(leads.filter((l) => l.reading.label === 'Hot').length, 2, 'the count equals the number of Hot badges');
+  });
+
+  test('No Response is about silence and does not follow the label', () => {
+    const silent = { ...base, status: 'qualified', lastInboundAt: daysAgo(5) };
+    assert.equal(matchesLeadQuickFilter('no_response', silent, reading(silent, override('Hot', 'Warm')), NOW), hasNoResponse(silent, NOW));
   });
 });

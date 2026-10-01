@@ -1,4 +1,4 @@
-import { HOT_REPLY_WINDOW_DAYS, isHotLead, isQualifiedOrBeyond, type LeadHeat } from './lead-quick-filters';
+import { HOT_REPLY_WINDOW_DAYS, hasNoResponse, isHotLead, isQualifiedOrBeyond, type LeadHeat, type QuickFilterKey } from './lead-quick-filters';
 
 /**
  * The Hot / Warm / Cold label — owner decision 1, round 2 (2026-10-01), ADM-88.
@@ -117,4 +117,15 @@ const RANK: Record<LeadHeatLabel, number> = { Cold: 0, Warm: 1, Hot: 2 };
 /** For the sortable column: Hot above Warm above Cold when sorted high-first. */
 export function heatRank(label: LeadHeatLabel): number {
   return RANK[label];
+}
+
+/**
+ * R1-4 (owner, round 3b): the Hot Leads quick filter and its count follow the
+ * manual override, so they agree with the badge. A lead is "hot" when its
+ * EFFECTIVE label is Hot: the person's override when there is one, else the
+ * computed label. With no override this is exactly `isHotLead`. No Response is
+ * about silence, not the label, and is unchanged.
+ */
+export function matchesLeadQuickFilter(key: QuickFilterKey, lead: LeadHeat, reading: Pick<LeadHeatReading, 'label'>, now: Date): boolean {
+  return key === 'hot_leads' ? reading.label === 'Hot' : hasNoResponse(lead, now);
 }

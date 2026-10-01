@@ -11,9 +11,10 @@ describe('the four chips', () => {
     assert.equal(clientLifecycle({ active: 1, planning: 2, completed: 1 }), 'active');
   });
 
-  test('Pending: only unstarted or signed projects', () => {
+  test('Pending: unstarted or signed projects, with nothing running or held', () => {
     assert.equal(clientLifecycle({ planning: 1 }), 'pending');
     assert.equal(clientLifecycle({ planning: 1, onboarding: 2 }), 'pending');
+    assert.equal(clientLifecycle({ completed: 1, planning: 1 }), 'pending');
   });
 
   test('Completed: every project complete', () => {
@@ -43,7 +44,10 @@ describe('no overlap', () => {
         const live = Object.entries(acc).filter(([s]) => s !== 'cancelled').reduce((n, [, c]) => n + c, 0);
         if (chip === 'active') assert.ok((acc.active ?? 0) > 0 && !acc.on_hold, JSON.stringify(acc));
         if (chip === 'on_hold') assert.ok((acc.on_hold ?? 0) > 0, JSON.stringify(acc));
-        if (chip === 'pending') assert.equal((acc.planning ?? 0) + (acc.onboarding ?? 0), live, JSON.stringify(acc));
+        const unstarted = (acc.planning ?? 0) + (acc.onboarding ?? 0);
+        if (chip === 'pending') assert.ok(unstarted > 0 && !acc.on_hold && !acc.active, JSON.stringify(acc));
+        // R1-2: every live client wears a chip; there is no "mixed" gap any more.
+        if (live > 0) assert.notEqual(chip, null, JSON.stringify(acc));
         if (chip === 'completed') assert.equal(acc.completed ?? 0, live, JSON.stringify(acc));
         if (live === 0) assert.equal(chip, null, JSON.stringify(acc));
         return;
@@ -60,7 +64,9 @@ describe('no overlap', () => {
     assert.equal(clientLifecycle(undefined), null);
   });
 
-  test('a finished project beside an unstarted one fits no chip', () => {
-    assert.equal(clientLifecycle({ completed: 1, planning: 1 }), null);
+  test('a finished project beside an unstarted one is Pending, and a running one still wins', () => {
+    assert.equal(clientLifecycle({ completed: 1, onboarding: 1 }), 'pending');
+    assert.equal(clientLifecycle({ completed: 1, planning: 1, active: 1 }), 'active');
+    assert.equal(clientLifecycle({ completed: 1, planning: 1, on_hold: 1 }), 'on_hold');
   });
 });

@@ -1,15 +1,18 @@
 import assert from 'node:assert/strict';
 import { describe, mock, test } from 'node:test';
 
-mock.module('@/lib/auth/session', { exports: { requireInternal: async () => ({}) } });
-mock.module('@/lib/db/server', { exports: { createClient: async () => ({}) } });
+let phaseRpcRow: unknown = { outcome: 'completed', missing: [] };
+mock.module('@/lib/auth/session', { exports: { requireInternal: async () => ({ role: 'owner' }) } });
+mock.module('@/lib/authz/permissions', { exports: { can: () => true } });
+mock.module('@/lib/db/server', { exports: { createClient: async () => ({ schema: () => ({ rpc: async () => ({ data: [phaseRpcRow], error: null }) }) }) } });
 mock.module('@/lib/db/admin', { exports: { createAdminClient: () => ({}) } });
 
 const { HANDLER_JOB_KIND, HANDLERS, subscribersFor } = await import('../src/lib/events/catalog.ts');
 const { handlePhaseFiveCompletedForFinance, handlePhaseSixCompletedForFinance } = await import('../src/modules/finance/handlers.ts');
 const { generateM3Invoice, generateM4Invoice } = await import('../src/modules/finance/service.ts');
 import { phaseCompletedEventSchema, task3CompleteAnnouncementFor, task4CompleteAnnouncementFor } from '../src/modules/crm/schema.ts';
-import { completePhaseSchema } from '../src/modules/projects/phase-completion-schema.ts';
+import { completePhaseSchema, PHASE_COMPLETION_COPY } from '../src/modules/projects/phase-completion-schema.ts';
+const { completePhase } = await import('../src/modules/projects/phase-completion-service.ts');
 
 /**
  * Q-PH56 (owner, round 3): completing Phase 5 raises the M3 invoice and the PM's
@@ -139,5 +142,28 @@ describe('M3 and M4 are raised from the milestone at their position', () => {
     assert.equal(result.ok, false);
     assert.match(!result.ok ? result.error.message : '', /Phase 5 completed but the billing profile is incomplete/);
     assert.equal(seen.rpcs.length, 0);
+  });
+});
+
+describe('R1-3: Phase 5 needs the M2 invoice verified paid', () => {
+  const projectId = '11111111-1111-4111-8111-111111111111';
+
+  test('the door’s refusal reaches the person in words', async () => {
+    phaseRpcRow = { outcome: 'not_ready', missing: ['M2 not verified paid'] };
+    const r = await completePhase({ projectId, phase: 5 });
+    assert.equal(r.ok, false);
+    assert.match(!r.ok ? r.error.message : '', /M2 not verified paid/);
+  });
+
+  test('a ready phase completes and a replay is already_completed', async () => {
+    phaseRpcRow = { outcome: 'completed', missing: [] };
+    assert.deepEqual((await completePhase({ projectId, phase: 5 })).ok && 'ok', 'ok');
+    phaseRpcRow = { outcome: 'already_completed', missing: [] };
+    const again = await completePhase({ projectId, phase: 5 });
+    assert.equal(again.ok && again.data.outcome, 'already_completed');
+  });
+
+  test('the page states the rule it enforces', () => {
+    assert.match(PHASE_COMPLETION_COPY[5].rule, /M2 invoice is verified paid/);
   });
 });

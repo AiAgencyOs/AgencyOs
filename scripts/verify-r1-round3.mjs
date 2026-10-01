@@ -77,7 +77,7 @@ async function rest(method, schema, path, body, token) {
 const rpc = (schema, fn, args, token) => rest('POST', schema, `rpc/${fn}`, args, token);
 const row = (r) => (Array.isArray(r.json) ? r.json[0] : r.json);
 
-const fixture = { users: [], orgs: [], leads: [], projects: [], accounts: [], deliverables: [] };
+const fixture = { users: [], orgs: [], leads: [], projects: [], accounts: [], deliverables: [], invoices: [] };
 let ORG = null;
 
 async function mkUser(role, orgId) {
@@ -99,6 +99,7 @@ async function cleanup() {
     await rest('DELETE', 'core', `outbox_events?subject_id=eq.${id}`);
     await rest('DELETE', 'projects', `projects?id=eq.${id}`);
   }
+  for (const id of fixture.invoices) await rest('DELETE', 'finance', `invoices?id=eq.${id}`);
   for (const id of fixture.leads) await rest('DELETE', 'crm', `leads?id=eq.${id}`);
   for (const id of fixture.accounts) await rest('DELETE', 'core', `client_accounts?id=eq.${id}`);
   if (ORG) await rest('DELETE', 'crm', `budget_bands?organization_id=eq.${ORG}`);
@@ -245,7 +246,25 @@ try {
   const t1done = row(await rest('POST', 'projects', 'tasks', { organization_id: ORG, project_id: P, module_id: mod?.id, title: `${MARKER} build one, finished`, status: 'done', completed_at: new Date().toISOString() }));
   check(!!t1done?.id && /1 of 2 development tasks/.test(((await readiness(5))?.missing ?? []).join(' ')), 'one done, one open: still not ready');
   await rest('DELETE', 'projects', `tasks?id=eq.${t2.id}`);
-  check((await readiness(5))?.outcome === 'ready', 'every development task done: ready (a task outside any module does not count)');
+  // R1-3 (round 3b): every task done is not enough - the M2 invoice must be verified paid.
+  const noM2 = await readiness(5);
+  check(noM2?.outcome === 'not_ready' && (noM2.missing ?? []).join('|') === 'M2 not verified paid', 'every development task done but no M2 on the project: still not ready, and M2 is the only thing missing', JSON.stringify(noM2));
+  const m2 = row(await rest('POST', 'projects', 'milestones', { organization_id: ORG, project_id: P, name: `${MARKER} M2`, position: 2, amount_minor: 100000, currency: 'INR' }));
+  if (!m2?.id) fail(`could not create the fixture M2 milestone: ${JSON.stringify(m2).slice(0, 200)}`);
+  const m2inv = row(await rest('POST', 'finance', 'invoices', { organization_id: ORG, client_account_id: account.id, project_id: P, milestone_id: m2.id, number: `${MARKER}-M2`, status: 'issued', currency: 'INR', subtotal_minor: 100000, total_minor: 100000, issued_at: new Date().toISOString() }));
+  if (!m2inv?.id) fail(`could not create the fixture M2 invoice: ${JSON.stringify(m2inv).slice(0, 200)}`);
+  fixture.invoices.push(m2inv.id);
+  check((await readiness(5))?.missing?.includes('M2 not verified paid'), 'an issued M2 invoice is not verified paid');
+  const refusedUnpaid = row(await complete(owner.token, 5));
+  check(refusedUnpaid?.outcome === 'not_ready' && (refusedUnpaid.missing ?? []).includes('M2 not verified paid'), 'complete_phase refuses while M2 is unpaid, and says why', JSON.stringify(refusedUnpaid));
+  check((await eventsOf('project.phase_five_completed')).length === 0, 'and nothing was emitted');
+  // Recorded but not verified (paid_minor without verified_minor) is still not enough.
+  await rest('PATCH', 'finance', `invoices?id=eq.${m2inv.id}`, { paid_minor: 100000 });
+  check((await readiness(5))?.missing?.includes('M2 not verified paid'), 'money recorded on M2 but not verified does not count');
+  // Verified in full: the basis the status follows.
+  const verifiedPaid = await rest('PATCH', 'finance', `invoices?id=eq.${m2inv.id}`, { verified_minor: 100000, status: 'paid', paid_at: new Date().toISOString() });
+  check(verifiedPaid.ok, 'the fixture M2 invoice is marked verified paid', verifiedPaid.text.slice(0, 160));
+  check((await readiness(5))?.outcome === 'ready', 'M2 verified paid and every development task done: ready (a task outside any module does not count)');
   check((await eventsOf('project.phase_five_completed')).length === 0, 'and nothing was emitted by merely being ready');
 
   const phase6Early = row(await complete(owner.token, 6));

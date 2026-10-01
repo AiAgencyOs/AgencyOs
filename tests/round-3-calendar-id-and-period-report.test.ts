@@ -152,6 +152,14 @@ describe('Q-D2: the history line and the lock that refers to a report', () => {
     assert.equal(describeSnapshot(snapshot, 1, fmt).startsWith('1 invoice ·'), true);
   });
 
+  test('R3-2: a snapshot that holds payments and profit-and-loss shows them in the history line', () => {
+    const rich = [{ ...snapshot[0], payments: { count: 2, received_minor: 90000, refunded_minor: 10000, net_received_minor: 80000 }, profit_and_loss: { revenue_minor: 80000, expenses_minor: 4000, net_minor: 76000 } }];
+    assert.equal(
+      describeSnapshot(rich, 2, fmt),
+      '2 invoices · taxable INR 1000.00, tax INR 180.00, expenses INR 40.00, payments received INR 800.00, profit and loss: revenue INR 800.00, expenses INR 40.00, net INR 760.00',
+    );
+  });
+
   test('a snapshot the database might hold in an odd shape reads as nothing rather than throwing', () => {
     assert.deepEqual(snapshotCurrencies(null), []);
     assert.deepEqual(snapshotCurrencies({ a: 1 }), []);

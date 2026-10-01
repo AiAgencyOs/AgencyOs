@@ -928,6 +928,21 @@ jobs:
           # under a marker and removes them.
           npm run db:verify:r2
 
+          # Round 3b, stream S1 (owner decisions R1-3, R3-2): completing Phase 5
+          # needs the M2 invoice verified paid (the readiness read lists "M2 not
+          # verified paid", the door refuses), and "Generate period report" also
+          # stores payments received (verified basis, net of refunds) and the
+          # profit-and-loss figures. Creates its own organizations and users and
+          # removes them in a `finally`.
+          npm run db:verify:s1
+
+          # Round 3b, stream S2 (owner decisions R2-1, R2-2, R2-3): dependencies are
+          # per task (audited add/remove doors, same project, no loop, tenancy guards;
+          # Start Task names the unfinished task), a project role binds task comments,
+          # time logs and checklist items, and the roster-manager exemption reads the
+          # role union. Plants its own users, projects and organisation, and removes them.
+          npm run db:verify:s2
+
           # Round 3, stream R1: budget bands are the owner's (audited, validated, tenant-
           # scoped), a person may override the Hot / Warm / Cold label with a reason (the
           # computed label is kept, every change audited), and completing Phase 5 or 6

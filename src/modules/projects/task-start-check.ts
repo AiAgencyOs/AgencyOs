@@ -4,8 +4,8 @@
  *
  *   requirement check  the task is linked to a requirement version, or to a feature that
  *                      carries an included or optional scope item;
- *   dependency check   the project's newest plan has no dependency still pending, requested
- *                      or blocked (received and not-applicable are complete).
+ *   dependency check   (R2-1) every task this task depends on is done; the failing task is
+ *                      named. The plan-level "any pending plan dependency" check is replaced.
  *
  * The database says it in `projects.task_start_check` and refuses in `projects.start_task`
  * (`no_requirement`, `dependencies_open`); this module is the same sentences, so the button
@@ -16,7 +16,7 @@ export const START_REQUIREMENT_MESSAGE =
   'Requirement check failed: this task is not linked to a requirement or scope item. Link it to the feature that delivers one, or ask the requirement on the task page.';
 
 export const START_DEPENDENCY_MESSAGE =
-  'Dependency check failed: a dependency is still outstanding on the project plan. Mark it supplied or not applicable first.';
+  'Dependency check failed: a task this one depends on is not done yet. Finish it first, or remove the dependency.';
 
 export type TaskStartCheck = {
   startable: boolean;
@@ -26,13 +26,24 @@ export type TaskStartCheck = {
   reason: string | null;
 };
 
-/** The pure rule, for the sentence and for tests: the same two checks, in the same order. */
-export function evaluateStartCheck(input: { requirementLinked: boolean; openDependencies: number }): TaskStartCheck {
-  const open = Math.max(0, Math.trunc(input.openDependencies));
+/** Up to this many failing tasks are named in the sentence; the rest are counted. */
+const NAMED = 3;
+
+/**
+ * The pure rule, for the sentence and for tests: the same two checks, in the same order.
+ * R2-1: dependencies are per task: `blocking` is every task this one depends on that is not done.
+ */
+export function evaluateStartCheck(input: { requirementLinked: boolean; blocking: { title: string; status: string }[] }): TaskStartCheck {
+  const open = input.blocking.length;
+  const named = [...input.blocking]
+    .sort((a, b) => a.title.localeCompare(b.title))
+    .slice(0, NAMED)
+    .map((t) => `"${t.title}" (${t.status.replace(/_/g, ' ')})`)
+    .join(', ');
   const reason = !input.requirementLinked
     ? START_REQUIREMENT_MESSAGE
     : open > 0
-      ? `Dependency check failed: ${open} ${open === 1 ? 'dependency is' : 'dependencies are'} still outstanding on the project plan. Mark them supplied or not applicable first.`
+      ? `Dependency check failed: waiting on ${named}${open > NAMED ? ` and ${open - NAMED} more` : ''}. Finish ${open === 1 ? 'it' : 'them'} first, or remove the dependency.`
       : null;
   return { startable: reason === null, requirementOk: input.requirementLinked, openDependencies: open, reason };
 }

@@ -7,7 +7,8 @@
 //   C. Q-B4  default assignees per project role: a role-gated, audited door,
 //            tenancy guards on the table
 //   D. Q-C3  Start Task is gated by the requirement check and the dependency
-//            check, and the failing reason is returned
+//            check (R2-1: per task, the failing task is named), and the failing
+//            reason is returned
 // Plants its own users, project, plan and organisation under a marker (the CI
 // database has only the seeded owner and organisation) and removes them.
 // ═══════════════════════════════════════════════════════════════════════════
@@ -132,7 +133,7 @@ try {
   check(!moved.ok, 'a row cannot be moved to another organisation', JSON.stringify(moved.json).slice(0, 100));
 
   // ── D. Start Task is gated ───────────────────────────────────────────────
-  section('D. Start Task needs a requirement and no outstanding dependency');
+  section('D. Start Task needs a requirement and every task it depends on done');
   const bare = await mkTask('no requirement');
   const chk0 = one(await projects('task_start_check', { p_task_id: bare.id }, plain.token));
   check(chk0?.startable === false && chk0?.requirement_ok === false && /Requirement check failed/.test(chk0?.reason ?? ''), 'a task linked to nothing fails the requirement check, with the reason', chk0?.reason?.slice(0, 80));
@@ -150,24 +151,37 @@ try {
   const onExcluded = await mkTask('feature with only an excluded item', { feature_id: featOut.id });
   check(one(await projects('start_task', { p_task_id: onExcluded.id }, plain.token))?.outcome === 'no_requirement', 'a feature carrying only an excluded scope item is not a requirement');
 
-  // The plan, with an outstanding dependency.
+  // R2-1: the plan's own dependencies no longer gate a task; the task's own dependencies do.
   const plan = one(await rest('POST', 'projects', 'project_plans', { organization_id: ORG, project_id: project.id, version: 1, status: 'draft', scope_version_id: sv.id }));
   const dep = one(await rest('POST', 'projects', 'plan_dependencies', { organization_id: ORG, plan_id: plan.id, kind: 'client_information', description: 'zztest-r2 brand pack', needed_by_phase: 'phase_4', owner_role: 'project_manager', status: 'pending' }));
   if (!plan?.id || !dep?.id) k.fail('could not create the plan fixtures');
 
   const linked = await mkTask('linked to a requirement', { feature_id: featIn.id });
+  const chk0b = one(await projects('task_start_check', { p_task_id: linked.id }, plain.token));
+  check(chk0b?.startable === true && chk0b?.open_dependencies === 0, 'a pending plan dependency does not stop a linked task: the plan-level check is replaced', JSON.stringify(chk0b)?.slice(0, 100));
+
+  const waitsFor = await mkTask('prerequisite');
+  const addDep = one(await projects('add_task_dependency', { p_task_id: linked.id, p_depends_on_task_id: waitsFor.id }, plain.token));
+  check(addDep?.outcome === 'added', 'a dependency on another task is added', addDep?.outcome);
   const chk1 = one(await projects('task_start_check', { p_task_id: linked.id }, plain.token));
-  check(chk1?.requirement_ok === true && chk1?.open_dependencies === 1 && chk1?.startable === false && /Dependency check failed: 1 dependency is/.test(chk1?.reason ?? ''), 'linked, but the plan has an outstanding dependency: the reason says so', chk1?.reason?.slice(0, 100));
-  check(one(await projects('start_task', { p_task_id: linked.id }, plain.token))?.outcome === 'dependencies_open', 'Start refuses with dependencies_open');
+  check(chk1?.requirement_ok === true && chk1?.open_dependencies === 1 && chk1?.startable === false && /waiting on "zztest-r2 prerequisite" \(todo\)/.test(chk1?.reason ?? ''), 'linked, but it waits for an unfinished task: the reason names that task', chk1?.reason?.slice(0, 120));
+  const refused = one(await projects('start_task', { p_task_id: linked.id }, plain.token));
+  check(refused?.outcome === 'dependencies_open' && /zztest-r2 prerequisite/.test(refused?.detail ?? ''), 'Start refuses with dependencies_open and names the task', refused?.detail?.slice(0, 100));
   check((await statusOf(linked.id)) === 'todo', 'the task stays to do');
 
-  for (const status of ['requested', 'blocked']) {
-    await rest('PATCH', 'projects', `plan_dependencies?id=eq.${dep.id}`, { status });
-    check(one(await projects('start_task', { p_task_id: linked.id }, plain.token))?.outcome === 'dependencies_open', `a ${status} dependency still counts as outstanding`);
+  for (const status of ['in_progress', 'blocked']) {
+    await rest('PATCH', 'projects', `tasks?id=eq.${waitsFor.id}`, status === 'blocked' ? { status, blocked_reason: 'zztest-r2 waiting' } : { status });
+    check(one(await projects('start_task', { p_task_id: linked.id }, plain.token))?.outcome === 'dependencies_open', `a prerequisite that is ${status} still counts as outstanding`);
   }
-  await rest('PATCH', 'projects', `plan_dependencies?id=eq.${dep.id}`, { status: 'received' });
+  await patch(waitsFor.id, { status: 'in_progress' });
+  await projects('submit_task_evidence', { p_task_id: waitsFor.id, p_kind: 'test', p_title: 'zztest-r2 prerequisite suite', p_note: 'green' }, plain.token);
+  await projects('mark_task_ready_for_qa', { p_task_id: waitsFor.id }, plain.token);
+  check(one(await rest('GET', 'projects', `tasks?id=eq.${waitsFor.id}&select=status`))?.status === 'in_review', 'the prerequisite reaches In review through the hand-off, and is still outstanding');
+  check(one(await projects('start_task', { p_task_id: linked.id }, plain.token))?.outcome === 'dependencies_open', 'a prerequisite in review still counts as outstanding');
+  const finished = await patch(waitsFor.id, { status: 'done', completed_at: new Date().toISOString() }, lead.token);
+  check(finished.ok, 'the prerequisite is completed from In review', JSON.stringify(finished.json).slice(0, 160));
   const chk2 = one(await projects('task_start_check', { p_task_id: linked.id }, plain.token));
-  check(chk2?.startable === true && chk2?.reason === null, 'once the dependency is received the task can start', JSON.stringify(chk2)?.slice(0, 100));
+  check(chk2?.startable === true && chk2?.reason === null, 'once the prerequisite is done the task can start', JSON.stringify(chk2)?.slice(0, 100));
   check(one(await projects('start_task', { p_task_id: linked.id }, plain.token))?.outcome === 'started', 'and Start succeeds');
   check((await statusOf(linked.id)) === 'in_progress', 'the task is in progress');
   check(one(await projects('start_task', { p_task_id: linked.id }, plain.token))?.outcome === 'wrong_state', 'a started task is not started twice');
@@ -182,7 +196,10 @@ try {
         await rest('DELETE', 'projects', `project_plans?id=eq.${pl.id}`);
       }
       const tasks = await rest('GET', 'projects', `tasks?project_id=eq.${id}&select=id`);
-      for (const t of Array.isArray(tasks.json) ? tasks.json : []) await rest('DELETE', 'projects', `task_evidence?task_id=eq.${t.id}`);
+      for (const t of Array.isArray(tasks.json) ? tasks.json : []) {
+        await rest('DELETE', 'projects', `task_evidence?task_id=eq.${t.id}`);
+        await rest('DELETE', 'projects', `task_dependencies?task_id=eq.${t.id}`);
+      }
       await rest('DELETE', 'projects', `tasks?project_id=eq.${id}`);
       await rest('DELETE', 'projects', `scope_items?scope_version_id=in.(${((await rest('GET', 'projects', `scope_versions?project_id=eq.${id}&select=id`)).json ?? []).map((v) => v.id).join(',') || randomUUID()})`);
       await rest('DELETE', 'projects', `scope_versions?project_id=eq.${id}`);

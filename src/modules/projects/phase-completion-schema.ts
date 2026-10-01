@@ -11,7 +11,7 @@ export type PhaseCompletionPhase = (typeof PHASE_COMPLETION_PHASES)[number];
 export const PHASE_COMPLETION_COPY: Record<PhaseCompletionPhase, { name: string; rule: string; raises: string }> = {
   5: {
     name: 'Phase 5, Development',
-    rule: 'Complete when the project has development tasks and every one of them is done.',
+    rule: 'Complete when the project has development tasks, every one of them is done, and the M2 invoice is verified paid.',
     raises: 'Completing it raises the M3 invoice and the PM’s Task 3 message.',
   },
   6: {

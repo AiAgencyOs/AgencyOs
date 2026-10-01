@@ -14,6 +14,7 @@ import { readTaskDetail } from '@/modules/projects/task-queries';
 import { projectRoleProblem } from '@/modules/projects/project-role-guard';
 import { readMyProjectRole } from '@/modules/projects/project-role-queries';
 import { readTaskStartCheck } from '@/modules/projects/task-start-queries';
+import { readTaskDependencies } from '@/modules/projects/task-dependency-queries';
 import { listDefectsForTask } from '@/modules/qa/defect-task-queries';
 import { Badge, buttonClass, Card, CardHeader, DetailPanel, EntityHeader, humanize, IconArrowLeft, IconCalendar, IconEdit, IconList, ProgressBar, StatusBadge, statusTone } from '@/ui';
 
@@ -23,6 +24,7 @@ import { TimeLogPanel } from '../../../../../time-log-panel';
 import { TaskRequirementClarificationForm } from './task-requirement-clarification';
 import { TaskClarificationForm } from './task-clarification-form';
 import { AddSubtaskForm, LabelsForm } from './task-plan-forms';
+import { AddDependencyForm, RemoveDependencyForm } from './task-dependency-forms';
 import { listProjectSprints } from '@/modules/projects/sprint-queries';
 import { sprintEnd } from '@/modules/projects/sprint-schema';
 import { PlaceInSprintForm } from '../../../sprint-forms';
@@ -74,6 +76,8 @@ export default async function TaskDetailPage({
   const myProjectRole = mayPlan ? null : await readMyProjectRole(projectId, context.userId);
   const roleProblem = projectRoleProblem({ role: myProjectRole, manager: mayPlan, userId: context.userId, assigneeId: task.assignee?.userId });
   const mayWriteTask = can(context, 'task.write') && roleProblem === null;
+  // R2-1: the task's own dependencies (the tasks it waits for, and the tasks waiting for it).
+  const taskDeps = await readTaskDependencies(projectId, task.id);
   // Q-C3: the requirement and dependency checks in front of Start Task, with the reason to show on the button.
   const startCheck = task.status === 'todo' && mayWriteTask ? await readTaskStartCheck(task.id) : null;
 
@@ -309,10 +313,40 @@ export default async function TaskDetailPage({
 
               <Card>
                 <CardHeader
-                  title="Outstanding dependencies"
+                  title={`Task dependencies (${taskDeps.dependsOn.length})`}
+                  description="The tasks this one waits for. Start Task is refused, naming the task, until each of them is done."
+                />
+                <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+                  {taskDeps.dependsOn.length === 0 ? (
+                    <p className="text-[13px] text-muted">This task waits for nothing.</p>
+                  ) : (
+                    <ul className="flex flex-col gap-1">
+                      {taskDeps.dependsOn.map((d) => (
+                        <li key={d.dependsOnTaskId} className="flex flex-wrap items-baseline justify-between gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
+                          <Link href={`/projects/${projectId}/development/tasks/${d.dependsOnTaskId}`} className="font-medium hover:underline">{d.title}</Link>
+                          <span className="flex items-center gap-2 text-muted">
+                            <Badge tone={statusTone(d.status)}>{humanize(d.status)}</Badge>
+                            {mayWriteTask ? <RemoveDependencyForm projectId={projectId} taskId={task.id} dependsOnTaskId={d.dependsOnTaskId} /> : null}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {taskDeps.blocks.length > 0 ? (
+                    <p className="text-[13px] text-muted">
+                      Waiting for this task: {taskDeps.blocks.map((b) => b.title).join(', ')}.
+                    </p>
+                  ) : null}
+                  {mayWriteTask ? <AddDependencyForm projectId={projectId} taskId={task.id} candidates={taskDeps.candidates} /> : null}
+                </div>
+              </Card>
+
+              <Card>
+                <CardHeader
+                  title="Plan dependencies"
                   description={
                     plan
-                      ? `What plan v${plan.version} is still waiting on. A task cannot be done by ignoring one.`
+                      ? `What plan v${plan.version} is still waiting on. For information: they no longer stop a task from starting (task dependencies above do).`
                       : 'The project has no plan, so nothing is recorded as waited on.'
                   }
                 />

@@ -10,8 +10,8 @@ import { LEAD_STATUSES, NURTURE_REASONS } from '@/modules/crm/schema';
 import { listLeadsForTable, listLeadsNeedingAttention } from '@/modules/crm/queries';
 import { readLeadHeat } from '@/modules/crm/lead-heat-queries';
 import { readLeadFacts } from '@/modules/crm/lead-list-queries';
-import { isQuickFilterKey, matchesQuickFilter } from '@/modules/crm/lead-quick-filters';
-import { heatRank, heatTitle, deriveLeadHeat, type LeadHeatReading } from '@/modules/crm/lead-heat';
+import { isQuickFilterKey } from '@/modules/crm/lead-quick-filters';
+import { heatRank, heatTitle, deriveLeadHeat, matchesLeadQuickFilter, type LeadHeatReading } from '@/modules/crm/lead-heat';
 import { LeadHeatBadge } from '@/modules/crm/lead-heat-badge';
 import { applyHeatOverride } from '@/modules/crm/lead-heat';
 import { readLeadHeatOverrides } from '@/modules/crm/lead-heat-override-queries';
@@ -294,8 +294,8 @@ export default async function LeadsPage({
   const heatOf = (l: Row) => ({ status: l.status, dealStage: heat.get(l.id)?.dealStage ?? null, createdAt: facts.get(l.id)?.createdAt ?? l.updated_at, lastInboundAt: heat.get(l.id)?.lastInboundAt ?? null });
   // Owner decision 1 (round 2): a Hot / Warm / Cold label with its reasons, never a number.
   const heats = new Map(allLeads.map((l) => [l.id, applyHeatOverride(deriveLeadHeat({ ...heatOf(l), budgetRecorded: (facts.get(l.id)?.budgetMinor ?? null) !== null }, now), heatOverrides.get(l.id))]));
-  const hotLeads = allLeads.filter((l) => matchesQuickFilter('hot_leads', heatOf(l), now)).length;
-  const noResponse = allLeads.filter((l) => matchesQuickFilter('no_response', heatOf(l), now)).length;
+  const hotLeads = allLeads.filter((l) => matchesLeadQuickFilter('hot_leads', heatOf(l), heats.get(l.id) ?? { label: 'Cold' }, now)).length;
+  const noResponse = allLeads.filter((l) => matchesLeadQuickFilter('no_response', heatOf(l), heats.get(l.id) ?? { label: 'Cold' }, now)).length;
   const needle = (q ?? '').trim().toLowerCase();
   const filtered = allLeads.filter(
     (l) =>
@@ -312,7 +312,7 @@ export default async function LeadsPage({
       (!createdFrom || (facts.get(l.id)?.createdAt ?? '') >= `${createdFrom}T00:00:00`) &&
       (!createdTo || (facts.get(l.id)?.createdAt ?? '') <= `${createdTo}T23:59:59.999Z`) &&
       (!service || (services.byLead.get(l.id) ?? '').toLowerCase() === service.toLowerCase()) &&
-      (!quick || matchesQuickFilter(quick, heatOf(l), now)),
+      (!quick || matchesLeadQuickFilter(quick, heatOf(l), heats.get(l.id) ?? { label: 'Cold' }, now)),
   );
   const sources = [...new Set(allLeads.map((l) => l.source))].sort();
   const owners = [...new Map(allLeads.filter((l) => l.assigned_to && l.assignedEmail).map((l) => [l.assigned_to as string, l.assignedEmail as string])).entries()];

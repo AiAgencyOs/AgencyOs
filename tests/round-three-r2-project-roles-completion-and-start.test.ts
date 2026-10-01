@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { mapCommitToTask, summariseMapping, taskPrefixInMessage } from '../src/modules/projects/code-task-mapping.ts';
 import { mayChangeTask, projectRoleDbProblem, projectRoleProblem, PROJECT_ROLE_MESSAGES } from '../src/modules/projects/project-role-guard.ts';
+import { ADD_DEPENDENCY_MESSAGES } from '../src/modules/projects/task-dependency-schema.ts';
 import { evaluateStartCheck, START_REQUIREMENT_MESSAGE } from '../src/modules/projects/task-start-check.ts';
 import { COMPLETION_MESSAGE, completingProblem, selectableStatuses } from '../src/modules/projects/task-transitions.ts';
 
@@ -41,15 +42,25 @@ test('Q-B2 a database refusal is answered in the same words', () => {
   assert.equal(projectRoleDbProblem(undefined), null);
 });
 
-test('Q-C3 Start Task needs a requirement and no outstanding dependency, and says which fails', () => {
-  assert.deepEqual(evaluateStartCheck({ requirementLinked: true, openDependencies: 0 }), { startable: true, requirementOk: true, openDependencies: 0, reason: null });
-  const noReq = evaluateStartCheck({ requirementLinked: false, openDependencies: 3 });
+test('Q-C3 / R2-1 Start Task needs a requirement and every task it depends on done, and names the failing task', () => {
+  assert.deepEqual(evaluateStartCheck({ requirementLinked: true, blocking: [] }), { startable: true, requirementOk: true, openDependencies: 0, reason: null });
+  const noReq = evaluateStartCheck({ requirementLinked: false, blocking: [{ title: 'Schema', status: 'todo' }] });
   assert.equal(noReq.startable, false);
   assert.equal(noReq.reason, START_REQUIREMENT_MESSAGE, 'the requirement check speaks first');
-  const deps = evaluateStartCheck({ requirementLinked: true, openDependencies: 2 });
-  assert.equal(deps.startable, false);
-  assert.match(deps.reason ?? '', /2 dependencies are still outstanding/);
-  assert.match(evaluateStartCheck({ requirementLinked: true, openDependencies: 1 }).reason ?? '', /1 dependency is still outstanding/);
+  const one = evaluateStartCheck({ requirementLinked: true, blocking: [{ title: 'Build the schema', status: 'in_progress' }] });
+  assert.equal(one.startable, false);
+  assert.match(one.reason ?? '', /waiting on "Build the schema" \(in progress\)\. Finish it first/);
+  const many = evaluateStartCheck({
+    requirementLinked: true,
+    blocking: ['d', 'c', 'b', 'a', 'e'].map((title) => ({ title, status: 'todo' })),
+  });
+  assert.equal(many.openDependencies, 5);
+  assert.match(many.reason ?? '', /waiting on "a" \(todo\), "b" \(todo\), "c" \(todo\) and 2 more\. Finish them first/);
+});
+
+test('R2-1 the dependency door refusals are said in words', () => {
+  for (const outcome of ['itself', 'other_project', 'already', 'cycle', 'not_found']) assert.ok(ADD_DEPENDENCY_MESSAGES[outcome], outcome);
+  assert.match(ADD_DEPENDENCY_MESSAGES.cycle!, /wait for each other/);
 });
 
 const tasks = [

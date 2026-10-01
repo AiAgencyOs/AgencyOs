@@ -11606,6 +11606,48 @@ export type Database = {
           },
         ]
       }
+      task_dependencies: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          depends_on_task_id: string
+          id: string
+          organization_id: string
+          task_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          depends_on_task_id: string
+          id?: string
+          organization_id: string
+          task_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          depends_on_task_id?: string
+          id?: string
+          organization_id?: string
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_dependencies_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_dependencies_depends_on_task_id_fkey"
+            columns: ["depends_on_task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       task_evidence: {
         Row: {
           created_at: string
@@ -12102,7 +12144,19 @@ export type Database = {
       }
       start_task: {
         Args: { p_task_id: string }
+        Returns: { detail: string | null; outcome: string }[]
+      }
+      add_task_dependency: {
+        Args: { p_depends_on_task_id: string; p_task_id: string }
         Returns: { outcome: string }[]
+      }
+      remove_task_dependency: {
+        Args: { p_depends_on_task_id: string; p_task_id: string }
+        Returns: { outcome: string }[]
+      }
+      is_roster_manager: {
+        Args: never
+        Returns: boolean
       }
       submit_prototype_to_qa: {
         Args: { p_artifact_id: string }

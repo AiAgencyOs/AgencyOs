@@ -138,7 +138,9 @@
     "db:verify:reqcomments": "node scripts/verify-requirement-comments.mjs",
     "db:verify:semantic": "node scripts/verify-semantic-search.mjs",
     "db:verify:r2": "node scripts/verify-r2-roles-and-gates.mjs",
-    "db:verify:r1": "node scripts/verify-r1-round3.mjs"
+    "db:verify:r1": "node scripts/verify-r1-round3.mjs",
+    "db:verify:s1": "node scripts/verify-s1-round3b.mjs",
+    "db:verify:s2": "node scripts/verify-s2-task-dependencies-and-roles.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
