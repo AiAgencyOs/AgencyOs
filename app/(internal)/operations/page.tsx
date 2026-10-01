@@ -533,7 +533,7 @@ export default async function OperationsPage({
         queued one (core.cancel_job, on the row).
       */}
       <div className="grid gap-4 xl:grid-cols-2">
-        <div className="flex flex-col gap-2">
+        <div className="flex min-w-0 flex-col gap-2">
           <h2 className="text-[13px] font-semibold tracking-tight">Job queue <span className="text-muted">({query ? `${queuedShown.rows.length} of ${queuedShown.held}` : queued.length})</span></h2>
           <p className="text-xs text-muted">Every job not yet done, in the order it will run. Dead jobs are listed above, not here.</p>
           {queuedShown.rows.length === 0 ? (
@@ -542,8 +542,8 @@ export default async function OperationsPage({
             <ul className="divide-y divide-line rounded-lg border border-line bg-surface">
               {queuedShown.rows.map((j) => (
                 <li key={j.id} className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-2 text-[13px]">
-                  <span className="flex items-center gap-2">
-                    <span className="font-mono text-xs">{j.kind}</span>
+                  <span className="flex min-w-0 flex-wrap items-center gap-2">
+                    <span className="break-all font-mono text-xs">{j.kind}</span>
                     <Badge tone={j.status === 'running' ? 'info' : j.status === 'failed' || j.status === 'retry' ? 'warning' : 'neutral'}>{j.status}</Badge>
                     {j.attempts > 0 ? <span className="text-xs text-muted">{j.attempts}/{j.maxAttempts} attempts</span> : null}
                   </span>
