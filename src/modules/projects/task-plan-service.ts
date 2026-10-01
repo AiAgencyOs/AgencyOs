@@ -7,6 +7,7 @@ import { err, ok, type Result } from '@/lib/result';
 
 import { createTask, setTaskStatus } from './service';
 import { projectRoleDbProblem } from './project-role-guard';
+import { ARCHIVED_READ_ONLY_MESSAGE, archivedTaskProblem } from './task-transitions';
 import {
   addMyTaskSchema,
   addProjectNoteSchema,
@@ -43,6 +44,11 @@ export async function addSubtask(input: AddSubtaskInput): Promise<Result<{ taskI
   if (refused) return refused;
 
   const supabase = await createClient();
+  // V1-1: nothing is added under an archived task.
+  const { data: parent } = await supabase.schema('projects').from('tasks').select('archived_at').eq('id', parsed.data.parentTaskId).maybeSingle();
+  const archivedProblem = archivedTaskProblem(parent as { archived_at?: string | null } | null);
+  if (archivedProblem) return err('CONFLICT', archivedProblem);
+
   const { data, error } = await supabase.schema('projects').rpc('add_subtask', {
     p_parent_id: parsed.data.parentTaskId,
     p_title: parsed.data.title,
@@ -51,12 +57,16 @@ export async function addSubtask(input: AddSubtaskInput): Promise<Result<{ taskI
   });
   if (error) {
     log('addSubtask', error.message);
+    const heldProblem = projectRoleDbProblem(error.message);
+    if (heldProblem) return err('CONFLICT', heldProblem);
     return err('INTERNAL', 'Could not add the subtask.');
   }
   const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; task_id?: string | null } | undefined;
   switch (row?.outcome) {
     case 'added':
       return row.task_id ? ok({ taskId: row.task_id }) : err('INTERNAL', 'Could not add the subtask.');
+    case 'task_archived_read_only':
+      return err('CONFLICT', ARCHIVED_READ_ONLY_MESSAGE);
     case 'nested':
       return err('CONFLICT', 'A subtask cannot have subtasks of its own.');
     case 'invalid_title':

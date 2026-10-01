@@ -84,8 +84,16 @@ try {
   check((await outcome(projects('set_task_archived', { p_task_id: task.id, p_archived: false }, lead.token))) === 'unarchived', 'a delivery lead restores it');
   check((await rest('PATCH', 'projects', `tasks?id=eq.${task.id}`, { title: 'zztest-v1 renamed' }, lead.token)).ok, 'and then it can be edited again');
   check((await rest('POST', 'projects', 'task_comments', { organization_id: ORG, task_id: task.id, author_id: lead.id, body: 'zztest-v1 after restore' }, lead.token)).ok, 'and commented on');
-  // The service role (seed, verifiers, the runner) is not bound.
+  // V1-1: nothing is added under an archived task, by the door or by a direct insert.
+  check((await outcome(projects('add_subtask', { p_parent_id: other.id, p_title: 'zztest-v1 sub' }, lead.token))) === 'added', 'a live task takes a subtask through the door');
+  check((await outcome(projects('set_task_archived', { p_task_id: other.id, p_archived: true }, lead.token))) === 'archived', 'a lead archives the parent');
+  check((await outcome(projects('add_subtask', { p_parent_id: other.id, p_title: 'zztest-v1 sub two' }, lead.token))) === 'task_archived_read_only', 'the door refuses a subtask under an archived task');
+  check(refused(await rest('POST', 'projects', 'tasks', { organization_id: ORG, project_id: project.id, parent_task_id: other.id, title: 'zztest-v1 sub three' }, lead.token)), 'and so does a direct insert by a person');
+  check((await rest('POST', 'projects', 'tasks', { organization_id: ORG, project_id: project.id, parent_task_id: other.id, title: 'zztest-v1 sub by system' })).ok, 'a system writer is not bound');
+  await projects('set_task_archived', { p_task_id: other.id, p_archived: false }, lead.token);
+  check((await outcome(projects('add_subtask', { p_parent_id: other.id, p_title: 'zztest-v1 sub four' }, lead.token))) === 'added', 'after a restore a subtask can be added again');
   await projects('set_task_archived', { p_task_id: other.id, p_archived: true }, lead.token);
+  // The service role (seed, verifiers, the runner) is not bound.
   check((await rest('PATCH', 'projects', `tasks?id=eq.${other.id}`, { description: 'zztest-v1 by the service' })).ok, 'a system writer (service role) is not bound');
 
   // ── B. a cancel says why; the assignee is told ───────────────────────────
