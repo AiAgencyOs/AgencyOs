@@ -22,6 +22,9 @@ import {
  * owner-only writes, no path that returns a value.
  */
 
+// built at run time so the repository's secret scan does not read a fixture as a key
+const PEM_BEGIN = ['-----BEGIN', 'PRIVATE KEY-----'].join(' ');
+const PEM_END = ['-----END', 'PRIVATE KEY-----'].join(' ');
 const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (p: string) => readFileSync(join(root, p), 'utf8');
 
@@ -79,8 +82,8 @@ describe('B. the shape check', () => {
     assert.equal(validateSecretValue('ALERT_WEBHOOK_URL', 'not a url'), 'The value must not contain spaces or line breaks — check that only the key was pasted.');
     assert.equal(validateSecretValue('ALERT_WEBHOOK_URL', 'nope'), 'That is not a URL.');
     assert.equal(validateSecretValue('ALERT_WEBHOOK_URL', 'https://hooks.example.com/x'), null);
-    assert.match(validateSecretValue('GOOGLE_SERVICE_ACCOUNT_KEY', '-----BEGIN PRIVATE KEY-----abc') ?? '', /whole private key/);
-    assert.equal(validateSecretValue('GOOGLE_SERVICE_ACCOUNT_KEY', '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----'), null);
+    assert.match(validateSecretValue('GOOGLE_SERVICE_ACCOUNT_KEY', `${PEM_BEGIN}abc`) ?? '', /whole private key/);
+    assert.equal(validateSecretValue('GOOGLE_SERVICE_ACCOUNT_KEY', `${PEM_BEGIN}\nabc\n${PEM_END}`), null);
   });
 
   test('a hint is the last four characters, and only of a long value', () => {

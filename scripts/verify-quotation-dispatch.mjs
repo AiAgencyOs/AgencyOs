@@ -1818,7 +1818,8 @@ try {
 
   // ── another agency sees none of it ───────────────────────────────────────
   const otherTerms = (await rest('GET', 'sales',
-    `payment_structures?organization_id=neq.${ORG}&select=id`)).json ?? [];
+    `payment_structures?organization_id=neq.${ORG}&is_default=eq.false&select=id`)).json ?? [];
+  // every organization is seeded its own default (30/20/30/20, X2); what must not exist is a structure this agency MADE
   check(otherTerms.length === 0, 'no other tenant has terms of this agency’s making', `${otherTerms.length} row(s)`);
 
   const withdrawn = one(await call(owner, 'POST', 'sales', 'rpc/clear_payment_structure', {

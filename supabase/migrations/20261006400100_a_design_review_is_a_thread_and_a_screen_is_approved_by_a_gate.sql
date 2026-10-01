@@ -311,12 +311,15 @@ begin
   -- approved, blocked) is a review decision, not an edit of the screen list,
   -- so it stays possible after the baseline is finalized. Superseding a screen
   -- and every content column remain refused.
-  if tg_table_name = 'screens' and tg_op = 'UPDATE'
+  -- (nested: PL/pgSQL does not short-circuit `and`, and `new.status` does not exist on screen_scope_items)
+  if tg_table_name = 'screens' then
+    if tg_op = 'UPDATE'
      and new.status is distinct from old.status
-     and old.status <> 'superseded' and new.status <> 'superseded'
-     and (new.project_id, new.screen_key, new.name, new.user_role, new.purpose, new.entry_point, new.exit_action, new.required_data, new.actions, new.validation, new.required_sections, new.dependencies, new.has_empty_state, new.has_loading_state, new.has_error_state, new.has_success_state, new.permission_behaviour, new.responsive_behaviour, new.accessibility_notes, new.superseded_by)
+       and old.status <> 'superseded' and new.status <> 'superseded'
+       and (new.project_id, new.screen_key, new.name, new.user_role, new.purpose, new.entry_point, new.exit_action, new.required_data, new.actions, new.validation, new.required_sections, new.dependencies, new.has_empty_state, new.has_loading_state, new.has_error_state, new.has_success_state, new.permission_behaviour, new.responsive_behaviour, new.accessibility_notes, new.superseded_by)
          is not distinct from (old.project_id, old.screen_key, old.name, old.user_role, old.purpose, old.entry_point, old.exit_action, old.required_data, old.actions, old.validation, old.required_sections, old.dependencies, old.has_empty_state, old.has_loading_state, old.has_error_state, old.has_success_state, old.permission_behaviour, old.responsive_behaviour, old.accessibility_notes, old.superseded_by) then
-    return new;
+      return new;
+    end if;
   end if;
 
   if tg_table_name = 'screens' then
