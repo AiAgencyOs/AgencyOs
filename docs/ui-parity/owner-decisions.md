@@ -91,3 +91,16 @@ Binding.
 | R2-3 | The database exemption for roster managers uses the role union, like the service. |
 | R3-1 | File caps stay at 5 per build and 20 per run or bug. |
 | R3-2 | The period report snapshot also holds payments received and the profit-and-loss figures. |
+
+## Round 3c — answers to the round-3b build's follow-up questions (2026-10-01)
+
+Binding.
+
+| Id | Decision |
+|---|---|
+| S1-1 | A project with no M2 milestone/invoice cannot complete Phase 5 (as built). No exemption. |
+| S1-2 | Period-report revenue stays cash-basis (verified receipts net of refunds) and payments are counted by verified date. No change. |
+| S1-3 | Payment milestones by phase: Phase 1 none, Phase 2 M1, Phase 3 none, Phase 4 M2, Phase 5 M3, Phase 6 M4. Phase 5 completions already recorded stay valid. |
+| S2-1 | Task attachments (links on a task) are bound by project role like comments, time logs and checklists. |
+| S2-2 | The project roster and default-assignee doors use the role union (primary or secondary), like the task rules. |
+| S2-3 | A dependency on a cancelled or archived task counts as satisfied, as well as done. A dependency across projects stays refused. |
