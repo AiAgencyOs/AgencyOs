@@ -7,6 +7,7 @@ import type { FormState } from '@/modules/identity/types';
 import { DESIGN_STATES, type DesignState } from './screen-schema';
 import {
   addScreen,
+  draftNextScreenBaseline,
   linkDesignAsset,
   mapScreenToScopeItem,
   mergeScreens,
@@ -159,4 +160,15 @@ export async function unlinkDesignAssetAction(_prev: FormState, formData: FormDa
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidateScreens(formData);
   return { status: 'success', message: result.data.removed ? 'Asset unlinked.' : 'Nothing to unlink.' };
+}
+
+/** Q-B7 — "Draft the next baseline" from a screen on a finalized baseline. */
+export async function draftNextScreenBaselineAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await draftNextScreenBaseline({ projectId: str(formData, 'projectId'), changeReason: str(formData, 'changeReason') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateScreens(formData);
+  return {
+    status: 'success',
+    message: result.data.alreadyDrafting ? `Baseline v${result.data.version} is already open — map the requirement there.` : `Baseline v${result.data.version} drafted — you can map requirements again.`,
+  };
 }

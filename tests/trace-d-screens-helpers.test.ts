@@ -29,7 +29,7 @@ describe('SCR-060 a meeting note can be uploaded as a text file and the human so
     assert.equal(d.ok && d.reference, 'uploaded file: kickoff.vtt');
   });
 
-  test('a recording or an image is refused with the reason, not accepted and dropped', () => {
+  test('the text decision refuses a file that is not text, with the reason, and never drops it (a recording, image, PDF or Word file takes the stored path)', () => {
     for (const name of ['call.mp3', 'whiteboard.png', 'notes.docx', 'notes']) {
       const d = decideMeetingNoteFile(file(name, 'x'));
       assert.equal(d.ok, false, name);

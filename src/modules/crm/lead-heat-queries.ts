@@ -3,7 +3,8 @@ import 'server-only';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
-import { deriveLeadHeat, type LeadHeatReading } from './lead-heat';
+import { applyHeatOverride, deriveLeadHeat, type LeadHeatReading } from './lead-heat';
+import { readLeadHeatOverride } from './lead-heat-override-queries';
 import { readLeadFacts } from './lead-list-queries';
 
 /**
@@ -49,9 +50,9 @@ export async function readLeadHeat(): Promise<Map<string, LeadHeatFacts>> {
  * The same three recorded reasons the list uses, from the same readers; a read
  * that fails refuses rather than printing "Cold" for a lead we could not look at.
  */
-export async function readLeadHeatReading(lead: { id: string; status: string }): Promise<LeadHeatReading> {
-  const [heat, facts] = await Promise.all([readLeadHeat(), readLeadFacts([lead.id])]);
-  return deriveLeadHeat(
+export async function readLeadHeatReading(lead: { id: string; status: string }, options: { ignoreOverride?: boolean } = {}): Promise<LeadHeatReading> {
+  const [heat, facts, override] = await Promise.all([readLeadHeat(), readLeadFacts([lead.id]), options.ignoreOverride ? null : readLeadHeatOverride(lead.id)]);
+  const computed = deriveLeadHeat(
     {
       status: lead.status,
       dealStage: heat.get(lead.id)?.dealStage ?? null,
@@ -62,4 +63,6 @@ export async function readLeadHeatReading(lead: { id: string; status: string }):
     },
     new Date(),
   );
+  // Q-OVERRIDE: a person's label shows; the computed one is kept on the reading.
+  return applyHeatOverride(computed, override);
 }

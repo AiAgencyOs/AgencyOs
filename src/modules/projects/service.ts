@@ -86,7 +86,9 @@ import type { BillableMilestone } from './types';
 import { LOCKED_PAYMENT_STRUCTURE, lockedAmountsFor } from './payment-structure';
 import { resolveOnboardingContext, type ContextMatrix } from './onboarding-context';
 import { taskAcceptanceProblem } from './task-acceptance';
-import { enteringReviewProblem, REVIEW_HAND_OFF_DB_ERROR, REVIEW_HAND_OFF_MESSAGE } from './task-transitions';
+import { projectRoleDbProblem } from './project-role-guard';
+import { projectRoleRefusal } from './project-role-service';
+import { completingProblem, COMPLETION_DB_ERROR, COMPLETION_MESSAGE, enteringReviewProblem, REVIEW_HAND_OFF_DB_ERROR, REVIEW_HAND_OFF_MESSAGE } from './task-transitions';
 
 /**
  * Writes for the projects module — its only public surface.
@@ -1869,6 +1871,29 @@ export async function createTask(input: CreateTaskInput): Promise<Result<{ taskI
   }
   if (!defaults) return err('NOT_FOUND', 'Project not found.');
 
+  // Q-B4: with a project role chosen and nobody named, the task goes to that role's default assignee,
+  // then to the project's one default assignee, then to nobody.
+  let roleDefault: string | null = null;
+  if (!parsed.data.assigneeId && parsed.data.assigneeRole) {
+    const { data: row, error: roleError } = await supabase
+      .schema('projects')
+      .from('project_default_assignees')
+      .select('user_id')
+      .eq('project_id', parsed.data.projectId)
+      .eq('project_role', parsed.data.assigneeRole)
+      .maybeSingle();
+    if (roleError) {
+      console.error(JSON.stringify({ level: 'error', scope: 'createTask.roleDefault', detail: roleError.message }));
+      return err('INTERNAL', 'Could not read the project’s default assignees.');
+    }
+    roleDefault = row?.user_id ?? null;
+  }
+  const assigneeId = parsed.data.assigneeId ?? roleDefault ?? defaults.default_assignee_id;
+
+  // Q-B2: an observer adds nothing; a contributor adds only a task for themself.
+  const roleRefusal = await projectRoleRefusal(context, parsed.data.projectId, assigneeId);
+  if (roleRefusal) return roleRefusal;
+
   const { data, error } = await supabase
     .schema('projects')
     .from('tasks')
@@ -1880,13 +1905,15 @@ export async function createTask(input: CreateTaskInput): Promise<Result<{ taskI
       title: parsed.data.title,
       description: parsed.data.description ?? null,
       due_on: parsed.data.dueOn ?? null,
-      assignee_id: parsed.data.assigneeId ?? defaults.default_assignee_id,
+      assignee_id: assigneeId,
     })
     .select('id')
     .single();
 
   if (error || !data) {
     console.error(JSON.stringify({ level: 'error', scope: 'createTask', detail: error?.message }));
+    const roleProblem = projectRoleDbProblem(error?.message);
+    if (roleProblem) return err('FORBIDDEN', roleProblem);
     return err('INTERNAL', 'Could not add the task.');
   }
 
@@ -1967,6 +1994,17 @@ export async function setTaskStatus(input: SetTaskStatusInput): Promise<Result<{
   const { data: before } = await supabase.schema('projects').from('tasks').select('status').eq('id', parsed.data.taskId).maybeSingle();
   const reviewProblem = enteringReviewProblem(before?.status, parsed.data.status);
   if (reviewProblem && before) return err('CONFLICT', reviewProblem);
+  // Q-B1: Completed is reached only from In review.
+  const completionProblem = completingProblem(before?.status, parsed.data.status);
+  if (completionProblem && before) return err('CONFLICT', completionProblem);
+  // Q-B2: the caller's project role (observer read-only, contributor own tasks only).
+  if (before) {
+    const { data: held } = await supabase.schema('projects').from('tasks').select('project_id, assignee_id').eq('id', parsed.data.taskId).maybeSingle();
+    if (held) {
+      const roleRefusal = await projectRoleRefusal(context, held.project_id, held.assignee_id);
+      if (roleRefusal) return roleRefusal;
+    }
+  }
 
   const { error, count } = await supabase
     .schema('projects')
@@ -1986,6 +2024,9 @@ export async function setTaskStatus(input: SetTaskStatusInput): Promise<Result<{
   if (error) {
     // SCR-020: the verification gate (trigger projects.refuse_unverified_agent_done) refuses an unverified agent task.
     if (error.message.includes(REVIEW_HAND_OFF_DB_ERROR)) return err('CONFLICT', REVIEW_HAND_OFF_MESSAGE);
+    if (error.message.includes(COMPLETION_DB_ERROR)) return err('CONFLICT', COMPLETION_MESSAGE);
+    const roleProblem = projectRoleDbProblem(error.message);
+    if (roleProblem) return err('FORBIDDEN', roleProblem);
     // SCR-041: a task is accepted as done only by a delivery role, with evidence, and no unverified defect.
     const acceptance = taskAcceptanceProblem(error.message);
     if (acceptance) return err('CONFLICT', acceptance);
@@ -2174,11 +2215,14 @@ export async function updateTask(input: UpdateTaskInput): Promise<Result<{ taskI
   const { data: task } = await supabase
     .schema('projects')
     .from('tasks')
-    .select('id, organization_id, project_id')
+    .select('id, organization_id, project_id, assignee_id')
     .eq('id', parsed.data.taskId)
     .eq('project_id', parsed.data.projectId)
     .maybeSingle();
   if (!task) return err('NOT_FOUND', 'Task not found.');
+  // Q-B2: observer read-only, contributor own tasks only.
+  const roleRefusal = await projectRoleRefusal(context, task.project_id, task.assignee_id);
+  if (roleRefusal) return roleRefusal;
 
   if (parsed.data.assigneeId) {
     const { data: member } = await supabase

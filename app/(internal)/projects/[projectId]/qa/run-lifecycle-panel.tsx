@@ -9,6 +9,7 @@ import { RUN_EVIDENCE_KINDS } from '@/modules/qa/run-lifecycle-schema';
 import { setSuiteScheduleAction } from '@/modules/qa/schedule-actions';
 import { TEST_RUN_SUITES } from '@/modules/qa/schema';
 import { IDLE_STATE } from '@/modules/identity/types';
+import { AREA_EXTENSIONS } from '@/modules/projects/attachment-rules';
 import { buttonClass, FormMessage, inputClass, labelClass, selectClass } from '@/ui';
 
 import { RunWhereAndWhoInputs, type TesterOption } from './run-who-where';
@@ -56,8 +57,11 @@ export function OpenRunForm({ projectId, builds, testers = [] }: { projectId: st
   );
 }
 
+const EVIDENCE_ACCEPT = AREA_EXTENSIONS.evidence.map((e) => `.${e}`).join(',');
+
 export function CloseRunForm({ projectId, runId }: { projectId: string; runId: string }) {
   const [state, action, pending] = useActionState(closeTestRunAction, IDLE_STATE);
+  const evidenceFileId = useId();
   return (
     <form action={action} className="flex flex-wrap items-end gap-2 rounded-md border border-line bg-canvas p-2">
       <input type="hidden" name="projectId" value={projectId} />
@@ -70,6 +74,11 @@ export function CloseRunForm({ projectId, runId }: { projectId: string; runId: s
       ))}
       <input name="evidenceUrl" type="url" placeholder="Evidence URL" aria-label="Evidence URL" className={`${inputClass} min-w-40 flex-1`} />
       <input name="perfNotes" maxLength={4000} placeholder="Performance notes" aria-label="Performance notes" className={`${inputClass} min-w-40 flex-1`} />
+      {/* Q-C6: the run's evidence may be a file — a screenshot or a log — under the project-file limits and credentials guard. */}
+      <div className="flex min-w-48 flex-col gap-1">
+        <label htmlFor={evidenceFileId} className={labelClass}>Evidence file (optional, up to 50 MB)</label>
+        <input id={evidenceFileId} name="file" type="file" accept={EVIDENCE_ACCEPT} className={`${inputClass} h-auto max-w-full py-1.5`} />
+      </div>
       <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
         {pending ? 'Closing…' : 'Close run'}
       </button>

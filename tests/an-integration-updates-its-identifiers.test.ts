@@ -25,7 +25,7 @@ describe('SCR-070 · the integration row carries the update control', () => {
   const list = read(LIST);
 
   it('the page mounts the Settings forms — imported from settings/forms, never re-declared', () => {
-    assert.match(page, /import \{ TestRecipientForm, VerifyAiProviderForm, VerifyCalendarForm, VerifyFigmaForm, VerifyWhatsAppButton, WhatsAppNumberForm \} from '\.\.\/settings\/forms'/);
+    assert.match(page, /import \{ CalendarIdForm, TestRecipientForm, VerifyAiProviderForm, VerifyCalendarForm, VerifyFigmaForm, VerifyWhatsAppButton, WhatsAppNumberForm \} from '\.\.\/settings\/forms'/);
     assert.match(page, /<WhatsAppNumberForm current=\{whatsappNumberId\} \/>/);
     assert.match(page, /<TestRecipientForm current=\{whatsappTestRecipient\} \/>/);
     assert.doesNotMatch(page, /useActionState|setOrganizationSetting\(/, 'the page owns no form and calls no door itself');

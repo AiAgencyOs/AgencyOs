@@ -1,11 +1,12 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useId } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
 import { markProductionReadyAction, raiseDefectAction, settleDefectAction,
   triageDefectAction,
 } from '@/modules/qa/actions';
+import { AREA_EXTENSIONS } from '@/modules/projects/attachment-rules';
 import { DEFECT_SEVERITIES, DEFECT_TRANSITIONS, type DefectStatus } from '@/modules/qa/schema';
 import type { Defect } from '@/modules/qa/types';
 import { FormMessage, buttonClass, inputClass, labelClass, selectClass } from '@/ui';
@@ -40,6 +41,7 @@ import { FormMessage, buttonClass, inputClass, labelClass, selectClass } from '@
  */
 
 const input = inputClass;
+const EVIDENCE_ACCEPT = AREA_EXTENSIONS.evidence.map((e) => `.${e}`).join(',');
 const label = labelClass;
 
 function Status({ state }: { state: { status: string; message?: string } }) {
@@ -60,6 +62,7 @@ export function RaiseDefectForm({
   defaultRunId?: string;
 }) {
   const [state, action, pending] = useActionState(raiseDefectAction, IDLE_STATE);
+  const evidenceFileId = useId();
 
   return (
     <form action={action} className="flex flex-col gap-2">
@@ -121,6 +124,13 @@ export function RaiseDefectForm({
       <div className="flex flex-wrap gap-2">
         <input name="environment" maxLength={500} placeholder="Where — browser, device, build" aria-label="Environment" className={`${input} min-w-40 flex-1`} />
         <input name="evidenceUrl" type="url" placeholder="Link to a screenshot or recording" aria-label="Evidence link" className={`${input} min-w-40 flex-1`} />
+      </div>
+      {/* Q-C6: the evidence may be a file — a screenshot or a log — under the project-file limits and credentials guard. */}
+      <div className="flex flex-col gap-1">
+        <label className={label} htmlFor={evidenceFileId}>
+          Evidence file (optional — a screenshot, log or report, up to 50 MB)
+        </label>
+        <input id={evidenceFileId} name="file" type="file" accept={EVIDENCE_ACCEPT} className={`${input} h-auto py-1.5`} />
       </div>
 
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>

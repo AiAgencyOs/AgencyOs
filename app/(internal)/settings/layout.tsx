@@ -19,6 +19,7 @@ const TABS = [
   // Decision: reversed by the owner on 2026-09-29 — project templates.
   { href: '/settings/templates', label: 'Templates' },
   { href: '/settings/project-defaults', label: 'Project defaults' },
+  { href: '/settings/budget-bands', label: 'Budget bands' },
 ] as const;
 
 /**

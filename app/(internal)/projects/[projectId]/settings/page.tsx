@@ -16,7 +16,7 @@ import { TemplateSelectForm } from './template-select-panel';
 import { Badge, Callout, Card, CardHeader, EmptyState, IconAudit, PageHeader, PermissionDenied, Stat, StatGrid, StatusBadge } from '@/ui';
 
 import { ProjectClassificationForm, ProjectDetailsForm, ProjectVisibilityForm } from '../settings-panel';
-import { DefaultAssigneeForm, WatchersPanel } from './project-defaults-panel';
+import { DefaultAssigneeForm, RoleDefaultAssigneesForm, WatchersPanel } from './project-defaults-panel';
 import { ProjectSubNav } from '../project-subnav';
 
 export const metadata: Metadata = { title: 'Settings' };
@@ -174,6 +174,21 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
               ? `New tasks go to ${members.find((m) => m.userId === defaults.defaultAssigneeId)?.fullName ?? 'a member'}.`
               : 'New tasks start unassigned.'}{' '}
             You do not have permission to change it.
+          </p>
+        )}
+      </section>
+
+      {/* Q-B4: a default assignee for each project role. */}
+      <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 shadow-xs sm:p-5">
+        <h2 className="text-sm font-semibold tracking-tight">Default Assignees by Project Role</h2>
+        {canWrite ? (
+          <RoleDefaultAssigneesForm projectId={projectId} current={defaults.roleDefaults} roster={members} />
+        ) : (
+          <p className="text-[13px] text-muted">
+            {Object.keys(defaults.roleDefaults).length === 0
+              ? 'No project role has a default assignee.'
+              : `Defaults are set for ${Object.keys(defaults.roleDefaults).length} project role${Object.keys(defaults.roleDefaults).length === 1 ? '' : 's'}.`}{' '}
+            You do not have permission to change them.
           </p>
         )}
       </section>

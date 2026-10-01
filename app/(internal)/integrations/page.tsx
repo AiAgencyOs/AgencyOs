@@ -15,7 +15,7 @@ import { LiveRefresh } from '@/lib/realtime';
 import { secretSource } from '@/lib/secrets/resolve';
 import { IntegrationState, PageHeader, PermissionDenied, buttonClass, labelClass } from '@/ui';
 
-import { TestRecipientForm, VerifyAiProviderForm, VerifyCalendarForm, VerifyFigmaForm, VerifyWhatsAppButton, WhatsAppNumberForm } from '../settings/forms';
+import { CalendarIdForm, TestRecipientForm, VerifyAiProviderForm, VerifyCalendarForm, VerifyFigmaForm, VerifyWhatsAppButton, WhatsAppNumberForm } from '../settings/forms';
 import { SettingHistory, type SettingHistoryEntry } from '../settings/setting-history';
 import { IntegrationsList, type IntegrationIdentifier, type SecureStorage } from './integrations-list';
 
@@ -72,6 +72,7 @@ export default async function IntegrationsPage() {
   const whatsappVerifiedNumber = settingText(settings, 'whatsapp_verified_number');
   const providerVerifiedAt = settingInstant(settings, 'ai_provider_verified_at');
   const providerVerifiedModel = settingText(settings, 'ai_provider_verified_model');
+  const calendarId = settingText(settings, 'google_calendar_id');
   const calendarVerifiedAt = settingInstant(settings, 'calendar_verified_at');
   const calendarVerifiedName = settingText(settings, 'calendar_verified_calendar');
   const figmaRow = integrations.find((i) => i.id === 'figma');
@@ -98,7 +99,9 @@ export default async function IntegrationsPage() {
       { label: 'Design references recorded', value: String(figmaRow?.count?.value ?? 0) },
     ],
     calendar: [
-      { label: 'Calendar id (GOOGLE_CALENDAR_ID)', value: envPresent('GOOGLE_CALENDAR_ID') ? 'set in the deployment environment' : 'unset' },
+      // Q-D1: the panel's own setting is read first; the environment value is the fallback.
+      { label: 'Calendar id (set in the panel)', value: calendarId ?? 'not set', effective: effectiveOf('google_calendar_id') },
+      { label: 'Calendar id (GOOGLE_CALENDAR_ID)', value: envPresent('GOOGLE_CALENDAR_ID') ? (calendarId ? 'set in the deployment environment; the panel value above is read first' : 'set in the deployment environment') : 'unset' },
       ...(calendarVerifiedName ? [{ label: 'Verified calendar', value: calendarVerifiedName, effective: effectiveOf('calendar_verified_calendar') }] : []),
     ],
     'ai-provider': providerVerifiedModel ? [{ label: 'Verified model', value: providerVerifiedModel, effective: effectiveOf('ai_provider_verified_model') }] : [],
@@ -121,6 +124,13 @@ export default async function IntegrationsPage() {
   // organization.setting_set). Only WhatsApp reads an identifier the panel may
   // set; the others' identifiers are environment values the panel cannot write.
   const editors: Record<string, React.ReactNode> = {
+    // Q-D1: the Google Calendar id is an organization setting, read before the environment value.
+    calendar: (
+      <div id="calendar-id" className="flex scroll-mt-4 flex-col gap-1">
+        <CalendarIdForm current={calendarId} environmentSet={envPresent('GOOGLE_CALENDAR_ID')} />
+        <SettingHistory label="Google Calendar id" entries={historyOf('google_calendar_id')} />
+      </div>
+    ),
     whatsapp: (
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-1">
@@ -145,7 +155,7 @@ export default async function IntegrationsPage() {
     'image-generator': { href: '/agents#vault', note: 'The image-generation key is kept encrypted in the provider vault, or read from the environment when the vault has none.' },
     github: { href: '/security/keys', note: keyed('GITHUB_TOKEN') },
     figma: { href: '/security/keys', note: keyed('FIGMA_ACCESS_TOKEN') },
-    calendar: { href: '/security/keys', note: keyed('GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_KEY and GOOGLE_CALENDAR_ID') },
+    calendar: { href: '/security/keys', note: keyed('GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_KEY') + ' The calendar id is not a secret: the panel stores it as an organization setting and reads it before the GOOGLE_CALENDAR_ID environment value.' },
     alerts: { href: '/security/keys', note: keyed('ALERT_WEBHOOK_URL') },
   };
   const verifiedCount = summary.VERIFIED ?? 0;

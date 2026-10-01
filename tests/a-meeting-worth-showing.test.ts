@@ -292,7 +292,7 @@ describe('H. every control is rendered, and says whether it is a command or what
     }
     const evidence = controls.find((c) => c.door === 'crm.add_meeting_evidence');
     assert.equal(evidence!.state, 'command');
-    assert.match(evidence!.reason, /no artifact store is chosen/, 'a file still cannot be attached, and it says why');
+    assert.match(evidence!.reason, /recording, image, PDF or Word file stored as it is/, 'a stored file can be attached (Q-D3), and it says under which rules');
     assert.ok(controls.every((c) => c.owner.length > 0), 'every control names an owner (Blueprint §8)');
     assert.ok(!controls.some((c) => c.door === 'crm.request_meeting_analysis'), 'analysis is not offered before completion — the gate would refuse it');
   });

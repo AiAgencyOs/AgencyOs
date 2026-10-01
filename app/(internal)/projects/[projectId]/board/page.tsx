@@ -43,6 +43,7 @@ import {
 import { ProjectBoard, type BoardTask } from './board-client';
 import { ProjectSubNav } from '../project-subnav';
 import { WorkspaceHeader } from '../workspace-header';
+import { readMyProjectRole } from '@/modules/projects/project-role-queries';
 
 export const metadata: Metadata = { title: 'Board' };
 
@@ -100,7 +101,10 @@ export default async function ProjectBoardPage({ params, searchParams }: { param
   const collab = await readTaskCollabFor(tasks.map((t) => t.id), clock);
   const nameByUser = new Map(roster.map((r) => [r.userId, r.fullName]));
   const moduleById = new Map(modules.map((m) => [m.id, m.name]));
-  const canWrite = can(context, 'task.write');
+  // Q-B2: an observer is read-only here; a contributor changes only the tasks assigned to them (the drawer says so per task).
+  const manager = can(context, 'project.write');
+  const projectRole = manager ? null : await readMyProjectRole(projectId, context.userId);
+  const canWrite = can(context, 'task.write') && projectRole !== 'observer';
   const todayKey = new Date().toISOString().slice(0, 10);
 
   const boardTasks: BoardTask[] = tasks.map((t) => ({
@@ -196,6 +200,7 @@ export default async function ProjectBoardPage({ params, searchParams }: { param
             sprints={sprints.map((s) => ({ id: s.id, name: s.name }))}
             initialSprint={initialSprint && (initialSprint === 'none' || sprints.some((s) => s.id === initialSprint)) ? initialSprint : ''}
             canWrite={canWrite}
+            projectRole={projectRole}
             collab={collab}
             currentUserId={context.userId}
             todayKey={todayKey}

@@ -5,6 +5,9 @@ import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
+import { projectRoleDbProblem } from './project-role-guard';
+import { projectRoleRefusal } from './project-role-service';
+
 import {
   reopenTaskFromDefectSchema,
   submitTaskEvidenceSchema,
@@ -13,6 +16,7 @@ import {
   type SubmitTaskEvidenceInput,
   type TaskIdInput,
 } from './task-doors-schema';
+import { START_DEPENDENCY_MESSAGE, START_REQUIREMENT_MESSAGE } from './task-start-check';
 
 /**
  * SCR-041 — the four task doors (migration 20261001130000). `task.write`
@@ -26,22 +30,33 @@ function log(scope: string, detail: string | undefined) {
   console.error(JSON.stringify({ level: 'error', scope, detail }));
 }
 
-async function gate(verb: string) {
+async function gate(verb: string, taskId?: string) {
   const context = await requireInternal();
   if (!can(context, 'task.write')) return err('FORBIDDEN', `You do not have permission to ${verb}.`) as Result<never>;
+  // Q-B2: the caller's project role on the task's project (observer read-only, contributor own tasks only).
+  if (taskId) {
+    const supabase = await createClient();
+    const { data: held } = await supabase.schema('projects').from('tasks').select('project_id, assignee_id').eq('id', taskId).maybeSingle();
+    if (held) {
+      const refusal = await projectRoleRefusal(context, held.project_id, held.assignee_id);
+      if (refusal) return refusal;
+    }
+  }
   return null;
 }
 
 export async function startTask(input: TaskIdInput): Promise<Result<{ started: true }>> {
   const parsed = taskIdSchema.safeParse(input);
   if (!parsed.success) return err('VALIDATION', 'Invalid task.');
-  const refused = await gate('start a task');
+  const refused = await gate('start a task', parsed.data.taskId);
   if (refused) return refused;
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('start_task', { p_task_id: parsed.data.taskId });
   if (error) {
     log('startTask', error.message);
+    const roleProblem = projectRoleDbProblem(error.message);
+    if (roleProblem) return err('FORBIDDEN', roleProblem);
     return err('INTERNAL', 'Could not start the task.');
   }
   const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
@@ -50,6 +65,13 @@ export async function startTask(input: TaskIdInput): Promise<Result<{ started: t
       return ok({ started: true });
     case 'wrong_state':
       return err('CONFLICT', 'Only a task that is still to do can be started.');
+    case 'no_requirement':
+      return err('CONFLICT', START_REQUIREMENT_MESSAGE);
+    case 'dependencies_open':
+      return err('CONFLICT', START_DEPENDENCY_MESSAGE);
+    case 'project_role_observer_read_only':
+    case 'project_role_contributor_own_tasks':
+      return err('FORBIDDEN', projectRoleDbProblem(row.outcome) ?? 'Your project role does not allow this.');
     case 'not_found':
       return err('NOT_FOUND', 'Task not found.');
     case 'forbidden':
@@ -62,13 +84,15 @@ export async function startTask(input: TaskIdInput): Promise<Result<{ started: t
 export async function markTaskReadyForQa(input: TaskIdInput): Promise<Result<{ evidenceCount: number }>> {
   const parsed = taskIdSchema.safeParse(input);
   if (!parsed.success) return err('VALIDATION', 'Invalid task.');
-  const refused = await gate('mark a task ready for QA');
+  const refused = await gate('mark a task ready for QA', parsed.data.taskId);
   if (refused) return refused;
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('mark_task_ready_for_qa', { p_task_id: parsed.data.taskId });
   if (error) {
     log('markTaskReadyForQa', error.message);
+    const roleProblem = projectRoleDbProblem(error.message);
+    if (roleProblem) return err('FORBIDDEN', roleProblem);
     return err('INTERNAL', 'Could not mark the task ready.');
   }
   const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; evidence_count?: number | null } | undefined;
@@ -93,7 +117,7 @@ export async function markTaskReadyForQa(input: TaskIdInput): Promise<Result<{ e
 export async function submitTaskEvidence(input: SubmitTaskEvidenceInput): Promise<Result<{ evidenceId: string }>> {
   const parsed = submitTaskEvidenceSchema.safeParse(input);
   if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid evidence.');
-  const refused = await gate('submit evidence');
+  const refused = await gate('submit evidence', parsed.data.taskId);
   if (refused) return refused;
 
   const supabase = await createClient();
@@ -106,6 +130,8 @@ export async function submitTaskEvidence(input: SubmitTaskEvidenceInput): Promis
   });
   if (error) {
     log('submitTaskEvidence', error.message);
+    const roleProblem = projectRoleDbProblem(error.message);
+    if (roleProblem) return err('FORBIDDEN', roleProblem);
     return err('INTERNAL', 'Could not submit the evidence.');
   }
   const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; evidence_id?: string | null } | undefined;
@@ -128,7 +154,7 @@ export async function submitTaskEvidence(input: SubmitTaskEvidenceInput): Promis
 export async function reopenTaskFromDefect(input: ReopenTaskFromDefectInput): Promise<Result<{ reopened: true }>> {
   const parsed = reopenTaskFromDefectSchema.safeParse(input);
   if (!parsed.success) return err('VALIDATION', 'Invalid task or defect.');
-  const refused = await gate('reopen a task');
+  const refused = await gate('reopen a task', parsed.data.taskId);
   if (refused) return refused;
 
   const supabase = await createClient();
@@ -138,6 +164,8 @@ export async function reopenTaskFromDefect(input: ReopenTaskFromDefectInput): Pr
   });
   if (error) {
     log('reopenTaskFromDefect', error.message);
+    const roleProblem = projectRoleDbProblem(error.message);
+    if (roleProblem) return err('FORBIDDEN', roleProblem);
     return err('INTERNAL', 'Could not reopen the task.');
   }
   const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;

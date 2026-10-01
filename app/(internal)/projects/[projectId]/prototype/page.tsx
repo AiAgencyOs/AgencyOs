@@ -9,6 +9,7 @@ import { readDeliverableDetails, readPrototypeSendGate } from '@/modules/project
 import { prototypeSendBlockers } from '@/modules/projects/build-details-schema';
 import { listPrototypeBuilds } from '@/modules/projects/prototype-queries';
 import { PROTOTYPE_PLATFORMS } from '@/modules/projects/prototype-schema';
+import { listAttachedFiles } from '@/modules/projects/attached-files-queries';
 import { getProject, listDeliverables } from '@/modules/projects/queries';
 import { listTestRuns } from '@/modules/qa/queries';
 import Link from 'next/link';
@@ -17,6 +18,8 @@ import { Badge, buttonClass, Card, CardHeader, DataTable, EmptyState, humanize, 
 
 import { ApprovalDecisionForm } from '../../../approvals/approval-decision-form';
 import { PreviewButton, PreviewDrawerProvider } from '../../../preview-drawer';
+import { AttachFileForm } from '../attach-file-form';
+import { AttachedFileLinks } from '../attached-file-links';
 import { AddPrototypeForm } from '../deliverables-panel';
 import { ProjectSubNav } from '../project-subnav';
 import { PlatformPicker, SubmitToQaButton } from './prototype-panels';
@@ -53,12 +56,14 @@ export default async function PrototypePage({ params, searchParams }: { params: 
   const clock = await agencyClock();
   const canWrite = can(context, 'project.write');
   const allBuilds = (await listDeliverables(projectId)).filter((d) => d.kind === 'prototype');
-  const [runs, approvals, artifacts, details, gates] = await Promise.all([
+  const [runs, approvals, artifacts, details, gates, attachedFiles] = await Promise.all([
     listTestRuns(projectId),
     Promise.all(allBuilds.map((b) => (b.approval_request_id ? getApproval(b.approval_request_id) : Promise.resolve(null)))),
     listPrototypeBuilds(projectId),
     readDeliverableDetails(projectId),
     Promise.all(allBuilds.map((b) => readPrototypeSendGate(b.id))),
+    // Q-C1: the build files uploaded against each prototype build.
+    listAttachedFiles(projectId),
   ]);
   const gateOf = new Map(allBuilds.map((b, i) => [b.id, gates[i]!]));
   const platformOf = (id: string) => details.get(id)?.platform ?? artifacts.find((a) => a.deliverableId === id)?.platform ?? null;
@@ -290,6 +295,15 @@ export default async function PrototypePage({ params, searchParams }: { params: 
                 </a>
               ) : null}
               <p className="mt-1 text-xs text-faint">Added {clock.dateTime(b.created_at)}</p>
+              <AttachedFileLinks projectId={projectId} files={attachedFiles.get(b.id)} label={`Build files of v${b.version}`} />
+              {canWrite ? (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs underline underline-offset-2">Attach a build file (.apk, .ipa, .zip)</summary>
+                  <div className="pt-2">
+                    <AttachFileForm projectId={projectId} subjectKind="build" subjectId={b.id} />
+                  </div>
+                </details>
+              ) : null}
               {canWrite && b.status === 'draft' ? (
                 <div className="mt-2">
                   <SendPrototypeForm projectId={projectId} deliverableId={b.id} blockers={prototypeSendBlockers(gateOf.get(b.id) ?? { qaPassed: false, adminApproved: false, qaSource: 'no QA evidence' })} mayOverride={mayOverride} />
@@ -324,11 +338,12 @@ export default async function PrototypePage({ params, searchParams }: { params: 
           icon={<IconProjects size={22} />}
           title="No prototype builds yet"
           description="Add the first build below once it's ready to review."
+          action={<a href="#add-build" className={buttonClass('secondary', 'sm')}>Add a build</a>}
         />
       )}
 
       {canWrite ? (
-        <Card className="p-4">
+        <Card id="add-build" className="scroll-mt-4 p-4">
           <AddPrototypeForm projectId={projectId} />
         </Card>
       ) : null}

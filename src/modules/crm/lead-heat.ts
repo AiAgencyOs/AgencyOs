@@ -30,10 +30,28 @@ export type LeadHeatInput = LeadHeat & {
   budgetRecorded: boolean;
 };
 
+/**
+ * A person's label beside the computed one — owner decision Q-OVERRIDE, round 3
+ * (2026-10-01). The computed label is kept (`computed`), the reason is required
+ * and the write is audited (`crm.override_lead_heat`).
+ */
+export type HeatOverride = {
+  label: LeadHeatLabel;
+  reason: string;
+  at: string;
+  byUserId: string;
+  /** The computed label at the moment of the override. */
+  computed: LeadHeatLabel;
+};
+
 export type LeadHeatReading = {
+  /** The label shown: the person's override when there is one, else the computed one. */
   label: LeadHeatLabel;
   /** One sentence per reason, positive and negative, in a fixed order. */
   reasons: string[];
+  /** What the facts compute now. Equals `label` unless overridden. */
+  computed?: LeadHeatLabel;
+  override?: HeatOverride | null;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -76,8 +94,21 @@ export function deriveLeadHeat(lead: LeadHeatInput, now: Date): LeadHeatReading 
   return { label: 'Cold', reasons };
 }
 
+/**
+ * Lays a person's override over the computed reading. The computed label and
+ * its reasons stay on the reading; only the label shown changes. An override
+ * equal to the computed label is still recorded (it says the person agrees).
+ */
+export function applyHeatOverride(reading: LeadHeatReading, override: HeatOverride | null | undefined): LeadHeatReading {
+  if (!override) return { ...reading, computed: reading.label, override: null };
+  return { label: override.label, reasons: reading.reasons, computed: reading.label, override };
+}
+
 /** The hover text: the label and its reasons, one per line. */
 export function heatTitle(reading: LeadHeatReading): string {
+  if (reading.override) {
+    return [`${reading.label} lead (set by a person; computed ${reading.computed ?? reading.override.computed})`, `Reason: ${reading.override.reason}`, ...reading.reasons].join('\n');
+  }
   return [`${reading.label} lead`, ...reading.reasons].join('\n');
 }
 

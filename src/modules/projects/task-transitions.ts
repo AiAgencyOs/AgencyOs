@@ -26,7 +26,25 @@ export function enteringReviewProblem(from: string | null | undefined, to: strin
   return REVIEW_HAND_OFF_MESSAGE;
 }
 
-/** The statuses a plain status select may offer for a task that is currently `from`: Review only when it is already there. */
+/**
+ * Owner decision Q-B1: a task reaches Completed only from In review. The database
+ * trigger `projects.refuse_completion_outside_review` refuses the move whichever
+ * path writes the row; this is the same rule in words.
+ */
+export const COMPLETION_MESSAGE =
+  'A task is completed only from In review. Hand it off for review first (evidence attached, then mark it ready for QA); an owner, ops admin or delivery lead then accepts it as completed.';
+
+/** The error text the database trigger raises; the service maps it to the same sentence. */
+export const COMPLETION_DB_ERROR = 'task_completion_requires_review';
+
+/** null when the move is allowed by this rule, otherwise the sentence that says why not. */
+export function completingProblem(from: string | null | undefined, to: string): string | null {
+  if (to !== 'done') return null;
+  if (from === 'done' || from === 'in_review') return null;
+  return COMPLETION_MESSAGE;
+}
+
+/** The statuses a plain status select may offer for a task that is currently `from`: Review only when it is already there, Completed only from Review (or when it is already there). */
 export function selectableStatuses<T extends string>(all: readonly T[], from: string): T[] {
-  return all.filter((s) => s !== 'in_review' || from === 'in_review');
+  return all.filter((s) => (s !== 'in_review' || from === 'in_review') && (s !== 'done' || from === 'in_review' || from === 'done'));
 }

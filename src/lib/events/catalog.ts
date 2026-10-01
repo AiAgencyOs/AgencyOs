@@ -29,6 +29,8 @@ export const HANDLERS = [
   'projects:completePhaseFourOnPrototypeApproval',
   'finance:generateM1Invoice',
   'finance:generateM2Invoice',
+  'finance:generateM3Invoice',
+  'finance:generateM4Invoice',
   'projects:openChangeRequestFromScopeEscalation',
   'crm:announceApproval',
   'crm:announceEscalation',
@@ -67,6 +69,8 @@ export const HANDLERS = [
   'crm:announcePrototypeSubmitted',
   'crm:announcePrototypeChangeRequested',
   'crm:announceTask2Complete',
+  'crm:announceTask3Complete',
+  'crm:announceTask4Complete',
   'crm:announceM2PaymentVerified',
 ] as const;
 
@@ -548,6 +552,14 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * fans out from the same event, independent of the invoicing chain.
    */
   'project.phase_four_completed': ['finance:generateM2Invoice', 'crm:announceTask2Complete'],
+  /**
+   * Q-PH56 (owner, round 3) — exactly as Phase 4 above: completing Phase 5
+   * (development) raises the M3 invoice and the PM's Task 3 message; completing
+   * Phase 6 (testing) raises M4 and the PM's Task 4 message. Both events come
+   * from `projects.complete_phase` (`20261009100000_phase_five_and_six_...`).
+   */
+  'project.phase_five_completed': ['finance:generateM3Invoice', 'crm:announceTask3Complete'],
+  'project.phase_six_completed': ['finance:generateM4Invoice', 'crm:announceTask4Complete'],
 };
 
 /**
@@ -572,6 +584,8 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:completePhaseFourOnPrototypeApproval': 'phase_four.complete',
   'finance:generateM1Invoice': 'invoice.generate_m1',
   'finance:generateM2Invoice': 'invoice.generate_m2',
+  'finance:generateM3Invoice': 'invoice.generate_m3',
+  'finance:generateM4Invoice': 'invoice.generate_m4',
   'projects:openChangeRequestFromScopeEscalation': 'change_request.open_from_scope_escalation',
   'crm:announceApproval': 'approval.announce',
   'crm:announceEscalation': 'escalation.announce',
@@ -610,6 +624,8 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'crm:announcePrototypeSubmitted': 'prototype_submitted.announce',
   'crm:announcePrototypeChangeRequested': 'prototype_change_requested.announce',
   'crm:announceTask2Complete': 'task2_complete.announce',
+  'crm:announceTask3Complete': 'task3_complete.announce',
+  'crm:announceTask4Complete': 'task4_complete.announce',
   'crm:announceM2PaymentVerified': 'm2_payment_verified.announce',
 };
 

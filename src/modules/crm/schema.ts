@@ -1566,6 +1566,41 @@ export function task2CompleteAnnouncementFor(input: { projectName: string | null
 }
 
 /**
+ * Q-PH56 — the PM's Task 3 (development) and Task 4 (testing) Complete
+ * messages, the same shape as PM4-M07 above and announced to the INTERNAL group
+ * the same way (a person sends anything client-facing). Off
+ * `project.phase_five_completed` / `project.phase_six_completed`, which
+ * `projects.complete_phase` emits with the project as subject.
+ */
+export const phaseCompletedEventSchema = z
+  .object({
+    projectId: z.uuid(),
+    phaseCompletionId: z.uuid(),
+    phase: z.number().int().optional(),
+  })
+  .strip();
+
+export type PhaseCompletedEvent = z.infer<typeof phaseCompletedEventSchema>;
+
+/** PM Task 3 Complete — Phase 5, development. */
+export function task3CompleteAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Task 3 (development) is complete. The M3 invoice is being raised.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Open the project in AgencyOS.',
+  ].join('\n');
+}
+
+/** PM Task 4 Complete — Phase 6, testing and QA. */
+export function task4CompleteAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Task 4 (testing and QA) is complete. The M4 invoice is being raised.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Open the project in AgencyOS.',
+  ].join('\n');
+}
+
+/**
  * `invoice.paid`, crm's own copy — ARCHITECTURE.md §3.2: cross-module access
  * goes through service.ts, never another module's schema.ts directly, so
  * this is deliberately its own small vocabulary rather than an import of

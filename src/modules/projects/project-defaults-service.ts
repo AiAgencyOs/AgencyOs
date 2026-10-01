@@ -8,9 +8,11 @@ import { err, ok, type Result } from '@/lib/result';
 
 import {
   setDefaultAssigneeSchema,
+  setRoleDefaultAssigneeSchema,
   unwatchProjectSchema,
   watchProjectSchema,
   type SetDefaultAssigneeInput,
+  type SetRoleDefaultAssigneeInput,
   type UnwatchProjectInput,
   type WatchProjectInput,
 } from './project-defaults-schema';
@@ -133,4 +135,45 @@ export async function unwatchProject(input: UnwatchProjectInput): Promise<Result
   }
 
   return ok({ removed: (data ?? []).length > 0 });
+}
+
+/**
+ * Q-B4 — the default assignee of one project role (`projects.project_default_assignees`).
+ * `project.write` here; the door `projects.set_project_default_assignee` asks again
+ * (owner, ops admin, delivery lead), checks the person is an active internal member and audits.
+ */
+export async function setProjectRoleDefaultAssignee(input: SetRoleDefaultAssigneeInput): Promise<Result<{ cleared: boolean }>> {
+  const parsed = setRoleDefaultAssigneeSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid request.');
+
+  const context = await requireInternal();
+  if (!can(context, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to set a default assignee.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('set_project_default_assignee', {
+    p_project_id: parsed.data.projectId,
+    p_project_role: parsed.data.projectRole,
+    p_user_id: parsed.data.userId as string,
+  });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setProjectRoleDefaultAssignee', detail: error.message }));
+    return err('INTERNAL', 'Could not save the default assignee.');
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+  switch (row?.outcome) {
+    case 'set':
+      return ok({ cleared: false });
+    case 'cleared':
+      return ok({ cleared: true });
+    case 'not_internal':
+      return err('VALIDATION', 'The default assignee must be an active member of the agency.');
+    case 'not_found':
+      return err('NOT_FOUND', 'Project not found.');
+    case 'bad_role':
+      return err('VALIDATION', 'That is not a project role.');
+    default:
+      return err('FORBIDDEN', 'The database refused: your role may not set default assignees.');
+  }
 }

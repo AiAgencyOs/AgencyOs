@@ -159,7 +159,7 @@ export function LeadBulkTable({
         </span>
       ),
     },
-    { key: 'budget', header: 'Budget', desktopOnly: true, cellClassName: 'tabular whitespace-nowrap text-[12px] text-muted', cell: (l) => l.budget ?? '—' },
+    { key: 'budget', header: 'Budget', desktopOnly: true, cellClassName: 'tabular whitespace-nowrap text-[12px] text-muted', cell: (l) => l.budget ?? 'Not recorded' },
     {
       key: 'tags',
       header: 'Tags',

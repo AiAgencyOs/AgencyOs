@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useId } from 'react';
 import {
   TEMPLATE_PARAMETERS,
   TEMPLATE_PARAMETER_LABELS,
@@ -31,6 +31,7 @@ import {
   setProviderCredentialAction,
   setReactivationCapAction,
   setReactivationPilotAction,
+  setCalendarIdAction,
   setTestRecipientAction,
   setThirdPartyChargeAction,
   setTimezoneAction,
@@ -144,6 +145,47 @@ export function WhatsAppNumberForm({ current }: { current: string | null }) {
       >
         {pending ? 'Saving…' : current ? 'Update' : 'Set number id'}
       </button>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/**
+ * Q-D1 — the Google Calendar id the agency books against, an organization
+ * setting read BEFORE the GOOGLE_CALENDAR_ID environment value. It names a
+ * calendar and grants nothing; the service-account key stays in the vault.
+ */
+export function CalendarIdForm({ current, environmentSet }: { current: string | null; environmentSet: boolean }) {
+  const [state, action, pending] = useActionState(setCalendarIdAction, IDLE_STATE);
+  const inputId = useId();
+
+  return (
+    <form action={action} className="flex flex-col gap-1">
+      <label htmlFor={inputId} className="text-xs font-medium text-muted">
+        Calendar id
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          id={inputId}
+          type="text"
+          name="calendar_id"
+          defaultValue={current ?? ''}
+          placeholder="meetings@agency.example"
+          maxLength={200}
+          autoComplete="off"
+          className={`${inputClass} min-w-0 max-w-full`}
+        />
+        <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+          {pending ? 'Saving…' : current ? 'Update' : 'Set calendar id'}
+        </button>
+      </div>
+      <span className="text-xs text-muted">
+        {current
+          ? 'Read before the environment value.'
+          : environmentSet
+            ? 'Not set here, so the GOOGLE_CALENDAR_ID environment value is used. A value saved here is read first.'
+            : 'Not set here and not in the environment, so no calendar is booked against.'}
+      </span>
       <Message status={state.status} message={state.message} />
     </form>
   );

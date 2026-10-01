@@ -131,6 +131,8 @@ import { RecordClaimForm, VerifyClaimForm } from './claims-panel';
 import { ProjectGroupPanel } from './group-panel';
 import { PhaseTwoPanel } from './phase-two-panel';
 import { PhaseFourPanel } from './phase-four-panel';
+import { PhaseCompletionPanel } from './phase-completion-panel';
+import { readPhaseCompletions } from '@/modules/projects/phase-completion-queries';
 import { ONBOARDING_MARK, OnboardingItemForm } from './onboarding-panel';
 
 export default async function ProjectPage({
@@ -212,6 +214,8 @@ export default async function ProjectPage({
   const groupCard = await readGroupSetup(projectId);
   const phaseTwo = await readPhaseTwo(projectId);
   const phaseFour = await readPhaseFourOverview(projectId);
+  // Q-PH56: where Phase 5 and Phase 6 stand, read from Development and QA data.
+  const phaseCompletions = await readPhaseCompletions(projectId);
   /**
    * G-268 — where this project is on Finance §12's ladder.
    *
@@ -822,6 +826,13 @@ export default async function ProjectPage({
       <PhaseTwoPanel view={phaseTwo} projectId={projectId} />
 
       <PhaseFourPanel view={phaseFour} projectId={projectId} />
+
+      <PhaseCompletionPanel
+        projectId={projectId}
+        readings={phaseCompletions}
+        mayComplete={mayWriteProject}
+        whenOf={Object.fromEntries(phaseCompletions.map((r) => [r.phase, r.completedAt ? `Completed ${clock.dateTime(r.completedAt)}` : null]))}
+      />
 
       <ProjectGroupPanel group={group} card={groupCard} projectId={projectId} />
 

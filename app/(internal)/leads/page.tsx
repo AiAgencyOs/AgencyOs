@@ -13,6 +13,10 @@ import { readLeadFacts } from '@/modules/crm/lead-list-queries';
 import { isQuickFilterKey, matchesQuickFilter } from '@/modules/crm/lead-quick-filters';
 import { heatRank, heatTitle, deriveLeadHeat, type LeadHeatReading } from '@/modules/crm/lead-heat';
 import { LeadHeatBadge } from '@/modules/crm/lead-heat-badge';
+import { applyHeatOverride } from '@/modules/crm/lead-heat';
+import { readLeadHeatOverrides } from '@/modules/crm/lead-heat-override-queries';
+import { describeBudget } from '@/modules/crm/budget-bands';
+import { readBudgetBands } from '@/modules/crm/budget-bands-queries';
 import { readLeadServices } from '@/modules/crm/lead-service-queries';
 import { readLeadIndicators } from '@/modules/crm/lead-indicators-queries';
 import { LeadFlags, type LeadFlagsData } from './lead-flags';
@@ -136,7 +140,7 @@ const columnsFor = (clock: AgencyClock, heats: Map<string, LeadHeatReading>, ser
   },
   { key: 'flags', header: 'Flags', desktopOnly: true, cell: (l) => <LeadFlags flags={flagsOf(l.id)} /> },
   { key: 'interest', header: 'Interested In', desktopOnly: true, cellClassName: 'text-muted', cell: (l) => <span className="block max-w-[5.5rem] truncate">{services.get(l.id) ?? '—'}</span> },
-  { key: 'budget', header: 'Budget', desktopOnly: true, cellClassName: 'tabular whitespace-nowrap text-muted', cell: (l) => factsOf(l.id).budget ?? '—' },
+  { key: 'budget', header: 'Budget', desktopOnly: true, cellClassName: 'tabular whitespace-nowrap text-muted', cell: (l) => factsOf(l.id).budget ?? 'Not recorded' },
   {
     key: 'tags',
     header: 'Tags',
@@ -272,6 +276,10 @@ export default async function LeadsPage({
   const now = new Date();
   const facts = await readLeadFacts(allLeads.map((l) => l.id));
   const heat = await readLeadHeat();
+  const heatOverrides = await readLeadHeatOverrides(allLeads.map((l) => l.id));
+  const budgetBands = (await readBudgetBands()).bands;
+  // Q-BAND: a lead's budget in its band, then the figure; "Not recorded" when there is none.
+  const budgetText = (id: string): string => describeBudget(facts.get(id)?.budgetMinor ?? null, budgetBands, money).text;
   const services = await readLeadServices(allLeads.map((l) => l.id));
   const indicators = await readLeadIndicators(allLeads.map((l) => l.id));
   const replyBy = new Map(waiting.map((w) => [w.lead_id, ATTENTION[w.reason]?.label ?? null]));
@@ -285,7 +293,7 @@ export default async function LeadsPage({
 
   const heatOf = (l: Row) => ({ status: l.status, dealStage: heat.get(l.id)?.dealStage ?? null, createdAt: facts.get(l.id)?.createdAt ?? l.updated_at, lastInboundAt: heat.get(l.id)?.lastInboundAt ?? null });
   // Owner decision 1 (round 2): a Hot / Warm / Cold label with its reasons, never a number.
-  const heats = new Map(allLeads.map((l) => [l.id, deriveLeadHeat({ ...heatOf(l), budgetRecorded: (facts.get(l.id)?.budgetMinor ?? null) !== null }, now)]));
+  const heats = new Map(allLeads.map((l) => [l.id, applyHeatOverride(deriveLeadHeat({ ...heatOf(l), budgetRecorded: (facts.get(l.id)?.budgetMinor ?? null) !== null }, now), heatOverrides.get(l.id))]));
   const hotLeads = allLeads.filter((l) => matchesQuickFilter('hot_leads', heatOf(l), now)).length;
   const noResponse = allLeads.filter((l) => matchesQuickFilter('no_response', heatOf(l), now)).length;
   const needle = (q ?? '').trim().toLowerCase();
@@ -462,7 +470,7 @@ export default async function LeadsPage({
                 assigned: l.assignedEmail ?? 'Unassigned',
                 lastActivity: clock.dateTime(l.updated_at),
                 created: facts.get(l.id) ? clock.date(facts.get(l.id)!.createdAt) : '—',
-                budget: facts.get(l.id)?.budgetMinor !== null && facts.get(l.id)?.budgetMinor !== undefined ? money(facts.get(l.id)!.budgetMinor as number) : null,
+                budget: budgetText(l.id),
                 tags: facts.get(l.id)?.tags ?? [],
                 heat: heats.get(l.id) ? { label: heats.get(l.id)!.label, title: heatTitle(heats.get(l.id)!) } : null,
                 flags: flagsOf(l.id),
@@ -493,7 +501,7 @@ export default async function LeadsPage({
             dense
             tight
             rows={pageRows}
-            columns={columnsFor(clock, heats, services.byLead, flagsOf, (id) => facts.get(id)?.createdAt, (id) => ({ budget: facts.get(id)?.budgetMinor !== null && facts.get(id)?.budgetMinor !== undefined ? money(facts.get(id)!.budgetMinor as number) : null, tags: facts.get(id)?.tags ?? [] }))}
+            columns={columnsFor(clock, heats, services.byLead, flagsOf, (id) => facts.get(id)?.createdAt, (id) => ({ budget: budgetText(id), tags: facts.get(id)?.tags ?? [] }))}
             getKey={(l) => l.id}
             // Bucket F: the shared per-row overflow menu — the row's secondary
             // destinations, each a page that already exists.
@@ -547,7 +555,7 @@ export default async function LeadsPage({
                 { label: 'Phone', value: selected.contact?.phone ?? null },
                 { label: 'Source', value: <Badge tone="neutral" dot={false}>{humanize(selected.source)}</Badge> },
                 { label: 'Interested in', value: services.byLead.get(selected.id) ?? null },
-                { label: 'Budget', value: selectedFacts && typeof selectedFacts.budgetMinor === 'number' ? money(selectedFacts.budgetMinor) : null },
+                { label: 'Budget', value: budgetText(selected.id) },
                 { label: 'Timeline', value: selectedFacts?.timelineNote ?? null },
                 { label: 'Company', value: selected.contact?.company ?? null },
                 { label: 'Team member', value: selected.assignedEmail ? selected.assignedEmail.split('@')[0] : 'Unassigned' },

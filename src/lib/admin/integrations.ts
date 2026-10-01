@@ -6,7 +6,7 @@ import { readGithubTokenScopes } from '@/lib/git/github';
 import { readCronAgeSeconds } from '@/lib/observability/queries';
 
 import { configStatusResolved } from './config-status-resolved';
-import { readOperationalSettings, settingInstant } from './settings';
+import { readOperationalSettings, settingInstant, settingText } from './settings';
 import { evaluateIntegrations, integrationsSummary, latestVerification, type Integration } from './integrations-eval';
 import type { Avail } from './overview-eval';
 
@@ -106,7 +106,8 @@ export async function getIntegrations(): Promise<IntegrationsView> {
     verifiedAt: { whatsapp: setting('whatsapp_verified_at'), aiProvider: setting('ai_provider_verified_at') },
     figma: { tokenConfigured: present('FIGMA_ACCESS_TOKEN'), references: figmaReferences },
     calendar: {
-      configured: present('GOOGLE_SERVICE_ACCOUNT_EMAIL') && present('GOOGLE_SERVICE_ACCOUNT_KEY') && present('GOOGLE_CALENDAR_ID'),
+      // Q-D1: the calendar id may be the organization setting or the environment value.
+      configured: present('GOOGLE_SERVICE_ACCOUNT_EMAIL') && present('GOOGLE_SERVICE_ACCOUNT_KEY') && (present('GOOGLE_CALENDAR_ID') || (settings.ok && settingText(settings.value, 'google_calendar_id') !== null)),
       verifiedAt: setting('calendar_verified_at'),
     },
     github: {

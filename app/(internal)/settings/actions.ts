@@ -216,6 +216,20 @@ export async function setWhatsAppNumberAction(_prev: FormState, formData: FormDa
   };
 }
 
+/** Q-D1 — the Google Calendar id, through the one settings door (owner / ops admin, whitelisted, validated, audited with old and new). */
+export async function setCalendarIdAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await setOrganizationSetting('google_calendar_id', String(formData.get('calendar_id') ?? ''));
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/integrations');
+  revalidatePath('/meetings');
+  return {
+    status: 'success',
+    message: result.data.cleared
+      ? 'Calendar id cleared. The GOOGLE_CALENDAR_ID environment value, if there is one, is used again.'
+      : 'Calendar id saved. It is read before the environment value; verify the calendar to confirm Google can read it.',
+  };
+}
+
 export async function setTestRecipientAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const result = await setOrganizationSetting('whatsapp_test_recipient', String(formData.get('test_recipient') ?? ''));
   if (!result.ok) return { status: 'error', message: result.error.message };
@@ -695,7 +709,7 @@ export async function verifyCalendarAction(_prev: FormState, _formData: FormData
   const context = await requireInternal();
   if (!can(context, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify the calendar.' };
   const calendar = await resolveGoogleCalendar();
-  if (!calendar) return { status: 'error', message: 'No calendar is configured: place GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_KEY and GOOGLE_CALENDAR_ID in the deployment environment, or store the key under Security & Audit › Keys & secrets (ADM-102).' };
+  if (!calendar) return { status: 'error', message: 'No calendar is configured: place GOOGLE_SERVICE_ACCOUNT_EMAIL in the deployment environment, store the service-account key under Security & Audit › Keys & secrets (or in the environment), and set the calendar id on Integrations (or as GOOGLE_CALENDAR_ID) (ADM-102).' };
   const from = new Date();
   const to = new Date(from.getTime() + 7 * 86_400_000);
   const answer = await calendar.readAvailability({ from: from.toISOString(), to: to.toISOString() });

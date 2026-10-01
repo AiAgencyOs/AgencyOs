@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { decoderSafeSchema } from '@/lib/ai/schema';
+import { PROJECT_ROLES } from './project-members-schema';
 
 /** Same vocabulary as the projects.projects status CHECK (migration 013). */
 export const PROJECT_STATUSES = [
@@ -1130,6 +1131,8 @@ export const createTaskSchema = z.object({
   dueOn: z.iso.date().optional(),
   /** The person the task is for; omitted, it goes to the project's default assignee. */
   assigneeId: z.uuid().optional(),
+  /** Q-B4: the project role the task is for; with nobody named it goes to that role's default assignee. */
+  assigneeRole: z.enum(PROJECT_ROLES).optional(),
 });
 
 export const setModuleStatusSchema = z.object({ moduleId: z.uuid(), status: z.enum(MODULE_STATUSES) });

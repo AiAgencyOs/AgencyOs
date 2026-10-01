@@ -23,6 +23,8 @@ import { listLeadServiceSuggestions, readLeadService } from '@/modules/crm/lead-
 import { heatTitle } from '@/modules/crm/lead-heat';
 import { LeadHeatBadge } from '@/modules/crm/lead-heat-badge';
 import { readLeadHeatReading } from '@/modules/crm/lead-heat-queries';
+import { describeBudget } from '@/modules/crm/budget-bands';
+import { readBudgetBands } from '@/modules/crm/budget-bands-queries';
 import { listSequencesForLead } from '@/modules/crm/lead-sequence-queries';
 import { readRequirementQuestionSends } from '@/modules/crm/requirement-question-queries';
 import { readProjectsForRequirementVersions } from '@/modules/projects/requirements-tab-queries';
@@ -122,6 +124,7 @@ import { RequirementDecisionForm } from './requirement-decision-form';
 import { RequirementSetPanel } from './requirement-set-panel';
 import { RequirementReviseForm } from './requirement-revise-form';
 import { LeadServiceForm } from './service-form';
+import { HeatOverrideForm } from './heat-override-form';
 import { SequenceControls } from '../../follow-ups/sequence-controls';
 import { RetryDeliveryForm } from '../../operations/retry-delivery-form';
 import {
@@ -225,6 +228,8 @@ export default async function LeadConversationPage({
   const [service, serviceSuggestions] = await Promise.all([readLeadService(leadId), listLeadServiceSuggestions()]);
   // Owner decision 1 (round 2, ADM-88): Hot / Warm / Cold from recorded reasons; the stored score is never read.
   const heatReading = await readLeadHeatReading({ id: leadId, status: lead.status });
+  // Q-BAND: the owner's budget bands.
+  const budgetBands = await readBudgetBands();
 
   const conversation = await getLatestConversation(leadId);
   const messages = conversation ? await listMessages(conversation.id) : [];
@@ -511,6 +516,8 @@ export default async function LeadConversationPage({
   const lastMessage = messages.length > 0 ? messages[messages.length - 1]! : null;
   const lastInbound = [...messages].reverse().find(isIncoming) ?? null;
   const budget = qualification.success && qualification.data.budgetMinor !== undefined ? money(qualification.data.budgetMinor, 'INR') : null;
+  // Q-BAND: the band the budget falls in, then the figure; "Not recorded" when there is none.
+  const budgetShown = describeBudget(qualification.success ? qualification.data.budgetMinor : undefined, budgetBands.bands, (m) => money(m, 'INR'));
 
   const quickActions = (
     <QuickActions
@@ -542,7 +549,7 @@ export default async function LeadConversationPage({
           { label: 'Status', value: <StatusBadge status={leadStatus} /> },
           ...(opportunity ? [{ label: 'Deal stage', value: <StatusBadge status={dealStage} /> }] : []),
           { label: 'Assigned to', value: facts?.assignedEmail ? facts.assignedEmail.split('@')[0] : 'Unassigned' },
-          { label: 'Budget', value: budget ?? 'Not qualified yet' },
+          { label: 'Budget', value: budgetShown.text },
           ...(qualification.success && qualification.data.timelineNote ? [{ label: 'Timeline', value: qualification.data.timelineNote }] : []),
           ...(qualification.success && qualification.data.isDecisionMaker !== undefined ? [{ label: 'Decision maker', value: qualification.data.isDecisionMaker ? 'Yes' : 'No' }] : []),
           ...(facts ? [{ label: 'Created on', value: clock.dateTime(facts.createdAt) }] : []),
@@ -553,17 +560,23 @@ export default async function LeadConversationPage({
       />
       {/* Owner decision 1 (round 2): a Hot / Warm / Cold label with its reasons — never a number. */}
       <Card>
-        <CardHeader title="Lead Heat" description="Worked out from the stage, the last reply and whether a budget is recorded. Nothing is typed." />
+        <CardHeader title="Lead Heat" description="Worked out from the stage, the last reply and whether a budget is recorded. A person may set the label beside it, with a reason." />
         <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
           <div className="flex items-center gap-2">
             <LeadHeatBadge label={heatReading.label} title={heatTitle(heatReading)} />
-            <span className="text-xs text-muted">{heatReading.label === 'Hot' ? 'Qualified or beyond, and replied in the last 7 days.' : heatReading.label === 'Warm' ? 'At least one good sign, not yet hot.' : 'No good sign on record.'}</span>
+            <span className="text-xs text-muted">{heatReading.override ? 'Set by a person; the computed label is kept below.' : heatReading.label === 'Hot' ? 'Qualified or beyond, and replied in the last 7 days.' : heatReading.label === 'Warm' ? 'At least one good sign, not yet hot.' : 'No good sign on record.'}</span>
           </div>
           <ul className="divide-y divide-line rounded-lg border border-line">
             {heatReading.reasons.map((r) => (
               <li key={r} className="px-3 py-1.5 text-[13px]">{r}</li>
             ))}
           </ul>
+          {heatReading.override ? (
+            <p className="rounded-lg border border-line bg-surface-hover px-3 py-2 text-[13px]">
+              Set by a person to <span className="font-medium">{heatReading.override.label}</span> on {clock.dateTime(heatReading.override.at)}; the computed label is <span className="font-medium">{heatReading.computed}</span>. Reason: {heatReading.override.reason}
+            </p>
+          ) : null}
+          {mayWrite ? <HeatOverrideForm leadId={leadId} current={heatReading.override?.label ?? null} /> : null}
         </div>
       </Card>
       {facts && (facts.tags.length > 0 || mayWrite) ? (
@@ -1509,7 +1522,7 @@ export default async function LeadConversationPage({
         }
         facts={[
           ...(facts?.contactCompany ? [{ label: 'Company', value: facts.contactCompany, icon: <IconUser size={14} /> }] : []),
-          ...(budget ? [{ label: 'Budget', value: budget, icon: <IconInvoices size={14} /> }] : []),
+          ...(budget ? [{ label: 'Budget', value: budgetShown.text, icon: <IconInvoices size={14} /> }] : []),
           { label: 'Assigned to', value: facts?.assignedEmail ? facts.assignedEmail.split('@')[0] : 'Unassigned', icon: <IconUser size={14} /> },
           ...(opportunity ? [{ label: 'Deal', value: humanize(dealStage), icon: <IconFlag size={14} /> }, { label: 'Deal value', value: money(opportunity.value_minor, opportunity.currency), icon: <IconRupee size={14} /> }] : []),
           // SCR-007's header: the requirement version that stands, and who is answering the thread.

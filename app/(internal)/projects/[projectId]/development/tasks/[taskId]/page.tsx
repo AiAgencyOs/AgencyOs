@@ -11,6 +11,9 @@ import { readTaskCollab } from '@/modules/projects/task-collab-queries';
 import { listTaskEvidence, readTaskHandoff } from '@/modules/projects/task-evidence-queries';
 import { readTaskTime } from '@/modules/projects/time-log-queries';
 import { readTaskDetail } from '@/modules/projects/task-queries';
+import { projectRoleProblem } from '@/modules/projects/project-role-guard';
+import { readMyProjectRole } from '@/modules/projects/project-role-queries';
+import { readTaskStartCheck } from '@/modules/projects/task-start-queries';
 import { listDefectsForTask } from '@/modules/qa/defect-task-queries';
 import { Badge, buttonClass, Card, CardHeader, DetailPanel, EntityHeader, humanize, IconArrowLeft, IconCalendar, IconEdit, IconList, ProgressBar, StatusBadge, statusTone } from '@/ui';
 
@@ -67,7 +70,12 @@ export default async function TaskDetailPage({
   const candidates = await listAssigneeCandidates(projectId);
   const sprints = await listProjectSprints(projectId);
   const mayPlan = can(context, 'project.write');
-  const mayWriteTask = can(context, 'task.write');
+  // Q-B2: the person's project role narrows the agency role on this project (observer read-only, contributor own tasks only).
+  const myProjectRole = mayPlan ? null : await readMyProjectRole(projectId, context.userId);
+  const roleProblem = projectRoleProblem({ role: myProjectRole, manager: mayPlan, userId: context.userId, assigneeId: task.assignee?.userId });
+  const mayWriteTask = can(context, 'task.write') && roleProblem === null;
+  // Q-C3: the requirement and dependency checks in front of Start Task, with the reason to show on the button.
+  const startCheck = task.status === 'todo' && mayWriteTask ? await readTaskStartCheck(task.id) : null;
 
   const priority: Record<string, { label: string; tone: 'danger' | 'warning' | 'info' | 'neutral' }> = {
     p0: { label: 'Critical', tone: 'danger' },
@@ -495,10 +503,10 @@ export default async function TaskDetailPage({
                 />
                 <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
                   {!mayWriteTask ? (
-                    <p className="text-[13px] text-muted">You do not have permission to move this task.</p>
+                    <p className="text-[13px] text-muted">{roleProblem ?? 'You do not have permission to move this task.'}</p>
                   ) : (
                     <div className="flex flex-wrap items-center gap-3">
-                      {task.status === 'todo' ? <StartTaskButton projectId={projectId} taskId={task.id} /> : null}
+                      {task.status === 'todo' ? <StartTaskButton projectId={projectId} taskId={task.id} blockedReason={startCheck?.reason ?? null} /> : null}
                       {task.status === 'in_progress' ? <ReadyForQaButton projectId={projectId} taskId={task.id} evidenceCount={taskEvidence.length} /> : null}
                       {task.status === 'in_review' || task.status === 'done' ? <ReopenFromDefectPanel projectId={projectId} taskId={task.id} defects={openDefects} /> : null}
                       {(task.status === 'in_review' || task.status === 'done') && openDefects.length === 0 ? <span className="text-[13px] text-muted">No open defect is triaged against this task, so there is nothing to reopen it from.</span> : null}

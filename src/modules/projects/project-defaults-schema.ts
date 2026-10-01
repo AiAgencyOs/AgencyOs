@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { PROJECT_ROLES } from './project-members-schema';
+
 /**
  * SCR-027 — a project's default assignee and its watchers
  * (`projects.projects.default_assignee_id`, `projects.project_watchers`,
@@ -38,3 +40,11 @@ export const unwatchProjectSchema = z.object({
   userId: z.uuid().optional(),
 });
 export type UnwatchProjectInput = z.infer<typeof unwatchProjectSchema>;
+
+/** Q-B4: the default assignee of one project role. Null clears it. */
+export const setRoleDefaultAssigneeSchema = z.object({
+  projectId: z.uuid(),
+  projectRole: z.enum(PROJECT_ROLES),
+  userId: z.uuid().nullable(),
+});
+export type SetRoleDefaultAssigneeInput = z.infer<typeof setRoleDefaultAssigneeSchema>;

@@ -16,15 +16,22 @@ import { buttonClass, FormMessage, inputClass, labelClass, selectClass, textarea
  * the ordinary outcome of a click is not a refusal.
  */
 
-export function StartTaskButton({ projectId, taskId }: { projectId: string; taskId: string }) {
+/** `blockedReason` is the requirement / dependency check's sentence (Q-C3): the button is disabled and says why. */
+export function StartTaskButton({ projectId, taskId, blockedReason = null }: { projectId: string; taskId: string; blockedReason?: string | null }) {
   const [state, action, pending] = useActionState(startTaskAction, IDLE_STATE);
+  const reasonId = `start-blocked-${taskId}`;
   return (
     <form action={action} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="taskId" value={taskId} />
-      <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
+      <button type="submit" disabled={pending || blockedReason !== null} aria-describedby={blockedReason ? reasonId : undefined} className={buttonClass('primary', 'sm')}>
         {pending ? 'Starting…' : 'Start task'}
       </button>
+      {blockedReason ? (
+        <span id={reasonId} className="text-xs text-warning">
+          {blockedReason}
+        </span>
+      ) : null}
       <FormMessage status={state.status} message={state.message} />
     </form>
   );

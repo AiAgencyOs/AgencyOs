@@ -91,7 +91,8 @@ try {
 
   // ── B ───────────────────────────────────────────────────────────────────
   console.log('\nB. Agent-generated work is not done until somebody verified it');
-  const human = await mkTask(project.id, 'human work', { status: 'in_progress' });
+  // Q-B1: Completed is reached only from In review, so the task waits there for the verification gate.
+  const human = await mkTask(project.id, 'human work', { status: 'in_review' });
   const marked = one(await door(owner.token, 'projects', 'mark_task_agent_generated', { p_task_id: human.id, p_agent: true }));
   check(marked?.outcome === 'set', 'a writer marks a task as agent-generated', marked?.outcome);
   check(one(await door(owner.token, 'projects', 'mark_task_agent_generated', { p_task_id: human.id, p_agent: true }))?.outcome === 'unchanged', 'marking it again changes nothing');

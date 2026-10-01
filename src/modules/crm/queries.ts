@@ -454,7 +454,7 @@ export async function listMeetingEvidence(meetingId: string): Promise<MeetingEvi
   const { data, error } = await supabase
     .schema('crm')
     .from('meeting_evidence')
-    .select('id, kind, visibility, artifact_ref, body, media_type, byte_size, uploaded_by, uploaded_at')
+    .select('id, kind, visibility, artifact_ref, body, media_type, byte_size, uploaded_by, uploaded_at, storage_path, file_name')
     .eq('meeting_id', meetingId)
     .order('uploaded_at', { ascending: false });
 

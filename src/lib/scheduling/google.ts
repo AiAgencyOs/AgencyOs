@@ -27,7 +27,9 @@ import type { AvailabilityAnswer, Slot } from './availability';
  *
  *   GOOGLE_SERVICE_ACCOUNT_EMAIL     the account's client_email
  *   GOOGLE_SERVICE_ACCOUNT_KEY       its private_key (PEM; \n escapes accepted)
- *   GOOGLE_CALENDAR_ID               the calendar booked against, e.g. meetings@…
+ *   GOOGLE_CALENDAR_ID               the calendar booked against, e.g. meetings@… — the
+ *                                    FALLBACK: the organization setting google_calendar_id
+ *                                    (Integrations › Google Calendar) is read first (Q-D1)
  *   GOOGLE_IMPERSONATE               the Workspace user the account acts as —
  *                                    OPTIONAL. Set it on Google Workspace with
  *                                    domain-wide delegation; leave it unset for
@@ -105,12 +107,45 @@ function trimmed(value: string | undefined): string | undefined {
   return v ? v : undefined;
 }
 
-/** The configuration from the environment and the key vault, or null when the owner has not placed it. */
+export type CalendarIdSource = 'setting' | 'environment' | 'none';
+
+/**
+ * Which calendar id applies — owner decision Q-D1 of 2026-10-01: the id is an
+ * organization setting editable in the panel, "read before the environment
+ * value". A non-empty setting wins; the environment value is the fallback for
+ * a deployment that never opened the panel; neither is `none`. Pure, so the
+ * order is testable without a database. The id names a calendar and grants
+ * nothing: the service-account key is still the vault's (resolveSecret).
+ */
+export function resolveCalendarId(setting: unknown, environmentValue: string | undefined): { id: string | undefined; source: CalendarIdSource } {
+  const fromSetting = typeof setting === 'string' ? trimmed(setting) : undefined;
+  if (fromSetting) return { id: fromSetting, source: 'setting' };
+  const fromEnvironment = trimmed(environmentValue);
+  return fromEnvironment ? { id: fromEnvironment, source: 'environment' } : { id: undefined, source: 'none' };
+}
+
+/**
+ * The organization setting, read under the caller's session. A read that
+ * fails is logged and answers "no setting", so the environment value still
+ * serves: availability then follows what it did before the setting existed,
+ * which is the older and more cautious behaviour rather than a guess.
+ */
+async function readCalendarIdSetting(): Promise<unknown> {
+  try {
+    const { readOperationalSettings } = await import('@/lib/admin/settings');
+    return (await readOperationalSettings()).google_calendar_id;
+  } catch (e) {
+    console.error(JSON.stringify({ level: 'error', scope: 'googleCalendarConfig.setting', detail: e instanceof Error ? e.message : String(e) }));
+    return undefined;
+  }
+}
+
+/** The configuration from the organization setting, the environment and the key vault, or null when the owner has not placed it. */
 export async function googleCalendarConfig(): Promise<GoogleCalendarConfig | null> {
   const env = serverEnv();
   const serviceAccountEmail = trimmed(env.GOOGLE_SERVICE_ACCOUNT_EMAIL);
   const key = trimmed((await resolveSecret('GOOGLE_SERVICE_ACCOUNT_KEY')) ?? undefined);
-  const calendarId = trimmed(env.GOOGLE_CALENDAR_ID);
+  const calendarId = resolveCalendarId(await readCalendarIdSetting(), env.GOOGLE_CALENDAR_ID).id;
   if (!serviceAccountEmail || !key || !calendarId) return null;
   return {
     serviceAccountEmail,

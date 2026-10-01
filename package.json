@@ -27,6 +27,7 @@
     "db:verify:finance-w1": "node scripts/verify-finance-w1.mjs",
     "db:verify:finance-x1": "node scripts/verify-finance-x1.mjs",
     "db:verify:x2": "node scripts/verify-x2.mjs",
+    "db:verify:r3": "node scripts/verify-r3-stream.mjs",
     "db:verify:trace-c": "node scripts/verify-trace-c.mjs",
     "db:verify:invokerrls": "node scripts/verify-invoker-rls.mjs",
     "db:verify:untenanted": "node scripts/verify-untenanted-writes.mjs",
@@ -135,7 +136,9 @@
     "db:verify:unannounced": "node scripts/verify-unannounced-approvals.mjs",
     "db:verify:spend": "node scripts/verify-cost-ledger.mjs",
     "db:verify:reqcomments": "node scripts/verify-requirement-comments.mjs",
-    "db:verify:semantic": "node scripts/verify-semantic-search.mjs"
+    "db:verify:semantic": "node scripts/verify-semantic-search.mjs",
+    "db:verify:r2": "node scripts/verify-r2-roles-and-gates.mjs",
+    "db:verify:r1": "node scripts/verify-r1-round3.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",

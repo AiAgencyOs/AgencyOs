@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { listClientProjectStatusCounts } from '@/lib/admin/client-projects';
+import { CLIENT_LIFECYCLE_LABEL, clientLifecycle, type ClientLifecycle } from '@/lib/admin/client-lifecycle';
 import { getClientsOverview, listClientProjectsBrief } from '@/lib/admin/clients-overview';
 import { countPeriods, periodDelta, trendOf } from '@/lib/admin/period-delta';
 import { listClients } from '@/lib/admin/clients';
@@ -58,7 +60,9 @@ function money(minor: number, currency: string): string {
 
 type Row = Awaited<ReturnType<typeof listClients>>[number];
 
-const columnsFor = (clock: AgencyClock, indexOf: (id: string) => number, phoneOf: (id: string) => string | undefined, selectable: boolean, dupOf: (id: string) => number): Column<Row>[] => [
+const LIFECYCLE_TONE: Record<ClientLifecycle, 'success' | 'warning' | 'info' | 'danger'> = { active: 'success', pending: 'warning', completed: 'info', on_hold: 'danger' };
+
+const columnsFor = (clock: AgencyClock, indexOf: (id: string) => number, phoneOf: (id: string) => string | undefined, selectable: boolean, dupOf: (id: string) => number, chipOf: (c: Row) => ReactNode): Column<Row>[] => [
   ...(selectable
     ? ([{ key: 'select', header: '', width: 'w-8', cell: (c: Row) => <input type="checkbox" name="id" value={c.id} form={CLIENT_BULK_FORM} aria-label={`Select ${c.name}`} /> }] as Column<Row>[])
     : []),
@@ -97,11 +101,7 @@ const columnsFor = (clock: AgencyClock, indexOf: (id: string) => number, phoneOf
     key: 'status',
     header: 'Status',
     badge: true,
-    cell: (c) => (
-      <Badge tone={c.status === 'active' ? 'success' : 'neutral'} dot>
-        {c.status === 'active' ? 'Active' : 'Archived'}
-      </Badge>
-    ),
+    cell: (c) => chipOf(c),
   },
   { key: 'created', header: 'Joined Date', cellClassName: 'text-muted whitespace-nowrap', cell: (c) => clock.date(c.createdAt), sortKey: 'created' },
 ];
@@ -146,21 +146,26 @@ export default async function ClientsPage({
   const projectCounts = await listClientProjectStatusCounts(allClients.map((c) => c.id));
   const mayEditClients = can(context, 'project.write');
 
-  const active = allClients.filter((c) => c.status === 'active');
+  // Q-CHIPS: one lifecycle chip per client, derived from its projects.
+  const lifecycleOf = (c: Row) => clientLifecycle(projectCounts.get(c.id)?.byStatus);
+  const chipOf = (c: Row): ReactNode => {
+    if (c.status !== 'active') return <Badge tone="neutral" dot>Archived</Badge>;
+    const life = lifecycleOf(c);
+    return life ? <Badge tone={LIFECYCLE_TONE[life]} dot>{CLIENT_LIFECYCLE_LABEL[life]}</Badge> : <Badge tone="neutral" dot={false}>{(projectCounts.get(c.id)?.total ?? 0) === 0 ? 'No projects' : 'Mixed'}</Badge>;
+  };
+  const active = allClients.filter((c) => lifecycleOf(c) === 'active');
   const archived = allClients.filter((c) => c.status !== 'active');
   const owing = allClients.filter((c) => c.outstandingMinor > 0);
-  const withProjects = allClients.filter((c) => c.projectsActive > 0);
   const currency = allClients[0]?.currency ?? 'INR';
   const sameCurrency = allClients.every((c) => c.currency === currency);
   const totalInvoiced = allClients.filter((c) => c.currency === currency).reduce((n, c) => n + c.invoicedMinor, 0);
   const totalPaid = allClients.filter((c) => c.currency === currency).reduce((n, c) => n + c.paidMinor, 0);
-  const completed = allClients.filter((c) => (projectCounts.get(c.id)?.completed ?? 0) > 0);
-  const pendingClients = allClients.filter((c) => (projectCounts.get(c.id)?.pending ?? 0) > 0);
-  // SCR-014 "on-hold clients": a client with at least one project whose status is on_hold.
-  const onHoldClients = allClients.filter((c) => (projectCounts.get(c.id)?.byStatus['on_hold'] ?? 0) > 0);
+  const completed = allClients.filter((c) => lifecycleOf(c) === 'completed');
+  const pendingClients = allClients.filter((c) => lifecycleOf(c) === 'pending');
+  const onHoldClients = allClients.filter((c) => lifecycleOf(c) === 'on_hold');
 
   const byStatus =
-    status === 'active' ? active : status === 'archived' ? archived : status === 'owing' ? owing : status === 'working' ? withProjects : status === 'completed' ? completed : status === 'pending' ? pendingClients : status === 'on_hold' ? onHoldClients : allClients;
+    status === 'active' ? active : status === 'archived' ? archived : status === 'owing' ? owing : status === 'working' ? active : status === 'completed' ? completed : status === 'pending' ? pendingClients : status === 'on_hold' ? onHoldClients : allClients;
   const bySearch = needle ? byStatus.filter((c) => c.name.toLowerCase().includes(needle) || (c.billingEmail ?? '').toLowerCase().includes(needle)) : byStatus;
   // SCR-014 — `?tag=` and `?owner=` (owner is a user id; `none` means unowned).
   const filtered = bySearch.filter((c) => (!tag || c.tags.includes(tag)) && (!owner || (owner === 'none' ? c.ownerId === null : c.ownerId === owner)));
@@ -215,10 +220,10 @@ export default async function ClientsPage({
       {allClients.length > 0 ? (
         <StatGrid cols={5}>
           <Stat label="Total Clients" value={String(allClients.length)} caption={`${archived.length} archived · ${owing.length} owing`} trend={trendOf(periodDelta(joined))} tone="brand" icon={<IconUsers size={16} />} href="/clients" />
-          <Stat label="Active Clients" value={String(active.length)} caption={`${withProjects.length} with an active project`} trend={trendOf(periodDelta(activeJoined))} tone="success" icon={<IconUser size={16} />} href="/clients?status=active" />
+          <Stat label="Active Clients" value={String(active.length)} caption="At least one running project" trend={trendOf(periodDelta(activeJoined))} tone="success" icon={<IconUser size={16} />} href="/clients?status=active" />
           {/* SCR-014 — completed and pending are counts of PROJECTS by client, from the projects table. */}
-          <Stat label="Completed Clients" value={String(completed.length)} caption="Clients with a completed project" trend={trendOf(periodDelta(completedJoined))} tone="info" icon={<IconCheck size={16} />} href="/clients?status=completed" />
-          <Stat label="Pending Clients" value={String(pendingClients.length)} caption="With a project not yet completed" trend={trendOf(periodDelta(pendingJoined))} tone={pendingClients.length > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/clients?status=pending" />
+          <Stat label="Completed Clients" value={String(completed.length)} caption="Every project complete" trend={trendOf(periodDelta(completedJoined))} tone="info" icon={<IconCheck size={16} />} href="/clients?status=completed" />
+          <Stat label="Pending Clients" value={String(pendingClients.length)} caption="Only unstarted or signed projects" trend={trendOf(periodDelta(pendingJoined))} tone={pendingClients.length > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/clients?status=pending" />
           <Stat
             label="Total Revenue"
             value={money(totalPaid, currency)}
@@ -239,7 +244,6 @@ export default async function ClientsPage({
               { key: 'pending', label: `Pending (${pendingClients.length})`, href: chip('pending'), active: status === 'pending' },
               { key: 'on_hold', label: `On hold (${onHoldClients.length})`, href: chip('on_hold'), active: status === 'on_hold' },
               { key: 'completed', label: `Completed (${completed.length})`, href: chip('completed'), active: status === 'completed' },
-              { key: 'working', label: `Working (${withProjects.length})`, href: chip('working'), active: status === 'working' },
               { key: 'owing', label: `Owing (${owing.length})`, href: chip('owing'), active: status === 'owing' },
               { key: 'archived', label: `Archived (${archived.length})`, href: chip('archived'), active: status === 'archived' },
             ]}
@@ -282,7 +286,7 @@ export default async function ClientsPage({
           <DataTable
             dense
             rows={pageRows}
-            columns={columnsFor(clock, (id) => clients.findIndex((x) => x.id === id) + 1, (id) => overview.phoneByClient.get(id), mayEditClients, (id) => dupCount.get(id) ?? 0)}
+            columns={columnsFor(clock, (id) => clients.findIndex((x) => x.id === id) + 1, (id) => overview.phoneByClient.get(id), mayEditClients, (id) => dupCount.get(id) ?? 0, chipOf)}
             getKey={(c) => c.id}
             rowActions={(c) => [
               { key: 'open', label: 'Open client', href: `/clients/${c.id}` },
@@ -301,7 +305,7 @@ export default async function ClientsPage({
               actions={<Link href={`/clients/${selected.id}`} className="text-xs font-medium text-brand hover:underline">Open</Link>}
               rows={[
                 { label: 'Client', value: selected.name },
-                { label: 'Status', value: <Badge tone={selected.status === 'active' ? 'success' : 'neutral'} dot>{selected.status === 'active' ? 'Active' : 'Archived'}</Badge> },
+                { label: 'Status', value: chipOf(selected) },
                 { label: 'Client since', value: clock.date(selected.createdAt) },
                 { label: 'Email', value: selected.billingEmail },
                 { label: 'Phone', value: overview.phoneByClient.get(selected.id) ?? null },

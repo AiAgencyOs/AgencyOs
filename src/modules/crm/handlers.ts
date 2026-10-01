@@ -28,6 +28,9 @@ import {
   prototypeChangeRequestedAnnouncementFor,
   phaseFourCompletedEventSchema,
   task2CompleteAnnouncementFor,
+  task3CompleteAnnouncementFor,
+  task4CompleteAnnouncementFor,
+  phaseCompletedEventSchema,
   m2PaymentVerifiedAnnouncementFor,
   invoicePaidForM2EventSchema,
   type ApprovalRequestedEvent,
@@ -2051,6 +2054,37 @@ export async function announceTask2Complete(admin: Admin, job: AnnounceJob): Pro
     body: task2CompleteAnnouncementFor({ projectName }),
     externalRef: `task2-complete:${event.phaseFourId}`,
   });
+}
+
+/**
+ * Q-PH56 — `project.phase_five_completed` / `project.phase_six_completed` → the
+ * PM's Task 3 / Task 4 Complete message, independent of the invoicing chain
+ * that listens to the same event (as `announceTask2Complete` above).
+ */
+async function announceLaterTaskComplete(
+  admin: Admin,
+  job: AnnounceJob,
+  step: { eventName: string; refPrefix: string; message: (input: { projectName: string | null }) => string },
+): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = phaseCompletedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed ${step.eventName} payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const event = parsed.data;
+  const projectName = await projectNameFor(admin, job.organization_id, event.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: step.message({ projectName }),
+    externalRef: `${step.refPrefix}:${event.phaseCompletionId}`,
+  });
+}
+
+export function announceTask3Complete(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  return announceLaterTaskComplete(admin, job, { eventName: 'project.phase_five_completed', refPrefix: 'task3-complete', message: task3CompleteAnnouncementFor });
+}
+
+export function announceTask4Complete(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  return announceLaterTaskComplete(admin, job, { eventName: 'project.phase_six_completed', refPrefix: 'task4-complete', message: task4CompleteAnnouncementFor });
 }
 
 /**

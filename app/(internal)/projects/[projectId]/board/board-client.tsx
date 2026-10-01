@@ -7,6 +7,8 @@ import { useActionState, useEffect, useId, useMemo, useRef, useState } from 'rea
 import { IDLE_STATE } from '@/modules/identity/types';
 import { createTaskAction, setTaskStatusAction, updateTaskAction } from '@/modules/projects/actions';
 import type { TaskCollab } from '@/modules/projects/task-collab-queries';
+import { PROJECT_ROLE_LABEL, PROJECT_ROLES } from '@/modules/projects/project-members-schema';
+import { COMPLETION_MESSAGE, completingProblem, selectableStatuses } from '@/modules/projects/task-transitions';
 import { GROUP_BY_OPTIONS, groupKeyOf, groupsFor, type GroupBy } from '@/modules/projects/project-view-derive';
 
 import { BlockReasonField, readBlocker, TaskCollabPanel } from '../../../task-collab-panel';
@@ -119,6 +121,7 @@ export function ProjectBoard({
   sprints = [],
   initialSprint,
   canWrite,
+  projectRole = null,
   collab,
   currentUserId,
   todayKey,
@@ -142,6 +145,8 @@ export function ProjectBoard({
   /** `?sprint=` — a sprint id or `none`. */
   initialSprint?: string;
   canWrite: boolean;
+  /** The caller's project role (Q-B2) when they are not a manager; a contributor changes only their own tasks. */
+  projectRole?: string | null;
   /** Comments, checklist, attachments and the blocker per task id — SCR-020. */
   collab: Record<string, TaskCollab>;
   currentUserId: string;
@@ -185,6 +190,11 @@ export function ProjectBoard({
       const message = 'A task goes to review through its hand-off: open it, submit evidence, then mark it ready for QA.';
       setError(message);
       throw new Error(message);
+    }
+    // Q-B1: Completed is reached only from In review.
+    if (from && completingProblem(from.status, toStatus)) {
+      setError(COMPLETION_MESSAGE);
+      throw new Error(COMPLETION_MESSAGE);
     }
     if (toStatus === 'blocked' && !why) {
       const task = tasks.find((t) => t.id === taskId);
@@ -498,7 +508,7 @@ export function ProjectBoard({
               projectId={projectId}
               columns={columns}
               roster={roster}
-              canWrite={canWrite}
+              canWrite={canWrite && !(projectRole === 'contributor' && openTask.assigneeId !== currentUserId)}
               onMoved={(taskId, toStatus, blocker) => {
                 handleMove(taskId, toStatus, blocker).catch(() => undefined);
               }}
@@ -787,8 +797,8 @@ function TaskDetails({
                   }}
                   className={cx(selectClass, 'mt-1')}
                 >
-                  {/* SCR-020: "In review" is entered through the evidence-gated hand-off below, not picked here. */}
-                  {columns.filter((c) => c.id !== 'in_review' || task.status === 'in_review').map((c) => (
+                  {/* SCR-020: "In review" is entered through the evidence-gated hand-off below, not picked here. Q-B1: "Completed" is offered only from In review. */}
+                  {columns.filter((c) => selectableStatuses([c.id], task.status).length > 0).map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.label}
                     </option>
@@ -986,6 +996,20 @@ function AddTaskDrawer({
         ) : (
           <p className="text-[13px] text-muted">This project has no modules yet; the task is created without one.</p>
         )}
+        <div className="flex flex-col gap-1">
+          <label htmlFor="board-task-role" className={labelClass}>
+            For project role
+          </label>
+          <select id="board-task-role" name="assigneeRole" className={selectClass} defaultValue="">
+            <option value="">No role — the project’s default assignee</option>
+            {PROJECT_ROLES.map((r) => (
+              <option key={r} value={r}>
+                {PROJECT_ROLE_LABEL[r]}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-muted">The task goes to that role’s default assignee, set under Settings.</p>
+        </div>
         <div className="flex flex-col gap-1">
           <label htmlFor="board-task-description" className={labelClass}>
             Description

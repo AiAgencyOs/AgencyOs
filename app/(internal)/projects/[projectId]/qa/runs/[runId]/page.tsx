@@ -5,12 +5,15 @@ import { notFound } from 'next/navigation';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { listAttachedFiles } from '@/modules/projects/attached-files-queries';
 import { getProject, listDeliverables, listInternalRoster } from '@/modules/projects/queries';
 import { listTestCaseResults } from '@/modules/qa/case-results-queries';
 import { readRunDetail } from '@/modules/qa/run-detail-queries';
 import { readTestPlan } from '@/modules/qa/queries';
 import { Badge, Card, CardHeader, DetailList, DetailRow, EmptyState, IconCheck, PageHeader, PermissionDenied, humanize, statusTone } from '@/ui';
 
+import { AttachFileForm } from '../../../attach-file-form';
+import { AttachedFileLinks } from '../../../attached-file-links';
 import { ProjectSubNav } from '../../../project-subnav';
 import { RaiseDefectForm } from '../../../qa-panel';
 import { AddEvidenceForm, CloseRunForm, MetricForm, RerunButton } from '../../run-lifecycle-panel';
@@ -39,12 +42,14 @@ export default async function RunDetailPage({ params }: { params: Promise<{ proj
   const run = await readRunDetail(projectId, runId);
   if (!run) notFound();
 
-  const [clock, caseResults, plan, deliverables, roster] = await Promise.all([
+  const [clock, caseResults, plan, deliverables, roster, attachedFiles] = await Promise.all([
     agencyClock(),
     listTestCaseResults(projectId),
     readTestPlan(projectId),
     listDeliverables(projectId),
     listInternalRoster(),
+    // Q-C6: the evidence files uploaded against this run.
+    listAttachedFiles(projectId),
   ]);
   void roster;
   const canRecord = can(context, 'task.write');
@@ -137,7 +142,10 @@ export default async function RunDetailPage({ params }: { params: Promise<{ proj
                   ))}
                 </ul>
               )}
+              {/* Q-C6: evidence may be an uploaded file — a screenshot or a log — under the project-file limits and credentials guard. */}
+              <AttachedFileLinks projectId={projectId} files={attachedFiles.get(run.id)} label="Evidence files of this run" />
               {canRecord ? <AddEvidenceForm projectId={projectId} runId={run.id} /> : null}
+              {canRecord ? <AttachFileForm projectId={projectId} subjectKind="test_run" subjectId={run.id} /> : null}
             </div>
           </Card>
 

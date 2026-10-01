@@ -74,7 +74,7 @@ try {
   check(system.ok && (await statusOf(t2.id)) === 'done', 'the service role (the job runner, verifiers) is not bound by this rule', `HTTP ${system.status}`);
 
   // The agent verification gate still speaks first for an unverified agent task.
-  const t3 = await mkTask('agent work', { status: 'in_progress' });
+  const t3 = await mkTask('agent work', { status: 'in_review' });
   await projects('mark_task_agent_generated', { p_task_id: t3.id, p_agent: true }, owner.token);
   const agent = await setDone(t3.id, owner.token);
   check(said(agent, 'agent_task_unverified'), 'an unverified agent task still answers agent_task_unverified', JSON.stringify(agent.json).slice(0, 110));

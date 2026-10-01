@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import type { FormState } from '@/modules/identity/types';
+import { attachChosenFile } from '@/modules/projects/attached-files-form';
 
 import { addRunEvidence, closeTestRun, openTestRun, rerunTestRun } from './run-lifecycle-service';
 
@@ -51,7 +52,13 @@ export async function closeTestRunAction(_prev: FormState, formData: FormData): 
     ...(text(formData, 'perfNotes') ? { perfNotes: text(formData, 'perfNotes') } : {}),
   });
   if (!result.ok) return { status: 'error', message: result.error.message };
+  // Q-C6: the run's evidence may be an uploaded file (a screenshot, a log), under the project-file rules.
+  // It is filed beside the run: a closed run is never edited, and this adds a row next to it.
+  const evidenceFile = await attachChosenFile(formData, 'test_run', text(formData, 'runId'));
   revalidateQa(projectId);
+  if (evidenceFile.status === 'refused') {
+    return { status: 'error', message: `The run was closed, but its evidence file was not saved: ${evidenceFile.message}` };
+  }
   return { status: 'success', message: 'Run closed. It is evidence now and will not change.' };
 }
 

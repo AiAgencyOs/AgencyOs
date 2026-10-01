@@ -11,6 +11,8 @@ import { listDisqualificationHistory, readQualificationCoverage } from '@/module
 import { heatTitle } from '@/modules/crm/lead-heat';
 import { LeadHeatBadge } from '@/modules/crm/lead-heat-badge';
 import { readLeadHeatReading } from '@/modules/crm/lead-heat-queries';
+import { describeBudget } from '@/modules/crm/budget-bands';
+import { readBudgetBands } from '@/modules/crm/budget-bands-queries';
 import { readLeadService } from '@/modules/crm/lead-service-queries';
 import { listOpenObjectionsForLead } from '@/modules/sales/queries';
 import { Badge, buttonClass, Card, CardHeader, DetailList, DetailRow, humanize, IconArrowLeft, PageHeader, PermissionDenied, Stat, StatGrid, StatusBadge } from '@/ui';
@@ -43,7 +45,7 @@ export default async function LeadQualificationPage({ params }: { params: Promis
 
   const lead = await getLeadHeader(leadId);
   if (!lead) notFound();
-  const [pipeline, heatReading, coverage, history, objections, service, clock] = await Promise.all([
+  const [pipeline, heatReading, coverage, history, objections, service, clock, budgetBands] = await Promise.all([
     getLeadPipeline(leadId),
     readLeadHeatReading({ id: leadId, status: lead.status }),
     readQualificationCoverage(leadId),
@@ -51,6 +53,7 @@ export default async function LeadQualificationPage({ params }: { params: Promis
     listOpenObjectionsForLead(leadId),
     readLeadService(leadId),
     agencyClock(),
+    readBudgetBands(),
   ]);
   const status = (pipeline?.status ?? 'new') as LeadStatus;
   const parsed = leadQualificationSchema.safeParse(pipeline?.qualification ?? {});
@@ -75,7 +78,7 @@ export default async function LeadQualificationPage({ params }: { params: Promis
       <StatGrid cols={5}>
         <Stat label="Lead heat" value={heatReading.label} caption="From stage, last reply and budget" />
         <Stat label="Fit criteria" value={`${coverage.covered.length}/${coverage.total}`} caption="Areas the conversation answered" />
-        <Stat label="Budget" value={q.budgetMinor !== undefined ? money(q.budgetMinor) : '—'} caption={q.budgetMinor !== undefined ? 'As recorded' : 'Not recorded'} />
+        <Stat label="Budget" value={q.budgetMinor !== undefined ? money(q.budgetMinor) : 'Not recorded'} caption={q.budgetMinor !== undefined ? (describeBudget(q.budgetMinor, budgetBands.bands, money).band ?? 'As recorded') : 'No budget on the lead yet'} />
         <Stat label="Timeline" value={q.timelineNote ? q.timelineNote : '—'} caption={q.timelineNote ? 'As recorded' : 'Not recorded'} />
         <Stat label="Decision maker" value={q.isDecisionMaker === undefined ? 'Unknown' : q.isDecisionMaker ? 'Yes' : 'No'} caption={`Status: ${humanize(status)}`} />
       </StatGrid>

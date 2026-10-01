@@ -328,7 +328,7 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
         <CardHeader
           title="Evidence"
           actions={<Badge tone="neutral">{evidence.length}</Badge>}
-          description="The human source, word for word: typed notes or an uploaded text file, each with who added it and when. No store has been chosen to sign a link to a recording or an image (G-229 §9.2)."
+          description="The human source, word for word: typed notes or an uploaded text file, each with who added it and when. A recording, an image, a PDF or a Word file is stored as it is and opened through a signed link that lasts five minutes."
         />
         <CardBody className="flex flex-col gap-3">
           {evidence.length === 0 ? (
@@ -346,7 +346,15 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
                       {agencyClockNow.dateTime(e.uploaded_at)} · by {e.uploaded_by ? (uploaderName.get(e.uploaded_by) ?? 'a former member') : 'the system'}
                     </span>
                   </div>
-                  {e.artifact_ref ? <p className="font-mono text-[11.5px] text-muted">reference recorded: {e.artifact_ref}</p> : null}
+                  {e.storage_path ? (
+                    <p className="text-[13px]">
+                      <a href={`/api/meetings/${m.id}/evidence/${e.id}`} className="break-all text-brand underline underline-offset-2" download>
+                        {e.file_name ?? 'Open the stored file'}
+                      </a>
+                    </p>
+                  ) : e.artifact_ref ? (
+                    <p className="font-mono text-[11.5px] text-muted">reference recorded: {e.artifact_ref}</p>
+                  ) : null}
                   {e.body ? <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{e.body}</p> : null}
                 </li>
               ))}

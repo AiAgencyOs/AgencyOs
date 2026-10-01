@@ -4607,6 +4607,27 @@ export type Database = {
           },
         ]
       }
+      budget_bands: {
+        Row: {
+          bands: Json
+          organization_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          bands: Json
+          organization_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          bands?: Json
+          organization_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       leads: {
         Row: {
           assigned_to: string | null
@@ -4619,6 +4640,11 @@ export type Database = {
           created_at: string
           deleted_at: string | null
           disqualified_reason: string | null
+          heat_override: string | null
+          heat_override_at: string | null
+          heat_override_by: string | null
+          heat_override_computed: string | null
+          heat_override_reason: string | null
           id: string
           in_reactivation_pilot: boolean
           merged_at: string | null
@@ -4657,6 +4683,11 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           disqualified_reason?: string | null
+          heat_override?: string | null
+          heat_override_at?: string | null
+          heat_override_by?: string | null
+          heat_override_computed?: string | null
+          heat_override_reason?: string | null
           id?: string
           in_reactivation_pilot?: boolean
           merged_at?: string | null
@@ -4695,6 +4726,11 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           disqualified_reason?: string | null
+          heat_override?: string | null
+          heat_override_at?: string | null
+          heat_override_by?: string | null
+          heat_override_computed?: string | null
+          heat_override_reason?: string | null
           id?: string
           in_reactivation_pilot?: boolean
           merged_at?: string | null
@@ -4745,12 +4781,14 @@ export type Database = {
           body: string | null
           byte_size: number | null
           created_at: string
+          file_name: string | null
           id: string
           kind: string
           lead_id: string
           media_type: string | null
           meeting_id: string
           organization_id: string
+          storage_path: string | null
           uploaded_at: string
           uploaded_by: string | null
           visibility: string
@@ -4760,12 +4798,14 @@ export type Database = {
           body?: string | null
           byte_size?: number | null
           created_at?: string
+          file_name?: string | null
           id?: string
           kind: string
           lead_id: string
           media_type?: string | null
           meeting_id: string
           organization_id: string
+          storage_path?: string | null
           uploaded_at?: string
           uploaded_by?: string | null
           visibility?: string
@@ -4775,12 +4815,14 @@ export type Database = {
           body?: string | null
           byte_size?: number | null
           created_at?: string
+          file_name?: string | null
           id?: string
           kind?: string
           lead_id?: string
           media_type?: string | null
           meeting_id?: string
           organization_id?: string
+          storage_path?: string | null
           uploaded_at?: string
           uploaded_by?: string | null
           visibility?: string
@@ -5462,6 +5504,18 @@ export type Database = {
           outcome: string
         }[]
       }
+      add_meeting_evidence_file: {
+        Args: {
+          p_byte_size?: number
+          p_file_name: string
+          p_kind: string
+          p_media_type?: string
+          p_meeting_id: string
+          p_storage_path: string
+          p_visibility: string
+        }
+        Returns: { evidence_id: string | null; lead_id: string | null; outcome: string }[]
+      }
       add_meeting_evidence: {
         Args: {
           p_meeting_id: string
@@ -5843,6 +5897,14 @@ export type Database = {
       }
       override_lead_score: {
         Args: { p_lead_id: string; p_reason: string; p_score?: number | null }
+        Returns: { outcome: string }[]
+      }
+      override_lead_heat: {
+        Args: { p_lead_id: string; p_label: string; p_reason: string; p_computed: string }
+        Returns: { outcome: string }[]
+      }
+      set_budget_bands: {
+        Args: { p_bands: Json }
         Returns: { outcome: string }[]
       }
       propose_meeting_slots: {
@@ -7026,6 +7088,45 @@ export type Database = {
           },
         ]
       }
+      period_reports: {
+        Row: {
+          created_at: string
+          generated_at: string
+          generated_by: string | null
+          id: string
+          invoice_count: number
+          organization_id: string
+          period_end: string
+          period_label: string
+          period_start: string
+          snapshot: Json
+        }
+        Insert: {
+          created_at?: string
+          generated_at?: string
+          generated_by?: string | null
+          id?: string
+          invoice_count?: number
+          organization_id: string
+          period_end: string
+          period_label: string
+          period_start: string
+          snapshot?: Json
+        }
+        Update: {
+          created_at?: string
+          generated_at?: string
+          generated_by?: string | null
+          id?: string
+          invoice_count?: number
+          organization_id?: string
+          period_end?: string
+          period_label?: string
+          period_start?: string
+          snapshot?: Json
+        }
+        Relationships: []
+      }
       tax_period_locks: {
         Row: {
           created_at: string
@@ -7035,6 +7136,7 @@ export type Database = {
           note: string | null
           organization_id: string
           period_end: string
+          period_report_id: string | null
           period_start: string
           unlock_reason: string | null
           unlocked_at: string | null
@@ -7049,6 +7151,7 @@ export type Database = {
           note?: string | null
           organization_id: string
           period_end: string
+          period_report_id?: string | null
           period_start: string
           unlock_reason?: string | null
           unlocked_at?: string | null
@@ -7063,6 +7166,7 @@ export type Database = {
           note?: string | null
           organization_id?: string
           period_end?: string
+          period_report_id?: string | null
           period_start?: string
           unlock_reason?: string | null
           unlocked_at?: string | null
@@ -7268,8 +7372,12 @@ export type Database = {
           outcome: string
         }[]
       }
+      generate_period_report: {
+        Args: { p_label?: string; p_period_end: string; p_period_start: string }
+        Returns: { id: string | null; invoice_count: number; outcome: string }[]
+      }
       lock_tax_period: {
-        Args: { p_note?: string; p_period_end: string; p_period_start: string }
+        Args: { p_note?: string; p_period_end: string; p_period_start: string; p_report_id?: string }
         Returns: {
           lock_id: string | null
           outcome: string
@@ -8000,6 +8108,48 @@ export type Database = {
           },
         ]
       }
+      attached_files: {
+        Row: {
+          content_type: string | null
+          created_at: string
+          file_name: string
+          id: string
+          organization_id: string
+          project_id: string
+          size_bytes: number
+          storage_path: string
+          subject_id: string
+          subject_kind: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          content_type?: string | null
+          created_at?: string
+          file_name: string
+          id?: string
+          organization_id: string
+          project_id: string
+          size_bytes: number
+          storage_path: string
+          subject_id: string
+          subject_kind: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          content_type?: string | null
+          created_at?: string
+          file_name?: string
+          id?: string
+          organization_id?: string
+          project_id?: string
+          size_bytes?: number
+          storage_path?: string
+          subject_id?: string
+          subject_kind?: string
+          uploaded_by?: string | null
+        }
+        Relationships: []
+      }
       project_file_shares: {
         Row: {
           access_count: number
@@ -8275,6 +8425,36 @@ export type Database = {
           },
         ]
       }
+      phase_completions: {
+        Row: {
+          basis: Json
+          completed_at: string
+          completed_by: string | null
+          id: string
+          organization_id: string
+          phase: number
+          project_id: string
+        }
+        Insert: {
+          basis?: Json
+          completed_at?: string
+          completed_by?: string | null
+          id?: string
+          organization_id: string
+          phase: number
+          project_id: string
+        }
+        Update: {
+          basis?: Json
+          completed_at?: string
+          completed_by?: string | null
+          id?: string
+          organization_id?: string
+          phase?: number
+          project_id?: string
+        }
+        Relationships: []
+      }
       project_defaults: {
         Row: {
           default_watch_phases: string[]
@@ -8371,6 +8551,47 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "project_notes_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_default_assignees: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          project_id: string
+          project_role: string
+          set_by: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          project_id: string
+          project_role: string
+          set_by?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          project_id?: string
+          project_role?: string
+          set_by?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_default_assignees_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -11563,6 +11784,17 @@ export type Database = {
       }
     }
     Functions: {
+      attach_file: {
+        Args: {
+          p_content_type?: string
+          p_file_name: string
+          p_size_bytes?: number
+          p_storage_path: string
+          p_subject_id: string
+          p_subject_kind: string
+        }
+        Returns: { id: string | null; outcome: string; project_id: string | null }[]
+      }
       raise_requirement_clarification: {
         Args: { p_impact: string; p_question: string; p_scope_item_id: string }
         Returns: { clarification_id: string | null; outcome: string }[]
@@ -11812,6 +12044,14 @@ export type Database = {
         Args: { p_folders: Json; p_watch_phases: string[] }
         Returns: { outcome: string }[]
       }
+      complete_phase: {
+        Args: { p_project_id: string; p_phase: number }
+        Returns: { outcome: string; missing: string[] }[]
+      }
+      phase_readiness: {
+        Args: { p_project_id: string; p_phase: number }
+        Returns: { outcome: string; missing: string[]; facts: Json }[]
+      }
       schedule_changes: {
         Args: { p_limit?: number; p_mine?: boolean; p_project_id?: string; p_since?: string }
         Returns: { actor_name: string | null; audit_id: number; changed_at: string; kind: string; label: string | null; now_on: string | null; project_id: string; project_name: string; subject_id: string; was_on: string | null }[]
@@ -11847,6 +12087,18 @@ export type Database = {
       set_task_labels: {
         Args: { p_labels: string[]; p_task_id: string }
         Returns: { labels: string[]; outcome: string }[]
+      }
+      set_project_default_assignee: {
+        Args: { p_project_id: string; p_project_role: string; p_user_id: string }
+        Returns: { outcome: string }[]
+      }
+      task_start_check: {
+        Args: { p_task_id: string }
+        Returns: { open_dependencies: number; reason: string | null; requirement_ok: boolean; startable: boolean }[]
+      }
+      project_role_refusal: {
+        Args: { p_assignee: string; p_project_id: string }
+        Returns: string
       }
       start_task: {
         Args: { p_task_id: string }

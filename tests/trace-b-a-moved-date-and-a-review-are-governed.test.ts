@@ -18,7 +18,8 @@ test('a task enters review only through the hand-off: every other way in is refu
 });
 
 test('a status select never offers Review to a task that is not already there', () => {
-  assert.deepEqual(selectableStatuses(STATUSES, 'todo'), ['todo', 'in_progress', 'blocked', 'done']);
+  // Q-B1: Completed is offered only from In review (or where it already is).
+  assert.deepEqual(selectableStatuses(STATUSES, 'todo'), ['todo', 'in_progress', 'blocked']);
   assert.deepEqual(selectableStatuses(STATUSES, 'in_review'), [...STATUSES]);
 });
 

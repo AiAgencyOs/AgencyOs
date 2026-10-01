@@ -12,6 +12,8 @@ export const lockTaxPeriodSchema = z
     periodStart: isoDate,
     periodEnd: isoDate,
     note: z.string().trim().max(600).optional(),
+    /** Q-D2: the dated report snapshot the filed return was made from. Optional; it must be of exactly this period. */
+    reportId: z.uuid().optional(),
   })
   .refine((v) => v.periodEnd > v.periodStart, { message: 'The period must end after it starts.' });
 

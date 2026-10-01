@@ -102,6 +102,7 @@ export const SETTINGS_ENTRIES: readonly SettingsEntry[] = [
   section('reactivation_pilot', 'Historical-lead reactivation', '/settings/communication#reactivation', ['reactivation', 'pilot', 'inactive', 'nurture', 'cohort']),
   setting('reactivation_max_per_run', 'Reactivation per-run cap', '/settings/communication#reactivation-cap', ['reactivation', 'cap', 'ceiling', 'batch', 'worker']),
   setting('whatsapp_phone_number_id', 'WhatsApp phone number id', '/settings/communication#whatsapp', ['whatsapp', 'meta', 'number', 'verify', 'phone_number_id']),
+  setting('google_calendar_id', 'Google Calendar id', '/integrations#calendar-id', ['calendar', 'google', 'meetings', 'booking', 'availability', 'calendar id']),
   setting('whatsapp_test_recipient', 'WhatsApp test recipient', '/settings/communication#whatsapp-test-recipient', ['whatsapp', 'test', 'first send', 'internal number']),
 
   // ── Team ────────────────────────────────────────────────────────────────

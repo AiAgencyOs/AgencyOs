@@ -8,6 +8,8 @@ import { requireInternal } from '@/lib/auth/session';
 import { can, hasRole } from '@/lib/authz/permissions';
 import { listExpenses, listPayments, listReceipts, listTaxReportInvoices } from '@/modules/finance/queries';
 import { EXPORT_KIND_LABEL, listReportExports } from '@/modules/finance/export-log';
+import { listPeriodReports } from '@/modules/finance/period-report-queries';
+import { describeSnapshot, reportsOfPeriod } from '@/modules/finance/period-report-schema';
 import {
   expensesInPeriod,
   invoicesInPeriod,
@@ -60,7 +62,7 @@ import {
 
 import { GstConfigurationCard } from './gst-configuration-card';
 import { PeriodSelect } from './period-select';
-import { LockPeriodForm, UnlockPeriodForm } from './period-lock';
+import { GeneratePeriodReportForm, LockPeriodForm, UnlockPeriodForm } from './period-lock';
 
 export const metadata: Metadata = { title: 'GST & tax' };
 
@@ -148,7 +150,7 @@ export default async function TaxReportPage({
   };
   const currentQuery = qs({}).slice(1);
 
-  const [allInvoices, allReceipts, allExpenses, allPayments, reportExports, savedViews, locks, gstIdentity, gstrRows, gstExports, settingHistory, orgSettings, expenseCategories] = await Promise.all([
+  const [allInvoices, allReceipts, allExpenses, allPayments, reportExports, savedViews, locks, gstIdentity, gstrRows, gstExports, settingHistory, orgSettings, expenseCategories, periodReports] = await Promise.all([
     listTaxReportInvoices(),
     listReceipts(),
     listExpenses(),
@@ -168,6 +170,8 @@ export default async function TaxReportPage({
     createClient().then((c) => readOrganizationSettingsRow(c)),
     // The owner's labels for the expense categories the P&L names (decision 6, 2026-10-01).
     listExpenseCategories(),
+    // Q-D2: the dated snapshots "Generate period report" stored, listed in the export history and nameable by a lock.
+    listPeriodReports(),
   ]);
   const gstIdentitySetAt = settingHistory.get('gst_identity')?.[0]?.at ?? null;
   // The door's own rule (core.set_gst_identity checks is_owner): owner only.
@@ -205,7 +209,7 @@ export default async function TaxReportPage({
   // SCR-056 "Report status": locked when the window carries an exact lock,
   // exported when any file was produced for exactly this period label, else open.
   const exportedForPeriod =
-    gstExports.some((e) => e.periodLabel === period.label) || reportExports.some((e) => e.periodLabel === period.label);
+    gstExports.some((e) => e.periodLabel === period.label) || reportExports.some((e) => e.periodLabel === period.label) || periodReports.some((r) => r.periodLabel === period.label);
   const reportStatus: { label: string; tone: 'danger' | 'success' | 'warning' | 'neutral'; caption: string } = lockState?.exact
     ? { label: 'Locked', tone: 'danger', caption: `locked ${clock.date(lockState.exact.lockedAt)}` }
     : lockState && lockState.overlapping.length > 0
@@ -218,6 +222,8 @@ export default async function TaxReportPage({
   const exportHistory = [
     ...gstExports.map((e) => ({ id: e.id, at: e.createdAt, kind: e.kind === 'gstr1' ? 'GSTR-1' : 'GSTR-3B', period: `${e.periodLabel} · ${e.returnPeriod.slice(0, 2)}/${e.returnPeriod.slice(2)}`, detail: Object.entries(e.counts).filter(([, n]) => n > 0).map(([k, n]) => `${k} ${n}`).join(' · ') || '—', omitted: e.omitted.length, by: e.exportedByName })),
     ...reportExports.map((e) => ({ id: e.id, at: e.createdAt, kind: EXPORT_KIND_LABEL[e.kind] ?? e.kind, period: e.periodLabel, detail: `${e.rowCount} row${e.rowCount === 1 ? '' : 's'}`, omitted: 0, by: e.exportedByName })),
+    // Q-D2: every stored period report, dated, with the figures it held.
+    ...periodReports.map((r) => ({ id: r.id, at: r.generatedAt, kind: 'Period report', period: `${r.periodLabel} · ${r.periodStart} to ${r.periodEnd}`, detail: describeSnapshot(r.snapshot, r.invoiceCount, money), omitted: 0, by: r.generatedByName })),
   ].sort((a, b) => b.at.localeCompare(a.at));
 
   return (
@@ -304,11 +310,18 @@ export default async function TaxReportPage({
                 {l.note ? <> — “{l.note}”</> : null}.
               </p>
             ))}
+            {/* Q-D2 "Generate period report": a dated snapshot of this window, listed in the export history. */}
+            <GeneratePeriodReportForm periodStart={lockWindow.start} periodEnd={lockWindow.end} label={period.label} />
             {mayLock ? (
               lockState.exact ? (
                 <UnlockPeriodForm lockId={lockState.exact.id} label={period.label} />
               ) : (
-                <LockPeriodForm periodStart={lockWindow.start} periodEnd={lockWindow.end} label={period.label} />
+                <LockPeriodForm
+                  periodStart={lockWindow.start}
+                  periodEnd={lockWindow.end}
+                  label={period.label}
+                  reports={reportsOfPeriod(periodReports, lockWindow.start, lockWindow.end).map((r) => ({ id: r.id, label: `${r.periodLabel} — generated ${clock.dateTime(r.generatedAt)}` }))}
+                />
               )
             ) : (
               <p className="text-[13px] text-muted">Only an owner or ops admin can lock or unlock a period.</p>
@@ -325,6 +338,16 @@ export default async function TaxReportPage({
                 { key: 'state', header: 'State', badge: true, cell: (l) => (l.unlockedAt ? <Badge>unlocked</Badge> : <Badge tone="danger">locked</Badge>) },
                 { key: 'locked', header: 'Locked', cellClassName: 'text-muted', cell: (l) => `${clock.date(l.lockedAt)} · ${l.lockedByName ?? '—'}` },
                 { key: 'note', header: 'Note', desktopOnly: true, cellClassName: 'text-muted', cell: (l) => l.note ?? '—' },
+                {
+                  key: 'report',
+                  header: 'Report',
+                  desktopOnly: true,
+                  cellClassName: 'text-muted',
+                  cell: (l) => {
+                    const r = l.periodReportId ? periodReports.find((p) => p.id === l.periodReportId) : null;
+                    return r ? `${r.periodLabel} · ${clock.date(r.generatedAt)}` : '—';
+                  },
+                },
                 {
                   key: 'unlocked',
                   header: 'Unlocked',
@@ -421,7 +444,7 @@ export default async function TaxReportPage({
         <CardHeader
           icon={<IconDownload size={16} />}
           title="Export history"
-          description={exportHistory.length === 0 ? 'Nothing has been exported yet. Every CSV, PDF and GSTR download is logged here.' : `${exportHistory.length} export${exportHistory.length === 1 ? '' : 's'}, newest first — which file, which period, what it held, who pulled it.`}
+          description={exportHistory.length === 0 ? 'Nothing has been exported yet. Every CSV, PDF and GSTR download, and every period report generated, is logged here.' : `${exportHistory.length} entr${exportHistory.length === 1 ? 'y' : 'ies'}, newest first — which file or report, which period, what it held, who pulled it.`}
         />
         {exportHistory.length > 0 ? (
           <DataTable
@@ -441,7 +464,7 @@ export default async function TaxReportPage({
       </Card>
 
       {splits.length === 0 ? (
-        <EmptyState icon={<IconInvoices size={22} />} title="Nothing issued in this period" description="Pick a wider period, or issue an invoice. Tax figures appear once an invoice is issued." />
+        <EmptyState icon={<IconInvoices size={22} />} title="Nothing issued in this period" description="Pick a wider period, or issue an invoice. Tax figures appear once an invoice is issued." action={<Link href="/invoices" className={buttonClass('secondary', 'sm')}>Open invoices</Link>} />
       ) : (
         splits.map((split) => (
           <section key={split.currency} className="flex flex-col gap-4">

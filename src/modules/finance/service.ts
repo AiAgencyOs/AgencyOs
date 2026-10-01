@@ -748,6 +748,172 @@ export async function generateM2Invoice(
   return err('CONFLICT', 'Could not allocate an invoice number. Please try again.');
 }
 
+/**
+ * Q-PH56 — `project.phase_five_completed` → the M3 invoice, and
+ * `project.phase_six_completed` → the M4 invoice, exactly as
+ * `generateM2Invoice` does for Phase 4 (and, like it, a sibling that leaves M1
+ * and M2 untouched). The milestone is read at its position (3 / 4), billed
+ * through the same helpers, and created through the same
+ * `finance.create_milestone_invoice` door, which answers `already_invoiced` on
+ * a replay. It ISSUES an invoice and never verifies a payment — that is the
+ * Admin's own door, reached only from a signed-in session.
+ */
+async function generateLaterMilestoneInvoice(
+  admin: ReturnType<typeof createAdminClient>,
+  scope: { organizationId: string; projectId: string },
+  step: { position: 3 | 4; label: 'M3' | 'M4'; phase: 5 | 6 },
+): Promise<Result<(InvoiceRef & { outcome: 'created' | 'already_invoiced' }) | { outcome: 'skipped'; reason: string }>> {
+  const fn = `generate${step.label}Invoice`;
+  const { data: milestone, error: milestoneError } = await admin
+    .schema('projects')
+    .from('milestones')
+    .select('id, name, position, status, payment_percent, amount_minor, currency, due_on')
+    .eq('project_id', scope.projectId)
+    .eq('organization_id', scope.organizationId)
+    .eq('position', step.position)
+    .maybeSingle();
+  if (milestoneError) {
+    console.error(JSON.stringify({ level: 'error', scope: fn, detail: milestoneError.message }));
+    return err('INTERNAL', 'Could not read the project’s payment plan.');
+  }
+  if (!milestone) return ok({ outcome: 'skipped', reason: `no milestone at position ${step.position}` });
+
+  const billable = milestoneInvoiceability({
+    status: milestone.status,
+    amountMinor: milestone.amount_minor,
+    paymentPercent: milestone.payment_percent === null ? null : Number(milestone.payment_percent),
+  });
+  if (!billable.ok) return ok({ outcome: 'skipped', reason: billable.reason });
+
+  const { data: project, error: projectError } = await admin
+    .schema('projects')
+    .from('projects')
+    .select('id, name, client_account_id')
+    .eq('id', scope.projectId)
+    .eq('organization_id', scope.organizationId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (projectError) {
+    console.error(JSON.stringify({ level: 'error', scope: fn, detail: projectError.message }));
+    return err('INTERNAL', 'Could not read the project.');
+  }
+  if (!project) return err('NOT_FOUND', 'Project not found.');
+
+  const { data: existing, error: existingError } = await admin
+    .schema('finance')
+    .from('invoices')
+    .select('id, number')
+    .eq('milestone_id', milestone.id)
+    .neq('status', 'void')
+    .limit(1)
+    .maybeSingle();
+  if (existingError) {
+    console.error(JSON.stringify({ level: 'error', scope: fn, detail: existingError.message }));
+    return err('INTERNAL', 'Could not check for an existing invoice.');
+  }
+  if (existing) return ok({ outcome: 'already_invoiced', invoiceId: existing.id, number: existing.number, created: false });
+
+  const { data: profile, error: profileError } = await admin
+    .schema('finance')
+    .from('billing_profiles')
+    .select('id, mode, legal_name, billing_address, billing_state, gstin')
+    .eq('project_id', scope.projectId)
+    .eq('status', 'active')
+    .maybeSingle();
+  if (profileError) {
+    console.error(JSON.stringify({ level: 'error', scope: fn, detail: profileError.message }));
+    return err('INTERNAL', 'Could not read the billing profile.');
+  }
+  const readiness = billingReadiness({
+    mode: (profile?.mode as 'gst' | 'non_gst' | undefined) ?? null,
+    legal_name: profile?.legal_name,
+    billing_address: profile?.billing_address,
+    billing_state: profile?.billing_state,
+    gstin: profile?.gstin,
+  });
+  if (!readiness.complete) {
+    return err(
+      'CONFLICT',
+      `Phase ${step.phase} completed but the billing profile is incomplete (missing: ${readiness.missing.join(', ') || 'unknown'}). The ${step.label} invoice was not raised automatically.`,
+    );
+  }
+  const taxRateBp = taxRateBpForMode((profile?.mode as 'gst' | 'non_gst' | null) ?? null);
+  if (taxRateBp === null) return err('INTERNAL', 'The billing mode could not be resolved into a tax rate.');
+
+  const lines = milestoneInvoiceLines(
+    { name: milestone.name, amountMinor: milestone.amount_minor, paymentPercent: Number(milestone.payment_percent), position: milestone.position, projectName: project.name },
+    taxRateBp,
+  );
+  const totals = invoiceTotals(lines);
+  const year = new Date().getUTCFullYear();
+  const numbering = await readInvoiceNumbering(admin);
+  const highest = await highestInvoiceSequenceFor(admin, year, numbering.prefix);
+  const payload = lines.map((line) => ({
+    position: line.position,
+    description: line.description,
+    quantity: line.quantity,
+    unit_price_minor: line.unitPriceMinor,
+    amount_minor: line.amountMinor,
+    tax_rate_bp: line.taxRateBp,
+  }));
+
+  for (let attempt = 0; attempt < NUMBER_ATTEMPTS; attempt += 1) {
+    const number = nextInvoiceNumber(year, highest, attempt, numbering.prefix);
+    const { data, error } = await admin.schema('finance').rpc('create_milestone_invoice', {
+      p_billing_profile_id: profile?.id ?? undefined,
+      p_organization_id: scope.organizationId,
+      p_client_account_id: project.client_account_id,
+      p_project_id: scope.projectId,
+      p_milestone_id: milestone.id,
+      p_number: number,
+      p_currency: milestone.currency,
+      p_subtotal_minor: totals.subtotalMinor,
+      p_tax_minor: totals.taxMinor,
+      p_total_minor: totals.totalMinor,
+      p_lines: payload,
+      ...(milestone.due_on ? { p_due_at: milestone.due_on } : {}),
+    });
+    if (error) {
+      console.error(JSON.stringify({ level: 'error', scope: fn, detail: error.message }));
+      return err('INTERNAL', 'Could not create the invoice.');
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return err('INTERNAL', 'Could not create the invoice.');
+    switch (row.outcome) {
+      case 'created':
+        return ok({ outcome: 'created', invoiceId: row.invoice_id as string, number: row.number as string, created: true });
+      case 'already_invoiced':
+        return ok({ outcome: 'already_invoiced', invoiceId: row.invoice_id as string, number: row.number as string, created: false });
+      case 'number_taken':
+        continue;
+      case 'no_lines':
+        return err('CONFLICT', 'That milestone produced no invoice lines.');
+      default:
+        console.error(JSON.stringify({ level: 'error', scope: fn, detail: `unrecognised outcome "${String(row.outcome)}"` }));
+        return err('INTERNAL', 'Could not create the invoice.');
+    }
+  }
+  return err('CONFLICT', 'Could not allocate an invoice number. Please try again.');
+}
+
+type LaterInvoiceResult = Result<(InvoiceRef & { outcome: 'created' | 'already_invoiced' }) | { outcome: 'skipped'; reason: string }>;
+
+/** `project.phase_five_completed` → the M3 (30%) invoice. */
+export function generateM3Invoice(
+  admin: ReturnType<typeof createAdminClient>,
+  scope: { organizationId: string; projectId: string },
+): Promise<LaterInvoiceResult> {
+  return generateLaterMilestoneInvoice(admin, scope, { position: 3, label: 'M3', phase: 5 });
+}
+
+/** `project.phase_six_completed` → the M4 (20%) invoice. */
+export function generateM4Invoice(
+  admin: ReturnType<typeof createAdminClient>,
+  scope: { organizationId: string; projectId: string },
+): Promise<LaterInvoiceResult> {
+  return generateLaterMilestoneInvoice(admin, scope, { position: 4, label: 'M4', phase: 6 });
+}
+
 // ── issue ──────────────────────────────────────────────────────────────────
 
 /** The row `finance.issue_invoice` returns. */

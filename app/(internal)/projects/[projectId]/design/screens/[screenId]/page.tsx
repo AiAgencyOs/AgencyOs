@@ -18,7 +18,7 @@ import { ProjectSubNav } from '../../../project-subnav';
 import { WorkspaceHeader } from '../../../workspace-header';
 import { LinkAssetForm, UnlinkAssetForm } from '../../asset-link-forms';
 import { DesignSubNav } from '../../design-subnav';
-import { DESIGN_STATE_LABEL, DesignStateForm, FigmaUrlForm, MapScopeItemForm, SubmitForQaForm, UnmapScopeItemForm } from '../screen-forms';
+import { DESIGN_STATE_LABEL, DesignStateForm, DraftNextBaselineForm, FigmaUrlForm, MapScopeItemForm, SubmitForQaForm, UnmapScopeItemForm } from '../screen-forms';
 import { ScreenStatesPanel } from '../screen-states-panel';
 import { ApproveScreenButton, CategoryForm, ConfirmQaButton } from '../screen-approval-forms';
 
@@ -201,7 +201,7 @@ export default async function ProjectScreenPage({ params }: { params: Promise<{ 
                   ))}
                 </ul>
               )}
-              {editable ? <MapScopeItemForm projectId={projectId} screenId={screen.id} options={mapOptions} /> : null}
+              {editable ? <MapScopeItemForm projectId={projectId} screenId={screen.id} options={mapOptions} /> : mayEdit && !superseded && !listState.open ? <DraftNextBaselineForm projectId={projectId} screenId={screen.id} closedBy={listState.closedBy} /> : null}
             </div>
           </Card>
 

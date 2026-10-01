@@ -5,6 +5,7 @@ import { useActionState, useState } from 'react';
 import { IDLE_STATE, type FormState } from '@/modules/identity/types';
 import {
   addScreenAction,
+  draftNextScreenBaselineAction,
   mapScreenScopeItemAction,
   mergeScreensAction,
   setScreenDesignStateAction,
@@ -271,6 +272,30 @@ export function MapScopeItemForm({ projectId, screenId, options }: { projectId: 
         </button>
       </div>
       <Message state={state} />
+    </form>
+  );
+}
+
+/** Q-B7 — "Map requirement" on a finalized baseline offers this instead: reopen the screen list as the next baseline version. */
+export function DraftNextBaselineForm({ projectId, screenId, closedBy }: { projectId: string; screenId: string; closedBy: string | null }) {
+  const [state, action, pending] = useActionState(draftNextScreenBaselineAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-col gap-2 rounded-lg border border-dashed border-line p-3">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="screenId" value={screenId} />
+      <p className="text-[13px] text-muted">
+        Mapping a requirement changes what was agreed{closedBy ? ` — ${closedBy}` : ''}. Draft the next baseline version, then map it there; the finalized baseline stays as it was.
+      </p>
+      <Field label="Why is the baseline being reopened?">
+        <input name="changeReason" required maxLength={2000} className={inputClass} placeholder="A requirement the first list missed" />
+      </Field>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="submit" disabled={pending} className={buttonClass('secondary')}>
+          {pending ? 'Drafting…' : 'Draft the next baseline'}
+        </button>
+        <Message state={state} />
+      </div>
     </form>
   );
 }

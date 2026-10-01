@@ -21,6 +21,8 @@ export type TaxPeriodLockRow = {
   unlockedBy: string | null;
   unlockedByName: string | null;
   unlockReason: string | null;
+  /** Q-D2: the dated report snapshot the lock refers to, if one was named. */
+  periodReportId: string | null;
 };
 
 /** Every lock, active and released, newest first. */
@@ -30,7 +32,7 @@ export async function listTaxPeriodLocks(limit = 200): Promise<TaxPeriodLockRow[
   const { data, error: locksError } = await supabase
     .schema('finance')
     .from('tax_period_locks')
-    .select('id, period_start, period_end, locked_by, locked_at, note, unlocked_at, unlocked_by, unlock_reason')
+    .select('id, period_start, period_end, locked_by, locked_at, note, unlocked_at, unlocked_by, unlock_reason, period_report_id')
     .order('locked_at', { ascending: false })
     .limit(limit);
 
@@ -61,6 +63,7 @@ export async function listTaxPeriodLocks(limit = 200): Promise<TaxPeriodLockRow[
     unlockedBy: r.unlocked_by,
     unlockedByName: r.unlocked_by ? (nameById.get(r.unlocked_by) ?? null) : null,
     unlockReason: r.unlock_reason,
+    periodReportId: r.period_report_id,
   }));
 }
 

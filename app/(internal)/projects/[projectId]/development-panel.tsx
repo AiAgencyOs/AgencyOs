@@ -11,6 +11,7 @@ import {
   setModuleStatusAction,
   setTaskStatusAction,
 } from '@/modules/projects/actions';
+import { PROJECT_ROLE_LABEL, PROJECT_ROLES } from '@/modules/projects/project-members-schema';
 import { FEATURE_STATUSES, MODULE_STATUSES, TASK_STATUSES } from '@/modules/projects/schema';
 import { selectableStatuses } from '@/modules/projects/task-transitions';
 import type { DevelopmentFeature, DevelopmentModule, DevelopmentTask } from '@/modules/projects/queries';
@@ -93,6 +94,17 @@ function AddTaskForm({ projectId, moduleId, features }: { projectId: string; mod
       <label className="flex min-w-40 flex-1 flex-col gap-1">
         <span className={labelClass}>Task</span>
         <input name="title" required maxLength={200} className={inputClass} placeholder="Build the login form" />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>For project role</span>
+        <select name="assigneeRole" className={selectClass} defaultValue="">
+          <option value="">none</option>
+          {PROJECT_ROLES.map((r) => (
+            <option key={r} value={r}>
+              {PROJECT_ROLE_LABEL[r]}
+            </option>
+          ))}
+        </select>
       </label>
       {features.length > 0 ? (
         <label className="flex flex-col gap-1">

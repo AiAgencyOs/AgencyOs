@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache';
 
 import type { FormState } from '@/modules/identity/types';
 
+import { PROJECT_ROLES, type ProjectRole } from './project-members-schema';
+
 import {
   assignDesignReviewer,
   finalizeDesignTokenSet,
@@ -84,6 +86,7 @@ import {
   lockUiVersion,
 } from './service';
 import { setDeliverableDetails } from './build-details-service';
+import { attachChosenFile } from './attached-files-form';
 import { PROTOTYPE_PLATFORMS, type PrototypePlatform } from './prototype-schema';
 
 /** Server Actions for delivery — thin wrappers over service.ts. */
@@ -236,10 +239,18 @@ export async function addDeliverableAction(
     }
   }
 
+  // Q-C1 (SCR-037 "Upload build"): a prototype or build may also carry a build
+  // file (apk, ipa, zip), under the project-file limits and credentials guard.
+  const kind = String(formData.get('kind') ?? '');
+  const buildFile = kind === 'prototype' || kind === 'build' ? await attachChosenFile(formData, 'build', result.data.deliverableId) : ({ status: 'none' } as const);
+
   revalidatePath(`/projects/${projectId}`);
   revalidatePath(`/projects/${projectId}/builds`);
   revalidatePath(`/projects/${projectId}/prototype`);
-  return { status: 'success', message: `Version ${result.data.version} added.` };
+  if (buildFile.status === 'refused') {
+    return { status: 'error', message: `Version ${result.data.version} was added, but its build file was not saved: ${buildFile.message}` };
+  }
+  return { status: 'success', message: buildFile.status === 'attached' ? `Version ${result.data.version} added with ${buildFile.fileName}.` : `Version ${result.data.version} added.` };
 }
 
 /** Put a version in front of the client, through the approval engine. */
@@ -1144,6 +1155,7 @@ export async function createTaskAction(_prev: FormState, formData: FormData): Pr
   const featureId = String(formData.get('featureId') ?? '').trim();
   const description = String(formData.get('description') ?? '').trim();
   const dueOn = String(formData.get('dueOn') ?? '').trim();
+  const assigneeRole = String(formData.get('assigneeRole') ?? '').trim();
 
   const result = await createTask({
     projectId,
@@ -1152,6 +1164,7 @@ export async function createTaskAction(_prev: FormState, formData: FormData): Pr
     ...(featureId ? { featureId } : {}),
     ...(description ? { description } : {}),
     ...(dueOn ? { dueOn } : {}),
+    ...((PROJECT_ROLES as readonly string[]).includes(assigneeRole) ? { assigneeRole: assigneeRole as ProjectRole } : {}),
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };

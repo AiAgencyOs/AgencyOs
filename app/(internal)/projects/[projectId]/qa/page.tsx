@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { agencyClock } from '@/lib/admin/agency-clock';
+import { listAttachedFiles } from '@/modules/projects/attached-files-queries';
 import { getProject, listDeliverables, listInternalRoster, readScopeBaseline, listDevelopmentBreakdown } from '@/modules/projects/queries';
 import { listTestPlanVersions, listTestRunDetails, readDefectHistory } from '@/modules/qa/dashboard-queries';
 import { listTestCaseResults } from '@/modules/qa/case-results-queries';
@@ -28,6 +29,8 @@ import { EmptyState, IconCheck, PermissionDenied } from '@/ui';
 import { PreviewButton, PreviewDrawerProvider } from '../../../preview-drawer';
 import { ProjectSubNav } from '../project-subnav';
 import { WorkspaceHeader } from '../workspace-header';
+import { AttachFileForm } from '../attach-file-form';
+import { AttachedFileLinks } from '../attached-file-links';
 import { RaiseDefectForm } from '../qa-panel';
 import { DraftTestPlanForm, TestPlanCard, TestRunsCard } from '../test-plan-panel';
 import { QaInsights } from './qa-insights';
@@ -69,6 +72,8 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
   ]);
   // SCR-047 — the fix / retest trail, one read for every defect on the project.
   const history = await readDefectHistory(defects.map((d) => d.id));
+  // Q-C6: the evidence files uploaded against each run and bug.
+  const attachedFiles = await listAttachedFiles(projectId);
   const canWrite = can(context, 'project.write');
   const canRecordRuns = can(context, 'task.write');
   // SCR-045 — approving the plan is the QA sign-off's own role (owner, ops admin).
@@ -184,7 +189,7 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
             </nav>
           ) : null}
           {runs.length === 0 ? (
-            <p className="text-[13px] text-muted">No run yet.</p>
+            <p className="text-[13px] text-muted">No run yet. Open one above, against a build, to start recording evidence.</p>
           ) : shownRuns.length === 0 ? (
             <p className="text-[13px] text-muted">No run matches that filter. <Link href={`/projects/${projectId}/qa#run-lifecycle`} className="text-brand hover:underline">Show every run</Link></p>
           ) : (
@@ -209,6 +214,7 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
                   {(metrics.get(run.id) ?? []).length > 0 ? (
                     <p className="text-xs text-muted">Metrics: {(metrics.get(run.id) ?? []).map((m) => `${m.metric} ${m.value} ${m.unit}`).join(' · ')}</p>
                   ) : null}
+                  <AttachedFileLinks projectId={projectId} files={attachedFiles.get(run.id)} label="Evidence files of this run" />
                   {canRecordRuns && run.status === 'open' ? <CloseRunForm projectId={projectId} runId={run.id} /> : null}
                   <div className="flex flex-wrap items-center gap-3">
                     {canRecordRuns && run.status === 'closed' && (run.failed > 0 || run.blocked > 0) ? <RerunButton projectId={projectId} runId={run.id} /> : null}
@@ -218,6 +224,14 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
                     <Link href={`/projects/${projectId}/qa/runs/${run.id}`} className="text-xs font-medium text-brand hover:underline">Open run</Link>
                     <span className="text-xs text-muted">{defects.filter((d) => d.run_id === run.id).length} defect{defects.filter((d) => d.run_id === run.id).length === 1 ? '' : 's'} from this run</span>
                   </div>
+                  {canRecordRuns ? (
+                    <details className="text-xs">
+                      <summary className="cursor-pointer text-brand">Attach an evidence file (screenshot, log)</summary>
+                      <div className="mt-2">
+                        <AttachFileForm projectId={projectId} subjectKind="test_run" subjectId={run.id} />
+                      </div>
+                    </details>
+                  ) : null}
                   {canWrite ? (
                     <details className="text-xs">
                       <summary className="cursor-pointer text-brand">Raise a defect from this run</summary>

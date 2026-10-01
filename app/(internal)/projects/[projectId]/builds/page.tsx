@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { listAttachedFiles } from '@/modules/projects/attached-files-queries';
 import { readDeliverableDetails } from '@/modules/projects/build-details-queries';
 import { listEnvironmentCheckRuns, listEnvironmentReadiness, readReleaseGates } from '@/modules/projects/environment-readiness-queries';
 import { READINESS_CHECK_LABEL, READINESS_CHECKS } from '@/modules/projects/environment-readiness-schema';
@@ -13,6 +14,8 @@ import { getProject, listDependencies, listDeliverables, listEnvironments, readP
 import { getRepositoryLink } from '@/modules/projects/repository-link-queries';
 import { Badge, buttonClass, Card, CardHeader, EmptyState, humanize, IconIntegrations, IconProjects, inputClass, labelClass, PageHeader, selectClass, Stat, StatGrid, statusTone, PermissionDenied } from '@/ui';
 
+import { AttachFileForm } from '../attach-file-form';
+import { AttachedFileLinks } from '../attached-file-links';
 import { AddBuildForm, SubmitDeliverableForm } from '../deliverables-panel';
 import {
   AddDependencyForm,
@@ -58,7 +61,7 @@ export default async function BuildsPage({ params, searchParams }: { params: Pro
 
   const clock = await agencyClock();
   const canWrite = can(context, 'project.write');
-  const [deliverables, environments, dependencies, board, readiness, gates, link, gitActions, details, checkRuns] = await Promise.all([
+  const [deliverables, environments, dependencies, board, readiness, gates, link, gitActions, details, checkRuns, attachedFiles] = await Promise.all([
     listDeliverables(projectId),
     listEnvironments(projectId),
     listDependencies(projectId),
@@ -69,6 +72,8 @@ export default async function BuildsPage({ params, searchParams }: { params: Pro
     listGitActions(projectId, 10),
     readDeliverableDetails(projectId),
     listEnvironmentCheckRuns(projectId),
+    // Q-C1: the build files uploaded against each build.
+    listAttachedFiles(projectId),
   ]);
   const allBuilds = deliverables.filter((d) => d.kind === 'build');
   const q = (qRaw ?? '').trim().slice(0, 120).toLowerCase();
@@ -382,6 +387,7 @@ export default async function BuildsPage({ params, searchParams }: { params: Pro
                 </a>
               ) : null}
               <p className="mt-1 text-xs text-faint">Added {clock.dateTime(b.created_at)}</p>
+              <AttachedFileLinks projectId={projectId} files={attachedFiles.get(b.id)} label={`Build files of v${b.version}`} />
               {(() => {
                 // SCR-043 — build reproducibility and rollback information, retained per build.
                 const d = details.get(b.id);
@@ -417,6 +423,14 @@ export default async function BuildsPage({ params, searchParams }: { params: Pro
                   </div>
                 </details>
               ) : null}
+              {canWrite ? (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs underline underline-offset-2">Attach a build file (.apk, .ipa, .zip)</summary>
+                  <div className="pt-2">
+                    <AttachFileForm projectId={projectId} subjectKind="build" subjectId={b.id} />
+                  </div>
+                </details>
+              ) : null}
               {canWrite && b.status === 'draft' ? (
                 <SubmitDeliverableForm deliverableId={b.id} projectId={projectId} />
               ) : null}
@@ -430,11 +444,12 @@ export default async function BuildsPage({ params, searchParams }: { params: Pro
           icon={<IconProjects size={22} />}
           title="No builds yet"
           description="Add the first build below once it's ready to review."
+          action={<a href="#add-build" className={buttonClass('secondary', 'sm')}>Add a build</a>}
         />
       )}
 
       {canWrite ? (
-        <Card className="p-4">
+        <Card id="add-build" className="scroll-mt-4 p-4">
           <AddBuildForm projectId={projectId} rollbackChoices={allBuilds.map((x) => ({ id: x.id, label: `Build v${x.version} — ${x.title}` }))} />
         </Card>
       ) : null}

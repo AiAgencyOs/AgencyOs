@@ -1,12 +1,12 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useId } from 'react';
 
 import { addDeliverableAction, submitDeliverableAction } from '@/modules/projects/actions';
 import { PROTOTYPE_PLATFORMS } from '@/modules/projects/prototype-schema';
 import { DELIVERABLE_KINDS } from '@/modules/projects/schema';
 import { IDLE_STATE } from '@/modules/identity/types';
-import { buttonClass, inputClass, selectClass } from '@/ui';
+import { buttonClass, inputClass, labelClass, selectClass } from '@/ui';
 
 /**
  * Adding a version, and sending one to the client — Phase 12.
@@ -94,6 +94,7 @@ export function AddDeliverableForm({ projectId }: { projectId: string }) {
  */
 export function AddPrototypeForm({ projectId }: { projectId: string }) {
   const [state, action, pending] = useActionState(addDeliverableAction, IDLE_STATE);
+  const fileId = useId();
 
   return (
     <form action={action} className="flex flex-col gap-2">
@@ -116,6 +117,14 @@ export function AddPrototypeForm({ projectId }: { projectId: string }) {
         className={inputClass}
         aria-label="Artifact link"
       />
+
+      {/* Q-C1 (SCR-037 "Upload build"): the build itself, beside the link, under the project-file limits and credentials guard. */}
+      <div className="flex flex-col gap-1">
+        <label htmlFor={fileId} className={labelClass}>
+          Build file (optional — .apk, .ipa or .zip, up to 50 MB)
+        </label>
+        <input id={fileId} name="file" type="file" accept=".apk,.ipa,.zip" className={`${inputClass} h-auto py-1.5`} />
+      </div>
 
       <input
         name="changelog"
@@ -153,6 +162,7 @@ export function AddPrototypeForm({ projectId }: { projectId: string }) {
 /** The same scoped form as `AddPrototypeForm`, for `kind = 'build'` — SCR-043's Builds half. */
 export function AddBuildForm({ projectId, rollbackChoices }: { projectId: string; rollbackChoices?: { id: string; label: string }[] }) {
   const [state, action, pending] = useActionState(addDeliverableAction, IDLE_STATE);
+  const fileId = useId();
 
   return (
     <form action={action} className="flex flex-col gap-2">
@@ -175,6 +185,14 @@ export function AddBuildForm({ projectId, rollbackChoices }: { projectId: string
         className={inputClass}
         aria-label="Artifact link"
       />
+
+      {/* Q-C1 (SCR-037 "Upload build"): the build itself, beside the link, under the project-file limits and credentials guard. */}
+      <div className="flex flex-col gap-1">
+        <label htmlFor={fileId} className={labelClass}>
+          Build file (optional — .apk, .ipa or .zip, up to 50 MB)
+        </label>
+        <input id={fileId} name="file" type="file" accept=".apk,.ipa,.zip" className={`${inputClass} h-auto py-1.5`} />
+      </div>
 
       <input
         name="changelog"

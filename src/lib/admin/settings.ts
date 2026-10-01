@@ -393,7 +393,10 @@ export type OrganizationSettingKey =
   // means regular / monthly / calendar month (src/modules/finance/gst-settings.ts).
   | 'gst_registration_type'
   | 'gst_filing_frequency'
-  | 'gst_period_basis';
+  | 'gst_period_basis'
+  // Round 3, Q-D1 — the Google Calendar id the agency books against. Read
+  // BEFORE the GOOGLE_CALENDAR_ID environment value (src/lib/scheduling/google.ts).
+  | 'google_calendar_id';
 
 const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   whatsapp_phone_number_id: 'a numeric WhatsApp phone_number_id (digits only)',
@@ -428,6 +431,7 @@ const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   gst_registration_type: "'regular' or 'composition'",
   gst_filing_frequency: "'monthly' or 'quarterly'",
   gst_period_basis: "'calendar_month'",
+  google_calendar_id: 'a calendar id with no spaces, like meetings@agency.example or primary (3 to 200 characters)',
 };
 
 /**

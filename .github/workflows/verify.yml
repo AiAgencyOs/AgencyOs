@@ -912,6 +912,30 @@ jobs:
           # a plan and users under a marker and removes them.
           npm run db:verify:trace-c
 
+          # Round 3, stream R3 (owner decisions Q-C1, Q-C6, Q-D1, Q-D2, Q-D3): a build,
+          # a test run, a bug and a meeting can carry an uploaded file (the doors'
+          # role, tenant, size, kind-of-file, credentials and path rules, against the
+          # database; Supabase Storage itself is not exercised here), the Google
+          # Calendar id is an audited organization setting, and "Generate period
+          # report" stores a dated snapshot a period lock may refer to. Creates its
+          # own organizations and users and removes them in a `finally`.
+          npm run db:verify:r3
+
+          # Round 3, stream R2: a task is completed only from In review; project roles
+          # bind (observer read-only, contributor own tasks); a project has default
+          # assignees per project role; Start Task is gated by the requirement and
+          # dependency checks. Plants users, a project, a plan and an organisation
+          # under a marker and removes them.
+          npm run db:verify:r2
+
+          # Round 3, stream R1: budget bands are the owner's (audited, validated, tenant-
+          # scoped), a person may override the Hot / Warm / Cold label with a reason (the
+          # computed label is kept, every change audited), and completing Phase 5 or 6
+          # from Development / QA data emits the event that raises M3 / M4 and the PM
+          # message. Creates its own users, a second organization and a project under a
+          # marker and removes them.
+          npm run db:verify:r1
+
           # Last, and deliberately so: the deploy smoke runs against the app
           # in its most-exercised state, and a tick it fires cannot disturb
           # the four scripts above. The same command, pointed at a real

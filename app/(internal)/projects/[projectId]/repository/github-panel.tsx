@@ -10,7 +10,7 @@ import {
   readGithubReviewFindings,
   readGithubTokenScopes,
 } from '@/lib/git/github';
-import { taskForBranch, taskForCommit, summariseMapping } from '@/modules/projects/code-task-mapping';
+import { mapCommitToTask, taskForBranch, summariseMapping } from '@/modules/projects/code-task-mapping';
 import { listCommitLinks, type GitAction } from '@/modules/projects/git-queries';
 import { accessAllows, accessRefusal } from '@/modules/projects/repository-policy';
 import type { RepositoryLink } from '@/modules/projects/repository-link-queries';
@@ -207,7 +207,7 @@ async function LiveRead({
   const commits = allCommits.filter((c) => !needle || `${c.message} ${c.shortSha} ${c.author ?? ''}`.toLowerCase().includes(needle));
   const pullRequests = allPulls.filter((p) => !needle || `${p.title} ${p.headBranch} ${p.author ?? ''}`.toLowerCase().includes(needle));
   const commitLinks = await listCommitLinks(projectId, 200);
-  const mapping = summariseMapping({ commits: allCommits, pullRequests: allPulls, links: commitLinks, tasks });
+  const mapping = summariseMapping({ commits: allCommits.map((c) => ({ sha: c.sha, message: c.message, branch })), pullRequests: allPulls, links: commitLinks, tasks });
   const [branches, checks, findings] = await Promise.all([
     readGithubBranches({ owner: link.owner, repo: link.repo }),
     readGithubChecks({ owner: link.owner, repo: link.repo }, branch),
@@ -262,11 +262,12 @@ async function LiveRead({
                     {c.author ?? 'unknown author'}
                     {c.authoredAt ? ` · ${clock.dateTime(c.authoredAt)}` : ''}
                     {(() => {
-                      const t = taskForCommit(c.sha, commitLinks, tasks);
-                      return t ? (
+                      const m = mapCommitToTask({ sha: c.sha, message: c.message, branch }, commitLinks, tasks);
+                      return m ? (
                         <>
                           {' · task '}
-                          <Link href={`/projects/${projectId}/development/tasks/${t.id}`} className="underline-offset-2 hover:underline">{t.title}</Link>
+                          <Link href={`/projects/${projectId}/development/tasks/${m.task.id}`} className="underline-offset-2 hover:underline">{m.task.title}</Link>
+                          {m.via === 'link' ? '' : ` (mapped from the ${m.via === 'branch' ? 'branch' : 'message'})`}
                         </>
                       ) : (
                         ' · not linked to a task'

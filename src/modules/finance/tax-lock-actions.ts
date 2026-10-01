@@ -14,6 +14,7 @@ export async function lockTaxPeriodAction(_prev: FormState, formData: FormData):
     periodStart: text('periodStart'),
     periodEnd: text('periodEnd'),
     ...(text('note') ? { note: text('note') } : {}),
+    ...(text('reportId') ? { reportId: text('reportId') } : {}),
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };
