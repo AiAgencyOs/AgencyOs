@@ -104,3 +104,12 @@ Binding.
 | S2-1 | Task attachments (links on a task) are bound by project role like comments, time logs and checklists. |
 | S2-2 | The project roster and default-assignee doors use the role union (primary or secondary), like the task rules. |
 | S2-3 | A dependency on a cancelled or archived task counts as satisfied, as well as done. A dependency across projects stays refused. |
+
+## Round 3d — answers to the round-3c build's follow-up questions (2026-10-01)
+
+Binding.
+
+| Id | Decision |
+|---|---|
+| T1-1 | Tasks gain a real `cancelled` status and an `archived_at` column. A cancelled or archived task counts as satisfied for dependencies; progress, health and KPIs do not count a cancelled task as outstanding work. |
+| T1-2 | Project roster writes (`project_members`) go through an audited security-definer door (add, remove, change role), like the default assignees. |
