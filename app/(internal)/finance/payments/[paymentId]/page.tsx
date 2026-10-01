@@ -6,6 +6,7 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getPaymentDetail } from '@/modules/finance/payment-detail-queries';
+import { claimProofHref } from '@/modules/finance/attachment-links';
 import { Badge, buttonClass, Callout, Card, CardHeader, DetailPanel, humanize, PageHeader, PermissionDenied, StatusBadge } from '@/ui';
 
 import { VerifyPaymentButton } from '../../../invoices/[invoiceId]/invoice-panel';
@@ -100,10 +101,12 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
                   <span className="text-muted">{humanize(c.method)}{c.reference ? ` · ${c.reference}` : ''}{c.payerName ? ` · ${c.payerName}` : ''}</span>
                   <span className="ml-auto text-xs text-muted">{clock.dateTime(c.submittedAt)}</span>
                 </span>
-                {c.proofUrl ? (
-                  <a href={c.proofUrl} target="_blank" rel="noreferrer" className="w-fit text-brand hover:underline">Open the submitted proof</a>
+                {claimProofHref(c) ? (
+                  <a href={claimProofHref(c) ?? undefined} target="_blank" rel="noreferrer" className="w-fit text-brand hover:underline">
+                    {c.proofFileName ? `Open the uploaded proof (${c.proofFileName})` : 'Open the submitted proof'}
+                  </a>
                 ) : (
-                  <span className="text-muted">No proof link was attached.</span>
+                  <span className="text-muted">No proof was attached.</span>
                 )}
                 {c.verificationEvidence ? <span><span className="text-muted">Checked: </span>{c.verificationEvidence}</span> : null}
                 {c.rejectedReason ? <span><span className="text-muted">Rejected: </span>{c.rejectedReason}</span> : null}

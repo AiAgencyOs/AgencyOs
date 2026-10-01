@@ -3,6 +3,9 @@ import 'server-only';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
+import { deriveLeadHeat, type LeadHeatReading } from './lead-heat';
+import { readLeadFacts } from './lead-list-queries';
+
 /**
  * What the Leads list's Hot Leads / No Response filters read (decision 14):
  * when each lead last wrote (`crm.last_inbound_by_lead`, the newest
@@ -38,4 +41,25 @@ export async function readLeadHeat(): Promise<Map<string, LeadHeatFacts>> {
     if ((STAGE_RANK[d.stage] ?? 0) > (STAGE_RANK[s.dealStage ?? ''] ?? 0)) s.dealStage = d.stage;
   }
   return out;
+}
+
+/**
+ * One lead's Hot / Warm / Cold reading with its reasons (owner decision 1,
+ * round 2) — for Lead 360, the qualification screen and the preview drawer.
+ * The same three recorded reasons the list uses, from the same readers; a read
+ * that fails refuses rather than printing "Cold" for a lead we could not look at.
+ */
+export async function readLeadHeatReading(lead: { id: string; status: string }): Promise<LeadHeatReading> {
+  const [heat, facts] = await Promise.all([readLeadHeat(), readLeadFacts([lead.id])]);
+  return deriveLeadHeat(
+    {
+      status: lead.status,
+      dealStage: heat.get(lead.id)?.dealStage ?? null,
+      // The label never reads the creation date (only No Response does); the type asks for one.
+      createdAt: new Date().toISOString(),
+      lastInboundAt: heat.get(lead.id)?.lastInboundAt ?? null,
+      budgetRecorded: (facts.get(lead.id)?.budgetMinor ?? null) !== null,
+    },
+    new Date(),
+  );
 }

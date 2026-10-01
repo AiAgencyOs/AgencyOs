@@ -1,6 +1,7 @@
 import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
+import { verifiedOn } from './verified-basis';
 
 import {
   INVOICE_REMINDER_SITUATION_KEY,
@@ -112,6 +113,20 @@ export async function runInvoiceReminders(admin: Admin, limit = 50): Promise<Rem
       ),
     );
 
+    // Owner decision 8 (2026-10-01): the balance the client is told is the VERIFIED one. Read before the claim, so a failed read
+    // does not use up the interval.
+    const { data: verifiedRow, error: verifiedError } = await admin
+      .schema('finance')
+      .from('invoices')
+      .select('verified_minor')
+      .eq('id', row.invoice_id)
+      .maybeSingle();
+    if (verifiedError || !verifiedRow) {
+      console.error(JSON.stringify({ level: 'error', scope: 'runInvoiceReminders.verified', invoice: row.invoice_id, detail: verifiedError?.message ?? 'no row' }));
+      outcome.failed = true;
+      continue;
+    }
+
     // ── claim ─────────────────────────────────────────────────────────────
     // Claimed even with no thread: the row is the record that the sweep
     // looked, and the interval keeps it from looking again tomorrow. Its
@@ -150,7 +165,7 @@ export async function runInvoiceReminders(admin: Admin, limit = 50): Promise<Rem
       invoiceNumber: row.invoice_number,
       currency: row.currency,
       totalMinor: Number(row.total_minor),
-      paidMinor: Number(row.paid_minor),
+      paidMinor: verifiedOn({ total_minor: Number(row.total_minor), verified_minor: Number(verifiedRow.verified_minor) }),
       dueAt: row.due_at,
       timeZone: org.timezone ?? 'UTC',
     });

@@ -11,6 +11,7 @@ import { can } from '@/lib/authz/permissions';
 import { readProjectMargin } from '@/modules/finance/margin-queries';
 import { readProjectBudgetVariance } from '@/modules/finance/budget-variance-queries';
 import { listExpenses, listProjectInvoices } from '@/modules/finance/queries';
+import { verifiedOn } from '@/modules/finance/verified-basis';
 import {
   getProject,
   listDevelopmentBreakdown,
@@ -176,7 +177,8 @@ export default async function ProjectReportPage({
   for (const d of openDefects) bySeverity.set(d.severity, (bySeverity.get(d.severity) ?? 0) + 1);
 
   const invoiced = invoices.reduce((n, i) => n + (i.status === 'void' ? 0 : i.total_minor), 0);
-  const paid = invoices.reduce((n, i) => n + i.paid_minor, 0);
+  // verified, not recorded: the same basis as the margin below (verified-basis.ts)
+  const paid = invoices.reduce((n, i) => n + (i.status === 'void' || i.status === 'draft' ? 0 : verifiedOn(i)), 0);
   const projectExpenses = expenses.filter((e) => e.projectId === projectId);
   const spent = projectExpenses.reduce((n, e) => n + e.amountMinor, 0);
   const aiCost = spend.reduce((n, r) => n + r.costMinor, 0);

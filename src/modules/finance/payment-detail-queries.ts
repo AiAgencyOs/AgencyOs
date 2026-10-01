@@ -36,6 +36,7 @@ export type PaymentDetail = {
     reference: string | null;
     payerName: string | null;
     proofUrl: string | null;
+    proofFileName: string | null;
     submittedAt: string;
     verificationEvidence: string | null;
     rejectedReason: string | null;
@@ -69,7 +70,7 @@ export async function getPaymentDetail(paymentId: string): Promise<PaymentDetail
 
   const [clientRes, verifierRes, receiptRes, claimsRes, itemsRes] = await Promise.all([
     invoice
-      ? supabase.schema('core').from('client_accounts').select('name').eq('id', invoice.client_account_id).maybeSingle()
+      ? supabase.schema('finance').rpc('client_names', { p_ids: [invoice.client_account_id] })
       : Promise.resolve({ data: null, error: null }),
     p.verified_by
       ? supabase.schema('core').from('users').select('full_name, email').eq('id', p.verified_by).maybeSingle()
@@ -79,7 +80,7 @@ export async function getPaymentDetail(paymentId: string): Promise<PaymentDetail
     supabase
       .schema('finance')
       .from('payment_submissions')
-      .select('id, status, method, reference, payer_name, proof_url, submitted_at, verification_evidence, rejected_reason, mismatch_note, evidence_request_note, payment_id')
+      .select('id, status, method, reference, payer_name, proof_url, proof_file_name, submitted_at, verification_evidence, rejected_reason, mismatch_note, evidence_request_note, payment_id')
       .eq('invoice_id', p.invoice_id)
       .order('submitted_at', { ascending: false }),
     supabase
@@ -119,7 +120,7 @@ export async function getPaymentDetail(paymentId: string): Promise<PaymentDetail
     invoiceTotalMinor: invoice?.total_minor ?? 0,
     invoiceVerifiedMinor: invoice?.verified_minor ?? 0,
     projectId: invoice?.project_id ?? null,
-    clientName: clientRes.data?.name ?? null,
+    clientName: clientRes.data?.[0]?.name ?? null,
     provider: p.provider,
     reference,
     amountMinor: p.amount_minor,
@@ -136,6 +137,7 @@ export async function getPaymentDetail(paymentId: string): Promise<PaymentDetail
       reference: c.reference,
       payerName: c.payer_name,
       proofUrl: c.proof_url,
+      proofFileName: c.proof_file_name,
       submittedAt: c.submitted_at,
       verificationEvidence: c.verification_evidence,
       rejectedReason: c.rejected_reason,

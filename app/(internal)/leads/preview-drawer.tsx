@@ -5,6 +5,8 @@ import { useState, useTransition } from 'react';
 
 import { Badge, Drawer, LinkButton, StatusBadge, buttonClass, humanize } from '@/ui';
 
+import { LeadHeatBadge } from '@/modules/crm/lead-heat-badge';
+
 import { readLeadPreviewAction, type LeadPreviewState } from './preview-actions';
 
 function money(minor: number, currency: string): string {
@@ -67,10 +69,9 @@ export function LeadPreviewButton({ leadId, name }: { leadId: string; name: stri
               <dd>{state.preview.assignedEmail?.split('@')[0] ?? 'Unassigned'}</dd>
               <dt className="text-muted">Next follow-up</dt>
               <dd>{state.preview.nextFollowUpAt ? when(state.preview.nextFollowUpAt) : 'None set'}</dd>
-              <dt className="text-muted">Score</dt>
+              <dt className="text-muted">Heat</dt>
               <dd>
-                {state.preview.score.computed === null ? 'Not scored' : `${state.preview.score.computed}/100 computed`}
-                {state.preview.score.override !== null ? ` · ${state.preview.score.override}/100 human override (${state.preview.score.overrideReason})` : ''}
+                <LeadHeatBadge label={state.preview.heat.label} title={state.preview.heat.title} />
               </dd>
               {state.preview.tags.length > 0 ? (
                 <>

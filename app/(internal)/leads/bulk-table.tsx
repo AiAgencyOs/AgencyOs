@@ -5,6 +5,9 @@ import { useState } from 'react';
 
 import { Avatar, Badge, Card, DataTable, StatusBadge, humanize, type Column, type SortDirection, type SortState } from '@/ui';
 
+import type { LeadHeatLabel } from '@/modules/crm/lead-heat';
+import { LeadHeatBadge } from '@/modules/crm/lead-heat-badge';
+
 import { LeadPreviewButton } from './preview-drawer';
 import { BulkActionsBar, type BulkRoster } from './bulk-actions-bar';
 import { LeadFlags, type LeadFlagsData } from './lead-flags';
@@ -36,8 +39,8 @@ export type BulkLeadRow = {
   created: string;
   budget: string | null;
   tags: string[];
-  /** ADM-88 (reversed 2026-09-29): the stored score, or null when unscored. */
-  score: number | null;
+  /** Owner decision 1 (round 2): Hot / Warm / Cold with its reasons as the hover title. Never a number. */
+  heat: { label: LeadHeatLabel; title: string } | null;
   /** SCR-006: consent, handoff, reply-waiting and duplicate indicators. */
   flags: LeadFlagsData;
   /** The other live leads on the same contact, for the row's merge entry. */
@@ -136,11 +139,11 @@ export function LeadBulkTable({
       key: 'status',
       header: 'Status',
       badge: true,
-      sortKey: 'score',
+      sortKey: 'heat',
       cell: (l) => (
         <span className="flex flex-col items-start gap-1">
           <StatusBadge status={l.status} />
-          <span className="tabular text-[11px] text-muted">{l.score === null ? 'Unscored' : `Score ${l.score}`}</span>
+          {l.heat ? <LeadHeatBadge label={l.heat.label} title={l.heat.title} /> : null}
         </span>
       ),
     },

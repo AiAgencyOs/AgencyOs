@@ -1,16 +1,17 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useId } from 'react';
 
 import { updateExpenseAction } from '@/modules/finance/actions';
-import { EXPENSE_CATEGORIES } from '@/modules/finance/schema';
+import { offeredFor, type ExpenseCategory } from '@/modules/finance/expense-categories';
 import type { ExpenseRow } from '@/modules/finance/queries';
 import { IDLE_STATE } from '@/modules/identity/types';
-import { buttonClass, FormMessage, humanize, inputClass, labelClass, selectClass } from '@/ui';
+import { buttonClass, FormMessage, inputClass, labelClass, selectClass } from '@/ui';
 
 /** SCR-055 — correct one expense in place. Opens under its row; owner/ops_admin only. */
-export function EditExpenseForm({ expense, projects }: { expense: ExpenseRow; projects: readonly { id: string; name: string }[] }) {
+export function EditExpenseForm({ expense, projects, categories }: { expense: ExpenseRow; projects: readonly { id: string; name: string }[]; categories: readonly ExpenseCategory[] }) {
   const [state, action, pending] = useActionState(updateExpenseAction, IDLE_STATE);
+  const receiptFileId = useId();
 
   return (
     <details>
@@ -24,8 +25,8 @@ export function EditExpenseForm({ expense, projects }: { expense: ExpenseRow; pr
         <label className="flex flex-col gap-1">
           <span className={labelClass}>Category</span>
           <select name="category" defaultValue={expense.category} className={selectClass}>
-            {EXPENSE_CATEGORIES.map((c) => (
-              <option key={c} value={c}>{humanize(c)}</option>
+            {offeredFor(categories, expense.category).map((c) => (
+              <option key={c.key} value={c.key}>{c.retired ? `${c.label} (retired)` : c.label}</option>
             ))}
           </select>
         </label>
@@ -54,6 +55,10 @@ export function EditExpenseForm({ expense, projects }: { expense: ExpenseRow; pr
           <span className={labelClass}>Receipt link</span>
           <input type="url" name="receiptUrl" maxLength={2000} defaultValue={expense.receiptUrl ?? ''} className={inputClass} placeholder="https://…" />
         </label>
+        <div className="col-span-2 flex flex-col gap-1">
+          <label className={labelClass} htmlFor={receiptFileId}>{expense.receiptFileName ? `Replace the uploaded receipt (${expense.receiptFileName})` : 'Upload a receipt'}</label>
+          <input id={receiptFileId} name="receiptFile" type="file" className={inputClass} />
+        </div>
         <div className="col-span-2 flex flex-wrap items-center gap-3">
           <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
             {pending ? 'Saving…' : 'Save'}

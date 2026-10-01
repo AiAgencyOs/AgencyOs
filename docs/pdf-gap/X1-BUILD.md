@@ -1,0 +1,45 @@
+# X1 — Finance: build report
+
+Stream X1, owner decisions 5 to 9 of 2026-10-01 (docs/ui-parity/owner-decisions.md, Round 2) plus the W1 leftovers. Migrations `20261007100000`, `20261007100100`, `20261007100200`. Live verifier `npm run db:verify:finance-x1` (scripts/verify-finance-x1.mjs, 57 checks, green; W1's 37 still green). Tests: tests/finance-attachments.test.ts, finance-x1-settings.test.ts, finance-client-pdf-basis.test.ts, composer-review-step.test.ts.
+
+## Decisions
+
+| # | Decision | Result | How verified |
+|---|---|---|---|
+| 5 | Invoice proof and expense receipt upload (links stay) | BUILT. A payment claim's proof (record-a-claim form on the project and invoice pages) and an expense receipt (record and edit forms) can be a file. Same bucket, 50 MB limit and credentials guard as project files (`fileCredentialProblem` over name and, for small text, content); storage probed first; object key `<org>/finance/<claim-proof or expense-receipt>/<record id>/<name>`; the row stores path and name only (`proof_storage_path/proof_file_name`, `receipt_storage_path/receipt_file_name`, CHECK that the path is the tenant's own folder). Object stored first, row second, so a failed upload leaves no row claiming a body. Opening goes through `/api/finance/attachment/<kind>/<id>` (RLS read, 5-minute signed URL). Screens that showed a proof/receipt link (verify queue, payments claims list and drawer, payment detail, expenses list) open the upload when there is one, else the link. | Storage is unreachable locally, so by fakes: tests/finance-attachments.test.ts runs the real `recordExpense` / `updateExpense` / `recordPaymentSubmission` with a fake storage client (reachable, unreachable, refusing, credential file, size, link-only, role) and the path/link helpers; live verifier proves the DB refuses another tenant's path. Rendered with a seeded claim and expense (links and labels shown; the inline image preview is broken locally, storage 503, as expected). |
+| 6 | Owner-editable expense categories | BUILT. `finance.expense_categories` (per org: key, label, order, `retired_at`), seeded with the six for every org and by a trigger for new ones; door `finance.set_expense_category(add / rename / retire / restore)`, owner / ops_admin, audited with old and new; the old CHECK is replaced by a guard (a NEW expense, or a changed category, must be an active category; an expense that keeps its category, even retired, edits freely). The last active category cannot be retired. Settings › Finance › "Expense categories" (list with counts, rename, retire/restore, add). Expenses page (list, filter, record and edit forms, top category, vendor rollup) and the tax page's P&L read the list. | Verifier: add / duplicate / rename clash / retire / restore / last-active / new-org seeding / direct write refused / finance reads the same list / audit rows / old expense keeps and edits; pure helpers and outcome messages in tests/finance-x1-settings.test.ts; rendered. |
+| 7 | Finance reads the client NAME only | BUILT. `finance.client_names(p_ids)` security definer, owner / ops_admin / finance, own org only, returns `(id, name)`; no ids = this org's names. `core.client_accounts` is still closed to finance. Money screens (payments ledger, claims queue and drawer, payment detail, invoice name, client filter list, invoice PDF, entity preview) read names through it, so "Unknown client" now shows only for a truly missing client. | Verifier: finance gets the name and only `id,name`; the billing e-mail does not leave; direct core read still empty; member gets nothing; another tenant's client never returned. Rendered Payments as finance: "Northwind Retail" where it said Unknown client. |
+| 8 | Client-facing PDF Paid / Balance due = verified | BUILT. Invoice PDF, the WhatsApp invoice message and the automatic past-due reminder print `verifiedOn(invoice)` (verified, clamped to total). The reminder reads it before claiming its interval. | tests/finance-client-pdf-basis.test.ts (recorded 5,000 / verified 2,500 prints 2,500; recorded-only prints no Paid line; never above total); real PDF fetched and read: Paid 2,500, Balance 2,500. |
+| 9 | GST defaults: regular, monthly (GSTR-1 and GSTR-3B), calendar month | BUILT as org settings `gst_registration_type` (regular or composition), `gst_filing_frequency` (monthly or quarterly), `gst_period_basis` (calendar_month). `core.set_organization_setting` redefined from the LATEST body (20261003100000), every key and check kept verbatim, three added with closed vocabularies. Unset means the decision (pure reader `gst-settings.ts`). Form in Settings › Finance › "GST setup". Used: the GST configuration card on the tax page shows the three values (saying "default" when unset) and the return due next; the GSTR-1/3B export route refuses a window the saved setup does not file (quarter for a monthly filer and the reverse; composition taxpayers do not file GSTR-1/3B) with words; the buttons and badge on the tax page follow the same check; a link opens the return period due next (last complete calendar month, or quarter). | Verifier: set / invalid / finance refused / audited with old and new / cleared; 5 earlier keys and unknown-key refusal still behave; pure reader, parser, due-period and `filingCheck` tests; rendered tax page for All time, a month and a quarter. |
+
+## W1 leftovers
+
+| Item | Result |
+|---|---|
+| Clients overview, client commercials | BUILT: `src/lib/admin/clients.ts` (list, detail, per-project commercials, invoice rows) and `clients-overview.ts` use live invoices for invoiced and verified money for paid / owed (the basis moved to `src/lib/finance/verified-basis.ts` because lib may not import modules; the module path re-exports it). `client-commercials.ts` summed nothing from `paid_minor` (its payment rows already say Verified or not); the unused column was dropped. Clients page now: Paid ₹7,500 of ₹5,54,000 invoiced, equal to Finance. |
+| Dashboard "revenue this month" | BUILT: verified payments by verified date (`finance.payments`, captured and verified), same for its trend delta; caption "Verified payments"; the "unpaid milestone invoices" gate list reads verified owed. |
+| Entity preview | BUILT: "Paid (verified)". |
+| Same drift found elsewhere | Project finance page, project report page and report PDF moved to verified. NOT moved (database function): the project overview "Summary" tile (`summary.paid_minor` from a database summary function). |
+| `/invoices/new` breadcrumb | BUILT: "New invoice" via `TrailLabel` (rendered). |
+| UI-level test for the composer review step | BUILT: the review step is now its own presentational component (`composer-review.tsx`); tests/composer-review-step.test.ts renders it with react-dom/server through tsx (spawned, because plain Node does not strip JSX) for CGST+SGST, IGST, Non-GST and multi-line cases. |
+
+## Files
+
+Migrations: supabase/migrations/20261007100000_the_owner_names_the_expense_categories.sql, 20261007100100_a_receipt_can_be_a_file_and_finance_reads_a_clients_name.sql, 20261007100200_the_gst_setup_is_an_organization_setting.sql. Verifier: scripts/verify-finance-x1.mjs, package.json `db:verify:finance-x1`, a step in .github/workflows/verify.yml. types.ts: targeted additions (expense_categories, the two new columns pairs, `set_expense_category`, `client_names`).
+
+New: src/modules/finance/{attachment,attachment-links,attachment-download,expense-categories,expense-category-queries,expense-category-actions,expense-category-outcome,gst-settings,gst-setup-actions}.ts, src/lib/finance/verified-basis.ts, app/api/finance/attachment/[kind]/[id]/route.ts, app/(internal)/settings/finance/{expense-categories-panel,gst-setup-form}.tsx, app/(internal)/invoices/new/composer-review.tsx, tests/_render/composer-review.tsx.
+
+Edited (existing pins kept in intent): tests/tax-configures-gst-where-the-pdf-puts-it.test.ts (the card now reads the setup), tests/a-setting-the-owner-can-set-has-a-history-and-a-default.test.ts (a later redefinition of the settings door must keep every key of this one, instead of "this is the newest").
+
+## Notes
+
+- Seeded rows (a claim, an expense, a category; marker zzbuild-x1) were deleted; the verifier cleans up after itself and restores the settings it touches.
+- PostgREST was restarted twice (once after the first migration, once after widening `client_names`).
+- Storage: no real upload was exercised (no storage service locally).
+
+## New owner questions
+
+1. Composition taxpayers: the GST setup allows "composition" and the GSTR export then refuses (they file other returns). Should composition be offered at all, or is "regular" the only registration type this agency will ever use?
+2. Quarterly filing: allowed as a value (QRMP) with the export following it. Keep, or lock the setting to monthly?
+3. Receipts and proofs are not retained or deleted by the panel (the bucket grants no delete, the same as project files). Is a replaced receipt's old object meant to stay forever?
+4. The project overview "Summary" (Paid / Amount received) is computed by a database function on recorded money. Move it to verified too (a database change)?

@@ -388,7 +388,12 @@ export type OrganizationSettingKey =
   // approved exception before a deal may be won; unset means only the accepted
   // quotation is required. Its form is Settings › Finance (PDF §7 "Milestone
   // rules where user explicitly changes policy").
-  | 'won_requires_payment_evidence';
+  | 'won_requires_payment_evidence'
+  // PDF gap X1 (owner decision 9, 2026-10-01) — the agency's GST setup. Unset
+  // means regular / monthly / calendar month (src/modules/finance/gst-settings.ts).
+  | 'gst_registration_type'
+  | 'gst_filing_frequency'
+  | 'gst_period_basis';
 
 const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   whatsapp_phone_number_id: 'a numeric WhatsApp phone_number_id (digits only)',
@@ -420,6 +425,9 @@ const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   meeting_offer_horizon_days: 'a whole number of days between 1 and 60',
   funnel_min_leads_to_name_leak: 'a whole number of leads between 5 and 500',
   won_requires_payment_evidence: "the single word 'on' — clear it to turn the payment requirement off",
+  gst_registration_type: "'regular' or 'composition'",
+  gst_filing_frequency: "'monthly' or 'quarterly'",
+  gst_period_basis: "'calendar_month'",
 };
 
 /**

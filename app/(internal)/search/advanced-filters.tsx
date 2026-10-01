@@ -35,6 +35,7 @@ export function AdvancedFilters({
   q,
   type,
   since,
+  mode,
   conditions,
   roster,
   ownerApplies,
@@ -42,6 +43,8 @@ export function AdvancedFilters({
   q: string;
   type?: string;
   since?: string;
+  /** The search mode (keyword / meaning / both); omitted for the default keyword mode. */
+  mode?: string;
   /** The current `field:op:value` conditions. */
   conditions: string[];
   roster: { userId: string; label: string }[];
@@ -62,6 +65,7 @@ export function AdvancedFilters({
       <input type="hidden" name="q" value={q} />
       {type ? <input type="hidden" name="type" value={type} /> : null}
       {since ? <input type="hidden" name="since" value={since} /> : null}
+      {mode ? <input type="hidden" name="mode" value={mode} /> : null}
       <p className="text-[13px] font-semibold text-foreground">Filter builder</p>
       {rows.length === 0 ? <p className="text-xs text-muted">No conditions yet. Add one to narrow the results by status, owner or creation date.</p> : null}
       {rows.map((r, i) => (

@@ -76,11 +76,13 @@ export default async function AuditPage({
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Audit log"
-        description="Every gated change — a settled approval, a consent grant, a config toggle — appended here and never edited. Owner and ops-admin only, scoped to this organization."
+        description="Every gated change — a settled approval, a consent grant, a config toggle — appended here, never edited and never deleted, and kept forever. Owner and ops-admin only, scoped to this organization. Every export is itself logged."
         actions={
-          <a href={`/api/audit/export${qs({})}`} className={buttonClass('secondary', 'sm')}>
-            <IconDownload size={14} /> Export CSV
-          </a>
+          can(context, 'audit.export') ? (
+            <a href={`/api/audit/export${qs({})}`} className={buttonClass('secondary', 'sm')} title="Downloads the matching entries as CSV and records the export in this log">
+              <IconDownload size={14} /> Export CSV
+            </a>
+          ) : undefined
         }
       />
 

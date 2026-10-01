@@ -23,6 +23,11 @@ import { listTaxPeriodLocks, lockStateFor } from '@/modules/finance/tax-lock-que
 import { describeStateCode, gstIdentityIssues, returnPeriodFor, selectForReturn } from '@/modules/finance/gstr';
 import { listGstrInvoices, readGstIdentity } from '@/modules/finance/gstr-queries';
 import { listGstExports } from '@/modules/finance/gst-export-queries';
+import { currentReturnPeriod, filingCheck, GST_FILING_LABEL, gstSetupFrom } from '@/modules/finance/gst-settings';
+import { readOrganizationSettingsRow } from '@/modules/finance/numbering';
+import { createClient } from '@/lib/db/server';
+import { categoryLabel } from '@/modules/finance/expense-categories';
+import { listExpenseCategories } from '@/modules/finance/expense-category-queries';
 import { SavedViewsBar } from '../../saved-views-bar';
 import {
   Badge,
@@ -34,7 +39,6 @@ import {
   DEFAULT_PAGE_SIZE,
   DonutChart,
   EmptyState,
-  humanize,
   IconDownload,
   IconFile,
   IconInvoices,
@@ -144,7 +148,7 @@ export default async function TaxReportPage({
   };
   const currentQuery = qs({}).slice(1);
 
-  const [allInvoices, allReceipts, allExpenses, allPayments, reportExports, savedViews, locks, gstIdentity, gstrRows, gstExports, settingHistory] = await Promise.all([
+  const [allInvoices, allReceipts, allExpenses, allPayments, reportExports, savedViews, locks, gstIdentity, gstrRows, gstExports, settingHistory, orgSettings, expenseCategories] = await Promise.all([
     listTaxReportInvoices(),
     listReceipts(),
     listExpenses(),
@@ -160,6 +164,10 @@ export default async function TaxReportPage({
     listGstExports(),
     // SCR-056: when the tax profile was last set — `organization.gst_identity_set` in the audit trail.
     readSettingHistory(),
+    // Owner decision 9 (2026-10-01): the saved GST setup; unset reads as regular, monthly, calendar month.
+    createClient().then((c) => readOrganizationSettingsRow(c)),
+    // The owner's labels for the expense categories the P&L names (decision 6, 2026-10-01).
+    listExpenseCategories(),
   ]);
   const gstIdentitySetAt = settingHistory.get('gst_identity')?.[0]?.at ?? null;
   // The door's own rule (core.set_gst_identity checks is_owner): owner only.
@@ -169,7 +177,11 @@ export default async function TaxReportPage({
   const returnPeriod = returnPeriodFor(period);
   const identityIssues = gstIdentityIssues(gstIdentity);
   const gstrSelection = selectForReturn(gstrRows, period);
-  const gstrReady = returnPeriod !== null && identityIssues.length === 0;
+  const gstSetup = gstSetupFrom(orgSettings);
+  const nextReturn = currentReturnPeriod(gstSetup, today);
+  // The two files are offered only for a window the saved setup says the agency files (GSTR-1 first: both share the rule).
+  const filing = filingCheck(gstSetup, period, 'GSTR-1');
+  const gstrReady = returnPeriod !== null && identityIssues.length === 0 && filing.ok;
   // SCR-056: the lock state of THIS window. The resolver's half-open ISO
   // instants become calendar days, the shape finance.tax_period_locks holds.
   const lockWindow = period.from && period.to ? { start: period.from.slice(0, 10), end: period.to.slice(0, 10) } : null;
@@ -252,7 +264,7 @@ export default async function TaxReportPage({
       <SavedViewsBar page="/finance/tax" currentQuery={currentQuery} views={savedViews} />
 
       {/* SCR-056: GST configuration — the tax profile, on the tax page, through the Settings form and door. */}
-      <GstConfigurationCard identity={gstIdentity} issues={identityIssues} mayConfigure={mayConfigureTax} effectiveSince={gstIdentitySetAt ? clock.dateTime(gstIdentitySetAt) : null} />
+      <GstConfigurationCard setup={gstSetup} nextReturnLabel={nextReturn.label} identity={gstIdentity} issues={identityIssues} mayConfigure={mayConfigureTax} effectiveSince={gstIdentitySetAt ? clock.dateTime(gstIdentitySetAt) : null} />
 
       {/*
         Period lock — SCR-056. A filed return is a number reported; the lock
@@ -349,18 +361,32 @@ export default async function TaxReportPage({
           description={
             returnPeriod
               ? `Return period ${returnPeriod.slice(0, 2)}/${returnPeriod.slice(2)} — ${gstrSelection.ready.length} GST invoice${gstrSelection.ready.length === 1 ? '' : 's'} in the file${gstrSelection.voided.length > 0 ? `, ${gstrSelection.voided.length} void counted as cancelled documents` : ''}${gstrSelection.excluded.nonGst > 0 ? `, ${gstrSelection.excluded.nonGst} non-GST left out` : ''}${gstrSelection.excluded.unconfirmed > 0 ? `, ${gstrSelection.excluded.unconfirmed} unconfirmed left out` : ''}. GSTR-3B states ITC and inward supplies as nil: no purchase register exists here.`
-              : 'A return is for one month or one quarter. Pick either above to export GSTR-1 and GSTR-3B; a financial year, a custom range and "All time" are not return periods.'
+              : `The agency files ${GST_FILING_LABEL[gstSetup.filingFrequency].toLowerCase()}. Pick ${gstSetup.filingFrequency === 'quarterly' ? 'a quarter' : 'a month'} above to export GSTR-1 and GSTR-3B; a financial year, a custom range and "All time" are not return periods.`
           }
           actions={
             identityIssues.length > 0 ? (
               <Badge tone="warning" dot>identity incomplete</Badge>
             ) : gstrSelection.unresolved.length > 0 ? (
               <Badge tone="warning" dot>{gstrSelection.unresolved.length} unresolved</Badge>
+            ) : returnPeriod && !filing.ok ? (
+              <Badge tone="warning" dot>not a filing period</Badge>
             ) : returnPeriod ? (
               <Badge tone="success" dot>ready</Badge>
             ) : null
           }
         />
+        {!filing.ok ? (
+          <div className="px-4 py-3 sm:px-5">
+            <Callout tone="warning">{filing.message}</Callout>
+          </div>
+        ) : null}
+        {returnPeriod === null || !filing.ok ? (
+          <div className="px-4 py-3 sm:px-5">
+            <Link href={`/finance/tax?period=${nextReturn.value}`} className="text-[13px] font-medium text-brand hover:underline">
+              Open the return period due next: {nextReturn.label}
+            </Link>
+          </div>
+        ) : null}
         {identityIssues.length > 0 ? (
           <div className="px-4 py-3 sm:px-5">
             <Callout tone="warning">
@@ -471,7 +497,7 @@ export default async function TaxReportPage({
                 <ul className="flex flex-wrap gap-1.5 border-t border-line px-4 py-3 sm:px-5">
                   {row.expensesByCategory.map((c) => (
                     <li key={c.category}>
-                      <Badge mono>{humanize(c.category)} · {money(c.amount, row.currency)}</Badge>
+                      <Badge mono>{categoryLabel(expenseCategories, c.category)} · {money(c.amount, row.currency)}</Badge>
                     </li>
                   ))}
                 </ul>

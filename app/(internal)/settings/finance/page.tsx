@@ -11,6 +11,8 @@ import { SUGGESTED_SAC } from '@/modules/finance/gst-identity-schema';
 import { PAYMENT_ACCOUNT_FIELDS, PAYMENT_ACCOUNT_KIND_LABEL } from '@/modules/finance/schema';
 import { readOrganizationSettingsRow, numberingFrom } from '@/modules/finance/numbering';
 import { createClient } from '@/lib/db/server';
+import { gstSetupFrom, GST_FILING_LABEL, GST_REGISTRATION_LABEL } from '@/modules/finance/gst-settings';
+import { countExpensesByCategory, listExpenseCategories } from '@/modules/finance/expense-category-queries';
 import { formatInvoiceNumber } from '@/modules/finance/schema';
 import { Badge, Callout, EmptyState, IconRupee, StatusBadge } from '@/ui';
 
@@ -18,6 +20,8 @@ import { AddPaymentAccountForm, PaymentAccountStatusButton } from './payment-acc
 import { InvoiceReminderPolicyForm } from './reminder-policy-form';
 import { GstIdentityForm } from './gst-identity-form';
 import { InvoiceNumberingForm, WonGateForm } from './numbering-form';
+import { GstSetupForm } from './gst-setup-form';
+import { AddExpenseCategoryForm, ExpenseCategoryRow } from './expense-categories-panel';
 
 export const metadata: Metadata = { title: 'Settings — Finance' };
 
@@ -50,6 +54,12 @@ export default async function SettingsFinancePage() {
   const orgSettings = await readOrganizationSettingsRow(await createClient());
   const numbering = numberingFrom(orgSettings);
   const wonGateOn = orgSettings.won_requires_payment_evidence === 'on';
+
+  // Owner decisions 6 and 9 (2026-10-01): the expense categories and the GST setup.
+  const gstSetup = gstSetupFrom(orgSettings);
+  const mayReadMoney = can(context, 'invoice.read');
+  const categories = mayReadMoney ? await listExpenseCategories() : [];
+  const categoryCounts = mayReadMoney ? await countExpensesByCategory() : new Map<string, number>();
 
   const active = accounts.filter((a) => a.status === 'active');
   const inactive = accounts.filter((a) => a.status === 'inactive');
@@ -198,6 +208,50 @@ export default async function SettingsFinancePage() {
           exception, before it can be marked won. The gate is enforced in the database; this is its switch.
         </p>
         {maySetPolicy ? <WonGateForm on={wonGateOn} /> : <Callout tone="info">Only an owner or ops admin can change this policy.</Callout>}
+      </div>
+
+      {/* Owner decision 9: registration type, filing frequency and tax period, as organization settings through the settings door. */}
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 id="gst-setup" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">GST setup</h2>
+          <Badge tone={gstSetup.explicit.registrationType || gstSetup.explicit.filingFrequency || gstSetup.explicit.periodBasis ? 'success' : 'neutral'} dot>
+            {GST_REGISTRATION_LABEL[gstSetup.registrationType]} · {GST_FILING_LABEL[gstSetup.filingFrequency].replace(' (GSTR-1 and GSTR-3B)', '')}
+          </Badge>
+        </div>
+        <p className="text-xs text-muted">
+          The agency is a regular taxpayer that files GSTR-1 and GSTR-3B monthly, for the calendar month. That is what applies until a value is saved
+          here; the GST &amp; tax page offers the return period due next and the GSTR exports refuse a window this setup does not file.
+        </p>
+        {maySetPolicy ? <GstSetupForm setup={gstSetup} /> : <Callout tone="info">Only an owner or ops admin can change the GST setup.</Callout>}
+      </div>
+
+      {/* Owner decision 6: the owner's list of expense categories. Retired, never deleted. */}
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 id="expense-categories" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Expense categories</h2>
+          <span className="text-xs text-muted">{categories.filter((c) => !c.retired).length} offered · {categories.filter((c) => c.retired).length} retired</span>
+        </div>
+        <p className="text-xs text-muted">
+          What an expense can be filed under on Finance › Expenses. Retire a category to stop offering it; expenses already filed under it keep it,
+          and the list never deletes one. Renaming changes the label everywhere; the stored key stays.
+        </p>
+        {!mayReadMoney ? (
+          <Callout tone="info">Only the owner, ops admin and finance roles read the expense categories.</Callout>
+        ) : categories.length === 0 ? (
+          <EmptyState
+            icon={<IconRupee size={22} />}
+            title="No expense categories"
+            description="Add the first category; expenses cannot be recorded without one."
+            action={maySetPolicy ? <a href="#expense-categories" className="text-[13px] font-medium text-brand hover:underline">Use the form below</a> : undefined}
+          />
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {categories.map((c) => (
+              <ExpenseCategoryRow key={c.key} category={c} inUse={categoryCounts.get(c.key) ?? 0} />
+            ))}
+          </ul>
+        )}
+        {maySetPolicy ? <AddExpenseCategoryForm /> : <Callout tone="info">Only an owner or ops admin can change the categories.</Callout>}
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">

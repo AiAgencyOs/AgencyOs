@@ -91,14 +91,22 @@ describe('B. one door, owner/ops_admin, with a reason, refusing an unscored lead
   });
 });
 
-describe('C. the page draws both numbers, and the list keeps the computed one', () => {
-  test('Lead 360 shows Computed and Human decision side by side, with the reasons still expanded', () => {
+describe('C. no screen shows the number any more (owner decision 1, round 2): a Hot / Warm / Cold label takes its place', () => {
+  test('Lead 360, the qualification screen, the list and the preview draw a label with its reasons and never the stored score', () => {
     const page = read('app/(internal)/leads/[leadId]/page.tsx');
-    assert.match(page, /Computed \(model\)/);
-    assert.match(page, /Human decision/);
-    assert.match(page, /scoreOverride\.reason/);
-    assert.match(page, /leadScore\.reasons\.map\(/);
-    assert.match(page, /mayAssign \? <OverrideScoreForm/);
+    assert.match(page, /LeadHeatBadge/);
+    assert.match(page, /heatReading\.reasons\.map\(/);
+    for (const file of [
+      'app/(internal)/leads/[leadId]/page.tsx',
+      'app/(internal)/leads/[leadId]/qualification/page.tsx',
+      'app/(internal)/leads/page.tsx',
+      'app/(internal)/leads/bulk-table.tsx',
+      'app/(internal)/leads/preview-actions.ts',
+      'app/(internal)/leads/preview-drawer.tsx',
+    ]) {
+      const code = read(file);
+      assert.doesNotMatch(code, /readLeadScore|readLeadScores|readLeadScoreOverride|RescoreLeadForm|OverrideScoreForm|RescoreAllLeadsButton|\/100</, `${file} still reads or draws the score`);
+    }
   });
 });
 

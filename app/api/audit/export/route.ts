@@ -1,11 +1,17 @@
 import { NextResponse } from 'next/server';
 
+import { auditExportFilters, logAuditExport } from '@/lib/audit/export-log';
 import { readAuditPage } from '@/lib/audit/queries';
 import { normaliseSearch } from '@/lib/db/search';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 
-/** The audit log as CSV, under the same filters and the same gate as the page. */
+/**
+ * The audit log as CSV, under the same filters as the page (owner decision 11,
+ * round 2): the owner and the ops admin only (`audit.export`, re-checked in the
+ * database by the logging door), and every export is itself an audit event,
+ * written BEFORE the file is sent — when it cannot be written, no file is sent.
+ */
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -16,13 +22,14 @@ function cell(v: string | number | null | undefined): string {
 
 export async function GET(request: Request) {
   const context = await requireInternal('/audit');
-  if (!can(context, 'audit.read')) {
-    return NextResponse.json({ error: 'You do not have permission to read the audit log.' }, { status: 403 });
+  if (!can(context, 'audit.export')) {
+    return NextResponse.json({ error: 'Only the owner and the ops admin may export the audit log.' }, { status: 403 });
   }
 
   const p = new URL(request.url).searchParams;
   // Every matching entry, page by page (bounded at 10,000 rows so one click cannot stall the server).
   const entries: Awaited<ReturnType<typeof readAuditPage>>['entries'] = [];
+  let capped = false;
   for (let page = 1; page <= 50; page += 1) {
     const chunk = await readAuditPage({
       page,
@@ -36,6 +43,12 @@ export async function GET(request: Request) {
     });
     entries.push(...chunk.entries);
     if (page >= chunk.pageCount) break;
+    if (page === 50) capped = true;
+  }
+
+  // Logged first. A failed log refuses the export: no file leaves unrecorded.
+  if (!(await logAuditExport(auditExportFilters(p, capped), entries.length))) {
+    return NextResponse.json({ error: 'The export could not be recorded in the audit log, so no file was produced. Try again.' }, { status: 500 });
   }
 
   const header = ['Id', 'At', 'Action', 'Subject type', 'Subject id', 'Actor type', 'Actor id', 'Correlation', 'Before', 'After'];

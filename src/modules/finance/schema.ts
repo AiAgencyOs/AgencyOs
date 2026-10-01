@@ -651,13 +651,18 @@ export const recordBillingDetailsSchema = z
 export type ConfirmBillingModeInput = z.infer<typeof confirmBillingModeSchema>;
 export type RecordBillingDetailsInput = z.infer<typeof recordBillingDetailsSchema>;
 
-/** Same vocabulary as the finance.expenses category CHECK (migration 20260921150000). */
-export const EXPENSE_CATEGORIES = ['infrastructure', 'ai', 'tooling', 'vendor', 'contractor', 'other'] as const;
-export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
+/**
+ * The category an expense is filed under is a KEY of the owner's list
+ * (`finance.expense_categories`, owner decision 6 of 2026-10-01), not a fixed
+ * enum: the database's guard refuses a key that is not an active category of
+ * the organization, and `src/modules/finance/expense-categories.ts` holds the
+ * list's pure half.
+ */
+const expenseCategoryKey = z.string().trim().regex(/^[a-z][a-z0-9_]{0,39}$/, 'Pick a category');
 
 export const recordExpenseSchema = z.object({
   projectId: z.uuid().optional(),
-  category: z.enum(EXPENSE_CATEGORIES),
+  category: expenseCategoryKey,
   vendor: z.string().trim().max(200).optional(),
   description: z.string().trim().min(1, 'Say what this was for').max(2000),
   amountMinor: z.number().int().min(0),

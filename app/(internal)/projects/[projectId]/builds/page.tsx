@@ -6,7 +6,7 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { readDeliverableDetails } from '@/modules/projects/build-details-queries';
-import { listEnvironmentReadiness, readReleaseGates } from '@/modules/projects/environment-readiness-queries';
+import { listEnvironmentCheckRuns, listEnvironmentReadiness, readReleaseGates } from '@/modules/projects/environment-readiness-queries';
 import { READINESS_CHECK_LABEL, READINESS_CHECKS } from '@/modules/projects/environment-readiness-schema';
 import { listGitActions } from '@/modules/projects/git-queries';
 import { getProject, listDependencies, listDeliverables, listEnvironments, readPlanBoard } from '@/modules/projects/queries';
@@ -22,7 +22,8 @@ import {
 } from '../environments-panel';
 import { ProjectSubNav } from '../project-subnav';
 import { BuildDetailsForm } from '../prototype/build-panels';
-import { PromoteBuildPanel, RecordCheckPanel, TriggerBuildPanel } from './environment-readiness-panels';
+import { describeCheckRun } from '@/modules/projects/environment-check-runs';
+import { PromoteBuildPanel, ReadCheckResultButton, RecordCheckPanel, RunChecksPanel, TriggerBuildPanel } from './environment-readiness-panels';
 
 export const metadata: Metadata = { title: 'Builds' };
 
@@ -56,7 +57,7 @@ export default async function BuildsPage({ params, searchParams }: { params: Pro
 
   const clock = await agencyClock();
   const canWrite = can(context, 'project.write');
-  const [deliverables, environments, dependencies, board, readiness, gates, link, gitActions, details] = await Promise.all([
+  const [deliverables, environments, dependencies, board, readiness, gates, link, gitActions, details, checkRuns] = await Promise.all([
     listDeliverables(projectId),
     listEnvironments(projectId),
     listDependencies(projectId),
@@ -66,6 +67,7 @@ export default async function BuildsPage({ params, searchParams }: { params: Pro
     getRepositoryLink(projectId),
     listGitActions(projectId, 10),
     readDeliverableDetails(projectId),
+    listEnvironmentCheckRuns(projectId),
   ]);
   const allBuilds = deliverables.filter((d) => d.kind === 'build');
   const q = (qRaw ?? '').trim().slice(0, 120).toLowerCase();
@@ -169,7 +171,7 @@ export default async function BuildsPage({ params, searchParams }: { params: Pro
       <Card id="environments" className="scroll-mt-4">
         <CardHeader
           title="Environment readiness"
-          description="Per environment: API contracts, DB migrations and external service configuration, each recorded by a person with evidence. Migration/API compatibility is these checks; promotion refuses until all three are ok and no release gate is red."
+          description="Per environment: API contracts, DB migrations and external service configuration, each recorded by a person with evidence, or by a GitHub workflow dispatched from here (the run's link is the evidence). Migration/API compatibility is these checks; promotion refuses until all three are ok and no release gate is red."
         />
         <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
           {readiness.length === 0 ? (
@@ -198,6 +200,29 @@ export default async function BuildsPage({ params, searchParams }: { params: Pro
                           <Badge tone={e.ready ? 'success' : 'warning'} dot={false} className="mt-1 w-fit">
                             {e.ready ? 'ready' : 'not ready'}
                           </Badge>
+                          {/* Owner decision 13: the contract and migration checks run as a GitHub workflow dispatched from here. */}
+                          {(checkRuns.get(e.id) ?? []).map((r) => (
+                            <span key={r.id} className="mt-1 flex flex-col text-xs text-muted">
+                              <span>
+                                {describeCheckRun(r)}
+                                {r.runUrl ? (
+                                  <>
+                                    {' '}
+                                    <a href={r.runUrl} target="_blank" rel="noreferrer noopener" className="underline underline-offset-2">
+                                      run
+                                    </a>
+                                  </>
+                                ) : null}
+                              </span>
+                              <span>{clock.dateTime(r.dispatchedAt)}</span>
+                            </span>
+                          ))}
+                          {canWrite ? (
+                            <span className="mt-2 flex flex-col gap-2">
+                              <RunChecksPanel projectId={projectId} environmentId={e.id} linked={Boolean(link)} />
+                              {link && (checkRuns.get(e.id) ?? []).some((r) => !r.recorded) ? <ReadCheckResultButton projectId={projectId} environmentId={e.id} /> : null}
+                            </span>
+                          ) : null}
                         </span>
                       </td>
                       {READINESS_CHECKS.map((c) => {
@@ -216,6 +241,7 @@ export default async function BuildsPage({ params, searchParams }: { params: Pro
                                     <span className="text-xs text-muted">no evidence link</span>
                                   )}
                                   {entry.checkedAt ? <span className="text-xs text-muted">{clock.dateTime(entry.checkedAt)}</span> : null}
+                                  {entry.source === 'workflow' ? <span className="text-xs text-muted">by GitHub workflow</span> : null}
                                 </span>
                               ) : (
                                 <Badge tone="neutral">not checked</Badge>

@@ -58,7 +58,7 @@ export function QuotationComposer({
   /** G-207 — the Admin-maintained third-party charges; the only figures a quotation may cite for them. */
   charges?: readonly { service: string; charge: string; source: string | null; checkedOn: string; stale: boolean }[];
   /** The agency's payment structures, for the schedule preview. */
-  structures?: readonly { name: string; minAmountMinor: number | null; maxAmountMinor: number | null; milestones: { label: string; pct: number }[] }[];
+  structures?: readonly { name: string; isDefault?: boolean; minAmountMinor: number | null; maxAmountMinor: number | null; milestones: { label: string; pct: number }[] }[];
   /** SCR-012 — who may own the deal; present only when the caller may assign (`lead.assign`). */
   roster?: readonly { userId: string; fullName: string; role: string }[];
 }) {
@@ -98,7 +98,9 @@ export function QuotationComposer({
     setLines((ls) => [...ls, { key: Date.now(), description: `${service} — ${charge} (third-party, at cost)`, quantity: '1', unitPrice: price }]);
   };
   const structure = (structures ?? []).find((st) => st.name === structureName) ?? null;
-  const suggestedStructure = (structures ?? []).find((st) => (st.minAmountMinor === null || total * 100 >= st.minAmountMinor) && (st.maxAmountMinor === null || total * 100 <= st.maxAmountMinor)) ?? null;
+  // The seeded 30/20/30/20 is the default (owner decision 2, round 2): a structure the owner set that fits wins, the default applies when nothing else does.
+  const fitting = (structures ?? []).filter((st) => (st.minAmountMinor === null || total * 100 >= st.minAmountMinor) && (st.maxAmountMinor === null || total * 100 < st.maxAmountMinor));
+  const suggestedStructure = fitting.find((st) => !st.isDefault) ?? fitting[0] ?? null;
   const suggestedTax = taxRatePercent !== null ? Math.round((Math.max(0, subtotal - discountN) * taxRatePercent) / 100) : null;
   const gstRate = taxRatePercent ?? 18;
   const gstTax = Math.round((Math.max(0, subtotal - discountN) * gstRate) / 100);

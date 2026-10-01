@@ -37,7 +37,7 @@ export async function getDashboardDeltas(now: Date, want: { leads: boolean; proj
       ? supabase.schema('projects').from('projects').select('created_at').is('deleted_at', null).gte('created_at', from)
       : Promise.resolve({ data: [], error: null }),
     want.revenue
-      ? supabase.schema('finance').from('invoices').select('paid_at, paid_minor').eq('status', 'paid').gte('paid_at', from)
+      ? supabase.schema('finance').from('payments').select('verified_at, amount_minor').eq('status', 'captured').not('verified_at', 'is', null).gte('verified_at', from)
       : Promise.resolve({ data: [], error: null }),
     want.leads
       ? supabase.schema('crm').from('conversation_messages').select('occurred_at').eq('metadata->>direction', 'outbound').gte('occurred_at', from)
@@ -54,7 +54,7 @@ export async function getDashboardDeltas(now: Date, want: { leads: boolean; proj
   return {
     leads: want.leads ? countPeriods((leads.data ?? []).map((r: { created_at: string }) => r.created_at), now, DAYS) : zero,
     projects: want.projects ? countPeriods((projects.data ?? []).map((r: { created_at: string }) => r.created_at), now, DAYS) : zero,
-    revenue: want.revenue ? sumPeriods((revenue.data ?? []).map((r: { paid_at: string | null; paid_minor: number }) => ({ at: r.paid_at, amount: r.paid_minor })), now, DAYS) : zero,
+    revenue: want.revenue ? sumPeriods((revenue.data ?? []).map((r: { verified_at: string | null; amount_minor: number }) => ({ at: r.verified_at, amount: r.amount_minor })), now, DAYS) : zero,
     messages: want.leads ? countPeriods((messages.data ?? []).map((r: { occurred_at: string }) => r.occurred_at), now, DAYS) : zero,
     runs: want.usage ? sumPeriods((runs.data ?? []).map((r: { day: string; runs: number }) => ({ at: `${r.day}T12:00:00Z`, amount: Number(r.runs) })), now, DAYS) : zero,
   };

@@ -444,7 +444,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
               label="Revenue (This Month)"
               href="/finance"
               value={revenue.length === 0 ? money(0, 'INR') : revenue.map((r) => money(r.paidMinor, r.currency)).join(' + ')}
-              caption="Payments recorded"
+              caption="Verified payments"
               trend={trendOf(periodDelta(deltas.revenue))}
               tone="success"
               icon={<IconInvoices size={16} />}

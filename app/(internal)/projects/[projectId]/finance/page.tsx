@@ -10,6 +10,7 @@ import { readProjectMargin } from '@/modules/finance/margin-queries';
 import { gstLine, lastPaymentAt, methodsUsed, receivedPayments, transactionStatus } from '@/modules/finance/project-finance';
 import { readProjectPayments } from '@/modules/finance/project-finance-queries';
 import { listProjectInvoices } from '@/modules/finance/queries';
+import { owedOn, verifiedOn } from '@/modules/finance/verified-basis';
 import { listProjectNotes } from '@/modules/projects/project-notes-queries';
 import { getProject, listPaymentPlan } from '@/modules/projects/queries';
 import { Badge, Card, CardHeader, cx, EmptyState, IconCalendar, IconCheck, IconClock, IconFile, IconInvoices, IconRupee, PermissionDenied, ProgressBar, QuickActions, Stat, StatGrid, StatusBadge, ViewAll } from '@/ui';
@@ -56,14 +57,15 @@ export default async function ProjectFinancePage({ params }: { params: Promise<{
   const currency = project.currency;
   const live = invoices.filter((i) => i.status !== 'void');
   const invoiced = live.reduce((n, i) => n + i.total_minor, 0);
-  const received = live.reduce((n, i) => n + i.paid_minor, 0);
+  // The ONE basis (verified-basis.ts): received is what was VERIFIED, not what was recorded.
+  const received = live.reduce((n, i) => n + verifiedOn(i), 0);
   const pending = Math.max(0, invoiced - received);
   const budget = project.budget_minor ?? 0;
   const value = budget > 0 ? budget : invoiced;
   const percentReceived = value > 0 ? Math.min(100, Math.round((received / value) * 100)) : 0;
-  const unpaid = live.filter((i) => i.paid_minor < i.total_minor && i.due_at).sort((a, b) => (a.due_at ?? '').localeCompare(b.due_at ?? ''));
+  const unpaid = live.filter((i) => owedOn(i) > 0 && i.due_at).sort((a, b) => (a.due_at ?? '').localeCompare(b.due_at ?? ''));
   const nextDue = unpaid[0] ?? null;
-  const paidCount = live.filter((i) => i.total_minor > 0 && i.paid_minor >= i.total_minor).length;
+  const paidCount = live.filter((i) => i.total_minor > 0 && owedOn(i) === 0).length;
   const invoiceForMilestone = (milestoneId: string) => live.find((i) => i.milestone_id === milestoneId) ?? null;
   const canCreateInvoice = can(context, 'invoice.create');
 
@@ -91,7 +93,7 @@ export default async function ProjectFinancePage({ params }: { params: Promise<{
         <Stat label="Amount Received" value={<span className="text-xl">{money(received, currency)}</span>} caption={`${percentReceived}% of value`} tone="info" icon={<IconCheck size={16} />} />
         <Stat label="Pending Amount" value={<span className="text-xl">{money(pending, currency)}</span>} caption="Invoiced, not yet received" tone="warning" icon={<IconClock size={16} />} />
         <Stat label="Total Invoices" value={String(live.length)} caption={`${paidCount} paid, ${live.length - paidCount} pending`} tone="brand" icon={<IconFile size={16} />} href="/invoices" />
-        <Stat label="Next Payment Due" value={<span className="text-xl">{nextDue ? money(nextDue.total_minor - nextDue.paid_minor, currency) : '—'}</span>} caption={nextDue?.due_at ? `Due on ${clock.date(nextDue.due_at)}` : 'Nothing due'} tone={nextDue?.due_at && clock.dayKey(nextDue.due_at) < clock.dayKey(new Date()) ? 'danger' : 'accent'} icon={<IconCalendar size={16} />} />
+        <Stat label="Next Payment Due" value={<span className="text-xl">{nextDue ? money(owedOn(nextDue), currency) : '—'}</span>} caption={nextDue?.due_at ? `Due on ${clock.date(nextDue.due_at)}` : 'Nothing due'} tone={nextDue?.due_at && clock.dayKey(nextDue.due_at) < clock.dayKey(new Date()) ? 'danger' : 'accent'} icon={<IconCalendar size={16} />} />
       </StatGrid>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(19rem,1fr)]">
@@ -105,7 +107,7 @@ export default async function ProjectFinancePage({ params }: { params: Promise<{
                 {plan.map((m, i) => {
                   const inv = invoiceForMilestone(m.id);
                   const amount = m.amount_minor ?? (m.payment_percent !== null && budget > 0 ? Math.round((budget * Number(m.payment_percent)) / 100) : null);
-                  const paid = inv !== null && inv.total_minor > 0 && inv.paid_minor >= inv.total_minor;
+                  const paid = inv !== null && inv.total_minor > 0 && owedOn(inv) === 0;
                   return (
                     <li key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-5">
                       <span className={cx('flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold', paid ? 'bg-success text-white' : 'border border-line-strong bg-surface text-muted')}>
@@ -152,7 +154,7 @@ export default async function ProjectFinancePage({ params }: { params: Promise<{
                         <td className="py-2.5"><Link href={`/invoices/${inv.id}`} className="font-medium text-brand hover:underline">{inv.number ?? 'Draft'}</Link></td>
                         <td className="py-2.5 text-muted">{plan.find((m) => m.id === inv.milestone_id)?.name ?? '—'}</td>
                         <td className="tabular py-2.5 text-right">{money(inv.total_minor, inv.currency)}</td>
-                        <td className="py-2.5 pl-4"><StatusBadge status={inv.total_minor > 0 && inv.paid_minor >= inv.total_minor ? 'paid' : inv.status} dot={false} /></td>
+                        <td className="py-2.5 pl-4"><StatusBadge status={inv.total_minor > 0 && owedOn(inv) === 0 ? 'paid' : inv.status} dot={false} /></td>
                         <td className="py-2.5 text-muted">{inv.issued_at ? clock.date(inv.issued_at) : '—'}</td>
                         <td className="px-4 py-2.5 text-muted sm:px-5">{inv.due_at ? clock.date(inv.due_at) : '—'}</td>
                       </tr>

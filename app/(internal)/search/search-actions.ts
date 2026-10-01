@@ -1,10 +1,12 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 
 import { editSearch, forgetSearch, listMySearches, normalizeFilters, recordSearch, saveSearch, type SavedSearch } from '@/lib/admin/saved-searches';
 import { getAuthContext } from '@/lib/auth/session';
 import { isInternalRole } from '@/lib/auth/claims';
+import { startBackfill, stopIndexing } from '@/lib/search/semantic-admin';
 import type { FormState } from '@/modules/identity/types';
 
 /**
@@ -46,4 +48,24 @@ export async function editSearchAction(_prev: FormState, formData: FormData): Pr
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath('/search');
   return { status: 'success', message: 'Saved.' };
+}
+
+/**
+ * Search by meaning, the owner's two doors (decision 14). The backfill is only
+ * ever reached from the estimate screen, whose form carries the record count
+ * the estimate was made for; the door re-checks the owner and audits.
+ */
+export async function startSemanticBackfillAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const records = Number(formData.get('records'));
+  const result = await startBackfill(records);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/search');
+  redirect('/search?mode=meaning');
+}
+
+export async function stopSemanticAction(_prev: FormState, _formData: FormData): Promise<FormState> {
+  const result = await stopIndexing();
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/search');
+  return { status: 'success', message: 'Search by meaning is off.' };
 }

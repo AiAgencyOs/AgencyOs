@@ -8,7 +8,9 @@ import { can } from '@/lib/authz/permissions';
 import { listExpenses, listInvoices } from '@/modules/finance/queries';
 import { readAiCostByAgent } from '@/modules/finance/ai-cost-queries';
 import { filterExpenses, projectProfitability, type ProjectCosts } from '@/modules/finance/project-profitability';
-import { EXPENSE_CATEGORIES } from '@/modules/finance/schema';
+import { categoryLabel, filterableCategories, offeredCategories, type ExpenseCategory } from '@/modules/finance/expense-categories';
+import { listExpenseCategories } from '@/modules/finance/expense-category-queries';
+import { expenseReceiptHref } from '@/modules/finance/attachment-links';
 import { financeBasis, principalCurrency } from '@/modules/finance/verified-basis';
 import { readBudgetVarianceByProject } from '@/modules/finance/budget-variance-queries';
 import { rollupByVendor } from '@/modules/finance/vendor-rollup';
@@ -59,18 +61,19 @@ const columnsFor = (
   projectName: (id: string | null) => string,
   editable: boolean,
   projects: readonly { id: string; name: string }[],
+  categories: readonly ExpenseCategory[],
 ): Column<Row>[] => [
   { key: 'description', header: 'What', primary: true, cell: (e) => e.description },
-  { key: 'category', header: 'Category', badge: true, cell: (e) => e.category },
+  { key: 'category', header: 'Category', badge: true, cell: (e) => categoryLabel(categories, e.category) },
   { key: 'vendor', header: 'Vendor', cellClassName: 'text-muted', cell: (e) => e.vendor ?? '—' },
   {
     key: 'receipt',
     header: 'Receipt',
     desktopOnly: true,
     cell: (e) =>
-      e.receiptUrl ? (
-        <a href={e.receiptUrl} target="_blank" rel="noreferrer" className="text-xs font-medium text-brand hover:underline">
-          Open
+      expenseReceiptHref(e) ? (
+        <a href={expenseReceiptHref(e) ?? undefined} target="_blank" rel="noreferrer" className="text-xs font-medium text-brand hover:underline">
+          {e.receiptFileName ? 'Open file' : 'Open'}
         </a>
       ) : (
         <span className="text-xs text-muted">—</span>
@@ -94,7 +97,7 @@ const columnsFor = (
     sortKey: 'incurred',
   },
   ...(editable
-    ? [{ key: 'edit', header: '', align: 'right' as const, desktopOnly: true, cell: (e: Row) => <EditExpenseForm expense={e} projects={projects} /> }]
+    ? [{ key: 'edit', header: '', align: 'right' as const, desktopOnly: true, cell: (e: Row) => <EditExpenseForm expense={e} projects={projects} categories={categories} /> }]
     : []),
 ];
 
@@ -129,11 +132,13 @@ export default async function ExpensesPage({
   if (!can(context, 'invoice.read')) return <PermissionDenied />;
 
   const raw = await searchParams;
+  // The owner's list (Settings › Finance): a failed read throws, it never falls back to a list that may be stale.
+  const categories = await listExpenseCategories();
   const { page: pageParam, sort: sortKey, dir, q: qRaw } = raw;
   // SCR-055 filters: category, project (or overhead), vendor, date range — from the URL, like every list here.
   const dayShape = /^\d{4}-\d{2}-\d{2}$/;
   const expenseFilter = {
-    category: (EXPENSE_CATEGORIES as readonly string[]).includes(raw.category ?? '') ? raw.category : undefined,
+    category: categories.some((c) => c.key === raw.category) ? raw.category : undefined,
     project: raw.project === 'none' || /^[0-9a-f-]{36}$/i.test(raw.project ?? '') ? raw.project : undefined,
     vendor: raw.vendor?.trim() || undefined,
     from: raw.from && dayShape.test(raw.from) ? raw.from : undefined,
@@ -262,7 +267,7 @@ export default async function ExpensesPage({
       <StatGrid cols={4}>
         <Stat label="Total Expenses" value={money(expenses.filter((e) => e.currency === basisCurrency).reduce((n, e) => n + e.amountMinor, 0), basisCurrency)} caption={`${expenses.length} recorded${filterActive || q ? ' in this filter' : ''}${byCurrency.size > 1 ? ` · other currencies: ${[...byCurrency.keys()].filter((c) => c !== basisCurrency).join(', ')}` : ''}`} tone="danger" icon={<IconInvoices size={16} />} />
         <Stat label="Project Margin" value={money(marginTotal, basisCurrency)} caption={`verified revenue less expenses, AI and time cost · net profit before AI and time ${money(basis.netMinor, basisCurrency)}`} tone={marginTotal >= 0 ? 'success' : 'danger'} icon={<IconInvoices size={16} />} href="#profitability" />
-        <Stat label="Cost Categories" value={String(categoryTotals.size)} caption={topCategory ? `largest: ${humanize(topCategory[0])} ${money(topCategory[1], basisCurrency)}` : 'nothing recorded'} tone="info" icon={<IconInvoices size={16} />} href="#expense-list" />
+        <Stat label="Cost Categories" value={String(categoryTotals.size)} caption={topCategory ? `largest: ${categoryLabel(categories, topCategory[0])} ${money(topCategory[1], basisCurrency)}` : 'nothing recorded'} tone="info" icon={<IconInvoices size={16} />} href="#expense-list" />
         <Stat label="Budget vs Actual" value={budgetTotal > 0 ? `${Math.round((budgetActual / budgetTotal) * 1000) / 10}%` : '—'} caption={budgetTotal > 0 ? `${money(budgetActual, basisCurrency)} of ${money(budgetTotal, basisCurrency)} budgeted (${withBudget.length} project${withBudget.length === 1 ? '' : 's'})` : 'no project has a budget recorded'} tone={budgetTotal > 0 && budgetActual > budgetTotal ? 'danger' : 'neutral'} icon={<IconInvoices size={16} />} href="#budget-vs-actual" />
       </StatGrid>
 
@@ -408,7 +413,7 @@ export default async function ExpensesPage({
                 {vendors.map((v) => (
                   <tr key={`${v.vendor}|${v.currency}`} className="border-b border-line">
                     <td className="px-4 py-2 font-medium sm:px-5">{v.vendor}</td>
-                    <td className="px-4 py-2 text-muted">{v.categories.join(', ')}</td>
+                    <td className="px-4 py-2 text-muted">{v.categories.map((k) => categoryLabel(categories, k)).join(', ')}</td>
                     <td className="px-4 py-2 text-right tabular text-muted">{v.count}</td>
                     <td className="px-4 py-2 text-right text-muted">{clock.date(v.lastIncurredOn)}</td>
                     <td className="px-4 py-2 text-right tabular font-medium sm:pr-5">{money(v.totalMinor, v.currency)}</td>
@@ -420,7 +425,7 @@ export default async function ExpensesPage({
         </Card>
       ) : null}
 
-      {canRecord ? <RecordExpenseForm projects={projects.map((p) => ({ id: p.id, name: p.name }))} /> : null}
+      {canRecord ? <RecordExpenseForm projects={projects.map((p) => ({ id: p.id, name: p.name }))} categories={offeredCategories(categories)} /> : null}
 
       {/* Search within domain (bucket G-3) plus SCR-055's filters: category, project, vendor, date range. */}
       <FilterBar clearHref="/finance/expenses" filtered={filterActive || Boolean(q)}>
@@ -432,8 +437,8 @@ export default async function ExpensesPage({
             <label className={labelClass} htmlFor="exp-category">Category</label>
             <select id="exp-category" name="category" defaultValue={expenseFilter.category ?? ''} className={`${selectClass} sm:w-40`}>
               <option value="">Every category</option>
-              {EXPENSE_CATEGORIES.map((c) => (
-                <option key={c} value={c}>{humanize(c)}</option>
+              {filterableCategories(categories).map((c) => (
+                <option key={c.key} value={c.key}>{c.retired ? `${c.label} (retired)` : c.label}</option>
               ))}
             </select>
           </div>
@@ -467,7 +472,7 @@ export default async function ExpensesPage({
         <div id="expense-list" className="flex flex-col gap-5">
           <DataTable
             rows={pageRows}
-            columns={columnsFor(clock, projectName, canRecord, projects.map((p) => ({ id: p.id, name: p.name })))}
+            columns={columnsFor(clock, projectName, canRecord, projects.map((p) => ({ id: p.id, name: p.name })), categories)}
             getKey={(e) => e.id}
             sort={{
               key: sortKey,

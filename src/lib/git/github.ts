@@ -520,3 +520,49 @@ export async function readGithubPullReviews(
   if (!Array.isArray(reviews.body)) return { ok: false, reason: 'unexpected', detail: 'reviews did not answer with a list' };
   return { ok: true, data: reviews.body.map((r) => ({ user: r.user?.login ?? null, state: r.state })) };
 }
+
+export type GithubWorkflowRun = {
+  id: number;
+  /** queued | in_progress | completed (GitHub's own words). */
+  status: string;
+  /** success | failure | cancelled | skipped | timed_out | … — null until completed. */
+  conclusion: string | null;
+  url: string;
+  createdAt: string;
+  /** The run's title; a workflow whose `run-name` includes the dispatch key makes a run matchable exactly. */
+  displayTitle: string;
+  headBranch: string;
+};
+
+/**
+ * Recent `workflow_dispatch` runs of one workflow file on one branch — the
+ * status read behind the environment checks (owner decision 13). A GET like
+ * every read in this file. GitHub's dispatch answers 204 with no run id, so
+ * the run is found afterwards, newest first.
+ */
+export async function readGithubWorkflowRuns(
+  link: { owner: string; repo: string },
+  workflowFile: string,
+  branch: string,
+): Promise<{ ok: true; data: GithubWorkflowRun[] } | { ok: false; reason: GithubReadReason; detail: string }> {
+  const token = await githubToken();
+  if (!token) return { ok: false, reason: 'not_configured', detail: 'GITHUB_TOKEN is unset' };
+  const base = `/repos/${encodeURIComponent(link.owner)}/${encodeURIComponent(link.repo)}`;
+  const runs = await githubGet<{
+    workflow_runs?: { id: number; status: string; conclusion: string | null; html_url: string; created_at: string; display_title?: string; head_branch?: string }[];
+  }>(token, `${base}/actions/workflows/${encodeURIComponent(workflowFile)}/runs?event=workflow_dispatch&branch=${encodeURIComponent(branch)}&per_page=30`);
+  if (!runs.ok) return runs;
+  if (!Array.isArray(runs.body?.workflow_runs)) return { ok: false, reason: 'unexpected', detail: 'workflow runs did not answer with a list' };
+  return {
+    ok: true,
+    data: runs.body.workflow_runs.map((r) => ({
+      id: r.id,
+      status: r.status,
+      conclusion: r.conclusion,
+      url: r.html_url,
+      createdAt: r.created_at,
+      displayTitle: r.display_title ?? '',
+      headBranch: r.head_branch ?? '',
+    })),
+  };
+}

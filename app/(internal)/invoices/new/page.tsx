@@ -7,6 +7,8 @@ import { listProjectBillingSummaries } from '@/modules/finance/queries';
 import { readGstIdentity } from '@/modules/finance/gstr-queries';
 import { buttonClass, Card, EmptyState, IconInvoices, PageHeader, PermissionDenied } from '@/ui';
 
+import { TrailLabel } from '../../trail-label';
+
 import { ComposerForm } from './composer-form';
 
 export const metadata: Metadata = { title: 'New Invoice' };
@@ -25,6 +27,7 @@ export default async function NewInvoicePage() {
 
   return (
     <div className="flex flex-col gap-5">
+      <TrailLabel name="New invoice" />
       <PageHeader
         title="New Invoice"
         description="Compose a draft for a project: lines, tax by the project's confirmed billing mode, then review. Issuing is a separate step on the invoice."

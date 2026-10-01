@@ -11,6 +11,7 @@ import { listPaymentAccounts, listPayments, listPendingPaymentClaims } from '@/m
 import { listPaymentSubmissions } from '@/modules/finance/overview-queries';
 import { filterPayments, paymentFilterQuery, parsePaymentFilter } from '@/modules/finance/payment-filters';
 import { isClaimAwaiting } from '@/modules/finance/schema';
+import { claimProofHref, proofIsImage } from '@/modules/finance/attachment-links';
 import { isVerifiedPayment } from '@/modules/finance/verified-basis';
 import { listReconciliationItems, listReconciliations, readMatchProposal } from '@/modules/finance/reconciliation-queries';
 import { listBankStatementLines } from '@/modules/finance/bank-import-queries';
@@ -233,6 +234,7 @@ export default async function PaymentsPage({
   const pendingCount = claims.filter((c) => isClaimAwaiting(c.status)).length;
   const verifiedCount = claims.filter((c) => c.status === 'verified').length;
   const rejectedCount = claims.filter((c) => c.status === 'rejected').length;
+  const pendingProofHref = (c: (typeof pendingClaims)[number]) => claimProofHref({ id: c.id, proofUrl: c.proof_url, proofFileName: c.proof_file_name });
   const claimViews = claims.map((c) => ({
     id: c.id,
     invoiceId: c.invoiceId,
@@ -243,7 +245,9 @@ export default async function PaymentsPage({
     reference: c.reference,
     payerName: c.payerName,
     paidAtLabel: c.paidAt ? clock.date(c.paidAt) : null,
-    proofUrl: c.proofUrl,
+    proofUrl: claimProofHref(c),
+    proofIsImage: proofIsImage(claimProofHref(c), c.proofFileName),
+    proofUploaded: Boolean(c.proofFileName),
     status: c.status,
     submittedAtLabel: clock.dateTime(c.submittedAt),
     verifiedAtLabel: c.verifiedAt ? clock.dateTime(c.verifiedAt) : null,
@@ -319,7 +323,7 @@ export default async function PaymentsPage({
                   <li key={c.id} className="rounded-lg border border-line bg-canvas p-3 text-[13px]">
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
                       <span className="font-semibold tabular">{money(c.amount_minor, c.currency)} · <Link href={`/invoices/${c.invoice_id}`} className="font-mono text-xs underline-offset-2 hover:underline">{c.invoiceNumber}</Link></span>
-                      <span className="text-xs text-muted">{c.clientName ?? 'Unknown client'} · claimed {clock.date(c.submitted_at)}{c.proof_url ? ' · ' : ''}{c.proof_url ? <a href={c.proof_url} target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">proof</a> : null}</span>
+                      <span className="text-xs text-muted">{c.clientName ?? 'Unknown client'} · claimed {clock.date(c.submitted_at)}{pendingProofHref(c) ? ' · ' : ''}{pendingProofHref(c) ? <a href={pendingProofHref(c) ?? undefined} target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">{c.proof_file_name ? 'uploaded proof' : 'proof'}</a> : null}</span>
                     </div>
                     <VerifyClaimForm projectId={c.projectId ?? null} claim={c} />
                   </li>

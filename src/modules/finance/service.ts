@@ -60,6 +60,11 @@ import {
   type RequestPaymentEvidenceInput,
 } from './schema';
 import { composeLines } from './invoice-composer';
+import type { StoreFinanceAttachmentInput } from './attachment';
+// The upload path (storage + credentials guard) is loaded only when a file was actually chosen, so the
+// ledger's other doors do not pull the storage client (and its environment) in with them.
+const hasChosenFile = (file: unknown): file is File => typeof File !== 'undefined' && file instanceof File && file.size > 0;
+const storeFinanceAttachment = async (input: StoreFinanceAttachmentInput) => (await import('./attachment')).storeFinanceAttachment(input);
 
 /**
  * Writes for the finance module — its only public surface.
@@ -1776,6 +1781,7 @@ export async function verifyPayment(input: VerifyPaymentInput): Promise<Result<V
  */
 export async function recordPaymentSubmission(
   input: RecordPaymentSubmissionInput,
+  proofFile?: File | null,
 ): Promise<Result<{ submissionId: string }>> {
   const parsed = recordPaymentSubmissionSchema.safeParse(input);
   if (!parsed.success) {
@@ -1792,10 +1798,23 @@ export async function recordPaymentSubmission(
 
   const supabase = await createClient();
 
+  // Owner decision 5 (2026-10-01): the proof may be a file under the project
+  // file rules and the credentials guard, as well as the link it could always
+  // be. The object is stored first (the row carries its path) so a failed
+  // upload leaves no claim pointing at nothing.
+  const submissionId = crypto.randomUUID();
+  let stored: { path: string; fileName: string } | null = null;
+  if (hasChosenFile(proofFile)) {
+    const upload = await storeFinanceAttachment({ supabase, organizationId: context.organizationId, kind: 'claim-proof', recordId: submissionId, file: proofFile });
+    if (!upload.ok) return upload;
+    stored = upload.data;
+  }
+
   const { data, error } = await supabase
     .schema('finance')
     .from('payment_submissions')
     .insert({
+      id: submissionId,
       organization_id: context.organizationId,
       invoice_id: parsed.data.invoiceId,
       amount_minor: parsed.data.amountMinor,
@@ -1804,6 +1823,7 @@ export async function recordPaymentSubmission(
       payer_name: parsed.data.payerName ?? null,
       paid_at: parsed.data.paidAt ?? null,
       proof_url: parsed.data.proofUrl ?? null,
+      ...(stored ? { proof_storage_path: stored.path, proof_file_name: stored.fileName } : {}),
       account_id: parsed.data.accountId ?? null,
       submitted_by: context.userId,
     })
@@ -1812,7 +1832,7 @@ export async function recordPaymentSubmission(
 
   if (error) {
     console.error(
-      JSON.stringify({ level: 'error', scope: 'recordPaymentSubmission', detail: error.message }),
+      JSON.stringify({ level: 'error', scope: 'recordPaymentSubmission', detail: error.message, orphanedObject: stored?.path }),
     );
     // §12's "duplicate references are flagged" is a partial unique index, and a
     // repeat of a reference that already exists is the caller telling us
@@ -2201,6 +2221,18 @@ export async function issueFreeMaintenanceInvoice(
 }
 
 /**
+ * A write refused by the category guard (23514) is the caller picking a
+ * category the owner's list does not offer (any more) — say so in words,
+ * rather than "could not record".
+ */
+function expenseWriteProblem(error: { code?: string; message?: string } | null, fallback: string): ['VALIDATION' | 'INTERNAL', string] {
+  if (error?.code === '23514' && /expense category/.test(error.message ?? '')) {
+    return ['VALIDATION', 'That category is not on the list any more. Pick one of the categories in Settings › Finance.'];
+  }
+  return ['INTERNAL', fallback];
+}
+
+/**
  * Records an internal cost — SCR-055, finance.expenses (20260921150000).
  *
  * `invoice.issue` (owner, ops_admin) rather than a new capability: exactly
@@ -2210,7 +2242,7 @@ export async function issueFreeMaintenanceInvoice(
  * Deliberately not `invoice.read`, which the finance role also holds: G-314
  * built that role to READ money, and this is a write.
  */
-export async function recordExpense(input: RecordExpenseInput): Promise<Result<{ expenseId: string }>> {
+export async function recordExpense(input: RecordExpenseInput, receiptFile?: File | null): Promise<Result<{ expenseId: string }>> {
   const parsed = recordExpenseSchema.safeParse(input);
   if (!parsed.success) {
     return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid expense.');
@@ -2223,10 +2255,22 @@ export async function recordExpense(input: RecordExpenseInput): Promise<Result<{
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
 
   const supabase = await createClient();
+
+  // Owner decision 5 (2026-10-01): a receipt may be uploaded (project file
+  // rules, credentials guard) as well as linked.
+  const expenseId = crypto.randomUUID();
+  let stored: { path: string; fileName: string } | null = null;
+  if (hasChosenFile(receiptFile)) {
+    const upload = await storeFinanceAttachment({ supabase, organizationId: context.organizationId, kind: 'expense-receipt', recordId: expenseId, file: receiptFile });
+    if (!upload.ok) return upload;
+    stored = upload.data;
+  }
+
   const { data, error } = await supabase
     .schema('finance')
     .from('expenses')
     .insert({
+      id: expenseId,
       organization_id: context.organizationId,
       project_id: parsed.data.projectId ?? null,
       category: parsed.data.category,
@@ -2236,14 +2280,15 @@ export async function recordExpense(input: RecordExpenseInput): Promise<Result<{
       currency: parsed.data.currency ?? 'INR',
       incurred_on: parsed.data.incurredOn,
       receipt_url: parsed.data.receiptUrl ?? null,
+      ...(stored ? { receipt_storage_path: stored.path, receipt_file_name: stored.fileName } : {}),
       recorded_by: context.userId,
     })
     .select('id')
     .single();
 
   if (error || !data) {
-    console.error(JSON.stringify({ level: 'error', scope: 'recordExpense', detail: error?.message }));
-    return err('INTERNAL', 'Could not record the expense.');
+    console.error(JSON.stringify({ level: 'error', scope: 'recordExpense', detail: error?.message, orphanedObject: stored?.path }));
+    return err(...expenseWriteProblem(error, 'Could not record the expense.'));
   }
 
   return ok({ expenseId: data.id });
@@ -2342,7 +2387,7 @@ export async function setPaymentAccountStatus(
 }
 
 /** SCR-055 — correct an expense. Owner/ops_admin, the same two RLS (expenses_write, is_admin) names. */
-export async function updateExpense(input: UpdateExpenseInput): Promise<Result<{ expenseId: string }>> {
+export async function updateExpense(input: UpdateExpenseInput, receiptFile?: File | null): Promise<Result<{ expenseId: string }>> {
   const parsed = updateExpenseSchema.safeParse(input);
   if (!parsed.success) {
     return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid expense.');
@@ -2353,7 +2398,18 @@ export async function updateExpense(input: UpdateExpenseInput): Promise<Result<{
     return err('FORBIDDEN', 'You do not have permission to edit an expense.');
   }
 
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
   const supabase = await createClient();
+  // A new file replaces the stored one (the object it replaces stays in the
+  // bucket: the bucket grants no delete); no file leaves it as it was.
+  let stored: { path: string; fileName: string } | null = null;
+  if (hasChosenFile(receiptFile)) {
+    const upload = await storeFinanceAttachment({ supabase, organizationId: context.organizationId, kind: 'expense-receipt', recordId: crypto.randomUUID(), file: receiptFile });
+    if (!upload.ok) return upload;
+    stored = upload.data;
+  }
+
   const { data, error } = await supabase
     .schema('finance')
     .from('expenses')
@@ -2365,6 +2421,7 @@ export async function updateExpense(input: UpdateExpenseInput): Promise<Result<{
       amount_minor: parsed.data.amountMinor,
       incurred_on: parsed.data.incurredOn,
       receipt_url: parsed.data.receiptUrl ?? null,
+      ...(stored ? { receipt_storage_path: stored.path, receipt_file_name: stored.fileName } : {}),
       ...(parsed.data.currency ? { currency: parsed.data.currency } : {}),
     })
     .eq('id', parsed.data.expenseId)
@@ -2372,8 +2429,8 @@ export async function updateExpense(input: UpdateExpenseInput): Promise<Result<{
     .maybeSingle();
 
   if (error) {
-    console.error(JSON.stringify({ level: 'error', scope: 'updateExpense', detail: error.message }));
-    return err('INTERNAL', 'Could not save the expense.');
+    console.error(JSON.stringify({ level: 'error', scope: 'updateExpense', detail: error.message, orphanedObject: stored?.path }));
+    return err(...expenseWriteProblem(error, 'Could not save the expense.'));
   }
   if (!data) return err('NOT_FOUND', 'That expense is not visible to you.');
 

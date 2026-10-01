@@ -521,6 +521,7 @@ export type Database = {
           model: string
           organization_id: string
           output_tokens: number
+          provider: string | null
           runs: number
           updated_at: string
         }
@@ -534,6 +535,7 @@ export type Database = {
           model: string
           organization_id: string
           output_tokens?: number
+          provider?: string | null
           runs?: number
           updated_at?: string
         }
@@ -547,6 +549,7 @@ export type Database = {
           model?: string
           organization_id?: string
           output_tokens?: number
+          provider?: string | null
           runs?: number
           updated_at?: string
         }
@@ -1065,6 +1068,32 @@ export type Database = {
           outcome: string
         }[]
       }
+      record_embedding_usage: {
+        Args: {
+          p_cost_minor: number
+          p_input_tokens: number
+          p_model: string
+          p_organization_id: string
+          p_provider: string
+        }
+        Returns: undefined
+      }
+      record_query_embedding_usage: {
+        Args: {
+          p_cost_minor: number
+          p_input_tokens: number
+          p_model: string
+          p_provider: string
+        }
+        Returns: undefined
+      }
+      semantic_budget_allows: {
+        Args: {
+          p_model: string
+          p_provider: string
+        }
+        Returns: boolean
+      }
       provider_spend_this_month: {
         Args: {
           p_organization_id: string
@@ -1461,7 +1490,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      log_audit_export: {
+        Args: { p_filters: Json; p_row_count: number }
+        Returns: { outcome: string }[]
+      }
     }
     Enums: {
       [_ in never]: never
@@ -1472,6 +1504,87 @@ export type Database = {
   }
   core: {
     Tables: {
+      search_embeddings: {
+        Row: {
+          content_hash: string
+          embedding: number[]
+          entity_id: string
+          entity_type: string
+          model: string
+          norm: number
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          content_hash: string
+          embedding: number[]
+          entity_id: string
+          entity_type: string
+          model: string
+          norm: number
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          content_hash?: string
+          embedding?: number[]
+          entity_id?: string
+          entity_type?: string
+          model?: string
+          norm?: number
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      semantic_search_state: {
+        Row: {
+          cursors: Json
+          done: number
+          enabled: boolean
+          last_run_at: string | null
+          model: string | null
+          note: string | null
+          organization_id: string
+          passes: Json
+          requested_at: string | null
+          requested_by: string | null
+          status: string
+          total: number
+          updated_at: string
+        }
+        Insert: {
+          cursors?: Json
+          done?: number
+          enabled?: boolean
+          last_run_at?: string | null
+          model?: string | null
+          note?: string | null
+          organization_id: string
+          passes?: Json
+          requested_at?: string | null
+          requested_by?: string | null
+          status?: string
+          total?: number
+          updated_at?: string
+        }
+        Update: {
+          cursors?: Json
+          done?: number
+          enabled?: boolean
+          last_run_at?: string | null
+          model?: string | null
+          note?: string | null
+          organization_id?: string
+          passes?: Json
+          requested_at?: string | null
+          requested_by?: string | null
+          status?: string
+          total?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       alert_state: {
         Row: {
           key: string
@@ -2760,6 +2873,56 @@ export type Database = {
           job_status: string
           outcome: string
         }[]
+      }
+      delete_search_embeddings: {
+        Args: {
+          p_entity_ids: string[]
+          p_entity_type: string
+          p_organization_id: string
+        }
+        Returns: number
+      }
+      request_semantic_backfill: {
+        Args: {
+          p_model: string
+          p_total: number
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      semantic_search: {
+        Args: {
+          p_candidate_cap?: number
+          p_limit?: number
+          p_min_score?: number
+          p_model: string
+          p_query: number[]
+          p_types?: string[]
+        }
+        Returns: {
+          entity_id: string
+          entity_type: string
+          score: number
+        }[]
+      }
+      semantic_visible_types: {
+        Args: Record<PropertyKey, never>
+        Returns: string[]
+      }
+      stop_semantic_indexing: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          outcome: string
+        }[]
+      }
+      upsert_search_embeddings: {
+        Args: {
+          p_model: string
+          p_organization_id: string
+          p_rows: Json
+        }
+        Returns: number
       }
       acknowledge_escalation: {
         Args: {
@@ -6089,6 +6252,8 @@ export type Database = {
           incurred_on: string
           organization_id: string
           project_id: string | null
+          receipt_file_name: string | null
+          receipt_storage_path: string | null
           receipt_url: string | null
           recorded_by: string | null
           updated_at: string
@@ -6104,6 +6269,8 @@ export type Database = {
           incurred_on: string
           organization_id: string
           project_id?: string | null
+          receipt_file_name?: string | null
+          receipt_storage_path?: string | null
           receipt_url?: string | null
           recorded_by?: string | null
           updated_at?: string
@@ -6119,6 +6286,8 @@ export type Database = {
           incurred_on?: string
           organization_id?: string
           project_id?: string | null
+          receipt_file_name?: string | null
+          receipt_storage_path?: string | null
           receipt_url?: string | null
           recorded_by?: string | null
           updated_at?: string
@@ -6451,6 +6620,39 @@ export type Database = {
         }
         Relationships: []
       }
+      expense_categories: {
+        Row: {
+          created_at: string
+          id: string
+          key: string
+          label: string
+          organization_id: string
+          retired_at: string | null
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          key: string
+          label: string
+          organization_id: string
+          retired_at?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          key?: string
+          label?: string
+          organization_id?: string
+          retired_at?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       report_exports: {
         Row: {
           created_at: string
@@ -6496,6 +6698,8 @@ export type Database = {
           paid_at: string | null
           payer_name: string | null
           payment_id: string | null
+          proof_file_name: string | null
+          proof_storage_path: string | null
           proof_url: string | null
           reference: string | null
           rejected_reason: string | null
@@ -6522,6 +6726,8 @@ export type Database = {
           paid_at?: string | null
           payer_name?: string | null
           payment_id?: string | null
+          proof_file_name?: string | null
+          proof_storage_path?: string | null
           proof_url?: string | null
           reference?: string | null
           rejected_reason?: string | null
@@ -6548,6 +6754,8 @@ export type Database = {
           paid_at?: string | null
           payer_name?: string | null
           payment_id?: string | null
+          proof_file_name?: string | null
+          proof_storage_path?: string | null
           proof_url?: string | null
           reference?: string | null
           rejected_reason?: string | null
@@ -7005,6 +7213,14 @@ export type Database = {
       log_report_export: {
         Args: { p_kind: string; p_period_label: string; p_row_count: number }
         Returns: { outcome: string }[]
+      }
+      set_expense_category: {
+        Args: { p_action: string; p_key: string; p_label: string }
+        Returns: { category_key: string | null; outcome: string }[]
+      }
+      client_names: {
+        Args: { p_ids?: string[] }
+        Returns: { id: string; name: string }[]
       }
       set_invoice_numbering: {
         Args: { p_prefix: string; p_terms_days: string; p_terms_note: string }
@@ -10156,6 +10372,66 @@ export type Database = {
         }
         Relationships: []
       }
+      environment_check_runs: {
+        Row: {
+          applied_at: string | null
+          checks: string[]
+          conclusion: string | null
+          dispatch_key: string
+          dispatched_at: string
+          dispatched_by: string | null
+          environment_id: string
+          id: string
+          organization_id: string
+          project_id: string
+          ref: string
+          repository: string
+          result_read_at: string | null
+          run_id: number | null
+          run_url: string | null
+          status: string
+          workflow_file: string
+        }
+        Insert: {
+          applied_at?: string | null
+          checks: string[]
+          conclusion?: string | null
+          dispatch_key: string
+          dispatched_at?: string
+          dispatched_by?: string | null
+          environment_id: string
+          id?: string
+          organization_id: string
+          project_id: string
+          ref: string
+          repository: string
+          result_read_at?: string | null
+          run_id?: number | null
+          run_url?: string | null
+          status?: string
+          workflow_file: string
+        }
+        Update: {
+          applied_at?: string | null
+          checks?: string[]
+          conclusion?: string | null
+          dispatch_key?: string
+          dispatched_at?: string
+          dispatched_by?: string | null
+          environment_id?: string
+          id?: string
+          organization_id?: string
+          project_id?: string
+          ref?: string
+          repository?: string
+          result_read_at?: string | null
+          run_id?: number | null
+          run_url?: string | null
+          status?: string
+          workflow_file?: string
+        }
+        Relationships: []
+      }
       deliverable_details: {
         Row: {
           qa_decided_at: string | null
@@ -11396,6 +11672,14 @@ export type Database = {
           p_theme_option_id: string
         }
         Returns: { color_option_id: string; outcome: string }[]
+      }
+      record_check_dispatch: {
+        Args: { p_checks: string[]; p_dispatch_key: string; p_environment_id: string; p_ref: string; p_repository: string; p_workflow_file: string }
+        Returns: { outcome: string; run_row_id: string | null }[]
+      }
+      record_check_run_result: {
+        Args: { p_conclusion?: string; p_run_id?: number; p_run_row_id: string; p_run_url?: string; p_status: string }
+        Returns: { outcome: string }[]
       }
       record_environment_check: {
         Args: { p_check: string; p_environment_id: string; p_evidence_url?: string; p_note?: string; p_ok: boolean }
@@ -13554,6 +13838,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           id: string
+          is_default: boolean
           max_amount_minor: number | null
           min_amount_minor: number | null
           name: string
@@ -13565,6 +13850,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          is_default?: boolean
           max_amount_minor?: number | null
           min_amount_minor?: number | null
           name: string
@@ -13576,6 +13862,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          is_default?: boolean
           max_amount_minor?: number | null
           min_amount_minor?: number | null
           name?: string

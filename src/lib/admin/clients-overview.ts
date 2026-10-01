@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
+import { owedOn } from '@/lib/finance/verified-basis';
 
 /**
  * What the Client Management screen shows beyond the table: the phone number
@@ -69,7 +70,7 @@ export async function getClientsOverview(want: { leads: boolean; invoices: boole
           const q = supabase
             .schema('finance')
             .from('invoices')
-            .select('id, number, client_account_id, due_at, total_minor, paid_minor, currency, status')
+            .select('id, number, client_account_id, due_at, total_minor, verified_minor, currency, status')
             .in('status', ['issued', 'partially_paid', 'overdue']);
           return (scope ? q.eq('client_account_id', scope) : q).order('due_at', { ascending: true, nullsFirst: false }).limit(5);
         })()
@@ -100,7 +101,7 @@ export async function getClientsOverview(want: { leads: boolean; invoices: boole
       return { id: m.id, clientId: clientOfConversation.get(m.conversation_id) ?? '', body: m.body, at: m.occurred_at, direction: dir === 'inbound' || dir === 'outbound' ? dir : null };
     }),
     followUps: (leadRes.data ?? []).map((l) => ({ leadId: l.id, leadTitle: l.title, clientId: clientOfContact.get(l.contact_id ?? '') ?? '', at: l.next_follow_up_at as string })),
-    pendingInvoices: (invRes.data ?? []).map((i) => ({ id: i.id, number: i.number, clientId: i.client_account_id, dueAt: i.due_at, owedMinor: i.total_minor - i.paid_minor, currency: i.currency, status: i.status })),
+    pendingInvoices: (invRes.data ?? []).map((i) => ({ id: i.id, number: i.number, clientId: i.client_account_id, dueAt: i.due_at, owedMinor: owedOn(i), currency: i.currency, status: i.status })),
   };
 }
 

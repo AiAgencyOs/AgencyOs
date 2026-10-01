@@ -11,7 +11,8 @@ import { listLeadsForTable, listLeadsNeedingAttention } from '@/modules/crm/quer
 import { readLeadHeat } from '@/modules/crm/lead-heat-queries';
 import { readLeadFacts } from '@/modules/crm/lead-list-queries';
 import { isQuickFilterKey, matchesQuickFilter } from '@/modules/crm/lead-quick-filters';
-import { readLeadScores, type LeadScoreSummary } from '@/modules/crm/lead-score-queries';
+import { heatRank, heatTitle, deriveLeadHeat, type LeadHeatReading } from '@/modules/crm/lead-heat';
+import { LeadHeatBadge } from '@/modules/crm/lead-heat-badge';
 import { readLeadServices } from '@/modules/crm/lead-service-queries';
 import { readLeadIndicators } from '@/modules/crm/lead-indicators-queries';
 import { LeadFlags, type LeadFlagsData } from './lead-flags';
@@ -58,7 +59,6 @@ import { SavedViewsBar } from '../saved-views-bar';
 import { LeadBulkTable, type BulkLeadRow } from './bulk-table';
 import { CreateLeadButton } from './create-lead-button';
 import { LeadPreviewButton } from './preview-drawer';
-import { RescoreAllLeadsButton } from './rescore-all-button';
 
 export const metadata: Metadata = { title: 'Leads' };
 
@@ -95,7 +95,7 @@ function waitedFor(iso: string, now: Date): string {
 
 type Row = Awaited<ReturnType<typeof listLeadsForTable>>[number];
 
-const columnsFor = (clock: AgencyClock, scores: Map<string, LeadScoreSummary>, services: Map<string, string | null>, flagsOf: (id: string) => LeadFlagsData, createdOf: (id: string) => string | undefined, factsOf: (id: string) => { budget: string | null; tags: string[] }): Column<Row>[] => [
+const columnsFor = (clock: AgencyClock, heats: Map<string, LeadHeatReading>, services: Map<string, string | null>, flagsOf: (id: string) => LeadFlagsData, createdOf: (id: string) => string | undefined, factsOf: (id: string) => { budget: string | null; tags: string[] }): Column<Row>[] => [
   {
     key: 'title',
     header: 'Name',
@@ -126,13 +126,11 @@ const columnsFor = (clock: AgencyClock, scores: Map<string, LeadScoreSummary>, s
     key: 'status',
     header: 'Status',
     badge: true,
-    sortKey: 'score',
+    sortKey: 'heat',
     cell: (l) => (
       <span className="flex flex-col items-start gap-1">
         <StatusBadge status={l.status} />
-        <span className="tabular text-[11px] text-muted" title={scores.get(l.id)?.reasons.map((r) => `${r.points >= 0 ? '+' : ''}${r.points} ${r.detail}`).join('\n')}>
-          {scores.get(l.id) ? `Score ${scores.get(l.id)!.score}` : 'Unscored'}
-        </span>
+        {heats.get(l.id) ? <LeadHeatBadge label={heats.get(l.id)!.label} title={heatTitle(heats.get(l.id)!)} /> : null}
       </span>
     ),
   },
@@ -274,8 +272,6 @@ export default async function LeadsPage({
   const now = new Date();
   const facts = await readLeadFacts(allLeads.map((l) => l.id));
   const heat = await readLeadHeat();
-  // ADM-88 (reversed 2026-09-29): the stored score per lead, with its reasons.
-  const scores = await readLeadScores(allLeads.map((l) => l.id));
   const services = await readLeadServices(allLeads.map((l) => l.id));
   const indicators = await readLeadIndicators(allLeads.map((l) => l.id));
   const replyBy = new Map(waiting.map((w) => [w.lead_id, ATTENTION[w.reason]?.label ?? null]));
@@ -288,6 +284,8 @@ export default async function LeadsPage({
   for (const l of allLeads) countByStatus.set(l.status, (countByStatus.get(l.status) ?? 0) + 1);
 
   const heatOf = (l: Row) => ({ status: l.status, dealStage: heat.get(l.id)?.dealStage ?? null, createdAt: facts.get(l.id)?.createdAt ?? l.updated_at, lastInboundAt: heat.get(l.id)?.lastInboundAt ?? null });
+  // Owner decision 1 (round 2): a Hot / Warm / Cold label with its reasons, never a number.
+  const heats = new Map(allLeads.map((l) => [l.id, deriveLeadHeat({ ...heatOf(l), budgetRecorded: (facts.get(l.id)?.budgetMinor ?? null) !== null }, now)]));
   const hotLeads = allLeads.filter((l) => matchesQuickFilter('hot_leads', heatOf(l), now)).length;
   const noResponse = allLeads.filter((l) => matchesQuickFilter('no_response', heatOf(l), now)).length;
   const needle = (q ?? '').trim().toLowerCase();
@@ -313,8 +311,8 @@ export default async function LeadsPage({
   const comparators = {
     ...COMPARATORS,
     created: (a: Row, b: Row) => (facts.get(a.id)?.createdAt ?? '').localeCompare(facts.get(b.id)?.createdAt ?? ''),
-    // Unscored sorts below every score, whichever way the column is sorted.
-    score: (a: Row, b: Row) => (scores.get(a.id)?.score ?? -1) - (scores.get(b.id)?.score ?? -1),
+    // Hot above Warm above Cold when sorted high-first.
+    heat: (a: Row, b: Row) => heatRank(heats.get(a.id)?.label ?? 'Cold') - heatRank(heats.get(b.id)?.label ?? 'Cold'),
   };
   const leads = sortRows(filtered, sortKey, direction, comparators);
   const { page, pageCount, rows: pageRows } = paginate(leads, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
@@ -357,7 +355,6 @@ export default async function LeadsPage({
                 Import leads
               </Link>
             ) : null}
-            {can(context, 'lead.write') ? <RescoreAllLeadsButton /> : null}
             {can(context, 'lead.write') ? <CreateLeadButton /> : null}
           </>
         }
@@ -467,7 +464,7 @@ export default async function LeadsPage({
                 created: facts.get(l.id) ? clock.date(facts.get(l.id)!.createdAt) : '—',
                 budget: facts.get(l.id)?.budgetMinor !== null && facts.get(l.id)?.budgetMinor !== undefined ? money(facts.get(l.id)!.budgetMinor as number) : null,
                 tags: facts.get(l.id)?.tags ?? [],
-                score: scores.get(l.id)?.score ?? null,
+                heat: heats.get(l.id) ? { label: heats.get(l.id)!.label, title: heatTitle(heats.get(l.id)!) } : null,
                 flags: flagsOf(l.id),
                 duplicates: indicators.get(l.id)?.duplicates ?? [],
               }),
@@ -496,7 +493,7 @@ export default async function LeadsPage({
             dense
             tight
             rows={pageRows}
-            columns={columnsFor(clock, scores, services.byLead, flagsOf, (id) => facts.get(id)?.createdAt, (id) => ({ budget: facts.get(id)?.budgetMinor !== null && facts.get(id)?.budgetMinor !== undefined ? money(facts.get(id)!.budgetMinor as number) : null, tags: facts.get(id)?.tags ?? [] }))}
+            columns={columnsFor(clock, heats, services.byLead, flagsOf, (id) => facts.get(id)?.createdAt, (id) => ({ budget: facts.get(id)?.budgetMinor !== null && facts.get(id)?.budgetMinor !== undefined ? money(facts.get(id)!.budgetMinor as number) : null, tags: facts.get(id)?.tags ?? [] }))}
             getKey={(l) => l.id}
             // Bucket F: the shared per-row overflow menu — the row's secondary
             // destinations, each a page that already exists.

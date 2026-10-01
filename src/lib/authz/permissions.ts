@@ -47,6 +47,10 @@ export const CAPABILITIES = [
   // Administration
   'member.invite',
   'audit.read',
+  // Owner decision 11 (round 2): the audit log may be exported as CSV by the owner and the ops admin only,
+  // and every export is itself an audit event (audit.log_audit_export). A capability of its own so the
+  // finance role's read access (if it ever gains one) is never an export right.
+  'audit.export',
   'organization.settings',
 
   // Operations
@@ -85,6 +89,7 @@ const ROLE_CAPABILITIES: Record<Role, readonly (Capability | '*')[]> = {
     'agent.run',
     'member.invite',
     'audit.read',
+    'audit.export',
     'job.requeue',
     'project.sign_off',
   ],

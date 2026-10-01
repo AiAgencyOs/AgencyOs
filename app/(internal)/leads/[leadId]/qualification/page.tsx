@@ -8,8 +8,9 @@ import { can } from '@/lib/authz/permissions';
 import { getLeadHeader, getLeadPipeline } from '@/modules/crm/queries';
 import { LEAD_TRANSITIONS, leadQualificationSchema, type LeadStatus } from '@/modules/crm/schema';
 import { listDisqualificationHistory, readQualificationCoverage } from '@/modules/crm/lead-insight-queries';
-import { readLeadScore } from '@/modules/crm/lead-score-queries';
-import { readLeadScoreOverride } from '@/modules/crm/lead-score-override-queries';
+import { heatTitle } from '@/modules/crm/lead-heat';
+import { LeadHeatBadge } from '@/modules/crm/lead-heat-badge';
+import { readLeadHeatReading } from '@/modules/crm/lead-heat-queries';
 import { readLeadService } from '@/modules/crm/lead-service-queries';
 import { listOpenObjectionsForLead } from '@/modules/sales/queries';
 import { Badge, buttonClass, Card, CardHeader, DetailList, DetailRow, humanize, IconArrowLeft, PageHeader, PermissionDenied, Stat, StatGrid, StatusBadge } from '@/ui';
@@ -42,10 +43,9 @@ export default async function LeadQualificationPage({ params }: { params: Promis
 
   const lead = await getLeadHeader(leadId);
   if (!lead) notFound();
-  const [pipeline, score, override, coverage, history, objections, service, clock] = await Promise.all([
+  const [pipeline, heatReading, coverage, history, objections, service, clock] = await Promise.all([
     getLeadPipeline(leadId),
-    readLeadScore(leadId),
-    readLeadScoreOverride(leadId),
+    readLeadHeatReading({ id: leadId, status: lead.status }),
     readQualificationCoverage(leadId),
     listDisqualificationHistory(leadId),
     listOpenObjectionsForLead(leadId),
@@ -73,7 +73,7 @@ export default async function LeadQualificationPage({ params }: { params: Promis
       />
 
       <StatGrid cols={5}>
-        <Stat label="Qualification score" value={score ? `${override?.score ?? score.score}` : '—'} caption={override ? `Human decision · model said ${score?.score}` : score ? 'Computed from recorded facts' : 'Not scored yet'} />
+        <Stat label="Lead heat" value={heatReading.label} caption="From stage, last reply and budget" />
         <Stat label="Fit criteria" value={`${coverage.covered.length}/${coverage.total}`} caption="Areas the conversation answered" />
         <Stat label="Budget" value={q.budgetMinor !== undefined ? money(q.budgetMinor) : '—'} caption={q.budgetMinor !== undefined ? 'As recorded' : 'Not recorded'} />
         <Stat label="Timeline" value={q.timelineNote ? q.timelineNote : '—'} caption={q.timelineNote ? 'As recorded' : 'Not recorded'} />
@@ -138,31 +138,16 @@ export default async function LeadQualificationPage({ params }: { params: Promis
 
         <div className="flex min-w-0 flex-col gap-4">
           <Card>
-            <CardHeader title="Score explanation" description="The model's number and the human decision, side by side — the original is never overwritten." />
+            <CardHeader title="Why This Heat" description="A Hot, Warm or Cold label worked out from the stage, the last reply and whether a budget is recorded. Never a number." />
             <div className="flex flex-col gap-2 px-4 pb-4 sm:px-5">
-              {score ? (
-                <ul className="divide-y divide-line rounded-lg border border-line">
-                  {score.reasons.map((r) => (
-                    <li key={r.code} className="flex items-start justify-between gap-3 px-3 py-1.5 text-[13px]">
-                      <span className="min-w-0">
-                        <span className="font-medium">{humanize(r.code)}</span>
-                        <span className="block text-xs text-muted">{r.detail}</span>
-                      </span>
-                      <span className={`shrink-0 tabular ${r.points < 0 ? 'text-danger' : r.points === 0 ? 'text-muted' : 'text-success'}`}>{r.points > 0 ? `+${r.points}` : r.points}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-[13px] text-muted">Not scored yet. Score it from Lead 360.</p>
-              )}
-              {override ? (
-                <p className="text-[13px] text-muted">
-                  Human decision {override.score}: “{override.reason}” — {clock.dateTime(override.at)}
-                </p>
-              ) : null}
-              <Link href={`/leads/${leadId}#sales`} className="text-xs font-medium text-brand hover:underline">
-                Rescore or override with a reason on Lead 360
-              </Link>
+              <div>
+                <LeadHeatBadge label={heatReading.label} title={heatTitle(heatReading)} />
+              </div>
+              <ul className="divide-y divide-line rounded-lg border border-line">
+                {heatReading.reasons.map((r) => (
+                  <li key={r} className="px-3 py-1.5 text-[13px]">{r}</li>
+                ))}
+              </ul>
             </div>
           </Card>
 

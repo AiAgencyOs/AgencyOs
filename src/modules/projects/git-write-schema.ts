@@ -71,3 +71,24 @@ export const setRepositoryPolicySchema = z.object({
   mergeRole: z.enum(['owner', 'admin', 'delivery']),
 });
 export type SetRepositoryPolicyInput = z.input<typeof setRepositoryPolicySchema>;
+
+/** Owner decision 13 — dispatch the contract / migration check workflow on a client environment. */
+export const dispatchEnvironmentChecksSchema = z.object({
+  projectId: z.uuid(),
+  environmentId: z.uuid(),
+  checks: z.array(z.enum(['api_contract', 'migrations'])).min(1, 'Choose at least one check to run.').max(2),
+  /** Blank means the default workflow file name. */
+  workflowFile: z
+    .string()
+    .trim()
+    .max(130)
+    .refine((v) => v.length === 0 || /^[A-Za-z0-9._-]{1,120}\.ya?ml$/.test(v), 'A workflow file is its name under .github/workflows/, ending in .yml')
+    .optional(),
+});
+export type DispatchEnvironmentChecksInput = z.input<typeof dispatchEnvironmentChecksSchema>;
+
+export const refreshEnvironmentChecksSchema = z.object({
+  projectId: z.uuid(),
+  environmentId: z.uuid(),
+});
+export type RefreshEnvironmentChecksInput = z.input<typeof refreshEnvironmentChecksSchema>;

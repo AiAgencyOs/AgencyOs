@@ -74,14 +74,11 @@ export async function getClientAccountName(clientAccountId: string): Promise<str
   const supabase = await createClient();
 
   const { data, error } = await supabase
-    .schema('core')
-    .from('client_accounts')
-    .select('name')
-    .eq('id', clientAccountId)
-    .maybeSingle();
+    .schema('finance')
+    .rpc('client_names', { p_ids: [clientAccountId] });
 
   if (error) unreadable('getClientAccountName', error);
-  return data?.name ?? null;
+  return data?.[0]?.name ?? null;
 }
 
 export async function listInvoiceItems(invoiceId: string): Promise<InvoiceItem[]> {
@@ -185,11 +182,10 @@ export async function listPayments(limit = 200, q?: string): Promise<PaymentLedg
 
   const nameByClient = new Map<string, string>();
   if (clientAccountIds.length > 0) {
+    // Decision 7 (2026-10-01): the finance role reads a client's NAME and nothing else, through finance.client_names.
     const { data: clients, error: clientsError } = await supabase
-      .schema('core')
-      .from('client_accounts')
-      .select('id, name')
-      .in('id', clientAccountIds);
+      .schema('finance')
+      .rpc('client_names', { p_ids: clientAccountIds });
     if (clientsError) unreadable('listPayments.clients', clientsError);
     for (const c of clients ?? []) nameByClient.set(c.id, c.name);
   }
@@ -247,6 +243,8 @@ export type PaymentClaim = {
   payer_name: string | null;
   paid_at: string | null;
   proof_url: string | null;
+  /** Set when the proof was uploaded rather than (or as well as) linked; open it through claimProofHref. */
+  proof_file_name?: string | null;
   status: string;
   submitted_at: string;
   verified_at: string | null;
@@ -283,7 +281,7 @@ export async function listPaymentClaims(projectId: string): Promise<PaymentClaim
     .schema('finance')
     .from('payment_submissions')
     .select(
-      'id, invoice_id, amount_minor, currency, method, reference, payer_name, paid_at, proof_url, status, submitted_at, verified_at, verification_evidence, rejected_reason, mismatch_note, payment_id',
+      'id, invoice_id, amount_minor, currency, method, reference, payer_name, paid_at, proof_url, proof_file_name, status, submitted_at, verified_at, verification_evidence, rejected_reason, mismatch_note, payment_id',
     )
     .in('invoice_id', ids)
     .order('submitted_at', { ascending: false });
@@ -328,7 +326,7 @@ export async function listPendingPaymentClaims(limit = 200): Promise<PendingPaym
     .schema('finance')
     .from('payment_submissions')
     .select(
-      'id, invoice_id, amount_minor, currency, method, reference, payer_name, paid_at, proof_url, status, submitted_at, verified_at, verification_evidence, rejected_reason, mismatch_note, payment_id, evidence_request_note',
+      'id, invoice_id, amount_minor, currency, method, reference, payer_name, paid_at, proof_url, proof_file_name, status, submitted_at, verified_at, verification_evidence, rejected_reason, mismatch_note, payment_id, evidence_request_note',
     )
     .in('status', ['pending_verification', 'mismatch', 'evidence_requested'])
     .order('submitted_at', { ascending: true })
@@ -354,7 +352,7 @@ export async function listPendingPaymentClaims(limit = 200): Promise<PendingPaym
     projectIds.length > 0
       ? supabase.schema('projects').from('projects').select('id, name').in('id', projectIds)
       : Promise.resolve({ data: [] as { id: string; name: string }[], error: null }),
-    supabase.schema('core').from('client_accounts').select('id, name').in('id', clientIds),
+    supabase.schema('finance').rpc('client_names', { p_ids: clientIds }),
   ]);
   if (projectsError) unreadable('listPendingPaymentClaims.projects', projectsError);
   if (clientsError) unreadable('listPendingPaymentClaims.clients', clientsError);
@@ -555,6 +553,8 @@ export type ExpenseRow = {
   incurredOn: string;
   /** SCR-055 — the receipt's URL, when one was attached. Optional so callers that shape rows by hand (the tax-report tests) need not carry it. */
   receiptUrl?: string | null;
+  /** The uploaded receipt's file name, when the receipt was uploaded rather than (or as well as) linked. The object is fetched through /api/finance/attachment. */
+  receiptFileName?: string | null;
   createdAt: string;
 };
 
@@ -570,7 +570,7 @@ export async function listExpenses(limit = 500, q?: string): Promise<ExpenseRow[
   let query = supabase
     .schema('finance')
     .from('expenses')
-    .select('id, project_id, category, vendor, description, currency, amount_minor, incurred_on, receipt_url, created_at')
+    .select('id, project_id, category, vendor, description, currency, amount_minor, incurred_on, receipt_url, receipt_file_name, receipt_storage_path, created_at')
     .order('incurred_on', { ascending: false })
     .limit(limit);
   // Search within domain (bucket G-3): vendor, description or category, server-side.
@@ -589,6 +589,7 @@ export async function listExpenses(limit = 500, q?: string): Promise<ExpenseRow[
     amountMinor: e.amount_minor,
     incurredOn: e.incurred_on,
     receiptUrl: e.receipt_url,
+    receiptFileName: e.receipt_storage_path ? (e.receipt_file_name ?? 'receipt') : null,
     createdAt: e.created_at,
   }));
 }
@@ -699,7 +700,7 @@ export async function listInvoicePaymentClaims(invoiceId: string): Promise<Payme
     .schema('finance')
     .from('payment_submissions')
     .select(
-      'id, invoice_id, amount_minor, currency, method, reference, payer_name, paid_at, proof_url, status, submitted_at, verified_at, verification_evidence, rejected_reason, mismatch_note, payment_id',
+      'id, invoice_id, amount_minor, currency, method, reference, payer_name, paid_at, proof_url, proof_file_name, status, submitted_at, verified_at, verification_evidence, rejected_reason, mismatch_note, payment_id',
     )
     .eq('invoice_id', invoiceId)
     .order('submitted_at', { ascending: false });

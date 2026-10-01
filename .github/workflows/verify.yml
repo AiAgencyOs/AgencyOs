@@ -872,6 +872,28 @@ jobs:
           # removes them in a `finally`; restores the numbering settings.
           npm run db:verify:finance-w1
 
+          # PDF gap X1. The owner's expense-category list (add / rename / retire,
+          # old expenses keep theirs, a new organization is seeded), the finance
+          # role reading a client's name and only that, the GST setup as three
+          # whitelisted organization settings, and tenant-scoped receipt paths.
+          # Plants a client / category / expenses under a marker; removes them
+          # and restores the settings in a `finally`.
+          npm run db:verify:finance-x1
+
+          # Stream X2 (owner decisions 2, 11, 12, 13). A plan cannot go live without
+          # its internal approval, the audit log is kept forever and an export is
+          # itself an audit event, a new organization starts with the 30/20/30/20
+          # payment structure, and the contract/migration checks dispatched as a
+          # workflow are recorded by two role-gated doors. Plants a project, an
+          # environment and an organization under a marker and removes them.
+          npm run db:verify:x2
+
+          # Decision 14: search by meaning. A stub embedding vendor on :54397
+          # (the runner's OPENAI_BASE_URL); proves the owner-only switch, the
+          # indexing job, ranking, role scoping, hash-skip, the budget gate
+          # and the ledger. Plants and removes its own clients and users.
+          npm run db:verify:semantic
+
           # Last, and deliberately so: the deploy smoke runs against the app
           # in its most-exercised state, and a tick it fires cannot disturb
           # the four scripts above. The same command, pointed at a real

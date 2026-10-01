@@ -154,22 +154,27 @@ function startOfCurrentMonthIso(): string {
 
 export type RevenueByCurrency = { currency: string; paidMinor: number };
 
-/** Sum of `paid_minor` for invoices paid since the start of the current calendar month (UTC), by currency. */
+/**
+ * Money received since the start of the current calendar month (UTC), by currency, on the ONE verified basis
+ * (src/modules/finance/verified-basis.ts): payments a person verified, dated by the day they verified them —
+ * not `paid_minor`, which counts what somebody recorded, and not the date an invoice flipped to paid.
+ */
 export async function getRevenueThisMonth(): Promise<RevenueByCurrency[]> {
   const supabase = await createClient();
 
   const { data, error } = await supabase
     .schema('finance')
-    .from('invoices')
-    .select('paid_minor, currency')
-    .eq('status', 'paid')
-    .gte('paid_at', startOfCurrentMonthIso());
+    .from('payments')
+    .select('amount_minor, currency')
+    .eq('status', 'captured')
+    .not('verified_at', 'is', null)
+    .gte('verified_at', startOfCurrentMonthIso());
 
   if (error) unreadable('getRevenueThisMonth', error);
 
   const byCurrency = new Map<string, number>();
   for (const row of data ?? []) {
-    byCurrency.set(row.currency, (byCurrency.get(row.currency) ?? 0) + row.paid_minor);
+    byCurrency.set(row.currency, (byCurrency.get(row.currency) ?? 0) + row.amount_minor);
   }
 
   return [...byCurrency.entries()].map(([currency, paidMinor]) => ({ currency, paidMinor }));

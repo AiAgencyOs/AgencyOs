@@ -93,12 +93,22 @@ describe('the door knows both keys', () => {
     assert.match(migration, /not in \('owner', 'ops_admin'\)/);
   });
 
-  it('is the newest redefinition of the door', () => {
+  it('a later redefinition of the door keeps every key this one names', () => {
+    // Each later key (the GST setup of 20261007100200, ...) is a redefinition from the LATEST body, so
+    // the newest body must be a superset of this one's whitelist: no key may be dropped by a later migration.
     const latest = readdirSync(join(process.cwd(), 'supabase/migrations'))
       .filter((f) => read(`supabase/migrations/${f}`).includes('create or replace function core.set_organization_setting'))
       .sort()
       .pop();
-    assert.equal(latest, MIGRATION.split('/').pop());
+    assert.ok(latest && latest >= MIGRATION.split('/').pop()!, 'this migration is not newer than the newest');
+    const whitelistOf = (sql: string) => {
+      const from = sql.indexOf('if p_key not in (');
+      return [...sql.slice(from, sql.indexOf(') then', from)).matchAll(/^\s*'([a-z_]+)',?\s*$/gm)].map((m) => m[1]!);
+    };
+    const mine = whitelistOf(read(MIGRATION));
+    const newest = whitelistOf(read(`supabase/migrations/${latest}`));
+    assert.ok(mine.length > 20, 'the whitelist was found');
+    for (const key of mine) assert.ok(newest.includes(key), `${key} survives in ${latest}`);
   });
 });
 

@@ -6,6 +6,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
 import { listPendingPaymentClaims } from '@/modules/finance/queries';
+import { claimProofHref, proofIsImage } from '@/modules/finance/attachment-links';
 import { listPaymentSubmissions } from '@/modules/finance/overview-queries';
 import { listRecentBankLines } from '@/modules/finance/bank-import-queries';
 import { crossCheckClaim, crossCheckSentence, filterQueue } from '@/modules/finance/claim-queue';
@@ -26,7 +27,6 @@ function when(clock: AgencyClock, value: string): string {
   return clock.date(value);
 }
 
-const IMAGE_EXT = /\.(png|jpe?g|gif|webp)(\?.*)?$/i;
 
 /**
  * The proof a claim carries, previewed when the URL says it is an image and
@@ -34,14 +34,14 @@ const IMAGE_EXT = /\.(png|jpe?g|gif|webp)(\?.*)?$/i;
  * image extension may lie — but rendering a PDF as `<img>` shows a broken
  * box where a link would have worked, so the rule errs toward the link.
  */
-function Proof({ url }: { url: string | null }) {
+function Proof({ url, fileName }: { url: string | null; fileName?: string | null }) {
   if (!url) return <span className="text-muted">none attached</span>;
   return (
     <span className="flex flex-col gap-2">
       <a href={url} target="_blank" rel="noreferrer" className="w-fit underline-offset-2 hover:underline">
-        Open proof
+        {fileName ? `Open uploaded proof (${fileName})` : 'Open proof'}
       </a>
-      {IMAGE_EXT.test(url) ? (
+      {proofIsImage(url, fileName) ? (
         <img src={url} alt="Payment proof" className="max-h-56 w-fit max-w-full rounded-lg border border-line object-contain" />
       ) : null}
     </span>
@@ -179,7 +179,7 @@ export default async function PaymentVerificationPage({
                   <div className="col-span-2 sm:col-span-1">
                     <dt className="text-muted">Evidence</dt>
                     <dd>
-                      <Proof url={c.proof_url} />
+                      <Proof url={claimProofHref({ id: c.id, proofUrl: c.proof_url, proofFileName: c.proof_file_name })} fileName={c.proof_file_name} />
                     </dd>
                   </div>
                 </dl>

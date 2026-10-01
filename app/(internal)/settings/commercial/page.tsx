@@ -78,7 +78,8 @@ export default async function SettingsCommercialPage() {
 
   const { readPaymentStructures } = await import('@/modules/sales/service');
   const termsResult = await readPaymentStructures();
-  const paymentTerms = termsResult.ok ? (termsResult.data[0] ?? null) : null;
+  // The seeded 30/20/30/20 is the default (owner decision 2, round 2); a structure the owner set comes first.
+  const paymentTerms = termsResult.ok ? (termsResult.data.find((t) => !t.isDefault) ?? termsResult.data[0] ?? null) : null;
 
   // Audit B-6 — the four quotation clauses and every version of each. A read
   // that failed refuses (G-054): an empty list would say "never edited" over
@@ -147,9 +148,11 @@ export default async function SettingsCommercialPage() {
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 id="payment-terms" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">When the client pays</h2>
         <p className="text-xs text-muted">
-          {paymentTerms
+          {paymentTerms?.isDefault
+            ? 'Standard — quotations start as 30% / 20% / 30% / 20%, released by Phases 2, 4, 5 and 6. Change the milestones below to use your own; any split that totals 100% is allowed.'
+            : paymentTerms
             ? `Set — “${paymentTerms.name}”, ${paymentTerms.milestones.length} milestone${paymentTerms.milestones.length === 1 ? '' : 's'}. New quotations carry it; ones already drafted keep the terms they were drafted with.`
-            : 'Not set — quotations use the two standard schedules: 40/30/30 under ₹1,00,000 and 30/30/25/15 at or above it. Fill this in to use your own.'}
+            : 'Not set — fill this in to use your own milestones; any split that totals 100% is allowed.'}
         </p>
         <p className="text-xs text-muted">
           Milestones must add up to 100%. Name what has to <em>happen</em> for each payment rather

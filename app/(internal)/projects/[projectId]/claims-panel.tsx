@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useId } from 'react';
 
 import {
   recordPaymentSubmissionAction,
@@ -52,6 +52,7 @@ export function RecordClaimForm({
   invoices: { id: string; number: string; status: string }[];
 }) {
   const [state, action, pending] = useActionState(recordPaymentSubmissionAction, IDLE_STATE);
+  const proofFileId = useId();
 
   if (invoices.length === 0) return null;
 
@@ -106,6 +107,13 @@ export function RecordClaimForm({
         <input name="paidAt" type="datetime-local" aria-label="When they say they paid" className={input} />
       </div>
       <input name="proofUrl" type="url" placeholder="Link to a screenshot or receipt" aria-label="Proof" className={input} />
+      <div className="flex flex-col gap-1">
+        <label className={label} htmlFor={proofFileId}>
+          Or upload the proof (optional)
+        </label>
+        <input id={proofFileId} name="proofFile" type="file" className={input} />
+        <span className="text-xs text-muted">Kept with the project files: up to 50 MB, and never a password or key. A link above works too.</span>
+      </div>
 
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
         {pending ? 'Recording…' : 'Record what they said they paid'}

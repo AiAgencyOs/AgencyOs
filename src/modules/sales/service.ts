@@ -1982,6 +1982,8 @@ export async function readPaymentStructures(): Promise<
   Result<
     Array<{
       name: string;
+      /** The seeded 30/20/30/20, until the owner edits it or sets their own. */
+      isDefault: boolean;
       minAmountMinor: number | null;
       maxAmountMinor: number | null;
       milestones: Array<{ label: string; pct: number }>;
@@ -1993,7 +1995,7 @@ export async function readPaymentStructures(): Promise<
   const { data, error } = await supabase
     .schema('sales')
     .from('payment_structures')
-    .select('name, min_amount_minor, max_amount_minor, payment_milestones(position, label, pct)')
+    .select('name, is_default, min_amount_minor, max_amount_minor, payment_milestones(position, label, pct)')
     .eq('active', true)
     .order('name');
 
@@ -2002,6 +2004,7 @@ export async function readPaymentStructures(): Promise<
   return ok(
     (data ?? []).map((row) => ({
       name: row.name,
+      isDefault: row.is_default,
       minAmountMinor: row.min_amount_minor ?? null,
       maxAmountMinor: row.max_amount_minor ?? null,
       milestones: (row.payment_milestones ?? [])

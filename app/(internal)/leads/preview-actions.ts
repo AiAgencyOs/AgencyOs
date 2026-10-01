@@ -2,8 +2,8 @@
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { readLeadScore } from '@/modules/crm/lead-score-queries';
-import { readLeadScoreOverride } from '@/modules/crm/lead-score-override-queries';
+import { heatTitle, type LeadHeatLabel } from '@/modules/crm/lead-heat';
+import { readLeadHeatReading } from '@/modules/crm/lead-heat-queries';
 import { getLatestConversation, getLeadFacts, getLeadHeader, getLeadPipeline, listMessages } from '@/modules/crm/queries';
 import { getOpportunityForLead } from '@/modules/sales/queries';
 
@@ -22,7 +22,8 @@ export type LeadPreview = {
   assignedEmail: string | null;
   nextFollowUpAt: string | null;
   deal: { name: string; stage: string; valueMinor: number; currency: string } | null;
-  score: { computed: number | null; override: number | null; overrideReason: string | null };
+  /** Hot / Warm / Cold with its reasons as the title — never a number. */
+  heat: { label: LeadHeatLabel; title: string };
   lastMessages: { id: string; body: string; occurredAt: string; incoming: boolean }[];
   tags: string[];
 };
@@ -34,16 +35,15 @@ export async function readLeadPreviewAction(leadId: string): Promise<LeadPreview
   if (!can(context, 'lead.read')) return { status: 'error', message: 'You do not have permission to view leads.' };
 
   try {
-    const [lead, facts, pipeline, opportunity, score, override, conversation] = await Promise.all([
+    const [lead, facts, pipeline, opportunity, conversation] = await Promise.all([
       getLeadHeader(leadId),
       getLeadFacts(leadId),
       getLeadPipeline(leadId),
       getOpportunityForLead(leadId),
-      readLeadScore(leadId),
-      readLeadScoreOverride(leadId),
       getLatestConversation(leadId),
     ]);
     if (!lead) return { status: 'error', message: 'Lead not found.' };
+    const reading = await readLeadHeatReading({ id: lead.id, status: lead.status });
     const messages = conversation ? await listMessages(conversation.id) : [];
     return {
       status: 'ok',
@@ -56,7 +56,7 @@ export async function readLeadPreviewAction(leadId: string): Promise<LeadPreview
         assignedEmail: facts?.assignedEmail ?? null,
         nextFollowUpAt: pipeline?.next_follow_up_at ?? null,
         deal: opportunity ? { name: opportunity.name, stage: opportunity.stage, valueMinor: opportunity.value_minor, currency: opportunity.currency } : null,
-        score: { computed: score?.score ?? null, override: override?.score ?? null, overrideReason: override?.reason ?? null },
+        heat: { label: reading.label, title: heatTitle(reading) },
         lastMessages: messages.slice(-4).map((m) => ({
           id: m.id,
           body: m.body,

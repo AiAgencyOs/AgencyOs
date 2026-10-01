@@ -381,7 +381,7 @@ export async function recordPaymentSubmissionAction(
     ...(text('payerName') === '' ? {} : { payerName: text('payerName') }),
     ...(text('paidAt') === '' ? {} : { paidAt: new Date(text('paidAt')).toISOString() }),
     ...(text('proofUrl') === '' ? {} : { proofUrl: text('proofUrl') }),
-  });
+  }, formData.get('proofFile') as File | null);
 
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidateInvoice(text('invoiceId'), text('projectId') || undefined);
@@ -436,7 +436,7 @@ export async function recordExpenseAction(_prev: FormState, formData: FormData):
     ...(projectId ? { projectId } : {}),
     ...(vendor ? { vendor } : {}),
     ...(text('receiptUrl') ? { receiptUrl: text('receiptUrl') } : {}),
-  });
+  }, formData.get('receiptFile') as File | null);
 
   if (!result.ok) return { status: 'error', message: result.error.message };
 
@@ -501,7 +501,7 @@ export async function updateExpenseAction(_prev: FormState, formData: FormData):
     ...(projectId ? { projectId } : {}),
     ...(vendor ? { vendor } : {}),
     ...(text('receiptUrl') ? { receiptUrl: text('receiptUrl') } : {}),
-  });
+  }, formData.get('receiptFile') as File | null);
 
   if (!result.ok) return { status: 'error', message: result.error.message };
 

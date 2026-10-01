@@ -61,7 +61,7 @@ export async function readClientCommercialTimeline(input: {
     supabase
       .schema('finance')
       .from('invoices')
-      .select('id, number, status, total_minor, paid_minor, currency, issued_at, created_at, due_at, project_id, milestone_id')
+      .select('id, number, status, total_minor, currency, issued_at, created_at, due_at, project_id, milestone_id')
       .eq('client_account_id', input.clientAccountId),
   ]);
   if (proposals.error) unreadable('readClientCommercialTimeline.proposals', proposals.error);

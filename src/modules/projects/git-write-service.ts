@@ -3,7 +3,7 @@ import 'server-only';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
-import { readGithubPullReviews } from '@/lib/git/github';
+import { describeGithubReason, readGithubPullReviews, readGithubWorkflowRuns } from '@/lib/git/github';
 import {
   createTaskBranch as githubCreateTaskBranch,
   describeGithubWriteReason,
@@ -16,6 +16,8 @@ import { err, ok, type Result } from '@/lib/result';
 
 import {
   createTaskBranchSchema,
+  dispatchEnvironmentChecksSchema,
+  refreshEnvironmentChecksSchema,
   linkCommitSchema,
   mergePullRequestSchema,
   setRepositoryPolicySchema,
@@ -23,6 +25,8 @@ import {
   submitReviewSchema,
   triggerBuildSchema,
   type CreateTaskBranchInput,
+  type DispatchEnvironmentChecksInput,
+  type RefreshEnvironmentChecksInput,
   type LinkCommitInput,
   type MergePullRequestInput,
   type SetRepositoryPolicyInput,
@@ -30,6 +34,7 @@ import {
   type SubmitReviewInput,
   type TriggerBuildInput,
 } from './git-write-schema';
+import { DEFAULT_CHECKS_WORKFLOW, matchWorkflowRun, newDispatchKey, runState } from './environment-check-runs';
 import { accessRefusal, countApprovals, evaluateMergePolicy, type GitAction } from './repository-policy';
 import { getRepositoryLink } from './repository-link-queries';
 
@@ -339,4 +344,148 @@ export async function setRepositoryPolicy(input: SetRepositoryPolicyInput): Prom
     default:
       return err('FORBIDDEN', 'The database refused: only an owner or ops admin sets a repository policy.');
   }
+}
+
+/**
+ * Owner decision 13 (round 2) — run the contract and migration checks of a
+ * client environment as a GitHub workflow, dispatched from the panel.
+ *
+ * Order, as in every door here: capability (`project.write` — owner, ops admin
+ * and delivery lead, the roles `core.can_manage_delivery()` re-checks in the
+ * database), the repository's policy (a build-level write, so `read_only` is
+ * refused), the environment must belong to the project, then the dispatch
+ * through `github-write.ts` (token from the secrets resolver), and only when
+ * GitHub accepted it `projects.record_check_dispatch`. A refused dispatch
+ * records nothing, because nothing ran; the hand-recorded check remains.
+ */
+export async function dispatchEnvironmentChecks(input: DispatchEnvironmentChecksInput): Promise<Result<{ runRowId: string; workflowFile: string; url: string }>> {
+  const parsed = dispatchEnvironmentChecksSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid request.');
+
+  const context = await requireInternal();
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to run environment checks.');
+
+  const link = await linkedRepository(parsed.data.projectId);
+  if (!link) return err('CONFLICT', 'This project has no linked GitHub repository. Link one on the Repository tab, or record the checks by hand.');
+
+  const refusal = accessRefusal(link.accessLevel, 'build' satisfies GitAction);
+  if (refusal) return err('FORBIDDEN', refusal);
+
+  const supabase = await createClient();
+  const { data: environment, error: envError } = await supabase
+    .schema('projects')
+    .from('environments')
+    .select('id, project_id, label, url')
+    .eq('id', parsed.data.environmentId)
+    .maybeSingle();
+  if (envError) {
+    console.error(JSON.stringify({ level: 'error', scope: 'dispatchEnvironmentChecks.environment', detail: envError.message }));
+    return err('INTERNAL', 'Could not read the environment.');
+  }
+  if (!environment || environment.project_id !== parsed.data.projectId) return err('NOT_FOUND', 'Environment not found on this project.');
+
+  const workflowFile = parsed.data.workflowFile || DEFAULT_CHECKS_WORKFLOW;
+  const dispatchKey = newDispatchKey();
+  const checks = [...new Set(parsed.data.checks)];
+  const dispatched = await dispatchWorkflow({
+    link,
+    workflowFile,
+    ref: link.defaultBranch,
+    inputs: { environment: environment.label, environment_url: environment.url, checks: checks.join(','), dispatch_key: dispatchKey },
+  });
+  if (!dispatched.ok) return githubRefused(dispatched.reason, dispatched.detail);
+
+  const { data, error } = await supabase.schema('projects').rpc('record_check_dispatch', {
+    p_environment_id: environment.id,
+    p_checks: checks,
+    p_repository: link.full,
+    p_workflow_file: workflowFile,
+    p_ref: link.defaultBranch,
+    p_dispatch_key: dispatchKey,
+  });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'dispatchEnvironmentChecks.record', detail: error.message }));
+    return err('INTERNAL', 'GitHub accepted the workflow, but the panel could not record it. Check the repository\u2019s Actions tab directly.');
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; run_row_id?: string | null } | undefined;
+  if (row?.outcome === 'recorded' && row.run_row_id) return ok({ runRowId: row.run_row_id, workflowFile, url: dispatched.data.url });
+  return err(
+    row?.outcome === 'not_authorized' ? 'FORBIDDEN' : 'INTERNAL',
+    `GitHub accepted the workflow, but the database refused to record it (${row?.outcome ?? 'no answer'}).`,
+  );
+}
+
+export type CheckRunRefresh = { runRowId: string; status: 'dispatched' | 'in_progress' | 'completed'; conclusion: string | null; url: string | null };
+
+/**
+ * The status read: for each dispatch on this environment whose result has not
+ * been recorded, ask GitHub for the workflow's recent runs, find this dispatch's
+ * run, and hand what GitHub says to `projects.record_check_run_result` — which,
+ * once the run has completed, records the dispatched checks on the environment's
+ * readiness (ok only for `success`) with the run's link as the evidence. A
+ * failed read refuses in GitHub's own words and changes nothing.
+ */
+export async function refreshEnvironmentChecks(input: RefreshEnvironmentChecksInput): Promise<Result<{ runs: CheckRunRefresh[] }>> {
+  const parsed = refreshEnvironmentChecksSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid environment.');
+
+  const context = await requireInternal();
+  if (!can(context, 'project.write')) return err('FORBIDDEN', 'You do not have permission to read environment check results.');
+
+  const link = await linkedRepository(parsed.data.projectId);
+  if (!link) return err('CONFLICT', 'This project has no linked GitHub repository.');
+
+  const supabase = await createClient();
+  const { data: pending, error } = await supabase
+    .schema('projects')
+    .from('environment_check_runs')
+    .select('id, workflow_file, ref, dispatch_key, dispatched_at, run_id')
+    .eq('project_id', parsed.data.projectId)
+    .eq('environment_id', parsed.data.environmentId)
+    .is('applied_at', null)
+    .order('dispatched_at', { ascending: true });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'refreshEnvironmentChecks.pending', detail: error.message }));
+    return err('INTERNAL', 'Could not read the dispatched checks.');
+  }
+  if (!pending || pending.length === 0) return ok({ runs: [] });
+
+  const claimed = new Set<number>(pending.map((p) => p.run_id).filter((id): id is number => typeof id === 'number'));
+  const runsByWorkflow = new Map<string, Awaited<ReturnType<typeof readGithubWorkflowRuns>>>();
+  const results: CheckRunRefresh[] = [];
+
+  for (const dispatch of pending) {
+    const cacheKey = `${dispatch.workflow_file}@${dispatch.ref}`;
+    let read = runsByWorkflow.get(cacheKey);
+    if (!read) {
+      read = await readGithubWorkflowRuns(link, dispatch.workflow_file, dispatch.ref);
+      runsByWorkflow.set(cacheKey, read);
+    }
+    if (!read.ok) return err('PROVIDER_ERROR', `GitHub: ${describeGithubReason(read.reason)}. (${read.detail})`);
+
+    const run = matchWorkflowRun(read.data, { dispatchKey: dispatch.dispatch_key, dispatchedAt: dispatch.dispatched_at }, claimed);
+    if (!run) {
+      results.push({ runRowId: dispatch.id, status: 'dispatched', conclusion: null, url: null });
+      continue;
+    }
+    claimed.add(run.id);
+    const state = runState(run);
+    const { data, error: rpcError } = await supabase.schema('projects').rpc('record_check_run_result', {
+      p_run_row_id: dispatch.id,
+      p_status: state.status,
+      p_conclusion: state.conclusion ?? undefined,
+      p_run_id: run.id,
+      p_run_url: run.url,
+    });
+    if (rpcError) {
+      console.error(JSON.stringify({ level: 'error', scope: 'refreshEnvironmentChecks.record', detail: rpcError.message }));
+      return err('INTERNAL', 'GitHub answered, but the panel could not record the result.');
+    }
+    const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+    if (row?.outcome !== 'recorded' && row?.outcome !== 'progress_noted' && row?.outcome !== 'already_recorded') {
+      return err(row?.outcome === 'not_authorized' ? 'FORBIDDEN' : 'INTERNAL', `The database refused to record the result (${row?.outcome ?? 'no answer'}).`);
+    }
+    results.push({ runRowId: dispatch.id, status: state.status, conclusion: state.conclusion, url: run.url });
+  }
+  return ok({ runs: results });
 }

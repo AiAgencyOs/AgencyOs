@@ -9,6 +9,7 @@ import { err, ok, type Result } from '@/lib/result';
 
 import { PAYMENT_ACCOUNT_FIELDS, PAYMENT_ACCOUNT_KIND_LABEL, type PaymentAccountKind } from './schema';
 import { listPaymentAccounts, readInvoiceBillingProfile } from './queries';
+import { verifiedOn } from './verified-basis';
 
 /**
  * The invoice as a document — SCR-051, mirroring `quotationPdfForProposal`.
@@ -37,7 +38,7 @@ export async function invoicePdfForInvoice(
     .schema('finance')
     .from('invoices')
     .select(
-      'id, number, status, currency, subtotal_minor, tax_minor, total_minor, paid_minor, issued_at, due_at, paid_at, created_at, notes, client_account_id, project_id, milestone_id',
+      'id, number, status, currency, subtotal_minor, tax_minor, total_minor, paid_minor, verified_minor, issued_at, due_at, paid_at, created_at, notes, client_account_id, project_id, milestone_id',
     )
     .eq('id', idCheck.data)
     .maybeSingle();
@@ -71,8 +72,9 @@ export async function invoicePdfForInvoice(
       .maybeSingle();
     if (orgError || !org) throw new Error(`the organization could not be read: ${orgError?.message ?? 'no row'}`);
 
-    const [{ data: client }, billing, accounts, project, milestone] = await Promise.all([
-      supabase.schema('core').from('client_accounts').select('name').eq('id', invoice.client_account_id).maybeSingle(),
+    const [{ data: clientRows }, billing, accounts, project, milestone] = await Promise.all([
+      // The name only, so the finance role can print the PDF too (decision 7, 2026-10-01).
+      supabase.schema('finance').rpc('client_names', { p_ids: [invoice.client_account_id] }),
       readInvoiceBillingProfile(invoice.project_id),
       listPaymentAccounts(),
       invoice.project_id
@@ -94,7 +96,7 @@ export async function invoicePdfForInvoice(
       status: invoice.status,
       currency: invoice.currency,
       billedTo: {
-        clientName: client?.name ?? null,
+        clientName: clientRows?.[0]?.name ?? null,
         legalName: billing?.legalName ?? null,
         gstin: billing?.gstin ?? null,
         billingState: billing?.billingState ?? null,
@@ -114,7 +116,8 @@ export async function invoicePdfForInvoice(
       subtotalMinor: invoice.subtotal_minor,
       taxMinor: invoice.tax_minor,
       totalMinor: invoice.total_minor,
-      paidMinor: invoice.paid_minor,
+      // Owner decision 8 (2026-10-01): what the client is shown as paid is what has been VERIFIED, the one basis (verified-basis.ts).
+      paidMinor: verifiedOn(invoice),
       issuedAt: invoice.issued_at,
       dueAt: invoice.due_at,
       paidAt: invoice.paid_at,

@@ -66,12 +66,8 @@ export type BillingClient = { id: string; name: string };
 export async function listBillingClients(): Promise<BillingClient[]> {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .schema('core')
-    .from('client_accounts')
-    .select('id, name')
-    .order('name', { ascending: true })
-    .limit(500);
+  // Names only, through finance.client_names, so the finance role filters by client too (decision 7, 2026-10-01).
+  const { data, error } = await supabase.schema('finance').rpc('client_names', {});
 
   if (error) unreadable('listBillingClients', error);
   return data ?? [];
@@ -131,6 +127,7 @@ export type PaymentSubmissionRow = {
   payerName: string | null;
   paidAt: string | null;
   proofUrl: string | null;
+  proofFileName: string | null;
   status: string;
   submittedAt: string;
   verifiedAt: string | null;
@@ -142,7 +139,7 @@ export type PaymentSubmissionRow = {
 };
 
 const SUBMISSION_SELECT =
-  'id, invoice_id, amount_minor, currency, method, reference, payer_name, paid_at, proof_url, status, submitted_at, verified_at, verified_by, verification_evidence, rejected_reason, mismatch_note, payment_id';
+  'id, invoice_id, amount_minor, currency, method, reference, payer_name, paid_at, proof_url, proof_file_name, status, submitted_at, verified_at, verified_by, verification_evidence, rejected_reason, mismatch_note, payment_id';
 
 /**
  * Payment claims across every invoice — the queue's other half. `settled`
@@ -182,7 +179,7 @@ export async function listPaymentSubmissions(
 
   const [{ data: clients, error: clientsError }, { data: users, error: usersError }] = await Promise.all([
     clientIds.length > 0
-      ? supabase.schema('core').from('client_accounts').select('id, name').in('id', clientIds)
+      ? supabase.schema('finance').rpc('client_names', { p_ids: clientIds })
       : Promise.resolve({ data: [] as { id: string; name: string }[], error: null }),
     verifierIds.length > 0
       ? supabase.schema('core').from('users').select('id, full_name, email').in('id', verifierIds)
@@ -208,6 +205,7 @@ export async function listPaymentSubmissions(
       payerName: c.payer_name,
       paidAt: c.paid_at,
       proofUrl: c.proof_url,
+      proofFileName: c.proof_file_name,
       status: c.status,
       submittedAt: c.submitted_at,
       verifiedAt: c.verified_at,

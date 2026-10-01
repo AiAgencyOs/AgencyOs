@@ -20,8 +20,9 @@ import {
 } from '@/modules/crm/queries';
 import { readConversationWindow, readProjectGroupForLead } from '@/modules/crm/window-queries';
 import { listLeadServiceSuggestions, readLeadService } from '@/modules/crm/lead-service-queries';
-import { readLeadScore } from '@/modules/crm/lead-score-queries';
-import { readLeadScoreOverride } from '@/modules/crm/lead-score-override-queries';
+import { heatTitle } from '@/modules/crm/lead-heat';
+import { LeadHeatBadge } from '@/modules/crm/lead-heat-badge';
+import { readLeadHeatReading } from '@/modules/crm/lead-heat-queries';
 import { listSequencesForLead } from '@/modules/crm/lead-sequence-queries';
 import { readRequirementQuestionSends } from '@/modules/crm/requirement-question-queries';
 import { readProjectsForRequirementVersions } from '@/modules/projects/requirements-tab-queries';
@@ -119,7 +120,6 @@ import { RequirementDecisionForm } from './requirement-decision-form';
 import { RequirementSetPanel } from './requirement-set-panel';
 import { RequirementReviseForm } from './requirement-revise-form';
 import { LeadServiceForm } from './service-form';
-import { OverrideScoreForm, RescoreLeadForm } from './score-panel';
 import { SequenceControls } from '../../follow-ups/sequence-controls';
 import { RetryDeliveryForm } from '../../operations/retry-delivery-form';
 import {
@@ -221,11 +221,8 @@ export default async function LeadConversationPage({
   const roster = await listInternalRoster();
   // SCR-006 — the service the lead asked about, and the values already in use.
   const [service, serviceSuggestions] = await Promise.all([readLeadService(leadId), listLeadServiceSuggestions()]);
-  // ADM-88 — Decision: reversed by the owner on 2026-09-29: the score with
-  // the reasons and inputs it was computed from, or null when never scored.
-  const leadScore = await readLeadScore(leadId);
-  // SCR-008 — the human decision beside it, or null when the computed score stands.
-  const scoreOverride = await readLeadScoreOverride(leadId);
+  // Owner decision 1 (round 2, ADM-88): Hot / Warm / Cold from recorded reasons; the stored score is never read.
+  const heatReading = await readLeadHeatReading({ id: leadId, status: lead.status });
 
   const conversation = await getLatestConversation(leadId);
   const messages = conversation ? await listMessages(conversation.id) : [];
@@ -552,65 +549,20 @@ export default async function LeadConversationPage({
           ...(facts ? [{ label: 'Row last updated', value: clock.dateTime(facts.updatedAt) }] : []),
         ]}
       />
-      {/* ADM-88 — Decision: reversed by the owner on 2026-09-29. */}
+      {/* Owner decision 1 (round 2): a Hot / Warm / Cold label with its reasons — never a number. */}
       <Card>
-        <CardHeader
-          title="Lead score"
-          description={leadScore ? `Computed ${clock.dateTime(leadScore.scoredAt)} from the facts below.` : 'Not scored yet. A score is computed from recorded facts and stored with its reasons; nothing is typed.'}
-          actions={mayWrite ? <RescoreLeadForm leadId={leadId} scored={leadScore !== null} /> : undefined}
-        />
-        {leadScore ? (
-          <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
-            {/* SCR-008 — AI suggestion vs human decision: two numbers, side by
-                side, never one overwriting the other. The override is a
-                person's, with their reason; the computed score stays. */}
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-lg border border-line bg-surface-sunken p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-faint">Computed (model)</p>
-                <p className="text-2xl tabular font-semibold">{leadScore.score}<span className="text-sm text-muted">/100</span></p>
-                <p className="text-xs text-muted">{leadScore.reasons.length} reasons, below</p>
-              </div>
-              <div className={`rounded-lg border p-3 ${scoreOverride ? 'border-brand/40 bg-brand-soft' : 'border-line bg-surface-sunken'}`}>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-faint">Human decision</p>
-                {scoreOverride ? (
-                  <>
-                    <p className="text-2xl tabular font-semibold">{scoreOverride.score}<span className="text-sm text-muted">/100</span></p>
-                    <p className="text-xs text-muted">
-                      &ldquo;{scoreOverride.reason}&rdquo; — {roster.find((m) => m.userId === scoreOverride.byUserId)?.fullName ?? scoreOverride.byUserId.slice(0, 8)}, {clock.dateTime(scoreOverride.at)}
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-[13px] text-muted">None — the computed score stands.</p>
-                )}
-              </div>
-            </div>
-            {mayAssign ? <OverrideScoreForm leadId={leadId} current={scoreOverride ? { score: scoreOverride.score, reason: scoreOverride.reason } : null} /> : null}
-            <ul className="divide-y divide-line rounded-lg border border-line">
-              {leadScore.reasons.map((r) => (
-                <li key={r.code} className="flex items-start justify-between gap-3 px-3 py-1.5 text-[13px]">
-                  <span className="min-w-0">
-                    <span className="font-medium">{humanize(r.code)}</span>
-                    <span className="block text-xs text-muted">{r.detail}</span>
-                  </span>
-                  <span className={`shrink-0 tabular ${r.points < 0 ? 'text-danger' : r.points === 0 ? 'text-muted' : 'text-success'}`}>
-                    {r.points > 0 ? `+${r.points}` : r.points}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <details className="text-xs text-muted">
-              <summary className="cursor-pointer">Inputs the score was computed from</summary>
-              <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                {Object.entries(leadScore.inputs).map(([key, value]) => (
-                  <div key={key} className="contents">
-                    <dt className="font-mono">{key}</dt>
-                    <dd className="break-words">{value === null ? 'null' : typeof value === 'object' ? JSON.stringify(value) : String(value)}</dd>
-                  </div>
-                ))}
-              </dl>
-            </details>
+        <CardHeader title="Lead Heat" description="Worked out from the stage, the last reply and whether a budget is recorded. Nothing is typed." />
+        <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+          <div className="flex items-center gap-2">
+            <LeadHeatBadge label={heatReading.label} title={heatTitle(heatReading)} />
+            <span className="text-xs text-muted">{heatReading.label === 'Hot' ? 'Qualified or beyond, and replied in the last 7 days.' : heatReading.label === 'Warm' ? 'At least one good sign, not yet hot.' : 'No good sign on record.'}</span>
           </div>
-        ) : null}
+          <ul className="divide-y divide-line rounded-lg border border-line">
+            {heatReading.reasons.map((r) => (
+              <li key={r} className="px-3 py-1.5 text-[13px]">{r}</li>
+            ))}
+          </ul>
+        </div>
       </Card>
       {facts && (facts.tags.length > 0 || mayWrite) ? (
         <Card>

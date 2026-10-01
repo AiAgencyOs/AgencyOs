@@ -4,6 +4,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
+import { verifiedOn } from '@/lib/finance/verified-basis';
 
 import { agencyClock } from './agency-clock';
 import type { EntityPreview, PreviewFact, PreviewGroup } from './entity-preview-types';
@@ -85,7 +86,9 @@ export async function readEntityPreview(group: PreviewGroup, id: string): Promis
         .is('deleted_at', null)
         .maybeSingle();
       if (error || !data) return notFound();
-      const { data: client } = await supabase.schema('core').from('client_accounts').select('name').eq('id', data.client_account_id).maybeSingle();
+      // The name only, through the door the finance role shares (decision 7, 2026-10-01).
+      const { data: clientRows } = await supabase.schema('finance').rpc('client_names', { p_ids: [data.client_account_id] });
+      const client = clientRows?.[0] ?? null;
       if (client) facts.push({ label: 'Client', value: client.name });
       if (data.budget_minor !== null) facts.push({ label: 'Budget', value: money(data.budget_minor, data.currency) });
       if (data.starts_on) facts.push({ label: 'Starts', value: clock.date(data.starts_on) });
@@ -96,13 +99,14 @@ export async function readEntityPreview(group: PreviewGroup, id: string): Promis
       const { data, error } = await supabase
         .schema('finance')
         .from('invoices')
-        .select('id, number, status, currency, total_minor, paid_minor, due_at, issued_at, client_account_id')
+        .select('id, number, status, currency, total_minor, verified_minor, due_at, issued_at, client_account_id')
         .eq('id', id)
         .maybeSingle();
       if (error || !data) return notFound();
       const { data: client } = await supabase.schema('core').from('client_accounts').select('name').eq('id', data.client_account_id).maybeSingle();
       facts.push({ label: 'Total', value: money(data.total_minor, data.currency) });
-      if (data.paid_minor > 0) facts.push({ label: 'Paid', value: money(data.paid_minor, data.currency) });
+      // Verified payments only: the one basis (verified-basis.ts).
+      if (verifiedOn(data) > 0) facts.push({ label: 'Paid (verified)', value: money(verifiedOn(data), data.currency) });
       if (data.issued_at) facts.push({ label: 'Issued', value: clock.date(data.issued_at) });
       if (data.due_at) facts.push({ label: 'Due', value: clock.date(data.due_at) });
       return ok({ group, id, name: data.number, status: data.status, subtitle: client?.name ?? null, facts, href: `/invoices/${id}` });

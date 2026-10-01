@@ -39,6 +39,7 @@ const src = join(here, '..', 'src');
  */
 const NEXT_STUBS = {
   'next/cache': join(here, '_stubs', 'next-cache.mjs'),
+  'next/server': join(here, '_stubs', 'next-server.mjs'),
 };
 
 /** The extensions tsc would try, in the order it would try them. */

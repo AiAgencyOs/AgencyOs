@@ -23,6 +23,8 @@ import { markOverdueInvoices } from '@/lib/finance/overdue';
 import { mayAgentRun } from '@/lib/ai/autonomy';
 import { alertOnBacklog } from '@/lib/observability/alert';
 import { stampAgentDefinitions } from '@/modules/agents/stamp';
+import { runSemanticIndexing } from '@/lib/search/semantic-indexer';
+import { AGENT_DEFINITIONS } from '@/modules/agents/registry';
 import { settlementFor } from '@/lib/jobs/retry';
 import {
   handleApprovalRequested,
@@ -327,6 +329,18 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    * costs one select per tick and no write at all.
    */
   const stamps = await stampAgentDefinitions(admin);
+
+  /**
+   * ── search by meaning (decision 14) ────────────────────────────────────
+   *
+   * For an organisation whose owner turned it on: embed new and changed
+   * records, a bounded page at a time, under the monthly budget gates. A
+   * failure is logged inside and never stops the tick.
+   */
+  const semantic = await runSemanticIndexing(admin, AGENT_DEFINITIONS).catch((error) => {
+    console.error(JSON.stringify({ level: 'error', scope: 'jobs/run.semantic', detail: error instanceof Error ? error.message : String(error) }));
+    return null;
+  });
 
   const alerted = await alertOnBacklog(admin);
 
@@ -1055,6 +1069,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     campaigns,
     dueAnnouncements,
     suiteSchedules,
+    semantic,
     unlocks: unlocks.results,
     announcements: announcements.results,
     escalations: escalations.results,
