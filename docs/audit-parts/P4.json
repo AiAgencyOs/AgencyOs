@@ -1,0 +1,1341 @@
+[
+ {
+  "phase": 4,
+  "step_id": "4.1",
+  "step_name": "Load locked baseline",
+  "business_trigger": "Phase 3 lock (project.phase_four_ready) after client direction approval",
+  "primary_agent": "PM Agent / Orchestrator (handlers; no AI)",
+  "supporting_agents": "ui_designer",
+  "expected_frontend": "Phase 4 overview panel showing baseline and workspace state",
+  "expected_backend": "start_phase_four reads latest phase_three_handoff with phase_four_ready=true; Designer reads frozen payload, never re-derives",
+  "expected_database": "projects.phase_three_handoffs (frozen), projects.phase_four (unique per project)",
+  "expected_api": "RPC projects.start_phase_four",
+  "expected_events_jobs": "project.phase_four_ready -> projects:startPhaseFour -> project.phase_four_started -> orchestrator:routeTask2Design + ui_designer draft",
+  "expected_admin_control": "/projects/[id] Phase 4 panel",
+  "expected_state_transition": "phase_three completed -> phase_four.task2_started",
+  "existing_files": [
+   "supabase/migrations/20260920000000_the_tokens_phase_four_inherits.sql:500-580 (handoff payload: screens, theme, colours, tokens, figma, approvalEvidence)",
+   "supabase/migrations/20260923100000_phase_four_begins_where_phase_three_locks.sql",
+   "src/modules/projects/handlers.ts:631 handlePhaseFourReady",
+   "app/api/jobs/run/workflows.ts:1072-1200 (UI_VERSION_DRAFT reads handoff.payload)",
+   "app/(internal)/projects/[projectId]/phase-four-panel.tsx"
+  ],
+  "existing_routes": [
+   "/projects/[projectId] (phase-four-panel)",
+   "/api/jobs/run"
+  ],
+  "existing_tables": [
+   "projects.phase_three_handoffs",
+   "projects.phase_four",
+   "projects.screen_baselines"
+  ],
+  "existing_tests": [
+   "the-ui-version-designs-the-locked-screens.test.ts [static-regex]+[behavioral zod schema]",
+   "task-2-routes-to-a-designer.test.ts [behavioral routing fn]+[static-regex]"
+  ],
+  "runtime_evidence": "Rolled-back txn on agencyos_local (psql, owner/service_role JWT claims): handoff forced ready -> projects.start_phase_four => \"started|<id>\"; ROLLBACK, phase_four count back to 0. Local DB has 0 phase_four rows and its only handoff has phase_four_ready=false (so no organic run). Handoff constraint check: phase_four_ready requires figma_node_id (migration 20260919180000:133).",
+  "implementation_status": "PARTIAL",
+  "verification_status": "VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "RISK",
+  "known_bug": "Handoff payload carries screens, theme, colour palette, 12 token fields, Figma node and approval evidence, but NO scope-version id, requirement-version id or scope items text; the Designer prompt receives only screenKey/name/role/purpose/declared-states + tokens. \"Approved scope + requirements\" are therefore not loaded into Phase 4 as versioned refs. phase_four.state is not advanced past ui_design by any later door (see 4.13/4.14).",
+  "blocker": "none for the load itself; a handoff with no Figma node or no token set stays phase_four_ready=false and Phase 4 never starts (correct, honest)",
+  "dependency": "Phase 3 lock",
+  "risk": "Scope/requirement drift between lock and Phase 4 cannot be detected from the workspace row",
+  "required_fix": "Carry scope_version_id + requirement_version_id into phase_four/ui_versions and pass them to the Designer and QA",
+  "validation_method": "Live txn: force handoff ready, call start_phase_four; inspect payload keys",
+  "notes": "Prior audit called this COMPLETE; direction is genuinely inherited, but scope/requirement refs are not."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.2",
+  "step_name": "Figma-first rule (Figma / approved design artifact is source of truth)",
+  "business_trigger": "Designer must work from the approved Figma/design artifact, not generated images",
+  "primary_agent": "UI Designer",
+  "supporting_agents": "PM, Admin",
+  "expected_frontend": "Link/verify Figma node per theme and per screen; design assets library",
+  "expected_backend": "Figma lookup (read-only API); ui_version content pinned to artifact version",
+  "expected_database": "theme_options.figma_*; phase_three_handoffs.figma_*; screens.figma_url; design_assets (uploaded, versioned, approved)",
+  "expected_api": "src/lib/figma/client.ts lookupNode; RPC link_theme_figma",
+  "expected_events_jobs": "none",
+  "expected_admin_control": "Design page: link Figma node, assets approve",
+  "expected_state_transition": "ui_version tied to a Figma file version",
+  "existing_files": [
+   "src/lib/figma/client.ts",
+   "src/modules/projects/design.ts:594-670 linkThemeFigma (verifies node + reads version; unverified fallback)",
+   "supabase/migrations/20260920000000:505 (handoff not ready without Figma node)",
+   "src/modules/projects/schema.ts:740-750,932 (explicit: agent cannot produce Figma; MANUAL_FIGMA_REQUIRED boundary)",
+   "src/modules/projects/screen-service.ts:194 setScreenFigmaUrl",
+   "supabase/migrations/20261006400100 (design_assets uploaded/brand kit)"
+  ],
+  "existing_routes": [
+   "/projects/[projectId]/design",
+   "/projects/[projectId]/design/screens/[screenId]"
+  ],
+  "existing_tables": [
+   "projects.theme_options",
+   "projects.phase_three_handoffs",
+   "projects.screens",
+   "projects.design_assets",
+   "projects.design_asset_links"
+  ],
+  "existing_tests": [
+   "a-reference-is-not-the-design.test.ts [static-regex]",
+   "the-designer-proposes.test.ts [static-regex]"
+  ],
+  "runtime_evidence": "psql: projects.ui_versions columns = id, org, project, phase_four, source_phase_three_handoff_id, version, status, screens jsonb, qa_*; NO figma/artifact column. Figma API not configured locally (no token), so lookupNode was not exercised (real integration not tested).",
+  "implementation_status": "PARTIAL",
+  "verification_status": "NOT_VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "RISK",
+  "known_bug": "Figma-first is enforced only at the Phase 3 gate (handoff needs a Figma node). In Phase 4 the UI version (jsonb layout spec written by an LLM) has no link to a Figma file/node/version, so the \"approved artifact/version\" the client approves is the text spec, not a Figma frame. screens.figma_url is a free https text field, optional, never checked by any QA/approval gate.",
+  "blocker": "EXTERNAL/OWNER: real Figma production is manual (MANUAL_FIGMA_REQUIRED); no Figma write capability exists by design",
+  "dependency": "Figma token + a human designer producing frames",
+  "risk": "Client approves a prose spec while believing it is the Figma design",
+  "required_fix": "Add figma_file_key/node/version to ui_versions, require them (or an uploaded design asset version) before admin_review; show them to the client",
+  "validation_method": "Inspect ui_versions schema; try to approve a ui_version with no Figma ref (possible - see 4.10 txn)",
+  "notes": "Honest limitation documented in code; prior audit PARTIAL stands. Unverified-fallback path records an unchecked Figma ref when Figma does not answer."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.3",
+  "step_name": "Design system (tokens, typography, spacing, components, states)",
+  "business_trigger": "Direction locked -> design system inherited by Phase 4",
+  "primary_agent": "UI Designer",
+  "supporting_agents": "UI QA",
+  "expected_frontend": "Token/brand kit views",
+  "expected_backend": "finalized token set frozen in handoff",
+  "expected_database": "projects.design_token_sets, color_options, brand_rules, design_assets (logo/icon/font)",
+  "expected_api": "RPC record_design_token_set / finalize_design_token_set / add_brand_rule",
+  "expected_events_jobs": "none",
+  "expected_admin_control": "Design page + brand kit",
+  "expected_state_transition": "token set draft->finalized (frozen)",
+  "existing_files": [
+   "supabase/migrations/20260920000000_the_tokens_phase_four_inherits.sql",
+   "supabase/migrations/20261006400100:596-640 (brand_rules)",
+   "src/modules/projects/design.ts"
+  ],
+  "existing_routes": [
+   "/projects/[projectId]/design"
+  ],
+  "existing_tables": [
+   "projects.design_token_sets",
+   "projects.color_options",
+   "projects.brand_rules",
+   "projects.design_assets"
+  ],
+  "existing_tests": [
+   "the-designer-proposes.test.ts [static-regex]",
+   "a-reference-is-not-the-design.test.ts [static-regex]"
+  ],
+  "runtime_evidence": "psql column list of design_token_sets: font_family_heading/body, type_scale_ratio, base_spacing_px, radius_style, elevation_style, border_style, icon_treatment, navigation_style, button_treatment, card_treatment, notes. No input/form/table/modal/feedback-state/focus tokens or component records exist as tables.",
+  "implementation_status": "PARTIAL",
+  "verification_status": "NOT_VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "OK",
+  "known_bug": "Design system = 12 descriptive token fields (mostly free-text style labels like \"rounded\") + colour palette roles + brand rules; no component library (inputs, forms, tables, modals, feedback states) is modelled. The UI Designer proposes keyComponents as free strings per screen.",
+  "blocker": "none",
+  "dependency": "Phase 3 token finalization",
+  "risk": "Components are not reusable/consistent across screens; QA cannot check token usage (admitted in migration 20260923120000 header)",
+  "required_fix": "Model a component/state library per project and check screens against it",
+  "validation_method": "Read schema; no runtime behaviour to run",
+  "notes": "Prior audit PARTIAL stands."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.4",
+  "step_name": "Full screen design (every scoped screen)",
+  "business_trigger": "project.phase_four_started",
+  "primary_agent": "UI Designer (AI, ui_designer)",
+  "supporting_agents": "Orchestrator route record, UI QA, PM",
+  "expected_frontend": "UI version detail page listing each screen design",
+  "expected_backend": "Designer workflow reads frozen baseline screens, proposes per-screen spec; invented screens rejected; one version per round",
+  "expected_database": "projects.ui_versions.screens jsonb (layoutSummary, keyComponents[1-12], statesAddressed[])",
+  "expected_api": "RPC record_ui_version_draft (service_role/can_write)",
+  "expected_events_jobs": "project.phase_four_started -> ui.version_draft (AI job) -> project.ui_version_drafted",
+  "expected_admin_control": "/projects/[id]/ui-versions/[uiVersionId]",
+  "expected_state_transition": "phase_four.task2_started -> ui_design; ui_version draft v1",
+  "existing_files": [
+   "app/api/jobs/run/workflows.ts:1060-1285 (UI_VERSION_DRAFT)",
+   "src/modules/projects/schema.ts:765-797 uiVersionDraftSchema",
+   "supabase/migrations/20260923110000_the_ui_version_designs_the_locked_screens.sql",
+   "app/(internal)/projects/[projectId]/ui-versions/[uiVersionId]/page.tsx"
+  ],
+  "existing_routes": [
+   "/projects/[projectId]/ui-versions/[uiVersionId]"
+  ],
+  "existing_tables": [
+   "projects.ui_versions",
+   "projects.phase_four"
+  ],
+  "existing_tests": [
+   "the-ui-version-designs-the-locked-screens.test.ts [static-regex]+[behavioral zod]",
+   "the-designer-proposes.test.ts [static-regex]",
+   "the-ui-version-gets-its-own-detail-page.test.ts [static-regex]"
+  ],
+  "runtime_evidence": "Rolled-back txn: record_ui_version_draft (service_role) => \"drafted|<id>\", state set ui_design. The AI workflow itself NOT run: ai.agents ui_designer enabled=t but no AI provider configured locally (workflow fails AI_PROVIDER_NOT_CONFIGURED, workflows.ts:1195). No ui_versions rows exist in the local DB. Unit run: node --test tests/the-ui-version-designs-the-locked-screens.test.ts => 24/24 pass.",
+  "implementation_status": "PARTIAL",
+  "verification_status": "NOT_VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "OK",
+  "known_bug": "\"Designed\" = a one-paragraph layout summary + component name list + state tags per screen, generated by an LLM (no pixels, no Figma frame, no assets). The workflow rejects invented screen keys, but nothing enforces that every baseline screen is drafted at draft time (that is the later QA check).",
+  "blocker": "EXTERNAL: AI provider credentials not configured here; real design output unverified",
+  "dependency": "4.1, AI provider",
+  "risk": "Client reviews a text spec as \"the UI\"",
+  "required_fix": "Real design artifact per screen (Figma frame/asset version) attached to the version",
+  "validation_method": "Run ui.version_draft job with a fake provider; inspect ui_versions.screens",
+  "notes": "Prior audit PARTIAL stands; structured spec is real and schema-validated."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.5",
+  "step_name": "Screen states (default/hover/focus/disabled/loading/empty/error/success/permission/offline/overflow)",
+  "business_trigger": "each screen design",
+  "primary_agent": "UI Designer",
+  "supporting_agents": "UI QA",
+  "expected_frontend": "state grid per screen",
+  "expected_backend": "states modelled and enforced at QA/approval",
+  "expected_database": "ui_versions.screens[].statesAddressed; screens.has_{empty,loading,error,success}_state",
+  "expected_api": "set_screen_states, approve_screen",
+  "expected_events_jobs": "project.ui_version_drafted -> quality_assurance:reviewUIVersion",
+  "expected_admin_control": "Coverage matrix grid on UI version page; screen states panel",
+  "expected_state_transition": "draft -> qa_pass only if declared states addressed",
+  "existing_files": [
+   "src/modules/projects/schema.ts:765-790 UI_VERSION_SCREEN_STATES = default,empty,loading,error,success (5 only)",
+   "src/modules/qa/handlers.ts:43-135 (only checks states the baseline DECLARED)",
+   "supabase/migrations/20261006400100:427-480 approve_screen (4 flags + QA confirm)",
+   "src/modules/projects/queries.ts:2353-2400 buildUiCoverageMatrix"
+  ],
+  "existing_routes": [
+   "/projects/[projectId]/ui-versions/[uiVersionId]",
+   "/projects/[projectId]/design/screens/[screenId]"
+  ],
+  "existing_tables": [
+   "projects.ui_versions",
+   "projects.screens"
+  ],
+  "existing_tests": [
+   "qa-cannot-pass-its-own-design.test.ts [static-regex]",
+   "ui-coverage.test.ts [static-regex]",
+   "db:verify:uicoverage [live-db]"
+  ],
+  "runtime_evidence": "flock npm run -s db:verify:uicoverage => \"All checks passed\" (3m47s incl. lock wait); section E: \"a screen missing states is reported ... and does not block\" (states are flagged, never enforced at Phase 3 design submission). psql: local screen_baseline screen \"dashboard\" has all four state flags false, so QA requires no state beyond default for it.",
+  "implementation_status": "PARTIAL",
+  "verification_status": "VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "RISK",
+  "known_bug": "Only 5 of the 12 required states can be expressed (no hover/focus, pressed, disabled, validation error, permission denied, offline, overflow). QA requires only the states the Phase 3 baseline declared (4 booleans); if the baseline declared none, any draft passes. Phase 3 design coverage treats missing states as \"flag, not block\" (verify-ui-coverage section E).",
+  "blocker": "none",
+  "dependency": "4.4",
+  "risk": "A design can be QA-passed with no loading/error/permission states",
+  "required_fix": "Extend state vocabulary and make required states a per-project config enforced by QA",
+  "validation_method": "db:verify:uicoverage; txn draft with statesAddressed=[default] against a baseline declaring none",
+  "notes": "Prior audit PARTIAL stands."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.6",
+  "step_name": "Responsive design (desktop/tablet/mobile)",
+  "business_trigger": "each screen design",
+  "primary_agent": "UI Designer",
+  "supporting_agents": "UI QA",
+  "expected_frontend": "device targets and coverage per screen",
+  "expected_backend": "responsive coverage required per project platform before approval",
+  "expected_database": "screens.device_targets text[], screens.responsive_coverage jsonb, screens.responsive_behaviour text",
+  "expected_api": "RPC set_screen_states (SCR-034/035)",
+  "expected_events_jobs": "none",
+  "expected_admin_control": "Screens list coverage column; screen detail panel",
+  "expected_state_transition": "none (not a gate)",
+  "existing_files": [
+   "supabase/migrations/20261001130000_a_design_has_activity_assets_have_states_and_git_is_written.sql:270-355",
+   "src/modules/projects/screen-states-schema.ts:41",
+   "app/(internal)/projects/[projectId]/design/screens/page.tsx:128",
+   "app/(internal)/projects/[projectId]/design/screens/screen-states-panel.tsx"
+  ],
+  "existing_routes": [
+   "/projects/[projectId]/design/screens",
+   "/projects/[projectId]/design/screens/[screenId]"
+  ],
+  "existing_tables": [
+   "projects.screens"
+  ],
+  "existing_tests": [
+   "(none specific; a-reference-is-not-the-design.test.ts does not cover it)"
+  ],
+  "runtime_evidence": "psql: select count(*) filter (device_targets non-empty) from projects.screens => 0 of 20 screens; responsive_behaviour populated on 0 of 20. grep: nothing in qa/handlers.ts, record_ui_version_qa_verdict, approve_screen, request_ui_version_admin_review or complete_phase_four reads responsive_coverage/device_targets.",
+  "implementation_status": "PARTIAL",
+  "verification_status": "VERIFIED",
+  "test_status": "NOT_RUN",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "OK",
+  "known_bug": "Responsive is now MODELLED (not prose-only) on the Phase 3 screen inventory record, edited by a person; it is not part of the Phase 4 UI version spec (uiVersionDraftSchema has no device/responsive field), not checked by Design QA, Prototype QA or either approval, and the prototype renderer is only a flex layout.",
+  "blocker": "none",
+  "dependency": "4.4",
+  "risk": "Desktop-only design can be approved and prototyped",
+  "required_fix": "Add responsive/device fields to uiVersionDraftSchema and make QA enforce coverage for each project platform",
+  "validation_method": "psql counts; grep gates",
+  "notes": "Prior audit MISSING -> now PARTIAL (modelled, unenforced, unused in data)."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.7",
+  "step_name": "Accessibility (contrast, labels, focus, keyboard, touch targets, hierarchy, reduced motion)",
+  "business_trigger": "each screen design",
+  "primary_agent": "UI Designer / UI QA",
+  "supporting_agents": "PM",
+  "expected_frontend": "accessibility checklist per screen",
+  "expected_backend": "contrast computed; a11y requirements checked by QA",
+  "expected_database": "screens.accessibility_notes text; color_options.contrast_notes text",
+  "expected_api": "none",
+  "expected_events_jobs": "none",
+  "expected_admin_control": "screen detail shows notes",
+  "expected_state_transition": "none",
+  "existing_files": [
+   "supabase/migrations/20260821230000_attractive_but_incomplete.sql:109-110 accessibility_notes",
+   "src/modules/projects/schema.ts:~960 contrastNotes (\"a number a model produces is a claim about arithmetic it did not do\")",
+   "app/(internal)/projects/[projectId]/design/colors/direction-panels.tsx:99 (\"not a WCAG claim\")",
+   "app/(internal)/projects/[projectId]/design/screens/[screenId]/page.tsx:177"
+  ],
+  "existing_routes": [
+   "/projects/[projectId]/design/screens/[screenId]"
+  ],
+  "existing_tables": [
+   "projects.screens",
+   "projects.color_options"
+  ],
+  "existing_tests": [
+   "none"
+  ],
+  "runtime_evidence": "grep -rni \"wcag|luminance|contrastRatio\" src app => no match in logic (only the placeholder text \"not a WCAG claim\"). psql: accessibility_notes populated on 0/20 local screens. Nothing in any QA/approval door reads accessibility.",
+  "implementation_status": "PARTIAL",
+  "verification_status": "VERIFIED",
+  "test_status": "NOT_RUN",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "OK",
+  "known_bug": "Accessibility is prose-only: two free-text columns, no contrast computation, no keyboard/focus/touch-target/reduced-motion/screen-reader model, no enforcement. Migration 20260918160000 header states Phase 3 deliberately excluded it; Phase 4 never added it.",
+  "blocker": "none",
+  "dependency": "4.3",
+  "risk": "Inaccessible UI approved; legal/quality exposure",
+  "required_fix": "Compute WCAG contrast from token hexes; add an accessibility checklist to ui_version spec and QA",
+  "validation_method": "grep; psql",
+  "notes": "Prior audit MISSING -> PARTIAL only because free-text fields exist; effectively still missing as a control."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.8",
+  "step_name": "Feature coverage matrix (requirement -> feature -> screen -> interaction -> state -> prototype)",
+  "business_trigger": "before UI QA / approval",
+  "primary_agent": "PM / Requirements capability / UI QA",
+  "supporting_agents": "UI Designer",
+  "expected_frontend": "matrix view with orphan/unmapped flags",
+  "expected_backend": "chain queryable and gating",
+  "expected_database": "requirement_versions -> features -> scope_items -> screen_scope_items -> screens -> ui_versions.screens[] -> prototype_artifacts.screens[]",
+  "expected_api": "projects.ui_coverage(project)",
+  "expected_events_jobs": "trigger refuse_uncovered_design on deliverable submit",
+  "expected_admin_control": "Design coverage panel; UI version coverage grid",
+  "expected_state_transition": "design deliverable in_review blocked on uncovered scope",
+  "existing_files": [
+   "supabase/migrations/20260821230000_attractive_but_incomplete.sql:260-310 (ui_coverage + refuse_uncovered_design, kind=design only)",
+   "src/modules/projects/queries.ts:2353-2400 buildUiCoverageMatrix (baseline screens x states only)",
+   "scripts/verify-ui-coverage.mjs",
+   "src/modules/qa/handlers.ts:179-215 (prototype screens vs ui_version screens)"
+  ],
+  "existing_routes": [
+   "/projects/[projectId]/design",
+   "/projects/[projectId]/ui-versions/[uiVersionId]"
+  ],
+  "existing_tables": [
+   "projects.features",
+   "projects.scope_items",
+   "projects.screen_scope_items",
+   "projects.screens",
+   "projects.ui_versions",
+   "projects.prototype_artifacts"
+  ],
+  "existing_tests": [
+   "ui-coverage.test.ts [static-regex]",
+   "db:verify:uicoverage [live-db]"
+  ],
+  "runtime_evidence": "flock npm run -s db:verify:uicoverage => all checks passed: included scope item with no screen is a BLOCKING gap, screen mapped to nothing blocks, optional-only reported, duplicate screen id 409, design deliverable enters review once covered, build deliverables not gated.",
+  "implementation_status": "PARTIAL",
+  "verification_status": "VERIFIED",
+  "test_status": "PASSED",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "RISK",
+  "known_bug": "The scope->screen coverage block (refuse_uncovered_design) fires only on deliverables.kind=design status in_review. The Phase 4 flow submits ui_versions (own table), never a design deliverable, so this block is not on the Phase 4 path; Phase 4 coverage is baseline-screen x state only. No single matrix joins requirement->feature->screen->interaction->state->prototype; there is no \"interaction\" entity at all and no missing-role flag.",
+  "blocker": "none",
+  "dependency": "4.4",
+  "risk": "A feature can be dropped between Phase 3 baseline and prototype without a flag",
+  "required_fix": "One coverage query across the full chain, enforced at ui_version admin review and prototype QA",
+  "validation_method": "db:verify:uicoverage + code trace of which table the trigger binds",
+  "notes": "Prior audit PARTIAL stands."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.9",
+  "step_name": "Internal UI QA (coverage, consistency, tokens, naming, assets, visual defects)",
+  "business_trigger": "project.ui_version_drafted",
+  "primary_agent": "UI/Design QA (quality_assurance)",
+  "supporting_agents": "ui_designer (producer)",
+  "expected_frontend": "QA findings shown on UI version page",
+  "expected_backend": "independent verifier decides; producer cannot self-pass",
+  "expected_database": "ui_versions.status qa_pass|qa_changes_required, qa_findings, qa_reviewed_at",
+  "expected_api": "RPC record_ui_version_qa_verdict",
+  "expected_events_jobs": "project.ui_version_drafted -> quality_assurance:reviewUIVersion -> project.ui_version_qa_reviewed",
+  "expected_admin_control": "UI version page findings; coverage grid",
+  "expected_state_transition": "draft -> qa_pass | qa_changes_required",
+  "existing_files": [
+   "src/modules/qa/handlers.ts:43-135 handleReviewUIVersion",
+   "src/modules/agents/verification.ts (verdictFor producer!=verifier)",
+   "supabase/migrations/20260923120000_qa_cannot_pass_its_own_design.sql",
+   "supabase/migrations/20260928100000 (transition graph trigger)"
+  ],
+  "existing_routes": [
+   "/api/jobs/run (runEventJobs uiVersionQa)"
+  ],
+  "existing_tables": [
+   "projects.ui_versions"
+  ],
+  "existing_tests": [
+   "qa-cannot-pass-its-own-design.test.ts [static-regex]+[behavioral verdictFor]",
+   "ui-version-state-machine.test.ts [static-regex]"
+  ],
+  "runtime_evidence": "Rolled-back txn: record_ui_version_qa_verdict(qa_pass) => recorded; transition trigger refused draft->locked (\"a UI version cannot move from draft to locked\") and CHECK ui_versions_qa_reviewed_is_dated refused qa_pass without qa_reviewed_at. Unit tests 15/15 pass. The handler is deterministic code (no AI); not run end to end as a job locally.",
+  "implementation_status": "PARTIAL",
+  "verification_status": "VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "RISK",
+  "data_integrity_status": "OK",
+  "known_bug": "QA checks only (a) every baseline screen is drafted and (b) declared states addressed. No consistency, token-usage, naming/versioning, asset, placeholder, responsive or accessibility check (named scope boundary in migration 20260923120000). The DB door record_ui_version_qa_verdict accepts ANY can_write user; producer!=verifier is enforced only in the TS handler (verdictFor), so a human with can_write can pass a version through the door directly.",
+  "blocker": "none",
+  "dependency": "4.4",
+  "risk": "Weak \"QA pass\" label gives false assurance to Admin",
+  "required_fix": "Restrict the door to the QA role/service and add the missing checks",
+  "validation_method": "txn through the door; unit tests",
+  "notes": "Producer!=verifier contract is real in the handler path."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.10",
+  "step_name": "PM / Admin approval of exact UI version",
+  "business_trigger": "project.ui_version_qa_reviewed (qa_pass)",
+  "primary_agent": "Orchestrator (raises request) + Admin (human)",
+  "supporting_agents": "PM",
+  "expected_frontend": "/approvals/[requestId] CONFIRM/EDIT with version context",
+  "expected_backend": "approvals engine request on exact ui_version id; decision synced back",
+  "expected_database": "approvals.approval_requests (subject_type ui_version), approval_policies, ui_versions.status",
+  "expected_api": "RPC request_ui_version_admin_review, approvals.decide_approval, sync_ui_version_decision",
+  "expected_events_jobs": "project.ui_version_qa_reviewed -> orchestrator:requestUIVersionAdminReview; project.ui_version_admin_reviewed",
+  "expected_admin_control": "Approvals page; Settings > Who must approve what",
+  "expected_state_transition": "qa_pass -> admin_review -> admin_approved | admin_edit",
+  "existing_files": [
+   "supabase/migrations/20260923130000_admin_review_reuses_the_engine.sql",
+   "src/modules/orchestrator/handlers.ts:170 handleRequestUIVersionAdminReview",
+   "app/(internal)/approvals/[requestId]/page.tsx",
+   "src/modules/approvals/schema.ts (APPROVAL_SUBJECT_TYPES)"
+  ],
+  "existing_routes": [
+   "/approvals",
+   "/approvals/[requestId]",
+   "/settings (approval policies)"
+  ],
+  "existing_tables": [
+   "approvals.approval_requests",
+   "approvals.approval_policies",
+   "projects.ui_versions"
+  ],
+  "existing_tests": [
+   "qa-cannot-pass-its-own-design.test.ts [static-regex]",
+   "the-ui-version-gets-its-own-detail-page.test.ts [static-regex]",
+   "db:verify:approvals [live-db, not run: not Phase-4 specific]"
+  ],
+  "runtime_evidence": "Rolled-back txns on agencyos_local (psql, owner JWT claims with app_metadata org+role; service_role for system doors; ROLLBACK; phase_four count 0 afterwards). Scripts kept in the audit scratchpad, results quoted here. Full door chain with an approvals policy present: start_phase_four=started; record_ui_version_draft=drafted; qa verdict=recorded; request_ui_version_admin_review=requested; decide_approval(owner)=decided/approved; sync_ui_version_decision=admin_approved. Without a policy: psql select subject_type,count(*) from approvals.approval_policies => only \"proposal|4\" (no ui_version / deliverable policy) so request_ui_version_admin_review answers no_policy and the version sits at qa_pass.",
+  "implementation_status": "PARTIAL",
+  "verification_status": "VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "RISK",
+  "known_bug": "Flow stalls at qa_pass in any org where the owner has not manually configured a ui_version approval policy (none seeded; migration header admits it). The approval payload records only screenCount + ids: no scope version, no screen-coverage snapshot, no known-limitations field. No separate PM approval step: only the configured Admin role decides. After decide_approval the status carry-over (sync_ui_version_decision) is called from the approvals page server action, not from an event, so a decision made any other way would not move the version.",
+  "blocker": "MANUAL SETUP: owner must create ui_version and deliverable approval policies (not seeded)",
+  "dependency": "4.9, owner approval policy",
+  "risk": "Stuck pipeline with no alarm; weak decision record",
+  "required_fix": "Seed default ui_version/deliverable policies at org creation or surface a blocking admin alert; make sync event-driven; store scope version + coverage in the request payload",
+  "validation_method": "txn chain; psql policies count",
+  "notes": "ADM-82: producer!=approver holds (AI cannot decide). Prior audit PARTIAL stands."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.11",
+  "step_name": "Client UI review (PM sends exact UI version)",
+  "business_trigger": "ui_version admin_approved",
+  "primary_agent": "PM Agent / PM (human)",
+  "supporting_agents": "Communication/WhatsApp",
+  "expected_frontend": "Client sees the exact UI version (portal link or message) and can respond",
+  "expected_backend": "share records WHAT/WHEN/HOW; message actually sent via approved channel",
+  "expected_database": "ui_versions.status client_review; audit row with evidenceRef",
+  "expected_api": "RPC share_ui_version_with_client(version, evidence_ref)",
+  "expected_events_jobs": "project.ui_version_shared_to_client (no subscriber)",
+  "expected_admin_control": "phase-four-forms.tsx client review forms",
+  "expected_state_transition": "admin_approved -> client_review",
+  "existing_files": [
+   "supabase/migrations/20260923140000_the_client_confirms_the_locked_ui.sql:176-235",
+   "app/(internal)/projects/[projectId]/phase-four-forms.tsx",
+   "app/(client)/portal/[projectId]/page.tsx (shows prototype link only)"
+  ],
+  "existing_routes": [
+   "/projects/[projectId] (Phase 4 forms)",
+   "/portal/[projectId]"
+  ],
+  "existing_tables": [
+   "projects.ui_versions"
+  ],
+  "existing_tests": [
+   "client-ui-review-gets-a-form.test.ts [static-regex]"
+  ],
+  "runtime_evidence": "Rolled-back txns on agencyos_local (psql, owner JWT claims with app_metadata org+role; service_role for system doors; ROLLBACK; phase_four count 0 afterwards). Scripts kept in the audit scratchpad, results quoted here. share_ui_version_with_client=shared (status client_review); event project.ui_version_shared_to_client appears in core.outbox_events. grep src/lib/events/catalog.ts: that event has no subscribers, and no portal page/query exists for a UI version (portal only has /portal/[projectId]/prototype/[uiVersionId]).",
+  "implementation_status": "PARTIAL",
+  "verification_status": "VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "RISK",
+  "known_bug": "The system only RECORDS that the PM shared a version (free-text evidence_ref, unverified). It sends nothing and gives the client no screen to view the UI version; the client sees the version through whatever the PM did outside AgencyOS. Revision rounds and old versions are not shown to the client. Phase 4 announcements (crm:announceUiVersionLocked / announcePrototypeSubmitted / ...) go to the organization INTERNAL channel (crm/handlers.ts:1773 announceToInternalChannel), never to the client: Phase 4 has no automated client-facing message at all.",
+  "blocker": "none",
+  "dependency": "4.10",
+  "risk": "\"Shared\" may not mean the client saw that exact version",
+  "required_fix": "Client portal page per ui_version (read-only) + outbound WhatsApp via the communication stack with delivery receipt as evidence",
+  "validation_method": "txn; grep subscribers; portal route listing",
+  "notes": "Prior audit called this COMPLETE; it is a record-keeping gate, not delivery. Downgraded to PARTIAL."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.12",
+  "step_name": "Client feedback classification",
+  "business_trigger": "project.ui_version_client_decided",
+  "primary_agent": "PM Agent (project_manager, AI)",
+  "supporting_agents": "UI Designer, Admin",
+  "expected_frontend": "classification visible to PM/Admin",
+  "expected_backend": "AI classifies into 6 classes; scope changes become change requests; clarifications become questions; classification governs what happens next",
+  "expected_database": "projects.client_feedback_classifications (unique per decision), clarification_requests, change_requests, approval_requests",
+  "expected_api": "workflow ui_version.classify_client_feedback",
+  "expected_events_jobs": "project.ui_version_client_decided -> project_manager:classifyClientFeedback AND ui_designer:reviseUIVersion (both, in parallel)",
+  "expected_admin_control": "Approvals queue for DESIGN_DIRECTION_CHANGE/REJECTED_REQUEST",
+  "expected_state_transition": "none beyond label",
+  "existing_files": [
+   "app/api/jobs/run/workflows.ts:1550-1725",
+   "src/modules/projects/schema.ts:890-914 (CORRECTION, INCLUDED_REVISION, CLARIFICATION, POSSIBLE_SCOPE_CHANGE, DESIGN_DIRECTION_CHANGE, REJECTED_REQUEST)",
+   "src/lib/events/catalog.ts:515-523"
+  ],
+  "existing_routes": [
+   "/api/jobs/run"
+  ],
+  "existing_tables": [
+   "projects.client_feedback_classifications",
+   "projects.clarification_requests",
+   "projects.change_requests",
+   "approvals.approval_requests"
+  ],
+  "existing_tests": [
+   "project-manager-classify-feedback.test.ts [static-regex]+[behavioral zod schema] (13/13 pass; asserts both reviseUIVersion and classifyClientFeedback subscribe to the same event - i.e. locks in the non-gating design)",
+   "pm-task-2-communication.test.ts [static-regex] 13/13 pass"
+  ],
+  "runtime_evidence": "Unit tests run (node --test): project-manager-classify-feedback 13/13, pm-task-2-communication 13/13 (source-text assertions). Job not run: needs the AI provider (none locally). Code trace: classification is written AFTER the model call; ui_designer:reviseUIVersion subscribes to the SAME event and runs unconditionally (workflows.ts:1329-1345 filters only on decision=change_requested). In the txn run, revise_ui_version produced v2 with no classification row present.",
+  "implementation_status": "PARTIAL",
+  "verification_status": "NOT_VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "RISK",
+  "known_bug": "Classification does not gate the revision: a POSSIBLE_SCOPE_CHANGE or REJECTED_REQUEST still triggers an automatic Designer redraft that consumes a revision round (race: both jobs consume the same event). New feature requests can therefore silently enter the next UI version, contrary to \"new feature != design correction\". Class names differ from the brief (CORRECTION vs BUG/CORRECTION, POSSIBLE_SCOPE_CHANGE vs SCOPE_CHANGE). Only the UI path is classified; prototype feedback is not (see 4.22).",
+  "blocker": "EXTERNAL: AI provider",
+  "dependency": "4.11",
+  "risk": "Scope creep through the design loop and wasted revision rounds",
+  "required_fix": "Make the revise job wait for and obey the classification (only CORRECTION/INCLUDED_REVISION auto-revise)",
+  "validation_method": "Run both jobs with a fake provider returning POSSIBLE_SCOPE_CHANGE and observe v2 still drafted",
+  "notes": "Prior audit called this COMPLETE; the classifier exists but is advisory only."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.13",
+  "step_name": "UI revision loop (next version, history, revision usage, repeat QA)",
+  "business_trigger": "client_change or admin_edit",
+  "primary_agent": "UI Designer",
+  "supporting_agents": "UI QA, PM, Admin",
+  "expected_frontend": "version history",
+  "expected_backend": "revise_ui_version creates v+1 draft, preserves previous row/feedback, counts rounds, limit escalation",
+  "expected_database": "ui_versions (unique phase_four_id+version), phase_four.ui_revision_count/limit, ui_version_client_decisions (append-only)",
+  "expected_api": "RPC revise_ui_version",
+  "expected_events_jobs": "project.ui_version_client_decided / project.ui_version_admin_reviewed -> ui_designer:reviseUIVersion -> project.ui_version_drafted -> QA again",
+  "expected_admin_control": "revision counters in Phase 4 panel; escalation state",
+  "expected_state_transition": "client_change|admin_edit (terminal) -> new draft v+1; limit -> revision_limit_escalation",
+  "existing_files": [
+   "supabase/migrations/20260924100000_the_revision_loop_client_change_asked_for.sql",
+   "supabase/migrations/20260924120000_admin_edit_redrafts_too.sql",
+   "supabase/migrations/20260924140000_the_escalation_reuses_the_announcement.sql",
+   "app/api/jobs/run/workflows.ts:1285-1545"
+  ],
+  "existing_routes": [
+   "/projects/[projectId]/ui-versions/[uiVersionId]"
+  ],
+  "existing_tables": [
+   "projects.ui_versions",
+   "projects.phase_four",
+   "projects.ui_version_client_decisions"
+  ],
+  "existing_tests": [
+   "the-revision-loop-client-change-asked-for.test.ts [static-regex] 17/17",
+   "admin-edit-redrafts-too.test.ts [static-regex] 10/10",
+   "the-escalation-reuses-the-announcement.test.ts [static-regex] 9/9",
+   "ui-version-state-machine.test.ts [static-regex] 5/5"
+  ],
+  "runtime_evidence": "Rolled-back txns on agencyos_local (psql, owner JWT claims with app_metadata org+role; service_role for system doors; ROLLBACK; phase_four count 0 afterwards). Scripts kept in the audit scratchpad, results quoted here. Client change_requested -> revise_ui_version=revised: versions 1|client_change, 2|draft; v1 screens untouched; phase_four ui_revision_count=1 limit=3; with limit forced to 1, the next revise answers revision_limit_reached and phase_four.state=revision_limit_escalation with a blocked_reason; client decision rows are append-only (trigger refuse_ui_version_client_decision_edit).",
+  "implementation_status": "COMPLETE",
+  "verification_status": "VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "OK",
+  "known_bug": "Revision is driven by the Designer AI (not run here). The loop does not link a version to the feedback that caused it except by decision rows referenced in the prompt; the revised draft does not record which decision it answers. phase_four.state is set back to ui_design only by the revise door.",
+  "blocker": "EXTERNAL: AI provider for the real redraft",
+  "dependency": "4.12",
+  "risk": "Revision runs even for out-of-scope feedback (4.12)",
+  "required_fix": "Store revises_decision_id on the new version; gate on classification",
+  "validation_method": "txn run above",
+  "notes": "Door-level behaviour verified; model-level untested."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.14",
+  "step_name": "Client UI approval (exact UI_VERSION_X_APPROVED with client, timestamp, evidence)",
+  "business_trigger": "client confirms the shared UI version",
+  "primary_agent": "PM (human records) / PM Agent",
+  "supporting_agents": "Admin",
+  "expected_frontend": "form to record the client decision and lock",
+  "expected_backend": "decision append-only against exact version id; lock freezes row",
+  "expected_database": "ui_version_client_decisions (decision, client_words, evidence_ref, conversation_id, recorded_by, created_at); ui_versions client_approved -> locked; freeze trigger",
+  "expected_api": "RPC record_ui_version_client_decision, lock_ui_version",
+  "expected_events_jobs": "project.ui_version_client_decided, project.ui_version_locked -> ui_prototype:build, crm:announceUiVersionLocked",
+  "expected_admin_control": "Phase 4 panel forms",
+  "expected_state_transition": "client_review -> client_approved -> locked",
+  "existing_files": [
+   "supabase/migrations/20260923140000_the_client_confirms_the_locked_ui.sql",
+   "supabase/migrations/20260928100000 (transition graph)",
+   "app/(internal)/projects/[projectId]/phase-four-forms.tsx"
+  ],
+  "existing_routes": [
+   "/projects/[projectId]"
+  ],
+  "existing_tables": [
+   "projects.ui_version_client_decisions",
+   "projects.ui_versions"
+  ],
+  "existing_tests": [
+   "client-ui-review-gets-a-form.test.ts [static-regex]",
+   "ui-version-state-machine.test.ts [static-regex]"
+  ],
+  "runtime_evidence": "Rolled-back txns on agencyos_local (psql, owner JWT claims with app_metadata org+role; service_role for system doors; ROLLBACK; phase_four count 0 afterwards). Scripts kept in the audit scratchpad, results quoted here. record_ui_version_client_decision(final_confirmed,\"yes looks good\",\"whatsapp-msg-2\")=recorded -> client_approved; lock_ui_version=locked; BEFORE UPDATE trigger then refuses edits to a locked row (\"a locked UI version is what Prototype builds from\"); direct draft->locked refused by enforce_ui_version_status_transition. Separately: as superuser, UPDATE of ui_versions.screens while status=client_review SUCCEEDED (screens rewritten, status unchanged), and DELETE of a locked row succeeded.",
+  "implementation_status": "PARTIAL",
+  "verification_status": "VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "RISK",
+  "data_integrity_status": "RISK",
+  "known_bug": "(1) The approval is a staff-recorded free-text quote + free-text evidence_ref; no client contact/identity is stored on the decision (the table has no client_contact_id, unlike approval_requests) and evidence_ref is not validated against a real message. Owner rule \"client yes != formal approval\" is only partly met. (2) Between draft and client_approved the screens jsonb is not frozen at the DB level (only the locked state is), and a locked row can be deleted by a privileged role, so \"exact approved version\" immutability relies on there being no writer other than the doors (RLS has no write policy, so ordinary users cannot). (3) phase_four.state stays ui_design after lock (psql in txn: state=ui_design while version=locked); ui_locked/ui_review states are never written.",
+  "blocker": "none",
+  "dependency": "4.11",
+  "risk": "Disputed approvals; dashboards read a stale workspace state",
+  "required_fix": "Add client_contact_id + require conversation/evidence link; freeze screens from admin_review onward; advance phase_four.state at each door",
+  "validation_method": "txn; superuser mutation probes",
+  "notes": "Prior audit COMPLETE downgraded: doors work, but identity/evidence/immutability gaps exist."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.15",
+  "step_name": "Prototype task (PM hands Prototype Agent: approved UI version, scope, critical flows, platform, expectations)",
+  "business_trigger": "project.ui_version_locked",
+  "primary_agent": "PM Agent -> Prototype Agent (ui_prototype)",
+  "supporting_agents": "Orchestrator",
+  "expected_frontend": "task/handoff visible to Admin",
+  "expected_backend": "structured handoff record with version refs, critical flows, platform, interaction expectations",
+  "expected_database": "ai.handoffs (design hop only), ai.runs",
+  "expected_api": "job prototype.build",
+  "expected_events_jobs": "project.ui_version_locked -> ui_prototype:build",
+  "expected_admin_control": "Prototype page lists builds",
+  "expected_state_transition": "ui_version locked -> prototype_build",
+  "existing_files": [
+   "src/lib/events/catalog.ts:492 (ui_version_locked -> ui_prototype:build)",
+   "app/api/jobs/run/workflows.ts:1728-1930 (prototype.build)",
+   "src/modules/orchestrator/handlers.ts:119 (comment: only design hop routed; prototype hop deferred)"
+  ],
+  "existing_routes": [
+   "/api/jobs/run"
+  ],
+  "existing_tables": [
+   "projects.ui_versions",
+   "projects.prototype_artifacts"
+  ],
+  "existing_tests": [
+   "the-prototype-reuses-the-deliverable.test.ts [static-regex]+[behavioral zod] 31/31 pass",
+   "task-2-routes-to-a-designer.test.ts [behavioral routing fn]"
+  ],
+  "runtime_evidence": "Rolled-back txns on agencyos_local (psql, owner JWT claims + service_role; ROLLBACK; phase_four count 0 afterwards). lock_ui_version=locked emitted project.ui_version_locked; subscriber list in catalog.ts has ui_prototype:build directly. The orchestrator handler routes ONLY the design hop (orchestrator/handlers.ts:119 comment). Job payload carries only the UI version id: the prompt (workflows.ts:1836) receives screens layout/components/states, NOT platform, critical flows, scope, tokens or interaction expectations. ai.agents orchestrator enabled=f (psql); ui_prototype enabled=t.",
+  "implementation_status": "PARTIAL",
+  "verification_status": "VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "OK",
+  "known_bug": "There is no PM-to-Prototype task: the build is triggered by an event and the Prototype Agent is given only the locked screen specs. No platform (web vs APK) or critical-flow list is captured before build; platform is set by a person afterwards (set_prototype_platform). No handoff record (ai.handoffs) is written for the prototype hop.",
+  "blocker": "none",
+  "dependency": "4.14",
+  "risk": "Prototype has no stated platform/critical flows to validate against",
+  "required_fix": "Create a prototype_task record (ui_version id, platform, critical flows) written by the PM before build and passed to the agent/QA",
+  "validation_method": "catalog trace + txn lock",
+  "notes": "Prior audit COMPLETE downgraded: trigger exists, task content does not."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.16",
+  "step_name": "Prototype generation (functional WEB and/or APK per project type)",
+  "business_trigger": "ui_prototype:build job",
+  "primary_agent": "Prototype Agent (ui_prototype, AI)",
+  "supporting_agents": "QA, human developer for real builds",
+  "expected_frontend": "working web preview and/or installable APK",
+  "expected_backend": "build generation, signing, hosting",
+  "expected_database": "projects.prototype_artifacts (screens jsonb), projects.deliverables kind=prototype, deliverable_details (platform)",
+  "expected_api": "RPC record_prototype_build",
+  "expected_events_jobs": "prototype.build -> project.prototype_build_ready",
+  "expected_admin_control": "/projects/[id]/prototype",
+  "expected_state_transition": "ui_version locked -> deliverable draft (prototype v1)",
+  "existing_files": [
+   "src/modules/projects/schema.ts:800-877 prototypeBuildSchema (closed element vocabulary: heading,text,button,link,input,image_placeholder,list; max 24/screen)",
+   "src/ui/prototype-screen-view.tsx:75-138 renderer",
+   "supabase/migrations/20260923150000_the_prototype_reuses_the_deliverable.sql",
+   "app/(internal)/projects/[projectId]/prototype/page.tsx",
+   "app/(internal)/projects/[projectId]/deliverables-panel.tsx:95-135 (manual build link/file, .apk/.ipa/.zip up to 50MB)",
+   "src/modules/projects/attachment-rules.ts:27 BUILD_FILE_EXTENSIONS"
+  ],
+  "existing_routes": [
+   "/projects/[projectId]/prototype",
+   "/projects/[projectId]/prototype/preview/[uiVersionId]",
+   "/portal/[projectId]/prototype/[uiVersionId]"
+  ],
+  "existing_tables": [
+   "projects.prototype_artifacts",
+   "projects.deliverables",
+   "projects.deliverable_details"
+  ],
+  "existing_tests": [
+   "the-prototype-reuses-the-deliverable.test.ts [static-regex]+[behavioral zod]",
+   "prototype-artifacts-status.test.ts [static-regex] 5/5",
+   "pm-prototype-communication.test.ts [static-regex] 9/9"
+  ],
+  "runtime_evidence": "Rolled-back txns on agencyos_local (psql, owner JWT claims + service_role; ROLLBACK; phase_four count 0 afterwards). record_prototype_build(service_role, locked version)=built -> deliverables row kind=prototype (artifact_url=/projects/<id>/prototype/preview/<uiVersionId>) + prototype_artifacts row. grep -rni \"apk|expo|keystore|signing\" src app scripts: the only APK code is a file-upload allow-list and an upload input; there is NO APK build, no mobile toolchain, no signing/credential handling, no hosting/deploy of a web prototype. AI generation not run (no provider locally).",
+  "implementation_status": "PARTIAL",
+  "verification_status": "VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "OK",
+  "known_bug": "What exists is a structured clickable WIREFRAME: an LLM lists elements from a closed vocabulary and a generic AgencyOS-styled renderer draws them. It is not a functional web app, and no APK is ever generated. The renderer uses AgencyOS UI tokens, not the client's locked token set/colours (no token application anywhere in prototype-screen-view.tsx), so it does not \"represent the approved UI\" visually.",
+  "blocker": "EXTERNAL: a real functional web/APK prototype needs a human/dev toolchain; APK additionally needs Android SDK build, signing keystore/credentials and a distribution channel (Play internal track / hosted link) that the owner must supply - none exist in repo. Manual upload of an externally built .apk/.zip/link is the only supported path.",
+  "dependency": "4.15",
+  "risk": "Client approves a wireframe believing it is the product prototype",
+  "required_fix": "Decide scope: (a) honest relabel as \"interactive wireframe\", or (b) integrate a real build pipeline + signing + hosted preview",
+  "validation_method": "repo-wide grep + txn + code read of renderer",
+  "notes": "Prior audit PARTIAL (APK MISSING) confirmed; APK still MISSING."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.17",
+  "step_name": "Prototype interactions (navigation, forms, buttons, back, main journey, responsive)",
+  "business_trigger": "prototype review",
+  "primary_agent": "Prototype Agent",
+  "supporting_agents": "Prototype QA",
+  "expected_frontend": "working navigation/forms/back/responsive",
+  "expected_backend": "critical flows defined and exercised",
+  "expected_database": "prototype_artifacts.screens[].elements[].navigatesTo",
+  "expected_api": "none",
+  "expected_events_jobs": "none",
+  "expected_admin_control": "preview pages",
+  "expected_state_transition": "none",
+  "existing_files": [
+   "src/ui/prototype-screen-view.tsx:75-138",
+   "src/modules/qa/handlers.ts:179-230 (dangling navigatesTo = broken route)",
+   "app/api/jobs/run/workflows.ts:1862-1895 (invented target rejected before persist)"
+  ],
+  "existing_routes": [
+   "/projects/[projectId]/prototype/preview/[uiVersionId]",
+   "/portal/[projectId]/prototype/[uiVersionId]"
+  ],
+  "existing_tables": [
+   "projects.prototype_artifacts"
+  ],
+  "existing_tests": [
+   "the-prototype-reuses-the-deliverable.test.ts [static-regex]+[behavioral zod]"
+  ],
+  "runtime_evidence": "Code read of prototype-screen-view.tsx: button/link with a valid navigatesTo switches the active screen via React state (works); button without target is disabled and badged \"not wired\"; input renders a DISABLED text box with placeholder \"Mock data - not a working form\"; no back control or history; no validation/state variants; layout is a flex sidebar of screen keys. I did not render it in a browser (no prototype row exists locally). The preview URL is the same for every build of a UI version.",
+  "implementation_status": "PARTIAL",
+  "verification_status": "NOT_VERIFIED",
+  "test_status": "NOT_RUN",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "OK",
+  "known_bug": "Forms/inputs are explicitly non-functional; no \"back\" behaviour; main journey is not defined or tested; responsive = default flex wrapping only. XSS-safe by construction (closed vocabulary, text children).",
+  "blocker": "none",
+  "dependency": "4.16",
+  "risk": "Critical flows cannot be tested by the client",
+  "required_fix": "Add flow definitions, working form states and a back stack; or deliver a real prototype",
+  "validation_method": "render the preview with a seeded artifact in a browser (not done)",
+  "notes": "Prior audit PARTIAL stands."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.18",
+  "step_name": "Prototype version (immutable/traceable PROTOTYPE_VX linked to UI_VERSION_X)",
+  "business_trigger": "each build / revision",
+  "primary_agent": "Prototype Agent / system",
+  "supporting_agents": "PM",
+  "expected_frontend": "version list per UI version",
+  "expected_backend": "each build = new immutable row with source ui_version_id; exact URL per version",
+  "expected_database": "prototype_artifacts(ui_version_id, deliverable_id) + deliverables.version",
+  "expected_api": "record_prototype_build / revise_prototype_build",
+  "expected_events_jobs": "project.prototype_build_ready",
+  "expected_admin_control": "Prototype page build list",
+  "expected_state_transition": "deliverable draft->in_review->approved|changes_requested; revisions = new rows",
+  "existing_files": [
+   "supabase/migrations/20260923150000_the_prototype_reuses_the_deliverable.sql",
+   "supabase/migrations/20260924110000_the_prototype_gets_its_revision_loop_too.sql",
+   "src/modules/portal/queries.ts:171-190 readClientPrototypeArtifact",
+   "src/modules/projects/queries.ts:2325-2345 getPrototypeArtifactByUiVersion"
+  ],
+  "existing_routes": [
+   "/projects/[projectId]/prototype/preview/[uiVersionId]",
+   "/portal/[projectId]/prototype/[uiVersionId]"
+  ],
+  "existing_tables": [
+   "projects.prototype_artifacts",
+   "projects.deliverables"
+  ],
+  "existing_tests": [
+   "the-prototype-reuses-the-deliverable.test.ts [static-regex]",
+   "the-prototype-gets-its-revision-loop-too.test.ts [static-regex]",
+   "prototype-artifacts-status.test.ts [static-regex]"
+  ],
+  "runtime_evidence": "Rolled-back txns on agencyos_local (psql, owner JWT claims + service_role; ROLLBACK; phase_four count 0 afterwards). After a client changes_requested decision, revise_prototype_build=revised: rows (deliverable v1 changes_requested, qa_pass) and (v2 draft) share the SAME ui_version_id AND the same artifact_url /projects/<p>/prototype/preview/<uiVersionId>; count(*) where ui_version_id=X is 2. Both readers use .eq(ui_version_id).maybeSingle(); PostgREST answers a single-object request over multiple rows with HTTP 406 PGRST116 (curl check against 127.0.0.1:54321 on a 4-row table: {\"code\":\"PGRST116\",\"details\":\"The result contains 4 rows\"}); unreadable() then throws. DB index is unique only on (ui_version_id, deliverable_id) and on deliverable_id.",
+  "implementation_status": "BROKEN",
+  "verification_status": "VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "RISK",
+  "known_bug": "BUG: once a prototype has been revised, getPrototypeArtifactByUiVersion and readClientPrototypeArtifact (maybeSingle on ui_version_id) hit two rows and error, so the staff preview page and the client portal prototype page throw for any revised UI version (inference from the PostgREST 406 behaviour demonstrated on another table; the app route itself was not exercised because committing two artifact rows into the shared DB was out of bounds). Separately, the preview URL does not address an exact build version, and prototype_artifacts.screens has no immutability trigger (only the status transition trigger).",
+  "blocker": "none",
+  "dependency": "4.16, 4.23",
+  "risk": "Client cannot open the revised prototype; \"exact build approved\" is not provable by URL",
+  "required_fix": "Key readers on deliverable_id/artifact id and put it in artifact_url; add freeze trigger on screens",
+  "validation_method": "Create two artifacts for one ui_version in a scratch DB and GET the preview/portal route",
+  "notes": "Prior audit COMPLETE is wrong for revised builds; v1 lineage (ui_version_id FK, deliverable version) is real."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.19",
+  "step_name": "Prototype QA (smoke, navigation, flows, routes, coverage, visual, responsive, runtime; fix and retest)",
+  "business_trigger": "project.prototype_build_ready",
+  "primary_agent": "Prototype QA (quality_assurance)",
+  "supporting_agents": "ui_prototype (producer), qa.defects",
+  "expected_frontend": "QA verdict and defects on Prototype page and /qa",
+  "expected_backend": "independent verdict; defects raised; blocks send",
+  "expected_database": "prototype_artifacts.status/qa_findings, qa.defects",
+  "expected_api": "RPC record_prototype_qa_verdict, record_prototype_qa_check",
+  "expected_events_jobs": "project.prototype_build_ready -> quality_assurance:reviewPrototypeBuild -> project.prototype_qa_reviewed (no subscriber)",
+  "expected_admin_control": "/qa, Prototype page",
+  "expected_state_transition": "artifact draft -> qa_pass | qa_changes_required",
+  "existing_files": [
+   "src/modules/qa/handlers.ts:179-330",
+   "src/modules/qa/secret-scan.ts",
+   "supabase/migrations/20260928100000 (record_prototype_qa_verdict)",
+   "supabase/migrations/20261006400200:92-140 (record_prototype_qa_check, human)",
+   "supabase/migrations/20261006400200:259-300 prototype_send_gate"
+  ],
+  "existing_routes": [
+   "/qa",
+   "/projects/[projectId]/prototype"
+  ],
+  "existing_tables": [
+   "projects.prototype_artifacts",
+   "projects.deliverable_details",
+   "qa.defects"
+  ],
+  "existing_tests": [
+   "qa-gate.test.ts [behavioral qa schema + static-regex] 15/15",
+   "prototype-artifacts-status.test.ts [static-regex]",
+   "a-handoff-bundle-is-a-real-zip-and-the-dashboard-filter-is-exact.test.ts [behavioral prototypeSendBlockers] 10/10"
+  ],
+  "runtime_evidence": "Rolled-back txns on agencyos_local (psql, owner JWT claims + service_role; ROLLBACK; phase_four count 0 afterwards). record_prototype_qa_verdict=recorded (qa_pass); prototype_send_gate before admin = (qa_passed=t, admin_approved=f, \"the prototype QA verdict\") and submit refused not_admin_approved, allowed after decide_prototype_admin. Code: handler checks (1) every UI-version screen present in build, (2) every navigatesTo resolves, (3) secret scan; it passes {kind:\"build\",passed:true} to verdictFor UNCONDITIONALLY (qa/handlers.ts:239) so the \"build evidence\" is not real evidence. Checks for visual consistency, responsiveness, runtime errors do not exist. project.prototype_qa_reviewed has no subscriber: after qa_changes_required nothing rebuilds (prototype.build is once per UI version).",
+  "implementation_status": "PARTIAL",
+  "verification_status": "VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "RISK",
+  "data_integrity_status": "OK",
+  "known_bug": "QA is a structural diff (screens present, targets resolve, no secrets). The human path record_prototype_qa_check lets ANY can_write user record \"passed\" and that satisfies the send gate (prototype_send_gate falls back to deliverable_details.qa_status), so QA independence is bypassable by the same person who built/uploaded; no fix-and-retest loop is triggered by a failed QA.",
+  "blocker": "none",
+  "dependency": "4.16",
+  "risk": "False \"QA pass\" on an unusable prototype",
+  "required_fix": "Remove the human-pass fallback or require a distinct QA role; wire qa_changes_required to a rebuild; add runtime/visual checks",
+  "validation_method": "txn; read handler",
+  "notes": "Prior audit PARTIAL stands; secret scan is a real, tested control."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.20",
+  "step_name": "Admin approval of exact prototype build before client release",
+  "business_trigger": "prototype QA pass",
+  "primary_agent": "Admin (owner / ops_admin)",
+  "supporting_agents": "PM",
+  "expected_frontend": "Prototype page: Admin decision + send-to-client gate",
+  "expected_backend": "admin decision on exact deliverable; send blocked until QA pass + admin approval; owner override audited with reason",
+  "expected_database": "projects.deliverable_details (admin_status, admin_decided_by/at, admin_note), audit",
+  "expected_api": "RPC decide_prototype_admin, prototype_send_gate, send_prototype_for_client_review, submit_deliverable",
+  "expected_events_jobs": "project.deliverable_submitted -> crm:announcePrototypeSubmitted (internal channel)",
+  "expected_admin_control": "/projects/[id]/prototype",
+  "expected_state_transition": "deliverable draft -> in_review only after gate",
+  "existing_files": [
+   "supabase/migrations/20261006400200_a_build_has_details_and_a_prototype_goes_to_the_client_through_a_gate.sql:206-440",
+   "app/(internal)/projects/[projectId]/prototype/build-panels.tsx",
+   "src/modules/projects/build-details-schema.ts (prototypeSendBlockers)"
+  ],
+  "existing_routes": [
+   "/projects/[projectId]/prototype"
+  ],
+  "existing_tables": [
+   "projects.deliverable_details",
+   "projects.deliverables",
+   "approvals.approval_requests"
+  ],
+  "existing_tests": [
+   "a-handoff-bundle-is-a-real-zip-and-the-dashboard-filter-is-exact.test.ts [behavioral prototypeSendBlockers] 10/10",
+   "the-handoff-has-a-face.test.ts [static-regex]"
+  ],
+  "runtime_evidence": "Rolled-back txns on agencyos_local (psql, owner JWT claims + service_role; ROLLBACK; phase_four count 0 afterwards). prototype_send_gate=(t,f); send_prototype_for_client_review => not_admin_approved (status draft); decide_prototype_admin(owner)=decided; send => submitted|in_review. decide_prototype_admin requires core.is_admin() (comment: \"the delivery lead who built it does not approve their own build\"). Owner override path requires owner + reason and writes deliverable.prototype_send_overridden audit (code read).",
+  "implementation_status": "COMPLETE",
+  "verification_status": "VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "OK",
+  "known_bug": "Admin decision is stored against the exact deliverable (so per build version) but the Admin is not shown/asked about the UI-version-to-build traceability; the same human can be QA-recorder, admin approver and client-decision recorder (no separation of duties enforced for owner). Needs the deliverable approval policy (manual setup) for the client step that follows.",
+  "blocker": "MANUAL SETUP: deliverable approval policy",
+  "dependency": "4.19",
+  "risk": "Low",
+  "required_fix": "none critical; optionally block self-approval for owner",
+  "validation_method": "txn",
+  "notes": "Gate is real and server-enforced; strongest-evidenced prototype step."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.21",
+  "step_name": "Client prototype review (exact APK / web preview / approved access)",
+  "business_trigger": "deliverable in_review",
+  "primary_agent": "PM Agent / PM",
+  "supporting_agents": "Client",
+  "expected_frontend": "client opens exact build via portal/link; PM messages client",
+  "expected_backend": "client-scoped read of the exact build; delivery of link by approved channel",
+  "expected_database": "RLS prototype_artifacts_select (client sees non-draft deliverables of own project)",
+  "expected_api": "portal read",
+  "expected_events_jobs": "project.deliverable_submitted -> crm:announcePrototypeSubmitted",
+  "expected_admin_control": "Prototype page",
+  "expected_state_transition": "in_review",
+  "existing_files": [
+   "app/(client)/portal/[projectId]/prototype/[uiVersionId]/page.tsx",
+   "src/modules/portal/queries.ts:171",
+   "src/modules/crm/handlers.ts:1773 announceToInternalChannel / :1988 announcePrototypeSubmitted",
+   "app/(client)/portal/[projectId]/page.tsx:22-130"
+  ],
+  "existing_routes": [
+   "/portal/[projectId]",
+   "/portal/[projectId]/prototype/[uiVersionId]"
+  ],
+  "existing_tables": [
+   "projects.prototype_artifacts",
+   "projects.deliverables"
+  ],
+  "existing_tests": [
+   "pm-prototype-communication.test.ts [static-regex] 9/9"
+  ],
+  "runtime_evidence": "Code read: the client portal page shows only a \"Open the prototype\" link per prototype deliverable and renders the wireframe; policy prototype_artifacts_select admits a client of the project for deliverable.status<>draft (psql pg_policies). announcePrototypeSubmitted posts to the org INTERNAL channel (announceToInternalChannel), never to the client. Not rendered in a browser (no seeded prototype / client account flow executed); AI/WhatsApp not configured locally. APK: only possible as a manually attached file/link on the deliverable.",
+  "implementation_status": "PARTIAL",
+  "verification_status": "NOT_VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "RISK",
+  "known_bug": "Client access exists only for the wireframe preview and depends on the client having a portal login; PM must tell the client out of band. For a revised UI version the preview readers break (see 4.18). A manually uploaded APK is stored as a project file/link, not a client-delivered build.",
+  "blocker": "EXTERNAL: client portal account provisioning and real WhatsApp delivery not tested",
+  "dependency": "4.20",
+  "risk": "Client reviews the wrong/old build or cannot open it",
+  "required_fix": "Exact-build URL, client-facing notification with receipt, test with a real client account",
+  "validation_method": "Seed a prototype + client login and browse the portal",
+  "notes": "Prior audit COMPLETE (web path only) downgraded: no end-to-end client run, and a revision bug exists."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.22",
+  "step_name": "Client prototype feedback classification",
+  "business_trigger": "client says changes on prototype (approval decision changes_requested)",
+  "primary_agent": "PM Agent",
+  "supporting_agents": "Admin",
+  "expected_frontend": "classified feedback",
+  "expected_backend": "same 6-way classification as UI feedback; scope changes become change requests",
+  "expected_database": "client_feedback_classifications (FK to ui_version_client_decisions only)",
+  "expected_api": "workflow",
+  "expected_events_jobs": "project.deliverable_decided -> ui_prototype:reviseBuild (+ announcePrototypeChangeRequested)",
+  "expected_admin_control": "approval decision note",
+  "expected_state_transition": "deliverable changes_requested",
+  "existing_files": [
+   "src/lib/events/catalog.ts:535-545 (deliverable_decided subscribers: completePhaseFour, announcePrototypeChangeRequested, ui_prototype:reviseBuild)",
+   "app/api/jobs/run/workflows.ts:1934-2150",
+   "psql: client_feedback_classifications.decision_id FK -> projects.ui_version_client_decisions"
+  ],
+  "existing_routes": [
+   "/api/jobs/run"
+  ],
+  "existing_tables": [
+   "approvals.approval_requests",
+   "projects.client_feedback_classifications"
+  ],
+  "existing_tests": [
+   "the-prototype-gets-its-revision-loop-too.test.ts [static-regex] 18/18"
+  ],
+  "runtime_evidence": "Rolled-back txns on agencyos_local (psql, owner JWT claims + service_role; ROLLBACK; phase_four count 0 afterwards). decide_approval(changes_requested) on the prototype deliverable => deliverable changes_requested, event project.deliverable_decided. psql constraint: client_feedback_classifications.decision_id references projects.ui_version_client_decisions(id) only, so a prototype decision cannot even be stored there. grep: no workflow classifies prototype feedback; the revise workflow reads approval_requests.decision_note and rebuilds unconditionally.",
+  "implementation_status": "MISSING",
+  "verification_status": "VERIFIED",
+  "test_status": "NOT_RUN",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "RISK",
+  "known_bug": "Prototype feedback is never classified: new features, backend/product scope, design-direction changes and clarifications are all handled as \"change the build\" and consume a prototype revision round; nothing opens a change request or asks a question. The agent prompt says never invent a screen, which limits but does not classify.",
+  "blocker": "none",
+  "dependency": "4.21",
+  "risk": "Silent scope creep through the prototype loop (the owner explicitly forbids it)",
+  "required_fix": "Generalise the classifier to deliverable decisions (store against approval_request id) and gate reviseBuild on it",
+  "validation_method": "txn; psql FK; grep workflows",
+  "notes": "Prior audit PARTIAL; evidence shows MISSING."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.23",
+  "step_name": "Prototype revision (update UI if required, prototype, version, QA; preserve history)",
+  "business_trigger": "prototype changes_requested",
+  "primary_agent": "Prototype Agent (+ UI Designer if UI must change)",
+  "supporting_agents": "QA, PM",
+  "expected_frontend": "build history",
+  "expected_backend": "revise_prototype_build creates v+1, preserves old, counts rounds, limit escalation; UI change goes back through UI loop",
+  "expected_database": "prototype_artifacts, deliverables versions, phase_four.prototype_revision_count/limit",
+  "expected_api": "RPC revise_prototype_build",
+  "expected_events_jobs": "project.deliverable_decided -> ui_prototype:reviseBuild -> project.prototype_build_ready -> QA",
+  "expected_admin_control": "Prototype page",
+  "expected_state_transition": "changes_requested -> new draft; limit -> revision_limit_escalation",
+  "existing_files": [
+   "supabase/migrations/20260924110000_the_prototype_gets_its_revision_loop_too.sql",
+   "app/api/jobs/run/workflows.ts:1934-2150"
+  ],
+  "existing_routes": [
+   "/projects/[projectId]/prototype"
+  ],
+  "existing_tables": [
+   "projects.prototype_artifacts",
+   "projects.deliverables",
+   "projects.phase_four"
+  ],
+  "existing_tests": [
+   "the-prototype-gets-its-revision-loop-too.test.ts [static-regex] 18/18"
+  ],
+  "runtime_evidence": "Rolled-back txns on agencyos_local (psql, owner JWT claims + service_role; ROLLBACK; phase_four count 0 afterwards). revise_prototype_build=revised: v1 (changes_requested, qa_pass) preserved, v2 draft created, phase_four prototype_revision_count=1 and state=prototype_build (psql output \"prototype_build|1\"). The new build then needs QA, admin approval and client submit again (draft). Breaks the preview pages (see 4.18).",
+  "implementation_status": "PARTIAL",
+  "verification_status": "VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "RISK",
+  "known_bug": "Door-level history/limit is real. \"Update UI if required\" does not exist: the revise prompt is bound to the same locked UI version, and a locked UI version can only change via a new version that no door can start from locked. The revised build is unreadable by the two preview readers (4.18). AI redraft not run.",
+  "blocker": "EXTERNAL: AI provider",
+  "dependency": "4.22",
+  "risk": "Revision loop yields a build nobody can open; UI-level feedback has no path",
+  "required_fix": "Fix readers; add \"reopen UI\" path (new ui_version from locked) for design-level prototype feedback",
+  "validation_method": "txn",
+  "notes": "Prior audit COMPLETE downgraded."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.24",
+  "step_name": "Client prototype approval (exact PROTOTYPE_VERSION_X_APPROVED with client, evidence, timestamp)",
+  "business_trigger": "client confirms the prototype",
+  "primary_agent": "PM (records) / Admin",
+  "supporting_agents": "approvals engine",
+  "expected_frontend": "approval decision form with client contact + evidence",
+  "expected_backend": "approval of exact deliverable version; client decision recorded by staff with client contact and evidence",
+  "expected_database": "approvals.approval_requests (subject deliverable, client_contact_id, evidence_ref, decided_by, decided_at), deliverables.status approved",
+  "expected_api": "approvals.decide_approval, projects.sync_deliverable_decision",
+  "expected_events_jobs": "project.deliverable_decided -> projects:completePhaseFourOnPrototypeApproval",
+  "expected_admin_control": "/approvals/[requestId], Prototype page",
+  "expected_state_transition": "in_review -> approved; phase_four -> completed",
+  "existing_files": [
+   "supabase/migrations/20260812120011_approval_engine.sql:233-275 (ADM-08d client evidence constraint)",
+   "supabase/migrations/20260923160000_m2_and_the_gate_it_actually_needs.sql",
+   "app/(internal)/approvals/approval-decision-form.tsx",
+   "src/modules/projects/handlers.ts:843-912"
+  ],
+  "existing_routes": [
+   "/approvals/[requestId]",
+   "/projects/[projectId]/prototype"
+  ],
+  "existing_tables": [
+   "approvals.approval_requests",
+   "projects.deliverables",
+   "projects.phase_four"
+  ],
+  "existing_tests": [
+   "m2-and-the-gate-it-actually-needs.test.ts [static-regex] 16/16"
+  ],
+  "runtime_evidence": "Rolled-back txns on agencyos_local (psql, owner JWT claims + service_role; ROLLBACK; phase_four count 0 afterwards). With a deliverable policy: decide_approval(approved, evidence \"whatsapp-msg-3\", client_contact 00000000-0000-4000-8000-000000000201) => decided/approved; deliverables.status=approved; events project.deliverable_decided. Constraint approval_requests_client_evidence: a client-audience approval must carry non-empty evidence_ref (free text). SECOND TXN (bypass): with NO ui_version at all (count 0), a manually added prototype deliverable (add_deliverable prototype + external link) -> record_prototype_qa_check passed -> decide_prototype_admin approved -> send -> client approval -> complete_phase_four => \"completed\" and project.phase_four_completed emitted.",
+  "implementation_status": "PARTIAL",
+  "verification_status": "VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "RISK",
+  "data_integrity_status": "RISK",
+  "known_bug": "The approval record is solid (exact deliverable/version, client contact, evidence text, decided_by/at). But Phase 4 completion keys only on \"a prototype-kind deliverable was approved\": projects.complete_phase_four checks no UI-version state, QA verdicts, prototype artifact or phase_four.state, so the whole UI loop can be skipped and M2 still fires. evidence_ref is unverified text.",
+  "blocker": "MANUAL SETUP: deliverable approval policy",
+  "dependency": "4.20",
+  "risk": "Premature M2 billing / phase completion without UI approval",
+  "required_fix": "complete_phase_four must require a locked ui_version and an approved prototype_artifact for that version (or an explicit owner override with reason)",
+  "validation_method": "two txns (full chain; manual-deliverable bypass)",
+  "notes": "Prior audit PARTIAL stands; the bypass is new evidence."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.25",
+  "step_name": "M2 finance trigger (20% after UI/prototype milestone; PM confirms; Finance invoices from baseline)",
+  "business_trigger": "project.phase_four_completed (final prototype client-approved)",
+  "primary_agent": "Finance Agent / finance service (deterministic code)",
+  "supporting_agents": "PM Agent (announces), Admin (issues invoice)",
+  "expected_frontend": "Billing panel shows M2 draft invoice; Phase 4 panel shows M2 gate",
+  "expected_backend": "PM confirms operational milestone completion; finance reads the M2 milestone row (20%) and creates a draft invoice from the commercial baseline",
+  "expected_database": "projects.milestones (position/percent), finance.invoices (draft), invoice_items",
+  "expected_api": "generateM2Invoice -> RPC finance.create_milestone_invoice",
+  "expected_events_jobs": "project.phase_four_completed -> finance:generateM2Invoice (runner app/api/jobs/run/route.ts:702) + crm:announceTask2Complete",
+  "expected_admin_control": "/projects/[id]/finance (billing-panel), invoices",
+  "expected_state_transition": "phase_four completed -> M2 invoice draft -> (admin issue) issued",
+  "existing_files": [
+   "src/modules/finance/service.ts:361 (M1 .eq(position,1)), :573-748 generateM2Invoice (.eq(position,2)), :754-914 M3 pos 3 / M4 pos 4",
+   "src/modules/finance/handlers.ts:98 handlePhaseFourCompletedForFinance",
+   "src/lib/events/catalog.ts:554",
+   "src/modules/projects/payment-structure.ts:55-90 (constants say positions 1..4)",
+   "src/modules/projects/service.ts:395-470 installLockedPaymentStructure",
+   "supabase/migrations/20260812120001_payment_plan_replaced_atomically.sql:145-160 ((ordinality-1)::int)",
+   "supabase/migrations/20261007200200_the_default_payment_structure_is_30_20_30_20.sql",
+   "supabase/migrations/20260923160000_m2_and_the_gate_it_actually_needs.sql:317 (position = 2)",
+   "src/modules/crm/handlers.ts:2128 (position !== 2)"
+  ],
+  "existing_routes": [
+   "/projects/[projectId]/finance",
+   "/invoices"
+  ],
+  "existing_tables": [
+   "projects.milestones",
+   "finance.invoices",
+   "finance.invoice_items",
+   "finance.billing_profiles"
+  ],
+  "existing_tests": [
+   "m2-and-the-gate-it-actually-needs.test.ts [static-regex] 16/16 pass",
+   "pm-m2-payment-verified.test.ts [static-regex] 7/7 pass (asserts the regex /if \\(milestone\\.position !== 2\\)/)",
+   "the-payment-structure-is-locked.test.ts [behavioral on TS constant] 18/18 pass (asserts LOCKED_PAYMENT_STRUCTURE positions == [1,2,3,4])",
+   "milestone-invoicing.test.ts [behavioral pure functions, positions 0-based] 65/65 pass",
+   "db:verify:billing [live-db] 149 pass / 22 FAIL locally (unconfirmed env cause)",
+   "db:verify:unlock [live-db] 49 pass / 1 fail (cleanup leftovers)"
+  ],
+  "runtime_evidence": "Live data (psql + the exact PostgREST filters the generators use, service key, 127.0.0.1:54321) on project 06052c2b-7b0e-4954-a309-3408f6806df2, whose plan was installed by installLockedPaymentStructure -> projects.replace_payment_plan (position = ordinality - 1): rows are 0 \"Advance (30%)\", 1 \"On UI prototype approval (20%)\", 2 \"On development completion (30%)\", 3 \"On testing completion (20%)\". Query position=eq.1 (M1 generator, finance/service.ts:361) returns the 20% UI-prototype row; position=eq.2 (generateM2Invoice :583 and m2_verified_paid and phase_five_gate_status and the PM M2 announcer crm/handlers.ts:2128) returns the 30% development row; position=eq.3 (M3 generator) returns the 20% testing row; position=eq.4 (M4 generator) returns [] . Same shape on the other two locked-structure projects (3d5100de..., aaaaaaaa-...b1). Triggering consequence read from code: on a standard installed plan the \"M2\" invoice would be raised for the 30% development milestone, the \"M1\" auto-invoice at billing confirmation for the 20% row, \"M3\" for the 20% testing row, and \"M4\" would skip (\"no milestone at position 4\"); the real 30% Advance at position 0 is never invoiced by any generator. All unit tests pass because they pin source text or a TS constant (positions 1-4) that the installer does not write. I did not execute the TS generator (it would write an invoice into the shared DB); the queries above are the generators' own filters. Wiring is real: catalog.ts:554 subscribes finance:generateM2Invoice and route.ts:702 drains it. Live verifiers (flock): npm run -s db:verify:billing => 149 checks passed, 22 FAILED (first: '7f. a partial payment publishes payment.recorded - found 0', then cascading 'overpayment/not_found/number_taken/duplicate' outcomes in 7f/7h/7d); cause not isolated - outcomes look like collisions with the long-lived dirty DB/other agents (spec says some verifiers fail locally for unrelated reasons) but I could not prove that, so treat as FAILED/unconfirmed. npm run -s db:verify:unlock => 49 passed, 1 failed ('test outbox events removed': leftover events from other runs); invoice.paid -> runner -> milestone.unlock itself passed. Neither verifier covers the locked 0-based plan from installLockedPaymentStructure (fixtures build their own plans).",
+  "implementation_status": "BROKEN",
+  "verification_status": "VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "BROKEN",
+  "known_bug": "STILL BROKEN on current main (PR #535/#536 did not fix it) and WORSE than the 2026-09-28 audit said: the whole ladder is shifted by one. replace_payment_plan writes 0-based positions; generators read 1-based. M1 reads M2's row, M2 reads M3's, M3 reads M4's, M4 reads nothing. Amounts billed would be 20% / 30% / 20% / none. Also: there is NO \"PM confirms milestone completion\" step - the invoice fires automatically on phase_four_completed, which (4.24) can be reached without any UI approval. The invoice is created as DRAFT (create_milestone_invoice inserts status draft), needing an admin issue. If the billing profile is incomplete the job fails permanently (CONFLICT is non-INTERNAL => permanent) and is not retried when the profile is completed (manual raise remains).",
+  "blocker": "CRITICAL BLOCKER: wrong milestone billed; fix (position 0-based or look up by trigger/percent key, not by position) required before any production use. Fix exists only as unmerged PR #530 per the earlier audit (not verified here).",
+  "dependency": "4.24, Phase 2 plan install",
+  "risk": "Client billed the wrong amount at the wrong milestone; 30% advance never auto-invoiced; revenue and trust loss",
+  "required_fix": "Resolve milestones by a stable key (e.g. add milestone_key M1..M4 / trigger column) instead of positional index in service.ts (361,583,~773), m2_verified_paid, phase_five_gate_status, crm/handlers.ts:2128; add a live test that installs the locked plan and runs each generator",
+  "validation_method": "Install the locked plan on a scratch project, emit phase_four_completed, read the invoice amount; compare to 20% of budget",
+  "notes": "NEEDS_BUSINESS_CLARIFICATION: spec says PM confirms the operational milestone; code has no such step (M2 fires on prototype approval). Owner to confirm whether PM confirmation is required."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.26",
+  "step_name": "M2 payment verification and financial gate (prototype approval != payment)",
+  "business_trigger": "M2 invoice issued",
+  "primary_agent": "Finance Agent / Admin (owner, ops_admin)",
+  "supporting_agents": "PM, Client",
+  "expected_frontend": "invoice verify queue; Phase 4 panel \"Can Phase 5 start?\"",
+  "expected_backend": "invoice -> submission -> pending_verification -> admin verification with evidence -> paid; gate reads verified payment of the M2 milestone",
+  "expected_database": "finance.payment_submissions, payments, invoices (status paid only via verify), projects.milestones",
+  "expected_api": "finance.verify_payment_submission, verify_payment, projects.m2_verified_paid, phase_five_gate_status",
+  "expected_events_jobs": "invoice.paid -> projects:unlockNextMilestone + crm:announceM2PaymentVerified",
+  "expected_admin_control": "/invoices/verify, /projects/[id]/finance, Phase 4 panel",
+  "expected_state_transition": "draft -> issued -> (submission) pending_verification -> verified -> invoice paid -> M3 unlocked",
+  "existing_files": [
+   "supabase/migrations/20260923160000_m2_and_the_gate_it_actually_needs.sql:296-335 phase_five_gate_status",
+   "supabase/migrations/20261009400000_phase_five_completes_only_when_m2_is_verified_paid.sql (m2_verified_paid; phase_readiness; complete_phase)",
+   "src/modules/finance/service.ts:2038-2080 verifyPaymentSubmission (requires invoice.issue = owner/ops_admin)",
+   "supabase/migrations/20260929120000_the_verifier_may_number_the_receipt.sql (receipt grant fix)",
+   "src/modules/crm/handlers.ts:2096-2140 announceM2PaymentVerified",
+   "scripts/verify-payment-verification.mjs"
+  ],
+  "existing_routes": [
+   "/invoices/verify",
+   "/projects/[projectId]/finance"
+  ],
+  "existing_tables": [
+   "finance.payment_submissions",
+   "finance.payments",
+   "finance.invoices",
+   "finance.receipts",
+   "projects.milestones"
+  ],
+  "existing_tests": [
+   "db:verify:paymentverify [live-db] PASSED",
+   "payment-verification.test.ts [static-regex] 8/8",
+   "no-ai-route-verifies-payment.test.ts [behavioral registry/tools + static-regex] 6/6",
+   "pm-m2-payment-verified.test.ts [static-regex] 7/7",
+   "a-claim-is-not-a-payment.test.ts [static-regex] 20/20 pass",
+   "db:verify:unlock [live-db] 49 pass / 1 fail (cleanup)",
+   "db:verify:billing [live-db] 22 FAIL locally (unconfirmed env cause)"
+  ],
+  "runtime_evidence": "flock npm run -s db:verify:paymentverify => \"All checks passed\": a claim lands pending_verification with no ledger row (\"a message is not money\"); no column lets an agent mark verified; verify with blank evidence refused; verifier is recorded and cannot be someone else; settled claim stays settled at the row; rejection needs a reason. psql: finance.new_receipt_reference() ACL now includes authenticated (migration 20260929120000), so the earlier \"receipt reference grant\" defect is FIXED. pg_policies: payment_submissions insert/update restricted to owner/ops_admin; finance role has SELECT only. Live data (psql + the exact PostgREST filters the generators use, service key, 127.0.0.1:54321) on project 06052c2b-7b0e-4954-a309-3408f6806df2, whose plan was installed by installLockedPaymentStructure -> projects.replace_payment_plan (position = ordinality - 1): rows are 0 \"Advance (30%)\", 1 \"On UI prototype approval (20%)\", 2 \"On development completion (30%)\", 3 \"On testing completion (20%)\". Query position=eq.1 (M1 generator, finance/service.ts:361) returns the 20% UI-prototype row; position=eq.2 (generateM2Invoice :583 and m2_verified_paid and phase_five_gate_status and the PM M2 announcer crm/handlers.ts:2128) returns the 30% development row; position=eq.3 (M3 generator) returns the 20% testing row; position=eq.4 (M4 generator) returns [] . Same shape on the other two locked-structure projects (3d5100de..., aaaaaaaa-...b1). => m2_verified_paid (m.position = 2) and phase_five_gate_status (position = 2) evaluate the 30% development milestone on installed plans. Also db:verify:unlock => invoice.paid -> runner -> milestone.unlock passed (49/50; one cleanup check failed on leftover events). db:verify:billing 22 failures in payment recording/verify_payment sections (see 4.25 evidence) so the payment engine end-to-end is NOT cleanly re-confirmed locally.",
+  "implementation_status": "PARTIAL",
+  "verification_status": "VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "BROKEN",
+  "known_bug": "Payment verification itself is strong and live-tested (proof != payment; only a signed-in owner/ops_admin can verify; no AI route verifies). The financial GATE is mis-aimed (position 2 = M3 row) and is narrower than the brief: m2_verified_paid is consulted only to COMPLETE Phase 5 (projects.phase_readiness/complete_phase); nothing blocks starting development tasks or the development handoff when M2 is unpaid (task_start_check checks requirement+dependencies only). Prototype approval does not mark anything paid (verified: complete_phase_four only emits an event). The \"authorised Finance\" role cannot verify (read-only) - verification is owner/ops_admin only. Submissions are inserted by owner/ops_admin on the client's behalf or by an agent/service (submitted_by_agent column); the client has no self-service payment submission.",
+  "blocker": "Inherited CRITICAL from 4.25 (position); NEEDS_BUSINESS_CLARIFICATION: should Phase 5 START (not only completion) require M2 verified paid? Owner round-3b answer R1-3 says completion only; the Phase 4 brief says the M2 financial gate precedes dev handoff.",
+  "dependency": "4.25",
+  "risk": "Development proceeds unpaid; gate reads the wrong invoice",
+  "required_fix": "Fix position lookup; decide and enforce the start gate (block task start / handoff until M2 verified paid, or record an explicit approved exception)",
+  "validation_method": "db:verify:paymentverify + install locked plan and call m2_verified_paid after paying the 20% invoice",
+  "notes": "Prior audit BROKEN (gate position + grant bug): grant bug fixed; position bug remains."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.27",
+  "step_name": "Development handoff package",
+  "business_trigger": "Phase 4 exit (M2 gate satisfied)",
+  "primary_agent": "PM Agent",
+  "supporting_agents": "Developer agent (disabled), Finance",
+  "expected_frontend": "a handoff view/export for developers",
+  "expected_backend": "package assembled from versioned refs: scope version, requirements, approved UI version, screen inventory, design system, Figma refs, approved prototype version + access, revision history, limitations, client approvals, M2 gate, constraints",
+  "expected_database": "a development_handoff record with frozen refs",
+  "expected_api": "none found",
+  "expected_events_jobs": "(none) - no project.development_handoff event",
+  "expected_admin_control": "none",
+  "expected_state_transition": "phase_four completed + M2 verified -> development_ready",
+  "existing_files": [
+   "src/modules/projects/design-handoff-bundle.ts (ZIP of manifest.json, assets.csv, brand-kit.md, files/)",
+   "src/modules/projects/design-export-queries.ts:115-190 (assets, themes+Figma refs, Phase 3 handoff, deliverables with artifact URL)",
+   "app/api/projects/[projectId]/design/assets/export/route.ts",
+   "app/(internal)/projects/[projectId]/design/final/page.tsx (Phase 3 handoff)"
+  ],
+  "existing_routes": [
+   "/api/projects/[projectId]/design/assets/export (json|zip)",
+   "/api/projects/[projectId]/design/screens/export (csv)",
+   "/api/projects/[projectId]/scope/export"
+  ],
+  "existing_tables": [
+   "projects.phase_three_handoffs (Phase 3 only)"
+  ],
+  "existing_tests": [
+   "a-handoff-bundle-is-a-real-zip-and-the-dashboard-filter-is-exact.test.ts [behavioral zip writer] 10/10 pass",
+   "the-handoff-has-a-face.test.ts [static-regex] (sales handoff, not this)"
+  ],
+  "runtime_evidence": "grep -rni \"development.handoff|dev_handoff|DevelopmentHandoff\" src app supabase => only the prior audit docs; no table, RPC, event or page. The existing design handoff export reads assets, theme Figma refs, the Phase 3 locked handoff and deliverables; it contains no ui_versions, prototype versions/builds, revision history, client approval decisions, scope/requirement version ids, or M2 gate status (design-export-queries.ts type DesignHandoffPackage). The ZIP writer itself is tested behaviorally (10/10 pass).",
+  "implementation_status": "MISSING",
+  "verification_status": "VERIFIED",
+  "test_status": "NOT_RUN",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "OK",
+  "data_integrity_status": "UNKNOWN",
+  "known_bug": "There is no Phase 4 -> Phase 5 development handoff entity. Only a Phase 3-flavoured design asset/brand bundle exists. phase_four completion emits only M2 invoice + an internal announcement; no developer-facing package or readiness state is created.",
+  "blocker": "none for other steps, but 4.GATE cannot pass without it",
+  "dependency": "4.24, 4.26",
+  "risk": "Developers start from chat history; approved versions and limitations are not frozen",
+  "required_fix": "Add projects.development_handoffs (frozen refs to scope_version, requirement_version, ui_version, prototype artifact/deliverable, design_token_set, Figma refs, approvals, M2 gate status, revision counts, known limitations) and an export",
+  "validation_method": "grep; read design-export-queries",
+  "notes": "Prior audit MISSING confirmed."
+ },
+ {
+  "phase": 4,
+  "step_id": "4.GATE",
+  "step_name": "Phase 4 production-ready / exit gate",
+  "business_trigger": "Phase 4 exit review",
+  "primary_agent": "PM Agent + Admin",
+  "supporting_agents": "UI QA, Prototype QA, Finance, Orchestrator",
+  "expected_frontend": "Phase 4 overview shows every criterion with evidence",
+  "expected_backend": "one enforced gate: UI complete, UI QA pass, admin approval, client UI approval, prototype generated, prototype QA, admin approval, client prototype approval, M2 condition, dev handoff, audit/history",
+  "expected_database": "projects.phase_four + ui_versions + prototype_artifacts + deliverables + approvals + finance.invoices",
+  "expected_api": "projects.complete_phase_four (the only closing door)",
+  "expected_events_jobs": "project.phase_four_completed",
+  "expected_admin_control": "phase-four-panel.tsx",
+  "expected_state_transition": "phase_four.state -> completed",
+  "existing_files": [
+   "supabase/migrations/20260923160000_m2_and_the_gate_it_actually_needs.sql:210-290 complete_phase_four",
+   "src/modules/projects/handlers.ts:843-912",
+   "app/(internal)/projects/[projectId]/phase-four-panel.tsx"
+  ],
+  "existing_routes": [
+   "/projects/[projectId]"
+  ],
+  "existing_tables": [
+   "projects.phase_four",
+   "projects.ui_versions",
+   "projects.prototype_artifacts",
+   "projects.deliverables"
+  ],
+  "existing_tests": [
+   "m2-and-the-gate-it-actually-needs.test.ts [static-regex]",
+   "no live E2E verifier for Phase 4 exists (no scripts/verify-*phase-four*)"
+  ],
+  "runtime_evidence": "Criterion by criterion (all from this audit): UI complete = PARTIAL (text layout specs; states 5 of 12; responsive/a11y unenforced); UI QA pass = structural only; admin approval = works only after a manual ui_version approval policy (none seeded); client UI approval = staff-recorded quote + free-text evidence, no client identity; prototype generated = LLM wireframe (no web app, no APK); prototype QA = structural + fake build evidence; admin approval = real gate; client prototype approval = real approval record; M2 condition = BROKEN (position shift); dev handoff = MISSING; audit/history = door-level audit + append-only decisions are real. Txns: whole chain passes at door level when policies exist; AND phase_four completes with no UI version at all via a manual prototype deliverable. No E2E (UI->prototype->M2->payment) path was run through the app, jobs and a real AI provider.",
+  "implementation_status": "PARTIAL",
+  "verification_status": "NOT_VERIFIED",
+  "test_status": "PARTIAL",
+  "production_readiness": "NOT_PRODUCTION_READY",
+  "security_status": "RISK",
+  "data_integrity_status": "BROKEN",
+  "known_bug": "complete_phase_four checks no gate other than \"a prototype deliverable was approved\"; phase_four.state is never advanced through ui_review/ui_locked/prototype_build/prototype_review/prototype_locked so the workspace row cannot be used as a gate; M2 position defect; no development handoff.",
+  "blocker": "CRITICAL: M2 position shift (4.25/4.26). MAJOR: no dev handoff (4.27); completion can bypass UI approval (4.24); no APK/functional prototype (4.16); prototype revision breaks preview (4.18); approval policies not seeded (4.10); AI provider + Figma + WhatsApp not configured (real integration untested).",
+  "dependency": "owner decisions on prototype definition, APK signing, PM-confirm step, M2 start gate",
+  "risk": "Phase 4 can be declared done and billed wrongly without approved design",
+  "required_fix": "Fix M2 lookup; harden complete_phase_four; add dev handoff; decide prototype scope; seed/alert approval policies; add live E2E verifier",
+  "validation_method": "A db:verify script that installs the locked plan, drives every door and asserts the M2 invoice amount, plus a job-level run with a fake AI provider",
+  "notes": "Prior audit gate: not production ready; confirmed. Counts: 4.1-4.27 = see table."
+ }
+]
