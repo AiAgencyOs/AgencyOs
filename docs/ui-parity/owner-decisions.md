@@ -123,3 +123,13 @@ Binding.
 | U1-1 | An archived task is read-only: status, edit, comment, time, checklist, attachment and dependency changes are refused until it is unarchived (unarchive by roster managers only). |
 | U1-2 | Cancelling a task requires a reason (kept in the audit row and shown on the task) and notifies the assignee. |
 | U1-3 | A roster change made through a door writes one audit row (the door's); the table trigger's row is kept only for writes that do not come through a door (service role). |
+
+## Round 3f — answers to the round-3e build's follow-up questions (2026-10-01)
+
+Binding.
+
+| Id | Decision |
+|---|---|
+| V1-1 | Adding a subtask under an archived task is refused (the archived task is wholly read-only). |
+| V1-2 | A cancel always carries a reason, for every writer; a system-initiated cancel supplies its own default reason (for example "Project cancelled"). The DB rule stays as built (service role included). |
+| V1-3 | The cancel notification goes to the assignee only. No change. |
