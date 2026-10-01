@@ -33,7 +33,8 @@ const URL_BASE = target.url;
 const KEY = target.serviceKey;
 const MARKER = 'zzbuild-x1';
 const ORG = '00000000-0000-4000-8000-000000000001';
-const OTHER_ORG = 'b96d23ff-3ca4-4054-a6b9-cf32399e91c6';
+// the other tenant is the organization this run creates (the seed carries only one)
+let OTHER_ORG = '00000000-0000-4000-8000-0000000000aa';
 
 const mint = (userId, role) => {
   const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -203,6 +204,7 @@ try {
 
   const newOrg = await rest('POST', 'core', 'organizations', { name: `${MARKER} org`, slug: `${MARKER}-${Date.now()}` });
   created.org = row(newOrg)?.id ?? null;
+  if (created.org) OTHER_ORG = created.org;
   if (created.org) {
     const seeded = await rest('GET', 'finance', `expense_categories?organization_id=eq.${created.org}&select=key`);
     check((seeded.json ?? []).length === 6, 'a new organization is seeded with the six', `${seeded.json?.length}`);
