@@ -90,7 +90,7 @@ import { resolveOnboardingContext, type ContextMatrix } from './onboarding-conte
 import { taskAcceptanceProblem } from './task-acceptance';
 import { projectRoleDbProblem } from './project-role-guard';
 import { projectRoleRefusal } from './project-role-service';
-import { ARCHIVE_FORBIDDEN_MESSAGE, cancelOrArchiveDbProblem, cancellingProblem, completingProblem, COMPLETION_DB_ERROR, COMPLETION_MESSAGE, enteringReviewProblem, REVIEW_HAND_OFF_DB_ERROR, REVIEW_HAND_OFF_MESSAGE } from './task-transitions';
+import { ARCHIVE_FORBIDDEN_MESSAGE, archivedTaskProblem, cancelOrArchiveDbProblem, cancelReasonProblem, cancellingProblem, completingProblem, COMPLETION_DB_ERROR, COMPLETION_MESSAGE, enteringReviewProblem, REVIEW_HAND_OFF_DB_ERROR, REVIEW_HAND_OFF_MESSAGE } from './task-transitions';
 
 /**
  * Writes for the projects module — its only public surface.
@@ -1993,7 +1993,10 @@ export async function setTaskStatus(input: SetTaskStatusInput): Promise<Result<{
 
   // SCR-020/021: Review is entered only through the evidence-gated hand-off. The
   // database trigger refuses it as well; this answers in words before the write.
-  const { data: before } = await supabase.schema('projects').from('tasks').select('status').eq('id', parsed.data.taskId).maybeSingle();
+  const { data: before } = await supabase.schema('projects').from('tasks').select('status, archived_at').eq('id', parsed.data.taskId).maybeSingle();
+  // U1-1: an archived task is read-only.
+  const archivedProblem = archivedTaskProblem(before);
+  if (archivedProblem) return err('CONFLICT', archivedProblem);
   const reviewProblem = enteringReviewProblem(before?.status, parsed.data.status);
   if (reviewProblem && before) return err('CONFLICT', reviewProblem);
   // Q-B1: Completed is reached only from In review.
@@ -2002,6 +2005,9 @@ export async function setTaskStatus(input: SetTaskStatusInput): Promise<Result<{
   // T1-1: Cancelled only from an open status; out of Cancelled only back to To do (the trigger also decides who).
   const cancelProblem = cancellingProblem(before?.status, parsed.data.status);
   if (cancelProblem && before) return err('CONFLICT', cancelProblem);
+  // U1-2: a cancel carries its reason (the trigger refuses one without).
+  const reasonProblem = cancelReasonProblem(before?.status, parsed.data.status, reason);
+  if (reasonProblem && before) return err('VALIDATION', reasonProblem);
   // Q-B2: the caller's project role (observer read-only, contributor own tasks only).
   if (before) {
     const { data: held } = await supabase.schema('projects').from('tasks').select('project_id, assignee_id').eq('id', parsed.data.taskId).maybeSingle();
@@ -2021,6 +2027,7 @@ export async function setTaskStatus(input: SetTaskStatusInput): Promise<Result<{
         ...(parsed.data.status === 'blocked'
           ? { blocked_reason: reason, blocker_type: parsed.data.blockerType ?? null, blocker_owner: parsed.data.blockerOwner ?? null, blocker_next_action: parsed.data.nextAction ?? null }
           : {}),
+        ...(parsed.data.status === 'cancelled' ? { cancel_reason: reason } : {}),
       },
       { count: 'exact' },
     )
@@ -2249,11 +2256,14 @@ export async function updateTask(input: UpdateTaskInput): Promise<Result<{ taskI
   const { data: task } = await supabase
     .schema('projects')
     .from('tasks')
-    .select('id, organization_id, project_id, assignee_id')
+    .select('id, organization_id, project_id, assignee_id, archived_at')
     .eq('id', parsed.data.taskId)
     .eq('project_id', parsed.data.projectId)
     .maybeSingle();
   if (!task) return err('NOT_FOUND', 'Task not found.');
+  // U1-1: an archived task is read-only.
+  const archivedProblem = archivedTaskProblem(task);
+  if (archivedProblem) return err('CONFLICT', archivedProblem);
   // Q-B2: observer read-only, contributor own tasks only.
   const roleRefusal = await projectRoleRefusal(context, task.project_id, task.assignee_id);
   if (roleRefusal) return roleRefusal;
@@ -2277,7 +2287,10 @@ export async function updateTask(input: UpdateTaskInput): Promise<Result<{ taskI
     p_start_on: parsed.data.startOn as string,
     p_due_on: parsed.data.dueOn as string,
   });
-  if (scheduleError) return err('INTERNAL', 'Could not save the task’s dates.');
+  if (scheduleError) {
+    const heldProblem = projectRoleDbProblem(scheduleError.message);
+    return heldProblem ? err('CONFLICT', heldProblem) : err('INTERNAL', 'Could not save the task’s dates.');
+  }
   const outcome = ((Array.isArray(scheduled) ? scheduled[0] : scheduled) as { outcome?: string } | undefined)?.outcome;
   if (outcome === 'start_after_due') return err('VALIDATION', 'The start date cannot be after the due date.');
   if (outcome !== 'set') return err('INTERNAL', 'Could not save the task’s dates.');

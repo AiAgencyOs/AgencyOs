@@ -8,7 +8,7 @@ import { IDLE_STATE } from '@/modules/identity/types';
 import { createTaskAction, setTaskStatusAction, updateTaskAction } from '@/modules/projects/actions';
 import type { TaskCollab } from '@/modules/projects/task-collab-queries';
 import { PROJECT_ROLE_LABEL, PROJECT_ROLES } from '@/modules/projects/project-members-schema';
-import { cancellingProblem, COMPLETION_MESSAGE, completingProblem, isOutstandingTask, selectableStatuses } from '@/modules/projects/task-transitions';
+import { ARCHIVED_READ_ONLY_MESSAGE, cancellingProblem, COMPLETION_MESSAGE, completingProblem, isOutstandingTask, selectableStatuses } from '@/modules/projects/task-transitions';
 import { GROUP_BY_OPTIONS, groupKeyOf, groupsFor, type GroupBy } from '@/modules/projects/project-view-derive';
 
 import { BlockReasonField, readBlocker, TaskCollabPanel } from '../../../task-collab-panel';
@@ -190,6 +190,17 @@ export function ProjectBoard({
     const from = tasks.find((t) => t.id === taskId);
     if (toStatus === 'in_review' && from && (from.status === 'todo' || from.status === 'in_progress')) {
       const message = 'A task goes to review through its hand-off: open it, submit evidence, then mark it ready for QA.';
+      setError(message);
+      throw new Error(message);
+    }
+    // U1-1: an archived task is read-only until it is restored.
+    if (from?.archived) {
+      setError(ARCHIVED_READ_ONLY_MESSAGE);
+      throw new Error(ARCHIVED_READ_ONLY_MESSAGE);
+    }
+    // U1-2: a cancel says why, so it is done from the task page, not by a drag.
+    if (toStatus === 'cancelled' && from && from.status !== 'cancelled') {
+      const message = 'Cancelling a task needs a reason: open the task and use Cancel task there.';
       setError(message);
       throw new Error(message);
     }
@@ -516,7 +527,7 @@ export function ProjectBoard({
               projectId={projectId}
               columns={columns}
               roster={roster}
-              canWrite={canWrite && !(projectRole === 'contributor' && openTask.assigneeId !== currentUserId)}
+              canWrite={canWrite && !openTask.archived && !(projectRole === 'contributor' && openTask.assigneeId !== currentUserId)}
               onMoved={(taskId, toStatus, blocker) => {
                 handleMove(taskId, toStatus, blocker).catch(() => undefined);
               }}

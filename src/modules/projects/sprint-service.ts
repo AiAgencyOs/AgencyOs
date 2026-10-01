@@ -4,6 +4,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
+import { projectRoleDbProblem } from './project-role-guard';
 
 import {
   closeSprintSchema,
@@ -104,6 +105,8 @@ export async function placeTaskInSprint(input: PlaceTaskInSprintInput): Promise<
   });
   if (error) {
     log('placeTaskInSprint', error.message);
+    const heldProblem = projectRoleDbProblem(error.message);
+    if (heldProblem) return err('CONFLICT', heldProblem);
     return err('INTERNAL', 'Could not place the task.');
   }
   switch (first<{ outcome?: string }>(data)?.outcome) {

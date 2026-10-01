@@ -150,21 +150,26 @@ export function TaskLifecycleControls({ projectId, taskId, status, archived, can
   const [statusState, statusAction, statusPending] = useActionState(setTaskStatusAction, IDLE_STATE);
   const [archiveState, archiveAction, archivePending] = useActionState(setTaskArchivedAction, IDLE_STATE);
   const open = ['todo', 'in_progress', 'blocked', 'in_review'].includes(status);
-  const nothing = !(canCancel && open) && !(canManage && status === 'cancelled') && !canManage;
+  const nothing = !(canCancel && open && !archived) && !(canManage && status === 'cancelled' && !archived) && !canManage;
   return (
     <div className="flex flex-wrap items-center gap-3">
-      {canCancel && open ? (
+      {canCancel && open && !archived ? (
         <form action={statusAction} className="flex flex-wrap items-center gap-2">
           <input type="hidden" name="projectId" value={projectId} />
           <input type="hidden" name="taskId" value={taskId} />
           <input type="hidden" name="status" value="cancelled" />
+          {/* U1-2: a cancel says why; the assignee is told. */}
+          <label className="flex flex-col gap-1 text-[13px] text-muted">
+            Reason for cancelling (required)
+            <input name="reason" required maxLength={1000} placeholder="Why is this task cancelled?" className="h-8 min-w-64 rounded-md border border-line-strong bg-surface px-2 text-[13px] text-foreground" />
+          </label>
           <button type="submit" disabled={statusPending} className={buttonClass('secondary', 'sm')}>
             {statusPending ? 'Cancelling…' : 'Cancel task'}
           </button>
           <FormMessage status={statusState.status} message={statusState.message} />
         </form>
       ) : null}
-      {canManage && status === 'cancelled' ? (
+      {canManage && status === 'cancelled' && !archived ? (
         <form action={statusAction} className="flex flex-wrap items-center gap-2">
           <input type="hidden" name="projectId" value={projectId} />
           <input type="hidden" name="taskId" value={taskId} />
@@ -186,7 +191,7 @@ export function TaskLifecycleControls({ projectId, taskId, status, archived, can
           <FormMessage status={archiveState.status} message={archiveState.message} />
         </form>
       ) : null}
-      {nothing ? <span className="text-[13px] text-muted">{status === 'cancelled' ? 'This task is cancelled.' : 'Only the assignee or a delivery lead cancels or archives a task.'}</span> : null}
+      {nothing ? <span className="text-[13px] text-muted">{archived ? 'This task is archived and read-only.' : status === 'cancelled' ? 'This task is cancelled.' : 'Only the assignee or a delivery lead cancels or archives a task.'}</span> : null}
     </div>
   );
 }

@@ -17,6 +17,8 @@
  * Pure: no server-only imports, so client components may use it.
  */
 
+import { ARCHIVED_DB_ERROR, ARCHIVED_READ_ONLY_MESSAGE } from './task-transitions';
+
 export const PROJECT_ROLE_DB_ERRORS = {
   observer: 'project_role_observer_read_only',
   contributor: 'project_role_contributor_own_tasks',
@@ -38,11 +40,12 @@ export function projectRoleProblem(input: { role: string | null | undefined; man
   return null;
 }
 
-/** The sentence for a database refusal by project role (the trigger error or a door outcome), or null when it is something else. */
+/** The sentence for a database refusal by project role (the trigger error or a door outcome) or because the task is archived (U1-1), or null when it is something else. */
 export function projectRoleDbProblem(dbMessage: string | null | undefined): string | null {
   const text = dbMessage ?? '';
   if (text.includes(PROJECT_ROLE_DB_ERRORS.observer)) return PROJECT_ROLE_MESSAGES.observer;
   if (text.includes(PROJECT_ROLE_DB_ERRORS.contributor)) return PROJECT_ROLE_MESSAGES.contributor;
+  if (text.includes(ARCHIVED_DB_ERROR)) return ARCHIVED_READ_ONLY_MESSAGE;
   return null;
 }
 

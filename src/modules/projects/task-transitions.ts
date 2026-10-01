@@ -60,6 +60,25 @@ export const CANCELLED_TERMINAL_MESSAGE = 'A cancelled task can only be reopened
 export const CANCELLED_DB_ERROR = 'task_cancelled_is_terminal';
 export const ARCHIVE_FORBIDDEN_MESSAGE = 'Only an owner, an ops admin or a delivery lead archives or restores a task.';
 export const ARCHIVE_DB_ERROR = 'task_archive_requires_roster_manager';
+/** U1-2: cancelling a task needs a reason; the database trigger refuses a cancel without one. */
+export const CANCEL_REASON_MESSAGE = 'Say why the task is cancelled: a cancel needs a reason, and the assignee is told it.';
+export const CANCEL_DB_ERROR_REASON = 'task_cancel_requires_reason';
+/** U1-1: an archived task is read-only until a roster manager restores it. */
+export const ARCHIVED_READ_ONLY_MESSAGE = 'This task is archived, so it is read-only. An owner, an ops admin or a delivery lead has to restore it before anything on it can change.';
+export const ARCHIVED_DB_ERROR = 'task_archived_read_only';
+
+/** null when a cancel carries a reason (or the move is not a cancel), otherwise the sentence that asks for one. */
+export function cancelReasonProblem(from: string | null | undefined, to: string, reason: string | null | undefined): string | null {
+  if (to !== 'cancelled' || from === 'cancelled') return null;
+  return reason && reason.trim() ? null : CANCEL_REASON_MESSAGE;
+}
+
+/** null when the task can be changed, otherwise the sentence that says an archived task is read-only. */
+export function archivedTaskProblem(task: { archivedAt?: string | null } | { archived_at?: string | null } | null | undefined): string | null {
+  if (!task) return null;
+  const at = 'archivedAt' in task ? task.archivedAt : (task as { archived_at?: string | null }).archived_at;
+  return at ? ARCHIVED_READ_ONLY_MESSAGE : null;
+}
 
 /** null when the move is allowed by this rule, otherwise the sentence that says why not. (Who may do it is the database's call.) */
 export function cancellingProblem(from: string | null | undefined, to: string): string | null {
@@ -74,6 +93,8 @@ export function cancelOrArchiveDbProblem(message: string): string | null {
   if (message.includes(CANCEL_DB_ERROR_FORBIDDEN)) return CANCEL_FORBIDDEN_MESSAGE;
   if (message.includes(CANCELLED_DB_ERROR)) return CANCELLED_TERMINAL_MESSAGE;
   if (message.includes(ARCHIVE_DB_ERROR)) return ARCHIVE_FORBIDDEN_MESSAGE;
+  if (message.includes(CANCEL_DB_ERROR_REASON)) return CANCEL_REASON_MESSAGE;
+  if (message.includes(ARCHIVED_DB_ERROR)) return ARCHIVED_READ_ONLY_MESSAGE;
   return null;
 }
 

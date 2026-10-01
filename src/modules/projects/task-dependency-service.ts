@@ -32,7 +32,7 @@ async function door(fn: 'add_task_dependency' | 'remove_task_dependency', input:
   const outcome = ((Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined)?.outcome;
   if (outcome === done) return ok({ done: true });
   const roleProblem = projectRoleDbProblem(outcome);
-  if (roleProblem) return err('FORBIDDEN', roleProblem);
+  if (roleProblem) return err(outcome === 'task_archived_read_only' ? 'CONFLICT' : 'FORBIDDEN', roleProblem);
   if (outcome === 'forbidden') return err('FORBIDDEN', 'The database refused: your role may not change a task.');
   if (outcome && ADD_DEPENDENCY_MESSAGES[outcome]) return err(outcome === 'not_found' ? 'NOT_FOUND' : 'CONFLICT', ADD_DEPENDENCY_MESSAGES[outcome]);
   return err('INTERNAL', `Could not ${verb}.`);

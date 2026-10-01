@@ -964,6 +964,12 @@ jobs:
           # only through the audited add / change-role / remove doors.
           npm run db:verify:u1
 
+          # Round 3e, stream V1: an archived task is read-only (status, fields,
+          # comments, time, checklists, attachments, evidence, dependencies) until a
+          # roster manager restores it; a cancel needs a reason, keeps it in the audit
+          # row and tells the assignee; a roster change through a door is audited once.
+          npm run db:verify:v1
+
           # Last, and deliberately so: the deploy smoke runs against the app
           # in its most-exercised state, and a tick it fires cannot disturb
           # the four scripts above. The same command, pointed at a real

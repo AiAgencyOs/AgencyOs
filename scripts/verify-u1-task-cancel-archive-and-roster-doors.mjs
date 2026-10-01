@@ -38,7 +38,8 @@ try {
     if (!row?.id) k.fail(`could not create a task: ${JSON.stringify(r.json)}`);
     return row;
   };
-  const setStatus = (task, status, token) => rest('PATCH', 'projects', `tasks?id=eq.${task.id}`, { status }, token);
+  // U1-2 (round 3e): a cancel carries its reason, so the helper supplies one.
+  const setStatus = (task, status, token) => rest('PATCH', 'projects', `tasks?id=eq.${task.id}`, { status, ...(status === 'cancelled' ? { cancel_reason: 'zztest-u1 reason' } : {}) }, token);
   const statusOf = async (task) => one(await rest('GET', 'projects', `tasks?id=eq.${task.id}&select=status,archived_at`));
   const audits = async (subjectId, like) => ((await rest('GET', 'audit', `audit_log?subject_id=eq.${subjectId}&action=like.${like}&select=action`)).json ?? []).map((r) => r.action);
 

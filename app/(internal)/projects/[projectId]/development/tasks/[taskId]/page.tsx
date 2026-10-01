@@ -75,7 +75,9 @@ export default async function TaskDetailPage({
   // Q-B2: the person's project role narrows the agency role on this project (observer read-only, contributor own tasks only).
   const myProjectRole = mayPlan ? null : await readMyProjectRole(projectId, context.userId);
   const roleProblem = projectRoleProblem({ role: myProjectRole, manager: mayPlan, userId: context.userId, assigneeId: task.assignee?.userId });
-  const mayWriteTask = can(context, 'task.write') && roleProblem === null;
+  // U1-1: an archived task is read-only for everyone; only a roster manager restores it.
+  const archived = task.archivedAt !== null;
+  const mayWriteTask = can(context, 'task.write') && roleProblem === null && !archived;
   // R2-1: the task's own dependencies (the tasks it waits for, and the tasks waiting for it).
   const taskDeps = await readTaskDependencies(projectId, task.id);
   // Q-C3: the requirement and dependency checks in front of Start Task, with the reason to show on the button.
@@ -96,6 +98,7 @@ export default async function TaskDetailPage({
         status={
           <>
             <Badge tone={statusTone(task.status)}>{humanize(task.status)}</Badge>
+            {archived ? <Badge tone="neutral">Archived</Badge> : null}
             <Badge tone={pr.tone}>{pr.label} priority</Badge>
             {module ? <Badge tone="info">{module.name}</Badge> : null}
             {task.labels.map((l) => (
@@ -132,12 +135,24 @@ export default async function TaskDetailPage({
 
       <ProjectSubNav projectId={projectId} />
 
+      {archived ? (
+        <p role="status" className="rounded-md border border-line bg-surface-sunken px-4 py-3 text-[13px] text-foreground">
+          <strong>Archived{task.archivedAt ? ` on ${clock.date(task.archivedAt)}` : ''}.</strong> This task is read-only: nothing on it can change until it is restored.{' '}
+          {mayPlan ? 'Use “Restore task” under Cancel or archive below.' : 'An owner, an ops admin or a delivery lead can restore it.'}
+        </p>
+      ) : null}
+
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(19rem,1fr)]">
         <div className="flex min-w-0 flex-col gap-4">
           <Card>
             <CardHeader title="Task description" actions={mayWriteTask ? <Link href={`/projects/${projectId}/board`} className="text-[13px] font-medium text-brand hover:underline">Edit</Link> : undefined} />
             <div className="px-4 pb-4 sm:px-5">
               {task.description ? <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">{task.description}</p> : <p className="text-[13px] text-muted">No description recorded.</p>}
+              {task.status === 'cancelled' ? (
+                <p className="mt-3 whitespace-pre-wrap text-[13px] text-foreground">
+                  <strong>Cancelled:</strong> {task.cancelReason ?? 'No reason recorded.'}
+                </p>
+              ) : null}
               {task.status === 'blocked' ? (
                 <p className="mt-3 whitespace-pre-wrap text-[13px] text-danger">
                   Blocked on: {collab.blocked.reason ?? 'No reason recorded.'}
@@ -458,7 +473,7 @@ export default async function TaskDetailPage({
                         <p className="text-[13px] text-muted">Raising a plan question takes the project.write permission; the question can go to a requirement instead.</p>
                       )}
                       {!mayWriteTask ? (
-                        <p className="text-[13px] text-muted">You do not have permission to raise a question on this project.</p>
+                        <p className="text-[13px] text-muted">{archived ? 'This task is archived, so it is read-only.' : 'You do not have permission to raise a question on this project.'}</p>
                       ) : scopeItems.length === 0 ? (
                         <p className="text-[13px] text-muted">
                           The task delivers no scope item, so there is no requirement to ask about. Ask it on the{' '}
@@ -537,7 +552,7 @@ export default async function TaskDetailPage({
                 />
                 <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
                   {!mayWriteTask ? (
-                    <p className="text-[13px] text-muted">{roleProblem ?? 'You do not have permission to move this task.'}</p>
+                    <p className="text-[13px] text-muted">{archived ? 'This task is archived, so it is read-only.' : (roleProblem ?? 'You do not have permission to move this task.')}</p>
                   ) : (
                     <div className="flex flex-wrap items-center gap-3">
                       {task.status === 'todo' ? <StartTaskButton projectId={projectId} taskId={task.id} blockedReason={startCheck?.reason ?? null} /> : null}
@@ -561,7 +576,7 @@ export default async function TaskDetailPage({
                     projectId={projectId}
                     taskId={task.id}
                     status={task.status}
-                    archived={task.archivedAt !== null}
+                    archived={archived}
                     canCancel={mayWriteTask && (mayPlan || task.assignee?.userId === context.userId)}
                     canManage={mayPlan}
                   />

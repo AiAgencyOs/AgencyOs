@@ -11239,6 +11239,7 @@ export type Database = {
       }
       tasks: {
         Row: {
+          cancel_reason: string | null
           archived_at: string | null
           blocker_type: string | null
           blocker_owner: string | null
@@ -11275,6 +11276,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          cancel_reason?: string | null
           archived_at?: string | null
           blocker_type?: string | null
           blocker_owner?: string | null
@@ -11311,6 +11313,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          cancel_reason?: string | null
           archived_at?: string | null
           blocker_type?: string | null
           blocker_owner?: string | null
@@ -12136,6 +12139,10 @@ export type Database = {
       set_project_default_assignee: {
         Args: { p_project_id: string; p_project_role: string; p_user_id: string }
         Returns: { outcome: string }[]
+      }
+      task_cancellations: {
+        Args: { p_limit?: number; p_since?: string }
+        Returns: { actor_name: string | null; audit_id: number; changed_at: string; project_id: string; project_name: string; reason: string; task_id: string; task_title: string }[]
       }
       set_task_archived: {
         Args: { p_archived: boolean; p_task_id: string }

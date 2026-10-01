@@ -7,6 +7,7 @@ import { err, ok, type Result } from '@/lib/result';
 
 import { projectRoleDbProblem } from './project-role-guard';
 import { projectRoleRefusal } from './project-role-service';
+import { archivedTaskProblem } from './task-transitions';
 
 import {
   reopenTaskFromDefectSchema,
@@ -36,8 +37,10 @@ async function gate(verb: string, taskId?: string) {
   // Q-B2: the caller's project role on the task's project (observer read-only, contributor own tasks only).
   if (taskId) {
     const supabase = await createClient();
-    const { data: held } = await supabase.schema('projects').from('tasks').select('project_id, assignee_id').eq('id', taskId).maybeSingle();
+    const { data: held } = await supabase.schema('projects').from('tasks').select('project_id, assignee_id, archived_at').eq('id', taskId).maybeSingle();
     if (held) {
+      const archived = archivedTaskProblem(held);
+      if (archived) return err('CONFLICT', archived) as Result<never>;
       const refusal = await projectRoleRefusal(context, held.project_id, held.assignee_id);
       if (refusal) return refusal;
     }

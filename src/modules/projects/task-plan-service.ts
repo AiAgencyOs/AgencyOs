@@ -6,6 +6,7 @@ import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
 import { createTask, setTaskStatus } from './service';
+import { projectRoleDbProblem } from './project-role-guard';
 import {
   addMyTaskSchema,
   addProjectNoteSchema,
@@ -81,6 +82,8 @@ export async function setTaskLabels(input: SetTaskLabelsInput): Promise<Result<{
   const { data, error } = await supabase.schema('projects').rpc('set_task_labels', { p_task_id: parsed.data.taskId, p_labels: parsed.data.labels });
   if (error) {
     log('setTaskLabels', error.message);
+    const heldProblem = projectRoleDbProblem(error.message);
+    if (heldProblem) return err('CONFLICT', heldProblem);
     return err('INTERNAL', 'Could not save the labels.');
   }
   const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; labels?: string[] | null } | undefined;

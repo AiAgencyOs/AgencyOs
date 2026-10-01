@@ -31,6 +31,8 @@ export type TaskDetail = {
     completedAt: string | null;
     /** T1-1: set when a roster manager archived the task. */
     archivedAt: string | null;
+    /** U1-2: why the task was cancelled (set only while it is cancelled). */
+    cancelReason: string | null;
     createdAt: string;
     assignee: { userId: string; fullName: string; email: string } | null;
     requirementVersionId: string | null;
@@ -61,7 +63,7 @@ export async function readTaskDetail(projectId: string, taskId: string): Promise
     .schema('projects')
     .from('tasks')
     .select(
-      'id, project_id, title, description, status, priority, due_on, estimate_hours, completed_at, created_at, assignee_id, module_id, feature_id, requirement_version_id, start_on, labels, milestone_id, parent_task_id, sprint_id, archived_at',
+      'id, project_id, title, description, status, priority, due_on, estimate_hours, completed_at, created_at, assignee_id, module_id, feature_id, requirement_version_id, start_on, labels, milestone_id, parent_task_id, sprint_id, archived_at, cancel_reason',
     )
     .eq('id', taskId)
     .eq('project_id', projectId)
@@ -188,6 +190,7 @@ export async function readTaskDetail(projectId: string, taskId: string): Promise
       estimateHours: task.estimate_hours === null ? null : Number(task.estimate_hours),
       completedAt: task.completed_at,
       archivedAt: task.archived_at,
+      cancelReason: task.cancel_reason,
       createdAt: task.created_at,
       assignee: assigneeRow
         ? { userId: assigneeRow.user_id, fullName: assigneeRow.users?.full_name ?? assigneeRow.users?.email ?? 'Unknown', email: assigneeRow.users?.email ?? '' }
