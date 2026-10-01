@@ -48,3 +48,30 @@ Answered one by one by the owner. Each row is the decision, not a recommendation
 | 12 | Plan activation | Requires internal approval, enforced in the database. |
 | 13 | Contract and migration checks | A GitHub workflow dispatched from the panel; the result is recorded. |
 | 14 | AI / semantic search | Yes, over everything searchable. |
+
+## Round 3 — answers to the line-by-line PDF trace's open questions (2026-10-01)
+
+Binding. Source questions: `docs/pdf-gap/TRACE-{A,B,C,D}.md`.
+
+| Id | Decision |
+|---|---|
+| Q-NAV | Keep the reference screenshots' module names (Communications, Approvals, Analytics & Costs, Security & Audit, Organization). Owner: "whichever you think best". |
+| Q-PH56 | Completing Phase 5 raises the M3 invoice and the PM Task 3 message; completing Phase 6 raises M4 and PM Task 4, exactly as Phase 4 does for M2. |
+| Q-BAND | Budget bands are owner-editable (a setting); a lead's budget shows in its band. The figure and "Not recorded" stay. |
+| Q-OVERRIDE | A person may override the Hot/Warm/Cold label with a reason; the computed label is kept and the override is audited. |
+| Q-CHIPS | Client chips come from projects: Active = at least one running project; Pending = only unstarted/signed projects; Completed = every project complete; On hold = a project on hold. No overlap. |
+| Q-B1 | A task reaches Completed only from In review. |
+| Q-B2 | Project roles are enforced: Observer read-only, Contributor own tasks only on that project. |
+| Q-B3 | Project roles are changed by owner, ops admin and delivery lead (as today, `project.write`). No change. |
+| Q-B4 | A project has default assignees per project role. |
+| Q-B5/B6 | Screen navigation paths and actions stay free text. No change. |
+| Q-B7 | "Map requirement" on a finalized baseline drafts the next baseline. |
+| Q-C1 | "Upload build" also accepts a build file (apk/ipa/zip) under the project-file limits and credentials guard. |
+| Q-C2 | No per-asset visibility flag now. No change. |
+| Q-C3 | Start Task is gated by a requirement check (task linked to a requirement/scope item) and a dependency check (its dependencies complete). |
+| Q-C4 | Commits map to tasks automatically by the `task/<id8>-` branch or message convention; manual mapping stays. |
+| Q-C5 | Defect verification stays with `project.write`, as today. No change. |
+| Q-C6 | Test-run and bug evidence may be uploaded files under the project-file rules. |
+| Q-D1 | The Google Calendar id becomes an organization setting editable in the panel, read before the environment value. |
+| Q-D2 | "Generate period report" stores a dated snapshot that "Export history" lists. |
+| Q-D3 | Meeting-note upload also accepts recordings, images, PDF and Word under the project-file rules. |
