@@ -919,7 +919,7 @@ event / user ──────────────▶ agent_runs ──▶ 
 
 Two drive mechanisms, belt and braces:
 
-- **`GET /api/cron/jobs` every minute** (Vercel Cron) — claims a batch and fans out via `waitUntil` to `/api/jobs/run`. This is the safety net: if anything is stuck, it moves within 60 s.
+- **`POST /api/jobs/run` every minute** (an external scheduler: AWS EventBridge → Lambda, Supabase `pg_cron`, or any host that can send `Authorization: Bearer <CRON_SECRET>`; the route also answers GET). `vercel.json` deliberately carries no `crons`. This is the safety net: it claims a batch and runs it, so if anything is stuck it moves within 60 s. See `docs/deployment/runbook.md` §5 and `docs/deployment/cron-external-trigger.md`.
 - **Immediate self-dispatch** — after enqueuing, `after()`/`waitUntil` fires `/api/jobs/run` without blocking the response. This is the fast path: sub-second latency in practice, with cron as the guarantee.
 
 **Every step is idempotent and resumable.** A killed invocation loses at most one step's work; the reaper unlocks the job and the next tick retries from the last persisted step.
@@ -1176,7 +1176,7 @@ service.ts, inside ONE transaction:
   3. INSERT core.outbox_events
   COMMIT                                 ← atomic: state + audit + event
 
-GET /api/cron/outbox (every minute) + immediate waitUntil nudge:
+The outbox is drained by the same every-minute `/api/jobs/run` tick, plus an immediate waitUntil nudge:
   4. claim unpublished events (FOR UPDATE SKIP LOCKED)
   5. for each, look up subscribers in the event catalog
   6. enqueue one job per (event, handler) with dedupe_key = evt:handler
@@ -1282,7 +1282,7 @@ proposal.accepted
 
 ### 9.5 Scheduled work
 
-`GET /api/cron/scheduled` (hourly) enqueues:
+Scheduled work is enqueued by the engine's heartbeat (the external every-minute tick on `/api/jobs/run`, §6.3); the route that does it is not a separate `/api/cron/scheduled` — that name was never built. It covers:
 
 - overdue-invoice reminders
 - approval SLA escalations
