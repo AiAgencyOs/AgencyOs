@@ -75,3 +75,19 @@ Binding. Source questions: `docs/pdf-gap/TRACE-{A,B,C,D}.md`.
 | Q-D1 | The Google Calendar id becomes an organization setting editable in the panel, read before the environment value. |
 | Q-D2 | "Generate period report" stores a dated snapshot that "Export history" lists. |
 | Q-D3 | Meeting-note upload also accepts recordings, images, PDF and Word under the project-file rules. |
+
+## Round 3b — answers to the round-3 build's follow-up questions (2026-10-01)
+
+Binding.
+
+| Id | Decision |
+|---|---|
+| R1-1 | A client with one project on hold and one running shows On hold. No change. |
+| R1-2 | A client with a finished project beside an unstarted one shows Pending (was "Mixed"). |
+| R1-3 | Completing Phase 5 requires the M2 invoice to be verified paid. |
+| R1-4 | The Hot Leads filter and its count follow the manual override, so they agree with the badge. |
+| R2-1 | Dependencies are per task (a task-level dependency table), replacing the plan-level check in Start Task. |
+| R2-2 | Project-role enforcement extends to task comments, time logs and checklists. |
+| R2-3 | The database exemption for roster managers uses the role union, like the service. |
+| R3-1 | File caps stay at 5 per build and 20 per run or bug. |
+| R3-2 | The period report snapshot also holds payments received and the profit-and-loss figures. |
