@@ -40,6 +40,15 @@ export async function checklistItemRoleRefusal(context: AuthContext, itemId: str
   return data ? taskRoleRefusal(context, data.task_id) : null;
 }
 
+/** S2-1: an attachment's task, then the guard. */
+export async function attachmentRoleRefusal(context: AuthContext, attachmentId: string): Promise<Result<never> | null> {
+  if (can(context, 'project.write')) return null;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').from('task_attachments').select('task_id').eq('id', attachmentId).maybeSingle();
+  if (error) unreadable('attachmentRoleRefusal', error);
+  return data ? taskRoleRefusal(context, data.task_id) : null;
+}
+
 /** A database refusal by project role (the trigger said it for a writer the service did not see) as the Result to return, or null. */
 export function dbRoleRefusal(dbMessage: string | null | undefined): Result<never> | null {
   const problem = projectRoleDbProblem(dbMessage);

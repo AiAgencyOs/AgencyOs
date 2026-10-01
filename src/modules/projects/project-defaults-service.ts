@@ -21,8 +21,8 @@ import {
  * SCR-027's three doors.
  *
  * `setProjectDefaultAssignee` is `project.write` — the same capability that
- * edits the project's own facts — and `projects_write` (can_manage_delivery)
- * decides again. Watching is any internal role for oneself and owner /
+ * edits the project's own facts — and the door `projects.set_project_fallback_assignee`
+ * (role union, audited) decides again. Watching is any internal role for oneself and owner /
  * ops_admin for anybody else, mirrored exactly by `project_watchers_write`,
  * so a delivery lead who names a colleague is refused by the database even
  * if this file were wrong.
@@ -38,31 +38,26 @@ export async function setProjectDefaultAssignee(input: SetDefaultAssigneeInput):
   }
 
   const supabase = await createClient();
-  if (parsed.data.defaultAssigneeId) {
-    const { data: member, error: memberError } = await supabase
-      .schema('core')
-      .from('memberships')
-      .select('user_id')
-      .eq('user_id', parsed.data.defaultAssigneeId)
-      .eq('status', 'active')
-      .maybeSingle();
-    if (memberError) return err('INTERNAL', 'Could not check the roster.');
-    if (!member) return err('VALIDATION', 'The default assignee must be an active member of the agency.');
-  }
-
-  const { data, error } = await supabase
-    .schema('projects')
-    .from('projects')
-    .update({ default_assignee_id: parsed.data.defaultAssigneeId })
-    .eq('id', parsed.data.projectId)
-    .is('deleted_at', null)
-    .select('id')
-    .maybeSingle();
+  const { data, error } = await supabase.schema('projects').rpc('set_project_fallback_assignee', {
+    p_project_id: parsed.data.projectId,
+    p_user_id: parsed.data.defaultAssigneeId as string,
+  });
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'setProjectDefaultAssignee', detail: error.message }));
     return err('INTERNAL', 'Could not save the default assignee.');
   }
-  if (!data) return err('NOT_FOUND', 'Project not found.');
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+  switch (row?.outcome) {
+    case 'set':
+    case 'cleared':
+      break;
+    case 'not_internal':
+      return err('VALIDATION', 'The default assignee must be an active member of the agency.');
+    case 'not_found':
+      return err('NOT_FOUND', 'Project not found.');
+    default:
+      return err('FORBIDDEN', 'The database refused: your role may not set default assignees.');
+  }
 
   return ok({ cleared: parsed.data.defaultAssigneeId === null });
 }

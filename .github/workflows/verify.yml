@@ -951,6 +951,12 @@ jobs:
           # marker and removes them.
           npm run db:verify:r1
 
+          # Round 3c, stream T1: task attachments obey the project role (observer
+          # refused, contributor own tasks only, roster managers exempt by the role
+          # union), the roster and default-assignee doors read the role union, and a
+          # done dependency is satisfied while one across projects stays refused.
+          npm run db:verify:t1
+
           # Last, and deliberately so: the deploy smoke runs against the app
           # in its most-exercised state, and a tick it fires cannot disturb
           # the four scripts above. The same command, pointed at a real

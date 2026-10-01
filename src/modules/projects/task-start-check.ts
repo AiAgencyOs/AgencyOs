@@ -4,7 +4,8 @@
  *
  *   requirement check  the task is linked to a requirement version, or to a feature that
  *                      carries an included or optional scope item;
- *   dependency check   (R2-1) every task this task depends on is done; the failing task is
+ *   dependency check   (R2-1) every task this task depends on is done, cancelled or
+ *                      archived (S2-3; a dependency across projects is refused when it is written); the failing task is
  *                      named. The plan-level "any pending plan dependency" check is replaced.
  *
  * The database says it in `projects.task_start_check` and refuses in `projects.start_task`
@@ -25,6 +26,11 @@ export type TaskStartCheck = {
   /** The sentence the button shows when the task cannot start; null when it can. */
   reason: string | null;
 };
+
+/** S2-3: a dependency is satisfied when the task it names is done, cancelled or archived. Mirrors `projects.task_start_check`. */
+export function dependencyIsSatisfied(task: { status: string; archivedAt?: string | null; cancelledAt?: string | null }): boolean {
+  return task.status === 'done' || task.status === 'cancelled' || task.status === 'archived' || Boolean(task.archivedAt) || Boolean(task.cancelledAt);
+}
 
 /** Up to this many failing tasks are named in the sentence; the rest are counted. */
 const NAMED = 3;

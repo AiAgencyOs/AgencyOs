@@ -4,7 +4,7 @@ import test from 'node:test';
 import { mapCommitToTask, summariseMapping, taskPrefixInMessage } from '../src/modules/projects/code-task-mapping.ts';
 import { mayChangeTask, projectRoleDbProblem, projectRoleProblem, PROJECT_ROLE_MESSAGES } from '../src/modules/projects/project-role-guard.ts';
 import { ADD_DEPENDENCY_MESSAGES } from '../src/modules/projects/task-dependency-schema.ts';
-import { evaluateStartCheck, START_REQUIREMENT_MESSAGE } from '../src/modules/projects/task-start-check.ts';
+import { dependencyIsSatisfied, evaluateStartCheck, START_REQUIREMENT_MESSAGE } from '../src/modules/projects/task-start-check.ts';
 import { COMPLETION_MESSAGE, completingProblem, selectableStatuses } from '../src/modules/projects/task-transitions.ts';
 
 const STATUSES = ['todo', 'in_progress', 'blocked', 'in_review', 'done'] as const;
@@ -92,4 +92,10 @@ test('Q-C4 a manual link still wins over the convention, and the summary counts 
     tasks,
   });
   assert.deepEqual(summary.commits, { mapped: 2, total: 3 });
+});
+
+test('S2-3 a dependency on a done, cancelled or archived task is satisfied; anything else is open', () => {
+  for (const status of ['done', 'cancelled', 'archived']) assert.equal(dependencyIsSatisfied({ status }), true, status);
+  assert.equal(dependencyIsSatisfied({ status: 'in_review', archivedAt: '2026-10-01T00:00:00Z' }), true, 'archived by date');
+  for (const status of ['todo', 'in_progress', 'blocked', 'in_review']) assert.equal(dependencyIsSatisfied({ status }), false, status);
 });

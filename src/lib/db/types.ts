@@ -12134,6 +12134,10 @@ export type Database = {
         Args: { p_project_id: string; p_project_role: string; p_user_id: string }
         Returns: { outcome: string }[]
       }
+      set_project_fallback_assignee: {
+        Args: { p_project_id: string; p_user_id: string }
+        Returns: { outcome: string }[]
+      }
       task_start_check: {
         Args: { p_task_id: string }
         Returns: { open_dependencies: number; reason: string | null; requirement_ok: boolean; startable: boolean }[]

@@ -6,7 +6,7 @@ import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
-import { checklistItemRoleRefusal, dbRoleRefusal, taskRoleRefusal } from './project-role-service';
+import { attachmentRoleRefusal, checklistItemRoleRefusal, dbRoleRefusal, taskRoleRefusal } from './project-role-service';
 
 import {
   addChecklistItemSchema,
@@ -181,6 +181,8 @@ export async function addTaskAttachment(input: AddTaskAttachmentInput): Promise<
   const context = await requireInternal();
   if (!can(context, 'task.write')) return refused('attach a link to a task');
   if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+  const roleRefusal = await taskRoleRefusal(context, parsed.data.taskId);
+  if (roleRefusal) return roleRefusal;
   const credential = fileCredentialProblem({ title: parsed.data.title, url: parsed.data.url });
   if (credential) return err('VALIDATION', credential);
 
@@ -201,6 +203,8 @@ export async function addTaskAttachment(input: AddTaskAttachmentInput): Promise<
 
   if (error || !data) {
     console.error(JSON.stringify({ level: 'error', scope: 'addTaskAttachment', detail: error?.message }));
+    const dbRefusal = dbRoleRefusal(error?.message);
+    if (dbRefusal) return dbRefusal;
     return err('INTERNAL', 'Could not add the attachment.');
   }
   return ok({ attachmentId: data.id });
@@ -212,11 +216,15 @@ export async function removeTaskAttachment(input: RemoveTaskAttachmentInput): Pr
 
   const context = await requireInternal();
   if (!can(context, 'task.write')) return refused('remove a task attachment');
+  const roleRefusal = await attachmentRoleRefusal(context, parsed.data.attachmentId);
+  if (roleRefusal) return roleRefusal;
 
   const supabase = await createClient();
   const { error } = await supabase.schema('projects').from('task_attachments').delete().eq('id', parsed.data.attachmentId);
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'removeTaskAttachment', detail: error.message }));
+    const dbRefusal = dbRoleRefusal(error.message);
+    if (dbRefusal) return dbRefusal;
     return err('INTERNAL', 'Could not remove the attachment.');
   }
   return ok({ removed: true });
