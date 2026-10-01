@@ -68,7 +68,7 @@ export default async function TestPlanPage({ params, searchParams }: { params: P
     agencyClock(),
     listTestCaseResults(projectId),
     // SCR-047 — the tasks a defect can be linked to.
-    listDevelopmentBreakdown(projectId),
+    listDevelopmentBreakdown(projectId, { excludeCancelled: true }),
   ]);
   // SCR-047 — the fix / retest trail, one read for every defect on the project.
   const history = await readDefectHistory(defects.map((d) => d.id));

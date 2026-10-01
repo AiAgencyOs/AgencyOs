@@ -102,7 +102,7 @@ export default async function ProjectReportPage({
   const mayReadMoney = can(context, 'invoice.read');
   const [plan, breakdown, defects, invoices, expenses, spend, roster, clock, clientName, time, margin] = await Promise.all([
     listPaymentPlan(projectId),
-    listDevelopmentBreakdown(projectId),
+    listDevelopmentBreakdown(projectId, { excludeCancelled: true }),
     listDefects(projectId),
     mayReadMoney ? listProjectInvoices(projectId) : Promise.resolve([]),
     mayReadMoney ? listExpenses(1000) : Promise.resolve([]),

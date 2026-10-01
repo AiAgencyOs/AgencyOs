@@ -86,15 +86,18 @@ try {
   section('B. the roster and the default-assignee doors read the role union');
   const outcome = async (promise) => one(await promise)?.outcome;
   const newcomer = await k.makeUser('member');
-  const addMember = (user, who) => rest('POST', 'projects', 'project_members', { organization_id: ORG, project_id: project.id, user_id: who.id, project_role: 'qa' }, user.token);
+  // T1-2: the roster is written through the audited doors (a direct write is refused for everyone signed in).
+  const addMember = (user, who) => projects('add_project_member', { p_project_id: project.id, p_user_id: who.id, p_project_role: 'qa' }, user.token);
   const refusedAdd = await addMember(plainMember, newcomer);
-  check(!refusedAdd.ok, 'a member whose secondary role is only member cannot change the roster', `HTTP ${refusedAdd.status}`);
+  check((await outcome(refusedAdd)) === 'forbidden', 'a member whose secondary role is only member cannot change the roster', JSON.stringify(refusedAdd.json).slice(0, 60));
   const okAdd = await addMember(secondaryLead, newcomer);
-  check(okAdd.ok, 'a member who is secondary delivery lead adds a person to the roster', JSON.stringify(okAdd.json).slice(0, 90));
-  const moved = await rest('PATCH', 'projects', `project_members?project_id=eq.${project.id}&user_id=eq.${newcomer.id}`, { project_role: 'designer' }, secondaryLead.token);
-  check(moved.ok && one(moved)?.project_role === 'designer', 'and changes their project role');
-  const gone = await rest('DELETE', 'projects', `project_members?project_id=eq.${project.id}&user_id=eq.${newcomer.id}`, undefined, secondaryLead.token);
-  check(gone.ok && one(gone)?.user_id === newcomer.id, 'and removes them');
+  const memberId = one(okAdd)?.member_id;
+  check(one(okAdd)?.outcome === 'added' && Boolean(memberId), 'a member who is secondary delivery lead adds a person to the roster', JSON.stringify(okAdd.json).slice(0, 90));
+  const moved = await projects('change_project_member_role', { p_member_id: memberId, p_project_role: 'designer' }, secondaryLead.token);
+  check(one(moved)?.outcome === 'changed', 'and changes their project role');
+  check(one(await rest('GET', 'projects', `project_members?id=eq.${memberId}&select=project_role`))?.project_role === 'designer', 'the role is stored');
+  const gone = await projects('remove_project_member', { p_member_id: memberId }, secondaryLead.token);
+  check(one(gone)?.outcome === 'removed', 'and removes them');
 
   const setRole = (role, userId, token) => projects('set_project_default_assignee', { p_project_id: project.id, p_project_role: role, p_user_id: userId }, token);
   check((await outcome(setRole('designer', developer.id, plainMember.token))) === 'forbidden', 'the per-role default door refuses a plain member');
@@ -127,8 +130,6 @@ try {
   const finished = await rest('PATCH', 'projects', `tasks?id=eq.${pre.id}`, { status: 'done', completed_at: new Date().toISOString() }, lead.token);
   check(finished.ok, 'the prerequisite is completed from In review', JSON.stringify(finished.json).slice(0, 120));
   check(one(await projects('task_start_check', { p_task_id: waiter.id }, developer.token))?.open_dependencies === 0, 'a done prerequisite is satisfied');
-  const cancelled = await rest('PATCH', 'projects', `tasks?id=eq.${pre.id}`, { status: 'cancelled' });
-  check(!cancelled.ok, 'tasks have no cancelled status yet (the check admits one the day it exists)', `HTTP ${cancelled.status}`);
   check((await outcome(projects('add_task_dependency', { p_task_id: waiter.id, p_depends_on_task_id: foreign.id }, developer.token))) === 'other_project', 'a dependency across projects is still refused');
   const direct = await rest('POST', 'projects', 'task_dependencies', { organization_id: ORG, task_id: waiter.id, depends_on_task_id: foreign.id });
   check(said(direct, 'task_dependency_other_project'), 'even a system writer cannot cross projects');

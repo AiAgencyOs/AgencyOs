@@ -10,6 +10,7 @@ import { can } from '@/lib/authz/permissions';
 import { getProject, listDevelopmentBreakdown, listInternalRoster, listPaymentPlan } from '@/modules/projects/queries';
 import { groupsFor, rollup, topLevelTasks } from '@/modules/projects/project-view-derive';
 import { TASK_STATUSES } from '@/modules/projects/schema';
+import { isCountedTask, isOutstandingTask } from '@/modules/projects/task-transitions';
 import { listProjectSprints } from '@/modules/projects/sprint-queries';
 import { sprintDay, sprintState } from '@/modules/projects/sprint-schema';
 import {
@@ -51,7 +52,7 @@ const PRIORITY: Record<string, { label: string; tone: 'danger' | 'warning' | 'in
   p3: { label: 'Low', tone: 'neutral' },
 };
 
-type Search = { q?: string; phase?: string; status?: string; assignee?: string; priority?: string; due?: string; mine?: string; sprint?: string };
+type Search = { q?: string; phase?: string; status?: string; assignee?: string; priority?: string; due?: string; mine?: string; sprint?: string; archived?: string };
 
 /**
  * The project's Tasks tab: every task as a list grouped by phase (the payment
@@ -70,7 +71,7 @@ export default async function ProjectTasksPage({ params, searchParams }: { param
   if (!project) notFound();
 
   const [{ tasks: allTasks, modules }, roster, phases, sprints, clock, clientName] = await Promise.all([
-    listDevelopmentBreakdown(projectId),
+    listDevelopmentBreakdown(projectId, { includeArchived: sp.archived === '1' }),
     listInternalRoster(),
     listPaymentPlan(projectId),
     listProjectSprints(projectId),
@@ -78,6 +79,8 @@ export default async function ProjectTasksPage({ params, searchParams }: { param
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
   ]);
   const tasks = topLevelTasks(allTasks);
+  // T1-1: cancelled and archived tasks are listed (so they can be found) but are not outstanding work: no figure counts them.
+  const counted = tasks.filter(isCountedTask);
   const todayKey = clock.dayKey(new Date());
   const weekEnd = new Date(`${todayKey}T00:00:00Z`);
   weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
@@ -96,7 +99,7 @@ export default async function ProjectTasksPage({ params, searchParams }: { param
       (!sp.priority || t.priority === sp.priority) &&
       (!sp.sprint || (sp.sprint === 'none' ? t.sprintId === null : t.sprintId === sp.sprint)) &&
       (!sp.due ||
-        (sp.due === 'overdue' && t.status !== 'done' && t.dueOn !== null && t.dueOn < todayKey) ||
+        (sp.due === 'overdue' && isOutstandingTask(t) && t.dueOn !== null && t.dueOn < todayKey) ||
         (sp.due === 'week' && t.dueOn !== null && t.dueOn >= todayKey && t.dueOn <= weekEndKey) ||
         (sp.due === 'none' && t.dueOn === null)) &&
       (sp.mine !== '1' || t.assigneeId === context.userId),
@@ -105,15 +108,15 @@ export default async function ProjectTasksPage({ params, searchParams }: { param
 
   const groups = groupsFor(visible, 'phase', { assignees: nameByUser, modules: new Map(), phases: phaseName }, { statuses: [], phases: phases.map((m) => m.id) });
   const whole = rollup(tasks);
-  const count = (s: string) => tasks.filter((t) => t.status === s).length;
-  const share = (n: number) => (tasks.length > 0 ? `${Math.round((n / tasks.length) * 100)}%` : '0%');
-  const completedTrend = trendOf(periodDelta(countPeriods(tasks.map((t) => t.completedAt), new Date())));
-  const createdTrend = trendOf(periodDelta(countPeriods(tasks.map((t) => t.createdAt), new Date())));
+  const count = (s: string) => counted.filter((t) => t.status === s).length;
+  const share = (n: number) => (counted.length > 0 ? `${Math.round((n / counted.length) * 100)}%` : '0%');
+  const completedTrend = trendOf(periodDelta(countPeriods(counted.map((t) => t.completedAt), new Date())));
+  const createdTrend = trendOf(periodDelta(countPeriods(counted.map((t) => t.createdAt), new Date())));
   const daysLeft = project.ends_on ? Math.ceil((new Date(`${project.ends_on}T00:00:00Z`).getTime() - new Date(`${todayKey}T00:00:00Z`).getTime()) / 86_400_000) : null;
 
-  const workload = [...new Set(tasks.map((t) => t.assigneeId).filter((id): id is string => id !== null))]
+  const workload = [...new Set(counted.map((t) => t.assigneeId).filter((id): id is string => id !== null))]
     .map((id) => {
-      const mine = tasks.filter((t) => t.assigneeId === id);
+      const mine = counted.filter((t) => t.assigneeId === id);
       return { id, name: nameByUser.get(id) ?? 'Unknown', done: mine.filter((t) => t.status === 'done').length, total: mine.length };
     })
     .sort((a, b) => b.total - a.total)
@@ -138,7 +141,7 @@ export default async function ProjectTasksPage({ params, searchParams }: { param
       <ProjectSubNav projectId={projectId} />
 
       <StatGrid cols={6}>
-        <Stat compact label="Total tasks" value={String(tasks.length)} caption="All phases" tone="brand" icon={<IconList size={16} />} trend={createdTrend} />
+        <Stat compact label="Total tasks" value={String(counted.length)} caption="All phases" tone="brand" icon={<IconList size={16} />} trend={createdTrend} />
         <Stat compact label="Completed" value={String(count('done'))} caption={share(count('done'))} tone="success" icon={<IconCheck size={16} />} trend={completedTrend} />
         <Stat compact label="In progress" value={String(count('in_progress'))} caption={share(count('in_progress'))} tone="info" icon={<IconClock size={16} />} />
         <Stat compact label="Pending" value={String(count('todo'))} caption={share(count('todo'))} tone="warning" icon={<IconList size={16} />} />
@@ -198,7 +201,7 @@ export default async function ProjectTasksPage({ params, searchParams }: { param
                           <tr key={t.id} className="hover:bg-surface-hover">
                             <td className="tabular py-2 pr-2 text-muted">{n}</td>
                             <td className="py-2 pr-3">
-                              <Link href={`${base}/development/tasks/${t.id}`} className={`font-medium text-foreground hover:underline ${t.status === 'done' ? 'text-muted line-through' : ''}`}>{t.title}</Link>
+                              <Link href={`${base}/development/tasks/${t.id}`} className={`font-medium text-foreground hover:underline ${t.status === 'done' || t.status === 'cancelled' || t.archivedAt ? 'text-muted line-through' : ''}`}>{t.title}</Link>
                             </td>
                             <td className="py-2 pr-3 text-muted">{t.milestoneId ? (phaseName.get(t.milestoneId) ?? '—') : '—'}</td>
                             <td className="py-2 pr-3 text-muted">{t.sprintId ? (sprintName.get(t.sprintId) ?? '—') : '—'}</td>
@@ -294,6 +297,10 @@ export default async function ProjectTasksPage({ params, searchParams }: { param
                 <option value="none">No due date</option>
               </select>
             </div>
+            <label className="flex items-center gap-2 text-[13px] text-foreground">
+              <input type="checkbox" name="archived" value="1" defaultChecked={sp.archived === '1'} className="h-4 w-4 rounded border-line-strong" />
+              Show archived
+            </label>
             <label className="flex items-center gap-2 text-[13px] text-foreground">
               <input type="checkbox" name="mine" value="1" defaultChecked={sp.mine === '1'} className="h-4 w-4 rounded border-line-strong" />
               Show my tasks only

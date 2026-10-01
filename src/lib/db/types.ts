@@ -11239,6 +11239,7 @@ export type Database = {
       }
       tasks: {
         Row: {
+          archived_at: string | null
           blocker_type: string | null
           blocker_owner: string | null
           blocker_next_action: string | null
@@ -11274,6 +11275,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          archived_at?: string | null
           blocker_type?: string | null
           blocker_owner?: string | null
           blocker_next_action?: string | null
@@ -11309,6 +11311,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          archived_at?: string | null
           blocker_type?: string | null
           blocker_owner?: string | null
           blocker_next_action?: string | null
@@ -12133,6 +12136,22 @@ export type Database = {
       set_project_default_assignee: {
         Args: { p_project_id: string; p_project_role: string; p_user_id: string }
         Returns: { outcome: string }[]
+      }
+      set_task_archived: {
+        Args: { p_archived: boolean; p_task_id: string }
+        Returns: { outcome: string }[]
+      }
+      add_project_member: {
+        Args: { p_project_id: string; p_project_role: string; p_user_id: string }
+        Returns: { member_id: string | null; outcome: string }[]
+      }
+      change_project_member_role: {
+        Args: { p_member_id: string; p_project_role: string }
+        Returns: { member_id: string | null; outcome: string }[]
+      }
+      remove_project_member: {
+        Args: { p_member_id: string }
+        Returns: { member_id: string | null; outcome: string }[]
       }
       set_project_fallback_assignee: {
         Args: { p_project_id: string; p_user_id: string }

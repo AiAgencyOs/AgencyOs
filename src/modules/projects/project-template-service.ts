@@ -84,7 +84,7 @@ export async function createProjectTemplateFromProject(
     supabase.schema('projects').from('milestones').select('name, description, payment_percent, position').eq('project_id', projectId).order('position'),
     supabase.schema('projects').from('scope_versions').select('id, version').eq('project_id', projectId).order('version', { ascending: false }).limit(1),
     supabase.schema('projects').from('onboarding_items').select('key, label, position').eq('project_id', projectId).order('position'),
-    supabase.schema('projects').from('tasks').select('title, description, module_id, created_at').eq('project_id', projectId).order('created_at'),
+    supabase.schema('projects').from('tasks').select('title, description, module_id, created_at').eq('project_id', projectId).is('archived_at', null).neq('status', 'cancelled').order('created_at'),
   ]);
   for (const [scope, res] of [
     ['modules', modulesRes],

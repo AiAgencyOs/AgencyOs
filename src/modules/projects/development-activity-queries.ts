@@ -29,6 +29,7 @@ export async function listActiveDeveloperTasks(limit = 12): Promise<ActiveDevelo
     .from('tasks')
     .select('id, project_id, title, status, priority, assignee_id, started_at, updated_at')
     .in('status', ['in_progress', 'in_review', 'blocked'])
+    .is('archived_at', null)
     .order('updated_at', { ascending: false })
     .limit(limit);
   if (error) unreadable('listActiveDeveloperTasks', error);

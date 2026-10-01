@@ -94,8 +94,9 @@ test('Q-C4 a manual link still wins over the convention, and the summary counts 
   assert.deepEqual(summary.commits, { mapped: 2, total: 3 });
 });
 
-test('S2-3 a dependency on a done, cancelled or archived task is satisfied; anything else is open', () => {
-  for (const status of ['done', 'cancelled', 'archived']) assert.equal(dependencyIsSatisfied({ status }), true, status);
+test('T1-1 a dependency on a done or cancelled task, or one with archived_at set, is satisfied; anything else is open', () => {
+  for (const status of ['done', 'cancelled']) assert.equal(dependencyIsSatisfied({ status }), true, status);
   assert.equal(dependencyIsSatisfied({ status: 'in_review', archivedAt: '2026-10-01T00:00:00Z' }), true, 'archived by date');
+  assert.equal(dependencyIsSatisfied({ status: 'todo', archivedAt: null }), false, 'not archived');
   for (const status of ['todo', 'in_progress', 'blocked', 'in_review']) assert.equal(dependencyIsSatisfied({ status }), false, status);
 });

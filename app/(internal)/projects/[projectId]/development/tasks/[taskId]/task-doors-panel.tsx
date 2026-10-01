@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { linkCommitAction } from '@/modules/projects/git-write-actions';
+import { setTaskArchivedAction, setTaskStatusAction } from '@/modules/projects/actions';
 import { markTaskReadyForQaAction, reopenTaskFromDefectAction, startTaskAction, submitTaskEvidenceAction } from '@/modules/projects/task-doors-actions';
 import { EVIDENCE_KINDS } from '@/modules/projects/task-doors-schema';
 import { IDLE_STATE } from '@/modules/identity/types';
@@ -137,5 +138,55 @@ export function LinkCommitPanel({ projectId, taskId }: { projectId: string; task
       </button>
       <FormMessage status={state.status} message={state.message} />
     </form>
+  );
+}
+
+/**
+ * T1-1 — cancel, reopen and archive. Cancel is offered while the task is open (to its assignee and the roster
+ * managers); a cancelled task is reopened to To do by a roster manager; archive and restore are the roster managers'.
+ * Each is one audited server action; a refusal is the database's own sentence.
+ */
+export function TaskLifecycleControls({ projectId, taskId, status, archived, canCancel, canManage }: { projectId: string; taskId: string; status: string; archived: boolean; canCancel: boolean; canManage: boolean }) {
+  const [statusState, statusAction, statusPending] = useActionState(setTaskStatusAction, IDLE_STATE);
+  const [archiveState, archiveAction, archivePending] = useActionState(setTaskArchivedAction, IDLE_STATE);
+  const open = ['todo', 'in_progress', 'blocked', 'in_review'].includes(status);
+  const nothing = !(canCancel && open) && !(canManage && status === 'cancelled') && !canManage;
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      {canCancel && open ? (
+        <form action={statusAction} className="flex flex-wrap items-center gap-2">
+          <input type="hidden" name="projectId" value={projectId} />
+          <input type="hidden" name="taskId" value={taskId} />
+          <input type="hidden" name="status" value="cancelled" />
+          <button type="submit" disabled={statusPending} className={buttonClass('secondary', 'sm')}>
+            {statusPending ? 'Cancelling…' : 'Cancel task'}
+          </button>
+          <FormMessage status={statusState.status} message={statusState.message} />
+        </form>
+      ) : null}
+      {canManage && status === 'cancelled' ? (
+        <form action={statusAction} className="flex flex-wrap items-center gap-2">
+          <input type="hidden" name="projectId" value={projectId} />
+          <input type="hidden" name="taskId" value={taskId} />
+          <input type="hidden" name="status" value="todo" />
+          <button type="submit" disabled={statusPending} className={buttonClass('secondary', 'sm')}>
+            {statusPending ? 'Reopening…' : 'Reopen to To do'}
+          </button>
+          <FormMessage status={statusState.status} message={statusState.message} />
+        </form>
+      ) : null}
+      {canManage ? (
+        <form action={archiveAction} className="flex flex-wrap items-center gap-2">
+          <input type="hidden" name="projectId" value={projectId} />
+          <input type="hidden" name="taskId" value={taskId} />
+          <input type="hidden" name="archived" value={archived ? 'false' : 'true'} />
+          <button type="submit" disabled={archivePending} className={buttonClass('secondary', 'sm')}>
+            {archivePending ? 'Saving…' : archived ? 'Restore task' : 'Archive task'}
+          </button>
+          <FormMessage status={archiveState.status} message={archiveState.message} />
+        </form>
+      ) : null}
+      {nothing ? <span className="text-[13px] text-muted">{status === 'cancelled' ? 'This task is cancelled.' : 'Only the assignee or a delivery lead cancels or archives a task.'}</span> : null}
+    </div>
   );
 }

@@ -297,6 +297,7 @@ export async function searchRecords(filter: SearchPageFilter): Promise<SearchPag
           .from('tasks')
           .select('id, title, status, priority, project_id, created_at')
           .ilike('title', like)
+          .is('archived_at', null)
           .order('created_at', { ascending: false })
           .limit(RESULTS_PER_ENTITY);
         if (since) query = query.gte('created_at', since);

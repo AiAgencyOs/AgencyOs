@@ -957,6 +957,13 @@ jobs:
           # done dependency is satisfied while one across projects stays refused.
           npm run db:verify:t1
 
+          # Round 3d, stream U1: a task can be cancelled (open statuses only, terminal
+          # except a roster manager reopens it) or archived through an audited door,
+          # a cancelled or archived task is not outstanding work (dependencies, phase
+          # readiness, module progress, QA hand-off), and the project roster is written
+          # only through the audited add / change-role / remove doors.
+          npm run db:verify:u1
+
           # Last, and deliberately so: the deploy smoke runs against the app
           # in its most-exercised state, and a tick it fires cannot disturb
           # the four scripts above. The same command, pointed at a real

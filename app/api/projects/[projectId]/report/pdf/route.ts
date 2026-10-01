@@ -51,7 +51,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
   const supabase = await createClient();
   const [plan, breakdown, defects, invoices, expenses, spend, roster, clientName, margin, blockers, escalations, claims, org] = await Promise.all([
     listPaymentPlan(projectId),
-    listDevelopmentBreakdown(projectId),
+    listDevelopmentBreakdown(projectId, { excludeCancelled: true }),
     listDefects(projectId),
     mayReadMoney ? listProjectInvoices(projectId) : Promise.resolve([]),
     mayReadMoney ? listExpenses(1000) : Promise.resolve([]),

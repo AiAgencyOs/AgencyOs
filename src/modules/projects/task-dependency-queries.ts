@@ -19,7 +19,7 @@ export async function readTaskDependencies(projectId: string, taskId: string): P
   const [forward, backward, tasks] = await Promise.all([
     supabase.schema('projects').from('task_dependencies').select('depends_on_task_id').eq('task_id', taskId),
     supabase.schema('projects').from('task_dependencies').select('task_id').eq('depends_on_task_id', taskId),
-    supabase.schema('projects').from('tasks').select('id, title, status').eq('project_id', projectId).order('title').limit(500),
+    supabase.schema('projects').from('tasks').select('id, title, status, archived_at').eq('project_id', projectId).order('title').limit(500),
   ]);
   if (forward.error) unreadable('readTaskDependencies.forward', forward.error);
   if (backward.error) unreadable('readTaskDependencies.backward', backward.error);
@@ -34,6 +34,6 @@ export async function readTaskDependencies(projectId: string, taskId: string): P
   return {
     dependsOn: [...waitsFor].map(row).filter((r): r is TaskDependencyRow => r !== null),
     blocks: [...waitingOnMe].map(row).filter((r): r is TaskDependencyRow => r !== null),
-    candidates: (tasks.data ?? []).filter((t) => t.id !== taskId && !waitsFor.has(t.id) && !waitingOnMe.has(t.id)).map((t) => ({ id: t.id, title: t.title, status: t.status })),
+    candidates: (tasks.data ?? []).filter((t) => t.id !== taskId && t.status !== 'cancelled' && t.archived_at === null && !waitsFor.has(t.id) && !waitingOnMe.has(t.id)).map((t) => ({ id: t.id, title: t.title, status: t.status })),
   };
 }

@@ -47,7 +47,7 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
   // anyone who cannot see it rather than showing them an empty list.
   const [clock, { tasks }, milestones, audit, defaults, roster] = await Promise.all([
     agencyClock(),
-    listDevelopmentBreakdown(projectId),
+    listDevelopmentBreakdown(projectId, { excludeCancelled: true }),
     listPaymentPlan(projectId),
     canAudit ? readAuditLog({ subjectId: projectId, limit: 50 }) : Promise.resolve([]),
     readProjectDefaults(projectId),

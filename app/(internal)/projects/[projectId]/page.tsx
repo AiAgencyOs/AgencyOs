@@ -300,7 +300,7 @@ export default async function ProjectPage({
     getAgencyTimeZone(),
   ]);
   const [{ tasks: allTasks, modules }, team, files, roster, clientName, assignedAgents, myWatch, notes] = await Promise.all([
-    listDevelopmentBreakdown(projectId),
+    listDevelopmentBreakdown(projectId, { excludeCancelled: true }),
     listProjectTeam(projectId),
     listProjectFiles(projectId),
     listInternalRoster(),

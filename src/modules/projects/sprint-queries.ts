@@ -35,6 +35,8 @@ export async function listProjectSprints(projectId: string): Promise<SprintRow[]
     .from('tasks')
     .select('sprint_id, status')
     .eq('project_id', projectId)
+    .is('archived_at', null)
+    .neq('status', 'cancelled')
     .in('sprint_id', sprints.map((s) => s.id));
   if (placedError) unreadable('listProjectSprints.tasks', placedError);
 

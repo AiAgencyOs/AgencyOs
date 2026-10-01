@@ -20,6 +20,8 @@ export type MyTaskDetail = {
   estimateHours: number | null;
   assigneeId: string | null;
   completedAt: string | null;
+  /** T1-1: set when the task is archived (only returned with `includeArchived`). */
+  archivedAt: string | null;
   createdAt: string;
   projectId: string;
   projectName: string;
@@ -27,16 +29,19 @@ export type MyTaskDetail = {
   moduleName: string | null;
 };
 
-export async function listMyTasksDetailed(userId: string): Promise<MyTaskDetail[]> {
+export async function listMyTasksDetailed(userId: string, options: { includeArchived?: boolean } = {}): Promise<MyTaskDetail[]> {
   const supabase = await createClient();
 
-  const { data: taskRows, error: tasksError } = await supabase
+  // T1-1: a cancelled task is not open work; an archived one is hidden unless asked for.
+  const open = supabase
     .schema('projects')
     .from('tasks')
-    .select('id, title, description, status, priority, due_on, estimate_hours, assignee_id, completed_at, created_at, project_id, module_id')
+    .select('id, title, description, status, priority, due_on, estimate_hours, assignee_id, completed_at, archived_at, created_at, project_id, module_id')
     .eq('assignee_id', userId)
     .neq('status', 'done')
+    .neq('status', 'cancelled')
     .order('due_on', { ascending: true, nullsFirst: false });
+  const { data: taskRows, error: tasksError } = await (options.includeArchived ? open : open.is('archived_at', null));
   if (tasksError) unreadable('listMyTasksDetailed.tasks', tasksError);
 
   const rows = taskRows ?? [];
@@ -67,6 +72,7 @@ export async function listMyTasksDetailed(userId: string): Promise<MyTaskDetail[
     estimateHours: t.estimate_hours === null ? null : Number(t.estimate_hours),
     assigneeId: t.assignee_id,
     completedAt: t.completed_at,
+    archivedAt: t.archived_at,
     createdAt: t.created_at,
     projectId: t.project_id,
     projectName: projectNameById.get(t.project_id) ?? 'Unknown project',
@@ -88,6 +94,7 @@ export async function listMyCompletedTasks(userId: string, limit = 8): Promise<{
     .select('id, title, description, status, priority, due_on, estimate_hours, assignee_id, completed_at, created_at, project_id, module_id', { count: 'exact' })
     .eq('assignee_id', userId)
     .eq('status', 'done')
+    .is('archived_at', null)
     .order('completed_at', { ascending: false, nullsFirst: false })
     .limit(limit);
   if (error) unreadable('listMyCompletedTasks', error);
@@ -109,6 +116,7 @@ export async function listMyCompletedTasks(userId: string, limit = 8): Promise<{
       estimateHours: t.estimate_hours === null ? null : Number(t.estimate_hours),
       assigneeId: t.assignee_id,
       completedAt: t.completed_at,
+      archivedAt: null,
       createdAt: t.created_at,
       projectId: t.project_id,
       projectName: names.get(t.project_id) ?? 'Unknown project',

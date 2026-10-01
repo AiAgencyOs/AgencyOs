@@ -38,7 +38,7 @@ export default async function ProjectActivityPage({ params, searchParams }: { pa
   if (!project) notFound();
 
   const clock = await agencyClock();
-  const [{ tasks }, milestones] = await Promise.all([listDevelopmentBreakdown(projectId), listPaymentPlan(projectId)]);
+  const [{ tasks }, milestones] = await Promise.all([listDevelopmentBreakdown(projectId, { excludeCancelled: true }), listPaymentPlan(projectId)]);
   const all = await readProjectActivity(projectId, { tasks, milestones });
   // The timeline grows with the project: search it, and narrow it to one kind of record.
   const chips = activityTypeChips(all);

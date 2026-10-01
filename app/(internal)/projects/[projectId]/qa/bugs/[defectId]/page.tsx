@@ -63,7 +63,7 @@ export default async function BugDetailPage({ params }: { params: Promise<{ proj
     readDefectHistory([defectId]),
     listInternalRoster(),
     listDeliverables(projectId),
-    listDevelopmentBreakdown(projectId),
+    listDevelopmentBreakdown(projectId, { excludeCancelled: true }),
     // Q-C6: the evidence files uploaded against this bug.
     listAttachedFiles(projectId),
   ]);

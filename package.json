@@ -141,7 +141,8 @@
     "db:verify:r1": "node scripts/verify-r1-round3.mjs",
     "db:verify:s1": "node scripts/verify-s1-round3b.mjs",
     "db:verify:s2": "node scripts/verify-s2-task-dependencies-and-roles.mjs",
-    "db:verify:t1": "node scripts/verify-t1-attachments-roster-and-closed-dependencies.mjs"
+    "db:verify:t1": "node scripts/verify-t1-attachments-roster-and-closed-dependencies.mjs",
+    "db:verify:u1": "node scripts/verify-u1-task-cancel-archive-and-roster-doors.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",

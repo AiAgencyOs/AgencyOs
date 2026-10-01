@@ -87,7 +87,7 @@ export default async function ProjectTeamPage({ params, searchParams }: { params
     listTeamActivity(projectId),
     // SCR-025 (20261001120000): the project's own roster, with project roles.
     listProjectMembers(projectId),
-    listDevelopmentBreakdown(projectId),
+    listDevelopmentBreakdown(projectId, { excludeCancelled: true }),
     // SCR-025 / SCR-063: the agents the owner assigned to this project — internal, never shown to the client.
     listAssignedAgents(projectId),
   ]);

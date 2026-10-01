@@ -63,6 +63,7 @@ import {
   createTask,
   setModuleStatus,
   setFeatureStatus,
+  setTaskArchived,
   setTaskStatus,
   openScopeVersion,
   addScopeItem,
@@ -1229,6 +1230,17 @@ export async function setTaskStatusAction(_prev: FormState, formData: FormData):
   // drop write path onto this same action, so it needs revalidating too.
   revalidatePath(`/projects/${projectId}/board`);
   return { status: 'success', message: 'Updated.' };
+}
+
+/** T1-1: archive or restore a task (roster managers, through the audited door). */
+export async function setTaskArchivedAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const archived = String(formData.get('archived') ?? '') === 'true';
+  const result = await setTaskArchived({ taskId: String(formData.get('taskId') ?? ''), archived });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}`, 'layout');
+  revalidatePath('/my-tasks');
+  return { status: 'success', message: archived ? 'Archived.' : 'Restored.' };
 }
 
 /**

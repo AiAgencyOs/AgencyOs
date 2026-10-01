@@ -40,12 +40,14 @@ import {
   createTaskSchema,
   setModuleStatusSchema,
   setFeatureStatusSchema,
+  setTaskArchivedSchema,
   setTaskStatusSchema,
   type CreateModuleInput,
   type CreateFeatureInput,
   type CreateTaskInput,
   type SetModuleStatusInput,
   type SetFeatureStatusInput,
+  type SetTaskArchivedInput,
   type SetTaskStatusInput,
   openScopeVersionSchema,
   addScopeItemSchema,
@@ -88,7 +90,7 @@ import { resolveOnboardingContext, type ContextMatrix } from './onboarding-conte
 import { taskAcceptanceProblem } from './task-acceptance';
 import { projectRoleDbProblem } from './project-role-guard';
 import { projectRoleRefusal } from './project-role-service';
-import { completingProblem, COMPLETION_DB_ERROR, COMPLETION_MESSAGE, enteringReviewProblem, REVIEW_HAND_OFF_DB_ERROR, REVIEW_HAND_OFF_MESSAGE } from './task-transitions';
+import { ARCHIVE_FORBIDDEN_MESSAGE, cancelOrArchiveDbProblem, cancellingProblem, completingProblem, COMPLETION_DB_ERROR, COMPLETION_MESSAGE, enteringReviewProblem, REVIEW_HAND_OFF_DB_ERROR, REVIEW_HAND_OFF_MESSAGE } from './task-transitions';
 
 /**
  * Writes for the projects module — its only public surface.
@@ -1997,6 +1999,9 @@ export async function setTaskStatus(input: SetTaskStatusInput): Promise<Result<{
   // Q-B1: Completed is reached only from In review.
   const completionProblem = completingProblem(before?.status, parsed.data.status);
   if (completionProblem && before) return err('CONFLICT', completionProblem);
+  // T1-1: Cancelled only from an open status; out of Cancelled only back to To do (the trigger also decides who).
+  const cancelProblem = cancellingProblem(before?.status, parsed.data.status);
+  if (cancelProblem && before) return err('CONFLICT', cancelProblem);
   // Q-B2: the caller's project role (observer read-only, contributor own tasks only).
   if (before) {
     const { data: held } = await supabase.schema('projects').from('tasks').select('project_id, assignee_id').eq('id', parsed.data.taskId).maybeSingle();
@@ -2025,6 +2030,8 @@ export async function setTaskStatus(input: SetTaskStatusInput): Promise<Result<{
     // SCR-020: the verification gate (trigger projects.refuse_unverified_agent_done) refuses an unverified agent task.
     if (error.message.includes(REVIEW_HAND_OFF_DB_ERROR)) return err('CONFLICT', REVIEW_HAND_OFF_MESSAGE);
     if (error.message.includes(COMPLETION_DB_ERROR)) return err('CONFLICT', COMPLETION_MESSAGE);
+    const cancelDb = cancelOrArchiveDbProblem(error.message);
+    if (cancelDb) return err('CONFLICT', cancelDb);
     const roleProblem = projectRoleDbProblem(error.message);
     if (roleProblem) return err('FORBIDDEN', roleProblem);
     // SCR-041: a task is accepted as done only by a delivery role, with evidence, and no unverified defect.
@@ -2037,6 +2044,33 @@ export async function setTaskStatus(input: SetTaskStatusInput): Promise<Result<{
     return err('INTERNAL', 'Could not change the task’s status.');
   }
   return ok({ updated: (count ?? 0) > 0 });
+}
+
+/** T1-1: archive or restore a task through the audited door `projects.set_task_archived` (owner, ops admin, delivery lead). */
+export async function setTaskArchived(input: SetTaskArchivedInput): Promise<Result<{ archived: boolean }>> {
+  const parsed = setTaskArchivedSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid task.');
+
+  const context = await requireInternal();
+  if (!can(context, 'task.write')) return err('FORBIDDEN', 'You do not have permission to archive a task.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('set_task_archived', { p_task_id: parsed.data.taskId, p_archived: parsed.data.archived });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setTaskArchived', detail: error.message }));
+    return err('INTERNAL', 'Could not change the task’s archive state.');
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+  switch (row?.outcome) {
+    case 'archived':
+    case 'unarchived':
+    case 'unchanged':
+      return ok({ archived: parsed.data.archived });
+    case 'not_found':
+      return err('NOT_FOUND', 'That task is not visible to you.');
+    default:
+      return err('FORBIDDEN', ARCHIVE_FORBIDDEN_MESSAGE);
+  }
 }
 
 /**

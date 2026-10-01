@@ -1,4 +1,5 @@
 import { PROJECT_ROLE_LABEL, type ProjectRole } from './project-members-schema';
+import { isCountedTask } from './task-transitions';
 
 /**
  * SCR-025 — ONE roster for the Project Team page. The page had two: the people
@@ -10,7 +11,7 @@ import { PROJECT_ROLE_LABEL, type ProjectRole } from './project-members-schema';
  */
 export type SummaryMember = { userId: string; fullName: string; orgRole: string; projectRole: ProjectRole };
 export type SummaryHolder = { userId: string; fullName: string; role: string };
-export type SummaryTask = { assigneeId: string | null; status: string; dueOn: string | null; estimateHours: number | null };
+export type SummaryTask = { assigneeId: string | null; status: string; dueOn: string | null; estimateHours: number | null; archivedAt?: string | null };
 
 export type TeamPerson = {
   userId: string;
@@ -38,6 +39,8 @@ export function teamSummary(input: { members: readonly SummaryMember[]; holders:
   for (const t of input.tasks) {
     const p = t.assigneeId ? byUser.get(t.assigneeId) : undefined;
     if (!p) continue;
+    // T1-1: a cancelled or archived task is not workload.
+    if (!isCountedTask(t)) continue;
     p.total += 1;
     if (t.status === 'done') {
       p.done += 1;

@@ -13,7 +13,7 @@ import {
 } from '@/modules/projects/actions';
 import { PROJECT_ROLE_LABEL, PROJECT_ROLES } from '@/modules/projects/project-members-schema';
 import { FEATURE_STATUSES, MODULE_STATUSES, TASK_STATUSES } from '@/modules/projects/schema';
-import { selectableStatuses } from '@/modules/projects/task-transitions';
+import { isCountedTask, selectableStatuses } from '@/modules/projects/task-transitions';
 import type { DevelopmentFeature, DevelopmentModule, DevelopmentTask } from '@/modules/projects/queries';
 import { IDLE_STATE, type FormState } from '@/modules/identity/types';
 import { FormMessage, buttonClass, inputClass, labelClass, selectClass } from '@/ui';
@@ -157,7 +157,9 @@ export function ModuleCard({
   tasks: DevelopmentTask[];
   projectId: string;
 }) {
-  const done = tasks.filter((t) => t.status === 'done').length;
+  // T1-1: a cancelled or archived task is listed but is not outstanding work, so it is not in "x of y done".
+  const counted = tasks.filter(isCountedTask);
+  const done = counted.filter((t) => t.status === 'done').length;
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
@@ -165,9 +167,9 @@ export function ModuleCard({
         <div>
           <h3 className="text-sm font-semibold">{module.name}</h3>
           {module.description ? <p className="mt-0.5 text-xs text-muted">{module.description}</p> : null}
-          {tasks.length > 0 ? (
+          {counted.length > 0 ? (
             <p className="mt-1 text-xs text-muted">
-              {done} of {tasks.length} task{tasks.length === 1 ? '' : 's'} done
+              {done} of {counted.length} task{counted.length === 1 ? '' : 's'} done
             </p>
           ) : null}
         </div>

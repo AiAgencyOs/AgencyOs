@@ -55,7 +55,7 @@ export default async function ProjectTimelinePage({ params }: { params: Promise<
 
   const [milestones, { tasks: allTasks }, roster, clock, clientName] = await Promise.all([
     listMilestoneViews(projectId),
-    listDevelopmentBreakdown(projectId),
+    listDevelopmentBreakdown(projectId, { excludeCancelled: true }),
     listInternalRoster(),
     agencyClock(),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),

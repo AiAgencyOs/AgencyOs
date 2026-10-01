@@ -105,7 +105,7 @@ export default async function ProjectPlanPage({
     // SCR-023: the tasks filed under each milestone, for the picked milestone's list.
     listTasksByMilestone(projectId),
   ]);
-  const [layersByDeliverable, breakdown, projectEvents] = await Promise.all([listPlanLayers(board.deliverables.map((d) => d.id)), listDevelopmentBreakdown(projectId), listDevelopmentEvents(projectId, 100)]);
+  const [layersByDeliverable, breakdown, projectEvents] = await Promise.all([listPlanLayers(board.deliverables.map((d) => d.id)), listDevelopmentBreakdown(projectId, { excludeCancelled: true }), listDevelopmentEvents(projectId, 100)]);
   // SCR-040 — client dependencies the PM has already been asked to request (an open dependency_requested event).
   const dependenciesWithThePm = new Set(
     projectEvents.filter((e) => e.kind === 'dependency_requested' && e.status === 'open').map((e) => String(e.detail.dependencyId ?? '')),

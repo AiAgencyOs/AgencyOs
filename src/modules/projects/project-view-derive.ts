@@ -10,6 +10,8 @@
  *  • milestone rollups   — tasks done / total under a milestone
  */
 
+import { isCountedTask } from './task-transitions';
+
 const DAY = 86_400_000;
 
 export type TaskFacts = {
@@ -150,7 +152,9 @@ export function groupsFor(
 
 export type Rollup = { total: number; done: number; percent: number };
 
-export function rollup(tasks: readonly Pick<TaskFacts, 'status'>[]): Rollup {
+export function rollup(all: readonly { status: string; archivedAt?: string | null }[]): Rollup {
+  // T1-1: a cancelled or archived task is not outstanding work, so it is not in the denominator.
+  const tasks = all.filter(isCountedTask);
   const total = tasks.length;
   const done = tasks.filter((t) => t.status === 'done').length;
   return { total, done, percent: total === 0 ? 0 : Math.round((done / total) * 100) };

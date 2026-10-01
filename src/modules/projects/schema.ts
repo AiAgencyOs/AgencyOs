@@ -1106,7 +1106,7 @@ export const MODULE_STATUSES = [
   'not_started', 'planned', 'in_progress', 'code_review', 'qa', 'ready_for_client', 'approved',
 ] as const;
 export const FEATURE_STATUSES = ['not_started', 'in_progress', 'blocked', 'done'] as const;
-export const TASK_STATUSES = ['todo', 'in_progress', 'blocked', 'in_review', 'done'] as const;
+export const TASK_STATUSES = ['todo', 'in_progress', 'blocked', 'in_review', 'done', 'cancelled'] as const;
 
 export const createModuleSchema = z.object({
   projectId: z.uuid(),
@@ -1137,6 +1137,8 @@ export const createTaskSchema = z.object({
 
 export const setModuleStatusSchema = z.object({ moduleId: z.uuid(), status: z.enum(MODULE_STATUSES) });
 export const setFeatureStatusSchema = z.object({ featureId: z.uuid(), status: z.enum(FEATURE_STATUSES) });
+export const setTaskArchivedSchema = z.object({ taskId: z.uuid(), archived: z.boolean() });
+export type SetTaskArchivedInput = z.infer<typeof setTaskArchivedSchema>;
 export const setTaskStatusSchema = z.object({
   taskId: z.uuid(),
   status: z.enum(TASK_STATUSES),

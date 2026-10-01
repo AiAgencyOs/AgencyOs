@@ -36,6 +36,7 @@ export async function listBlockedTasks(limit = 25): Promise<BlockedTaskRow[]> {
     .from('tasks')
     .select('id, title, project_id, blocker_type, blocker_owner, blocker_next_action, updated_at')
     .eq('status', 'blocked')
+    .is('archived_at', null)
     .order('updated_at', { ascending: false })
     .limit(limit);
   if (error) unreadable('listBlockedTasks.tasks', error);

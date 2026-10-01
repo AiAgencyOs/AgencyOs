@@ -52,7 +52,7 @@ export async function readProjectLifecycles(todayKey: string = new Date().toISOS
     supabase.schema('projects').from('handovers').select('project_id').limit(2000),
     readBlockersAcrossProjects(),
     // One health rule on every screen: the same facts the Reports page reads.
-    supabase.schema('projects').from('tasks').select('project_id, status, due_on').is('parent_task_id', null).limit(50000),
+    supabase.schema('projects').from('tasks').select('project_id, status, due_on').is('parent_task_id', null).is('archived_at', null).neq('status', 'cancelled').limit(50000),
     supabase.schema('projects').from('milestones').select('project_id').is('met_at', null).lt('due_on', todayKey).limit(5000),
     supabase.schema('qa').from('defects').select('project_id, severity, status').eq('status', 'open').limit(5000),
   ]);

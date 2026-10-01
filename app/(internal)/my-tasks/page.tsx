@@ -10,6 +10,7 @@ import { listInternalRoster, type RosterMember } from '@/modules/projects/querie
 import { readTaskCollabFor, type TaskCollab } from '@/modules/projects/task-collab-queries';
 import { readTaskTimeFor, type TaskTime } from '@/modules/projects/time-log-queries';
 import { TASK_STATUSES } from '@/modules/projects/schema';
+import { isOutstandingTask } from '@/modules/projects/task-transitions';
 import {
   buttonClass,
   Avatar,
@@ -103,14 +104,15 @@ const HEADER_TINT: Record<Tone, string> = {
 export default async function MyTasksPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; month?: string; q?: string; project?: string; priority?: string; status?: string }>;
+  searchParams: Promise<{ view?: string; month?: string; q?: string; project?: string; priority?: string; status?: string; archived?: string }>;
 }) {
   const context = await requireInternal('/my-tasks');
   const clock = await agencyClock();
-  const { view: rawView, month: rawMonth, q: rawQ, project: rawProject, priority: rawPriority, status: rawStatus } = await searchParams;
+  const { view: rawView, month: rawMonth, q: rawQ, project: rawProject, priority: rawPriority, status: rawStatus, archived: rawArchived } = await searchParams;
+  const showArchived = rawArchived === '1';
   const view = viewOf(rawView);
 
-  const [allTasks, roster, completed, projectList] = await Promise.all([listMyTasksDetailed(context.userId), listInternalRoster(), listMyCompletedTasks(context.userId), listProjects(200)]);
+  const [allTasks, roster, completed, projectList] = await Promise.all([listMyTasksDetailed(context.userId, { includeArchived: showArchived }), listInternalRoster(), listMyCompletedTasks(context.userId), listProjects(200)]);
   const mayAdd = can(context, 'task.write');
   // The toolbar is a plain GET form, so it filters without JavaScript; the figures above stay the whole list.
   const q = (rawQ ?? '').trim().toLowerCase();
@@ -138,7 +140,8 @@ export default async function MyTasksPage({
   // Time section. Who is looking decides which entries they may delete.
   const time = await readTaskTimeFor([...tasks, ...doneTasks].map((t) => t.id));
   const timeUser: TimeUser = { currentUserId: context.userId, canDeleteAny: can(context, 'project.write'), today };
-  const all = allTasks;
+  // T1-1: archived tasks (shown only with the toggle) are not outstanding work, so they stay out of the figures.
+  const all = allTasks.filter(isOutstandingTask);
   const overdue = all.filter((t) => t.dueOn !== null && dueLabel(clock, t.dueOn).overdue);
   // SCR-021's three asks beside the reference's own figures: due today,
   // blocked, and waiting for review — the agency's today, not the server's.
@@ -147,7 +150,7 @@ export default async function MyTasksPage({
   const month = isMonthKey(rawMonth) ? rawMonth : monthKeyOf(today);
   const byStatus = (s: string) => (s === 'done' ? doneTasks : tasks.filter((t) => t.status === s));
   const byStatusAll = (s: string) => all.filter((t) => t.status === s);
-  const columns = TASK_STATUSES.filter((s) => s !== 'done');
+  const columns = TASK_STATUSES.filter((s) => s !== 'done' && s !== 'cancelled');
   const pct = (n: number) => (all.length > 0 ? `${Math.round((n / all.length) * 100)}%` : undefined);
   const name = context.fullName ?? context.email;
 
@@ -166,7 +169,7 @@ export default async function MyTasksPage({
 
       {allTasks.length > 0 ? (
         <StatGrid cols={5}>
-          <Stat label="Open tasks" value={String(allTasks.length)} caption="Assigned to me" tone="brand" icon={<IconCheck size={16} />} />
+          <Stat label="Open tasks" value={String(all.length)} caption="Assigned to me" tone="brand" icon={<IconCheck size={16} />} />
           <Stat label="To do" value={String(byStatusAll('todo').length)} caption={pct(byStatusAll('todo').length)} tone="warning" icon={<IconList size={16} />} />
           <Stat label="In progress" value={String(byStatusAll('in_progress').length)} caption={pct(byStatusAll('in_progress').length)} tone="info" icon={<IconClock size={16} />} />
           <Stat label="In review" value={String(byStatusAll('in_review').length)} caption={pct(byStatusAll('in_review').length)} tone="accent" icon={<IconSearch size={16} />} />
@@ -209,6 +212,10 @@ export default async function MyTasksPage({
               <option key={c} value={c}>{humanize(c)}</option>
             ))}
           </select>
+          <label className="flex items-center gap-1.5 text-[13px] text-muted">
+            <input type="checkbox" name="archived" value="1" defaultChecked={showArchived} />
+            Show archived
+          </label>
           <button type="submit" className={buttonClass('secondary', 'sm')}>Filter</button>
           {filtering || rawQ ? (
             <Link href={view === 'columns' ? '/my-tasks' : `/my-tasks?view=${view}`} className="text-[13px] font-medium text-brand hover:underline">Reset</Link>
@@ -219,7 +226,7 @@ export default async function MyTasksPage({
               options={VIEWS.map((v) => ({
                 key: v,
                 label: humanize(v),
-                href: `/my-tasks?${new URLSearchParams({ ...(v === 'columns' ? {} : { view: v }), ...Object.fromEntries(Object.entries({ q: rawQ, project: rawProject, priority: rawPriority, status: rawStatus }).filter(([, val]) => val)) as Record<string, string> }).toString()}`,
+                href: `/my-tasks?${new URLSearchParams({ ...(v === 'columns' ? {} : { view: v }), ...Object.fromEntries(Object.entries({ q: rawQ, project: rawProject, priority: rawPriority, status: rawStatus, archived: showArchived ? '1' : undefined }).filter(([, val]) => val)) as Record<string, string> }).toString()}`,
                 active: v === view,
               }))}
             />

@@ -65,7 +65,7 @@ export default async function ProjectMilestonesPage({ params, searchParams }: { 
 
   const [milestones, { tasks: allTasks }, roster, files, clock, clientName] = await Promise.all([
     listMilestoneViews(projectId),
-    listDevelopmentBreakdown(projectId),
+    listDevelopmentBreakdown(projectId, { excludeCancelled: true }),
     listInternalRoster(),
     listProjectFiles(projectId),
     agencyClock(),

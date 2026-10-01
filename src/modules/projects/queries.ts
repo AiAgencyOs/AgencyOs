@@ -131,6 +131,8 @@ export type DevelopmentTask = {
   labels: string[];
   /** The sprint of this project the task is placed in (migration 20261005100000). */
   sprintId: string | null;
+  /** T1-1: set when a roster manager archived the task; null otherwise. */
+  archivedAt: string | null;
   createdAt: string;
 };
 
@@ -147,9 +149,19 @@ export type DevelopmentTask = {
  */
 export async function listDevelopmentBreakdown(
   projectId: string,
+  /** T1-1: archived tasks are hidden unless the caller asks for them (a "Show archived" toggle). */
+  options: { includeArchived?: boolean; /** T1-1: leave cancelled tasks out (every figure and overview; the Board, Tasks and Development lists keep them so they can be found and reopened). */ excludeCancelled?: boolean } = {},
 ): Promise<{ modules: DevelopmentModule[]; features: DevelopmentFeature[]; tasks: DevelopmentTask[] }> {
   const supabase = await createClient();
 
+  const allTasks = supabase
+    .schema('projects')
+    .from('tasks')
+    .select('id, module_id, feature_id, title, description, status, priority, assignee_id, due_on, completed_at, estimate_hours, milestone_id, start_on, parent_task_id, labels, sprint_id, archived_at, created_at')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: true });
+  const unarchived = options.includeArchived ? allTasks : allTasks.is('archived_at', null);
+  const taskQuery = options.excludeCancelled ? unarchived.neq('status', 'cancelled') : unarchived;
   const [{ data: moduleRows, error: modulesError }, { data: featureRows, error: featuresError }, { data: taskRows, error: tasksError }] =
     await Promise.all([
       supabase
@@ -164,12 +176,7 @@ export async function listDevelopmentBreakdown(
         .select('id, module_id, name, description, status, position')
         .eq('project_id', projectId)
         .order('position', { ascending: true }),
-      supabase
-        .schema('projects')
-        .from('tasks')
-        .select('id, module_id, feature_id, title, description, status, priority, assignee_id, due_on, completed_at, estimate_hours, milestone_id, start_on, parent_task_id, labels, sprint_id, created_at')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: true }),
+      taskQuery,
     ]);
 
   if (modulesError) unreadable('listDevelopmentBreakdown.modules', modulesError);
@@ -211,6 +218,7 @@ export async function listDevelopmentBreakdown(
       parentTaskId: t.parent_task_id,
       labels: t.labels ?? [],
       sprintId: t.sprint_id,
+      archivedAt: t.archived_at,
       createdAt: t.created_at,
     })),
   };
@@ -1634,6 +1642,8 @@ export async function listProjectTeam(projectId: string): Promise<ProjectTeamMem
     .from('tasks')
     .select('assignee_id, status')
     .eq('project_id', projectId)
+    .is('archived_at', null)
+    .neq('status', 'cancelled')
     .not('assignee_id', 'is', null);
   if (error) unreadable('listProjectTeam.tasks', error);
 
@@ -2171,6 +2181,8 @@ export async function listMyTasks(userId: string): Promise<MyTaskRow[]> {
     .select('id, title, status, priority, due_on, project_id')
     .eq('assignee_id', userId)
     .neq('status', 'done')
+    .neq('status', 'cancelled')
+    .is('archived_at', null)
     .order('due_on', { ascending: true, nullsFirst: false });
 
   if (tasksError) unreadable('listMyTasks.tasks', tasksError);
@@ -2615,6 +2627,8 @@ export async function listMilestoneTaskCounts(projectId: string): Promise<Milest
     .from('tasks')
     .select('milestone_id, status')
     .eq('project_id', projectId)
+    .is('archived_at', null)
+    .neq('status', 'cancelled')
     .not('milestone_id', 'is', null);
   if (tasksError) unreadable('listMilestoneTaskCounts', tasksError);
 
@@ -2735,7 +2749,7 @@ export async function readDevelopmentPortfolio(): Promise<DevelopmentPortfolioRo
   const [projects, modules, tasks, builds] = await Promise.all([
     listProjects(200),
     supabase.schema('projects').from('modules').select('project_id, status'),
-    supabase.schema('projects').from('tasks').select('project_id, status'),
+    supabase.schema('projects').from('tasks').select('project_id, status').is('archived_at', null).neq('status', 'cancelled'),
     supabase
       .schema('projects')
       .from('deliverables')

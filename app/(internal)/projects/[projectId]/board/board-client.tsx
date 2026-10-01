@@ -8,7 +8,7 @@ import { IDLE_STATE } from '@/modules/identity/types';
 import { createTaskAction, setTaskStatusAction, updateTaskAction } from '@/modules/projects/actions';
 import type { TaskCollab } from '@/modules/projects/task-collab-queries';
 import { PROJECT_ROLE_LABEL, PROJECT_ROLES } from '@/modules/projects/project-members-schema';
-import { COMPLETION_MESSAGE, completingProblem, selectableStatuses } from '@/modules/projects/task-transitions';
+import { cancellingProblem, COMPLETION_MESSAGE, completingProblem, isOutstandingTask, selectableStatuses } from '@/modules/projects/task-transitions';
 import { GROUP_BY_OPTIONS, groupKeyOf, groupsFor, type GroupBy } from '@/modules/projects/project-view-derive';
 
 import { BlockReasonField, readBlocker, TaskCollabPanel } from '../../../task-collab-panel';
@@ -65,6 +65,8 @@ export type BoardTask = KanbanItem & {
   dueLabel: string | null;
   completedLabel: string | null;
   overdue: boolean;
+  /** T1-1: the task is archived (shown only when the board's "Show archived" is on). */
+  archived?: boolean;
 };
 
 type SortKey = '' | 'due' | 'priority' | 'title';
@@ -102,7 +104,7 @@ const PRIORITY: Record<string, { label: string; tone: 'danger' | 'warning' | 'in
 function countBy(tasks: readonly BoardTask[], key: (t: BoardTask) => string | null): [string | null, number][] {
   const counts = new Map<string | null, number>();
   for (const t of tasks) {
-    if (t.status === 'done') continue;
+    if (!isOutstandingTask(t)) continue;
     counts.set(key(t), (counts.get(key(t)) ?? 0) + 1);
   }
   return [...counts.entries()].sort((a, b) => b[1] - a[1]);
@@ -191,6 +193,12 @@ export function ProjectBoard({
       setError(message);
       throw new Error(message);
     }
+    // T1-1: Cancelled only while open; out of Cancelled only back to To do.
+    const cancelProblem = from ? cancellingProblem(from.status, toStatus) : null;
+    if (cancelProblem) {
+      setError(cancelProblem);
+      throw new Error(cancelProblem);
+    }
     // Q-B1: Completed is reached only from In review.
     if (from && completingProblem(from.status, toStatus)) {
       setError(COMPLETION_MESSAGE);
@@ -232,8 +240,8 @@ export function ProjectBoard({
     () => ({
       mine: (t) => t.assigneeId === currentUserId,
       overdue: (t) => t.overdue,
-      week: (t) => t.status !== 'done' && t.dueOn !== null && t.dueOn >= todayKey && t.dueOn <= weekEnd,
-      high: (t) => t.status !== 'done' && (t.priority === 'p0' || t.priority === 'p1'),
+      week: (t) => isOutstandingTask(t) && t.dueOn !== null && t.dueOn >= todayKey && t.dueOn <= weekEnd,
+      high: (t) => isOutstandingTask(t) && (t.priority === 'p0' || t.priority === 'p1'),
       files: (t) => (collab[t.id]?.attachments.length ?? 0) > 0,
     }),
     [currentUserId, todayKey, weekEnd, collab],
@@ -400,7 +408,7 @@ export function ProjectBoard({
 
       {/* SCR-020: open-task counts per assignee and per module, on the board
           itself. Each chip is also the filter for that person or module. */}
-      {tasks.some((t) => t.status !== 'done') ? (
+      {tasks.some(isOutstandingTask) ? (
         <div className="flex flex-col gap-1.5 text-[13px]">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="mr-1 text-[11px] font-semibold uppercase tracking-wider text-muted">Open by assignee</span>
@@ -448,14 +456,14 @@ export function ProjectBoard({
           disabled={!canWrite || groupBy !== 'status'}
           onMove={handleMove}
           renderColumnAction={(col) =>
-            canWrite && groupBy === 'status' ? (
+            canWrite && groupBy === 'status' && col.id !== 'cancelled' ? (
               <button type="button" onClick={() => setAdding(col.id)} aria-label={`Add task in ${col.label}`} className="flex h-6 w-6 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface hover:text-foreground">
                 <IconPlus size={14} />
               </button>
             ) : null
           }
           renderColumnFooter={(col) =>
-            canWrite && groupBy === 'status' ? (
+            canWrite && groupBy === 'status' && col.id !== 'cancelled' ? (
               <button type="button" onClick={() => setAdding(col.id)} className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg text-xs font-medium text-brand transition-colors hover:bg-brand-soft">
                 <IconPlus size={13} />
                 Add task

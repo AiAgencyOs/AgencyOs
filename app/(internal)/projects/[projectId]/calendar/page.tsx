@@ -103,7 +103,7 @@ export default async function ProjectCalendarPage({
 
   const clock = await agencyClock();
   const [{ tasks, modules }, milestones, clientName, meetings, clientLeads, agencyZone, feed, scheduleChanges] = await Promise.all([
-    listDevelopmentBreakdown(projectId),
+    listDevelopmentBreakdown(projectId, { excludeCancelled: true }),
     listPaymentPlan(projectId),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
     listProjectMeetings(projectId),

@@ -29,6 +29,8 @@ export type TaskDetail = {
     dueOn: string | null;
     estimateHours: number | null;
     completedAt: string | null;
+    /** T1-1: set when a roster manager archived the task. */
+    archivedAt: string | null;
     createdAt: string;
     assignee: { userId: string; fullName: string; email: string } | null;
     requirementVersionId: string | null;
@@ -59,7 +61,7 @@ export async function readTaskDetail(projectId: string, taskId: string): Promise
     .schema('projects')
     .from('tasks')
     .select(
-      'id, project_id, title, description, status, priority, due_on, estimate_hours, completed_at, created_at, assignee_id, module_id, feature_id, requirement_version_id, start_on, labels, milestone_id, parent_task_id, sprint_id',
+      'id, project_id, title, description, status, priority, due_on, estimate_hours, completed_at, created_at, assignee_id, module_id, feature_id, requirement_version_id, start_on, labels, milestone_id, parent_task_id, sprint_id, archived_at',
     )
     .eq('id', taskId)
     .eq('project_id', projectId)
@@ -109,7 +111,7 @@ export async function readTaskDetail(projectId: string, taskId: string): Promise
   const [milestoneRes, parentRes, subtaskRes] = await Promise.all([
     task.milestone_id ? supabase.schema('projects').from('milestones').select('id, name').eq('id', task.milestone_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
     task.parent_task_id ? supabase.schema('projects').from('tasks').select('id, title').eq('id', task.parent_task_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
-    supabase.schema('projects').from('tasks').select('id, title, status, due_on, assignee_id').eq('parent_task_id', taskId).order('created_at', { ascending: true }),
+    supabase.schema('projects').from('tasks').select('id, title, status, due_on, assignee_id').eq('parent_task_id', taskId).is('archived_at', null).order('created_at', { ascending: true }),
   ]);
   if (milestoneRes.error) unreadable('readTaskDetail.milestone', milestoneRes.error);
   if (parentRes.error) unreadable('readTaskDetail.parent', parentRes.error);
@@ -185,6 +187,7 @@ export async function readTaskDetail(projectId: string, taskId: string): Promise
       dueOn: task.due_on,
       estimateHours: task.estimate_hours === null ? null : Number(task.estimate_hours),
       completedAt: task.completed_at,
+      archivedAt: task.archived_at,
       createdAt: task.created_at,
       assignee: assigneeRow
         ? { userId: assigneeRow.user_id, fullName: assigneeRow.users?.full_name ?? assigneeRow.users?.email ?? 'Unknown', email: assigneeRow.users?.email ?? '' }

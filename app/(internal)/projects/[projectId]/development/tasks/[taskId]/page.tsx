@@ -29,7 +29,7 @@ import { listProjectSprints } from '@/modules/projects/sprint-queries';
 import { sprintEnd } from '@/modules/projects/sprint-schema';
 import { PlaceInSprintForm } from '../../../sprint-forms';
 import { listAssigneeCandidates } from '@/modules/projects/project-members-queries';
-import { LinkCommitPanel, ReadyForQaButton, ReopenFromDefectPanel, StartTaskButton, SubmitEvidencePanel } from './task-doors-panel';
+import { LinkCommitPanel, ReadyForQaButton, TaskLifecycleControls, ReopenFromDefectPanel, StartTaskButton, SubmitEvidencePanel } from './task-doors-panel';
 
 export const metadata: Metadata = { title: 'Task' };
 
@@ -148,7 +148,7 @@ export default async function TaskDetailPage({
           </Card>
 
               <Card>
-                <CardHeader title={`Subtasks (${subtasks.filter((x) => x.status === 'done').length}/${subtasks.length})`} description={task.parent ? undefined : 'Work broken out under this task. A subtask keeps its own status on its own page.'} />
+                <CardHeader title={`Subtasks (${subtasks.filter((x) => x.status === 'done').length}/${subtasks.filter((x) => x.status !== 'cancelled').length})`} description={task.parent ? undefined : 'Work broken out under this task. A subtask keeps its own status on its own page.'} />
                 <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
                   {task.parent ? (
                     <p className="text-[13px] text-muted">This is itself a subtask, so it has none of its own.</p>
@@ -547,6 +547,24 @@ export default async function TaskDetailPage({
                       {task.status === 'blocked' ? <span className="text-[13px] text-muted">Blocked. Unblock it from the checklist panel, or escalate it to the PM on the Development tab.</span> : null}
                     </div>
                   )}
+                </div>
+              </Card>
+
+              {/* T1-1 — cancel, reopen and archive. A cancelled or archived task is not outstanding work and satisfies a dependency. */}
+              <Card>
+                <CardHeader
+                  title="Cancel or archive"
+                  description="A cancelled or archived task is not outstanding work: progress, health and the dependency check do not count it. Cancelled is final unless an owner, ops admin or delivery lead reopens it; archiving hides the task from the default lists."
+                />
+                <div className="px-4 pb-4 sm:px-5">
+                  <TaskLifecycleControls
+                    projectId={projectId}
+                    taskId={task.id}
+                    status={task.status}
+                    archived={task.archivedAt !== null}
+                    canCancel={mayWriteTask && (mayPlan || task.assignee?.userId === context.userId)}
+                    canManage={mayPlan}
+                  />
                 </div>
               </Card>
 

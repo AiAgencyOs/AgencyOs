@@ -18,6 +18,8 @@ export async function listTasksByMilestone(projectId: string): Promise<Record<st
     .from('tasks')
     .select('id, milestone_id, title, status, priority, assignee_id, due_on')
     .eq('project_id', projectId)
+    .is('archived_at', null)
+    .neq('status', 'cancelled')
     .not('milestone_id', 'is', null)
     .order('created_at', { ascending: true });
   if (error) unreadable('listTasksByMilestone', error);
