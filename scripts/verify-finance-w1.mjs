@@ -16,7 +16,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { Buffer } from 'node:buffer';
-import { createHmac } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
@@ -74,9 +74,29 @@ async function rest(method, schema, path, body, token) {
 const rpc = (schema, fn, args, token) => rest('POST', schema, `rpc/${fn}`, args, token);
 const row = (r) => (Array.isArray(r.json) ? r.json[0] : r.json);
 
+// A role the seed does not carry (CI seeds only an owner) gets a fixture user for this run, removed again in cleanup().
+const fixtureUsers = [];
 const users = async (role) => {
   const m = await rest('GET', 'core', `memberships?role=eq.${role}&organization_id=eq.${ORG}&select=user_id&limit=1`);
-  return m.json?.[0]?.user_id ?? null;
+  if (m.json?.[0]?.user_id) return m.json[0].user_id;
+  const email = `${MARKER}-${role}-${randomUUID().slice(0, 8)}@example.invalid`;
+  const authUser = await fetch(`${URL_BASE}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: randomUUID(), email_confirm: true }),
+  }).then((r) => r.json());
+  if (!authUser?.id) return null;
+  fixtureUsers.push(authUser.id);
+  await rest('POST', 'core', 'users', { id: authUser.id, email, full_name: `${MARKER} ${role}` });
+  await rest('POST', 'core', 'memberships', { organization_id: ORG, user_id: authUser.id, role, status: 'active' });
+  return authUser.id;
+};
+const dropFixtureUsers = async () => {
+  for (const id of fixtureUsers) {
+    await rest('DELETE', 'core', `memberships?user_id=eq.${id}`);
+    await rest('DELETE', 'core', `users?id=eq.${id}`);
+    await fetch(`${URL_BASE}/auth/v1/admin/users/${id}`, { method: 'DELETE', headers: { apikey: KEY, Authorization: `Bearer ${KEY}` } });
+  }
 };
 
 const ownerId = await users('owner');
@@ -200,6 +220,7 @@ try {
   check(!JSON.stringify(a2.json).includes('prompt'), 'and no prompt or output leaves the function');
 } finally {
   await cleanup();
+  await dropFixtureUsers().catch(() => {});
 }
 
 console.log(failures === 0 ? '\n  all finance W1 checks passed\n' : `\n  ${failures} check(s) failed\n`);
