@@ -113,3 +113,13 @@ Binding.
 |---|---|
 | T1-1 | Tasks gain a real `cancelled` status and an `archived_at` column. A cancelled or archived task counts as satisfied for dependencies; progress, health and KPIs do not count a cancelled task as outstanding work. |
 | T1-2 | Project roster writes (`project_members`) go through an audited security-definer door (add, remove, change role), like the default assignees. |
+
+## Round 3e — answers to the round-3d build's follow-up questions (2026-10-01)
+
+Binding.
+
+| Id | Decision |
+|---|---|
+| U1-1 | An archived task is read-only: status, edit, comment, time, checklist, attachment and dependency changes are refused until it is unarchived (unarchive by roster managers only). |
+| U1-2 | Cancelling a task requires a reason (kept in the audit row and shown on the task) and notifies the assignee. |
+| U1-3 | A roster change made through a door writes one audit row (the door's); the table trigger's row is kept only for writes that do not come through a door (service role). |
