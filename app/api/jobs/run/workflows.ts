@@ -17,6 +17,8 @@
  * skip them.
  */
 
+import { raiseAlert } from '@/lib/ai/run-gates';
+import { LEAD_OUTCOME_PROMPT, decideOutcome, leadOutcomeJsonSchema, leadOutcomeReadingSchema } from '@/modules/sales/lead-outcome';
 import { quotationLanguageForLead } from '@/modules/sales/quotation-language';
 import { approvedStatementsBlock } from '@/modules/sales/approved-statements';
 import type { WorkClass } from '@/lib/ai/autonomy';
@@ -2962,6 +2964,275 @@ const MEETING_REQUEST_READ: AgentWorkflow = {
     );
     await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
     return { status: 'succeeded', reason: outcome, runId, meetingId: row?.meeting_id ?? null };
+  },
+};
+
+/**
+ * A client's clear "no", or clear "not yet", is noticed and acted on — O-3.
+ *
+ * Owner decision 2026-10-03: the agent marks the CLEAR cases itself and says
+ * so; anything it is not sure of it proposes and leaves alone. The judgment is
+ * the model's, but everything that makes acting on it safe is `decideOutcome`
+ * (code, tested): a no with a condition is negotiation and is never marked; the
+ * quoted words must be in the message verbatim; "not yet" becomes nurture only
+ * with a return date the client's own words support; a closed, converted or
+ * accepted deal is never touched; nothing is ever WON here.
+ *
+ * Every change is written where staff read — a status-change line on the
+ * lead's timeline carrying the client's exact words — and raised as an alert,
+ * and a person reopens it with the same status control as always
+ * (`disqualified → qualifying`, `nurture → qualifying`), so a wrong call costs
+ * one click and is never hidden. A lost deal also stops its follow-ups.
+ */
+const LEAD_OUTCOME_READ: AgentWorkflow = {
+  jobKind: 'lead.outcome_read',
+  agentKey: 'sales',
+  systemPrompt: LEAD_OUTCOME_PROMPT,
+  schemaName: 'LeadOutcomeReading',
+  jsonSchema: leadOutcomeJsonSchema,
+  workClass: 'internal_plan',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const messageId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+    if (!messageId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+    const settle = async (reason: string, extra: Record<string, unknown> = {}) => {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded' as const, reason, ...extra };
+    };
+
+    const { data: message, error: messageError } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .select('id, conversation_id, body, author_type, metadata, media_description')
+      .eq('id', messageId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+    if (messageError) {
+      await failJob(admin, job, `could not read the message: ${messageError.message}`);
+      return { status: 'failed', reason: 'could not read the message' };
+    }
+    if (!message) return settle('message no longer exists');
+    if (message.author_type !== 'client') return settle('not a client message');
+    if (isImportedMessage(message.metadata)) return settle('an imported history is not something said now');
+
+    const { data: conversation, error: threadError } = await admin
+      .schema('crm')
+      .from('conversations')
+      .select('id, lead_id')
+      .eq('id', message.conversation_id)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+    if (threadError) {
+      await failJob(admin, job, `could not read the conversation: ${threadError.message}`);
+      return { status: 'failed', reason: 'could not read the conversation' };
+    }
+    if (!conversation?.lead_id) return settle('no lead on this conversation');
+    const leadId = conversation.lead_id;
+
+    const { data: lead, error: leadError } = await admin
+      .schema('crm')
+      .from('leads')
+      .select('id, status, title')
+      .eq('id', leadId)
+      .eq('organization_id', job.organization_id)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (leadError) {
+      await failJob(admin, job, `could not read the lead: ${leadError.message}`);
+      return { status: 'failed', reason: 'could not read the lead' };
+    }
+    // Cheap exits before any model call: a lead that is already settled has nothing to decide.
+    if (!lead || ['converted', 'disqualified'].includes(lead.status)) return settle(`the lead is already ${lead?.status ?? 'gone'}`);
+
+    const { data: deals, error: dealError } = await admin
+      .schema('sales')
+      .from('opportunities')
+      .select('id, stage')
+      .eq('lead_id', leadId)
+      .eq('organization_id', job.organization_id);
+    if (dealError) {
+      await failJob(admin, job, `could not read the deals: ${dealError.message}`);
+      return { status: 'failed', reason: 'could not read the deals' };
+    }
+    const openDeal = (deals ?? []).find((d) => d.stage !== 'won' && d.stage !== 'lost') ?? null;
+    if ((deals ?? []).some((d) => d.stage === 'won')) return settle('the deal is already won');
+
+    const { data: accepted } = openDeal
+      ? await admin
+          .schema('sales')
+          .from('proposals')
+          .select('id')
+          .eq('opportunity_id', openDeal.id)
+          .eq('organization_id', job.organization_id)
+          .eq('status', 'accepted')
+          .limit(1)
+      : { data: [] };
+
+    const zoneRead = await agencyTimeZoneFor(admin, job.organization_id);
+    if (!zoneRead.ok) {
+      await failJob(admin, job, `could not read the agency timezone: ${zoneRead.detail}`);
+      return { status: 'failed', reason: 'could not read the agency timezone' };
+    }
+
+    const runId = await openRun(ctx, {
+      type: 'crm.conversation_message',
+      id: message.id,
+      input: { messageId: message.id, leadId } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [{ role: 'user', content: [localDateLine(new Date(), zoneRead.zone ?? 'UTC'), clientTurn(message)].join('\n\n') }],
+      runId,
+    );
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    const validated = leadOutcomeReadingSchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    const decision = decideOutcome(validated.data, {
+      messageBody: message.body,
+      leadStatus: lead.status,
+      hasOpenDeal: openDeal !== null,
+      hasAcceptedQuotation: (accepted ?? []).length > 0,
+    });
+
+    const note = async (body: string, metadata: Record<string, unknown>, kind: 'note' | 'status_change' = 'note') => {
+      const { error } = await admin.schema('crm').from('lead_activities').insert({
+        organization_id: job.organization_id,
+        lead_id: leadId,
+        kind,
+        actor_type: 'agent',
+        body,
+        metadata: { source: 'lead.outcome_read', messageId: message.id, ...metadata } as unknown as Json,
+      });
+      if (error) console.error(JSON.stringify({ level: 'error', scope: 'lead.outcome_read.note', detail: error.message }));
+    };
+    const alert = (summary: string) =>
+      raiseAlert(admin, {
+        organizationId: job.organization_id,
+        source: 'lead_outcome',
+        severity: 'info',
+        summary,
+        fingerprint: `lead-outcome:${leadId}`,
+      });
+
+    await succeedRun(admin, runId, { ...validated.data, decision: decision.act } as unknown as Json, call.usage, call.stepCount);
+
+    if (decision.act === 'none') return settle(decision.why, { runId, outcome: 'none' });
+
+    if (decision.act === 'suggest') {
+      const r = decision.reading;
+      await note(
+        `Agent read the client as possibly ${r.outcome === 'declined' ? 'DECLINING' : 'POSTPONING'} but was not sure enough to change anything (${decision.why}): “${r.quote}”. Confirm with the client, then set the lead ${r.outcome === 'declined' ? 'to disqualified (with the reason)' : 'to nurture (with a return date)'} yourself.`,
+        { suggestion: r.outcome },
+      );
+      return settle('proposed to staff; nothing changed', { runId, outcome: 'suggested' });
+    }
+
+    if (decision.act === 'lose_deal') {
+      const { data: moved, error } = await admin
+        .schema('sales')
+        .from('opportunities')
+        .update({
+          stage: 'lost',
+          closed_at: new Date().toISOString(),
+          lost_category: decision.category,
+          lost_reason: `Client said: “${decision.quote}”`.slice(0, 500),
+        })
+        .eq('id', openDeal!.id)
+        .eq('stage', openDeal!.stage)
+        .select('id')
+        .maybeSingle();
+      if (error) {
+        await failJob(admin, job, `could not mark the deal lost: ${error.message}`);
+        return { status: 'failed', reason: 'could not mark the deal lost', runId };
+      }
+      if (!moved) return settle('the deal moved while it was being read; left as it is', { runId });
+      await note(`Agent marked the deal LOST (${decision.category.replace(/_/g, ' ')}). The client said: “${decision.quote}”. Reopen it from the deal if this is wrong.`, { auto: true, to: 'lost', category: decision.category }, 'status_change');
+      await alert(`${lead.title}: marked LOST by the agent — “${decision.quote.slice(0, 120)}”. Reopen it if that is wrong.`);
+      return settle('deal marked lost', { runId, outcome: 'lost' });
+    }
+
+    if (decision.act === 'disqualify_lead') {
+      const from = lead.status;
+      const { data: moved, error } = await admin
+        .schema('crm')
+        .from('leads')
+        .update({ status: 'disqualified', disqualified_reason: `${decision.category.replace(/_/g, ' ')} — client said: “${decision.quote}”`.slice(0, 500) })
+        .eq('id', leadId)
+        .eq('status', from)
+        .select('id')
+        .maybeSingle();
+      if (error) {
+        await failJob(admin, job, `could not disqualify the lead: ${error.message}`);
+        return { status: 'failed', reason: 'could not disqualify the lead', runId };
+      }
+      if (!moved) return settle('the lead moved while it was being read; left as it is', { runId });
+      await note(`Agent marked the lead DISQUALIFIED (${decision.category.replace(/_/g, ' ')}). The client said: “${decision.quote}”. Move it back to qualifying if this is wrong.`, { auto: true, from, to: 'disqualified', category: decision.category }, 'status_change');
+      await alert(`${lead.title}: marked DISQUALIFIED by the agent — “${decision.quote.slice(0, 120)}”. Move it back if that is wrong.`);
+      return settle('lead disqualified', { runId, outcome: 'disqualified' });
+    }
+
+    // nurture
+    let from = lead.status;
+    // The state machine reaches nurture from qualifying or qualified, never
+    // from new ("not ready yet" is learned once a conversation has started).
+    // A person would move the lead to qualifying first, so that is the route:
+    // two legal steps, each compare-and-swap, not a back door.
+    if (from === 'new') {
+      const { data: opened, error: openError } = await admin
+        .schema('crm')
+        .from('leads')
+        .update({ status: 'qualifying' })
+        .eq('id', leadId)
+        .eq('status', 'new')
+        .select('id')
+        .maybeSingle();
+      if (openError) {
+        await failJob(admin, job, `could not move the lead to qualifying: ${openError.message}`);
+        return { status: 'failed', reason: 'could not move the lead to qualifying', runId };
+      }
+      if (!opened) return settle('the lead moved while it was being read; left as it is', { runId });
+      from = 'qualifying';
+    }
+    const until = new Date(Date.now() + decision.days * 86_400_000);
+    until.setUTCHours(9, 0, 0, 0);
+    const { data: moved, error } = await admin
+      .schema('crm')
+      .from('leads')
+      .update({ status: 'nurture', nurture_reason: decision.reason, next_follow_up_at: until.toISOString() })
+      .eq('id', leadId)
+      .eq('status', from)
+      .select('id')
+      .maybeSingle();
+    if (error) {
+      await failJob(admin, job, `could not move the lead to nurture: ${error.message}`);
+      return { status: 'failed', reason: 'could not move the lead to nurture', runId };
+    }
+    if (!moved) return settle('the lead moved while it was being read; left as it is', { runId });
+    await note(`Agent moved the lead to NURTURE until ${until.toISOString().slice(0, 10)} (${decision.reason.replace(/_/g, ' ')}). The client said: “${decision.quote}”. Change the date or move it back if this is wrong.`, { auto: true, from, to: 'nurture', reason: decision.reason, until: until.toISOString() }, 'status_change');
+    await alert(`${lead.title}: moved to NURTURE until ${until.toISOString().slice(0, 10)} by the agent — “${decision.quote.slice(0, 120)}”.`);
+    return settle('lead moved to nurture', { runId, outcome: 'nurture' });
   },
 };
 
@@ -9071,6 +9342,7 @@ const MEETING_ANALYSIS: AgentWorkflow = {
 export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   REQUIREMENT_EXTRACT,
   MEETING_REQUEST_READ,
+  LEAD_OUTCOME_READ,
   MAINTENANCE_TRIAGE,
   PLAN_BREAKDOWN,
   DESIGN_DIRECTIONS,

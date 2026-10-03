@@ -28,6 +28,7 @@ import { AGENT_DEFINITIONS } from '@/modules/agents/registry';
 import { settlementFor } from '@/lib/jobs/retry';
 import {
   handleApprovalRequested,
+  handleClientWaiting,
   handleConversationEscalated,
   handlePhaseThreeCompleted,
   handleRevisionLimitEscalated,
@@ -827,6 +828,20 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   );
 
   /**
+   * ── the handover acknowledgement (owner decision 2026-10-03) ─────────
+   *
+   * A client wrote while their thread waits for a person. The application —
+   * not the agent — tells them once that a colleague has it, and alerts staff.
+   * One HTTP request, no model call, so it drains beside the announcements.
+   */
+  const clientWaiting = await runEventJobs(
+    admin,
+    CLIENT_WAITING_JOB_KIND,
+    handleClientWaiting,
+    'runClientWaitingJobs',
+  );
+
+  /**
    * ── Phase 3 revision-limit and completion announcements (G-309) ──────
    *
    * Beside the other internal-group announcements and drained by the same
@@ -1111,6 +1126,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     unlocks: unlocks.results,
     announcements: announcements.results,
     escalations: escalations.results,
+    clientWaiting: clientWaiting.results,
     revisionLimitAnnouncements: revisionLimitAnnouncements.results,
     phaseThreeCompletedAnnouncements: phaseThreeCompletedAnnouncements.results,
     phaseFourStartedAnnouncements: phaseFourStartedAnnouncements.results,
@@ -1251,6 +1267,7 @@ const M4_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM4Invoice'];
 const SCOPE_CHANGE_REQUEST_JOB_KIND = HANDLER_JOB_KIND['projects:openChangeRequestFromScopeEscalation'];
 const ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceApproval'];
 const ESCALATION_JOB_KIND = HANDLER_JOB_KIND['crm:announceEscalation'];
+const CLIENT_WAITING_JOB_KIND = HANDLER_JOB_KIND['crm:acknowledgeHandover'];
 const FOLLOWUP_JOB_KIND = HANDLER_JOB_KIND['crm:deliverFollowUp'];
 const DISPATCH_JOB_KIND = HANDLER_JOB_KIND['crm:dispatchApprovedQuotation'];
 const LEARN_JOB_KIND = HANDLER_JOB_KIND['sales:learnFromDecision'];

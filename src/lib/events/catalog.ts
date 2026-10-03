@@ -34,6 +34,7 @@ export const HANDLERS = [
   'projects:openChangeRequestFromScopeEscalation',
   'crm:announceApproval',
   'crm:announceEscalation',
+  'crm:acknowledgeHandover',
   'crm:deliverFollowUp',
   'support:triageTicket',
   'project_manager:planBreakdown',
@@ -44,6 +45,7 @@ export const HANDLERS = [
   'project_manager:classifyClientFeedback',
   'sales:readIntent',
   'sales:readMeetingRequest',
+  'sales:readLeadOutcome',
   'quality_assurance:draftTestPlan',
   'customer_success:draftCheckIn',
   'handover:draftPackage',
@@ -318,7 +320,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * the call for a message from staff, a thread with no lead, and a lead that
    * already has a meeting open — which is the lead most likely to write again.
    */
-  'message.received': ['sales:readIntent', 'sales:readQualification', 'sales:summariseThread', 'sales:readMeetingRequest'],
+  'message.received': ['sales:readIntent', 'sales:readQualification', 'sales:summariseThread', 'sales:readMeetingRequest', 'sales:readLeadOutcome'],
   /**
    * Doc 09 §19, and the reason it is a separate event rather than a third
    * subscriber on `message.received`: four of Doc 08 §12's twenty-two intents
@@ -399,6 +401,12 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * step, and the one that drifts is the one nobody remembers exists.
    */
   'conversation.escalated': ['crm:announceEscalation'],
+  /**
+   * A client wrote while their thread waits for a person. The agent stays
+   * silent; the APPLICATION tells the client once that a colleague has it, and
+   * tells staff each time the client writes. Owner decision 2026-10-03.
+   */
+  'conversation.client_waiting': ['crm:acknowledgeHandover'],
   /**
    * Brief 2026-08-22 §28, and Doc 08 §9 for its sibling below. Separate events
    * rather than subscribers on `message.received`, because neither is a
@@ -589,6 +597,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:openChangeRequestFromScopeEscalation': 'change_request.open_from_scope_escalation',
   'crm:announceApproval': 'approval.announce',
   'crm:announceEscalation': 'escalation.announce',
+  'crm:acknowledgeHandover': 'handover.acknowledge',
   'crm:deliverFollowUp': 'followup.deliver',
   'support:triageTicket': 'maintenance.triage',
   'project_manager:planBreakdown': 'plan.breakdown',
@@ -599,6 +608,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'project_manager:classifyClientFeedback': 'ui_version.classify_client_feedback',
   'sales:readIntent': 'message.intent',
   'sales:readMeetingRequest': 'meeting.request_read',
+  'sales:readLeadOutcome': 'lead.outcome_read',
   'quality_assurance:draftTestPlan': 'qa.plan',
   'customer_success:draftCheckIn': 'success.checkin',
   'handover:draftPackage': 'handover.package',

@@ -2,12 +2,15 @@ import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
 
+import { deliverQueuedText, type QueuedOutbound } from './deliver-text';
+import { handoverAcknowledgementFor, handoverAcknowledgementRef } from './handover-acknowledgement';
 import { OUTBOUND_PAUSED, outboundPaused } from './kill-switch';
 import { deferSend, markAsOutreach, planOutbound } from './outbound-window';
 
 import {
   approvalDecidedEventSchema,
   announcementFor,
+  conversationClientWaitingEventSchema,
   conversationEscalatedEventSchema,
   escalationAnnouncementFor,
   phaseThreeCompletedEventSchema,
@@ -1437,6 +1440,124 @@ export async function handleConversationEscalated(
   }
 
   return { status: 'succeeded', outcome: 'announced', detail: 'the internal channel was told' };
+}
+
+/** A recorded-but-undelivered acknowledgement older than this belongs to a job that died. */
+const HANDOVER_ACK_STALE_MS = 120_000;
+
+/**
+ * `conversation.client_waiting` → tell the client once, and tell staff every time.
+ *
+ * A thread handed to a person is deliberately silent on the agent's side. The
+ * first live run showed what that meant to a client who kept writing: four
+ * price objections, no word back, and staff told only at the moment of the
+ * pause. The owner decided (2026-10-03) that the client hears — ONCE per
+ * pause — that a colleague has it, and that staff are alerted each time the
+ * client writes again.
+ *
+ * The acknowledgement is fixed text in the client's own language and script
+ * (`handoverAcknowledgementFor`), never the agent's words. It is keyed on the
+ * conversation AND the moment of the pause, so a second message, a redelivered
+ * event and a retried job all collapse onto one acknowledgement, while a
+ * thread paused again later (after a person resumed it) gets its own.
+ *
+ * The alert is separate and repeats on purpose: `core.raise_alert` bumps one
+ * alert per conversation rather than creating many, so an owner sees "this
+ * client has written 4 times" rather than four rows.
+ */
+export async function handleClientWaiting(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const parsed = conversationClientWaitingEventSchema.safeParse((job.payload ?? {}).event);
+  if (!parsed.success) {
+    return {
+      status: 'failed',
+      permanent: true,
+      detail: `malformed conversation.client_waiting payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}`,
+    };
+  }
+  const event = parsed.data;
+
+  const { data: conversation, error: readError } = await admin
+    .schema('crm')
+    .from('conversations')
+    .select('id, lead_id, agent_paused_at, contacts(full_name)')
+    .eq('id', event.conversation_id)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+  if (readError) return { status: 'failed', permanent: false, detail: `could not read the conversation: ${readError.message}` };
+  if (!conversation) return { status: 'succeeded', outcome: 'gone', detail: 'the conversation no longer exists' };
+
+  // A person may have resumed the thread between the message and this job: the
+  // agent is answering again and there is nothing to acknowledge.
+  if (!conversation.agent_paused_at) {
+    return { status: 'succeeded', outcome: 'resumed', detail: 'the thread is no longer waiting for a person' };
+  }
+
+  const person = (conversation.contacts ?? null) as { full_name: string | null } | null;
+  const { error: alertError } = await admin.schema('core').rpc('raise_alert', {
+    p_organization_id: job.organization_id,
+    p_source: 'handover',
+    p_severity: 'warning',
+    p_summary: `${person?.full_name ?? 'A client'} wrote again while their thread is waiting for a person — nobody has answered.`,
+    p_fingerprint: `client-waiting:${conversation.id}`,
+  });
+  if (alertError) {
+    console.error(JSON.stringify({ level: 'error', scope: 'handleClientWaiting.alert', detail: alertError.message }));
+  }
+
+  const { quotationLanguageForLead } = await import('@/modules/sales/quotation-language');
+  const language = await quotationLanguageForLead(admin, conversation.lead_id, job.organization_id);
+  const body = handoverAcknowledgementFor(language);
+
+  const { data, error } = await admin.schema('crm').rpc('send_outbound_message', {
+    p_conversation_id: conversation.id,
+    p_body: body,
+    p_external_ref: handoverAcknowledgementRef(conversation.id, conversation.agent_paused_at),
+  });
+  if (error) return { status: 'failed', permanent: false, detail: `could not record the acknowledgement: ${error.message}` };
+
+  const queued = (Array.isArray(data) ? data[0] : data) as
+    | (QueuedOutbound & { outcome: string; delivery: string | null })
+    | undefined;
+  if (!queued) return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
+  if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
+  if (queued.outcome === 'no_consent') {
+    return { status: 'succeeded', outcome: 'no_consent', detail: 'this contact has withdrawn consent; staff were alerted, the client was not messaged' };
+  }
+  if (!queued.message_id) return { status: 'failed', permanent: false, detail: `acknowledgement not recorded (${queued.outcome})` };
+  // Already acknowledged for this pause and it landed: nothing more to send.
+  if (queued.outcome === 'already_sent' && queued.delivery === 'sent') {
+    return { status: 'succeeded', outcome: 'already_acknowledged', detail: 'this pause was already acknowledged; staff were alerted again' };
+  }
+  // Recorded by ANOTHER job a moment ago and still being delivered. Three
+  // messages in a burst make three jobs; only the one that created the row
+  // delivers it — the first live run sent the acknowledgement three times,
+  // because all three saw "recorded, not yet sent" and each sent it. A row
+  // that has sat pending for two minutes belongs to a job that died, and is
+  // delivered here.
+  if (queued.outcome === 'already_sent' && queued.delivery === 'pending') {
+    const { data: row } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .select('created_at')
+      .eq('id', queued.message_id)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+    const ageMs = row?.created_at ? Date.now() - new Date(row.created_at).getTime() : Number.POSITIVE_INFINITY;
+    if (ageMs < HANDOVER_ACK_STALE_MS) {
+      return { status: 'succeeded', outcome: 'in_flight', detail: 'another job is delivering this pause\'s acknowledgement; staff were alerted again' };
+    }
+  }
+
+  const delivered = await deliverQueuedText(admin, {
+    organizationId: job.organization_id,
+    conversationId: conversation.id,
+    body,
+    queued,
+  });
+  if (!delivered.ok) {
+    return { status: 'failed', permanent: false, detail: `acknowledgement not delivered: ${delivered.error.message}` };
+  }
+  return { status: 'succeeded', outcome: 'acknowledged', detail: 'the client was told a colleague has it; staff were alerted' };
 }
 
 /**

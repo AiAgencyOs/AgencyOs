@@ -372,7 +372,8 @@ describe('D2. the door cannot lose the race', () => {
 
 describe('E. the wiring', () => {
   test('it is the fourth reader of an inbound message, under its own job kind', () => {
-    assert.deepEqual(SUBSCRIPTIONS['message.received'], [
+    // A fifth (the clear no / not-yet reader) joined it on 2026-10-03; the order of the first four is the point.
+    assert.deepEqual(SUBSCRIPTIONS['message.received']?.slice(0, 4), [
       'sales:readIntent', 'sales:readQualification', 'sales:summariseThread', 'sales:readMeetingRequest',
     ]);
     assert.equal(HANDLER_JOB_KIND['sales:readMeetingRequest'], 'meeting.request_read');

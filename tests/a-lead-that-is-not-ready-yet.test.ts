@@ -126,9 +126,19 @@ describe('C. who may put a lead there', () => {
     assert.match(SERVICE, /export async function setLeadStatus\([\s\S]{0,600}?requireInternal\(\)[\s\S]{0,200}?can\(context, 'lead\.write'\)/);
   });
 
-  test('and nothing in the agent workflows writes this status', () => {
+  test('and exactly one agent workflow writes this status — the clear-no / not-yet reader, under rules in code', () => {
+    // History. G-203 said no agent may decide a client is not ready (business
+    // rules §5: no treating a client's word as a fact). On 2026-10-03 the OWNER
+    // narrowed that for the CLEAR cases only: an explicit decline or a stated
+    // return date, quoted verbatim, never conditional, never acceptance, never
+    // WON, always shown on the timeline and as an alert (see lead-outcome.ts).
+    // So the rule is now: one place, and that place is the tested one.
     const workflows = codeOnly(read('app/api/jobs/run/workflows.ts'));
-    assert.ok(!workflows.includes("'nurture'"), 'no agent may decide a client is not ready');
+    const reader = workflows.slice(workflows.indexOf('const LEAD_OUTCOME_READ: AgentWorkflow'), workflows.indexOf('const TEST_PLAN_PROMPT'));
+    const outside = workflows.replace(reader, '');
+    assert.ok(!outside.includes("'nurture'"), 'an agent workflow other than the outcome reader decided a client is not ready');
+    assert.match(reader, /status: 'nurture'/);
+    assert.match(reader, /decideOutcome\(/);
   });
 });
 

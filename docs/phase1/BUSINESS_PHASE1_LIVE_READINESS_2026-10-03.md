@@ -51,9 +51,9 @@ Caveat found while doing this: three verifiers (`quotedispatch`, `followup`, `wo
 |---|---|---|
 | O-1 | ~~P1/P2~~ **FIXED** | **Scope change after a quote was parked** (fixed, see D-014 below). Client asked for a receptionist role, iOS and an advanced admin panel; the objection was recorded (`feature`, round 6) but **no `quotation.rework` job was enqueued** because the version the client held (v2) had been superseded by a pending v3. The owner then approved v3, which was sent without those asks. |
 | O-2 | ~~P2~~ **FIXED (D-021)** | Language of the quotation and the client summary. Hinglish (Roman) and Hindi (Devanagari, shaped, drawn as outlines) now follow how the client writes; the page's headings follow the language; the agency's standard terms translate behind the owner switch `quotation_translate_standards` and only where unedited. **Caveat:** the Hinglish/Hindi standard-terms wording is a draft the owner should read before switching on, and a Hindi PDF's text is outlines (not selectable or searchable). |
-| O-3 | P2 | **No automatic WON / LOST / NURTURE.** By design (closing is a human act), but every lead stayed `new` through full conversations, an explicit "I don't want to proceed" lead still has an active follow-up, and moving to nurture needs staff. A client saying "December" correctly stopped follow-ups only once a next-follow-up date was set by staff. |
+| O-3 | FIXED 2026-10-03 (owner decision: clear cases only) | **No automatic WON / LOST / NURTURE.** By design (closing is a human act), but every lead stayed `new` through full conversations, an explicit "I don't want to proceed" lead still has an active follow-up, and moving to nurture needs staff. A client saying "December" correctly stopped follow-ups only once a next-follow-up date was set by staff. |
 | O-4 | ~~P2~~ **FIXED (D-019)** | Agent replies showed in the lead chat as "Staff"; they now read "AI · sales". |
-| O-5 | P2 | After a hand-over the client's messages get **no reply** until staff press "Let the agent answer again" (4 price objections unanswered); the local run has no internal channel to prove the owner was alerted. |
+| O-5 | FIXED 2026-10-03 (client acknowledged once, staff alerted) | After a hand-over the client's messages get **no reply** until staff press "Let the agent answer again" (4 price objections unanswered); the local run has no internal channel to prove the owner was alerted. |
 | O-6 | ~~P2~~ **BUILT (D-022)** | Approved trust facts: Settings › Communication holds up to 12 owner-written statements the sales agent may say, in its own words, and nothing beyond; empty keeps today's behaviour. **Owner action:** write them. Live (test statements): the agent used the approved ones and still deferred 'years in business' and refunds to a colleague. |
 | O-7 | P2 | Router (audit, not live-tested): no provider/model fallback; `ai.routing_policies` is edited in `/agents/routing` but not read at runtime; event dispatch wrote `correlation_id: null` (**fixed, D-017**: one chain id per event, inherited by its jobs and agent runs, stored on the event; live: reply.compose / lead.qualify / message.intent share their event's id); **update:** main's SCR-064 already made routing policies, agent overrides and work-class chains run (the audit line about unused policies was stale); failure-time fallback and a routing-log page are now built too (D-018). |
 | O-8 | ~~P3~~ **FIXED (D-020)** | A "Request changes" with an empty note is now refused in the form. |
@@ -76,8 +76,8 @@ Caveat found while doing this: three verifiers (`quotedispatch`, `followup`, `wo
 | 6 | Quote sent, client ghosts | PARTIAL: quote sequence created and correctly blocked while the thread waits for a person; send not observed |
 | 7 | Multiple follow-ups, still silent | **NOT RUN** (needs several business days) |
 | 8 | Near-close ghosting | **NOT RUN** live |
-| 9 | Explicit rejection | PARTIAL: polite, no pushback; no LOST recorded automatically (O-3) |
-| 10 | Nurture / start later | PASS with staff step: follow-up stopped once the return date was set (O-3) |
+| 9 | Explicit rejection | PASS after O-3 fix: clear decline marks the lead or deal LOST with the client's own words (live, PH1_TEST_071/079) |
+| 10 | Nurture / start later | PASS after O-3 fix: a clear "not now" moves the lead to nurture with a return date (live, PH1_TEST_073) |
 | 11 | Trust-issue client | PASS_AFTER_FIX (D-007) but weak (O-6) |
 | 12 | Aggressive negotiator | PASS_AFTER_FIX (D-012) |
 | 13 | Requirement change after quote | **FAIL** (O-1) |

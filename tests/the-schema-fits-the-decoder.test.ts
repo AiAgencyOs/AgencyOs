@@ -33,6 +33,7 @@ import {
 } from '../src/modules/crm/schema.ts';
 import { schedulingRequestJsonSchema } from '../src/modules/crm/scheduling-request.ts';
 import { meetingAnalysisJsonSchema } from '../src/modules/crm/meeting-analysis.ts';
+import { leadOutcomeJsonSchema } from '../src/modules/sales/lead-outcome.ts';
 import { testPlanJsonSchema } from '../src/modules/qa/schema.ts';
 import { objectionReadingJsonSchema, quotationScopeJsonSchema } from '../src/modules/sales/schema.ts';
 import {
@@ -111,6 +112,8 @@ const FLEET: Record<string, () => unknown> = {
   meetingAnalysisJsonSchema,
   // G-249 — whether a client asked to meet, Scheduler §3.1.
   schedulingRequestJsonSchema,
+  // O-3 — a client's clear no or not-yet, 2026-10-03.
+  leadOutcomeJsonSchema,
 };
 
 describe('A. the fleet walk', () => {
