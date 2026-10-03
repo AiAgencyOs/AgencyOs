@@ -160,7 +160,7 @@ describe('C. it is enforced where it cannot be skipped', () => {
     // version of this assertion pass for the wrong reason.
     assert.ok(
       route.indexOf('mayAgentRun(agent.autonomy_level, workflow.workClass)') <
-        route.indexOf('resolveProvider(ctx.agent.default_model)'),
+        route.indexOf('modelPlanFor(ctx, {'),
       'the model must not be reached by an agent that may not act',
     );
   });
