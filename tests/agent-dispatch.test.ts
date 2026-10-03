@@ -124,7 +124,8 @@ describe('B. what a workflow may not bring its own version of', () => {
   });
 
   test('the provider and the step trace are the shared helper’s', () => {
-    assert.match(agentRun, /resolveProvider\(ctx\.agent\.default_model\)/);
+    assert.match(agentRun, /modelPlanFor\(ctx, \{/);
+    assert.match(agentRun, /\[\.\.\.routed, ctx\.agent\.default_model\]/);
     assert.doesNotMatch(workflowCode, /resolveProvider/);
     assert.doesNotMatch(workflowCode, /generateStructured/);
     assert.doesNotMatch(workflowCode, /from\('agent_steps'\)/);
@@ -135,7 +136,7 @@ describe('B. what a workflow may not bring its own version of', () => {
     // gates, and only then does a workflow reach `agent-run.ts` for a model.
     assert.ok(
       RUNNER_SOURCE.indexOf('mayAgentRun(agent.autonomy_level, workflow.workClass)') <
-        RUNNER_SOURCE.indexOf('resolveProvider(ctx.agent.default_model)'),
+        RUNNER_SOURCE.indexOf('modelPlanFor(ctx, {'),
       'an agent that may not act must not reach the model',
     );
   });

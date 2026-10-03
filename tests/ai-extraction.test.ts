@@ -509,7 +509,7 @@ describe('D. a provider failure settles the job rather than stranding it', () =>
   test('the model call is still traced whatever its outcome', () => {
     // recordModelCall runs before the ok/failed branch, so a timeout leaves a
     // step with its error rather than no evidence at all.
-    assert.ok(routeSource.indexOf('recordModelCall(admin') < routeSource.indexOf('if (!response.ok)'));
+    assert.ok(routeSource.indexOf('recordModelCall(ctx.admin') < routeSource.indexOf('if (!outcome.result.ok)'));
   });
 });
 

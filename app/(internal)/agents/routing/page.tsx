@@ -196,9 +196,14 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
         title="Model routing & providers"
         description="What each category of agent optimises for, and which model it prefers. An admin override wins outright over the resolver's own preference."
         actions={
-          <Link href="/agents" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
-            Registry &amp; key vault
-          </Link>
+          <span className="flex items-center gap-4">
+            <Link href="/agents/routing-log" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
+              Routing log
+            </Link>
+            <Link href="/agents" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
+              Registry &amp; key vault
+            </Link>
+          </span>
         }
       />
 

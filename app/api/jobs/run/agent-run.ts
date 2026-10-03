@@ -16,15 +16,17 @@
  */
 
 import { AgentPolicyRefusal, loadAgentPolicy, recordAgentPolicyRefusal } from '@/lib/ai/agent-policy';
-import { routedModelFor } from '@/lib/ai/agent-routing';
+import { routedCandidatesFor } from '@/lib/ai/agent-routing';
+import { categoryForAgent } from '@/lib/ai/model-choice';
+import { runWithFallback, type Candidate } from '@/lib/ai/fallback';
 import { decideProjectAction, projectIdOf } from '@/lib/ai/policy-decision';
 import { resolveProvider } from '@/lib/ai/router';
 import { checkRunGates, raiseAlert, refuseIfOverBudget, type AgentBudgetRefusal, type AgentsPaused, type JobCancelled } from '@/lib/ai/run-gates';
-import type { AiMessage, AiToolSpec, AiUsage, StructuredResponse } from '@/lib/ai/types';
+import type { AiMessage, AiToolSpec, AiUsage, StructuredResponse, ToolCallResponse } from '@/lib/ai/types';
 import type { createAdminClient } from '@/lib/db/admin';
 import type { Json } from '@/lib/db/types';
 import { settlementFor } from '@/lib/jobs/retry';
-import type { Result } from '@/lib/result';
+import { err, type Result } from '@/lib/result';
 
 export type Admin = ReturnType<typeof createAdminClient>;
 
@@ -278,6 +280,8 @@ export async function recordModelCall(
     };
     result: Result<StructuredResponse>;
     latencyMs: number;
+    /** Set only on a fallback attempt: which attempt this was and the model whose failure led to it. */
+    routing?: { attempt: number; fallbackOf: string | null };
   },
 ): Promise<number> {
   if (!args.runId) return 0;
@@ -299,6 +303,7 @@ export async function recordModelCall(
         schema: args.request.schemaName,
         system: args.request.system,
         message_count: args.request.messages.length,
+        ...(args.routing ? { routing: args.routing } : {}),
       },
       response: args.result.ok
         ? // `json` is `unknown` at the port boundary because a provider's
@@ -416,49 +421,121 @@ export async function callModel(
     }
 > {
   // SCR-064: an owner's (agent, category) override, then the category policy,
-  // then the work class's fallback chain, are asked before the row's default
-  // — null means nothing but the default.
-  const routed = await routedModelFor(ctx.admin, ctx.job.organization_id, ctx.agent.key, ctx.workClass);
-  const provider = routed ? await resolveProvider(routed) : await resolveProvider(ctx.agent.default_model);
-
-  if (!provider.ok) {
-    return { ok: false, kind: 'no_provider', detail: provider.error.message, stepCount: 0 };
+  // then the work class's fallback chain, are asked before the row's default.
+  // Failure-time routing: if the model first chosen cannot serve the call
+  // (rate limit, 5xx, timeout, rejected key, missing model) the next candidate
+  // is tried — see fallback.ts for exactly when, and when never.
+  const plan = await modelPlanFor(ctx, { needsTools: false });
+  if (!plan.ok) {
+    return { ok: false, kind: 'no_provider', detail: plan.detail, stepCount: 0 };
   }
 
-  // Between steps, before the call: a cancel flag, the agents_paused switch,
-  // and the provider's monthly budget (SCR-065/068/064). Each throws; the
-  // tick catches exactly those classes and settles the job.
+  // Between steps, before the call: a cancel flag and the agents_paused switch
+  // (SCR-065/068). Each throws; the tick catches exactly those classes and
+  // settles the job. The provider budget is asked per attempt, below, because
+  // a fallback may be a different provider with a different cap.
   await checkRunGates(ctx.admin, { jobId: ctx.job.id, organizationId: ctx.job.organization_id, runId });
-  await refuseIfOverBudget(ctx.admin, { organizationId: ctx.job.organization_id, agentKey: ctx.agent.key, provider: provider.data.id, runId, model: routed ?? ctx.agent.default_model });
 
-  const request = {
-    model: routed ?? ctx.agent.default_model,
-    system: spec.systemPrompt,
-    messages: [...messages],
-    jsonSchema: spec.jsonSchema(),
-    schemaName: spec.schemaName,
-    effort: ctx.agent.default_effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max',
-  };
+  let seq = 0;
+  const outcome = await runWithFallback<StructuredResponse>({
+    candidates: plan.candidates,
+    sameVendorOnly: sameVendorOnly(ctx),
+    attempt: async (candidate, info) => {
+      await refuseIfOverBudget(ctx.admin, { organizationId: ctx.job.organization_id, agentKey: ctx.agent.key, provider: candidate.providerId, runId, model: candidate.model });
+      const provider = await resolveProvider(candidate.model);
+      if (!provider.ok) return { ok: false, error: provider.error };
 
-  const started = Date.now();
-  const response = await provider.data.generateStructured(request);
-  const latencyMs = Date.now() - started;
+      const request = {
+        model: candidate.model,
+        system: spec.systemPrompt,
+        messages: [...messages],
+        jsonSchema: spec.jsonSchema(),
+        schemaName: spec.schemaName,
+        effort: ctx.agent.default_effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max',
+      };
 
-  const stepCount = await recordModelCall(ctx.admin, {
-    organizationId: ctx.job.organization_id,
-    runId,
-    seq: 0,
-    providerId: provider.data.id,
-    request,
-    result: response,
-    latencyMs,
+      const started = Date.now();
+      const response = await provider.data.generateStructured(request);
+      const latencyMs = Date.now() - started;
+
+      seq = await recordModelCall(ctx.admin, {
+        organizationId: ctx.job.organization_id,
+        runId,
+        seq,
+        providerId: candidate.providerId,
+        request,
+        result: response,
+        latencyMs,
+        routing: info.index > 0 ? { attempt: info.index, fallbackOf: info.fallbackOf } : undefined,
+      });
+      return response;
+    },
   });
 
-  if (!response.ok) {
-    return { ok: false, kind: 'provider_error', detail: response.error.message, stepCount };
+  if (outcome.exhausted) await alertChainExhausted(ctx, outcome.attempts);
+
+  if (!outcome.result.ok) {
+    return { ok: false, kind: 'provider_error', detail: outcome.result.error.message, stepCount: seq };
   }
 
-  return { ok: true, json: response.data.json, usage: response.data.usage, stepCount };
+  return { ok: true, json: outcome.result.data.json, usage: outcome.result.data.usage, stepCount: seq };
+}
+
+/**
+ * The ordered models a run may use: the owner's routing (override → policy →
+ * work-class chain), each one a registered provider serves, then the agent's
+ * own default last. A tool-using run keeps only providers that can call tools.
+ * The list is empty only when nothing is servable, and then the first reason
+ * is the one reported — the same `no_provider` the runner always gave.
+ */
+async function modelPlanFor(
+  ctx: AgentContext,
+  options: { needsTools: boolean },
+): Promise<{ ok: true; candidates: Candidate[] } | { ok: false; detail: string }> {
+  const routed = await routedCandidatesFor(ctx.admin, ctx.job.organization_id, ctx.agent.key, ctx.workClass);
+  const models = routed.includes(ctx.agent.default_model) ? routed : [...routed, ctx.agent.default_model];
+
+  const candidates: Candidate[] = [];
+  let firstReason: string | null = null;
+  for (const model of models) {
+    const provider = await resolveProvider(model);
+    if (!provider.ok) {
+      firstReason ??= provider.error.message;
+      continue;
+    }
+    if (options.needsTools && !provider.data.generateWithTools) {
+      firstReason ??= `${provider.data.id} does not support tool calling.`;
+      continue;
+    }
+    candidates.push({ model, providerId: provider.data.id });
+  }
+
+  if (candidates.length === 0) return { ok: false, detail: firstReason ?? 'No AI provider is configured.' };
+  return { ok: true, candidates };
+}
+
+/**
+ * Money-bearing work switches vendor only by the owner's decision, never the
+ * router's: finance and upsell, and every quotation job (which prices work the
+ * owner then approves). For these the next candidate must be the same vendor.
+ */
+function sameVendorOnly(ctx: AgentContext): boolean {
+  return categoryForAgent(ctx.agent.key) === 'money' || ctx.job.kind.startsWith('quotation.');
+}
+
+async function alertChainExhausted(
+  ctx: AgentContext,
+  attempts: readonly { model: string; error: string | null }[],
+): Promise<void> {
+  await raiseAlert(ctx.admin, {
+    organizationId: ctx.job.organization_id,
+    source: 'router',
+    severity: 'warning',
+    summary: `Every model for ${ctx.agent.key} (${ctx.job.kind}) was unavailable: ${attempts
+      .map((a) => `${a.model} — ${(a.error ?? '').slice(0, 80)}`)
+      .join('; ')}`.slice(0, 480),
+    fingerprint: `router-exhausted:${ctx.agent.key}`,
+  });
 }
 
 /**
@@ -584,79 +661,89 @@ export async function callModelWithTools(
       stepCount: number;
     }
 > {
-  const routed = await routedModelFor(ctx.admin, ctx.job.organization_id, ctx.agent.key, ctx.workClass);
-  const provider = routed ? await resolveProvider(routed) : await resolveProvider(ctx.agent.default_model);
-  if (!provider.ok) {
-    return { ok: false, kind: 'no_provider', detail: provider.error.message, stepCount: 0 };
+  // Providers that cannot call tools are not candidates (stated in the reason
+  // when none can, rather than silently dropping to a structured call).
+  const plan = await modelPlanFor(ctx, { needsTools: true });
+  if (!plan.ok) {
+    return { ok: false, kind: 'no_provider', detail: plan.detail, stepCount: 0 };
   }
-  if (!provider.data.generateWithTools) {
-    // Stated rather than a silent fallback to `generateStructured`: a caller
-    // that asked for tools and got an answer with none attempted would not
-    // know the difference between "the model chose not to" and "this
-    // provider cannot".
-    return {
-      ok: false,
-      kind: 'no_provider',
-      detail: `${provider.data.id} does not support tool calling.`,
-      stepCount: 0,
-    };
-  }
+  let active: readonly Candidate[] = plan.candidates;
 
   const messages: AiMessage[] = [...initialMessages];
   let seq = 0;
   let usage: AiUsage = { inputTokens: 0, outputTokens: 0, costMinor: 0 };
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-    // Between steps, before each model turn: the cancel flag, the pause
-    // switch and the provider budget (SCR-065/068/064).
+    // Between steps, before each model turn: the cancel flag and the pause
+    // switch (SCR-065/068). The provider budget is asked per attempt.
     await checkRunGates(ctx.admin, { jobId: ctx.job.id, organizationId: ctx.job.organization_id, runId });
-    await refuseIfOverBudget(ctx.admin, { organizationId: ctx.job.organization_id, agentKey: ctx.agent.key, provider: provider.data.id, runId, model: routed ?? ctx.agent.default_model });
 
-    const request = {
-      model: routed ?? ctx.agent.default_model,
-      system: spec.systemPrompt,
-      messages,
-      tools,
-      ...(spec.jsonSchema ? { jsonSchema: spec.jsonSchema() } : {}),
-      effort: ctx.agent.default_effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max',
-    };
+    // Only the FIRST turn may change model. After it, tool results exist that
+    // the issuing model must see answered, so later turns are pinned to the
+    // model that served turn one (and fall back to nothing).
+    const outcome = await runWithFallback<ToolCallResponse>({
+      candidates: active,
+      sameVendorOnly: sameVendorOnly(ctx),
+      canSwitch: round === 0,
+      attempt: async (candidate, info) => {
+        await refuseIfOverBudget(ctx.admin, { organizationId: ctx.job.organization_id, agentKey: ctx.agent.key, provider: candidate.providerId, runId, model: candidate.model });
+        const provider = await resolveProvider(candidate.model);
+        if (!provider.ok) return { ok: false, error: provider.error };
+        if (!provider.data.generateWithTools) return err('PROVIDER_ERROR', `${provider.data.id} does not support tool calling.`);
 
-    const started = Date.now();
-    const response = await provider.data.generateWithTools(request);
-    const latencyMs = Date.now() - started;
+        const request = {
+          model: candidate.model,
+          system: spec.systemPrompt,
+          messages,
+          tools,
+          ...(spec.jsonSchema ? { jsonSchema: spec.jsonSchema() } : {}),
+          effort: ctx.agent.default_effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max',
+        };
 
-    seq = await recordModelCall(ctx.admin, {
-      organizationId: ctx.job.organization_id,
-      runId,
-      seq,
-      providerId: provider.data.id,
-      request: {
-        model: request.model,
-        system: request.system,
-        messages: request.messages,
-        schemaName: spec.schemaName,
-        effort: String(request.effort ?? ''),
+        const started = Date.now();
+        const attempted = await provider.data.generateWithTools(request);
+        const latencyMs = Date.now() - started;
+
+        seq = await recordModelCall(ctx.admin, {
+          organizationId: ctx.job.organization_id,
+          runId,
+          seq,
+          providerId: candidate.providerId,
+          request: {
+            model: request.model,
+            system: request.system,
+            messages: request.messages,
+            schemaName: spec.schemaName,
+            effort: String(request.effort ?? ''),
+          },
+          // Adapted into `generateStructured`'s response shape so ONE recorder
+          // writes every model turn a run makes, tool-using or not: a
+          // `tool_calls` turn's "json" is the calls the model asked for, which is
+          // exactly what a reader of `ai.agent_steps` wants to see it did.
+          result: attempted.ok
+            ? {
+                ok: true,
+                data: {
+                  json: attempted.data.kind === 'tool_calls' ? { tool_calls: attempted.data.calls } : safeJsonParse(attempted.data.text),
+                  usage: attempted.data.usage,
+                  model: attempted.data.model,
+                },
+              }
+            : attempted,
+          latencyMs,
+          routing: info.index > 0 ? { attempt: info.index, fallbackOf: info.fallbackOf } : undefined,
+        });
+        return attempted;
       },
-      // Adapted into `generateStructured`'s response shape so ONE recorder
-      // writes every model turn a run makes, tool-using or not: a
-      // `tool_calls` turn's "json" is the calls the model asked for, which is
-      // exactly what a reader of `ai.agent_steps` wants to see it did.
-      result: response.ok
-        ? {
-            ok: true,
-            data: {
-              json: response.data.kind === 'tool_calls' ? { tool_calls: response.data.calls } : safeJsonParse(response.data.text),
-              usage: response.data.usage,
-              model: response.data.model,
-            },
-          }
-        : response,
-      latencyMs,
     });
 
-    if (!response.ok) {
-      return { ok: false, kind: 'provider_error', detail: response.error.message, stepCount: seq };
+    if (outcome.exhausted) await alertChainExhausted(ctx, outcome.attempts);
+
+    if (!outcome.result.ok) {
+      return { ok: false, kind: 'provider_error', detail: outcome.result.error.message, stepCount: seq };
     }
+    const response = outcome.result;
+    if (round === 0 && outcome.final) active = [outcome.final];
 
     usage = addUsage(usage, response.data.usage);
 

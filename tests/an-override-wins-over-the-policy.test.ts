@@ -104,24 +104,27 @@ describe('B. the runner consults the override before it resolves a provider', ()
   const agentRun = read('../app/api/jobs/run/agent-run.ts');
   const routing = read('../src/lib/ai/agent-routing.ts');
 
-  test('both model-call sites route first, then resolve, and the request carries the routed model', () => {
-    // Bucket F (F-F): the call carries the work class too, so the owner's
+  test('both model-call sites route first, then resolve, and the request carries the chosen candidate', () => {
+    // Bucket F (F-F): the lookup carries the work class too, so the owner's
     // fallback chain for that class is consulted after the override and policy.
-    const routed = agentRun.match(/routedModelFor\(ctx\.admin, ctx\.job\.organization_id, ctx\.agent\.key(?:, ctx\.workClass)?\)/g) ?? [];
-    assert.equal(routed.length, 2, 'callModel and callModelWithTools both route');
-    // anchored at the start of a line: the request body, not the per-model budget argument that also names the routed model
-    const requests = agentRun.match(/^\s+model: routed \?\? ctx\.agent\.default_model,/gm) ?? [];
-    assert.equal(requests.length, 2, 'both requests carry the routed model, or the default');
-    // The default path is untouched: a tenant that set nothing resolves the
-    // default exactly as before, and the dispatch tests still find it.
-    assert.match(agentRun, /routed \? await resolveProvider\(routed\) : await resolveProvider\(ctx\.agent\.default_model\)/);
-    assert.ok(agentRun.indexOf('routedModelFor(') < agentRun.indexOf('resolveProvider(ctx.agent.default_model)'));
+    // Failure-time routing: one shared plan, asked by both call sites.
+    const routed = agentRun.match(/routedCandidatesFor\(ctx\.admin, ctx\.job\.organization_id, ctx\.agent\.key, ctx\.workClass\)/g) ?? [];
+    assert.equal(routed.length, 1, 'modelPlanFor asks the owner\'s routing once');
+    assert.equal((agentRun.match(/await modelPlanFor\(ctx, \{/g) ?? []).length, 2, 'callModel and callModelWithTools both route');
+    // anchored at the start of a line: the request body, not the per-attempt budget argument
+    const requests = agentRun.match(/^\s+model: candidate\.model,/gm) ?? [];
+    assert.equal(requests.length, 2, 'both requests carry the candidate being tried');
+    // The default is never dropped: it is the last candidate, so a tenant that
+    // set nothing resolves the default exactly as before.
+    assert.match(agentRun, /\[\.\.\.routed, ctx\.agent\.default_model\]/);
+    assert.ok(agentRun.indexOf('routedCandidatesFor(') < agentRun.indexOf('resolveProvider(model)'));
   });
 
   test('the runner-side lookup reads the override before the policy and excludes the default from its answer', () => {
     assert.ok(routing.indexOf("from('agent_routing_overrides')") < routing.indexOf("from('routing_policies')"));
     assert.match(routing, /agentDefault: ''/);
-    assert.match(routing, /return null/);
+    assert.match(routing, /return \[\]/);
+    assert.match(routing, /\)\[0\] \?\? null/);
     // Best effort: a routing read that fails must not fail the run.
     assert.match(routing, /catch \(error\)/);
   });

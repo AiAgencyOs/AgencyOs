@@ -635,7 +635,7 @@ describe('H. the loop: recording, bounding, and the round-trip', () => {
     // Pinned as source instead, the same way `read-failure-semantics.test.ts`
     // pins a rule that has no live path a unit test can reach.
     const source = readFileSync(fileURLToPath(new URL('../app/api/jobs/run/agent-run.ts', import.meta.url)), 'utf8');
-    assert.match(source, /if \(!provider\.data\.generateWithTools\) \{/);
+    assert.match(source, /options\.needsTools && !provider\.data\.generateWithTools/);
     assert.match(source, /does not support tool calling/);
   });
 });

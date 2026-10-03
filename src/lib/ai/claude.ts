@@ -16,6 +16,7 @@ import type {
   ToolUseRequest,
 } from './types';
 import { getProviderCredential } from './vault';
+import { providerUnavailable } from './failure';
 import { fromWireToolName, toWireToolName } from './tool-names';
 
 /**
@@ -182,7 +183,7 @@ export async function createClaudeProvider(): Promise<AiProvider | null> {
 
         return ok({ kind: 'final', text, usage, model: response.model });
       } catch (error) {
-        return err('PROVIDER_ERROR', describeProviderError(error));
+        return providerFailure(error);
       }
     },
 
@@ -252,7 +253,7 @@ export async function createClaudeProvider(): Promise<AiProvider | null> {
           },
         });
       } catch (error) {
-        return err('PROVIDER_ERROR', describeProviderError(error));
+        return providerFailure(error);
       }
     },
   };
@@ -309,6 +310,24 @@ function toContent(content: AiMessage['content']): Anthropic.MessageParam['conte
  * Nothing here reads or reflects the API key: the messages are constants, and
  * the SDK's own error text is never interpolated.
  */
+/**
+ * A caught SDK error as a `Result`, tagged `unavailable` when this key, model
+ * or vendor cannot serve the call (so the router may try another) and left
+ * untagged when the request itself was the problem (so it never does).
+ */
+function providerFailure(error: unknown): Result<never> {
+  const message = describeProviderError(error);
+  const unavailable =
+    error instanceof Anthropic.AuthenticationError ||
+    error instanceof Anthropic.PermissionDeniedError ||
+    error instanceof Anthropic.NotFoundError ||
+    error instanceof Anthropic.RateLimitError ||
+    error instanceof Anthropic.APIConnectionTimeoutError ||
+    error instanceof Anthropic.APIConnectionError ||
+    (error instanceof Anthropic.APIError && typeof error.status === 'number' && error.status >= 500);
+  return unavailable ? providerUnavailable(message) : err('PROVIDER_ERROR', message);
+}
+
 export function describeProviderError(error: unknown): string {
   if (error instanceof Anthropic.AuthenticationError) {
     return 'The configured Anthropic API key was rejected.';
