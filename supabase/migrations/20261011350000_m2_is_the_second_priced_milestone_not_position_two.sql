@@ -31,7 +31,7 @@ begin
       from projects.milestones m
       join finance.invoices i on i.milestone_id = m.id and i.status <> 'void'
      where m.project_id = p_project_id
-       and m.id = (select m2.id from projects.milestones m2 where m2.project_id = p_project_id and m2.payment_percent is not null order by m2.position, m2.created_at offset 1 limit 1)
+       and m.id = (select m2.id from projects.milestones m2 where m2.project_id = p_project_id and m2.amount_minor is not null order by m2.position, m2.created_at offset 1 limit 1)
        and i.organization_id = v_org
        and i.status = 'paid'
        and i.verified_minor >= i.total_minor
@@ -59,7 +59,7 @@ AS $function$
   from projects.milestones m
   left join finance.invoices i on i.milestone_id = m.id and i.status <> 'void'
   where m.project_id = p_project_id
-    and m.id = (select m2.id from projects.milestones m2 where m2.project_id = p_project_id and m2.payment_percent is not null order by m2.position, m2.created_at offset 1 limit 1)
+    and m.id = (select m2.id from projects.milestones m2 where m2.project_id = p_project_id and m2.amount_minor is not null order by m2.position, m2.created_at offset 1 limit 1)
   limit 1;
 $function$
 

@@ -25,7 +25,7 @@ export async function pricedMilestones(
     .select('id, position, created_at')
     .eq('project_id', scope.projectId)
     .eq('organization_id', scope.organizationId)
-    .not('payment_percent', 'is', null)
+    .not('amount_minor', 'is', null)
     .order('position', { ascending: true })
     .order('created_at', { ascending: true });
   if (error) return null;

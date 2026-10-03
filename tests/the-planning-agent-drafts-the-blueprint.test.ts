@@ -182,7 +182,7 @@ describe('the advance is the FIRST priced milestone, by order - never a position
 
   test('the two Phase 5 gates wait on the milestone the Phase 4 invoice bills (the second priced one)', () => {
     const sql = read('supabase/migrations/20261011350000_m2_is_the_second_priced_milestone_not_position_two.sql');
-    assert.equal((sql.match(/order by m2\.position, m2\.created_at offset 1 limit 1/g) ?? []).length, 2);
+    assert.equal((sql.match(/m2\.amount_minor is not null order by m2\.position, m2\.created_at offset 1 limit 1/g) ?? []).length, 2);
     assert.doesNotMatch(sql.replace(/^--.*$/gm, ''), /m\.position = 2/);
   });
 });

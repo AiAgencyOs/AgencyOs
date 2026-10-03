@@ -346,7 +346,7 @@ async function nthPricedMilestone(
     .select('id, name, position, status, payment_percent, amount_minor, currency, due_on')
     .eq('project_id', scope.projectId)
     .eq('organization_id', scope.organizationId)
-    .not('payment_percent', 'is', null)
+    .not('amount_minor', 'is', null)
     .order('position', { ascending: true })
     .order('created_at', { ascending: true });
   return { data: error ? null : (data ?? [])[ordinal - 1] ?? null, error };
