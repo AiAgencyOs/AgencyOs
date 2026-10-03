@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { providerUnavailable } from './failure';
 import { err, ok, type Result } from '@/lib/result';
 
 import { MAX_RETRIES, REQUEST_TIMEOUT_MS, retryBackoffWorstCaseMs } from './budget';
@@ -106,20 +107,20 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Ai
     return safe === '' ? null : safe.slice(0, DETAIL_LIMIT);
   };
 
-  const describeStatus = (status: number, raw: string): { message: string; retry: boolean } => {
+  const describeStatus = (status: number, raw: string): { message: string; retry: boolean; unavailable: boolean } => {
     const detail = detailOf(raw);
     switch (status) {
       case 401:
-        return { message: `The configured ${config.name} API key was rejected.`, retry: false };
+        return { message: `The configured ${config.name} API key was rejected.`, retry: false, unavailable: true };
       case 403:
-        return { message: `The configured ${config.name} API key may not use this model.`, retry: false };
+        return { message: `The configured ${config.name} API key may not use this model.`, retry: false, unavailable: true };
       case 404:
-        return { message: 'The configured model does not exist. Check ai.agents.default_model.', retry: false };
+        return { message: 'The configured model does not exist. Check ai.agents.default_model.', retry: false, unavailable: true };
       case 429:
-        return { message: `Rate limited by ${config.name}. The job will be retried.`, retry: true };
+        return { message: `Rate limited by ${config.name}. The job will be retried.`, retry: true, unavailable: true };
       default:
-        if (status >= 500) return { message: `${config.name} returned ${status}. The job will be retried.`, retry: true };
-        return { message: detail ? `${config.name} returned ${status}: ${detail}` : `${config.name} returned ${status}.`, retry: false };
+        if (status >= 500) return { message: `${config.name} returned ${status}. The job will be retried.`, retry: true, unavailable: true };
+        return { message: detail ? `${config.name} returned ${status}: ${detail}` : `${config.name} returned ${status}.`, retry: false, unavailable: false };
     }
   };
 
@@ -147,14 +148,16 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Ai
         if (attempt > 0) await sleep(retryBackoffWorstCaseMs(attempt) - retryBackoffWorstCaseMs(attempt - 1));
         const outcome = await once(body);
         if (outcome.kind === 'ok') return ok(outcome.response);
-        last = err('PROVIDER_ERROR', outcome.message);
+        last = outcome.unavailable ? providerUnavailable(outcome.message) : err('PROVIDER_ERROR', outcome.message);
         if (!outcome.retry) return last;
       }
       return last;
     },
   };
 
-  type Once = { kind: 'ok'; response: StructuredResponse } | { kind: 'fail'; message: string; retry: boolean };
+  type Once =
+    | { kind: 'ok'; response: StructuredResponse }
+    | { kind: 'fail'; message: string; retry: boolean; unavailable?: boolean };
 
   async function once(body: Record<string, unknown>): Promise<Once> {
     // The body read is inside the try as well: the timeout covers streaming,
@@ -181,6 +184,7 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Ai
       return {
         kind: 'fail',
         retry: true,
+        unavailable: true,
         message: timedOut
           ? `The model did not respond within ${Math.round(REQUEST_TIMEOUT_MS / 1000)}s. The job will be retried.`
           : `Could not reach ${config.name}.`,
@@ -192,8 +196,8 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Ai
         // Redact before truncating: a key straddling the cut would leave its prefix.
         JSON.stringify({ level: 'error', scope: `${config.id}.chat`, status: response.status, detail: redact(raw).slice(0, 500) }),
       );
-      const { message, retry } = describeStatus(response.status, raw);
-      return { kind: 'fail', message, retry };
+      const { message, retry, unavailable } = describeStatus(response.status, raw);
+      return { kind: 'fail', message, retry, unavailable };
     }
 
     let parsed: Completion;

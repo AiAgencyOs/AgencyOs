@@ -188,7 +188,9 @@ describe('D. the runner asks — structurally', () => {
   const route = codeOnly(read('app/api/jobs/run/route.ts'));
 
   test('the routed model is asked with the work class, so the chain for that class is consulted', () => {
-    assert.equal((agentRun.match(/routedModelFor\(ctx\.admin, ctx\.job\.organization_id, ctx\.agent\.key, ctx\.workClass\)/g) ?? []).length, 2);
+    // One lookup, shared: both model-call sites go through modelPlanFor, which asks it.
+    assert.equal((agentRun.match(/routedCandidatesFor\(ctx\.admin, ctx\.job\.organization_id, ctx\.agent\.key, ctx\.workClass\)/g) ?? []).length, 1);
+    assert.equal((agentRun.match(/await modelPlanFor\(ctx, \{/g) ?? []).length, 2);
     const routing = codeOnly(read('src/lib/ai/agent-routing.ts'));
     assert.match(routing, /\.from\('fallback_chains'\)/);
     assert.match(routing, /fallbackChain: chainRead\.data\?\.model_ids \?\? \[\]/);

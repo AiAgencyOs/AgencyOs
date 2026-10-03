@@ -28,15 +28,15 @@ import { categoryForAgent, orderModelCandidates } from './model-choice';
  * unreadable for a moment — the default model is the honest fallback, and
  * `ai.agent_runs.model` records which one actually ran.
  */
-export async function routedModelFor(
+export async function routedCandidatesFor(
   admin: ReturnType<typeof createAdminClient>,
   organizationId: string,
   agentKey: string,
   /** ADM-61 class of the work, so the owner's fallback chain for it is consulted (decision 2026-09-30). */
   workClass?: string,
-): Promise<string | null> {
+): Promise<string[]> {
   const category = categoryForAgent(agentKey);
-  if (!category && !workClass) return null;
+  if (!category && !workClass) return [];
 
   try {
     const [overrideRead, policyRead, chainRead] = await Promise.all([
@@ -77,10 +77,13 @@ export async function routedModelFor(
       agentDefault: '',
     });
 
+    // Every candidate a registered provider serves, in the owner's order. A
+    // model no provider serves is skipped here, as it always was.
+    const served: string[] = [];
     for (const candidate of candidates) {
-      if ((await resolveProvider(candidate.model)).ok) return candidate.model;
+      if ((await resolveProvider(candidate.model)).ok) served.push(candidate.model);
     }
-    return null;
+    return served;
   } catch (error) {
     console.error(
       JSON.stringify({
@@ -90,6 +93,16 @@ export async function routedModelFor(
         detail: error instanceof Error ? error.message : String(error),
       }),
     );
-    return null;
+    return [];
   }
+}
+
+/** The first routed model, or null when nothing but the default applies — the original contract. */
+export async function routedModelFor(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  agentKey: string,
+  workClass?: string,
+): Promise<string | null> {
+  return (await routedCandidatesFor(admin, organizationId, agentKey, workClass))[0] ?? null;
 }
