@@ -1343,6 +1343,17 @@ export const conversationEscalatedEventSchema = z
 
 export type ConversationEscalatedEvent = z.infer<typeof conversationEscalatedEventSchema>;
 
+/** `conversation.client_waiting`: a client wrote while the thread waits for a person. */
+export const conversationClientWaitingEventSchema = z
+  .object({
+    conversation_id: z.uuid(),
+    seq: z.number().int().nonnegative(),
+    pausedAt: z.string().min(10),
+  })
+  .strip();
+
+export type ConversationClientWaitingEvent = z.infer<typeof conversationClientWaitingEventSchema>;
+
 /**
  * What the internal group is told when a conversation is waiting.
  *

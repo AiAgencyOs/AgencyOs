@@ -110,6 +110,8 @@ describe('C. the summariser costs nothing when there is nothing to do', () => {
       'sales:readQualification',
       'sales:summariseThread',
       'sales:readMeetingRequest',
+      // the fifth, a clear no / not-yet (owner decision 2026-10-03)
+      'sales:readLeadOutcome',
     ]);
     assert.equal(HANDLER_JOB_KIND['sales:summariseThread'], 'conversation.summarise');
   });
