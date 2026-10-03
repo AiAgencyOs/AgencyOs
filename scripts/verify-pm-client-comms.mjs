@@ -226,8 +226,9 @@ try {
   const gotAck = await tickUntil(async () => texts(c.phone).some((t) => /received your payment details/.test(t)));
   check(Boolean(gotAck), '"we have received your payment details" reaches the client when proof is submitted');
 
-  // The advance is verified by a PERSON (here the door the Admin's button calls,
-  // with a real user): the PM only reports what that person decided.
+  // An Admin CHECKS the claim (the claims queue's Confirm). That records that somebody looked; it is not the
+  // money (Doc 15 §12, G-272), so the client is NOT told "advance verified" - it would be a promise the system
+  // does not hold, because the project still cannot move.
   const authUser = await fetch(`${URL_BASE}/auth/v1/admin/users`, {
     method: 'POST',
     headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
@@ -237,12 +238,22 @@ try {
   const adminId = authUser?.id;
   if (!adminId) fail('could not create the verifying admin');
   await rest('POST', 'core', 'memberships', { organization_id: ORG, user_id: adminId, role: 'owner', status: 'active' });
-  const decided = one(await rpc('finance', 'verify_payment_submission', {
+  const checked = one(await rpc('finance', 'verify_payment_submission', {
     p_submission_id: submission.id, p_verified_by: adminId, p_evidence: 'bank statement line 12', p_approve: true,
   }));
-  check(Boolean(decided), 'an admin verifies the advance', JSON.stringify(decided).slice(0, 80));
+  check(checked?.outcome === 'verified', 'an admin checks the claim', JSON.stringify(checked).slice(0, 60));
+  for (let i = 0; i < 8; i += 1) await tick();
+  check(!texts(c.phone).some((t) => /advance payment has been verified/.test(t)), 'a CHECKED claim is not announced as the verified advance - the money is not confirmed yet');
+
+  // The money: the payment is recorded and a PERSON confirms it - which pays the invoice and publishes invoice.paid.
+  const money = one(await rpc('finance', 'record_manual_payment', {
+    p_invoice_id: invoice.id, p_provider_payment_id: `${MARKER}-utr-money`, p_amount_minor: 3000000,
+    p_captured_at: new Date().toISOString(), p_method: 'bank_transfer',
+  }));
+  const confirmed = one(await rpc('finance', 'verify_payment', { p_payment_id: money?.payment_id, p_verified_by: adminId }));
+  check(confirmed?.outcome === 'verified', 'the payment is confirmed by a person', String(confirmed?.outcome));
   const gotAdvance = await tickUntil(async () => texts(c.phone).some((t) => /advance payment has been verified/.test(t)));
-  check(Boolean(gotAdvance), 'the client is told the ADVANCE is verified (milestone 1), in words and with no amount');
+  check(Boolean(gotAdvance), 'NOW the client is told the ADVANCE is verified (milestone 1), in words and with no amount');
   check(texts(c.phone).filter((t) => /advance payment has been verified/.test(t)).length === 1, 'and told once');
 
   const rejected = one(await rest('POST', 'finance', 'payment_submissions', {

@@ -3,6 +3,7 @@ import 'server-only';
 import type { createAdminClient } from '@/lib/db/admin';
 import { sendSystemText, type SystemTextResult } from '@/modules/crm/system-message';
 
+import { isAdvanceMilestone } from './advance-milestone';
 import type { HandlerResult } from './handlers';
 import {
   pmAdvanceVerified,
@@ -258,64 +259,74 @@ export async function handleAskGstDetails(admin: Admin, job: PmCommsJob): Promis
 // ── 3. payment status ───────────────────────────────────────────────────────
 
 /**
- * `payment.submitted | verified | rejected | mismatched` → tell the client
- * where their payment stands. The subject is the payment submission; the
- * project is read through its invoice, org-scoped, never from the payload.
+ * `payment.submitted | rejected | mismatched | invoice.paid` → tell the client
+ * where their payment stands.
  *
- * It states the OUTCOME a person already decided. It verifies nothing.
+ * Two different facts, and the words follow them:
+ *
+ *   • a CLAIM (proof the client sent) was received, rejected, or did not match -
+ *     the subject is the payment submission, and a person already decided;
+ *   • the MONEY was verified and the invoice is paid - the subject is the
+ *     invoice, and only THAT is "your advance is verified". A claim an Admin has
+ *     merely checked is not the money (Doc 15 §12, G-272: verifying is not
+ *     paying), so `payment.verified` on a claim says nothing to the client: telling
+ *     them the advance was verified while the project still cannot move would be
+ *     this system promising what it does not hold.
+ *
+ * The project is read through the invoice, org-scoped, never from the payload.
+ * It states an outcome somebody decided; it verifies nothing.
  */
 export async function handlePaymentUpdate(admin: Admin, job: PmCommsJob): Promise<HandlerResult> {
-  const submissionId = subjectOf(job);
+  const subjectId = subjectOf(job);
   const eventType = job.payload?.eventType;
-  if (!submissionId) return { status: 'failed', permanent: true, detail: 'the event named no payment' };
-  if (!['payment.submitted', 'payment.verified', 'payment.rejected', 'payment.mismatched'].includes(eventType ?? '')) {
+  if (!subjectId) return { status: 'failed', permanent: true, detail: 'the event named no payment' };
+  if (!['payment.submitted', 'payment.rejected', 'payment.mismatched', 'invoice.paid'].includes(eventType ?? '')) {
     return { status: 'failed', permanent: true, detail: `not a payment status event: ${eventType ?? 'none'}` };
   }
 
-  const { data: submission, error } = await admin
-    .schema('finance')
-    .from('payment_submissions')
-    .select('id, invoice_id, status')
-    .eq('id', submissionId)
-    .eq('organization_id', job.organization_id)
-    .maybeSingle();
-  if (error) return { status: 'failed', permanent: false, detail: `could not read the payment: ${error.message}` };
-  if (!submission) return { status: 'succeeded', outcome: 'gone', detail: 'the payment no longer exists' };
+  let invoiceId: string;
+  if (eventType === 'invoice.paid') {
+    invoiceId = subjectId;
+  } else {
+    const { data: submission, error } = await admin
+      .schema('finance')
+      .from('payment_submissions')
+      .select('id, invoice_id, status')
+      .eq('id', subjectId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+    if (error) return { status: 'failed', permanent: false, detail: `could not read the payment: ${error.message}` };
+    if (!submission) return { status: 'succeeded', outcome: 'gone', detail: 'the payment no longer exists' };
+
+    // The state at the time of the job, not at the time of the event: a claim
+    // answered and then answered differently must not be congratulated.
+    const expected: Record<string, string> = {
+      'payment.rejected': 'rejected',
+      'payment.mismatched': 'mismatch',
+    };
+    if (eventType !== 'payment.submitted' && submission.status !== expected[eventType!]) {
+      return { status: 'succeeded', outcome: 'superseded', detail: `the claim is now ${submission.status}; this update is stale` };
+    }
+    invoiceId = submission.invoice_id;
+  }
 
   const { data: invoice, error: invoiceError } = await admin
     .schema('finance')
     .from('invoices')
-    .select('id, number, project_id, milestone_id')
-    .eq('id', submission.invoice_id)
+    .select('id, number, project_id, milestone_id, status')
+    .eq('id', invoiceId)
     .eq('organization_id', job.organization_id)
     .maybeSingle();
   if (invoiceError) return { status: 'failed', permanent: false, detail: `could not read the invoice: ${invoiceError.message}` };
   if (!invoice?.project_id) return { status: 'succeeded', outcome: 'no_project', detail: 'this invoice belongs to no project' };
-
-  // The state at the time of the job, not at the time of the event: a payment
-  // verified and then reversed must not be congratulated.
-  const expected: Record<string, string> = {
-    'payment.submitted': 'pending_verification',
-    'payment.verified': 'verified',
-    'payment.rejected': 'rejected',
-    'payment.mismatched': 'mismatch',
-  };
-  if (submission.status !== expected[eventType!] && eventType !== 'payment.submitted') {
-    return { status: 'succeeded', outcome: 'superseded', detail: `the payment is now ${submission.status}; this update is stale` };
+  if (eventType === 'invoice.paid' && invoice.status !== 'paid') {
+    return { status: 'succeeded', outcome: 'superseded', detail: `the invoice is now ${invoice.status}; not congratulating` };
   }
 
-  let isAdvance = false;
-  if (invoice.milestone_id) {
-    const { data: milestone } = await admin
-      .schema('projects')
-      .from('milestones')
-      .select('position')
-      .eq('id', invoice.milestone_id)
-      .eq('organization_id', job.organization_id)
-      .maybeSingle();
-    // The locked 30/20/30/20 plan numbers its milestones 1-4 (payment-structure.ts); the advance is position 1.
-    isAdvance = milestone?.position === 1;
-  }
+  // The advance is the FIRST priced milestone of the plan - by order, not by a position number (advance-milestone.ts).
+  const isAdvance = invoice.milestone_id
+    ? (await isAdvanceMilestone(admin, { organizationId: job.organization_id, projectId: invoice.project_id, milestoneId: invoice.milestone_id })) === true
+    : false;
 
   const ctx = await loadContext(admin, job.organization_id, invoice.project_id);
   if (ctx === 'unreadable') return { status: 'failed', permanent: false, detail: 'could not read the project' };
@@ -325,7 +336,7 @@ export async function handlePaymentUpdate(admin: Admin, job: PmCommsJob): Promis
   const body =
     eventType === 'payment.submitted'
       ? pmPaymentReceived(ctx.language)
-      : eventType === 'payment.verified'
+      : eventType === 'invoice.paid'
         ? isAdvance
           ? pmAdvanceVerified(ctx.language)
           : pmPaymentVerified(ctx.language, invoice.number)
@@ -333,12 +344,12 @@ export async function handlePaymentUpdate(admin: Admin, job: PmCommsJob): Promis
 
   return settle([
     {
-      label: eventType!.replace('payment.', 'payment '),
+      label: eventType!.replace(/^(payment|invoice)\./, '$1 '),
       result: await sendSystemText(admin as never, {
         organizationId: job.organization_id,
         conversationId: ctx.conversationId,
         body,
-        ref: `pm:payment:${eventType}:${submissionId}`,
+        ref: `pm:payment:${eventType}:${subjectId}`,
       }),
     },
   ]);

@@ -29,6 +29,7 @@ export const HANDLERS = [
   'projects:completePhaseFourOnPrototypeApproval',
   'finance:generateM1Invoice',
   'finance:deliverIssuedInvoice',
+  'finance:raiseFreeMaintenance',
   'project_planning:draftBlueprint',
   'projects:askClarification',
   'projects:readClarificationAnswer',
@@ -104,7 +105,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   // than trusted from the payload, filtered to M2 (position 2) inside the
   // handler — this is not a second gate, only a second listener on one.
   // Phase 2 Planning §2: the advance verified opens planning. The agent itself decides whether this invoice IS the advance.
-  'invoice.paid': ['projects:unlockNextMilestone', 'crm:announceM2PaymentVerified', 'project_planning:draftBlueprint'],
+  'invoice.paid': ['projects:unlockNextMilestone', 'crm:announceM2PaymentVerified', 'project_planning:draftBlueprint', 'projects:updateClientOnPayment'],
   'project.planning_requested': ['project_planning:draftBlueprint'],
   /** Planning §10: the planner's question goes to the client through the PM, one at a time. */
   'project.clarification_required': ['projects:askClarification'],
@@ -139,7 +140,6 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   'project.billing_mode_confirmed': ['finance:generateM1Invoice', 'projects:askGstDetails'],
   /** Phase 2 PM §6 PM-08: where the client's payment stands, said to the client. */
   'payment.submitted': ['projects:updateClientOnPayment'],
-  'payment.verified': ['projects:updateClientOnPayment'],
   'payment.rejected': ['projects:updateClientOnPayment'],
   'payment.mismatched': ['projects:updateClientOnPayment'],
   /** Phase 2 Finance §4.5 — the issued bill reaches the client's email and the project group. */
@@ -310,7 +310,10 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * fifteen.
    */
   'handover.preparing': ['handover:draftPackage'],
-  'handover.accepted': ['customer_success:draftCheckIn'],
+  // Finance §9: Phase 7 complete → the free-maintenance ₹0 document, if maintenance was included free.
+  'handover.accepted': ['customer_success:draftCheckIn', 'finance:raiseFreeMaintenance'],
+  // ...and once raised it is delivered like any invoice.
+  'maintenance.free_invoice_issued': ['finance:deliverIssuedInvoice'],
   /**
    * Doc 08 §12. The first step of answering a lead, and the only step of it
    * that reaches nobody: naming what a client's message means is internal
@@ -612,6 +615,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:completePhaseFourOnPrototypeApproval': 'phase_four.complete',
   'finance:generateM1Invoice': 'invoice.generate_m1',
   'finance:deliverIssuedInvoice': 'invoice.deliver',
+  'finance:raiseFreeMaintenance': 'invoice.free_maintenance',
   'project_planning:draftBlueprint': 'planning.blueprint',
   'projects:askClarification': 'pm.clarify',
   'projects:readClarificationAnswer': 'pm.clarification_answer',

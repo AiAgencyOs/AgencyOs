@@ -142,20 +142,48 @@ describe('assembling what the door writes', () => {
   });
 });
 
-describe('the advance is position 1, as the locked plan installs it', () => {
-  // Found by reading: the first draft of the planner and of the PM's payment
-  // messages treated position 0 as the advance, while payment-structure.ts has
-  // always numbered the four milestones 1-4 - so in production neither would
-  // ever have recognised the advance.
-  test('the locked structure numbers its milestones 1-4, and each gate lands in the phase that completes it', () => {
-    assert.deepEqual(LOCKED_PAYMENT_STRUCTURE.map((m) => m.position), [1, 2, 3, 4]);
-    assert.deepEqual(LOCKED_PAYMENT_STRUCTURE.map((m) => financeGatePhase(m.position)), ['phase_2', 'phase_4', 'phase_5', 'phase_6']);
+describe('the advance is the FIRST priced milestone, by order - never a position number', () => {
+  // Found by driving the whole flow: the installer numbers a plan from 0, and
+  // the first drafts of the planner, the PM's payment messages AND the M1-M4
+  // invoice generators each assumed a different base - so the "M1" invoice was
+  // raised for the SECOND milestone (20%). M1 means "first", whatever the
+  // writer numbered it.
+  test('the locked structure has four milestones in the order M1..M4, and each gate lands in the phase that completes it', () => {
+    assert.deepEqual(LOCKED_PAYMENT_STRUCTURE.map((m) => m.key), ['M1', 'M2', 'M3', 'M4']);
+    assert.deepEqual([1, 2, 3, 4].map(financeGatePhase), ['phase_2', 'phase_4', 'phase_5', 'phase_6']);
   });
 
-  test('both consumers read the advance as position 1', () => {
+  test('gates are mapped by the milestone\'s place in the plan, whatever position numbers it carries', () => {
+    for (const base of [0, 1, 7]) {
+      const plan = payments.map((p, i) => ({ ...p, position: base + i }));
+      const r = assembleBlueprint(draft(), { includedItems: items, paymentMilestones: [...plan].reverse() });
+      assert.ok(r.ok);
+      if (!r.ok) continue;
+      const gates = (r.blueprint as { milestones: Array<{ kind: string; phase: string; paymentMilestoneId?: string }> }).milestones.filter((m) => m.kind === 'finance_gate');
+      assert.deepEqual(gates.map((g) => g.phase), ['phase_2', 'phase_4', 'phase_5', 'phase_6'], `base ${base}`);
+      assert.deepEqual(gates.map((g) => g.paymentMilestoneId), ['pm-0', 'pm-1', 'pm-2', 'pm-3'], `base ${base}`);
+    }
+  });
+
+  test('both consumers ask "is this the first priced milestone" and never compare a position number', () => {
     const comms = read('src/modules/projects/pm-client-comms.ts');
-    assert.match(comms, /isAdvance = milestone\?\.position === 1;/);
-    assert.match(read('app/api/jobs/run/workflows.ts'), /milestone\?\.position !== 1\) return settle\('a later milestone, not the advance'\)/);
+    assert.match(comms, /isAdvanceMilestone\(admin,/);
+    const wf = read('app/api/jobs/run/workflows.ts');
+    const at = wf.indexOf('const PLANNING_BLUEPRINT');
+    assert.match(wf.slice(at, at + 4000), /isAdvanceMilestone\(admin,/);
+    assert.doesNotMatch(wf.slice(at, wf.indexOf('export const AGENT_WORKFLOWS')), /position !== [0-9]/);
+  });
+
+  test('the M1-M4 generators pick by ordinal, not by a stored position', () => {
+    const svc = read('src/modules/finance/service.ts');
+    assert.doesNotMatch(svc, /\.eq\('position', /);
+    assert.equal((svc.match(/nthPricedMilestone\(admin, scope, /g) ?? []).length, 3);
+  });
+
+  test('the two Phase 5 gates wait on the milestone the Phase 4 invoice bills (the second priced one)', () => {
+    const sql = read('supabase/migrations/20261011350000_m2_is_the_second_priced_milestone_not_position_two.sql');
+    assert.equal((sql.match(/order by m2\.position, m2\.created_at offset 1 limit 1/g) ?? []).length, 2);
+    assert.doesNotMatch(sql.replace(/^--.*$/gm, ''), /m\.position = 2/);
   });
 });
 
@@ -173,7 +201,7 @@ describe('what is wired, and what it must not do', () => {
   });
 
   test('only the advance opens planning, and an existing plan is never replaced', () => {
-    assert.match(code, /milestone\?\.position !== 1/);
+    assert.match(code, /if \(!advance\) return settle\('a later milestone, not the advance'\)/);
     assert.match(code, /the project already has a plan/);
   });
 

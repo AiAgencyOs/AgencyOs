@@ -387,6 +387,22 @@ try {
   const held = await tickUntil(async () => (await rest('GET', 'core', `alerts?summary=ilike.*held back*&select=id,summary`)).json?.some((a) => a.summary.includes(h.name)));
   check(Boolean(held), 'but the question is HELD for a person, not sent');
   check(textsTo(h.phone).length === 0, 'and the client received nothing');
+
+  // ── 7. the phase says what it is waiting for ──────────────────────────────
+  section('7. Phase 2\'s state follows the facts (Master §9)');
+  const i1 = await plant('i');
+  modes.set(i1.name, 'good');
+  const stateOf = async () => (await rest('GET', 'projects', `phase_two?project_id=eq.${i1.project.id}&select=state`)).json?.[0]?.state;
+  const sawClient = await tickUntil(async () => (await stateOf()) === 'waiting_client', 10);
+  check(Boolean(sawClient), 'no billing mode yet: it reads WAITING CLIENT', String(await stateOf()));
+  await rest('POST', 'finance', 'billing_profiles', { organization_id: ORG, project_id: i1.project.id, client_account_id: i1.client.id, version: 1, status: 'active', mode: 'non_gst', source: 'internal' });
+  const sawFinance = await tickUntil(async () => (await stateOf()) === 'waiting_finance', 10);
+  check(Boolean(sawFinance), 'billing confirmed, advance unverified: WAITING FINANCE', String(await stateOf()));
+  await advanceVerified(i1, 1);
+  const sawPlanning = await tickUntil(async () => (await stateOf()) === 'waiting_planning', 15);
+  check(Boolean(sawPlanning), 'advance verified, plan not yet active: WAITING PLANNING', String(await stateOf()));
+  const audits = (await rest('GET', 'audit', `audit_log?subject_id=eq.${i1.project.id}&action=eq.project.phase_two_state_changed&select=before,after`)).json ?? [];
+  check(audits.length >= 3 && audits.some((a) => a.after?.state === 'waiting_planning'), 'each change is audited with before and after', `${audits.length}`);
 } catch (e) {
   console.error(e);
   failures += 1;

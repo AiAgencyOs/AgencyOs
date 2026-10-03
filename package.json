@@ -131,6 +131,8 @@
     "db:verify:invdelivery": "node scripts/verify-invoice-delivery.mjs",
     "db:verify:pmcomms": "node scripts/verify-pm-client-comms.mjs",
     "db:verify:planner": "node scripts/verify-planning-agent.mjs",
+    "db:verify:freemaint": "node scripts/verify-free-maintenance.mjs",
+    "db:verify:phase2": "node scripts/verify-phase-two-e2e.mjs",
     "db:verify:contracts": "node scripts/verify-contracts-and-lead-files.mjs",
     "db:verify:w2-projects": "node scripts/verify-w2-projects.mjs",
     "db:verify:trace-b": "node scripts/verify-trace-b.mjs",
