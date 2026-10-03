@@ -107,6 +107,18 @@ describe('C. the gates, every fact from the row', () => {
     assert.match(REWORK, /submitDraftedQuotation\(admin, draft\.proposal_id\)/);
   });
 
+  test('an ask made while the owner is still deciding the last version is attached to it and reworked, not dropped', () => {
+    // Found live: v2 sent, v3 pending approval, client asked for more scope —
+    // the objection linked only sent/approved, so it named no quotation, no
+    // rework ran, and v3 was approved without the ask.
+    const OBJECTION_READ = region(WORKFLOWS, "const { data: live } = opportunity", "const { data: row, error: writeError }");
+    assert.match(OBJECTION_READ, /\.in\('status', \['sent', 'approved', 'pending_approval'\]\)/);
+    // The positive twin: the rework accepts that version as its base…
+    assert.match(REWORK, /proposal\.status !== 'sent' && proposal\.status !== 'pending_approval'/);
+    // …and a version that is none of those still is not the client's concern.
+    assert.match(REWORK, /the client is not holding it/);
+  });
+
   test('only the version the client is HOLDING is reworked — and approved is a wait, not a no', () => {
     assert.match(REWORK, /proposal\.status !== 'sent'/);
     assert.match(REWORK, /the client is not holding it/);

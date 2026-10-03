@@ -4157,7 +4157,13 @@ const OBJECTION_READ: AgentWorkflow = {
           .from('proposals')
           .select('id')
           .eq('opportunity_id', opportunity.id)
-          .in('status', ['sent', 'approved'])
+          // `pending_approval` counts: a client who asks for more scope while the
+          // owner is still deciding the version they last saw has asked about
+          // THAT version. Linking only sent/approved left the ask unattached,
+          // the rework never ran, and the owner approved a quotation that did
+          // not contain what the client had since asked for (found live,
+          // 2026-10-03: receptionist role, iOS and advanced admin dropped).
+          .in('status', ['sent', 'approved', 'pending_approval'])
           .order('version', { ascending: false })
           .limit(1)
       : { data: [] };
@@ -8224,7 +8230,11 @@ const QUOTATION_REWORK: AgentWorkflow = {
 
     // Only the version the client is HOLDING is reworked from their ask —
     // anything else means the loop is already turning somewhere else.
-    if (!supersedingOwnFailedDraft && proposal.status !== 'sent') {
+    // `pending_approval` is the version the ask is about when the client wrote
+    // while the owner was still deciding it. The rework supersedes it and
+    // submits the next version for the same decision; nothing reaches the
+    // client without the owner approving it.
+    if (!supersedingOwnFailedDraft && proposal.status !== 'sent' && proposal.status !== 'pending_approval') {
       await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
       return {
         status: 'succeeded',

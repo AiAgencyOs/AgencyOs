@@ -34,13 +34,14 @@ Caveat found while doing this: three verifiers (`quotedispatch`, `followup`, `wo
 | D-011 | P2 | With a meeting open, the scheduling job returned **without reading** the message, so "4 nahi 6 baje" and "cancel kar do" were silently dropped and nobody was told. | message is read; reschedule/cancel writes a lead-timeline note naming the meeting and what still stands (no automatic change, per §3.1) | both messages produced notes |
 | D-012 | P2 | On price pushback the agent handed over at once and promised "ek updated quotation taiyaar ho raha hai". | prompt: probe what is behind it, offer phasing (scope, not price), never promise a revision | aggressive-negotiator lead: asked what the rival quote includes; no discount, no advance waiver, no free feature |
 | D-013 | P1 | A quote follow-up draft said "colleague se baat ho gayi" — an event that never happened. | prompt: never state that something happened unless the thread shows it | **retest PENDING**: drafting only runs inside the Mon–Fri 10:00–19:00 window and today is Saturday |
+| D-014 | **P1** | O-1: a client scope change arriving while the owner was still deciding the last version attached to no quotation, so no rework ran and that version could be approved without it. | objection links `pending_approval` too; rework accepts it as its base (supersedes it, resubmits for approval; nothing reaches the client unapproved) | fresh lead PH1_TEST_021: v1 pending → client asks for doctor role, iOS, reports → v2 (₹1,25,000, 6 lines containing all three) pending, v1 superseded, one pending approval; regression test red-proved |
 | D-003/004 | P3 | eslint scanned agent worktrees (8,046 errors); roadmap record 2 tests stale. | ignores; record updated | green |
 
 ## 4. Open defects and gaps (not fixed)
 
 | ID | Sev | Gap |
 |---|---|---|
-| O-1 | **P1/P2** | **Scope change after a quote is parked.** Client asked for a receptionist role, iOS and an advanced admin panel; the objection was recorded (`feature`, round 6) but **no `quotation.rework` job was enqueued** because the version the client held (v2) had been superseded by a pending v3. The owner then approved v3, which was sent without those asks. |
+| O-1 | ~~P1/P2~~ **FIXED** | **Scope change after a quote was parked** (fixed, see D-014 below). Client asked for a receptionist role, iOS and an advanced admin panel; the objection was recorded (`feature`, round 6) but **no `quotation.rework` job was enqueued** because the version the client held (v2) had been superseded by a pending v3. The owner then approved v3, which was sent without those asks. |
 | O-2 | P2 | **Language.** Quotations are always English; the PDF font cannot render Devanagari (glyphs become `?`) and no prompt picks a quote language. The client-facing requirement summary is raw English in the third person ("Client owns a clothing shop…", "Client is not technical…") even for a Hinglish client. |
 | O-3 | P2 | **No automatic WON / LOST / NURTURE.** By design (closing is a human act), but every lead stayed `new` through full conversations, an explicit "I don't want to proceed" lead still has an active follow-up, and moving to nurture needs staff. A client saying "December" correctly stopped follow-ups only once a next-follow-up date was set by staff. |
 | O-4 | P2 | Agent replies show in the lead chat as **"Staff"** with no AI marker. |
@@ -88,4 +89,4 @@ Verified live: Leads (WhatsApp-style chat, requirements with versions, qualifica
 
 ## 8. Go-live gate
 
-Not met: O-1 (scope change after quote), Hindi/Devanagari quotes and client summary language, follow-up send + D-013 retest, scenarios 7/8/14A/10-lead concurrency, trust facts, router fallback/correlation, auto-lost/nurture decision. No P0 was observed. P1 items found live (D-005, D-006, D-007, D-009, D-013) are fixed except D-013, whose retest is pending; O-1 remains open.
+Not met: Hindi/Devanagari quotes and client summary language, follow-up send + D-013 retest, scenarios 7/8/14A/10-lead concurrency, trust facts, router fallback/correlation, auto-lost/nurture decision. No P0 was observed. P1 items found live (D-005, D-006, D-007, D-009, D-013) are fixed except D-013, whose retest is pending; O-1 remains open.
