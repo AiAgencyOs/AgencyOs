@@ -791,6 +791,11 @@ jobs:
           # extraction that script is waiting for.
           npm run db:verify:dispatch
 
+          # Phase 2 Finance §4.5: issuing an invoice delivers it to the project
+          # group with no further call; a failing provider leaves the channel
+          # visible and recovery sends exactly once. Runs a Graph stub on 54398.
+          npm run db:verify:invdelivery
+
           # PH1-CLS-002 and G-250. Doc 09 §33: a handoff is a real workflow
           # event, not a note. Wins a deal through the governed path, reads the
           # ai.handoffs row, the outbox row and the packet projection — and

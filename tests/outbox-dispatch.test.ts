@@ -110,8 +110,12 @@ describe('the subscription catalog', () => {
     assert.deepEqual(subscribersFor('invoice.paid'), ['projects:unlockNextMilestone', 'crm:announceM2PaymentVerified']);
   });
 
+  test('an issued invoice is delivered by exactly one handler (Phase 2 Finance §4.5)', () => {
+    assert.deepEqual(subscribersFor('invoice.issued'), ['finance:deliverIssuedInvoice']);
+  });
+
   test('an event nobody listens to has no subscribers', () => {
-    for (const type of ['invoice.issued', 'invoice.created', 'payment.recorded', 'nonsense']) {
+    for (const type of ['invoice.created', 'payment.recorded', 'nonsense']) {
       assert.deepEqual(subscribersFor(type), [], `${type} should have no subscriber yet`);
     }
   });
@@ -200,7 +204,7 @@ describe('planJobsForEvent', () => {
   });
 
   test('an unsubscribed event plans nothing', () => {
-    assert.deepEqual(planJobsForEvent({ ...invoicePaid, type: 'invoice.issued' }), []);
+    assert.deepEqual(planJobsForEvent({ ...invoicePaid, type: 'invoice.created' }), []);
   });
 
   test('planning twice yields identical jobs — replay changes nothing', () => {
