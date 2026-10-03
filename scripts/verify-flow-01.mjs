@@ -826,7 +826,18 @@ try {
     `outbox_events?type=eq.reply.due&subject_id=eq.${afterPause.id}&select=id`);
   check((dueAfter.json ?? []).length === 0, 'a message arriving after the handover asks for no reply', `${(dueAfter.json ?? []).length} event(s)`);
   for (let i = 0; i < 6; i += 1) await tick();
-  check(graphSends.length === sendsAtPause, 'and nothing further is sent to the client', `${graphSends.length - sendsAtPause} send(s)`);
+  // The ONE thing sent is the hand-over acknowledgement (the owner's decision:
+  // a client who writes while a person is awaited is told so, once). It is an
+  // acknowledgement, not an answer: no reply.due, and a further message gets
+  // no second one.
+  const acks = (await rest('GET', 'crm',
+    `conversation_messages?conversation_id=eq.${humanConv.id}&external_ref=like.handover-ack:*&select=id`)).json ?? [];
+  check(graphSends.length - sendsAtPause === 1 && acks.length === 1,
+    'the client is acknowledged once, and nothing is answered', `${graphSends.length - sendsAtPause} send(s), ${acks.length} acknowledgement(s)`);
+  const sendsAfterAck = graphSends.length;
+  await deliverAs(wamid('human.3'), 'Koi jawab nahi?');
+  for (let i = 0; i < 6; i += 1) await tick();
+  check(graphSends.length === sendsAfterAck, 'and a further message is not acknowledged again', `${graphSends.length - sendsAfterAck} send(s)`);
 
   // ── the half that was missing ────────────────────────────────────────────
   //
