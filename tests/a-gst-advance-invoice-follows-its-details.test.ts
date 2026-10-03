@@ -51,3 +51,22 @@ describe('Phase 2 starting moves the project to onboarding', () => {
     assert.match(sql, /return query select 'no_handoff'::text, null::uuid, null::uuid; return;/);
   });
 });
+
+describe('the kickoff gate says ready only when the kickoff can complete', () => {
+  const sql = read('supabase/migrations/20261011370000_the_kickoff_gate_reads_the_requirement_too.sql');
+
+  test('the accepted requirement (ADM-13) is read by the gate, so "ready" cannot be followed by a refusal', () => {
+    assert.match(sql, /if not coalesce\(v_start\.requirement_approved, false\) then v_unmet := v_unmet \|\| 'no_approved_requirement'::text; end if;/);
+  });
+
+  test('every earlier gate is carried forward, unchanged', () => {
+    for (const name of ['onboarding_incomplete', 'whatsapp_group_not_mapped', 'advance_not_verified', 'no_active_plan']) {
+      assert.match(sql, new RegExp(`v_unmet \\|\\| '${name}'::text`), name);
+    }
+  });
+
+  test('a missing requirement is Phase 1\'s, so the phase reads as waiting on staff', () => {
+    const states = read('supabase/migrations/20261011330000_phase_two_states_follow_the_facts.sql');
+    assert.match(states, /'no_approved_requirement' = any\(v_ready\.unmet\)\s+then 'waiting_admin'/);
+  });
+});

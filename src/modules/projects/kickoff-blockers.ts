@@ -6,10 +6,10 @@
  * reads, and they live in their own module with no database and no
  * `server-only` so a surface, a test or a job can all use the same words.
  *
- * Two of these names come from `projects.start_readiness` rather than from the
- * Phase 2 gate — ADM-13's conditions are not §5.10's, so a project can pass
- * the kickoff gate and still be refused ACTIVE. That difference is surfaced
- * rather than hidden, which is why their sentences are here too.
+ * `no_approved_requirement` is ADM-13's, not §5.10's, and the gate now reads it
+ * too: a project could pass the gate, have the kickoff SENT to the client, and
+ * still be refused ACTIVE for it (found by pressing the real button).
+ * `no_whatsapp_group` stays here for the door's own answer.
  */
 export const KICKOFF_BLOCKERS: Record<string, string> = {
   onboarding_incomplete: 'The onboarding checklist still has open items.',

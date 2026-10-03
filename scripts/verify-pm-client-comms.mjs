@@ -263,7 +263,8 @@ try {
   const gotNeeds = await tickUntil(async () => texts(c.phone).some((t) => /could not match the payment details/.test(t)));
   check(Boolean(gotNeeds), 'a rejected payment tells the client only that it could not be matched yet');
   check(texts(c.phone).every((t) => !/internal|statement|reference does not match/i.test(t)), 'and the staff\'s own reason never reaches the client');
-  check(texts(c.phone).every((t) => !/[₹$]|\bRs\b|30,000|3000000/.test(t)), 'and no amount appears in any payment message');
+  // The bill itself (the invoice delivery) names its amount, written by code; the PM's payment MESSAGES never do.
+  check(texts(c.phone).filter((t) => !/^Invoice /.test(t)).every((t) => !/[₹$]|\bRs\b|30,000|3000000/.test(t)), 'and no amount appears in any payment message');
 
   const cBefore = graphSends.length;
   await emit('payment.submitted', 'payment_submission', submission.id);

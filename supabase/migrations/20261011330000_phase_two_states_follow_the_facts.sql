@@ -14,6 +14,7 @@
 --
 --   no billing mode confirmed          -> waiting_client   (the GST / Non-GST answer)
 --   WhatsApp group not mapped          -> waiting_admin    (the manual group action)
+--   no accepted requirement            -> waiting_admin    (Phase 1's, for staff to repair)
 --   advance not verified               -> waiting_finance  (invoice out, payment unverified)
 --   no active plan                     -> waiting_planning (the blueprint)
 --   required onboarding items open     -> waiting_client
@@ -56,6 +57,7 @@ begin
     v_next := case
       when not v_billing                                           then 'waiting_client'
       when 'whatsapp_group_not_mapped' = any(v_ready.unmet)        then 'waiting_admin'
+      when 'no_approved_requirement' = any(v_ready.unmet)          then 'waiting_admin'
       when 'advance_not_verified' = any(v_ready.unmet)             then 'waiting_finance'
       when 'no_active_plan' = any(v_ready.unmet)                   then 'waiting_planning'
       when 'onboarding_incomplete' = any(v_ready.unmet)            then 'waiting_client'
