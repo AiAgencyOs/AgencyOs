@@ -9422,7 +9422,7 @@ const PLANNING_BLUEPRINT: AgentWorkflow = {
         .eq('organization_id', orgId)
         .maybeSingle();
       // Only the advance opens planning (Master §5.9: "after the required financial gate is verified").
-      if (milestone?.position !== 0) return settle('a later milestone, not the advance');
+      if (milestone?.position !== 1) return settle('a later milestone, not the advance');
       projectId = invoice.project_id;
     } else {
       projectId = subjectId;

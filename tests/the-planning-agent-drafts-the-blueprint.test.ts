@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 
 import { HANDLER_JOB_KIND, SUBSCRIPTIONS } from '../src/lib/events/catalog.ts';
+import { LOCKED_PAYMENT_STRUCTURE } from '../src/modules/projects/payment-structure.ts';
 import {
   assembleBlueprint, blueprintDraftJsonSchema, blueprintDraftSchema, financeGatePhase, findDevelopmentContent,
   renderPlanningContext, type BlueprintDraft,
@@ -20,8 +21,8 @@ const items = [
   { id: 'item-2', title: 'Admin panel: stock and orders' },
 ];
 const payments = [
-  { id: 'pm-0', name: 'M1 advance', position: 0 }, { id: 'pm-1', name: 'M2', position: 1 },
-  { id: 'pm-2', name: 'M3', position: 2 }, { id: 'pm-3', name: 'M4', position: 3 },
+  { id: 'pm-0', name: 'M1 advance', position: 1 }, { id: 'pm-1', name: 'M2', position: 2 },
+  { id: 'pm-2', name: 'M3', position: 3 }, { id: 'pm-3', name: 'M4', position: 4 },
 ];
 const draft = (over: Partial<BlueprintDraft> = {}): BlueprintDraft => ({
   objective: 'Launch a pharmacy ordering app for three stores.',
@@ -125,7 +126,7 @@ describe('assembling what the door writes', () => {
   });
 
   test('the payment gate phase follows the locked 30/20/30/20 structure', () => {
-    assert.deepEqual([0, 1, 2, 3, 4].map(financeGatePhase), ['phase_2', 'phase_4', 'phase_5', 'phase_6', 'phase_7']);
+    assert.deepEqual([1, 2, 3, 4, 5].map(financeGatePhase), ['phase_2', 'phase_4', 'phase_5', 'phase_6', 'phase_7']);
   });
 
   test('the model is shown the scope by number, what is excluded, and what onboarding already holds', () => {
@@ -138,6 +139,23 @@ describe('assembling what the door writes', () => {
     assert.match(text, /EXPLICITLY EXCLUDED.*Marketing/);
     assert.match(text, /- Logo: received/);
     assert.doesNotMatch(text, /%|₹|\d{4,}/, 'no percentage or amount reaches the planner');
+  });
+});
+
+describe('the advance is position 1, as the locked plan installs it', () => {
+  // Found by reading: the first draft of the planner and of the PM's payment
+  // messages treated position 0 as the advance, while payment-structure.ts has
+  // always numbered the four milestones 1-4 - so in production neither would
+  // ever have recognised the advance.
+  test('the locked structure numbers its milestones 1-4, and each gate lands in the phase that completes it', () => {
+    assert.deepEqual(LOCKED_PAYMENT_STRUCTURE.map((m) => m.position), [1, 2, 3, 4]);
+    assert.deepEqual(LOCKED_PAYMENT_STRUCTURE.map((m) => financeGatePhase(m.position)), ['phase_2', 'phase_4', 'phase_5', 'phase_6']);
+  });
+
+  test('both consumers read the advance as position 1', () => {
+    const comms = read('src/modules/projects/pm-client-comms.ts');
+    assert.match(comms, /isAdvance = milestone\?\.position === 1;/);
+    assert.match(read('app/api/jobs/run/workflows.ts'), /milestone\?\.position !== 1\) return settle\('a later milestone, not the advance'\)/);
   });
 });
 
@@ -155,7 +173,7 @@ describe('what is wired, and what it must not do', () => {
   });
 
   test('only the advance opens planning, and an existing plan is never replaced', () => {
-    assert.match(code, /milestone\?\.position !== 0/);
+    assert.match(code, /milestone\?\.position !== 1/);
     assert.match(code, /the project already has a plan/);
   });
 

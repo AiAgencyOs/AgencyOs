@@ -169,10 +169,14 @@ function everyText(draft: BlueprintDraft): Array<[string, string]> {
 export type ScopeItemRef = { id: string; title: string };
 export type PaymentMilestoneRef = { id: string; name: string; position: number };
 
-/** Which phase a payment milestone gates: the locked 30/20/30/20 structure (ADM-105). */
+/**
+ * Which phase a payment milestone gates: the locked 30/20/30/20 structure
+ * (ADM-105). Milestones are numbered 1-4 - M1 is position 1 - exactly as
+ * `payment-structure.ts` installs them.
+ */
 const FINANCE_GATE_PHASE = ['phase_2', 'phase_4', 'phase_5', 'phase_6'] as const;
 export function financeGatePhase(position: number): (typeof PLAN_PHASES)[number] {
-  return FINANCE_GATE_PHASE[position] ?? 'phase_7';
+  return FINANCE_GATE_PHASE[position - 1] ?? 'phase_7';
 }
 
 export type AssembleResult =

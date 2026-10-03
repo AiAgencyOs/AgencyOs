@@ -313,7 +313,8 @@ export async function handlePaymentUpdate(admin: Admin, job: PmCommsJob): Promis
       .eq('id', invoice.milestone_id)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
-    isAdvance = milestone?.position === 0;
+    // The locked 30/20/30/20 plan numbers its milestones 1-4 (payment-structure.ts); the advance is position 1.
+    isAdvance = milestone?.position === 1;
   }
 
   const ctx = await loadContext(admin, job.organization_id, invoice.project_id);

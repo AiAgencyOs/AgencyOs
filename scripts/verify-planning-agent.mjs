@@ -217,7 +217,7 @@ async function plant(label, { items = 3, plan = false, thread = false } = {}) {
   // Items go in while the version is a draft; freezing it is what makes it the approved scope.
   await rest('PATCH', 'projects', `scope_versions?id=eq.${scope.id}`, { status: 'active', frozen_at: new Date().toISOString() });
   const milestones = (await rest('POST', 'projects', 'milestones', [30, 20, 30, 20].map((p, i) => ({
-    organization_id: ORG, project_id: project.id, name: `${name} M${i + 1}`, position: i, payment_percent: p,
+    organization_id: ORG, project_id: project.id, name: `${name} M${i + 1}`, position: i + 1, payment_percent: p,
   })))).json ?? [];
   if (plan) {
     await rpc('projects', 'draft_project_plan', { p_project_id: project.id, p_objective: 'A person drafted this.' });
@@ -256,7 +256,7 @@ try {
   section('1. The advance verified opens planning, with no further call');
   const a = await plant('a');
   modes.set(a.name, 'good');
-  const { verified } = await advanceVerified(a, 0);
+  const { verified } = await advanceVerified(a, 1);
   check(verified?.outcome === 'verified', 'an admin verifies the advance (the human act)', String(verified?.outcome));
   const draftA = await tickUntil(async () => (await plans(a.project.id))[0] ?? null);
   check(Boolean(draftA), 'a plan appears for the project');
@@ -292,7 +292,7 @@ try {
 
   const b = await plant('b');
   modes.set(b.name, 'good');
-  await advanceVerified(b, 1);
+  await advanceVerified(b, 2);
   for (let i = 0; i < 10; i += 1) await tick();
   check((await plans(b.project.id)).length === 0, 'the second milestone\'s payment does not open planning');
 
@@ -300,7 +300,7 @@ try {
   section('3. A draft that misses scope or designs the product is sent back once');
   const c = await plant('c');
   modes.set(c.name, 'bad_then_good');
-  await advanceVerified(c, 0);
+  await advanceVerified(c, 1);
   const draftC = await tickUntil(async () => (await plans(c.project.id))[0] ?? null);
   check(Boolean(draftC), 'the corrected draft is what gets written');
   check(corrections.some((t) => /no deliverable/.test(t) && /database design|not how the product is built/.test(t)),
@@ -312,7 +312,7 @@ try {
   section('4. A model that cannot get it right writes nothing and tells staff');
   const d = await plant('d');
   modes.set(d.name, 'always_bad');
-  await advanceVerified(d, 0);
+  await advanceVerified(d, 1);
   const told = await tickUntil(async () => (await rest('GET', 'core', `alerts?fingerprint=eq.planning-refused:${d.project.id}&select=id`)).json?.length === 1);
   check(Boolean(told), 'staff are told the planner could not produce a valid blueprint');
   check((await plans(d.project.id)).length === 0, 'and NO plan was written');
@@ -321,7 +321,7 @@ try {
   section('5. A person\'s plan is never replaced, and staff can ask by hand');
   const e = await plant('e', { plan: true });
   modes.set(e.name, 'good');
-  await advanceVerified(e, 0);
+  await advanceVerified(e, 1);
   for (let i = 0; i < 10; i += 1) await tick();
   const ePlans = await plans(e.project.id);
   check(ePlans.length === 1 && ePlans[0].objective === 'A person drafted this.', 'the person\'s plan stands untouched');
@@ -347,7 +347,7 @@ try {
   section('6. The planner\'s question goes to the client through the PM, one at a time, and the answer is kept');
   const g = await plant('g', { thread: true });
   modes.set(g.name, 'asks');
-  await advanceVerified(g, 0);
+  await advanceVerified(g, 1);
   const draftG = await tickUntil(async () => (await plans(g.project.id))[0] ?? null);
   check(Boolean(draftG), 'the planner drafts a plan with two open questions');
   const asked1 = await tickUntil(async () => textsTo(g.phone).some((t) => /Which stores/.test(t)));
@@ -381,7 +381,7 @@ try {
 
   const h = await plant('h', { thread: true });
   modes.set(h.name, 'unsafe_question');
-  await advanceVerified(h, 0);
+  await advanceVerified(h, 1);
   const draftH = await tickUntil(async () => (await plans(h.project.id))[0] ?? null);
   check(Boolean(draftH), 'a plan with a question that mentions money is drafted');
   const held = await tickUntil(async () => (await rest('GET', 'core', `alerts?summary=ilike.*held back*&select=id,summary`)).json?.some((a) => a.summary.includes(h.name)));
