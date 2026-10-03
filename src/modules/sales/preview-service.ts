@@ -1,3 +1,4 @@
+import { localiseSections } from './quotation-standards-i18n';
 import 'server-only';
 
 import { z } from 'zod';
@@ -73,7 +74,7 @@ export async function quotationPdfPreview(input: QuotationPreviewInput): Promise
       body: parsed.data.body || null,
       currency: parsed.data.currency,
       items,
-      ...(sections ?? {}),
+      ...((surroundings.translateStandards && sections ? localiseSections(sections, surroundings.language) : sections) ?? {}),
       subtotalMinor,
       discountMinor: parsed.data.discountMinor,
       taxMinor: parsed.data.taxMinor,

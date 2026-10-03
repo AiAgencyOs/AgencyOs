@@ -396,7 +396,14 @@ export type OrganizationSettingKey =
   | 'gst_period_basis'
   // Round 3, Q-D1 — the Google Calendar id the agency books against. Read
   // BEFORE the GOOGLE_CALENDAR_ID environment value (src/lib/scheduling/google.ts).
-  | 'google_calendar_id';
+  | 'google_calendar_id'
+  // Phase 1 live run (O-6) — the statements about the agency the sales agent may
+  // say, one per line. Empty means it says nothing about the agency beyond
+  // "a colleague will confirm".
+  | 'approved_trust_facts'
+  // Phase 1 live run (O-2) — 'on' prints the agency's standard quotation terms in the
+  // client's language (Hinglish or Hindi) too; unset prints them in English.
+  | 'quotation_translate_standards';
 
 const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   whatsapp_phone_number_id: 'a numeric WhatsApp phone_number_id (digits only)',
@@ -432,6 +439,8 @@ const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   gst_filing_frequency: "'monthly' or 'quarterly'",
   gst_period_basis: "'calendar_month'",
   google_calendar_id: 'a calendar id with no spaces, like meetings@agency.example or primary (3 to 200 characters)',
+  approved_trust_facts: 'up to 12 statements, one per line, each up to 240 characters and 1500 in all',
+  quotation_translate_standards: "the single word 'on' — clear it to print the standard terms in English",
 };
 
 /**

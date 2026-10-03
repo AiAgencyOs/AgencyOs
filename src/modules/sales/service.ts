@@ -1,3 +1,6 @@
+import type { QuotationLanguage } from '@/lib/pdf/quotation-labels';
+import { quotationLanguageForLead, translateStandardsOn } from './quotation-language';
+import { localiseSections } from './quotation-standards-i18n';
 import 'server-only';
 
 import type { AiSpendComparison } from './ai-spend';
@@ -1180,7 +1183,17 @@ class SurroundingsUnreadable extends Error {}
 export async function quotationDocumentSurroundings(
   supabase: Awaited<ReturnType<typeof createClient>>,
   opportunityId: string | null,
-): Promise<{ organizationName: string; timeZone: string; preparedFor: string | null; contactLine: string | null; validityDays: number }> {
+): Promise<{
+  organizationName: string;
+  timeZone: string;
+  preparedFor: string | null;
+  contactLine: string | null;
+  validityDays: number;
+  /** The language the client writes in — the page's words, and for Hindi its typeface. */
+  language: QuotationLanguage;
+  /** The owner's switch: the agency's standard terms in that language too (reviewed wording only). */
+  translateStandards: boolean;
+}> {
   const { data: org, error: orgError } = await supabase
     .schema('core')
     .from('organizations')
@@ -1197,6 +1210,7 @@ export async function quotationDocumentSurroundings(
   }
 
   let preparedFor: string | null = null;
+  let languageLeadId: string | null = null;
   if (opportunityId) {
     const { data: opportunity } = await supabase
       .schema('sales')
@@ -1204,6 +1218,7 @@ export async function quotationDocumentSurroundings(
       .select('lead_id')
       .eq('id', opportunityId)
       .maybeSingle();
+    languageLeadId = opportunity?.lead_id ?? null;
     if (opportunity?.lead_id) {
       const { data: lead } = await supabase
         .schema('crm')
@@ -1237,6 +1252,8 @@ export async function quotationDocumentSurroundings(
     contactLine: quotationContactLine(org.settings),
     // Configurability audit B-1 — the owner's validity, or the old constant.
     validityDays: quotationValidityDays(org.settings as Record<string, unknown> | null),
+    language: await quotationLanguageForLead(supabase, languageLeadId),
+    translateStandards: translateStandardsOn(org.settings),
   };
 }
 
@@ -1341,7 +1358,8 @@ export async function quotationPdfForProposal(
       // Every section, by name from the one assembler (G-167). Enumerating
       // them here meant three edits per new section and three chances to
       // forget one — the keys are already exactly the renderer's own.
-      ...(sections ?? {}),
+      language: surroundings.language,
+      ...((surroundings.translateStandards && sections ? localiseSections(sections, surroundings.language) : sections) ?? {}),
       subtotalMinor: proposal.subtotal_minor,
       discountMinor: proposal.discount_minor ?? 0,
       taxMinor: proposal.tax_minor,
@@ -1564,7 +1582,8 @@ export async function sendProposal(
       // Every section, by name from the one assembler (G-167). Enumerating
       // them here meant three edits per new section and three chances to
       // forget one — the keys are already exactly the renderer's own.
-      ...(sections ?? {}),
+      language: surroundings.language,
+      ...((surroundings.translateStandards && sections ? localiseSections(sections, surroundings.language) : sections) ?? {}),
       subtotalMinor: proposal.subtotal_minor,
       discountMinor: proposal.discount_minor ?? 0,
       taxMinor: proposal.tax_minor,

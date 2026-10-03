@@ -157,6 +157,7 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "recharts": "^3.10.1",
+    "regenerator-runtime": "0.14.1",
     "server-only": "^0.0.1",
     "zod": "^4.4.3"
   },

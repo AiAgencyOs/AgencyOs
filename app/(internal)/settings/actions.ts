@@ -216,6 +216,25 @@ export async function setWhatsAppNumberAction(_prev: FormState, formData: FormDa
   };
 }
 
+/**
+ * O-6 — what the sales agent may say about the agency. Statements the owner has
+ * approved, one per line; they reach clients, so this goes through the one
+ * settings door (owner / ops admin, whitelisted, validated, audited). Clearing
+ * it returns the agent to saying nothing about the agency beyond "a colleague
+ * will confirm".
+ */
+export async function setTrustFactsAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await setOrganizationSetting('approved_trust_facts', String(formData.get('trust_facts') ?? ''));
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings/communication');
+  return {
+    status: 'success',
+    message: result.data.cleared
+      ? 'Cleared. The agent will say nothing about the agency beyond “a colleague will confirm”.'
+      : 'Saved. The agent may now say these, in its own words, and nothing beyond them.',
+  };
+}
+
 /** Q-D1 — the Google Calendar id, through the one settings door (owner / ops admin, whitelisted, validated, audited with old and new). */
 export async function setCalendarIdAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const result = await setOrganizationSetting('google_calendar_id', String(formData.get('calendar_id') ?? ''));
@@ -1098,8 +1117,21 @@ export async function verifyFigmaAction(_prev: FormState, _formData: FormData): 
  */
 export async function setOrganizationSettingAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const key = String(formData.get('key') ?? '');
-  if (key !== 'won_requires_payment_evidence') return { status: 'error', message: 'That setting cannot be changed here.' };
   const on = formData.get('on') === 'on';
+
+  if (key === 'quotation_translate_standards') {
+    const result = await setOrganizationSetting('quotation_translate_standards', on ? 'on' : '');
+    if (!result.ok) return { status: 'error', message: result.error.message };
+    revalidatePath('/settings/commercial');
+    return {
+      status: 'success',
+      message: on
+        ? 'On. A Hindi or Hinglish client’s quotation prints the standard terms in their language too, from the next one rendered.'
+        : 'Off. The standard terms print in English whatever language the rest of the quotation is in.',
+    };
+  }
+
+  if (key !== 'won_requires_payment_evidence') return { status: 'error', message: 'That setting cannot be changed here.' };
   const result = await setOrganizationSetting('won_requires_payment_evidence', on ? 'on' : '');
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath('/settings/finance');

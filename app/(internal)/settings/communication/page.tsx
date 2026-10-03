@@ -25,6 +25,7 @@ import {
   ReactivationCapForm,
   SendWhatsAppTestForm,
   TestRecipientForm,
+  TrustFactsForm,
   VerifyWhatsAppButton,
   WakeOnInboundForm,
   WhatsAppNumberForm,
@@ -274,6 +275,16 @@ export default async function SettingsCommunicationPage({ searchParams }: { sear
         </p>
         <MeetingOfferHorizonForm current={setting('meeting_offer_horizon_days')} />
         <SettingHistory label="Meeting offer horizon" entries={historyOf('meeting_offer_horizon_days')} />
+
+        <h2 id="trust-facts" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">What the agent may say about the agency</h2>
+        <p className="text-xs text-muted">
+          The sales agent states nothing about the agency that it was not given — no years in business, no payment terms,
+          no guarantees. Anything a nervous client asks about how you work, it hands to a colleague. Write the statements
+          you are willing to stand behind, one per line (up to 12). It may say them in its own words and nothing beyond
+          them. Leave empty to keep today&rsquo;s behaviour.
+        </p>
+        <TrustFactsForm current={setting('approved_trust_facts')} />
+        <SettingHistory label="Statements about the agency" entries={historyOf('approved_trust_facts')} />
 
         <h2 id="wake-on-inbound" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">How quickly the agent answers</h2>
         <p className="text-xs text-muted">
