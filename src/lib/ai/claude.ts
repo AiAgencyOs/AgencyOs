@@ -16,6 +16,7 @@ import type {
   ToolUseRequest,
 } from './types';
 import { getProviderCredential } from './vault';
+import { fromWireToolName, toWireToolName } from './tool-names';
 
 /**
  * Anthropic provider — implements the AiProvider port (ARCHITECTURE.md §6.4,
@@ -124,11 +125,18 @@ export async function createClaudeProvider(): Promise<AiProvider | null> {
           system: request.system,
           messages: request.messages.map((m) => ({ role: m.role, content: toContent(m.content) })),
           tools: request.tools.map((t) => ({
-            name: t.name,
+            name: toWireToolName(t.name),
             description: t.description,
             input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
           })),
-          ...(request.effort ? { output_config: { effort: request.effort } } : {}),
+          ...(request.effort || request.jsonSchema
+            ? {
+                output_config: {
+                  ...(request.effort ? { effort: request.effort } : {}),
+                  ...(request.jsonSchema ? { format: { type: 'json_schema' as const, schema: request.jsonSchema } } : {}),
+                },
+              }
+            : {}),
         });
 
         if (response.stop_reason === 'refusal') {
@@ -149,7 +157,7 @@ export async function createClaudeProvider(): Promise<AiProvider | null> {
         if (response.stop_reason === 'tool_use') {
           const calls = response.content
             .filter((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use')
-            .map((block) => ({ id: block.id, name: block.name, input: block.input }));
+            .map((block) => ({ id: block.id, name: fromWireToolName(block.name), input: block.input }));
 
           // A `tool_use` stop reason with no actual tool_use block would be a
           // provider contradicting its own field. Reported as a provider
@@ -278,7 +286,7 @@ function toContent(content: AiMessage['content']): Anthropic.MessageParam['conte
       // below), so this branch only has to name the shape, not construct one
       // from scratch.
       case 'tool_use':
-        return { type: 'tool_use', id: block.id, name: block.name, input: block.input } as const;
+        return { type: 'tool_use', id: block.id, name: toWireToolName(block.name), input: block.input } as const;
       case 'tool_result':
         return {
           type: 'tool_result',

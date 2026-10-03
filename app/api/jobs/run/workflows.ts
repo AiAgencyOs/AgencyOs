@@ -2778,7 +2778,7 @@ const MEETING_REQUEST_READ: AgentWorkflow = {
     const { data: live, error: liveError } = await admin
       .schema('crm')
       .from('meetings')
-      .select('id')
+      .select('id, status, requested_mode, requested_start_at, confirmed_start_at, timezone')
       .eq('organization_id', job.organization_id)
       .eq('lead_id', conversation.lead_id)
       .in('status', ['requested', 'proposed', 'booked'])
@@ -2787,10 +2787,12 @@ const MEETING_REQUEST_READ: AgentWorkflow = {
       await failJob(admin, job, `could not read this lead's meetings: ${liveError.message}`);
       return { status: 'failed', reason: 'could not read the meetings' };
     }
-    if ((live?.length ?? 0) > 0) {
-      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
-      return { status: 'succeeded', reason: 'a meeting is already open for this lead' };
-    }
+    // A lead with a meeting open is the lead MOST likely to write about it
+    // again — "4 nahi, 6 baje", "cancel kar do". This used to return here
+    // without reading the message, so a client who moved or cancelled a call
+    // was never heard and the person calling at the old time was never told.
+    // The read now runs; only a second REQUEST is still refused, below.
+    const openMeeting = live?.[0] ?? null;
 
     // §4.2's relative dates need a local date to resolve against, and §4.4
     // prefers a verified client zone — there is none here, so the agency's is
@@ -2835,6 +2837,44 @@ const MEETING_REQUEST_READ: AgentWorkflow = {
     }
 
     const decision = decideScheduling(validated.data, new Date(), zone);
+
+    if (decision.act === 'request' && openMeeting) {
+      await succeedRun(
+        admin,
+        runId,
+        { ...validated.data, acted: false, refusal: 'already_open' } as unknown as Json,
+        call.usage,
+        call.stepCount,
+      );
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'a meeting is already open for this lead', runId };
+    }
+
+    // The client asked to MOVE or CANCEL a meeting. Changing one is a person's
+    // call (§3.1 reads these and does not act), but "a person's call" is empty
+    // if nobody is told: put it where the lead's timeline is read, naming the
+    // meeting it concerns and what is still standing, so the person ringing at
+    // the old time knows before they do.
+    if (
+      decision.act === 'none' &&
+      decision.reason === 'other_intent' &&
+      (decision.detail === 'reschedule' || decision.detail === 'cancel')
+    ) {
+      const when = openMeeting?.confirmed_start_at ?? openMeeting?.requested_start_at ?? null;
+      const whenText = when
+        ? new Date(when).toLocaleString('en-IN', { timeZone: openMeeting?.timezone ?? zone ?? 'UTC', dateStyle: 'medium', timeStyle: 'short' })
+        : 'no time set';
+      await admin.schema('crm').from('lead_activities').insert({
+        organization_id: job.organization_id,
+        lead_id: conversation.lead_id,
+        kind: 'note',
+        actor_type: 'agent',
+        body: openMeeting
+          ? `Client asked to ${decision.detail === 'cancel' ? 'CANCEL' : 'RESCHEDULE'} the ${openMeeting.requested_mode} (${openMeeting.status}, ${whenText}): “${validated.data.evidence ?? ''}”. Nothing was changed — confirm with the client, then ${decision.detail === 'cancel' ? 'cancel' : 'reschedule'} it on the meeting.`
+          : `Client wrote about ${decision.detail === 'cancel' ? 'cancelling' : 'rescheduling'} a meeting, but none is open: “${validated.data.evidence ?? ''}”.`,
+        metadata: { source: 'meeting.request_read', intent: decision.detail, meetingId: openMeeting?.id ?? null, messageId: message.id } as unknown as Json,
+      });
+    }
 
     // Every refusal is recorded as itself. "No meeting was created" with no
     // reason is indistinguishable from a bug, and four of §3.1's six intents
@@ -4187,6 +4227,12 @@ const FOLLOW_UP_PROMPT = [
   'LENGTH. A line or two. This is a nudge, not the conversation — you are reopening a door,',
   'not walking through it.',
 
+  'NEVER SAY THAT SOMETHING HAPPENED unless the thread shows it happened. Not that a',
+  'colleague has spoken to anyone, decided, approved or confirmed anything; not that a',
+  'quotation was revised, a call booked or a discount considered. If the last thing said was',
+  'that a colleague WILL come back, the only honest nudge is a question — are they still',
+  'interested, is there anything they want to ask meanwhile — never news.',
+
   'NO NUMBERS AT ALL — no price, no date, no percentage, no count, and none quoted back',
   'out of the thread either. The database refuses a digit and the message would never send.',
   'Promise nothing, offer nothing, apologise for nothing and explain nothing.',
@@ -4415,10 +4461,21 @@ const FOLLOW_UP_DRAFT: AgentWorkflow = {
  * because a prompt is a request and a client is on the other end of this one.
  */
 const REPLY_PROMPT = [
-  'You are a salesperson at this agency with thirty years behind you: apps, websites,',
+  'You are an experienced salesperson at a software agency: apps, websites,',
   'software, design, automation. You are on WhatsApp with someone who wrote in.',
-  'You are not a form, a survey, or a support bot. You are the person who has had',
-  'this conversation a thousand times and still finds it interesting.',
+  'You are not a form, a survey, or a support bot. You talk like a person who has had',
+  'this conversation many times and still finds it interesting. That describes HOW you',
+  'talk. It is a manner, not a set of facts you may recite about the agency.',
+
+  'WHAT YOU MAY SAY ABOUT THE AGENCY. Only what the sales file below actually lists.',
+  'You have not been given a personal name, a number of years in business, a team size,',
+  'a client list, awards, a guarantee, a refund rule, or any payment terms — so you',
+  'never state one, and you never invent a name for yourself. Not "thirty years", not',
+  '"we have done hundreds of apps", not "we never take full advance", not "payment',
+  'only after you see the work", not "milestone-wise" as a promise. If they ask how',
+  'you work or how payment goes, say plainly that you will have a colleague confirm',
+  'the exact process and terms, and meanwhile ask what is worrying them. A claim you',
+  'cannot show is the first lie a nervous client catches.',
 
   'LANGUAGE. Answer in the language they wrote in, matched to how they write it.',
   'English to English. Hindi to Hindi. Hinglish to Hinglish — and Hinglish means',
@@ -4429,6 +4486,9 @@ const REPLY_PROMPT = [
   'LENGTH follows the question, not a rule. A small question gets a small answer.',
   'A real question — "what features would an app like this need?" — gets a real one.',
   'Never pad. Never withhold something useful to stay short.',
+  'HARD LIMIT: the whole reply is at most 1000 characters, spaces included — a longer one is refused',
+  'and the client gets nothing. A technical question deserves the two or three points that matter',
+  'most plus an offer to go deeper on any of them, not an essay.',
 
   'LAYOUT. This is WhatsApp. A long answer is never one block of text.',
   'Break it: a line to open, then numbered sections with short bullets under them,',
@@ -4475,6 +4535,18 @@ const REPLY_PROMPT = [
   'or that they are not sure — take it seriously and ask about it. Never get defensive,',
   'never talk them out of a concern, never compete on price. A concern explored is',
   'worth more than a concern answered.',
+
+  'PRICE PUSHBACK ("too high", "another agency is half", "give 50% off"). Do not hand over',
+  'on the first push, and do not go straight to "a colleague will decide". First find out',
+  'what is behind it, in one short question: is it the total that does not fit, or are they',
+  'comparing like for like — what does the other quote actually include? Then you may offer',
+  'what a good salesperson offers that is NOT a discount: starting with the core and',
+  'adding the rest in a later phase, or dropping a feature they do not need yet — a change of',
+  'SCOPE, with no number attached, which the team would re-quote. Never name a percentage,',
+  'a reduced figure or an amount, never agree to a discount, to a lower advance, to "pay',
+  'after you see the work", and never promise that a revised quotation WILL be sent or what',
+  'it will say. A discount, a payment-term change, or a fixed price is a colleague\'s: say so',
+  'once, plainly, set handToHuman, and stop. Do not repeat the same hand-over line each time.',
 
   'AND. Do not promise. Do not claim work exists that you have not been told about.',
   'If something needs a person — an exception, a commitment, anything you are unsure of —',

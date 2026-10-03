@@ -79,7 +79,12 @@ describe('A. the message the client reads', () => {
     // A model asked to restate an agreed scope will restate it differently,
     // and a client confirming a sentence nobody wrote down is worse than a
     // client who was never asked.
-    assert.match(SERVICE, /p_body: requirementConfirmationMessage\(payload\.data\)/);
+    // The composed text is bound once and that one binding is what both the
+    // record door and the delivery use — a second composition anywhere would
+    // be a second sentence the client could be asked to confirm.
+    assert.match(SERVICE, /const summaryBody = requirementConfirmationMessage\(payload\.data\);/);
+    assert.match(SERVICE, /p_body: summaryBody,/);
+    assert.equal((SERVICE.match(/requirementConfirmationMessage\(/g) ?? []).length, 1);
   });
 });
 
