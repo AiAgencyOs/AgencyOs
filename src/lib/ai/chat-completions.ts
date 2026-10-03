@@ -4,7 +4,17 @@ import { providerUnavailable } from './failure';
 import { err, ok, type Result } from '@/lib/result';
 
 import { MAX_RETRIES, REQUEST_TIMEOUT_MS, retryBackoffWorstCaseMs } from './budget';
-import type { AiContentBlock, AiEffort, AiMessage, AiProvider, StructuredRequest, StructuredResponse } from './types';
+import { fromWireToolName, toWireToolName } from './tool-names';
+import type {
+  AiContentBlock,
+  AiEffort,
+  AiMessage,
+  AiProvider,
+  StructuredRequest,
+  StructuredResponse,
+  ToolCallResponse,
+  ToolUseRequest,
+} from './types';
 
 /**
  * The OpenAI-style chat-completions adapter — one implementation of the
@@ -79,7 +89,11 @@ const REDACTED = '[redacted]';
 
 type Choice = {
   finish_reason?: unknown;
-  message?: { content?: unknown; refusal?: unknown };
+  message?: {
+    content?: unknown;
+    refusal?: unknown;
+    tool_calls?: Array<{ id?: unknown; function?: { name?: unknown; arguments?: unknown } }>;
+  };
 };
 type Completion = {
   model?: unknown;
@@ -153,13 +167,105 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Ai
       }
       return last;
     },
+
+    /**
+     * Tool-calling over the chat-completions wire — so an agent can run on
+     * OpenAI, Gemini, xAI or anything OpenRouter routes to, not only on
+     * Anthropic. One request per call, exactly like claude.ts: the caller owns
+     * the loop. `tool_calls` when the model asked for tools, `final` otherwise.
+     */
+    async generateWithTools(request: ToolUseRequest): Promise<Result<ToolCallResponse>> {
+      const body = {
+        model: request.model,
+        [config.maxTokensParam ?? 'max_tokens']: request.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+        messages: [{ role: 'system', content: request.system }, ...toToolTranscript(request.messages)],
+        tools: request.tools.map((t) => ({
+          type: 'function',
+          function: { name: toWireToolName(t.name), description: t.description, parameters: t.inputSchema },
+        })),
+        ...(request.jsonSchema
+          ? { response_format: { type: 'json_schema', json_schema: { name: 'FinalAnswer', schema: request.jsonSchema } } }
+          : {}),
+        ...(request.effort && config.effort ? config.effort(request.model, request.effort) : {}),
+      };
+
+      let last: Result<ToolCallResponse> = err('PROVIDER_ERROR', `Unexpected failure calling ${config.name}.`);
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+        if (attempt > 0) await sleep(retryBackoffWorstCaseMs(attempt) - retryBackoffWorstCaseMs(attempt - 1));
+        const sent = await post(body);
+        if (sent.kind === 'fail') {
+          last = sent.unavailable ? providerUnavailable(sent.message) : err('PROVIDER_ERROR', sent.message);
+          if (!sent.retry) return last;
+          continue;
+        }
+        const reading = readToolTurn(sent.parsed, request.model);
+        if (reading.kind === 'ok') return ok(reading.response);
+        last = err('PROVIDER_ERROR', reading.message);
+        if (!reading.retry) return last;
+      }
+      return last;
+    },
   };
+
+  type Posted =
+    | { kind: 'parsed'; parsed: Completion }
+    | { kind: 'fail'; message: string; retry: boolean; unavailable?: boolean };
 
   type Once =
     | { kind: 'ok'; response: StructuredResponse }
     | { kind: 'fail'; message: string; retry: boolean; unavailable?: boolean };
 
-  async function once(body: Record<string, unknown>): Promise<Once> {
+  /** One tool-using turn, read: the calls the model asked for, or its final text. */
+  function readToolTurn(
+    parsed: Completion,
+    requested: unknown,
+  ): { kind: 'ok'; response: ToolCallResponse } | { kind: 'fail'; message: string; retry: boolean } {
+    const choice = parsed.choices?.[0];
+    if (!choice) return { kind: 'fail', retry: false, message: 'The model returned no output.' };
+    if (typeof choice.message?.refusal === 'string' && choice.message.refusal.trim() !== '') {
+      return { kind: 'fail', retry: false, message: 'The model declined to process this conversation.' };
+    }
+    if (choice.finish_reason === 'content_filter') {
+      return { kind: 'fail', retry: false, message: 'The model declined to process this conversation.' };
+    }
+    const usage = {
+      inputTokens: count(parsed.usage?.prompt_tokens),
+      outputTokens: count(parsed.usage?.completion_tokens),
+      costMinor: 0,
+    };
+    const model = typeof parsed.model === 'string' && parsed.model ? parsed.model : String(requested);
+
+    const asked = choice.message?.tool_calls ?? [];
+    if (asked.length > 0) {
+      const calls: { id: string; name: string; input: unknown }[] = [];
+      for (const call of asked) {
+        const name = call?.function?.name;
+        if (typeof call?.id !== 'string' || typeof name !== 'string') {
+          return { kind: 'fail', retry: false, message: 'The model sent a tool call with no id or name.' };
+        }
+        let input: unknown = {};
+        const args = call.function?.arguments;
+        if (typeof args === 'string' && args.trim() !== '') {
+          try {
+            input = JSON.parse(args);
+          } catch {
+            return { kind: 'fail', retry: false, message: 'The model sent tool arguments that were not valid JSON.' };
+          }
+        }
+        calls.push({ id: call.id, name: fromWireToolName(name), input });
+      }
+      return { kind: 'ok', response: { kind: 'tool_calls', calls, usage, model } };
+    }
+
+    if (choice.finish_reason === 'length') {
+      return { kind: 'fail', retry: false, message: 'The model ran out of output budget before completing the call.' };
+    }
+    const text = contentText(choice.message?.content);
+    if (!text.trim()) return { kind: 'fail', retry: false, message: 'The model returned no output.' };
+    return { kind: 'ok', response: { kind: 'final', text, usage, model } };
+  }
+
+  async function post(body: Record<string, unknown>): Promise<Posted> {
     // The body read is inside the try as well: the timeout covers streaming,
     // and a connection dropped mid-body rejects text(), not fetch(). Review
     // found the first draft letting that escape as a throw — the one thing
@@ -206,6 +312,14 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Ai
     } catch {
       return { kind: 'fail', retry: true, message: `${config.name} returned a response that was not valid JSON.` };
     }
+
+    return { kind: 'parsed', parsed };
+  }
+
+  async function once(body: Record<string, unknown>): Promise<Once> {
+    const sent = await post(body);
+    if (sent.kind === 'fail') return sent;
+    const parsed = sent.parsed;
 
     const choice = parsed.choices?.[0];
     if (!choice) return { kind: 'fail', retry: false, message: 'The model returned no output.' };
@@ -269,18 +383,51 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * The port's transcript in the chat-completions tool shape.
+ *
+ * An assistant turn's `tool_use` blocks become `tool_calls` on that message; a
+ * user turn's `tool_result` blocks become one `role: 'tool'` message each,
+ * emitted BEFORE any text the same turn carried, because the wire requires a
+ * tool message to follow the assistant message that asked.
+ */
+function toToolTranscript(messages: readonly AiMessage[]): Array<Record<string, unknown>> {
+  const out: Array<Record<string, unknown>> = [];
+  for (const m of messages) {
+    if (typeof m.content === 'string') {
+      out.push({ role: m.role, content: m.content });
+      continue;
+    }
+    if (m.role === 'assistant') {
+      const text = m.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
+      const calls = m.content.flatMap((b) =>
+        b.type === 'tool_use'
+          ? [{ id: b.id, type: 'function', function: { name: toWireToolName(b.name), arguments: JSON.stringify(b.input ?? {}) } }]
+          : [],
+      );
+      out.push({ role: 'assistant', content: text === '' ? null : text, ...(calls.length ? { tool_calls: calls } : {}) });
+      continue;
+    }
+    for (const b of m.content) {
+      if (b.type === 'tool_result') {
+        out.push({ role: 'tool', tool_call_id: b.toolUseId, content: b.isError ? `Error: ${b.content}` : b.content });
+      }
+    }
+    const rest = m.content.filter((b) => b.type !== 'tool_result');
+    if (rest.length) out.push({ role: m.role, content: toContent(rest) });
+  }
+  return out;
+}
+
+/**
  * The port's content in the chat-completions shape. A string passes through;
  * an image block becomes an `image_url` data URL — the one form every
  * vendor on this wire accepts — and the bytes are handed over, never held.
  */
 function toContent(content: AiMessage['content']): string | Array<Record<string, unknown>> {
   if (typeof content === 'string') return content;
-  // tool_use / tool_result never reach this provider: none of these adapters
-  // implements `generateWithTools` (G-187, ADM-99 — Anthropic is the only one
-  // that does, because every enabled agent runs on claude-*), so
-  // `callModelWithTools` never builds a transcript containing either block
-  // for a model this file serves. The branches exist so the port's union
-  // stays exhaustive rather than because this code path is reachable.
+  // tool_use / tool_result are split out by `toToolTranscript` before this is
+  // called on a tool-using transcript; the branches below keep the union
+  // exhaustive for the structured path, which never carries them.
   return content.map((block: AiContentBlock) => {
     switch (block.type) {
       case 'text':
