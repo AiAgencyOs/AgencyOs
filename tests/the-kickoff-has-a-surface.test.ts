@@ -55,7 +55,7 @@ describe('A. it does not predict the gate', () => {
   });
 });
 
-describe('B. it does not pretend the kickoff was sent', () => {
+describe('B. it does not claim a kickoff it did not send', () => {
   test('the form asks for the reference of a message a person sent', () => {
     assert.match(PANEL, /name="evidenceRef"/);
     assert.match(PANEL, /required/);
@@ -63,17 +63,21 @@ describe('B. it does not pretend the kickoff was sent', () => {
   });
 
   test('the button says who did the sending', () => {
+    // The primary button sends the official message to the project group and the
+    // sent message is the evidence; the by-hand form remains for a kickoff made
+    // another way and still says that a person sent it.
+    assert.match(PANEL, /Send the kickoff to the project group — complete Phase 2/);
     assert.match(PANEL, /I have sent the kickoff — complete Phase 2/);
-    assert.match(PANEL, /AgencyOS cannot send the kickoff message — there is no channel\s*\n?\s*configured/);
+    assert.match(PANEL, /Sent it another way\? Record it by hand instead/);
   });
 
-  test('nothing here sends anything', () => {
-    // Narrowed to send MECHANISMS: the form's own label says "a WhatsApp
-    // message id", which is the honest half — it tells the person what to
-    // paste after sending it themselves.
+  test('the only send is the group kickoff, and it goes through the governed door', () => {
+    // Narrowed to send MECHANISMS: the panel itself never calls a provider.
     assert.doesNotMatch(PANEL_CODE, /sendMessage|dispatchMessage|fetch\(|graph\.facebook|api\.whatsapp/i);
     assert.match(PANEL, /a WhatsApp message id, an email id/);
     assert.doesNotMatch(region(ACTIONS, 'export async function recordKickoffAction'), /sendMessage|fetch\(/);
+    // The twin: the send action exists, and it calls the one function that sends.
+    assert.match(region(ACTIONS, 'export async function sendKickoffAction'), /sendKickoffAndRecord\(\{ projectId \}\)/);
   });
 
   test('the form is offered only when every gate is met', () => {

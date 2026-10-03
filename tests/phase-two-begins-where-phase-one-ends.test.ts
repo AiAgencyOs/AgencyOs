@@ -166,7 +166,8 @@ describe('D. the handler is thin, and the decisions are in the door', () => {
   });
 
   test('it is wired: a handler, a job kind, a subscription and a drain', () => {
-    assert.deepEqual(SUBSCRIPTIONS['project.handoff_bound'], ['projects:startPhaseTwo']);
+    // The second subscriber is the PM's welcome (Phase 2 PM §6 PM-03): beside the start, off the same event.
+    assert.deepEqual(SUBSCRIPTIONS['project.handoff_bound'], ['projects:startPhaseTwo', 'projects:welcomeClient']);
     assert.equal(HANDLER_JOB_KIND['projects:startPhaseTwo'], 'phase_two.start');
     assert.match(ROUTE, /PHASE_TWO_JOB_KIND,\s*\n\s*handleHandoffBound,/);
     // Beside the unlocks, ahead of the agent batch: pure database work should

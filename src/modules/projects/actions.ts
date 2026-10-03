@@ -6,6 +6,7 @@ import type { FormState } from '@/modules/identity/types';
 
 import { PROJECT_ROLES, type ProjectRole } from './project-members-schema';
 
+import { sendKickoffAndRecord } from './kickoff-send';
 import {
   assignDesignReviewer,
   finalizeDesignTokenSet,
@@ -439,6 +440,23 @@ export async function recordKickoffAction(
   revalidatePath(`/projects/${projectId}`);
   revalidatePath('/projects');
   return { status: 'success', message: 'Kickoff recorded. Phase 2 is complete and the project is active.' };
+}
+
+/**
+ * Announce the kickoff in the project group and close Phase 2 — Master §5.11.
+ * The sent message is the evidence; nothing is pasted.
+ */
+export async function sendKickoffAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const result = await sendKickoffAndRecord({ projectId });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath('/projects');
+  return { status: 'success', message: 'Kickoff sent to the project group. Phase 2 is complete and the project is active.' };
 }
 
 /**

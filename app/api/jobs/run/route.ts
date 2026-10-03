@@ -56,6 +56,7 @@ import {
   type HandlerResult,
   type UnlockJob,
 } from '@/modules/projects/handlers';
+import { handleWelcomeClient, handleAskGstDetails, handlePaymentUpdate, handleReadBillingReply } from '@/modules/projects/pm-client-comms';
 import { handleBillingModeConfirmed, handleInvoiceIssuedForDelivery, handlePhaseFourCompletedForFinance, handlePhaseFiveCompletedForFinance, handlePhaseSixCompletedForFinance } from '@/modules/finance/handlers';
 import { learnFromDecision, learnFromRevision } from '@/modules/sales/handlers';
 import { handleRouteTask2Design, handleRequestUIVersionAdminReview } from '@/modules/orchestrator/handlers';
@@ -939,6 +940,17 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     'runInvoiceDeliveryJobs',
   );
 
+  /**
+   * ── the project manager talks to the client (Phase 2 PM §6) ─────────────
+   *
+   * Fixed templates, one HTTP request each, no model call: drained beside the
+   * announcements. The billing answer is read here too; it only tells staff.
+   */
+  const pmWelcomes = await runEventJobs(admin, PM_WELCOME_JOB_KIND, handleWelcomeClient, 'runPmWelcomeJobs');
+  const pmGstDetails = await runEventJobs(admin, PM_GST_DETAILS_JOB_KIND, handleAskGstDetails, 'runPmGstDetailsJobs');
+  const pmPaymentUpdates = await runEventJobs(admin, PM_PAYMENT_UPDATE_JOB_KIND, handlePaymentUpdate, 'runPmPaymentUpdateJobs');
+  const pmBillingReplies = await runEventJobs(admin, PM_BILLING_REPLY_JOB_KIND, handleReadBillingReply, 'runPmBillingReplyJobs');
+
   const m2PaymentVerifiedAnnouncements = await runEventJobs(
     admin,
     M2_PAYMENT_VERIFIED_JOB_KIND,
@@ -1141,6 +1153,10 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     escalations: escalations.results,
     clientWaiting: clientWaiting.results,
     invoiceDeliveries: invoiceDeliveries.results,
+    pmWelcomes: pmWelcomes.results,
+    pmGstDetails: pmGstDetails.results,
+    pmPaymentUpdates: pmPaymentUpdates.results,
+    pmBillingReplies: pmBillingReplies.results,
     revisionLimitAnnouncements: revisionLimitAnnouncements.results,
     phaseThreeCompletedAnnouncements: phaseThreeCompletedAnnouncements.results,
     phaseFourStartedAnnouncements: phaseFourStartedAnnouncements.results,
@@ -1275,6 +1291,10 @@ const UI_VERSION_ADMIN_REVIEW_JOB_KIND = HANDLER_JOB_KIND['orchestrator:requestU
 const PROTOTYPE_QA_JOB_KIND = HANDLER_JOB_KIND['quality_assurance:reviewPrototypeBuild'];
 const M1_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM1Invoice'];
 const INVOICE_DELIVERY_JOB_KIND = HANDLER_JOB_KIND['finance:deliverIssuedInvoice'];
+const PM_WELCOME_JOB_KIND = HANDLER_JOB_KIND['projects:welcomeClient'];
+const PM_GST_DETAILS_JOB_KIND = HANDLER_JOB_KIND['projects:askGstDetails'];
+const PM_PAYMENT_UPDATE_JOB_KIND = HANDLER_JOB_KIND['projects:updateClientOnPayment'];
+const PM_BILLING_REPLY_JOB_KIND = HANDLER_JOB_KIND['projects:readBillingReply'];
 const PHASE_FOUR_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['projects:completePhaseFourOnPrototypeApproval'];
 const M2_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM2Invoice'];
 const M3_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM3Invoice'];
