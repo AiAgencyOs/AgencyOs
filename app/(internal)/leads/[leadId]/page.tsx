@@ -174,6 +174,17 @@ function money(minor: number, currency: string): string {
   }).format(minor / 100);
 }
 
+/**
+ * Who a bubble says wrote it. A reply the AI agent composed is stored with the
+ * staff author type (it goes out as the agency) but names the agent in
+ * `authored_by_agent`; showing it as "Staff" told an owner reading the chat
+ * that a person had written something a model had.
+ */
+function authorOf(m: { author_type: string; authored_by_agent?: string | null }): string {
+  if (m.authored_by_agent) return `AI · ${m.authored_by_agent}`;
+  return AUTHOR_LABEL[m.author_type] ?? m.author_type;
+}
+
 const AUTHOR_LABEL: Record<string, string> = {
   client: 'Customer',
   user: 'Staff',
@@ -436,7 +447,7 @@ export default async function LeadConversationPage({
                       outgoing={!incoming}
                       author={
                         startsRun && !incoming
-                          ? (AUTHOR_LABEL[m.author_type] ?? m.author_type)
+                          ? authorOf(m)
                           : undefined
                       }
                       body={m.body}

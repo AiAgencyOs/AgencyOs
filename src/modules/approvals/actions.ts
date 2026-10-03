@@ -36,6 +36,18 @@ export async function decideApprovalAction(
     return { status: 'error', message: 'That is not a decision this request accepts.' };
   }
 
+  // Sending something back with nothing said gives whoever redrafts nothing to
+  // redraft from — the agent waits for a person, and the owner thinks they
+  // acted (found live, 2026-10-03). Asked for here, where the owner is still
+  // looking at the form.
+  if (decision === 'changes_requested' && !note) {
+    return {
+      status: 'error',
+      message: 'Say what should change — the redraft starts from your note.',
+      fieldErrors: { note: ['Say what should change.'] },
+    };
+  }
+
   const result = await decideApproval({
     requestId: String(formData.get('requestId') ?? ''),
     decision,

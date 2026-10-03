@@ -140,9 +140,21 @@ describe('A. settling a request', () => {
       ['changes_requested', 'Changes requested.'],
     ] as const) {
       outcome = { ok: true, data: { requestId: 'r1', state: decision, decidedAt: 'now' } };
-      const state = await decideApprovalAction(IDLE, form({ requestId: 'r1', decision }));
+      const state = await decideApprovalAction(IDLE, form({ requestId: 'r1', decision, note: 'Make the second line cheaper.' }));
       assert.equal(state.message, said, `${decision} reported as "${state.message}"`);
     }
+  });
+
+  test('asking for changes with nothing said is refused before it reaches the engine; approving needs no note', async () => {
+    outcome = { ok: true, data: { requestId: 'r1', state: 'changes_requested', decidedAt: 'now' } };
+    const refused = await decideApprovalAction(IDLE, form({ requestId: 'r1', decision: 'changes_requested', note: '   ' }));
+    assert.equal(refused.status, 'error');
+    assert.match(refused.message ?? '', /Say what should change/);
+    assert.ok(refused.fieldErrors?.['note']);
+
+    outcome = { ok: true, data: { requestId: 'r1', state: 'approved', decidedAt: 'now' } };
+    const approved = await decideApprovalAction(IDLE, form({ requestId: 'r1', decision: 'approved' }));
+    assert.equal(approved.status, 'success');
   });
 
   test('the message reports the state the database wrote, not the button pressed', async () => {
