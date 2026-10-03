@@ -946,7 +946,18 @@ export async function sendRequirementForConfirmation(
     return err('VALIDATION', 'This version’s requirements could not be read, so nothing was sent.');
   }
 
-  const summaryBody = requirementConfirmationMessage(payload.data);
+  // The client's own language, from the contact the thread belongs to — the
+  // frame around the summary follows it. No language recorded, English.
+  const { data: threadOwner } = await supabase
+    .schema('crm')
+    .from('conversations')
+    .select('contacts(preferred_language)')
+    .eq('id', version.conversation_id)
+    .maybeSingle();
+  const contactRow = (threadOwner as { contacts?: { preferred_language: string | null } | { preferred_language: string | null }[] | null } | null)?.contacts;
+  const clientLanguage = (Array.isArray(contactRow) ? contactRow[0] : contactRow)?.preferred_language ?? null;
+
+  const summaryBody = requirementConfirmationMessage(payload.data, clientLanguage);
   const { data, error } = await supabase.schema('crm').rpc('send_requirement_for_confirmation', {
     p_version_id: idCheck.data,
     p_body: summaryBody,

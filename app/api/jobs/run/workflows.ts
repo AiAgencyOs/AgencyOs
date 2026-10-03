@@ -251,6 +251,11 @@ const REQUIREMENT_PROMPT = [
   'niceToHaves are additions the client mentioned wanting but did not commit to as required scope.',
   'exclusions are things the client explicitly said are NOT included, not simply things never mentioned.',
   'designReferences are links or descriptions of examples the client pointed to.',
+  'LANGUAGE AND VOICE. This text is sent back to the client to confirm, so write it for them to read.',
+  'Use the language they write in: Hinglish — Hindi in Roman letters with the plain English product words',
+  'they use — if they write Hindi or Hinglish; English if they write English. Never Devanagari script.',
+  'Address them directly ("aapka", "aap", "your"), not as "the client" or "Client wants".',
+  'Keep names, product terms and every figure exactly as they said them.',
 ].join(' ');
 
 const REQUIREMENT_EXTRACT: AgentWorkflow = {
@@ -6442,6 +6447,7 @@ const QUOTATION_SCOPE: AgentWorkflow = {
             `The requirements the client agreed:\n\n${JSON.stringify(version.payload, null, 2)}`,
             budgetTurnFor(budget),
             chargesTurnFor(charges),
+            await quotationLanguageTurn(admin, job.organization_id, (opportunity as { id: string }).id),
             decisions,
             corrections,
           ]
@@ -6951,6 +6957,60 @@ async function handToAPersonForLead(
 }
 
 /** The same signal as a user turn, or '' when the client never said anything. */
+/**
+ * The language the client writes in, as an instruction for the quotation
+ * drafters. The PDF font carries Latin only (Devanagari becomes `?`), so Hindi
+ * is asked for in Roman script — Hinglish, the way these clients write — never
+ * in Devanagari. English clients, and any client with no recorded language,
+ * get nothing added: an unrecorded language is not guessed at.
+ *
+ * Read from the contact, which `crm.maintain_preferred_language` keeps current,
+ * so a client who switched language mid-thread gets the language they are
+ * writing in NOW, not the one they opened with.
+ */
+async function quotationLanguageTurn(
+  admin: AgentContext['admin'],
+  organizationId: string,
+  opportunityId: string | null | undefined,
+): Promise<string> {
+  if (!opportunityId) return '';
+  const { data: opp } = await admin
+    .schema('sales')
+    .from('opportunities')
+    .select('lead_id')
+    .eq('id', opportunityId)
+    .eq('organization_id', organizationId)
+    .maybeSingle();
+  if (!opp?.lead_id) return '';
+  const { data: conv } = await admin
+    .schema('crm')
+    .from('conversations')
+    .select('contact_id')
+    .eq('lead_id', opp.lead_id)
+    .eq('organization_id', organizationId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!conv?.contact_id) return '';
+  const { data: contact } = await admin
+    .schema('crm')
+    .from('contacts')
+    .select('preferred_language')
+    .eq('id', conv.contact_id)
+    .eq('organization_id', organizationId)
+    .maybeSingle();
+  const tag = contact?.preferred_language ?? '';
+  if (tag !== 'hi' && tag !== 'hi-en') return '';
+  return (
+    'LANGUAGE OF THE DOCUMENT. This client writes Hindi/Hinglish. Write every sentence YOU author — ' +
+    'the title, the summary, each line\'s description and features, the exclusions, assumptions and ' +
+    'responsibilities — in Hinglish: Hindi in Roman (English) letters mixed with the plain English product ' +
+    'words the client uses, the way they write to us. Never Devanagari script. Keep product names, ' +
+    'technical terms, names of services and every figure exactly as they are. Do not add, remove or ' +
+    'reword the SCOPE because of the language; only the words change.'
+  );
+}
+
 /**
  * The list, as the drafter sees it — G-207.
  *
@@ -7619,6 +7679,7 @@ const QUOTATION_REVISE: AgentWorkflow = {
             // wholesale, so without this the reviser would have to drop every
             // charge the previous version cited.
             chargesTurnFor(revisionCharges) || null,
+            (await quotationLanguageTurn(admin, job.organization_id, proposal.opportunity_id)) || null,
           ]
             .filter((part): part is string => part !== null)
             .join('\n\n'),
@@ -8336,6 +8397,7 @@ const QUOTATION_REWORK: AgentWorkflow = {
             // G-207 — the recorded charges, so a rework can cite one. The
             // resolver discards anything not cited either way.
             chargesTurnFor(reworkCharges) || null,
+            (await quotationLanguageTurn(admin, job.organization_id, proposal.opportunity_id)) || null,
             // G-185. A rework goes to the owner for approval, so a version
             // that already reflects what they always correct is one they can
             // approve. Empty until they have corrected something, and an
