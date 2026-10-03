@@ -204,7 +204,7 @@ export async function listMessages(conversationId: string): Promise<Conversation
   const { data, error } = await supabase
     .schema('crm')
     .from('conversation_messages')
-    .select('id, seq, author_type, body, occurred_at, metadata, media_description, retry_of, retry_count')
+    .select('id, seq, author_type, body, occurred_at, metadata, media_description, retry_of, retry_count, authored_by_agent')
     .eq('conversation_id', conversationId)
     .order('seq', { ascending: true });
 
