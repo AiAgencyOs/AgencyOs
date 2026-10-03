@@ -18,6 +18,7 @@ import {
 import { ImpactGate } from '../impact-gate';
 import { SettingHistory } from '../setting-history';
 import { loadSettingHistory } from '../setting-history-entries';
+import { TranslateStandardsForm } from '../finance/numbering-form';
 import { QuotationClausesPanel, type ClauseCard } from './clauses-panel';
 
 export const metadata: Metadata = { title: 'Settings — Commercial' };
@@ -181,6 +182,17 @@ export default async function SettingsCommercialPage() {
             : 'Standard wording — none of these has been edited. Publish your own and every quotation issued from then on prints it; ones already issued keep what they printed.'}
         </p>
         <QuotationClausesPanel clauses={clauseCards} canEdit={canEditClauses} />
+
+        <h3 id="quotation-language" className="mt-6 scroll-mt-24 text-sm font-medium">Language of the quotation</h3>
+        <p className="text-xs text-muted">
+          A client who writes Hindi or Hinglish gets their quotation&rsquo;s headings and content in that language
+          automatically (Devanagari if they write Devanagari). The agency&rsquo;s <em>standard terms</em> — support,
+          commercial terms, regulatory notes, next steps — are your wording, so they stay in English until you turn this
+          on. Anything you wrote yourself (a clause you published, a milestone you named) always prints exactly as
+          written. The Hinglish and Hindi versions are in <code>quotation-standards-i18n.ts</code>; read them before
+          switching on.
+        </p>
+        <TranslateStandardsForm on={setting('quotation_translate_standards') === 'on'} />
 
         <h3 id="third-party-charges" className="mt-6 scroll-mt-24 text-sm font-medium">Third-party charges</h3>
         <p className="text-xs text-muted">

@@ -15,6 +15,7 @@ import { linkInternalRecipientAction, linkInternalGroupAction } from '@/modules/
 
 import {
   sendWhatsAppTestAction,
+  setTrustFactsAction,
   setApprovedOfferAction,
   setDefaultDesignReviewerAction,
   setNegotiationLimitsAction,
@@ -120,6 +121,30 @@ export function TimezoneForm({ current }: { current: string | null }) {
         {pending ? 'Saving…' : current ? 'Update' : 'Set timezone'}
       </button>
       <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+export function TrustFactsForm({ current }: { current: string | null }) {
+  const [state, action, pending] = useActionState(setTrustFactsAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <textarea
+        name="trust_facts"
+        defaultValue={current ?? ''}
+        rows={6}
+        maxLength={1500}
+        placeholder={'One statement per line, for example:\nWork is paid in stages and you see each stage before the next payment.\nYou receive a written quotation before anything starts.'}
+        aria-label="Statements the agent may say about the agency"
+        className={inputClass}
+      />
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+          {pending ? 'Saving…' : current ? 'Update' : 'Save'}
+        </button>
+        <Message status={state.status} message={state.message} />
+      </div>
     </form>
   );
 }

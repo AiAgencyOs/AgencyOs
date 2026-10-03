@@ -1,7 +1,9 @@
 import { PDFDocument, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 
-import { quotationFontBytes } from './fonts';
+import { quotationDevanagariFontBytes, quotationFontBytes } from './fonts';
+import { QUOTATION_LABELS, type QuotationLabels, type QuotationLanguage } from './quotation-labels';
+import { ShapedFont } from './shaped-font';
 
 /**
  * The quotation as a document — brief §12.
@@ -38,6 +40,14 @@ import { quotationFontBytes } from './fonts';
  */
 
 export interface QuotationPdfInput {
+  /**
+   * The language the fixed words of the page are in, and — for 'hindi' — the
+   * script the whole document is set in (Devanagari, shaped). Absent is
+   * English, exactly as before. The sentences themselves are whatever the
+   * caller passes; this changes the furniture and the typeface, never the
+   * content.
+   */
+  language?: QuotationLanguage;
   /** The agency's own name — the branding line. */
   organizationName: string;
   /**
@@ -231,21 +241,22 @@ function accentFor(theme: string | null | undefined) {
  */
 const CLEAN_STATUSES = new Set(['approved', 'sent', 'accepted']);
 
-export function statusBandFor(status: string): string | null {
+export function statusBandFor(status: string, language: QuotationLanguage = 'en'): string | null {
   if (CLEAN_STATUSES.has(status)) return null;
+  const bands = QUOTATION_LABELS[language].bands;
   switch (status) {
     case 'draft':
-      return 'DRAFT — NOT YET APPROVED';
+      return bands.draft;
     case 'pending_approval':
-      return 'FOR INTERNAL REVIEW — NOT YET APPROVED';
+      return bands.pending;
     case 'superseded':
-      return 'SUPERSEDED — A LATER VERSION REPLACES THIS DOCUMENT';
+      return bands.superseded;
     case 'lapsed':
-      return 'VALIDITY EXPIRED';
+      return bands.lapsed;
     case 'rejected':
-      return 'DECLINED BY THE CLIENT';
+      return bands.rejected;
     default:
-      return `NOT APPROVED — STATUS: ${status.toUpperCase().replace(/_/g, ' ')}`;
+      return bands.unknown(status);
   }
 }
 
@@ -420,13 +431,16 @@ export function quotationPdfFilename(title: string, version: number): string {
 
 // ── the renderer ───────────────────────────────────────────────────────────
 
+/** A pdf-lib font, or — for Devanagari — a font whose text is shaped and drawn as outlines. */
+type QuoteFont = PDFFont | ShapedFont;
+
 interface Cursor {
   doc: PDFDocument;
   page: PDFPage;
   y: number;
   pages: PDFPage[];
-  regular: PDFFont;
-  bold: PDFFont;
+  regular: QuoteFont;
+  bold: QuoteFont;
   /** Repainted at the top of every continuation page. */
   continuationHeader: (page: PDFPage) => number;
 }
@@ -438,7 +452,7 @@ function ensureRoom(c: Cursor, height: number): void {
   c.y = c.continuationHeader(c.page);
 }
 
-function wrap(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
+function wrap(text: string, font: QuoteFont, size: number, maxWidth: number): string[] {
   const lines: string[] = [];
   for (const paragraph of text.split('\n')) {
     const words = paragraph.split(/\s+/).filter(Boolean);
@@ -491,21 +505,40 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
 
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
-  const fontBytes = quotationFontBytes();
-  // `subset: false`, and the reason is written on quotationFontBytes: the
-  // vendored files are already subsets, and pdf-lib's own subsetting breaks
-  // Apple's renderer — the one the owner's iPhone opens this PDF with.
-  // Ligatures off: with `liga` on, fontkit substitutes one glyph for "fi"/"fl"
-  // but pdf-lib measures and draws the original letters, so the PDF showed
-  // "fl ow", "profi le" and, to a text extractor, "con rmation" — in the
-  // document a client reads before paying.
-  const regular = await doc.embedFont(fontBytes.regular, { subset: false, features: { liga: false, clig: false } });
-  const bold = await doc.embedFont(fontBytes.bold, { subset: false, features: { liga: false, clig: false } });
+  const language: QuotationLanguage = input.language ?? 'en';
+  const L: QuotationLabels = QUOTATION_LABELS[language];
+  let regular: QuoteFont;
+  let bold: QuoteFont;
+  let charsetSource: ReadonlySet<number>;
+  if (language === 'hindi') {
+    // Devanagari: shaped by fontkit, drawn as outlines (see shaped-font.ts).
+    // One face carries Latin, digits and ₹ as well, so the document is set in
+    // it throughout.
+    const deva = quotationDevanagariFontBytes();
+    const r = new ShapedFont(deva.regular);
+    regular = r;
+    bold = new ShapedFont(deva.bold);
+    charsetSource = new Set(r.getCharacterSet());
+  } else {
+    const fontBytes = quotationFontBytes();
+    // `subset: false`, and the reason is written on quotationFontBytes: the
+    // vendored files are already subsets, and pdf-lib's own subsetting breaks
+    // Apple's renderer — the one the owner's iPhone opens this PDF with.
+    // Ligatures off: with `liga` on, fontkit substitutes one glyph for "fi"/"fl"
+    // but pdf-lib measures and draws the original letters, so the PDF showed
+    // "fl ow", "profi le" and, to a text extractor, "con rmation" — in the
+    // document a client reads before paying.
+    const embeddedRegular = await doc.embedFont(fontBytes.regular, { subset: false, features: { liga: false, clig: false } });
+    regular = embeddedRegular;
+    bold = await doc.embedFont(fontBytes.bold, { subset: false, features: { liga: false, clig: false } });
+    // Both weights of Noto Sans carry the same character set, so one check
+    // serves both.
+    charsetSource = new Set(embeddedRegular.getCharacterSet());
+  }
 
-  // Both weights of Noto Sans carry the same character set, so one check
-  // serves both. Characters outside it become '?' — visibly wrong beats a
-  // crashed send, and the substitution is reported, not swallowed.
-  const charset = new Set(regular.getCharacterSet());
+  // Characters outside it become '?' — visibly wrong beats a crashed send, and
+  // the substitution is reported, not swallowed.
+  const charset = new Set(charsetSource);
   charset.add('\n'.codePointAt(0)!);
   const replaced = new Set<string>();
   const clean = (text: string): string =>
@@ -519,9 +552,19 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
     }).join('');
 
   const drawn: string[] = [];
-  const draw = (page: PDFPage, text: string, options: Parameters<PDFPage['drawText']>[1]) => {
+  type DrawOptions = Omit<NonNullable<Parameters<PDFPage['drawText']>[1]>, 'font'> & { font: QuoteFont };
+  const draw = (page: PDFPage, text: string, options: DrawOptions) => {
     drawn.push(text);
-    page.drawText(text, options);
+    if (options.font instanceof ShapedFont) {
+      options.font.drawText(page, text, {
+        x: options.x ?? 0,
+        y: options.y ?? 0,
+        size: options.size ?? 12,
+        ...(options.color ? { color: options.color } : {}),
+      });
+    } else {
+      page.drawText(text, options as Parameters<PDFPage['drawText']>[1]);
+    }
   };
 
   // For fields drawn as ONE line — the letterhead, the client, the header
@@ -533,7 +576,7 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
   const money = moneyFormatter(input.currency);
   const title = cleanLine(input.title);
   const organizationName = cleanLine(input.organizationName);
-  const versionLabel = `Version ${input.version}`;
+  const versionLabel = `${L.version} ${input.version}`;
 
   const firstPage = doc.addPage([A4.width, A4.height]);
   const pages = [firstPage];
@@ -550,7 +593,7 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
     // Truncated to the half of the width the letterhead does not own — a
     // 200-character title would otherwise compute a negative x and be drawn
     // straight through the organization's name.
-    let label = `${title} — ${versionLabel} (continued)`;
+    let label = `${title} — ${versionLabel} (${L.continued})`;
     const labelMax = CONTENT_WIDTH / 2;
     if (regular.widthOfTextAtSize(label, size) > labelMax) {
       while (label.length > 1 && regular.widthOfTextAtSize(`${label}…`, size) > labelMax) {
@@ -579,7 +622,7 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
   // ── header: who this document is from ──
   let y = A4.height - MARGIN;
   draw(c.page, organizationName, { x: MARGIN, y, size: 13, font: bold, color: INK });
-  const kind = 'QUOTATION';
+  const kind = L.kind;
   draw(c.page, kind, {
     x: A4.width - MARGIN - regular.widthOfTextAtSize(kind, 10),
     y: y + 1,
@@ -606,7 +649,7 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
   y -= 28;
 
   // ── the status, before the content it qualifies ──
-  const band = statusBandFor(input.status);
+  const band = statusBandFor(input.status, language);
   if (band) {
     const bandText = clean(band);
     const bandHeight = 26;
@@ -640,8 +683,8 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
   // The phase sits right after the version, because "v1" of a phase 3
   // document means something different from "v1" of a whole project.
   if (input.phaseLabel) metaParts.push(clean(input.phaseLabel));
-  metaParts.push(`Prepared ${dateOnly(input.preparedAt, input.timeZone)}`);
-  if (input.validUntil) metaParts.push(`Valid until ${dateOnly(input.validUntil, input.timeZone)}`);
+  metaParts.push(`${L.prepared} ${dateOnly(input.preparedAt, input.timeZone)}`);
+  if (input.validUntil) metaParts.push(`${L.validUntil} ${dateOnly(input.validUntil, input.timeZone)}`);
   draw(c.page, clean(metaParts.join('   ·   ')), {
     x: MARGIN,
     y: y - 10,
@@ -663,10 +706,10 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
   if (input.preparedFor || preparedByLine) {
     const half = CONTENT_WIDTH / 2;
     if (input.preparedFor) {
-      draw(c.page, 'PREPARED FOR', { x: MARGIN, y: y - 8, size: 7.5, font: bold, color: LABEL });
+      draw(c.page, L.preparedFor, { x: MARGIN, y: y - 8, size: 7.5, font: bold, color: LABEL });
     }
     if (preparedByLine) {
-      draw(c.page, 'PREPARED BY', { x: MARGIN + half, y: y - 8, size: 7.5, font: bold, color: LABEL });
+      draw(c.page, L.preparedBy, { x: MARGIN + half, y: y - 8, size: 7.5, font: bold, color: LABEL });
     }
     y -= 12;
     if (input.preparedFor) {
@@ -690,7 +733,7 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
     const size = 10.5;
     const leading = 15.5;
     ensureRoom(c, 14 + leading);
-    draw(c.page, 'THE PROJECT, AS UNDERSTOOD', { x: MARGIN, y: c.y - 8, size: 7.5, font: bold, color: LABEL });
+    draw(c.page, L.projectUnderstood, { x: MARGIN, y: c.y - 8, size: 7.5, font: bold, color: LABEL });
     c.y -= 16;
     for (const line of wrap(clean(input.understanding), regular, size, CONTENT_WIDTH)) {
       ensureRoom(c, leading);
@@ -723,18 +766,18 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
     // Room for the header AND the first row: a header whose every item sits
     // on the next page is a table that appears to cover nothing.
     ensureRoom(c, 30 + leading + 10);
-    draw(c.page, 'WHAT IT COVERS', { x: MARGIN, y: c.y - 8, size: 7.5, font: bold, color: LABEL });
+    draw(c.page, L.whatItCovers, { x: MARGIN, y: c.y - 8, size: 7.5, font: bold, color: LABEL });
     if (qtyColumn) {
-      draw(c.page, 'QTY', {
-        x: MARGIN + descWidth + (qtyColumn - bold.widthOfTextAtSize('QTY', 7.5)) - 8,
+      draw(c.page, L.qty, {
+        x: MARGIN + descWidth + (qtyColumn - bold.widthOfTextAtSize(L.qty, 7.5)) - 8,
         y: c.y - 8,
         size: 7.5,
         font: bold,
         color: MUTED,
       });
     }
-    draw(c.page, 'AMOUNT', {
-      x: A4.width - MARGIN - bold.widthOfTextAtSize('AMOUNT', 7.5),
+    draw(c.page, L.amount, {
+      x: A4.width - MARGIN - bold.widthOfTextAtSize(L.amount, 7.5),
       y: c.y - 8,
       size: 7.5,
       font: bold,
@@ -817,7 +860,7 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
       if (item.serves && item.serves.length > 0) {
         const sSize = 8.5;
         const sLeading = 12;
-        const sLines = wrap(clean(`For: ${item.serves.join(', ')}`), regular, sSize, descWidth - 30);
+        const sLines = wrap(clean(`${L.servesPrefix}${item.serves.join(', ')}`), regular, sSize, descWidth - 30);
         for (const line of sLines) {
           ensureRoom(c, sLeading);
           draw(c.page, line, { x: MARGIN + 12, y: c.y - sSize, size: sSize, font: regular, color: MUTED });
@@ -841,11 +884,11 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
   {
     const rows: Array<{ label: string; value: string; strong?: boolean }> = [];
     if (input.discountMinor > 0 || input.taxMinor > 0) {
-      rows.push({ label: 'Subtotal', value: money(input.subtotalMinor) });
-      if (input.discountMinor > 0) rows.push({ label: 'Discount', value: `−${money(input.discountMinor)}` });
-      if (input.taxMinor > 0) rows.push({ label: 'Tax', value: money(input.taxMinor) });
+      rows.push({ label: L.subtotal, value: money(input.subtotalMinor) });
+      if (input.discountMinor > 0) rows.push({ label: L.discount, value: `−${money(input.discountMinor)}` });
+      if (input.taxMinor > 0) rows.push({ label: L.tax, value: money(input.taxMinor) });
     }
-    rows.push({ label: 'Total', value: money(input.totalMinor), strong: true });
+    rows.push({ label: L.total, value: money(input.totalMinor), strong: true });
 
     const blockWidth = 240;
     const rowHeight = 17;
@@ -923,7 +966,7 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
   }
 
   if (input.timelineLabel) {
-    sectionList('TIMELINE', [input.timelineLabel, ...(input.timelineTerms ?? [])], false);
+    sectionList(L.timeline, [input.timelineLabel, ...(input.timelineTerms ?? [])], false);
   }
 
   if (input.paymentRows && input.paymentRows.length > 0) {
@@ -936,7 +979,7 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
     // heading AND the first row actually consume.
     ensureRoom(c, 26 + leading + 4);
     c.y -= 8;
-    draw(c.page, 'PAYMENT SCHEDULE', { x: MARGIN, y: c.y - 8, size: 7.5, font: bold, color: LABEL });
+    draw(c.page, L.paymentSchedule, { x: MARGIN, y: c.y - 8, size: 7.5, font: bold, color: LABEL });
     c.y -= 18;
     for (const row of input.paymentRows) {
       const amount = clean(`${money(row.amountMinor)} (${row.pct}%)`);
@@ -968,28 +1011,28 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
    * here means the exclusions that follow read as the end of a complete
    * picture rather than as the first thing the document says about limits.
    */
-  sectionList('WHO USES IT', input.roleLines ?? [], true);
+  sectionList(L.whoUsesIt, input.roleLines ?? [], true);
   // "SERVICES IT USES", not "INTEGRATIONS": the reader is a client, and the
   // line that matters to them is whose bill it is.
-  sectionList('SERVICES IT USES, AND WHO PAYS FOR THEM', input.integrationLines ?? [], true);
+  sectionList(L.services, input.integrationLines ?? [], true);
 
-  sectionList('EXPLICITLY NOT INCLUDED', input.exclusions ?? [], true);
+  sectionList(L.notIncluded, input.exclusions ?? [], true);
   // Not an exclusion — a handover. Named separately so a client reads "later"
   // rather than "never", and so nobody has to argue about which it was.
-  sectionList('NOT IN THIS PHASE — AND WHICH PHASE OWNS IT', input.deferredLines ?? [], true);
+  sectionList(L.notThisPhase, input.deferredLines ?? [], true);
   // Priced, named, and outside the total — the amount is drawn INTO the line
   // rather than into a column, because an add-on that looks like a table row
   // is an add-on a client reads as included (G-167).
   sectionList(
-    'OPTIONAL — NOT IN THE TOTAL ABOVE',
+    L.optional,
     (input.optionalAddons ?? []).map((a) => `${a.label} — ${money(a.priceRupees * 100)}`),
     true,
   );
-  sectionList('CLIENT RESPONSIBILITIES', input.clientResponsibilities ?? [], true);
-  sectionList('ASSUMPTIONS', input.assumptions ?? [], true);
-  sectionList('DEPENDENCIES', input.dependencies ?? [], true);
-  sectionList('ACCEPTED WHEN', input.acceptanceCriteria ?? [], true);
-  sectionList('SCOPE & CHANGES', input.scopeProtection ?? [], false);
+  sectionList(L.clientResponsibilities, input.clientResponsibilities ?? [], true);
+  sectionList(L.assumptions, input.assumptions ?? [], true);
+  sectionList(L.dependencies, input.dependencies ?? [], true);
+  sectionList(L.acceptedWhen, input.acceptanceCriteria ?? [], true);
+  sectionList(L.scopeChanges, input.scopeProtection ?? [], false);
   // The approver's note, and the gate that keeps it theirs (G-168). `band` is
   // the same value the status banner was drawn from: non-null means this
   // document already declares itself unapproved, which is exactly the set of
@@ -1008,10 +1051,10 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
     const notes = input.internalNote.split(/\n{2,}/).map((n) => n.trim()).filter(Boolean);
     sectionList('FOR THE APPROVER — NOT PART OF THE QUOTATION', notes, false);
   }
-  sectionList('SUPPORT', input.supportLines ?? [], true);
-  sectionList('COMMERCIAL TERMS', input.commercialTerms ?? [], true);
-  sectionList('REGULATORY', input.regulatedClauses ?? [], true);
-  sectionList('NEXT STEPS', input.nextSteps ?? [], true);
+  sectionList(L.support, input.supportLines ?? [], true);
+  sectionList(L.commercialTerms, input.commercialTerms ?? [], true);
+  sectionList(L.regulatory, input.regulatedClauses ?? [], true);
+  sectionList(L.nextSteps, input.nextSteps ?? [], true);
 
   // ── footer, on every page, once the page count is known ──
   const total = pages.length;
@@ -1022,9 +1065,9 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
       thickness: 0.5,
       color: RULE,
     });
-    const trace = clean(`Quotation ${input.reference} — ${versionLabel.toLowerCase()}`);
+    const trace = clean(`${L.quotation} ${input.reference} — ${versionLabel.toLowerCase()}`);
     draw(page, trace, { x: MARGIN, y: MARGIN - 20, size: 7.5, font: regular, color: MUTED });
-    const pageLabel = `Page ${i + 1} of ${total}`;
+    const pageLabel = L.page(i + 1, total);
     draw(page, pageLabel, {
       x: A4.width - MARGIN - regular.widthOfTextAtSize(pageLabel, 7.5),
       y: MARGIN - 20,

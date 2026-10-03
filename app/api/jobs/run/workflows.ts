@@ -17,6 +17,8 @@
  * skip them.
  */
 
+import { quotationLanguageForLead } from '@/modules/sales/quotation-language';
+import { approvedStatementsBlock } from '@/modules/sales/approved-statements';
 import type { WorkClass } from '@/lib/ai/autonomy';
 import type { AiAudioMediaType, AiMessage } from '@/lib/ai/types';
 import type { Json } from '@/lib/db/types';
@@ -253,8 +255,9 @@ const REQUIREMENT_PROMPT = [
   'exclusions are things the client explicitly said are NOT included, not simply things never mentioned.',
   'designReferences are links or descriptions of examples the client pointed to.',
   'LANGUAGE AND VOICE. This text is sent back to the client to confirm, so write it for them to read.',
-  'Use the language they write in: Hinglish — Hindi in Roman letters with the plain English product words',
-  'they use — if they write Hindi or Hinglish; English if they write English. Never Devanagari script.',
+  'Use the language AND script they write in: Hinglish — Hindi in Roman letters with the plain English',
+  'product words they use — if they write Hindi in Roman letters; Hindi in Devanagari script if they write',
+  'in Devanagari; English if they write English.',
   'Address them directly ("aapka", "aap", "your"), not as "the client" or "Client wants".',
   'Keep names, product terms and every figure exactly as they said them.',
   // SCR-029 (bucket G-3): the six optional sections. Each is filled only from
@@ -4485,7 +4488,7 @@ const REPLY_PROMPT = [
   'this conversation many times and still finds it interesting. That describes HOW you',
   'talk. It is a manner, not a set of facts you may recite about the agency.',
 
-  'WHAT YOU MAY SAY ABOUT THE AGENCY. Only what the sales file below actually lists.',
+  'WHAT YOU MAY SAY ABOUT THE AGENCY. Only what the sales file below actually lists, and the statements the agency has approved if the file gives any.',
   'You have not been given a personal name, a number of years in business, a team size,',
   'a client list, awards, a guarantee, a refund rule, or any payment terms — so you',
   'never state one, and you never invent a name for yourself. Not "thirty years", not',
@@ -4499,6 +4502,8 @@ const REPLY_PROMPT = [
   'English to English. Hindi to Hindi. Hinglish to Hinglish — and Hinglish means',
   'Hinglish, not translated Hindi: "aapke mind mein kis type ka app hai?", never',
   '"कृपया अपनी लक्षित ग्राहक-वर्ग की जानकारी प्रदान करें". If they switch, you switch.',
+  'SCRIPT. Match the script as well: if they write Hindi in Devanagari, answer in Devanagari; if they write',
+  'it in Roman letters, answer in Roman letters. Never switch script on them.',
   'Simple words if they use simple words. Technical words only if they do.',
 
   'LENGTH follows the question, not a rule. A small question gets a small answer.',
@@ -5337,7 +5342,8 @@ const CLIENT_REPLY: AgentWorkflow = {
             // knows, and a model handed them mixed cannot tell a new client's
             // first sentence from a returning one's history.
             (remembered ? `\nWhat we already know about this client, from before:\n${remembered}\n` : '') +
-            salesFile,
+            salesFile +
+            approvedStatementsBlock(org?.settings),
         },
       ],
       runId,
@@ -7000,33 +7006,25 @@ async function quotationLanguageTurn(
     .eq('id', opportunityId)
     .eq('organization_id', organizationId)
     .maybeSingle();
-  if (!opp?.lead_id) return '';
-  const { data: conv } = await admin
-    .schema('crm')
-    .from('conversations')
-    .select('contact_id')
-    .eq('lead_id', opp.lead_id)
-    .eq('organization_id', organizationId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (!conv?.contact_id) return '';
-  const { data: contact } = await admin
-    .schema('crm')
-    .from('contacts')
-    .select('preferred_language')
-    .eq('id', conv.contact_id)
-    .eq('organization_id', organizationId)
-    .maybeSingle();
-  const tag = contact?.preferred_language ?? '';
-  if (tag !== 'hi' && tag !== 'hi-en') return '';
+  const language = await quotationLanguageForLead(admin, opp?.lead_id, organizationId);
+  if (language === 'en') return '';
+
+  const keep =
+    'Keep product names, technical terms, names of services and every figure exactly as they are. ' +
+    'Do not add, remove or reword the SCOPE because of the language; only the words change.';
+  if (language === 'hindi') {
+    return (
+      'LANGUAGE OF THE DOCUMENT. This client writes Hindi in Devanagari script. Write every sentence YOU author — ' +
+      'the title, the summary, each line\'s description and features, the exclusions, assumptions and ' +
+      'responsibilities — in simple, natural Hindi in Devanagari script, the way they write to us, using ' +
+      'the common English product words (ऐप, एडमिन पैनल, UPI, WhatsApp) where they would. ' + keep
+    );
+  }
   return (
-    'LANGUAGE OF THE DOCUMENT. This client writes Hindi/Hinglish. Write every sentence YOU author — ' +
+    'LANGUAGE OF THE DOCUMENT. This client writes Hindi/Hinglish in Roman letters. Write every sentence YOU author — ' +
     'the title, the summary, each line\'s description and features, the exclusions, assumptions and ' +
     'responsibilities — in Hinglish: Hindi in Roman (English) letters mixed with the plain English product ' +
-    'words the client uses, the way they write to us. Never Devanagari script. Keep product names, ' +
-    'technical terms, names of services and every figure exactly as they are. Do not add, remove or ' +
-    'reword the SCOPE because of the language; only the words change.'
+    'words the client uses, the way they write to us. Never Devanagari script. ' + keep
   );
 }
 

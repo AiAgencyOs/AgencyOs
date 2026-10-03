@@ -43,6 +43,30 @@ export function InvoiceNumberingForm({ prefix, termsDays, termsNote, example }: 
 }
 
 /**
+ * Whether the agency's standard quotation terms print in the client's language
+ * (Hinglish or Hindi) as well as the headings and the content. The wording is
+ * the agency's own legal-adjacent text, so it is the owner's to switch on after
+ * reading it (Settings › Commercial › Standard terms).
+ */
+export function TranslateStandardsForm({ on }: { on: boolean }) {
+  const [state, action, pending] = useActionState(setOrganizationSettingAction, IDLE_STATE);
+  const uid = useId();
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-3">
+      <input type="hidden" name="key" value="quotation_translate_standards" />
+      <label className="flex items-center gap-2 text-sm" htmlFor={`${uid}-on`}>
+        <input id={`${uid}-on`} type="checkbox" name="on" defaultChecked={on} className="h-4 w-4" />
+        Print the standard terms in the client&rsquo;s language too
+      </label>
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Saving…' : 'Save'}
+      </button>
+      <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/**
  * The payment half of the WON gate (G-230): a switch. 'on' requires a captured
  * payment or an approved exception before a deal may be won; off requires only
  * the accepted quotation the gate always enforces. The door is the existing

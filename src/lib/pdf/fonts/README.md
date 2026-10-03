@@ -18,3 +18,12 @@ font whole avoids that entire failure class. The ranges cover Latin,
 punctuation, currency (₹ U+20B9) and the minus sign U+2212 that
 `Intl.NumberFormat` output and the app's own copy use; characters outside
 them are replaced with '?' by the renderer and reported, never crashed on.
+
+## Devanagari
+
+`NotoSansDevanagari_400Regular.ttf` and `NotoSansDevanagari_700Bold.ttf` —
+Noto Sans Devanagari, © The Noto Project Authors, SIL Open Font License 1.1
+(./LICENSE.devanagari), from the `@expo-google-fonts/noto-sans-devanagari`
+npm package (0.4.1), unmodified and whole. These are read by `fontkit` and
+drawn as shaped glyph outlines (see `../shaped-font.ts`), never embedded by
+pdf-lib, which cannot shape Devanagari.

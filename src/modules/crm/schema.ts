@@ -324,6 +324,13 @@ const CONFIRMATION_FRAME = {
     open: 'Still to confirm:',
     outro: 'If anything here is wrong or missing, tell us and we will correct it before quoting.',
   },
+  hindi: {
+    intro: 'कोटेशन बनाने से पहले, हमने जो समझा है वह यह है — कृपया एक बार जाँच लीजिए।',
+    build: 'हम यह बनाएँगे:',
+    constraints: 'आपने जो सीमाएँ/शर्तें बताई हैं:',
+    open: 'यह अभी पुष्टि होना बाकी है:',
+    outro: 'अगर कुछ गलत या अधूरा हो तो बता दीजिए, कोटेशन बनाने से पहले हम ठीक कर देंगे।',
+  },
   hinglish: {
     intro: 'Quotation banane se pehle, humne jo samjha hai woh yeh hai — please ek baar check kar lijiye.',
     build: 'Hum yeh banayenge:',
@@ -355,7 +362,12 @@ export function requirementConfirmationMessage(
   },
   language?: string | null,
 ): string {
-  const frame = language === 'hi' || language === 'hi-en' ? CONFIRMATION_FRAME.hinglish : CONFIRMATION_FRAME.en;
+  const frame =
+    language === 'hindi'
+      ? CONFIRMATION_FRAME.hindi
+      : language === 'hinglish' || language === 'hi' || language === 'hi-en'
+        ? CONFIRMATION_FRAME.hinglish
+        : CONFIRMATION_FRAME.en;
   const lines: string[] = [frame.intro, '', payload.summary];
 
   const items = payload.scopeItems ?? [];

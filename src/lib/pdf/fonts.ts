@@ -36,6 +36,29 @@ import path from 'node:path';
 const FONT_DIR = path.join(process.cwd(), 'src', 'lib', 'pdf', 'fonts');
 
 let cached: { regular: Uint8Array; bold: Uint8Array } | null = null;
+let cachedDevanagari: { regular: Uint8Array; bold: Uint8Array } | null = null;
+
+/**
+ * Noto Sans Devanagari, for a quotation written in Devanagari script
+ * (@expo-google-fonts/noto-sans-devanagari 0.4.1, SIL OFL — ./fonts/LICENSE.devanagari).
+ *
+ * Whole files, not subsets, and NOT handed to pdf-lib to embed: Devanagari
+ * must be shaped (conjuncts, vowel signs written before the consonant they
+ * follow, mark positioning), which pdf-lib does not do. `ShapedFont` reads
+ * these with fontkit and draws each shaped glyph as an outline, so none of the
+ * embedded-font concerns above apply to them. The face carries Latin, digits,
+ * ₹ and the punctuation the copy uses, so a Hindi document is set in this one
+ * face throughout.
+ */
+export function quotationDevanagariFontBytes(): { regular: Uint8Array; bold: Uint8Array } {
+  if (!cachedDevanagari) {
+    cachedDevanagari = {
+      regular: readFileSync(path.join(FONT_DIR, 'NotoSansDevanagari_400Regular.ttf')),
+      bold: readFileSync(path.join(FONT_DIR, 'NotoSansDevanagari_700Bold.ttf')),
+    };
+  }
+  return cachedDevanagari;
+}
 
 export function quotationFontBytes(): { regular: Uint8Array; bold: Uint8Array } {
   if (!cached) {

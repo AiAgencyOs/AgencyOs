@@ -313,8 +313,14 @@ describe('E. the wiring around the renderer', () => {
 
   test('every draw goes through the transcript wrapper — an unrecorded draw makes the honesty tests above blind', () => {
     const renderer = read('../src/lib/pdf/quotation.ts');
+    // Two, both INSIDE the wrapper and nowhere else: pdf-lib's own text draw,
+    // and the shaped-outline draw a Devanagari document uses. A third would be
+    // a draw the transcript never sees.
     const bare = renderer.match(/\.drawText\(/g) ?? [];
-    assert.equal(bare.length, 1, 'a drawText call outside the draw() wrapper appeared');
+    assert.equal(bare.length, 2, 'a drawText call outside the draw() wrapper appeared');
+    const wrapper = renderer.slice(renderer.indexOf('const draw = ('), renderer.indexOf('// For fields drawn as ONE line'));
+    assert.equal((wrapper.match(/\.drawText\(/g) ?? []).length, 2, 'both drawText calls live in the wrapper');
+    assert.match(wrapper, /drawn\.push\(text\);/);
   });
 
   test('the owner leg attaches for every quotation; attribution still asks for a PERSON', () => {

@@ -715,6 +715,7 @@ async function renderQuotationDocument(
   // Absent links leave it null — the renderer omits the block rather than
   // inventing a name (ADM-76).
   let preparedFor: string | null = null;
+  let languageLeadId: string | null = null;
   if (proposal.opportunity_id) {
     const { data: opportunity } = await admin
       .schema('sales')
@@ -723,6 +724,7 @@ async function renderQuotationDocument(
       .eq('id', proposal.opportunity_id)
       .eq('organization_id', organizationId)
       .maybeSingle();
+    languageLeadId = opportunity?.lead_id ?? null;
     if (opportunity?.lead_id) {
       const { data: lead } = await admin
         .schema('crm')
@@ -756,6 +758,11 @@ async function renderQuotationDocument(
   // whose sales-side callers use the same function via its re-export — must
   // not ride into a cron handler for one pure function.
   const { quotationSectionsFor } = await import('@/modules/sales/quotation-standards');
+  const { localiseSections } = await import('@/modules/sales/quotation-standards-i18n');
+  const { quotationLanguageForLead, translateStandardsOn } = await import('@/modules/sales/quotation-language');
+  // The language this client writes in — the page's words and, for Hindi, its
+  // typeface — read the same way for the owner's copy and the client's.
+  const documentLanguage = await quotationLanguageForLead(admin, languageLeadId, organizationId);
   // The scope in words, for the regulated-category backstop (G-167):
   // it reads the quotation's own lines rather than trusting a label.
   // Mapped once and used twice (G-168) — see the note in sales/service.ts.
@@ -784,6 +791,7 @@ async function renderQuotationDocument(
 
   try {
     const rendered = await renderQuotationPdf({
+      language: documentLanguage,
       organizationName: org.name,
       // G-171 — this is the copy a client forwards, so it is the copy that
       // most needs to say how to reach the agency.
@@ -803,7 +811,7 @@ async function renderQuotationDocument(
       // Every section, by name from the one assembler (G-167). Enumerating
       // them here meant three edits per new section and three chances to
       // forget one — the keys are already exactly the renderer's own.
-      ...(sections ?? {}),
+      ...((translateStandardsOn(org.settings) && sections ? localiseSections(sections, documentLanguage) : sections) ?? {}),
       subtotalMinor: proposal.subtotal_minor,
       discountMinor: proposal.discount_minor ?? 0,
       taxMinor: proposal.tax_minor,
