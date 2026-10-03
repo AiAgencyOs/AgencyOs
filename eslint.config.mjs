@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['.next/**', 'node_modules/**', 'next-env.d.ts', 'src/lib/db/types.ts', 'supabase/**'],
+    ignores: ['.next/**', 'node_modules/**', 'next-env.d.ts', 'src/lib/db/types.ts', 'supabase/**', '.claude/**', 'tmp/**'],
   },
 
   js.configs.recommended,

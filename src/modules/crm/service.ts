@@ -359,6 +359,35 @@ export async function sendClientMessage(
     return ok({ messageId: queued.message_id!, seq: queued.seq!, delivered: true });
   }
 
+  return deliverQueuedText(supabase, {
+    organizationId: context.organizationId!,
+    conversationId: parsed.data.conversationId,
+    body: parsed.data.body,
+    queued,
+  });
+}
+
+type QueuedOutbound = {
+  message_id: string | null;
+  seq: number | null;
+  to_phone: string | null;
+  from_phone_number_id: string | null;
+  recipient_type: 'individual' | 'group' | null;
+};
+
+/**
+ * The second half of every staff text send: the row already exists (pending);
+ * decide whether WhatsApp will carry it, call the provider, write the outcome
+ * back. Shared so that a send recorded by a DATABASE door (the requirement
+ * summary) is delivered by the same code as one typed in the composer — the
+ * requirement summary used to be recorded and never transmitted, and the
+ * lead page said it had been sent.
+ */
+async function deliverQueuedText(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  args: { organizationId: string; conversationId: string; body: string; queued: QueuedOutbound },
+): Promise<Result<{ messageId: string; seq: number; delivered: boolean }>> {
+  const { queued } = args;
   if (!queued.to_phone) {
     // Two ways to get here now: a contact with no phone, or a group that was
     // linked in this system and never mapped to a provider group. Said apart,
@@ -396,8 +425,8 @@ export async function sendClientMessage(
    * failure the person cannot interpret.
    */
   const plan = await planOutbound(supabase, {
-    organizationId: context.organizationId!,
-    conversationId: parsed.data.conversationId,
+    organizationId: args.organizationId,
+    conversationId: args.conversationId,
     situationKey: 'agent_message',
   });
 
@@ -437,7 +466,7 @@ export async function sendClientMessage(
         // than being assumed here. Sending a group id as `individual` is refused
         // by the provider, which is how this was found.
         to: queued.to_phone,
-        body: parsed.data.body,
+        body: args.body,
         recipientType: queued.recipient_type ?? 'individual',
       });
 
@@ -908,7 +937,7 @@ export async function sendRequirementForConfirmation(
   const { data: version, error: readError } = await supabase
     .schema('crm')
     .from('requirement_versions')
-    .select('id, status, payload, sent_for_confirmation_at')
+    .select('id, conversation_id, status, payload, sent_for_confirmation_at')
     .eq('id', idCheck.data)
     .maybeSingle();
 
@@ -930,9 +959,21 @@ export async function sendRequirementForConfirmation(
     return err('VALIDATION', 'This version’s requirements could not be read, so nothing was sent.');
   }
 
+  // The client's own language, from the contact the thread belongs to — the
+  // frame around the summary follows it. No language recorded, English.
+  const { data: threadOwner } = await supabase
+    .schema('crm')
+    .from('conversations')
+    .select('contacts(preferred_language)')
+    .eq('id', version.conversation_id)
+    .maybeSingle();
+  const contactRow = (threadOwner as { contacts?: { preferred_language: string | null } | { preferred_language: string | null }[] | null } | null)?.contacts;
+  const clientLanguage = (Array.isArray(contactRow) ? contactRow[0] : contactRow)?.preferred_language ?? null;
+
+  const summaryBody = requirementConfirmationMessage(payload.data, clientLanguage);
   const { data, error } = await supabase.schema('crm').rpc('send_requirement_for_confirmation', {
     p_version_id: idCheck.data,
-    p_body: requirementConfirmationMessage(payload.data),
+    p_body: summaryBody,
   });
 
   if (error) {
@@ -948,9 +989,36 @@ export async function sendRequirementForConfirmation(
 
   switch (row?.outcome) {
     case 'sent':
-      return ok({ versionId: idCheck.data, messageId: row.message_id ?? '' });
-    case 'already_sent':
-      return err('CONFLICT', 'This summary has already been sent to the client.');
+    case 'already_sent': {
+      // The door records the message and stamps the version; it does not call
+      // the provider. Delivering is this function's half, through the same
+      // code a composer send uses. A retry of the same key hands back the
+      // routing fields and the row's delivery state without a second row, so
+      // a summary whose first delivery failed is re-attempted here and one
+      // that already went is reported as such.
+      const { data: again } = await supabase.schema('crm').rpc('send_outbound_message', {
+        p_conversation_id: version.conversation_id,
+        p_body: summaryBody,
+        p_external_ref: `requirement:${idCheck.data}`,
+      });
+      const queued = (Array.isArray(again) ? again[0] : again) as
+        | (QueuedOutbound & { outcome: string; delivery: string | null })
+        | undefined;
+      if (!queued || !queued.message_id) {
+        return err('INTERNAL', 'The summary was recorded but could not be routed for delivery.');
+      }
+      if (row.outcome === 'already_sent' && queued.delivery === 'sent') {
+        return err('CONFLICT', 'This summary has already been sent to the client.');
+      }
+      const delivered = await deliverQueuedText(supabase, {
+        organizationId: context.organizationId!,
+        conversationId: version.conversation_id,
+        body: summaryBody,
+        queued,
+      });
+      if (!delivered.ok) return delivered;
+      return ok({ versionId: idCheck.data, messageId: row.message_id ?? queued.message_id });
+    }
     case 'not_proposed':
       return err('CONFLICT', 'Only a version still awaiting a decision can be sent for confirmation.');
     case 'no_consent':

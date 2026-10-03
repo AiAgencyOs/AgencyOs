@@ -656,6 +656,8 @@ export type OutboxEvent = {
   payload: unknown;
   /** Present when the dispatcher reads the row; how many enqueue passes have failed. */
   attempts?: number;
+  /** The chain this event belongs to, when something upstream set one. */
+  correlation_id?: string | null;
 };
 
 export type PlannedJob = {

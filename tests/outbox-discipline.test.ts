@@ -103,9 +103,13 @@ describe('outbox discipline', () => {
     const summary = await dispatchOutbox(makeAdmin() as never);
 
     assert.equal(summary.parkedDead, 0);
-    assert.equal(seen.updates.length, 1);
-    assert.equal(seen.updates[0]!.attempts, 4, 'attempts is bumped');
-    assert.equal(seen.updates[0]!.dead_at, undefined, 'and the event is not parked dead');
+    // The chain-id stamp is its own update (an event with none gets one before
+    // any job is planned); the failure bookkeeping is everything else.
+    const bookkeeping = seen.updates.filter((u) => u.correlation_id === undefined);
+    assert.equal(seen.updates.filter((u) => u.correlation_id !== undefined).length, 1, 'the chain id is stamped once');
+    assert.equal(bookkeeping.length, 1);
+    assert.equal(bookkeeping[0]!.attempts, 4, 'attempts is bumped');
+    assert.equal(bookkeeping[0]!.dead_at, undefined, 'and the event is not parked dead');
   });
 
   test('a failed enqueue that crosses the ceiling parks the event dead and names it', async () => {
@@ -115,8 +119,9 @@ describe('outbox discipline', () => {
     const summary = await dispatchOutbox(makeAdmin() as never);
 
     assert.equal(summary.parkedDead, 1);
-    assert.equal(seen.updates[0]!.attempts, 10);
-    assert.ok(seen.updates[0]!.dead_at, 'dead_at is stamped at the ceiling');
+    const parked = seen.updates.filter((u) => u.correlation_id === undefined)[0]!;
+    assert.equal(parked.attempts, 10);
+    assert.ok(parked.dead_at, 'dead_at is stamped at the ceiling');
     const line = seen.logs.find((l) => l.includes('outbox/dead'));
     assert.ok(line, 'the dead event is named in a structured line');
     assert.match(line!, /"eventId":7/);

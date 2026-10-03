@@ -495,8 +495,12 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
   // `subset: false`, and the reason is written on quotationFontBytes: the
   // vendored files are already subsets, and pdf-lib's own subsetting breaks
   // Apple's renderer — the one the owner's iPhone opens this PDF with.
-  const regular = await doc.embedFont(fontBytes.regular, { subset: false });
-  const bold = await doc.embedFont(fontBytes.bold, { subset: false });
+  // Ligatures off: with `liga` on, fontkit substitutes one glyph for "fi"/"fl"
+  // but pdf-lib measures and draws the original letters, so the PDF showed
+  // "fl ow", "profi le" and, to a text extractor, "con rmation" — in the
+  // document a client reads before paying.
+  const regular = await doc.embedFont(fontBytes.regular, { subset: false, features: { liga: false, clig: false } });
+  const bold = await doc.embedFont(fontBytes.bold, { subset: false, features: { liga: false, clig: false } });
 
   // Both weights of Noto Sans carry the same character set, so one check
   // serves both. Characters outside it become '?' — visibly wrong beats a

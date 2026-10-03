@@ -308,6 +308,32 @@ export const requirementPayloadSchema = z.object({
 });
 
 /**
+ * The frame the client reads around the summary, in their language. Hindi and
+ * Hinglish clients get Hinglish (Roman letters — the way they write to us, and
+ * the only script the agency's documents can carry); everyone else, and any
+ * client with no recorded language, gets English. The frame is code, never a
+ * model's words — the text a client is asked to confirm must be a sentence
+ * somebody wrote down. The summary BODY and scope titles are the extraction's
+ * own words and stay as recorded.
+ */
+const CONFIRMATION_FRAME = {
+  en: {
+    intro: 'Before we put a quotation together, here is what we have understood — please check it.',
+    build: 'What we would build:',
+    constraints: 'What you have told us to work within:',
+    open: 'Still to confirm:',
+    outro: 'If anything here is wrong or missing, tell us and we will correct it before quoting.',
+  },
+  hinglish: {
+    intro: 'Quotation banane se pehle, humne jo samjha hai woh yeh hai — please ek baar check kar lijiye.',
+    build: 'Hum yeh banayenge:',
+    constraints: 'Aapne jo limits/conditions batayi hain:',
+    open: 'Yeh abhi confirm karna baaki hai:',
+    outro: 'Agar kuch galat ya adhoora ho to bata dijiye, quote banane se pehle hum theek kar denge.',
+  },
+} as const;
+
+/**
  * The summary as the CLIENT reads it — G-200, Doc 09 §12.
  *
  * Composed in code from the payload the agency already holds, never by a
@@ -320,21 +346,21 @@ export const requirementPayloadSchema = z.object({
  * whole message exists to ask. No prices — this is a scope confirmation, and
  * every number in AgencyOS belongs to a quotation somebody approved.
  */
-export function requirementConfirmationMessage(payload: {
-  summary: string;
-  scopeItems?: ReadonlyArray<{ title: string; detail?: string | null }>;
-  constraints?: readonly string[];
-  openQuestions?: readonly string[];
-}): string {
-  const lines: string[] = [
-    'Before we put a quotation together, here is what we have understood — please check it.',
-    '',
-    payload.summary,
-  ];
+export function requirementConfirmationMessage(
+  payload: {
+    summary: string;
+    scopeItems?: ReadonlyArray<{ title: string; detail?: string | null }>;
+    constraints?: readonly string[];
+    openQuestions?: readonly string[];
+  },
+  language?: string | null,
+): string {
+  const frame = language === 'hi' || language === 'hi-en' ? CONFIRMATION_FRAME.hinglish : CONFIRMATION_FRAME.en;
+  const lines: string[] = [frame.intro, '', payload.summary];
 
   const items = payload.scopeItems ?? [];
   if (items.length > 0) {
-    lines.push('', 'What we would build:');
+    lines.push('', frame.build);
     for (const item of items) {
       lines.push(`• ${item.title}${item.detail ? ` — ${item.detail}` : ''}`);
     }
@@ -342,20 +368,17 @@ export function requirementConfirmationMessage(payload: {
 
   const constraints = payload.constraints ?? [];
   if (constraints.length > 0) {
-    lines.push('', 'What you have told us to work within:');
+    lines.push('', frame.constraints);
     for (const constraint of constraints) lines.push(`• ${constraint}`);
   }
 
   const open = payload.openQuestions ?? [];
   if (open.length > 0) {
-    lines.push('', 'Still to confirm:');
+    lines.push('', frame.open);
     for (const question of open) lines.push(`• ${question}`);
   }
 
-  lines.push(
-    '',
-    'If anything here is wrong or missing, tell us and we will correct it before quoting.',
-  );
+  lines.push('', frame.outro);
 
   return lines.join('\n');
 }

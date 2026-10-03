@@ -568,7 +568,7 @@ function addUsage(a: AiUsage, b: AiUsage): AiUsage {
  */
 export async function callModelWithTools(
   ctx: AgentContext,
-  spec: { systemPrompt: string; schemaName: string },
+  spec: { systemPrompt: string; schemaName: string; jsonSchema?: () => Record<string, unknown> },
   initialMessages: readonly AiMessage[],
   tools: readonly AiToolSpec[],
   runId: string | null,
@@ -617,6 +617,7 @@ export async function callModelWithTools(
       system: spec.systemPrompt,
       messages,
       tools,
+      ...(spec.jsonSchema ? { jsonSchema: spec.jsonSchema() } : {}),
       effort: ctx.agent.default_effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max',
     };
 

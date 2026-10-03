@@ -268,6 +268,13 @@ export type AiToolSpec = {
 
 export type ToolUseRequest = Omit<StructuredRequest, 'jsonSchema' | 'schemaName'> & {
   readonly tools: readonly AiToolSpec[];
+  /**
+   * The shape the FINAL answer must take. Without it a real model, having used
+   * (or declined) its tools, answers in prose — the stub models every verifier
+   * uses always answered in JSON, so the gap shipped unseen. Applies only to
+   * the final turn; tool_use turns are not constrained by it.
+   */
+  readonly jsonSchema?: Record<string, unknown>;
 };
 
 /**

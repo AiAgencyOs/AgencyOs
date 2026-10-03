@@ -75,11 +75,31 @@ describe('A. the message the client reads', () => {
     assert.ok(!/₹|\brupees?\b|\bprice\b/i.test(body));
   });
 
+  test('a Hindi or Hinglish client gets the frame in Hinglish; everyone else, and unknown, gets English', () => {
+    const hi = requirementConfirmationMessage(payload, 'hi-en');
+    assert.match(hi, /^Quotation banane se pehle/);
+    assert.match(hi, /Hum yeh banayenge:/);
+    assert.ok(!/Before we put a quotation together/.test(hi));
+    assert.equal(requirementConfirmationMessage(payload, 'hi'), hi);
+    // The positive twin: English stays English, and an unrecorded language is not guessed at.
+    const en = requirementConfirmationMessage(payload, 'en');
+    assert.match(en, /^Before we put a quotation together/);
+    assert.equal(requirementConfirmationMessage(payload, null), en);
+    assert.equal(requirementConfirmationMessage(payload), en);
+    // Devanagari cannot be carried by the agency's documents — never emitted.
+    assert.ok(!/[\u0900-\u097F]/.test(hi));
+  });
+
   test('and it is composed in CODE, never by a model', () => {
     // A model asked to restate an agreed scope will restate it differently,
     // and a client confirming a sentence nobody wrote down is worse than a
     // client who was never asked.
-    assert.match(SERVICE, /p_body: requirementConfirmationMessage\(payload\.data\)/);
+    // The composed text is bound once and that one binding is what both the
+    // record door and the delivery use — a second composition anywhere would
+    // be a second sentence the client could be asked to confirm.
+    assert.match(SERVICE, /const summaryBody = requirementConfirmationMessage\(payload\.data, clientLanguage\);/);
+    assert.match(SERVICE, /p_body: summaryBody,/);
+    assert.equal((SERVICE.match(/requirementConfirmationMessage\(/g) ?? []).length, 1);
   });
 });
 
