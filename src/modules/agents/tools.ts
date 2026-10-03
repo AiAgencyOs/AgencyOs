@@ -38,8 +38,8 @@ import { definitionFor } from './registry';
  * **What is true today, stated because the sentence above used to say `TOOLS`
  * is empty and it stopped being true without anybody noticing** (G-187, the
  * same defect class the audit found in the webhook route's docblock): the list
- * holds fourteen tools and the registry binds thirty-eight of them across
- * thirteen agents.
+ * holds fourteen tools and the registry binds forty of them across
+ * fourteen agents.
  *
  * **ADM-99 (2026-09-20) answered which of them run: the four read-only
  * tools.** `callModelWithTools` in `app/api/jobs/run/agent-run.ts` is the tool

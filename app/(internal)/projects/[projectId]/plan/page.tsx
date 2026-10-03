@@ -35,6 +35,7 @@ import {
   AddNoteForm,
   ClarificationRow,
   GateMilestoneForm,
+  AskPlannerForm,
   DraftPlanForm,
   RaiseClarificationForm,
 } from './plan-forms';
@@ -116,8 +117,8 @@ export default async function ProjectPlanPage({
     const ob = layersByDeliverable.get(b.id)?.executionOrder ?? Number.MAX_SAFE_INTEGER;
     return oa - ob;
   });
-  // The register's own vocabulary: client_information and client_access are what the client owes.
-  const clientDependencies = board.dependencies.filter((d) => d.kind === 'client_information' || d.kind === 'client_access');
+  // The register's own vocabulary: client_information, client_access, client_asset and client_approval are what the client owes.
+  const clientDependencies = board.dependencies.filter((d) => ['client_information', 'client_access', 'client_asset', 'client_approval'].includes(d.kind));
   const clientOutstanding = clientDependencies.filter((d) => ['pending', 'requested', 'blocked'].includes(d.status));
 
   // SCR-023: the two doors on a payment milestone, gated the way their
@@ -347,7 +348,12 @@ export default async function ProjectPlanPage({
             and the kickoff gate waits on one being active.
           </p>
           {mayPlan ? (
-            <DraftPlanForm projectId={projectId} hasPlan={false} />
+            <>
+              {/* The agent drafts it on its own when the advance is verified; this asks for it now. */}
+              <AskPlannerForm projectId={projectId} />
+              <p className="text-[13px] text-muted">Or start one by hand:</p>
+              <DraftPlanForm projectId={projectId} hasPlan={false} />
+            </>
           ) : (
             <p className="text-[13px] text-muted">You do not have permission to plan this project.</p>
           )}

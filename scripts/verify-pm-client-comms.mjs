@@ -208,9 +208,9 @@ try {
   // The locked 30/20/30/20 plan, inserted together because the database refuses
   // a plan that does not total 100.
   const plan = (await rest('POST', 'projects', 'milestones', [30, 20, 30, 20].map((percent, i) => ({
-    organization_id: ORG, project_id: c.project.id, name: `${MARKER} M${i + 1}`, position: i, payment_percent: percent,
+    organization_id: ORG, project_id: c.project.id, name: `${MARKER} M${i + 1}`, position: i + 1, payment_percent: percent,
   })))).json ?? [];
-  const milestone = plan.find((m) => m.position === 0);
+  const milestone = plan.find((m) => m.position === 1);
   check(Boolean(milestone?.id), 'the project has its locked four-milestone plan (fixture)');
   const invoice = one(await rest('POST', 'finance', 'invoices', {
     organization_id: ORG, client_account_id: c.client.id, project_id: c.project.id, milestone_id: milestone?.id,

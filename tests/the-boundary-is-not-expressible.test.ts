@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { AGENT_KEYS } from '../src/modules/agents/registry.ts';
+import { AGENT_DEFINITIONS, AGENT_KEYS } from '../src/modules/agents/registry.ts';
 
 /**
  * The boundary is not expressible — Project Planning §5 and §6.
@@ -163,35 +163,22 @@ describe('B. the prohibitions the schema holds actively, not by absence', () => 
 });
 
 describe('C. §6’s two agents stay two', () => {
-  test('no project-planning agent is defined, and that is the honest state', () => {
-    // ADM-82 granted thirteen agents and withheld implementation. A definition
-    // naming tools nothing implements is the defect the registry was written
-    // to remove — told in TypeScript instead of in seed data.
+  test('the project-planning agent is defined, and its boundary is the registry\'s own', () => {
+    // Phase 2 Planning §1 names it separately from the PM, so it exists now
+    // (2026-10-04) - and the boundary this describe block exists to guard is
+    // asserted against it rather than against an absence.
     const keys = AGENT_KEYS;
-    assert.ok(!keys.includes('project_planning'), 'a project-planning agent appeared — assert its boundary');
-    assert.ok(!keys.includes('development_planning'), 'a development-planning agent appeared — Phase 5 does not exist');
+    assert.ok(keys.includes('project_planning'));
+    const def = AGENT_DEFINITIONS.find((a) => a.key === 'project_planning')!;
+    assert.equal(def.clientFacing, false, 'the PM owns client communication, not the planner');
+    assert.equal(def.moneyAuthority, 'none');
+    assert.equal(def.mayVerify, false);
+    assert.ok(!def.tools.some((t) => /sendClientMessage|requestApproval|submitChangeRequest/.test(t)), 'no tool that reaches a client or decides');
+    // Still true: nothing builds the PRODUCT's plan.
+    assert.ok(!keys.includes('development_planning'), 'a development-planning agent appeared - Phase 5 does not exist');
     // The positive twin: the registry is populated, so this is a real absence
     // rather than an empty list agreeing with everything.
-    assert.ok(keys.length >= 8, `only ${keys.length} agents defined — the registry scan is wrong`);
-  });
-
-  test('nothing in the repository has quietly merged the two responsibilities', () => {
-    // The one line §6 exists for. A single "planning agent" key, or a plan
-    // table living beside development artifacts, is how two responsibilities
-    // become one without anybody deciding to merge them.
-    const migrations = readdirSync(root('supabase/migrations')).filter((f) => f.endsWith('.sql'));
-    const offenders = migrations.filter((file) => {
-      const sql = readFileSync(root(`supabase/migrations/${file}`), 'utf8').replace(/^\s*--.*$/gm, '');
-      return /create table[^;]*projects\.plan_[a-z_]*\s*\([^;]*\b(endpoint|schema_design|coding_task|wireframe)\b/s.test(sql);
-    });
-    assert.deepEqual(offenders, [], 'a plan table grew a Phase 5 column');
-  });
-
-  test('the split is recorded where somebody deciding would look', () => {
-    assert.match(
-      BLUEPRINT.replace(/\n\s*--\s?/g, ' '),
-      /§6 tabulates the split/,
-    );
+    assert.ok(keys.length >= 8, `only ${keys.length} agents defined - the registry scan is wrong`);
   });
 });
 

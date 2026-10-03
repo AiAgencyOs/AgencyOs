@@ -35,6 +35,7 @@ import { schedulingRequestJsonSchema } from '../src/modules/crm/scheduling-reque
 import { meetingAnalysisJsonSchema } from '../src/modules/crm/meeting-analysis.ts';
 import { leadOutcomeJsonSchema } from '../src/modules/sales/lead-outcome.ts';
 import { testPlanJsonSchema } from '../src/modules/qa/schema.ts';
+import { blueprintDraftJsonSchema } from '../src/modules/projects/blueprint.ts';
 import { objectionReadingJsonSchema, quotationScopeJsonSchema } from '../src/modules/sales/schema.ts';
 import {
   breakdownJsonSchema,
@@ -83,6 +84,7 @@ function forbiddenKeywords(node: unknown, path = '$'): string[] {
 }
 
 const FLEET: Record<string, () => unknown> = {
+  blueprintDraftJsonSchema,
   checkInBriefJsonSchema,
   clientReplyJsonSchema,
   followUpDraftJsonSchema,

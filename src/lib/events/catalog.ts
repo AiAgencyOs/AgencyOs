@@ -29,6 +29,9 @@ export const HANDLERS = [
   'projects:completePhaseFourOnPrototypeApproval',
   'finance:generateM1Invoice',
   'finance:deliverIssuedInvoice',
+  'project_planning:draftBlueprint',
+  'projects:askClarification',
+  'projects:readClarificationAnswer',
   'projects:welcomeClient',
   'projects:askGstDetails',
   'projects:updateClientOnPayment',
@@ -100,7 +103,12 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   // Admin's real verification, re-checked against the milestone row rather
   // than trusted from the payload, filtered to M2 (position 2) inside the
   // handler — this is not a second gate, only a second listener on one.
-  'invoice.paid': ['projects:unlockNextMilestone', 'crm:announceM2PaymentVerified'],
+  // Phase 2 Planning §2: the advance verified opens planning. The agent itself decides whether this invoice IS the advance.
+  'invoice.paid': ['projects:unlockNextMilestone', 'crm:announceM2PaymentVerified', 'project_planning:draftBlueprint'],
+  'project.planning_requested': ['project_planning:draftBlueprint'],
+  /** Planning §10: the planner's question goes to the client through the PM, one at a time. */
+  'project.clarification_required': ['projects:askClarification'],
+  'project.clarification_resolved': ['projects:askClarification'],
   /**
    * Phase 2 Master Flow §5.1 — the receiver PH1-CLS-002 said would arrive.
    *
@@ -332,7 +340,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * the call for a message from staff, a thread with no lead, and a lead that
    * already has a meeting open — which is the lead most likely to write again.
    */
-  'message.received': ['sales:readIntent', 'sales:readQualification', 'sales:summariseThread', 'sales:readMeetingRequest', 'sales:readLeadOutcome', 'projects:readBillingReply'],
+  'message.received': ['sales:readIntent', 'sales:readQualification', 'sales:summariseThread', 'sales:readMeetingRequest', 'sales:readLeadOutcome', 'projects:readBillingReply', 'projects:readClarificationAnswer'],
   /**
    * Doc 09 §19, and the reason it is a separate event rather than a third
    * subscriber on `message.received`: four of Doc 08 §12's twenty-two intents
@@ -604,6 +612,9 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:completePhaseFourOnPrototypeApproval': 'phase_four.complete',
   'finance:generateM1Invoice': 'invoice.generate_m1',
   'finance:deliverIssuedInvoice': 'invoice.deliver',
+  'project_planning:draftBlueprint': 'planning.blueprint',
+  'projects:askClarification': 'pm.clarify',
+  'projects:readClarificationAnswer': 'pm.clarification_answer',
   'projects:welcomeClient': 'pm.welcome',
   'projects:askGstDetails': 'pm.gst_details',
   'projects:updateClientOnPayment': 'pm.payment_update',

@@ -801,6 +801,11 @@ jobs:
           # client's billing answer reaches staff without confirming anything.
           npm run db:verify:pmcomms
 
+          # Phase 2 Planning §2-§9: the advance verified opens planning; the
+          # Project Planning Agent drafts the blueprint (stub model on 54399),
+          # corrected once, refused twice writes nothing, a person's plan stands.
+          npm run db:verify:planner
+
           # PH1-CLS-002 and G-250. Doc 09 §33: a handoff is a real workflow
           # event, not a note. Wins a deal through the governed path, reads the
           # ai.handoffs row, the outbox row and the packet projection — and

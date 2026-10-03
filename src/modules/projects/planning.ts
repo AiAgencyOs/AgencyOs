@@ -37,6 +37,34 @@ async function planningActor(): Promise<Result<true>> {
   return ok(true);
 }
 
+/**
+ * Ask the Project Planning Agent to draft the blueprint — Phase 2 Planning §2.
+ * The agent starts on its own when the advance is verified; this is the same
+ * request by hand. One audited door publishes the event the agent listens to;
+ * nothing here drafts a plan or decides one.
+ */
+export async function requestProjectPlanning(input: { projectId: string }): Promise<Result<{ requested: true }>> {
+  const gate = await planningActor();
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('request_project_planning', { p_project_id: input.projectId });
+  if (error) return err('INTERNAL', 'Could not ask for planning.');
+
+  switch (data) {
+    case 'requested':
+      return ok({ requested: true });
+    case 'plan_exists':
+      return err('CONFLICT', 'This project already has a plan. A new version is opened by a person, below.');
+    case 'no_phase_two':
+      return err('CONFLICT', 'Phase 2 has not started for this project, so there is nothing to plan yet.');
+    case 'unknown_project':
+      return err('NOT_FOUND', 'Project not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to ask for planning.');
+  }
+}
+
 /** §2, §15 — open the next version. */
 export async function draftProjectPlan(input: {
   projectId: string;

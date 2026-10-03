@@ -47,7 +47,7 @@ export type PmCommsJob = {
  *     outbound kill switch all still decide inside the send chokepoint.
  */
 
-type Context = {
+export type PmContext = {
   organizationId: string;
   projectId: string;
   projectName: string;
@@ -63,7 +63,7 @@ type Context = {
  * exists (Master §5.7), otherwise the thread the deal was won on, otherwise the
  * client account's own. Never an abandoned thread.
  */
-async function loadContext(admin: Admin, organizationId: string, projectId: string): Promise<Context | 'gone' | 'unreadable'> {
+export async function loadContext(admin: Admin, organizationId: string, projectId: string): Promise<PmContext | 'gone' | 'unreadable'> {
   const { data: project, error } = await admin
     .schema('projects')
     .from('projects')
@@ -127,7 +127,7 @@ const subjectOf = (job: PmCommsJob): string | null =>
   typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
 
 /** Fold the sends of one job into the one answer the runner needs. */
-function settle(results: Array<{ label: string; result: SystemTextResult }>): HandlerResult {
+export function settle(results: Array<{ label: string; result: SystemTextResult }>): HandlerResult {
   const paused = results.find((r) => r.result.kind === 'paused');
   if (paused) {
     return { status: 'failed', permanent: false, detail: 'Outbound messaging is paused by the owner; this goes out when the switch is released.' };
@@ -140,7 +140,7 @@ function settle(results: Array<{ label: string; result: SystemTextResult }>): Ha
   return { status: 'succeeded', outcome: results.some((r) => r.result.kind === 'sent') ? 'sent' : 'nothing_new', detail: summary };
 }
 
-async function noThread(admin: Admin, ctx: Context, why: string): Promise<HandlerResult> {
+async function noThread(admin: Admin, ctx: PmContext, why: string): Promise<HandlerResult> {
   // A person has to reach this client another way; say so where staff look.
   await admin.schema('core').rpc('raise_alert', {
     p_organization_id: ctx.organizationId,
@@ -313,7 +313,8 @@ export async function handlePaymentUpdate(admin: Admin, job: PmCommsJob): Promis
       .eq('id', invoice.milestone_id)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
-    isAdvance = milestone?.position === 0;
+    // The locked 30/20/30/20 plan numbers its milestones 1-4 (payment-structure.ts); the advance is position 1.
+    isAdvance = milestone?.position === 1;
   }
 
   const ctx = await loadContext(admin, job.organization_id, invoice.project_id);
@@ -341,6 +342,37 @@ export async function handlePaymentUpdate(admin: Admin, job: PmCommsJob): Promis
       }),
     },
   ]);
+}
+
+/**
+ * Which project a client's thread is about: the project's own group, or the
+ * thread the deal was won on (its lead's opportunity's project). Null when the
+ * thread belongs to no project.
+ */
+export async function projectForConversation(
+  admin: Admin,
+  organizationId: string,
+  conversation: { kind: string; project_id: string | null; lead_id: string | null },
+): Promise<string | null> {
+  if (conversation.kind === 'project_group') return conversation.project_id;
+  if (!conversation.lead_id) return null;
+  const { data: opp } = await admin
+    .schema('sales')
+    .from('opportunities')
+    .select('id')
+    .eq('lead_id', conversation.lead_id)
+    .eq('organization_id', organizationId)
+    .maybeSingle();
+  if (!opp) return null;
+  const { data: project } = await admin
+    .schema('projects')
+    .from('projects')
+    .select('id')
+    .eq('opportunity_id', opp.id)
+    .eq('organization_id', organizationId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  return project?.id ?? null;
 }
 
 // ── 4. the client's answer to the billing question ──────────────────────────
@@ -396,29 +428,8 @@ export async function handleReadBillingReply(admin: Admin, job: PmCommsJob): Pro
     .maybeSingle();
   if (!conversation) return { status: 'succeeded', outcome: 'gone', detail: 'the conversation no longer exists' };
 
-  let projectId: string | null = conversation.kind === 'project_group' ? conversation.project_id : null;
-  if (!projectId && conversation.lead_id) {
-    const { data: opp } = await admin
-      .schema('sales')
-      .from('opportunities')
-      .select('id')
-      .eq('lead_id', conversation.lead_id)
-      .eq('organization_id', job.organization_id)
-      .maybeSingle();
-    if (opp) {
-      const { data: project } = await admin
-        .schema('projects')
-        .from('projects')
-        .select('id')
-        .eq('opportunity_id', opp.id)
-        .eq('organization_id', job.organization_id)
-        .is('deleted_at', null)
-        .maybeSingle();
-      projectId = project?.id ?? null;
-    }
-  }
+  const projectId = await projectForConversation(admin, job.organization_id, conversation);
   if (!projectId) return { status: 'succeeded', outcome: 'no_project', detail: 'this thread belongs to no project' };
-
   const { data: asked } = await admin
     .schema('crm')
     .from('conversation_messages')

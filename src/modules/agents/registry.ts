@@ -416,7 +416,34 @@ const PROJECT_MANAGER: AgentDefinition = {
   ],
   clientFacing: true,
   moneyAuthority: 'none',
-  handoffTargets: ['ui_designer', 'developer', 'quality_assurance'],
+  handoffTargets: ['ui_designer', 'developer', 'quality_assurance', 'project_planning'],
+  mayVerify: false,
+  verification: {
+    selfAssertionAllowed: false,
+    requiredEvidence: [],
+    verifiedBy: 'quality_assurance',
+  },
+  retry: { maxAttempts: 3, onExhausted: 'escalate' },
+};
+
+/** `project_planning` — Phase 2 Planning §1: how the PROJECT is organised and
+ *  moves through AgencyOS, never how the PRODUCT is built. It drafts the
+ *  operational blueprint (deliverables, phase sequence, dependencies, risks,
+ *  readiness gates) from the accepted scope; a person approves it. It does not
+ *  talk to the client - the project manager owns communication, so any
+ *  question it has goes to the PM - and it holds no money authority: finance
+ *  gates are mapped onto the sequence from the payment plan, never decided. */
+const PROJECT_PLANNING: AgentDefinition = {
+  key: 'project_planning',
+  displayName: 'Project Planning',
+  layer: 'core',
+  purpose:
+    'Turns the accepted scope into the operational project blueprint - deliverables, phase sequence, dependencies, risks and readiness gates. Plans how the project moves through AgencyOS, never how the product is built. Drafts; a person approves.',
+  capabilities: ['reasoning', 'long_context', 'structured_output'],
+  tools: ['projects.readScope', 'memory.recall'],
+  clientFacing: false,
+  moneyAuthority: 'none',
+  handoffTargets: ['project_manager'],
   mayVerify: false,
   verification: {
     selfAssertionAllowed: false,
@@ -605,6 +632,7 @@ export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
   // Core — layer 2
   SALES,
   PROJECT_MANAGER,
+  PROJECT_PLANNING,
   UI_DESIGNER,
   UI_PROTOTYPE,
   HANDOVER,

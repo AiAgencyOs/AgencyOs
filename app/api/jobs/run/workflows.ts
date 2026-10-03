@@ -17,6 +17,7 @@
  * skip them.
  */
 
+import { assembleBlueprint, BLUEPRINT_PROMPT, blueprintDraftJsonSchema, blueprintDraftSchema, renderPlanningContext } from '@/modules/projects/blueprint';
 import { raiseAlert } from '@/lib/ai/run-gates';
 import { LEAD_OUTCOME_PROMPT, decideOutcome, leadOutcomeJsonSchema, leadOutcomeReadingSchema } from '@/modules/sales/lead-outcome';
 import { quotationLanguageForLead } from '@/modules/sales/quotation-language';
@@ -9355,10 +9356,236 @@ const MEETING_ANALYSIS: AgentWorkflow = {
   },
 };
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// project_planning — the operational blueprint (Phase 2 Planning §2, §4–§9)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * The Project Planning Agent drafts the blueprint when the advance is verified,
+ * or when staff ask for it. It reads the accepted scope, the payment plan and
+ * what onboarding already holds; it writes ONE draft plan through
+ * `projects.agent_draft_blueprint` (all rows or none, refused if any plan
+ * already exists) and stops. Approving and activating the plan stays a
+ * person's act (decision 12, 2026-10-01), and nothing here messages a client:
+ * the questions it raises are the project manager's to ask.
+ *
+ * Every rule that is not a prompt lives in `assembleBlueprint` (pure, tested):
+ * scope items are referred to by number so none can be invented, every
+ * included item must be covered, finance gates come from the payment plan, a
+ * client-owed dependency belongs to the PM, and development-level content is
+ * refused. One round of correction is offered to the model; a second failure
+ * is told to staff and no plan is written.
+ */
+const PLANNING_BLUEPRINT: AgentWorkflow = {
+  jobKind: 'planning.blueprint',
+  agentKey: 'project_planning',
+  workClass: 'internal_plan',
+  systemPrompt: BLUEPRINT_PROMPT,
+  schemaName: 'OperationalBlueprint',
+  jsonSchema: blueprintDraftJsonSchema,
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const subjectId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+    const eventType = typeof job.payload?.eventType === 'string' ? job.payload.eventType : null;
+    if (!subjectId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+    const settle = async (reason: string, extra: Record<string, unknown> = {}) => {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded' as const, reason, ...extra };
+    };
+    const orgId = job.organization_id;
+
+    // ── which project, and is this the moment? ────────────────────────────────
+    let projectId: string;
+    if (eventType === 'invoice.paid') {
+      const { data: invoice, error } = await admin
+        .schema('finance')
+        .from('invoices')
+        .select('id, project_id, milestone_id')
+        .eq('id', subjectId)
+        .eq('organization_id', orgId)
+        .maybeSingle();
+      if (error) {
+        await failJob(admin, job, `could not read the invoice: ${error.message}`);
+        return { status: 'failed', reason: 'could not read the invoice' };
+      }
+      if (!invoice?.project_id || !invoice.milestone_id) return settle('this invoice is not a project milestone');
+      const { data: milestone } = await admin
+        .schema('projects')
+        .from('milestones')
+        .select('position')
+        .eq('id', invoice.milestone_id)
+        .eq('organization_id', orgId)
+        .maybeSingle();
+      // Only the advance opens planning (Master §5.9: "after the required financial gate is verified").
+      if (milestone?.position !== 1) return settle('a later milestone, not the advance');
+      projectId = invoice.project_id;
+    } else {
+      projectId = subjectId;
+    }
+
+    const { data: project, error: projectError } = await admin
+      .schema('projects')
+      .from('projects')
+      .select('id, name, project_type, deleted_at')
+      .eq('id', projectId)
+      .eq('organization_id', orgId)
+      .maybeSingle();
+    if (projectError) {
+      await failJob(admin, job, `could not read the project: ${projectError.message}`);
+      return { status: 'failed', reason: 'could not read the project' };
+    }
+    if (!project || project.deleted_at) return settle('the project no longer exists');
+
+    const { data: phase } = await admin.schema('projects').from('phase_two').select('id').eq('project_id', project.id).eq('organization_id', orgId).maybeSingle();
+    if (!phase) return settle('Phase 2 never started for this project');
+
+    const { data: existing, error: existingError } = await admin
+      .schema('projects')
+      .from('project_plans')
+      .select('id')
+      .eq('project_id', project.id)
+      .eq('organization_id', orgId)
+      .limit(1);
+    if (existingError) {
+      await failJob(admin, job, `could not read the plans: ${existingError.message}`);
+      return { status: 'failed', reason: 'could not read the plans' };
+    }
+    // A machine never replaces, or duplicates, a person's plan.
+    if ((existing ?? []).length > 0) return settle('the project already has a plan');
+
+    // ── the facts ─────────────────────────────────────────────────────────────
+    const { data: scope, error: scopeError } = await admin
+      .schema('projects')
+      .from('scope_versions')
+      .select('id, version')
+      .eq('project_id', project.id)
+      .eq('organization_id', orgId)
+      .neq('status', 'draft')
+      .order('version', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (scopeError) {
+      await failJob(admin, job, `could not read the scope: ${scopeError.message}`);
+      return { status: 'failed', reason: 'could not read the scope' };
+    }
+    if (!scope) {
+      await raiseAlert(admin, { organizationId: orgId, source: 'planning', severity: 'warning', summary: `${project.name}: the advance is verified but there is no approved scope to plan from.`, fingerprint: `planning-no-scope:${project.id}` });
+      return settle('no approved scope to plan from');
+    }
+
+    const [{ data: items, error: itemsError }, { data: milestones, error: milestonesError }, { data: onboarding }] = await Promise.all([
+      admin.schema('projects').from('scope_items').select('id, title, detail, inclusion, acceptance_criteria, position').eq('scope_version_id', scope.id).eq('organization_id', orgId).order('position').order('created_at'),
+      admin.schema('projects').from('milestones').select('id, name, position, payment_percent').eq('project_id', project.id).eq('organization_id', orgId).not('payment_percent', 'is', null).order('position'),
+      admin.schema('projects').from('onboarding_items').select('label, status').eq('project_id', project.id).eq('organization_id', orgId).order('position'),
+    ]);
+    if (itemsError || milestonesError) {
+      const detail = itemsError?.message ?? milestonesError?.message ?? 'unreadable';
+      await failJob(admin, job, `could not read the planning facts: ${detail}`);
+      return { status: 'failed', reason: 'could not read the planning facts' };
+    }
+    const included = (items ?? []).filter((i) => i.inclusion === 'included');
+    if (included.length === 0) return settle('the approved scope has no included items');
+    const paymentMilestones = (milestones ?? []).map((m) => ({ id: m.id, name: m.name, position: m.position ?? 0 }));
+
+    const contextText = renderPlanningContext({
+      projectName: project.name,
+      projectType: project.project_type ?? null,
+      scopeVersion: scope.version,
+      includedItems: included.map((i) => ({ title: i.title, detail: i.detail ?? null, acceptanceCriteria: i.acceptance_criteria ?? null })),
+      excludedTitles: (items ?? []).filter((i) => i.inclusion !== 'included').map((i) => i.title),
+      onboarding: (onboarding ?? []).map((o) => ({ label: o.label, status: o.status })),
+      paymentMilestones,
+    });
+
+    const runId = await openRun(ctx, {
+      type: 'projects.project',
+      id: project.id,
+      input: { projectId: project.id, scopeVersionId: scope.id, includedItems: included.length } as unknown as Json,
+    });
+
+    // ── ask, check, correct once ─────────────────────────────────────────────
+    const messages: AiMessage[] = [{ role: 'user', content: contextText }];
+    let assembled: ReturnType<typeof assembleBlueprint> | null = null;
+    let lastProblems: string[] = [];
+    let usage = { inputTokens: 0, outputTokens: 0, costMinor: 0 };
+    let steps = 0;
+    for (let attempt = 0; attempt < 2 && !assembled?.ok; attempt += 1) {
+      const call = await callModel(ctx, this, messages, runId);
+      if (!call.ok) {
+        await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+        await failJob(admin, job, call.detail);
+        return { status: 'failed', reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error', detail: call.detail, runId };
+      }
+      usage = { inputTokens: usage.inputTokens + call.usage.inputTokens, outputTokens: usage.outputTokens + call.usage.outputTokens, costMinor: usage.costMinor + call.usage.costMinor };
+      steps += call.stepCount;
+
+      const parsed = blueprintDraftSchema.safeParse(call.json);
+      if (!parsed.success) {
+        lastProblems = [`The answer did not fit the required shape: ${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`];
+      } else {
+        assembled = assembleBlueprint(parsed.data, {
+          includedItems: included.map((i) => ({ id: i.id, title: i.title })),
+          paymentMilestones,
+        });
+        if (assembled.ok) break;
+        lastProblems = assembled.problems;
+      }
+      messages.push({ role: 'assistant', content: JSON.stringify(call.json ?? {}) });
+      messages.push({ role: 'user', content: `That blueprint cannot be used. Fix exactly these problems and answer again in full:\n- ${lastProblems.join('\n- ')}` });
+    }
+
+    if (!assembled?.ok) {
+      const detail = `the blueprint was refused twice: ${lastProblems.join(' | ')}`.slice(0, 900);
+      await finishRun(admin, runId, 'failed', detail, steps);
+      await raiseAlert(admin, { organizationId: orgId, source: 'planning', severity: 'warning', summary: `${project.name}: the Planning Agent could not produce a valid blueprint — plan it by hand. ${lastProblems[0] ?? ''}`.slice(0, 500), fingerprint: `planning-refused:${project.id}` });
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: 'blueprint refused', detail, runId };
+    }
+
+    // ── one atomic write ─────────────────────────────────────────────────────
+    const { data: door, error: doorError } = await admin.schema('projects').rpc('agent_draft_blueprint', {
+      p_project_id: project.id,
+      p_blueprint: assembled.blueprint as unknown as Json,
+    });
+    if (doorError) {
+      await finishRun(admin, runId, 'failed', doorError.message, steps);
+      await failJob(admin, job, `the blueprint could not be written: ${doorError.message}`);
+      return { status: 'failed', reason: 'persist failed', detail: doorError.message, runId };
+    }
+    const row = (Array.isArray(door) ? door[0] : door) as { outcome?: string; plan_id?: string | null } | undefined;
+    if (row?.outcome === 'plan_exists') {
+      await succeedRun(admin, runId, { outcome: 'plan_exists' } as unknown as Json, usage, steps);
+      return settle('a plan appeared while this was drafting; left alone', { runId });
+    }
+    if (row?.outcome !== 'drafted' || !row.plan_id) {
+      const detail = `the door answered ${row?.outcome ?? 'nothing'}`;
+      await finishRun(admin, runId, 'failed', detail, steps);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    await succeedRun(admin, runId, { planId: row.plan_id, ...assembled.summary } as unknown as Json, usage, steps);
+    await raiseAlert(admin, {
+      organizationId: orgId,
+      source: 'planning',
+      severity: assembled.summary.clarifications > 0 ? 'warning' : 'info',
+      summary: `${project.name}: the Planning Agent drafted the operational blueprint (${assembled.summary.deliverables} deliverables, ${assembled.summary.dependencies} dependencies${assembled.summary.clarifications > 0 ? `, ${assembled.summary.clarifications} open question${assembled.summary.clarifications === 1 ? '' : 's'} for the client` : ''}). Review, approve and activate it.`,
+      fingerprint: `planning-drafted:${project.id}`,
+    });
+    return settle('blueprint drafted', { runId, planId: row.plan_id, ...assembled.summary });
+  },
+};
+
 export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   REQUIREMENT_EXTRACT,
   MEETING_REQUEST_READ,
   LEAD_OUTCOME_READ,
+  PLANNING_BLUEPRINT,
   MAINTENANCE_TRIAGE,
   PLAN_BREAKDOWN,
   DESIGN_DIRECTIONS,
