@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react';
 
-import { recordKickoffAction } from '@/modules/projects/actions';
+import { recordKickoffAction, sendKickoffAction } from '@/modules/projects/actions';
 import { describeBlockers } from '@/modules/projects/kickoff-blockers';
 import type { PhaseTwoView } from '@/modules/projects/queries';
 import { IDLE_STATE } from '@/modules/identity/types';
@@ -24,9 +24,10 @@ import { Badge, buttonClass, type Tone } from '@/ui';
  * "the advance is not verified" goes stale the moment an Admin verifies it,
  * and would tell somebody their project cannot start when it can.
  *
- * **It does not pretend the kickoff was sent.** There is no channel on this
- * deployment (BLK-003, BLK-007), so the form asks for the reference of a
- * message a person sent themselves. The button says so.
+ * **It does not claim a kickoff it did not send.** The primary button sends the
+ * official message to the project group and records the sent message as the
+ * evidence; the by-hand form remains for a kickoff made another way, and still
+ * asks for that message's reference.
  */
 
 const STATE_TONE: Record<string, Tone> = {
@@ -41,6 +42,21 @@ const STATE_TONE: Record<string, Tone> = {
   completed: 'success',
   blocked: 'danger',
 };
+
+function SendKickoffForm({ projectId }: { projectId: string }) {
+  const [state, action, pending] = useActionState(sendKickoffAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <button type="submit" className={buttonClass('primary')} disabled={pending}>
+        {pending ? 'Sending…' : 'Send the kickoff to the project group — complete Phase 2'}
+      </button>
+      {state.status === 'error' ? <span className="text-[13px] text-danger">{state.message}</span> : null}
+      {state.status === 'success' ? <span className="text-[13px] text-muted">{state.message}</span> : null}
+    </form>
+  );
+}
 
 function KickoffForm({ projectId }: { projectId: string }) {
   const [state, action, pending] = useActionState(recordKickoffAction, IDLE_STATE);
@@ -137,10 +153,16 @@ export function PhaseTwoPanel({ view, projectId }: { view: PhaseTwoView; project
       ) : readiness?.ready ? (
         <>
           <p className="text-[13px]">
-            Every gate is met. AgencyOS cannot send the kickoff message — there is no channel
-            configured — so send it yourself and record it here.
+            Every gate is met. The project manager sends the short official kickoff message to the
+            project&apos;s WhatsApp group; the sent message is recorded as the evidence.
           </p>
-          <KickoffForm projectId={projectId} />
+          <SendKickoffForm projectId={projectId} />
+          <details className="text-[13px]">
+            <summary className="cursor-pointer text-muted">Sent it another way? Record it by hand instead</summary>
+            <div className="mt-2">
+              <KickoffForm projectId={projectId} />
+            </div>
+          </details>
         </>
       ) : (
         <div className="flex flex-col gap-1">

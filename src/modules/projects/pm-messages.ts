@@ -1,0 +1,117 @@
+/**
+ * What the project manager says to a client during Phase 2 — written in code,
+ * in the client's language, never composed by a model.
+ *
+ * Phase 2 PM §14 and Master §16 ask for exactly this: configurable templates
+ * that "must not contain unsupported promises". So every line is a fact the
+ * system already holds or a question, never a date, a price, an approval it has
+ * not got, or a word about which model or provider is behind it. Amounts are
+ * deliberately absent: the invoice carries them, and an automated message that
+ * states a price is a human's to author (ADM-22).
+ *
+ * Three languages, the same three the quotation and the hand-over use: English,
+ * Hinglish in Roman letters, and Hindi in Devanagari — the script the client
+ * wrote in is the script they are answered in.
+ */
+export type PmLanguage = 'en' | 'hinglish' | 'hindi';
+
+type Table = Record<PmLanguage, string>;
+
+const pick = (t: Table, language: PmLanguage): string => t[language] ?? t.en;
+
+export function pmWelcome(input: { language: PmLanguage; agencyName: string; projectName: string }): string {
+  const { agencyName: a, projectName: p } = input;
+  return pick(
+    {
+      en: `Welcome aboard! I'm the project manager at ${a} for "${p}". I'll guide you through the setup and be your point of contact. I'll only ask for what we don't already have.`,
+      hinglish: `Welcome! Main ${a} me "${p}" ka project manager hoon. Setup me main aapko guide karunga aur aapka point of contact rahunga. Jo humare paas pehle se hai wo dobara nahi poochunga.`,
+      hindi: `स्वागत है! मैं ${a} में "${p}" का प्रोजेक्ट मैनेजर हूँ। सेटअप में मैं आपका मार्गदर्शन करूँगा और आपका संपर्क-बिंदु रहूँगा। जो जानकारी हमारे पास पहले से है, वह दोबारा नहीं पूछूँगा।`,
+    },
+    input.language,
+  );
+}
+
+export function pmBillingQuestion(language: PmLanguage): string {
+  return pick(
+    {
+      en: 'For billing, please confirm whether you need a GST invoice or a Non-GST invoice.',
+      hinglish: 'Billing ke liye please confirm karein ki aapko GST invoice chahiye ya Non-GST invoice.',
+      hindi: 'बिलिंग के लिए कृपया बताएँ कि आपको GST इनवॉइस चाहिए या Non-GST इनवॉइस।',
+    },
+    language,
+  );
+}
+
+export function pmGstDetailsRequest(language: PmLanguage): string {
+  return pick(
+    {
+      en: 'For the GST invoice we need: your registered business name, GSTIN, billing address and state. Please send them in one message.',
+      hinglish: 'GST invoice ke liye humein chahiye: registered business name, GSTIN, billing address aur state. Please ye sab ek hi message me bhej dein.',
+      hindi: 'GST इनवॉइस के लिए हमें चाहिए: पंजीकृत व्यवसाय का नाम, GSTIN, बिलिंग पता और राज्य। कृपया ये सब एक ही संदेश में भेजें।',
+    },
+    language,
+  );
+}
+
+export function pmPaymentReceived(language: PmLanguage): string {
+  return pick(
+    {
+      en: 'We have received your payment details. We are verifying them and will update you shortly.',
+      hinglish: 'Humein aapke payment ki details mil gayi hain. Hum unhe verify kar rahe hain aur jaldi aapko update denge.',
+      hindi: 'हमें आपके भुगतान का विवरण मिल गया है। हम उसे सत्यापित कर रहे हैं और जल्द ही आपको सूचित करेंगे।',
+    },
+    language,
+  );
+}
+
+/** The advance (M1): the gate Phase 2 was waiting on has opened. */
+export function pmAdvanceVerified(language: PmLanguage): string {
+  return pick(
+    {
+      en: 'Your advance payment has been verified, thank you. We are now preparing your project plan and will be in touch if we need anything from you.',
+      hinglish: 'Aapka advance payment verify ho gaya hai, thank you. Ab hum aapka project plan taiyaar kar rahe hain; kuch chahiye hoga to aapse sampark karenge.',
+      hindi: 'आपका एडवांस भुगतान सत्यापित हो गया है, धन्यवाद। अब हम आपकी प्रोजेक्ट योजना तैयार कर रहे हैं; कुछ चाहिए होगा तो आपसे संपर्क करेंगे।',
+    },
+    language,
+  );
+}
+
+/** A later milestone: said without implying the project is starting again. */
+export function pmPaymentVerified(language: PmLanguage, invoiceNumber: string): string {
+  return pick(
+    {
+      en: `Your payment for invoice ${invoiceNumber} has been verified. Thank you.`,
+      hinglish: `Invoice ${invoiceNumber} ka aapka payment verify ho gaya hai. Thank you.`,
+      hindi: `इनवॉइस ${invoiceNumber} का आपका भुगतान सत्यापित हो गया है। धन्यवाद।`,
+    },
+    language,
+  );
+}
+
+/**
+ * Rejected or mismatched. Says only that it could not be matched yet and that a
+ * person will follow up with what is needed — the staff's own note (a reason,
+ * a figure) stays internal.
+ */
+export function pmPaymentNeedsAttention(language: PmLanguage, invoiceNumber: string): string {
+  return pick(
+    {
+      en: `We could not match the payment details for invoice ${invoiceNumber} yet. A colleague will get in touch shortly with what is needed.`,
+      hinglish: `Invoice ${invoiceNumber} ke payment ki details abhi match nahi ho payi. Hamare ek colleague jaldi aapse sampark karke bata denge ki kya chahiye.`,
+      hindi: `इनवॉइस ${invoiceNumber} के भुगतान का विवरण अभी मेल नहीं खा सका। हमारे एक सहयोगी जल्द ही आपसे संपर्क करके बताएँगे कि क्या चाहिए।`,
+    },
+    language,
+  );
+}
+
+/** Master §16: the official kickoff, short, in the project group. */
+export function pmKickoff(language: PmLanguage): string {
+  return pick(
+    {
+      en: 'Your advance payment has been verified and the project setup is complete. We are officially starting your project now.',
+      hinglish: 'Aapka advance payment verify ho gaya hai aur project setup complete hai. Hum ab officially aapka project start kar rahe hain.',
+      hindi: 'आपका एडवांस भुगतान सत्यापित हो गया है और प्रोजेक्ट सेटअप पूरा हो गया है। हम अब आधिकारिक रूप से आपका प्रोजेक्ट शुरू कर रहे हैं।',
+    },
+    language,
+  );
+}

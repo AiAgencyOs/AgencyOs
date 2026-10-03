@@ -29,6 +29,10 @@ export const HANDLERS = [
   'projects:completePhaseFourOnPrototypeApproval',
   'finance:generateM1Invoice',
   'finance:deliverIssuedInvoice',
+  'projects:welcomeClient',
+  'projects:askGstDetails',
+  'projects:updateClientOnPayment',
+  'projects:readBillingReply',
   'finance:generateM2Invoice',
   'finance:generateM3Invoice',
   'finance:generateM4Invoice',
@@ -105,7 +109,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * and Master §5.3's workspace IS the project. So Phase 2 starts at the
    * BINDING, which `ai.handoffs` now emits for itself.
    */
-  'project.handoff_bound': ['projects:startPhaseTwo'],
+  'project.handoff_bound': ['projects:startPhaseTwo', 'projects:welcomeClient'],
   /**
    * Master §7.12 and §15 — Phase 3's entry, and the event G-258 emitted into
    * nothing on purpose.
@@ -124,7 +128,12 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * trusting the payload, and skips quietly for a project whose payment plan
    * was configured by hand instead of the locked structure.
    */
-  'project.billing_mode_confirmed': ['finance:generateM1Invoice'],
+  'project.billing_mode_confirmed': ['finance:generateM1Invoice', 'projects:askGstDetails'],
+  /** Phase 2 PM §6 PM-08: where the client's payment stands, said to the client. */
+  'payment.submitted': ['projects:updateClientOnPayment'],
+  'payment.verified': ['projects:updateClientOnPayment'],
+  'payment.rejected': ['projects:updateClientOnPayment'],
+  'payment.mismatched': ['projects:updateClientOnPayment'],
   /** Phase 2 Finance §4.5 — the issued bill reaches the client's email and the project group. */
   'invoice.issued': ['finance:deliverIssuedInvoice'],
   /**
@@ -323,7 +332,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * the call for a message from staff, a thread with no lead, and a lead that
    * already has a meeting open — which is the lead most likely to write again.
    */
-  'message.received': ['sales:readIntent', 'sales:readQualification', 'sales:summariseThread', 'sales:readMeetingRequest', 'sales:readLeadOutcome'],
+  'message.received': ['sales:readIntent', 'sales:readQualification', 'sales:summariseThread', 'sales:readMeetingRequest', 'sales:readLeadOutcome', 'projects:readBillingReply'],
   /**
    * Doc 09 §19, and the reason it is a separate event rather than a third
    * subscriber on `message.received`: four of Doc 08 §12's twenty-two intents
@@ -595,6 +604,10 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:completePhaseFourOnPrototypeApproval': 'phase_four.complete',
   'finance:generateM1Invoice': 'invoice.generate_m1',
   'finance:deliverIssuedInvoice': 'invoice.deliver',
+  'projects:welcomeClient': 'pm.welcome',
+  'projects:askGstDetails': 'pm.gst_details',
+  'projects:updateClientOnPayment': 'pm.payment_update',
+  'projects:readBillingReply': 'pm.billing_reply',
   'finance:generateM2Invoice': 'invoice.generate_m2',
   'finance:generateM3Invoice': 'invoice.generate_m3',
   'finance:generateM4Invoice': 'invoice.generate_m4',

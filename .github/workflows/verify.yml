@@ -796,6 +796,11 @@ jobs:
           # visible and recovery sends exactly once. Runs a Graph stub on 54398.
           npm run db:verify:invdelivery
 
+          # Phase 2 PM §6: the project manager speaks to the client (welcome,
+          # billing question, GST details, payment status), once each, and the
+          # client's billing answer reaches staff without confirming anything.
+          npm run db:verify:pmcomms
+
           # PH1-CLS-002 and G-250. Doc 09 §33: a handoff is a real workflow
           # event, not a note. Wins a deal through the governed path, reads the
           # ai.handoffs row, the outbox row and the packet projection — and
