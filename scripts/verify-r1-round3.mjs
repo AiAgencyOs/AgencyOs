@@ -249,6 +249,9 @@ try {
   // R1-3 (round 3b): every task done is not enough - the M2 invoice must be verified paid.
   const noM2 = await readiness(5);
   check(noM2?.outcome === 'not_ready' && (noM2.missing ?? []).join('|') === 'M2 not verified paid', 'every development task done but no M2 on the project: still not ready, and M2 is the only thing missing', JSON.stringify(noM2));
+  // M2 is the SECOND milestone of the plan by order (the installer numbers from 0, hand-built plans from 1 - the
+  // gate counts the ladder, not a number), so the fixture has the advance before it, as every real plan does.
+  await rest('POST', 'projects', 'milestones', { organization_id: ORG, project_id: P, name: `${MARKER} M1`, position: 1, amount_minor: 50000, currency: 'INR' });
   const m2 = row(await rest('POST', 'projects', 'milestones', { organization_id: ORG, project_id: P, name: `${MARKER} M2`, position: 2, amount_minor: 100000, currency: 'INR' }));
   if (!m2?.id) fail(`could not create the fixture M2 milestone: ${JSON.stringify(m2).slice(0, 200)}`);
   const m2inv = row(await rest('POST', 'finance', 'invoices', { organization_id: ORG, client_account_id: account.id, project_id: P, milestone_id: m2.id, number: `${MARKER}-M2`, status: 'issued', currency: 'INR', subtotal_minor: 100000, total_minor: 100000, issued_at: new Date().toISOString() }));
