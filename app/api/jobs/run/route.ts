@@ -58,7 +58,7 @@ import {
 } from '@/modules/projects/handlers';
 import { handleAskClarification, handleReadClarificationAnswer } from '@/modules/projects/pm-clarifications';
 import { handleWelcomeClient, handleAskGstDetails, handlePaymentUpdate, handleReadBillingReply } from '@/modules/projects/pm-client-comms';
-import { handleBillingModeConfirmed, handleInvoiceIssuedForDelivery, handlePhaseFourCompletedForFinance, handlePhaseFiveCompletedForFinance, handlePhaseSixCompletedForFinance } from '@/modules/finance/handlers';
+import { handleHandoverAcceptedForFinance, handleBillingModeConfirmed, handleInvoiceIssuedForDelivery, handlePhaseFourCompletedForFinance, handlePhaseFiveCompletedForFinance, handlePhaseSixCompletedForFinance } from '@/modules/finance/handlers';
 import { learnFromDecision, learnFromRevision } from '@/modules/sales/handlers';
 import { handleRouteTask2Design, handleRequestUIVersionAdminReview } from '@/modules/orchestrator/handlers';
 import { handleReviewUIVersion, handleReviewPrototypeBuild } from '@/modules/qa/handlers';
@@ -278,6 +278,19 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    * Finance; then one reminder per invoice per interval, never more.
    */
   const invoiceReminders = await runInvoiceReminders(admin);
+
+  /**
+   * ── Phase 2's state follows the facts (Master §9, PM §11) ──────────────
+   *
+   * One bounded set-based pass: each running Phase 2 is read against the same
+   * facts the kickoff gate reads and moved to what it is actually waiting for
+   * (client, admin, finance, planning, or ready). A failure here is logged and
+   * ignored - a stale label must never stop the queue behind it.
+   */
+  const phaseTwoStates = await admin.schema('projects').rpc('refresh_phase_two_states', { p_limit: 200 });
+  if (phaseTwoStates.error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `phase two states: ${phaseTwoStates.error.message}` }));
+  }
 
   /**
    * ── campaigns, one governed send at a time (owner decision 2026-09-30) ──
@@ -934,6 +947,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    * One HTTP request per channel, no model call, so it drains beside the
    * announcements. A person issued the invoice; this carries it to the client.
    */
+  // Phase 7 complete → the free-maintenance document (Finance §9), drained before its delivery.
+  const freeMaintenance = await runEventJobs(admin, FREE_MAINTENANCE_JOB_KIND, handleHandoverAcceptedForFinance, 'runFreeMaintenanceJobs');
   const invoiceDeliveries = await runEventJobs(
     admin,
     INVOICE_DELIVERY_JOB_KIND,
@@ -1155,6 +1170,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     announcements: announcements.results,
     escalations: escalations.results,
     clientWaiting: clientWaiting.results,
+    phaseTwoStatesChanged: phaseTwoStates.data ?? 0,
+    freeMaintenance: freeMaintenance.results,
     invoiceDeliveries: invoiceDeliveries.results,
     pmWelcomes: pmWelcomes.results,
     pmGstDetails: pmGstDetails.results,
@@ -1296,6 +1313,7 @@ const UI_VERSION_ADMIN_REVIEW_JOB_KIND = HANDLER_JOB_KIND['orchestrator:requestU
 const PROTOTYPE_QA_JOB_KIND = HANDLER_JOB_KIND['quality_assurance:reviewPrototypeBuild'];
 const M1_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM1Invoice'];
 const INVOICE_DELIVERY_JOB_KIND = HANDLER_JOB_KIND['finance:deliverIssuedInvoice'];
+const FREE_MAINTENANCE_JOB_KIND = HANDLER_JOB_KIND['finance:raiseFreeMaintenance'];
 const PM_WELCOME_JOB_KIND = HANDLER_JOB_KIND['projects:welcomeClient'];
 const PM_GST_DETAILS_JOB_KIND = HANDLER_JOB_KIND['projects:askGstDetails'];
 const PM_PAYMENT_UPDATE_JOB_KIND = HANDLER_JOB_KIND['projects:updateClientOnPayment'];

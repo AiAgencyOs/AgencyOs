@@ -12923,6 +12923,10 @@ export type Database = {
           outcome: string
         }[]
       }
+      refresh_phase_two_states: {
+        Args: { p_limit?: number }
+        Returns: number
+      }
       agent_mark_clarification_asked: {
         Args: { p_clarification_id: string; p_message_id: string }
         Returns: string

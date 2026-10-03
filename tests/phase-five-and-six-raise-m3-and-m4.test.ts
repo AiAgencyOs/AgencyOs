@@ -75,15 +75,17 @@ describe('the messages and the request', () => {
 
 /** A fake admin client: each table answers `maybeSingle()` with its row; rpc calls are recorded. */
 function fakeAdmin(tables: Record<string, unknown>, rpcRow: unknown) {
-  const seen = { positions: [] as unknown[], rpcs: [] as { fn: string; args: Record<string, unknown> }[], writes: 0 };
+  const seen = { rpcs: [] as { fn: string; args: Record<string, unknown> }[], writes: 0 };
   const admin = {
     schema: () => ({
       from(table: string) {
         const builder: Record<string, unknown> = {};
-        for (const m of ['select', 'neq', 'is', 'like', 'order', 'limit']) builder[m] = () => builder;
-        builder.eq = (column: string, value: unknown) => {
-          if (table === 'milestones' && column === 'position') seen.positions.push(value);
-          return builder;
+        for (const m of ['select', 'neq', 'is', 'not', 'like', 'order', 'limit', 'eq']) builder[m] = () => builder;
+        // The payment plan is read as a LIST (every priced milestone, in order) and the Nth is picked by ordinal;
+        // `tables.milestones` may be one row or an array, and an awaited builder resolves to the array.
+        builder.then = (resolve: (v: unknown) => unknown) => {
+          const row = tables[table];
+          return resolve({ data: Array.isArray(row) ? row : row ? [row] : [], error: null });
         };
         for (const m of ['insert', 'update', 'delete', 'upsert']) builder[m] = () => { seen.writes += 1; return builder; };
         builder.maybeSingle = async () => ({ data: tables[table] ?? null, error: null });
@@ -99,23 +101,41 @@ function fakeAdmin(tables: Record<string, unknown>, rpcRow: unknown) {
 }
 
 const scope = { organizationId: '22222222-2222-4222-8222-222222222222', projectId: '11111111-1111-4111-8111-111111111111' };
+// The installer numbers a plan from 0 (projects.replace_payment_plan), so M3 sits at position 2. The generators pick by
+// ORDINAL, which is the whole point of the test below.
+const plan = [
+  { id: 'ms1', name: 'Advance (30%)', position: 0, status: 'pending', payment_percent: 30, amount_minor: 3_000_000, currency: 'INR', due_on: null },
+  { id: 'ms2', name: 'On UI prototype approval (20%)', position: 1, status: 'pending', payment_percent: 20, amount_minor: 2_000_000, currency: 'INR', due_on: null },
+  { id: 'ms', name: 'On development completion (30%)', position: 2, status: 'pending', payment_percent: 30, amount_minor: 3_000_000, currency: 'INR', due_on: null },
+  { id: 'ms4', name: 'On testing completion (20%)', position: 3, status: 'pending', payment_percent: 20, amount_minor: 2_000_000, currency: 'INR', due_on: null },
+];
 const tables = {
-  milestones: { id: 'ms', name: 'On development completion (30%)', position: 3, status: 'pending', payment_percent: 30, amount_minor: 3_000_000, currency: 'INR', due_on: null },
+  milestones: plan,
   projects: { id: scope.projectId, name: 'Acme App', client_account_id: 'ca' },
   billing_profiles: { id: 'bp', mode: 'non_gst', legal_name: 'Acme Pvt Ltd', billing_address: '1 Road', billing_state: 'KA', gstin: null },
 };
 
-describe('M3 and M4 are raised from the milestone at their position', () => {
-  test('M3 reads position 3 and M4 reads position 4', async () => {
+describe('M3 and M4 are raised from the third and fourth priced milestone, by order', () => {
+  test('a plan without a third or fourth milestone is skipped, and says which', async () => {
     const m3 = fakeAdmin({}, null);
     const r3 = await generateM3Invoice(m3.admin, scope);
-    assert.deepEqual(m3.seen.positions, [3]);
-    assert.deepEqual(r3.ok && r3.data, { outcome: 'skipped', reason: 'no milestone at position 3' });
+    assert.deepEqual(r3.ok && r3.data, { outcome: 'skipped', reason: 'the payment plan has no milestone number 3' });
 
-    const m4 = fakeAdmin({}, null);
+    const m4 = fakeAdmin({ milestones: plan.slice(0, 3) }, null);
     const r4 = await generateM4Invoice(m4.admin, scope);
-    assert.deepEqual(m4.seen.positions, [4]);
-    assert.deepEqual(r4.ok && r4.data, { outcome: 'skipped', reason: 'no milestone at position 4' });
+    assert.deepEqual(r4.ok && r4.data, { outcome: 'skipped', reason: 'the payment plan has no milestone number 4' });
+  });
+
+  test('M3 is the third row and M4 the fourth, whatever positions the installer wrote (it numbers from 0)', async () => {
+    const m3 = fakeAdmin(tables, { outcome: 'created', invoice_id: 'i3', number: 'N3' });
+    await generateM3Invoice(m3.admin, scope);
+    assert.equal(m3.seen.rpcs[0]?.args.p_milestone_id, 'ms');
+    assert.equal(m3.seen.rpcs[0]?.args.p_total_minor, 3_000_000, 'M3 is 30%');
+
+    const m4 = fakeAdmin(tables, { outcome: 'created', invoice_id: 'i4', number: 'N4' });
+    await generateM4Invoice(m4.admin, scope);
+    assert.equal(m4.seen.rpcs[0]?.args.p_milestone_id, 'ms4');
+    assert.equal(m4.seen.rpcs[0]?.args.p_total_minor, 2_000_000, 'M4 is 20%');
   });
 
   test('a ready milestone is invoiced through the invoice door, once, and nothing is marked paid', async () => {

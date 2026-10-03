@@ -170,13 +170,13 @@ export type ScopeItemRef = { id: string; title: string };
 export type PaymentMilestoneRef = { id: string; name: string; position: number };
 
 /**
- * Which phase a payment milestone gates: the locked 30/20/30/20 structure
- * (ADM-105). Milestones are numbered 1-4 - M1 is position 1 - exactly as
- * `payment-structure.ts` installs them.
+ * Which phase a payment milestone gates, by its ORDINAL in the plan - M1 is the
+ * first priced milestone, M2 the second (ADM-105's 30/20/30/20). Never by the
+ * stored position number: the installer numbers from 0 and fixtures from 1.
  */
 const FINANCE_GATE_PHASE = ['phase_2', 'phase_4', 'phase_5', 'phase_6'] as const;
-export function financeGatePhase(position: number): (typeof PLAN_PHASES)[number] {
-  return FINANCE_GATE_PHASE[position - 1] ?? 'phase_7';
+export function financeGatePhase(ordinal: number): (typeof PLAN_PHASES)[number] {
+  return FINANCE_GATE_PHASE[ordinal - 1] ?? 'phase_7';
 }
 
 export type AssembleResult =
@@ -255,15 +255,15 @@ export function assembleBlueprint(
   }
 
   // Finance gates, from the payment plan - never the model's.
-  for (const pm of [...facts.paymentMilestones].sort((a, b) => a.position - b.position)) {
+  [...facts.paymentMilestones].sort((a, b) => a.position - b.position).forEach((pm, index) => {
     milestones.push({
       name: `${pm.name} verified`,
       kind: 'finance_gate',
-      phase: financeGatePhase(pm.position),
+      phase: financeGatePhase(index + 1),
       gateCriteria: 'The payment is verified by an Admin. A client message or a screenshot is not verification.',
       paymentMilestoneId: pm.id,
     });
-  }
+  });
 
   return {
     ok: true,

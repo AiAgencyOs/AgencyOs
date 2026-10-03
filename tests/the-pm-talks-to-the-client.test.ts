@@ -66,13 +66,32 @@ describe('reading the client\'s billing answer', () => {
   }
 });
 
+describe('what the client is told about money', () => {
+  const src = read('src/modules/projects/pm-client-comms.ts').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const handler = src.slice(src.indexOf('export async function handlePaymentUpdate'), src.indexOf('export function readBillingAnswer'));
+
+  test('"verified" is said only when the invoice is paid, and only if it still is', () => {
+    assert.match(handler, /eventType === 'invoice\.paid' && invoice\.status !== 'paid'/);
+    assert.doesNotMatch(handler, /payment\.verified/);
+  });
+
+  test('the advance is the first priced milestone, and anything else is an ordinary verified payment', () => {
+    assert.match(handler, /isAdvanceMilestone\(admin,/);
+    assert.match(handler, /isAdvance\s*\n?\s*\? pmAdvanceVerified\(ctx\.language\)\s*\n?\s*: pmPaymentVerified\(ctx\.language, invoice\.number\)/);
+  });
+});
+
 describe('what is wired', () => {
-  test('the welcome rides the handoff beside the start; GST details ride the confirmed mode; payments ride all four payment events', () => {
+  test('the welcome rides the handoff beside the start; GST details ride the confirmed mode; payment claims and the paid invoice ride the payment events', () => {
     assert.ok(SUBSCRIPTIONS['project.handoff_bound']?.includes('projects:welcomeClient'));
     assert.ok(SUBSCRIPTIONS['project.billing_mode_confirmed']?.includes('projects:askGstDetails'));
-    for (const e of ['payment.submitted', 'payment.verified', 'payment.rejected', 'payment.mismatched']) {
+    for (const e of ['payment.submitted', 'payment.rejected', 'payment.mismatched']) {
       assert.deepEqual(SUBSCRIPTIONS[e], ['projects:updateClientOnPayment'], e);
     }
+    // The MONEY being verified (the invoice is paid) is what the client is told; a claim an Admin merely checked is not
+    // the money (Doc 15 §12, G-272), so payment.verified on a claim says nothing.
+    assert.ok(SUBSCRIPTIONS['invoice.paid']?.includes('projects:updateClientOnPayment'));
+    assert.equal(SUBSCRIPTIONS['payment.verified'], undefined);
     assert.ok(SUBSCRIPTIONS['message.received']?.includes('projects:readBillingReply'));
     for (const h of ['projects:welcomeClient', 'projects:askGstDetails', 'projects:updateClientOnPayment', 'projects:readBillingReply']) {
       assert.ok(HANDLER_JOB_KIND[h as keyof typeof HANDLER_JOB_KIND], h);

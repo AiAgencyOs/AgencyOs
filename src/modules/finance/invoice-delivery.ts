@@ -8,7 +8,7 @@ import { renderInvoiceDocument } from './pdf-service';
 import { listPaymentAccounts } from './queries';
 import { PAYMENT_ACCOUNT_FIELDS, type PaymentAccountKind } from './schema';
 import { verifiedOn } from './verified-basis';
-import { invoiceMessage } from './whatsapp-send-schema';
+import { freeMaintenanceMessage, invoiceMessage } from './whatsapp-send-schema';
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -78,7 +78,7 @@ export async function deliverIssuedInvoice(
   const { data: invoice, error } = await admin
     .schema('finance')
     .from('invoices')
-    .select('id, organization_id, number, status, currency, total_minor, verified_minor, due_at, client_account_id, project_id')
+    .select('id, organization_id, number, status, currency, total_minor, verified_minor, due_at, client_account_id, project_id, maintenance_plan_id')
     .eq('id', args.invoiceId)
     .eq('organization_id', args.organizationId)
     .maybeSingle();
@@ -106,14 +106,15 @@ export type InvoiceRow = {
   due_at: string | null;
   client_account_id: string;
   project_id: string | null;
+  /** Set on the free-maintenance document (Finance §9): a ₹0 invoice that is delivered, not collected. */
+  maintenance_plan_id?: string | null;
 };
 
 // ── WhatsApp ─────────────────────────────────────────────────────────────────
 
 /**
- * The official project group first (Master §5.7), the client's own thread when
- * the project has no group yet. Never a lead's sales thread: a bill is not a
- * sales message.
+ * The official project group first (Master §5.7), then the client's own thread,
+ * then - only when the client has neither yet - the thread the deal was won on.
  */
 async function pickThread(admin: Admin, invoice: InvoiceRow): Promise<string | null> {
   if (invoice.project_id) {
@@ -139,7 +140,46 @@ async function pickThread(admin: Admin, invoice: InvoiceRow): Promise<string | n
     .neq('status', 'abandoned')
     .order('updated_at', { ascending: false })
     .limit(1);
-  return data?.[0]?.id ?? null;
+  if (data?.[0]) return data[0].id;
+
+  // Before the project has a group and the client an account thread of their
+  // own, the only place the client IS reachable is the thread the deal was won
+  // on - the same one the project manager welcomed them on. The advance invoice
+  // typically goes out exactly then, so a bill with nowhere to go would wait for
+  // a group it does not need. Used ONLY for the delivery of this invoice; a
+  // reminder never chases a bill on a sales thread (reminder-schema.ts).
+  if (invoice.project_id) {
+    const { data: project } = await admin
+      .schema('projects')
+      .from('projects')
+      .select('opportunity_id')
+      .eq('id', invoice.project_id)
+      .eq('organization_id', invoice.organization_id)
+      .maybeSingle();
+    if (project?.opportunity_id) {
+      const { data: opportunity } = await admin
+        .schema('sales')
+        .from('opportunities')
+        .select('lead_id')
+        .eq('id', project.opportunity_id)
+        .eq('organization_id', invoice.organization_id)
+        .maybeSingle();
+      if (opportunity?.lead_id) {
+        const { data: direct } = await admin
+          .schema('crm')
+          .from('conversations')
+          .select('id')
+          .eq('organization_id', invoice.organization_id)
+          .eq('kind', 'direct')
+          .eq('lead_id', opportunity.lead_id)
+          .neq('status', 'abandoned')
+          .order('updated_at', { ascending: false })
+          .limit(1);
+        return direct?.[0]?.id ?? null;
+      }
+    }
+  }
+  return null;
 }
 
 async function deliverOnWhatsApp(admin: Admin, invoice: InvoiceRow): Promise<ChannelOutcome> {
@@ -172,7 +212,10 @@ async function deliverOnWhatsApp(admin: Admin, invoice: InvoiceRow): Promise<Cha
   ]);
   if (!org) return fail('the organization could not be read, so the message has no sender name');
 
-  const body = invoiceMessage({
+  const freeUntil = invoice.maintenance_plan_id ? await freeMaintenanceEnd(admin, invoice) : null;
+  const body = invoice.maintenance_plan_id
+    ? freeMaintenanceMessage({ agencyName: org.name, invoiceNumber: invoice.number, endsOn: freeUntil, projectName: project.data?.name ?? null })
+    : invoiceMessage({
     agencyName: org.name,
     invoiceNumber: invoice.number,
     currency: invoice.currency,
@@ -301,6 +344,18 @@ async function deliverOnWhatsApp(admin: Admin, invoice: InvoiceRow): Promise<Cha
   return { channel: 'whatsapp', result: 'sent', detail: 'text and PDF delivered' };
 }
 
+async function freeMaintenanceEnd(admin: Admin, invoice: InvoiceRow): Promise<string | null> {
+  if (!invoice.maintenance_plan_id) return null;
+  const { data } = await admin
+    .schema('projects')
+    .from('maintenance_plans')
+    .select('ends_on')
+    .eq('id', invoice.maintenance_plan_id)
+    .eq('organization_id', invoice.organization_id)
+    .maybeSingle();
+  return data?.ends_on ?? null;
+}
+
 // ── email ────────────────────────────────────────────────────────────────────
 
 export type EmailDeps = {
@@ -352,15 +407,22 @@ export async function deliverByEmail(admin: Admin, invoice: InvoiceRow, deps: Em
   const amount = new Intl.NumberFormat('en-IN', { style: 'currency', currency: invoice.currency, maximumFractionDigits: 2 }).format(invoice.total_minor / 100);
   const due = invoice.due_at ? invoice.due_at.slice(0, 10) : null;
 
+  const free = Boolean(invoice.maintenance_plan_id);
   const sent = await deps.send({
     to,
-    subject: `Invoice ${invoice.number} from ${agency} (${amount})`,
-    text: [
-      `Please find invoice ${invoice.number} for ${amount} attached${due ? `, due ${due}` : ''}.`,
-      '',
-      'Payment details are on the invoice. Thank you.',
-      `— ${agency}`,
-    ].join('\n'),
+    subject: free ? `Your free maintenance document ${invoice.number} from ${agency}` : `Invoice ${invoice.number} from ${agency} (${amount})`,
+    text: free
+      ? [
+          `Please find document ${invoice.number} attached. It records the free maintenance included with your project.`,
+          'No payment is needed.',
+          `— ${agency}`,
+        ].join('\n')
+      : [
+          `Please find invoice ${invoice.number} for ${amount} attached${due ? `, due ${due}` : ''}.`,
+          '',
+          'Payment details are on the invoice. Thank you.',
+          `— ${agency}`,
+        ].join('\n'),
     attachments: [{ filename: rendered.data.filename, contentType: 'application/pdf', bytes: rendered.data.bytes }],
   });
   if (!sent.ok) {

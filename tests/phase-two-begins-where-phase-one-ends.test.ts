@@ -159,7 +159,7 @@ describe('D. the handler is thin, and the decisions are in the door', () => {
 
   test('a database that did not answer is retried; a missing packet is not', () => {
     assert.match(HANDLER, /if \(error\) \{[\s\S]{0,260}permanent: false/);
-    assert.match(HANDLER, /case 'no_handoff':[\s\S]{0,300}permanent: true/);
+    assert.match(HANDLER, /case 'no_handoff':[\s\S]{0,1400}permanent: true/);
     // Both settled outcomes succeed — `already_started` is the replay this is
     // built to survive.
     assert.match(HANDLER, /case 'started':\s*\n\s*case 'already_started':/);

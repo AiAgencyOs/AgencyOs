@@ -17,6 +17,7 @@
  * skip them.
  */
 
+import { isAdvanceMilestone } from '@/modules/projects/advance-milestone';
 import { assembleBlueprint, BLUEPRINT_PROMPT, blueprintDraftJsonSchema, blueprintDraftSchema, renderPlanningContext } from '@/modules/projects/blueprint';
 import { raiseAlert } from '@/lib/ai/run-gates';
 import { LEAD_OUTCOME_PROMPT, decideOutcome, leadOutcomeJsonSchema, leadOutcomeReadingSchema } from '@/modules/sales/lead-outcome';
@@ -9414,15 +9415,14 @@ const PLANNING_BLUEPRINT: AgentWorkflow = {
         return { status: 'failed', reason: 'could not read the invoice' };
       }
       if (!invoice?.project_id || !invoice.milestone_id) return settle('this invoice is not a project milestone');
-      const { data: milestone } = await admin
-        .schema('projects')
-        .from('milestones')
-        .select('position')
-        .eq('id', invoice.milestone_id)
-        .eq('organization_id', orgId)
-        .maybeSingle();
       // Only the advance opens planning (Master §5.9: "after the required financial gate is verified").
-      if (milestone?.position !== 1) return settle('a later milestone, not the advance');
+      // The advance is the FIRST priced milestone of the plan - by order, not by a position number.
+      const advance = await isAdvanceMilestone(admin, { organizationId: orgId, projectId: invoice.project_id, milestoneId: invoice.milestone_id });
+      if (advance === null) {
+        await failJob(admin, job, 'could not read the payment plan');
+        return { status: 'failed', reason: 'could not read the payment plan' };
+      }
+      if (!advance) return settle('a later milestone, not the advance');
       projectId = invoice.project_id;
     } else {
       projectId = subjectId;
