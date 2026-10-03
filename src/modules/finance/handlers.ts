@@ -163,3 +163,32 @@ export function handlePhaseFiveCompletedForFinance(admin: Admin, job: BillingMod
 export function handlePhaseSixCompletedForFinance(admin: Admin, job: BillingModeJob): Promise<HandlerResult> {
   return handleLaterPhaseCompleted(admin, job, 'M4', generateM4Invoice);
 }
+
+/**
+ * `invoice.issued` → carry the bill to the client — Phase 2 Finance §4.5.
+ *
+ * The decision to issue stays with the person who pressed Issue; this is the
+ * consequence. Every rule lives in `deliverIssuedInvoice`: this claims the job
+ * and translates its outcome. `finance.issue_invoice` emits the event with
+ * `subject_id` set to the invoice, trusted the same way the other handlers
+ * trust their event's subject — and re-read under the job's organization.
+ *
+ * A channel that CANNOT be attempted (no email configured, no address, no
+ * thread, no consent) is `skipped` with its reason on the delivery row, not a
+ * failure: retrying cannot fix it, and a retry loop would hide it. A channel
+ * that was attempted and failed makes the job fail, so the runner retries it
+ * with its backoff; the row says which channel and why.
+ */
+export async function handleInvoiceIssuedForDelivery(admin: Admin, job: BillingModeJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const invoiceId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+  if (!invoiceId) return { status: 'failed', permanent: true, detail: 'the event named no invoice' };
+
+  const { deliverIssuedInvoice } = await import('./invoice-delivery');
+  const result = await deliverIssuedInvoice(admin, { organizationId: job.organization_id, invoiceId });
+  if ('error' in result) return { status: 'failed', permanent: result.permanent, detail: result.error };
+
+  const summary = result.outcomes.map((o) => `${o.channel}: ${o.result}${o.result === 'sent' ? '' : ` (${o.detail})`}`).join('; ');
+  if (result.retry) return { status: 'failed', permanent: false, detail: summary.slice(0, 500) };
+  return { status: 'succeeded', outcome: 'delivered', detail: summary.slice(0, 500) };
+}

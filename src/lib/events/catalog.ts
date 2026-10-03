@@ -28,6 +28,7 @@ export const HANDLERS = [
   'quality_assurance:reviewPrototypeBuild',
   'projects:completePhaseFourOnPrototypeApproval',
   'finance:generateM1Invoice',
+  'finance:deliverIssuedInvoice',
   'finance:generateM2Invoice',
   'finance:generateM3Invoice',
   'finance:generateM4Invoice',
@@ -124,6 +125,8 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * was configured by hand instead of the locked structure.
    */
   'project.billing_mode_confirmed': ['finance:generateM1Invoice'],
+  /** Phase 2 Finance §4.5 — the issued bill reaches the client's email and the project group. */
+  'invoice.issued': ['finance:deliverIssuedInvoice'],
   /**
    * Master §17: "new functionality is not automatically a design revision."
    * `record_client_design_decision` has emitted this since it was written
@@ -591,6 +594,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'quality_assurance:reviewPrototypeBuild': 'prototype.qa_review',
   'projects:completePhaseFourOnPrototypeApproval': 'phase_four.complete',
   'finance:generateM1Invoice': 'invoice.generate_m1',
+  'finance:deliverIssuedInvoice': 'invoice.deliver',
   'finance:generateM2Invoice': 'invoice.generate_m2',
   'finance:generateM3Invoice': 'invoice.generate_m3',
   'finance:generateM4Invoice': 'invoice.generate_m4',

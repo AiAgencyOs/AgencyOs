@@ -56,7 +56,7 @@ import {
   type HandlerResult,
   type UnlockJob,
 } from '@/modules/projects/handlers';
-import { handleBillingModeConfirmed, handlePhaseFourCompletedForFinance, handlePhaseFiveCompletedForFinance, handlePhaseSixCompletedForFinance } from '@/modules/finance/handlers';
+import { handleBillingModeConfirmed, handleInvoiceIssuedForDelivery, handlePhaseFourCompletedForFinance, handlePhaseFiveCompletedForFinance, handlePhaseSixCompletedForFinance } from '@/modules/finance/handlers';
 import { learnFromDecision, learnFromRevision } from '@/modules/sales/handlers';
 import { handleRouteTask2Design, handleRequestUIVersionAdminReview } from '@/modules/orchestrator/handlers';
 import { handleReviewUIVersion, handleReviewPrototypeBuild } from '@/modules/qa/handlers';
@@ -926,6 +926,19 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const task3CompleteAnnouncements = await runEventJobs(admin, TASK3_COMPLETE_JOB_KIND, announceTask3Complete, 'runTask3CompleteAnnouncementJobs');
   const task4CompleteAnnouncements = await runEventJobs(admin, TASK4_COMPLETE_JOB_KIND, announceTask4Complete, 'runTask4CompleteAnnouncementJobs');
 
+  /**
+   * ── the issued invoice is delivered (Phase 2 Finance §4.5) ──────────────
+   *
+   * One HTTP request per channel, no model call, so it drains beside the
+   * announcements. A person issued the invoice; this carries it to the client.
+   */
+  const invoiceDeliveries = await runEventJobs(
+    admin,
+    INVOICE_DELIVERY_JOB_KIND,
+    handleInvoiceIssuedForDelivery,
+    'runInvoiceDeliveryJobs',
+  );
+
   const m2PaymentVerifiedAnnouncements = await runEventJobs(
     admin,
     M2_PAYMENT_VERIFIED_JOB_KIND,
@@ -1127,6 +1140,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     announcements: announcements.results,
     escalations: escalations.results,
     clientWaiting: clientWaiting.results,
+    invoiceDeliveries: invoiceDeliveries.results,
     revisionLimitAnnouncements: revisionLimitAnnouncements.results,
     phaseThreeCompletedAnnouncements: phaseThreeCompletedAnnouncements.results,
     phaseFourStartedAnnouncements: phaseFourStartedAnnouncements.results,
@@ -1260,6 +1274,7 @@ const UI_VERSION_QA_JOB_KIND = HANDLER_JOB_KIND['quality_assurance:reviewUIVersi
 const UI_VERSION_ADMIN_REVIEW_JOB_KIND = HANDLER_JOB_KIND['orchestrator:requestUIVersionAdminReview'];
 const PROTOTYPE_QA_JOB_KIND = HANDLER_JOB_KIND['quality_assurance:reviewPrototypeBuild'];
 const M1_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM1Invoice'];
+const INVOICE_DELIVERY_JOB_KIND = HANDLER_JOB_KIND['finance:deliverIssuedInvoice'];
 const PHASE_FOUR_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['projects:completePhaseFourOnPrototypeApproval'];
 const M2_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM2Invoice'];
 const M3_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM3Invoice'];

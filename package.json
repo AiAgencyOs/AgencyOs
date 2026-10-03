@@ -128,6 +128,7 @@
     "db:verify:meeting-commands": "node scripts/verify-meeting-commands.mjs",
     "db:verify:analysis": "node scripts/verify-meeting-analysis.mjs",
     "db:verify:handoff": "node scripts/verify-won-handoff.mjs",
+    "db:verify:invdelivery": "node scripts/verify-invoice-delivery.mjs",
     "db:verify:contracts": "node scripts/verify-contracts-and-lead-files.mjs",
     "db:verify:w2-projects": "node scripts/verify-w2-projects.mjs",
     "db:verify:trace-b": "node scripts/verify-trace-b.mjs",

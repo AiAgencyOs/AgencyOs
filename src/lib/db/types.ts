@@ -6518,6 +6518,69 @@ export type Database = {
           },
         ]
       }
+      invoice_deliveries: {
+        Row: {
+          attempts: number
+          channel: string
+          conversation_id: string | null
+          created_at: string
+          delivered_at: string | null
+          destination: string | null
+          id: string
+          invoice_id: string
+          last_error: string | null
+          message_ref: string | null
+          organization_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          channel: string
+          conversation_id?: string | null
+          created_at?: string
+          delivered_at?: string | null
+          destination?: string | null
+          id?: string
+          invoice_id: string
+          last_error?: string | null
+          message_ref?: string | null
+          organization_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          channel?: string
+          conversation_id?: string | null
+          created_at?: string
+          delivered_at?: string | null
+          destination?: string | null
+          id?: string
+          invoice_id?: string
+          last_error?: string | null
+          message_ref?: string | null
+          organization_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_deliveries_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_deliveries_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoice_sends: {
         Row: {
           automatic: boolean
@@ -7198,6 +7261,25 @@ export type Database = {
           number: string | null
           outcome: string
         }[]
+      }
+      claim_invoice_delivery: {
+        Args: { p_channel: string; p_invoice_id: string }
+        Returns: {
+          attempts: number
+          delivery_id: string | null
+          outcome: string
+        }[]
+      }
+      settle_invoice_delivery: {
+        Args: {
+          p_conversation_id?: string
+          p_delivery_id: string
+          p_destination?: string
+          p_error?: string
+          p_message_ref?: string
+          p_status: string
+        }
+        Returns: string
       }
       claim_invoice_reminder: {
         Args: { p_conversation_id?: string; p_interval_days: number; p_invoice_id: string }

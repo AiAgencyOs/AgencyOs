@@ -32,7 +32,22 @@ export async function invoicePdfForInvoice(
     return err('FORBIDDEN', 'You do not have permission to read invoices.');
   }
 
-  const supabase = await createClient();
+  return renderInvoiceDocument(await createClient(), idCheck.data);
+}
+
+type InvoiceDb = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * The render itself, over whichever client the caller holds. The session path
+ * above reads under RLS; the runner's automatic delivery passes the service
+ * client, having decided for itself (the invoice was issued, the channel is
+ * claimed) that this document may be read. Nothing here checks who is asking.
+ */
+export async function renderInvoiceDocument(
+  supabase: InvoiceDb,
+  invoiceId: string,
+): Promise<Result<{ bytes: Uint8Array; filename: string }>> {
+  const idCheck = { data: invoiceId };
 
   const { data: invoice, error } = await supabase
     .schema('finance')
@@ -75,8 +90,8 @@ export async function invoicePdfForInvoice(
     const [{ data: clientRows }, billing, accounts, project, milestone] = await Promise.all([
       // The name only, so the finance role can print the PDF too (decision 7, 2026-10-01).
       supabase.schema('finance').rpc('client_names', { p_ids: [invoice.client_account_id] }),
-      readInvoiceBillingProfile(invoice.project_id),
-      listPaymentAccounts(),
+      readInvoiceBillingProfile(invoice.project_id, supabase),
+      listPaymentAccounts(supabase),
       invoice.project_id
         ? supabase.schema('projects').from('projects').select('name').eq('id', invoice.project_id).maybeSingle()
         : Promise.resolve({ data: null }),

@@ -660,9 +660,12 @@ export type InvoiceBillingProfile = {
  * the invoice was set at issue time from it. Null when the project has not
  * confirmed a mode yet, which the page says in words.
  */
-export async function readInvoiceBillingProfile(projectId: string | null): Promise<InvoiceBillingProfile | null> {
+export async function readInvoiceBillingProfile(
+  projectId: string | null,
+  client?: Awaited<ReturnType<typeof createClient>>,
+): Promise<InvoiceBillingProfile | null> {
   if (!projectId) return null;
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
 
   const { data, error: profileError } = await supabase
     .schema('finance')
@@ -727,8 +730,8 @@ export type PaymentAccount = {
  * newest. `usedBy` is counted here so the settings screen can say *why* an
  * account's details cannot be edited rather than letting the trigger refuse.
  */
-export async function listPaymentAccounts(): Promise<PaymentAccount[]> {
-  const supabase = await createClient();
+export async function listPaymentAccounts(client?: Awaited<ReturnType<typeof createClient>>): Promise<PaymentAccount[]> {
+  const supabase = client ?? (await createClient());
 
   const [{ data, error: accountsError }, { data: uses, error: usesError }] = await Promise.all([
     supabase
