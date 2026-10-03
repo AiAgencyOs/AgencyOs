@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { randomUUID } from 'node:crypto';
+
 import type { createAdminClient } from '@/lib/db/admin';
 
 import { planJobsForEvent, type OutboxEvent } from './catalog';
@@ -78,7 +80,7 @@ export async function dispatchOutbox(
   const { data: events, error } = await admin
     .schema('core')
     .from('outbox_events')
-    .select('id, organization_id, type, subject_type, subject_id, payload, attempts')
+    .select('id, organization_id, type, subject_type, subject_id, payload, attempts, correlation_id')
     // Live and unpublished only — a dead event is not retried.
     .is('published_at', null)
     .is('dead_at', null)
@@ -104,6 +106,30 @@ export async function dispatchOutbox(
 
     let enqueueFailed = false;
 
+    // One chain id per event: every job this event plans carries it, the agent
+    // run inherits it from its job, and it is written back to the event so the
+    // chain is readable from either end. It was `null` here, so event → job →
+    // run were three unrelated records and a trace could not cross them. An
+    // upstream id, if one exists, is kept; one minted here is stored before any
+    // job is enqueued, so a retry of this event reuses it.
+    let correlationId: string | null = event.correlation_id ?? null;
+    if (!correlationId && planned.length > 0) {
+      const minted = randomUUID();
+      const { error: stampError } = await admin
+        .schema('core')
+        .from('outbox_events')
+        .update({ correlation_id: minted })
+        .eq('id', event.id)
+        .is('correlation_id', null);
+      // A failed stamp must not strand the event: the jobs still carry the id.
+      correlationId = minted;
+      if (stampError) {
+        console.error(
+          JSON.stringify({ level: 'error', scope: 'dispatchOutbox', eventId: event.id, detail: stampError.message }),
+        );
+      }
+    }
+
     // One insert per job rather than one batched insert: a duplicate on the
     // second handler must not roll back the first handler's job.
     for (const job of planned) {
@@ -115,7 +141,7 @@ export async function dispatchOutbox(
           kind: job.kind,
           payload: job.payload as never,
           dedupe_key: job.dedupe_key,
-          correlation_id: null,
+          correlation_id: correlationId,
         });
 
       if (!insertError) {
