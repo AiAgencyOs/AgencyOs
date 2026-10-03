@@ -322,6 +322,8 @@ try {
   graph.close();
   model.close();
   await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { settings: savedSettings });
+  // The proposal policy and the owners this run created: a later verifier inserts the same policy and would collide.
+  await fx.cleanup().catch(() => {});
   console.log(`\n${failures === 0 ? '\x1b[32m✔' : '\x1b[31m✖'} ${checks - failures}/${checks} checks passed\x1b[0m`);
   process.exit(failures === 0 ? 0 : 1);
 }
