@@ -711,3 +711,21 @@ describe('H. the internal group can be linked, so the announcement lands', () =>
     assert.match(migration, /'handed_over'/);
   });
 });
+
+describe('a client is asked one thing at a time', () => {
+  const ask = (text: string) => clientReplySchema.safeParse({ reply: text, handToHuman: null, show: [] });
+
+  test('one question, or one and its alternative, is sendable', () => {
+    assert.ok(ask('Achha, samajh gaya. Kaun use karega ye app?').success);
+    assert.ok(ask('Is it for your own shop? Or for many shops?').success);
+  });
+
+  test('three questions are refused, in Roman and Devanagari alike', () => {
+    assert.ok(!ask('Kaun use karega? Kitne log? Kab tak chahiye?').success);
+    assert.ok(!ask('कौन इस्तेमाल करेगा? कितने लोग? कब तक चाहिए?').success);
+  });
+
+  test('a statement with no question is still sendable', () => {
+    assert.ok(ask('Got it. A colleague will confirm the details.').success);
+  });
+});

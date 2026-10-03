@@ -4314,7 +4314,10 @@ const OBJECTION_PROMPT = [
   'timeline — the schedule is wrong for them.',
   'feature — what is included is not what they expected, or they are asking to add',
   'or remove something from the scope.',
-  'Quote the client, do not summarise them, and pick the concern they actually lead with.',
+  'Quote the client, do not summarise them, and pick the concern they actually lead with',
+  'as kind and concern. If the same message raises a DIFFERENT kind as well, put each',
+  'of those in alsoRaised with the words that raised it; a kind appears once, and',
+  'alsoRaised is empty when the message raises only one thing.',
   'You are not answering the objection. You do not offer a discount, a payment plan,',
   'a new deadline or any reassurance — a person decides all of those.',
 ].join(' ');
@@ -4371,6 +4374,8 @@ const OBJECTION_READ: AgentWorkflow = {
       .from('objections')
       .select('id')
       .eq('message_id', message.id)
+      .order('round', { ascending: true })
+      .limit(1)
       .maybeSingle();
 
     if (seen) {
@@ -4454,23 +4459,32 @@ const OBJECTION_READ: AgentWorkflow = {
           .limit(1)
       : { data: [] };
 
-    const { data: row, error: writeError } = await admin
+    // Every kind the message raised, in ONE statement so a retry never finds
+    // half of them, and all in the same round: a round is a turn of the
+    // negotiation, not a count of complaints.
+    const parts = [
+      { kind: validated.data.kind, concern: validated.data.concern },
+      ...validated.data.alsoRaised,
+    ];
+    const { data: written, error: writeError } = await admin
       .schema('sales')
       .from('objections')
-      .insert({
-        organization_id: job.organization_id,
-        lead_id: conversation.lead_id,
-        message_id: message.id,
-        round,
-        proposal_id: (live ?? [])[0]?.id ?? null,
-        kind: validated.data.kind,
-        concern: validated.data.concern,
-        raised_by_agent: ctx.agent.key,
-        // No response, no outcome, no next action. The row rule refuses them
-        // from an agent regardless; their absence here is why it never has to.
-      })
-      .select('id')
-      .single();
+      .insert(
+        parts.map((part) => ({
+          organization_id: job.organization_id,
+          lead_id: conversation.lead_id as string,
+          message_id: message.id,
+          round,
+          proposal_id: (live ?? [])[0]?.id ?? null,
+          kind: part.kind,
+          concern: part.concern,
+          raised_by_agent: ctx.agent.key,
+          // No response, no outcome, no next action. The row rule refuses them
+          // from an agent regardless; their absence here is why it never has to.
+        })),
+      )
+      .select('id, kind');
+    const row = (written ?? []).find((r) => r.kind === validated.data.kind) ?? (written ?? [])[0];
 
     if (writeError || !row) {
       const detail = writeError?.message ?? 'the objection row could not be written';
@@ -4482,7 +4496,7 @@ const OBJECTION_READ: AgentWorkflow = {
     await succeedRun(
       admin,
       runId,
-      { objectionId: row.id, kind: validated.data.kind, round } as unknown as Json,
+      { objectionId: row.id, kind: validated.data.kind, kinds: parts.map((x) => x.kind), round } as unknown as Json,
       call.usage,
       call.stepCount,
     );
@@ -4794,6 +4808,8 @@ const REPLY_PROMPT = [
   'Say "achha", "samajh gaya", "got it", "bilkul", "theek hai" — and vary it.',
   'Use "sir" only if they do, and not in every sentence.',
 
+  'ONE QUESTION. Ask the client one thing at a time — never a list of questions, and at most two',
+  'question marks in the whole reply, or it is refused. Pick the one that would help you most.',
   'WHAT TO ASK. You are told which things about this project are still unknown.',
   'That is context, not a checklist — ask the one that would genuinely help you next,',
   'and only when it fits. Never ask what the thread already answered.',

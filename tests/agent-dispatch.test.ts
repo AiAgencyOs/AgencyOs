@@ -658,7 +658,7 @@ describe("C9. an objection is recorded, and the agency's answer is not the agent
     // never has to: there is nothing here to refuse.
     const at = objection.indexOf(".from('objections')\n      .insert(");
     assert.ok(at > 0, 'the objection write was not found — the workflow drifted');
-    const written = objection.slice(at, objection.indexOf('})', at));
+    const written = objection.slice(at, objection.indexOf(".select('id, kind')", at));
     const columns = [...written.matchAll(/^\s*(\w+):/gm)].map((m) => m[1]).sort();
     // `round` is written from a variable rather than a literal key, so the
     // ^\s*(\w+): scan does not see it. Asserted separately rather than by

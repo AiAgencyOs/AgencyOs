@@ -459,7 +459,9 @@ export type ObjectionOutcome = (typeof OBJECTION_OUTCOMES)[number];
  * so there is no discount here, no amount, no floor and no cap. The round
  * number counts; it stops nothing.
  */
-export const objectionReadingSchema = z
+export const MAX_OBJECTIONS_PER_MESSAGE = 3;
+
+const objectionPartSchema = z
   .object({
     kind: z.enum(OBJECTION_KINDS),
     concern: z
@@ -469,6 +471,23 @@ export const objectionReadingSchema = z
       .max(600),
   })
   .strict();
+
+/**
+ * What the client pushed back on in ONE message. `kind` and `concern` are the
+ * objection they lead with; `alsoRaised` is every OTHER kind the same message
+ * raised, each with its own words. Kinds are distinct across the whole message.
+ */
+export const objectionReadingSchema = objectionPartSchema
+  .extend({
+    alsoRaised: z.array(objectionPartSchema).max(MAX_OBJECTIONS_PER_MESSAGE - 1),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const kinds = [value.kind, ...value.alsoRaised.map((o) => o.kind)];
+    if (new Set(kinds).size !== kinds.length) {
+      ctx.addIssue({ code: 'custom', message: 'each kind of objection is recorded once per message' });
+    }
+  });
 
 export type ObjectionReading = z.infer<typeof objectionReadingSchema>;
 

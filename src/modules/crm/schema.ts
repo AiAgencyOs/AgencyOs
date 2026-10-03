@@ -1105,6 +1105,9 @@ export function followUpDraftJsonSchema(): Record<string, unknown> {
   return decoderSafeSchema(z.toJSONSchema(followUpDraftSchema)) as Record<string, unknown>;
 }
 
+/** The most question marks one reply to a client may carry. */
+export const MAX_QUESTIONS_PER_REPLY = 2;
+
 /**
  * What the sales agent may say back to a client.
  *
@@ -1152,6 +1155,15 @@ export const clientReplySchema = z
       .refine(
         (v) => (v.match(/\p{Extended_Pictographic}/gu) ?? []).length <= 1,
         'At most one emoji, and usually none',
+      )
+      // A client is asked one thing at a time. Doc 09 §9 forbids interrogating
+      // a lead, and a WhatsApp message with four question marks is a form with
+      // the boxes taken out. Two is the ceiling: one real question and, at
+      // most, the "or would you rather...?" that completes it. The prompt asks
+      // for one; this is the line a model that ignores it cannot cross.
+      .refine(
+        (v) => (v.match(/[?？]/g) ?? []).length <= MAX_QUESTIONS_PER_REPLY,
+        `At most ${MAX_QUESTIONS_PER_REPLY} questions in one message — ask the one that matters most`,
       )
       .regex(
         /^(?!.*(₹|\$|\brs\.?\b|\binr\b|\busd\b))/is,
