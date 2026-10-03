@@ -9,19 +9,23 @@ export function Badge({
   tone = 'neutral',
   dot,
   mono,
+  wrap,
   className,
   children,
 }: {
   tone?: Tone;
   dot?: boolean;
   mono?: boolean;
+  /** Let long text wrap and the chip shrink — for a sentence in a chip, not a one-word status. */
+  wrap?: boolean;
   className?: string;
   children: React.ReactNode;
 }) {
   return (
     <span
       className={cx(
-        'inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap',
+        'inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium',
+        wrap ? 'min-w-0 max-w-full whitespace-normal' : 'shrink-0 whitespace-nowrap',
         mono && 'font-mono',
         TONE_CHIP[tone],
         className,

@@ -1,0 +1,53 @@
+{"level":"error","scope":"listInvoices","detail":"could not connect to server"}
+{"level":"error","scope":"getInvoice","detail":"could not connect to server"}
+{"level":"error","scope":"listInvoicePayments","detail":"could not connect to server"}
+{"level":"error","scope":"listLeads","detail":"could not connect to server"}
+{"level":"error","scope":"getLeadHeader","detail":"could not connect to server"}
+{"level":"error","scope":"listLeadActivities","detail":"could not connect to server"}
+{"level":"error","scope":"listProjects","detail":"could not connect to server"}
+{"level":"error","scope":"getProject","detail":"could not connect to server"}
+{"level":"error","scope":"listOpportunities","detail":"could not connect to server"}
+{"level":"error","scope":"reactivationSummary","detail":"could not connect to server"}
+{"level":"error","scope":"aiStatus","detail":"could not connect to server"}
+▶ A. a read that failed
+  ✔ finance.listInvoices refuses rather than rendering an empty page (0.927375ms)
+  ✔ finance.getInvoice refuses rather than rendering an empty page (0.135958ms)
+  ✔ finance.listInvoicePayments refuses rather than rendering an empty page (0.103084ms)
+  ✔ crm.listLeads refuses rather than rendering an empty page (0.107625ms)
+  ✔ crm.getLeadHeader refuses rather than rendering an empty page (0.118958ms)
+  ✔ crm.listLeadActivities refuses rather than rendering an empty page (0.098208ms)
+  ✔ projects.listProjects refuses rather than rendering an empty page (0.098917ms)
+  ✔ projects.getProject refuses rather than rendering an empty page (0.101333ms)
+  ✔ sales.listOpportunities refuses rather than rendering an empty page (0.111417ms)
+  ✔ admin.reactivationSummary refuses rather than rendering an empty page (0.158625ms)
+  ✔ admin.aiStatus refuses rather than rendering an empty page (0.11125ms)
+✔ A. a read that failed (2.727458ms)
+▶ B. a read that genuinely found nothing
+  ✔ an empty list is still an empty list (0.755667ms)
+  ✔ a missing single row is still null (0.088583ms)
+✔ B. a read that genuinely found nothing (0.920542ms)
+▶ C. every reader in the repository
+  ✔ there are query files to scan, so a pass means something (0.10275ms)
+  ✔ approvals/queries.ts turns no error into an empty answer (0.209958ms)
+  ✔ approvals/queries.ts reports every read failure (0.1205ms)
+  ✔ crm/queries.ts turns no error into an empty answer (0.16225ms)
+  ✔ crm/queries.ts reports every read failure (1.228959ms)
+  ✔ finance/queries.ts turns no error into an empty answer (0.087917ms)
+  ✔ finance/queries.ts reports every read failure (0.050834ms)
+  ✔ portal/queries.ts turns no error into an empty answer (0.056875ms)
+  ✔ portal/queries.ts reports every read failure (0.045084ms)
+  ✔ projects/queries.ts turns no error into an empty answer (0.06775ms)
+  ✔ projects/queries.ts reports every read failure (0.048208ms)
+  ✔ qa/queries.ts turns no error into an empty answer (0.037417ms)
+  ✔ qa/queries.ts reports every read failure (0.0315ms)
+  ✔ sales/queries.ts turns no error into an empty answer (0.071291ms)
+  ✔ sales/queries.ts reports every read failure (0.046792ms)
+✔ C. every reader in the repository (2.477542ms)
+ℹ tests 28
+ℹ suites 3
+ℹ pass 28
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 136.416125

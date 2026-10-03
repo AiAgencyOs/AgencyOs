@@ -1,11 +1,12 @@
 import 'server-only';
 
+import { ilikeAny } from '@/lib/db/search';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
 import { resolveProjectContext } from './service';
 
-import type { PaymentPlanMilestone, ProjectDetail, ProjectListItem, DeliverableRow, CompletionSummary, OnboardingItem, UiCoverageFlag } from './types';
+import type { PaymentPlanMilestone, ProjectDetail, ProjectListItem, DeliverableRow, CompletionSummary, OnboardingItem, UiCoverageFlag, DesignPortfolioRow, DevelopmentPortfolioRow } from './types';
 
 /**
  * Reads for the projects module. Pure and RLS-scoped, so the same query is
@@ -18,7 +19,8 @@ const LIST_SELECT = 'id, name, code, status, currency, budget_minor, created_at'
 // `proposal_id` is on the detail because ADM-72 requires the accepted
 // quotation's presence — or absence — to be *visible*, not merely auditable.
 // It was written by conversion since G-017 and read by nothing until G-114.
-const DETAIL_SELECT = `${LIST_SELECT}, description, client_account_id, opportunity_id, proposal_id, starts_on, ends_on, visibility`;
+// SCR-018/027 (20261001120000): the archive mark and the template followed.
+const DETAIL_SELECT = `${LIST_SELECT}, description, client_account_id, opportunity_id, proposal_id, starts_on, ends_on, visibility, delivery_lead_id, status_reason, status_changed_at, archived_at, template_id, project_type, technology, tags`;
 
 export async function listProjects(limit = 100): Promise<ProjectListItem[]> {
   const supabase = await createClient();
@@ -119,6 +121,19 @@ export type DevelopmentTask = {
   assigneeId: string | null;
   dueOn: string | null;
   completedAt: string | null;
+  estimateHours: number | null;
+  /** The payment milestone ("phase") the task is filed under. */
+  milestoneId: string | null;
+  /** Planned first day of work (migration 20261004100000). */
+  startOn: string | null;
+  /** The task this is a subtask of; null for a top-level task. */
+  parentTaskId: string | null;
+  labels: string[];
+  /** The sprint of this project the task is placed in (migration 20261005100000). */
+  sprintId: string | null;
+  /** T1-1: set when a roster manager archived the task; null otherwise. */
+  archivedAt: string | null;
+  createdAt: string;
 };
 
 /**
@@ -134,9 +149,19 @@ export type DevelopmentTask = {
  */
 export async function listDevelopmentBreakdown(
   projectId: string,
+  /** T1-1: archived tasks are hidden unless the caller asks for them (a "Show archived" toggle). */
+  options: { includeArchived?: boolean; /** T1-1: leave cancelled tasks out (every figure and overview; the Board, Tasks and Development lists keep them so they can be found and reopened). */ excludeCancelled?: boolean } = {},
 ): Promise<{ modules: DevelopmentModule[]; features: DevelopmentFeature[]; tasks: DevelopmentTask[] }> {
   const supabase = await createClient();
 
+  const allTasks = supabase
+    .schema('projects')
+    .from('tasks')
+    .select('id, module_id, feature_id, title, description, status, priority, assignee_id, due_on, completed_at, estimate_hours, milestone_id, start_on, parent_task_id, labels, sprint_id, archived_at, created_at')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: true });
+  const unarchived = options.includeArchived ? allTasks : allTasks.is('archived_at', null);
+  const taskQuery = options.excludeCancelled ? unarchived.neq('status', 'cancelled') : unarchived;
   const [{ data: moduleRows, error: modulesError }, { data: featureRows, error: featuresError }, { data: taskRows, error: tasksError }] =
     await Promise.all([
       supabase
@@ -151,12 +176,7 @@ export async function listDevelopmentBreakdown(
         .select('id, module_id, name, description, status, position')
         .eq('project_id', projectId)
         .order('position', { ascending: true }),
-      supabase
-        .schema('projects')
-        .from('tasks')
-        .select('id, module_id, feature_id, title, description, status, priority, assignee_id, due_on, completed_at')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: true }),
+      taskQuery,
     ]);
 
   if (modulesError) unreadable('listDevelopmentBreakdown.modules', modulesError);
@@ -192,6 +212,14 @@ export async function listDevelopmentBreakdown(
       assigneeId: t.assignee_id,
       dueOn: t.due_on,
       completedAt: t.completed_at,
+      estimateHours: t.estimate_hours === null ? null : Number(t.estimate_hours),
+      milestoneId: t.milestone_id,
+      startOn: t.start_on,
+      parentTaskId: t.parent_task_id,
+      labels: t.labels ?? [],
+      sprintId: t.sprint_id,
+      archivedAt: t.archived_at,
+      createdAt: t.created_at,
     })),
   };
 }
@@ -342,6 +370,32 @@ export async function listScopeVersionHistory(projectId: string): Promise<ScopeV
     frozenAt: v.frozen_at,
     createdAt: v.created_at,
     itemCount: countByVersion.get(v.id) ?? 0,
+  }));
+}
+
+/**
+ * The items of any one scope version — the compare view (SCR-029). The
+ * baseline reader only returns the active and draft versions; a dispute
+ * needs the superseded one beside the current one, item by item.
+ */
+export async function listScopeItemsForVersion(scopeVersionId: string): Promise<ScopeItemRow[]> {
+  const supabase = await createClient();
+
+  const { data, error: itemsError } = await supabase
+    .schema('projects')
+    .from('scope_items')
+    .select('id, scope_version_id, title, detail, inclusion, acceptance_criteria, position')
+    .eq('scope_version_id', scopeVersionId)
+    .order('position', { ascending: true });
+  if (itemsError) unreadable('listScopeItemsForVersion', itemsError);
+
+  return (data ?? []).map((i) => ({
+    id: i.id,
+    title: i.title,
+    detail: i.detail,
+    inclusion: i.inclusion,
+    acceptanceCriteria: i.acceptance_criteria,
+    position: i.position,
   }));
 }
 
@@ -798,6 +852,9 @@ export type PlanBoard = {
     status: string;
     objective: string | null;
     scopeVersionId: string | null;
+    /** SCR-040: the internal approval of a draft plan (migration 20261006400200). */
+    approvedAt?: string | null;
+    approvalNote?: string | null;
   } | null;
   deliverables: {
     id: string;
@@ -814,7 +871,7 @@ export type PlanBoard = {
   dependencies: { id: string; kind: string; description: string; neededByPhase: string; ownerRole: string; status: string }[];
   notes: { id: string; kind: string; statement: string; ownerRole: string | null }[];
   clarifications: { id: string; question: string; status: string; answer: string | null }[];
-  scopeItems: { id: string; title: string; inclusion: string }[];
+  scopeItems: { id: string; title: string; inclusion: string; acceptanceCriteria: string | null }[];
   /**
    * §10's second ending needs somewhere to send the question. The picker
    * offers the project's own change requests and nothing else — routing a
@@ -833,7 +890,7 @@ export async function readPlanBoard(projectId: string): Promise<PlanBoard> {
   const { data: planRow, error: planError } = await supabase
     .schema('projects')
     .from('project_plans')
-    .select('id, version, status, objective, scope_version_id')
+    .select('id, version, status, objective, scope_version_id, approved_at, approval_note')
     .eq('project_id', projectId)
     .in('status', ['draft', 'active'])
     .order('version', { ascending: false })
@@ -845,7 +902,7 @@ export async function readPlanBoard(projectId: string): Promise<PlanBoard> {
   const { data: scopeRows, error: scopeError } = await supabase
     .schema('projects')
     .from('scope_items')
-    .select('id, title, inclusion, scope_version_id')
+    .select('id, title, inclusion, scope_version_id, acceptance_criteria')
     .eq('scope_version_id', planRow?.scope_version_id ?? '00000000-0000-0000-0000-000000000000');
 
   if (scopeError) unreadable('readPlanBoard.scope', scopeError);
@@ -904,6 +961,8 @@ export async function readPlanBoard(projectId: string): Promise<PlanBoard> {
       status: planRow.status,
       objective: planRow.objective,
       scopeVersionId: planRow.scope_version_id,
+      approvedAt: planRow.approved_at,
+      approvalNote: planRow.approval_note,
     },
     deliverables: (deliverables.data ?? []).map((row) => ({
       id: row.id,
@@ -948,6 +1007,7 @@ export async function readPlanBoard(projectId: string): Promise<PlanBoard> {
       id: row.id,
       title: row.title,
       inclusion: row.inclusion,
+      acceptanceCriteria: row.acceptance_criteria ?? null,
     })),
     changeRequests: (changeRequests.data ?? []).map((row) => ({
       id: row.id,
@@ -1139,6 +1199,8 @@ export type DesignTrailView = {
   }[];
   clientDecisions: {
     id: string;
+    /** The share the client was answering: it carries a snapshot of the exact theme options and versions that were sent. */
+    shareId: string;
     decision: string;
     clientWords: string;
     evidenceRef: string | null;
@@ -1194,8 +1256,6 @@ export async function readDesignTrail(projectId: string): Promise<DesignTrailVie
   const [
     { data: baseline, error: baselineError },
     { data: themes, error: themesError },
-    { data: reviews, error: reviewsError },
-    { data: adminDecisions, error: adminError },
     { data: shares, error: sharesError },
     { data: clientDecisions, error: clientError },
     { data: revisions, error: revisionsError },
@@ -1217,18 +1277,6 @@ export async function readDesignTrail(projectId: string): Promise<DesignTrailVie
       .order('option_index', { ascending: true }),
     supabase
       .schema('projects')
-      .from('design_reviews')
-      .select('id, theme_option_id, result, comments, created_at')
-      .eq('phase_three_id', phase.id)
-      .order('created_at', { ascending: false }),
-    supabase
-      .schema('projects')
-      .from('admin_design_decisions')
-      .select('id, theme_option_id, decision, reason, created_at')
-      .eq('phase_three_id', phase.id)
-      .order('created_at', { ascending: false }),
-    supabase
-      .schema('projects')
       .from('client_design_shares')
       .select('id, share_number, channel, evidence_ref, option_count, shared_options, created_at')
       .eq('phase_three_id', phase.id)
@@ -1236,7 +1284,7 @@ export async function readDesignTrail(projectId: string): Promise<DesignTrailVie
     supabase
       .schema('projects')
       .from('client_design_decisions')
-      .select('id, decision, client_words, evidence_ref, selected_theme_option_id, selected_color_option_id, created_at')
+      .select('id, share_id, decision, client_words, evidence_ref, selected_theme_option_id, selected_color_option_id, created_at')
       .eq('phase_three_id', phase.id)
       .order('created_at', { ascending: false }),
     supabase
@@ -1259,8 +1307,6 @@ export async function readDesignTrail(projectId: string): Promise<DesignTrailVie
   // Admin goes instead of reading WhatsApp.
   if (baselineError) unreadable('readDesignTrail.baseline', baselineError);
   if (themesError) unreadable('readDesignTrail.themes', themesError);
-  if (reviewsError) unreadable('readDesignTrail.reviews', reviewsError);
-  if (adminError) unreadable('readDesignTrail.adminDecisions', adminError);
   if (sharesError) unreadable('readDesignTrail.shares', sharesError);
   if (clientError) unreadable('readDesignTrail.clientDecisions', clientError);
   if (revisionsError) unreadable('readDesignTrail.revisions', revisionsError);
@@ -1268,6 +1314,34 @@ export async function readDesignTrail(projectId: string): Promise<DesignTrailVie
 
   const themeRows = (themes ?? []) as Record<string, unknown>[];
   const themeIds = themeRows.map((t) => t.id as string);
+
+  // A review and an admin decision belong to a THEME OPTION, not to the
+  // phase — neither table carries `phase_three_id` (the column this read
+  // once filtered on, which made the whole Design tab throw for any project
+  // that had reached Phase 3; found live on 2026-09-29 against the
+  // verifier's fixture). Read them by the themes just found.
+  let reviews: Record<string, unknown>[] = [];
+  let adminDecisions: Record<string, unknown>[] = [];
+  if (themeIds.length > 0) {
+    const [{ data: reviewRows, error: reviewsError }, { data: adminRows, error: adminError }] = await Promise.all([
+      supabase
+        .schema('projects')
+        .from('design_reviews')
+        .select('id, theme_option_id, result, comments, created_at')
+        .in('theme_option_id', themeIds)
+        .order('created_at', { ascending: false }),
+      supabase
+        .schema('projects')
+        .from('admin_design_decisions')
+        .select('id, theme_option_id, decision, reason, created_at')
+        .in('theme_option_id', themeIds)
+        .order('created_at', { ascending: false }),
+    ]);
+    if (reviewsError) unreadable('readDesignTrail.reviews', reviewsError);
+    if (adminError) unreadable('readDesignTrail.adminDecisions', adminError);
+    reviews = (reviewRows ?? []) as Record<string, unknown>[];
+    adminDecisions = (adminRows ?? []) as Record<string, unknown>[];
+  }
 
   // §12 makes a colour belong to a theme, so the palettes are read by theme
   // rather than by project — there is no project column to read them by.
@@ -1355,6 +1429,7 @@ export async function readDesignTrail(projectId: string): Promise<DesignTrailVie
     })),
     clientDecisions: ((clientDecisions ?? []) as Record<string, unknown>[]).map((c) => ({
       id: c.id as string,
+      shareId: c.share_id as string,
       decision: c.decision as string,
       clientWords: c.client_words as string,
       evidenceRef: (c.evidence_ref as string | null) ?? null,
@@ -1444,14 +1519,20 @@ export type RosterMemberWithRoles = RosterMember & {
   createdAt: string;
 };
 
-export async function listInternalRosterWithRoles(): Promise<RosterMemberWithRoles[]> {
+export async function listInternalRosterWithRoles(q?: string): Promise<RosterMemberWithRoles[]> {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
+  // Search within domain (bucket G-3): a person's name or email, server-side.
+  // The embed becomes an inner join only while searching, so a membership
+  // whose user row does not match drops out; unsearched, every membership
+  // is listed as before.
+  let query = supabase
     .schema('core')
     .from('memberships')
-    .select('id, user_id, role, status, created_at, organization_id, users:user_id(full_name, email)')
+    .select(q ? 'id, user_id, role, status, created_at, organization_id, users:user_id!inner(full_name, email)' : 'id, user_id, role, status, created_at, organization_id, users:user_id(full_name, email)')
     .order('role', { ascending: true });
+  if (q) query = query.or(ilikeAny(['full_name', 'email'], q), { referencedTable: 'users' });
+  const { data, error } = await query;
   if (error) unreadable('listInternalRosterWithRoles', error);
 
   const rows = (data ?? []) as Record<string, unknown>[];
@@ -1561,6 +1642,8 @@ export async function listProjectTeam(projectId: string): Promise<ProjectTeamMem
     .from('tasks')
     .select('assignee_id, status')
     .eq('project_id', projectId)
+    .is('archived_at', null)
+    .neq('status', 'cancelled')
     .not('assignee_id', 'is', null);
   if (error) unreadable('listProjectTeam.tasks', error);
 
@@ -1626,11 +1709,17 @@ export type ProjectFile = {
 export async function listProjectFiles(projectId: string): Promise<ProjectFile[]> {
   const supabase = await createClient();
 
+  // Since 20260930110000 a row may be a stored object (storage_path, no
+  // url), a later version (parent_file_id) or in the trash (deleted_at).
+  // This reader keeps its shape for the overview: first versions only,
+  // nothing trashed, and a stored file's href is the download route.
   const { data, error } = await supabase
     .schema('projects')
     .from('project_files')
-    .select('id, category, title, url, description, uploaded_by, created_at')
+    .select('id, category, title, url, description, uploaded_by, created_at, storage_path')
     .eq('project_id', projectId)
+    .is('parent_file_id', null)
+    .is('deleted_at', null)
     .order('created_at', { ascending: false });
   if (error) unreadable('listProjectFiles', error);
 
@@ -1652,7 +1741,7 @@ export async function listProjectFiles(projectId: string): Promise<ProjectFile[]
     id: r.id,
     category: r.category,
     title: r.title,
-    url: r.url,
+    url: r.storage_path !== null ? `/api/projects/${projectId}/files/${r.id}/download` : (r.url ?? ''),
     description: r.description,
     uploadedByName: r.uploaded_by ? (nameByUser.get(r.uploaded_by) ?? null) : null,
     createdAt: r.created_at,
@@ -1708,6 +1797,10 @@ export type ProjectDependency = {
   reference: string | null;
   notes: string | null;
   createdAt: string;
+  /** SCR-043: open until marked supplied or waived (20260929190000). */
+  status: 'open' | 'supplied' | 'waived';
+  suppliedAt: string | null;
+  note: string | null;
 };
 
 /** Every dependency recorded on a project, newest first — SCR-043. */
@@ -1717,18 +1810,22 @@ export async function listDependencies(projectId: string): Promise<ProjectDepend
   const { data, error } = await supabase
     .schema('projects')
     .from('dependencies')
-    .select('id, name, version, reference, notes, created_at')
+    .select('id, name, version, reference, notes, created_at, status, supplied_at, note')
     .eq('project_id', projectId)
     .order('created_at', { ascending: false });
   if (error) unreadable('listDependencies', error);
 
-  return (data ?? []).map((d) => ({
+  type Row = { id: string; name: string; version: string | null; reference: string | null; notes: string | null; created_at: string; status: string; supplied_at: string | null; note: string | null };
+  return ((data ?? []) as Row[]).map((d) => ({
     id: d.id,
     name: d.name,
     version: d.version,
     reference: d.reference,
     notes: d.notes,
     createdAt: d.created_at,
+    status: d.status === 'supplied' || d.status === 'waived' ? d.status : 'open',
+    suppliedAt: d.supplied_at,
+    note: d.note,
   }));
 }
 
@@ -2084,6 +2181,8 @@ export async function listMyTasks(userId: string): Promise<MyTaskRow[]> {
     .select('id, title, status, priority, due_on, project_id')
     .eq('assignee_id', userId)
     .neq('status', 'done')
+    .neq('status', 'cancelled')
+    .is('archived_at', null)
     .order('due_on', { ascending: true, nullsFirst: false });
 
   if (tasksError) unreadable('listMyTasks.tasks', tasksError);
@@ -2511,6 +2610,39 @@ export type PhaseFourEscalation = {
   updatedAt: string;
 };
 
+export type MilestoneTaskCount = { milestoneId: string; total: number; done: number };
+
+/**
+ * How much of the work under each payment milestone is done — SCR-020's
+ * "milestone tasks". `projects.tasks.milestone_id` has been a column since
+ * the first projects migration and nothing read it; a milestone's progress
+ * is the only honest number for "is this milestone near", so it is counted
+ * here rather than guessed from dates.
+ */
+export async function listMilestoneTaskCounts(projectId: string): Promise<MilestoneTaskCount[]> {
+  const supabase = await createClient();
+
+  const { data, error: tasksError } = await supabase
+    .schema('projects')
+    .from('tasks')
+    .select('milestone_id, status')
+    .eq('project_id', projectId)
+    .is('archived_at', null)
+    .neq('status', 'cancelled')
+    .not('milestone_id', 'is', null);
+  if (tasksError) unreadable('listMilestoneTaskCounts', tasksError);
+
+  const counts = new Map<string, MilestoneTaskCount>();
+  for (const t of data ?? []) {
+    if (!t.milestone_id) continue;
+    const row = counts.get(t.milestone_id) ?? { milestoneId: t.milestone_id, total: 0, done: 0 };
+    row.total += 1;
+    if (t.status === 'done') row.done += 1;
+    counts.set(t.milestone_id, row);
+  }
+  return [...counts.values()];
+}
+
 /**
  * Master's own Admin Panel question "WHAT IS BLOCKED?", answered across the
  * whole organization rather than one project at a time. A stopped Task 2
@@ -2555,4 +2687,288 @@ export async function listPhaseFourEscalations(): Promise<PhaseFourEscalation[]>
     blockedReason: r.blocked_reason,
     updatedAt: r.updated_at,
   }));
+}
+
+/* ── Portfolio-level Design & Development (screen architecture modules 6 and 7) ── */
+
+/**
+ * Every live project's design standing, in three reads — projects, their
+ * Phase 3 rows, their design/prototype deliverables — grouped in memory. Not
+ * one read per project: the index exists so an owner does not open forty
+ * project pages, and it must not cost forty pages' worth of queries to draw.
+ */
+export async function readDesignPortfolio(): Promise<DesignPortfolioRow[]> {
+  const supabase = await createClient();
+  const [projects, phaseThree, deliverables] = await Promise.all([
+    listProjects(200),
+    supabase
+      .schema('projects')
+      .from('phase_three')
+      .select('project_id, state, reviewer_user_id, client_revision_count, client_revision_limit, updated_at'),
+    supabase
+      .schema('projects')
+      .from('deliverables')
+      .select('project_id, kind, status')
+      .in('kind', ['design', 'prototype']),
+  ]);
+  const phaseThreeError = phaseThree.error;
+  const deliverablesError = deliverables.error;
+  if (phaseThreeError) unreadable('readDesignPortfolio.phase_three', phaseThreeError);
+  if (deliverablesError) unreadable('readDesignPortfolio.deliverables', deliverablesError);
+
+  const phase = new Map((phaseThree.data ?? []).map((p) => [p.project_id, p]));
+  const tally = new Map<string, DesignPortfolioRow['designs'] & { p: DesignPortfolioRow['prototypes'] }>();
+  for (const d of deliverables.data ?? []) {
+    const t = tally.get(d.project_id) ?? { total: 0, inReview: 0, approved: 0, p: { total: 0, inReview: 0, approved: 0 } };
+    const bucket = d.kind === 'prototype' ? t.p : t;
+    bucket.total += 1;
+    if (d.status === 'in_review') bucket.inReview += 1;
+    if (d.status === 'approved') bucket.approved += 1;
+    tally.set(d.project_id, t);
+  }
+
+  return projects.map((p) => {
+    const ph = phase.get(p.id);
+    const t = tally.get(p.id);
+    return {
+      ...p,
+      phaseThreeState: ph?.state ?? null,
+      reviewerAssigned: Boolean(ph?.reviewer_user_id),
+      clientRevisionsUsed: ph?.client_revision_count ?? 0,
+      clientRevisionLimit: ph?.client_revision_limit ?? null,
+      designs: { total: t?.total ?? 0, inReview: t?.inReview ?? 0, approved: t?.approved ?? 0 },
+      prototypes: t?.p ?? { total: 0, inReview: 0, approved: 0 },
+      designUpdatedAt: ph?.updated_at ?? null,
+    };
+  });
+}
+
+/** Every live project's development standing — modules, tasks, builds — in four reads, grouped in memory. */
+export async function readDevelopmentPortfolio(): Promise<DevelopmentPortfolioRow[]> {
+  const supabase = await createClient();
+  const [projects, modules, tasks, builds] = await Promise.all([
+    listProjects(200),
+    supabase.schema('projects').from('modules').select('project_id, status'),
+    supabase.schema('projects').from('tasks').select('project_id, status').is('archived_at', null).neq('status', 'cancelled'),
+    supabase
+      .schema('projects')
+      .from('deliverables')
+      .select('project_id, status, version, created_at')
+      .eq('kind', 'build')
+      .order('created_at', { ascending: false }),
+  ]);
+  const modulesError = modules.error;
+  const tasksError = tasks.error;
+  const buildsError = builds.error;
+  if (modulesError) unreadable('readDevelopmentPortfolio.modules', modulesError);
+  if (tasksError) unreadable('readDevelopmentPortfolio.tasks', tasksError);
+  if (buildsError) unreadable('readDevelopmentPortfolio.builds', buildsError);
+
+  const mod = new Map<string, { total: number; done: number }>();
+  for (const m of modules.data ?? []) {
+    const t = mod.get(m.project_id) ?? { total: 0, done: 0 };
+    t.total += 1;
+    if (m.status === 'approved') t.done += 1;
+    mod.set(m.project_id, t);
+  }
+  const task = new Map<string, DevelopmentPortfolioRow['tasks']>();
+  for (const r of tasks.data ?? []) {
+    const t = task.get(r.project_id) ?? { total: 0, todo: 0, inProgress: 0, blocked: 0, inReview: 0, done: 0 };
+    t.total += 1;
+    if (r.status === 'todo') t.todo += 1;
+    else if (r.status === 'in_progress') t.inProgress += 1;
+    else if (r.status === 'blocked') t.blocked += 1;
+    else if (r.status === 'in_review') t.inReview += 1;
+    else if (r.status === 'done') t.done += 1;
+    task.set(r.project_id, t);
+  }
+  const build = new Map<string, DevelopmentPortfolioRow['builds']>();
+  for (const b of builds.data ?? []) {
+    const t = build.get(b.project_id) ?? { total: 0, latestStatus: b.status, latestVersion: b.version };
+    t.total += 1;
+    build.set(b.project_id, t);
+  }
+
+  return projects.map((p) => ({
+    ...p,
+    modules: mod.get(p.id) ?? { total: 0, done: 0 },
+    tasks: task.get(p.id) ?? { total: 0, todo: 0, inProgress: 0, blocked: 0, inReview: 0, done: 0 },
+    builds: build.get(p.id) ?? { total: 0, latestStatus: null, latestVersion: null },
+  }));
+}
+
+export type ProjectTableRow = ProjectListItem & {
+  /** SCR-018: why the project was last paused, resumed or cancelled — the chip's title. */
+  statusReason: string | null;
+  clientName: string | null;
+  startsOn: string | null;
+  endsOn: string | null;
+  milestonesMet: number;
+  milestonesTotal: number;
+};
+
+/**
+ * The projects list with what the reference's table shows beside a name —
+ * the client, the dates and milestone progress. Two bounded follow-up reads
+ * (client names by id, milestone rows by project) rather than a per-row
+ * query, and the progress is counted from `met_at` on the milestones
+ * themselves: `projects.projects` has no progress column anywhere in the
+ * schema, so nothing here is stored or estimated.
+ */
+export async function listProjectsForTable(limit = 200, q?: string): Promise<ProjectTableRow[]> {
+  const supabase = await createClient();
+
+  let query = supabase
+    .schema('projects')
+    .from('projects')
+    .select(`${LIST_SELECT}, client_account_id, starts_on, ends_on, status_reason`)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  // Search within domain (bucket G-3): server-side, over the human-named columns.
+  if (q) query = query.or(ilikeAny(['name', 'code'], q));
+
+  const { data, error } = await query;
+
+  if (error) unreadable('listProjectsForTable', error);
+  const rows = data ?? [];
+
+  const clientIds = [...new Set(rows.map((r) => r.client_account_id).filter((id): id is string => id !== null))];
+  const projectIds = rows.map((r) => r.id);
+
+  const [{ data: clients }, { data: milestones, error: milestonesError }] = await Promise.all([
+    clientIds.length > 0
+      ? supabase.schema('core').from('client_accounts').select('id, name').in('id', clientIds)
+      : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+    supabase.schema('projects').from('milestones').select('project_id, met_at').in('project_id', projectIds),
+  ]);
+  if (milestonesError) unreadable('listProjectsForTable.milestones', milestonesError);
+
+  const clientName = new Map((clients ?? []).map((c) => [c.id, c.name]));
+  const progress = new Map<string, { met: number; total: number }>();
+  for (const m of milestones ?? []) {
+    const entry = progress.get(m.project_id) ?? { met: 0, total: 0 };
+    entry.total += 1;
+    if (m.met_at) entry.met += 1;
+    progress.set(m.project_id, entry);
+  }
+
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    code: r.code,
+    status: r.status,
+    currency: r.currency,
+    budget_minor: r.budget_minor,
+    created_at: r.created_at,
+    statusReason: r.status_reason,
+    clientName: r.client_account_id ? (clientName.get(r.client_account_id) ?? null) : null,
+    startsOn: r.starts_on,
+    endsOn: r.ends_on,
+    milestonesMet: progress.get(r.id)?.met ?? 0,
+    milestonesTotal: progress.get(r.id)?.total ?? 0,
+  }));
+}
+
+
+export type RequirementsOverview = {
+  frozenScopes: number;
+  openChangeRequests: number;
+  pendingApprovalChangeRequests: number;
+  openClarifications: number;
+  projects: {
+    projectId: string;
+    projectName: string;
+    scopeVersion: number | null;
+    scopeStatus: string | null;
+    openChangeRequests: number;
+    openClarifications: number;
+  }[];
+};
+
+/**
+ * The org-wide state of scope — SCR-028's other half. Counts are read from
+ * the tables' own status vocabularies (the CHECK constraints in
+ * 20260808…scope): a scope is frozen once `status <> 'draft'`, a change
+ * request is open until approved / rejected / implemented / closed, a
+ * clarification is open until resolved or routed. Four bounded reads, no
+ * per-project fan-out.
+ */
+export async function readRequirementsOverview(): Promise<RequirementsOverview> {
+  const supabase = await createClient();
+
+  const [{ data: projects, error: projectsError }, { data: scopes, error: scopesError }, { data: crs, error: crsError }, { data: planQs, error: planQsError }, { data: uiQs, error: uiQsError }, { data: reqQs, error: reqQsError }] =
+    await Promise.all([
+      supabase.schema('projects').from('projects').select('id, name').is('deleted_at', null).limit(500),
+      supabase.schema('projects').from('scope_versions').select('project_id, version, status').order('version', { ascending: false }).limit(2000),
+      supabase.schema('projects').from('change_requests').select('project_id, status').limit(2000),
+      supabase.schema('projects').from('plan_clarifications').select('plan_id, status, project_plans:plan_id(project_id)').limit(2000),
+      supabase.schema('projects').from('clarification_requests').select('project_id, status').limit(2000),
+      supabase.schema('projects').from('requirement_clarifications').select('project_id').eq('status', 'open').limit(2000),
+    ]);
+  if (reqQsError) unreadable('readRequirementsOverview.requirementClarifications', reqQsError);
+  if (projectsError) unreadable('readRequirementsOverview.projects', projectsError);
+  if (scopesError) unreadable('readRequirementsOverview.scopes', scopesError);
+  if (crsError) unreadable('readRequirementsOverview.changeRequests', crsError);
+  if (planQsError) unreadable('readRequirementsOverview.planClarifications', planQsError);
+  if (uiQsError) unreadable('readRequirementsOverview.clarifications', uiQsError);
+
+  const OPEN_CR = new Set(['submitted', 'analysing', 'classified', 'pending_approval']);
+  const OPEN_Q = new Set(['open', 'asked', 'answered']);
+
+  const latestScope = new Map<string, { version: number; status: string }>();
+  for (const sv of scopes ?? []) if (!latestScope.has(sv.project_id)) latestScope.set(sv.project_id, { version: sv.version, status: sv.status });
+  const activeScope = new Map<string, { version: number; status: string }>();
+  for (const sv of scopes ?? []) if (sv.status === 'active' && !activeScope.has(sv.project_id)) activeScope.set(sv.project_id, { version: sv.version, status: sv.status });
+
+  const crByProject = new Map<string, number>();
+  for (const cr of crs ?? []) if (OPEN_CR.has(cr.status)) crByProject.set(cr.project_id, (crByProject.get(cr.project_id) ?? 0) + 1);
+
+  const qByProject = new Map<string, number>();
+  for (const q of planQs ?? []) {
+    const embedded = q.project_plans as unknown as { project_id: string } | { project_id: string }[] | null;
+    const pid = Array.isArray(embedded) ? embedded[0]?.project_id : embedded?.project_id;
+    if (pid && OPEN_Q.has(q.status)) qByProject.set(pid, (qByProject.get(pid) ?? 0) + 1);
+  }
+  for (const q of uiQs ?? []) if (q.status === 'open') qByProject.set(q.project_id, (qByProject.get(q.project_id) ?? 0) + 1);
+  for (const q of reqQs ?? []) qByProject.set(q.project_id, (qByProject.get(q.project_id) ?? 0) + 1);
+
+  return {
+    frozenScopes: new Set((scopes ?? []).filter((sv) => sv.status !== 'draft').map((sv) => sv.project_id)).size,
+    openChangeRequests: (crs ?? []).filter((cr) => OPEN_CR.has(cr.status)).length,
+    pendingApprovalChangeRequests: (crs ?? []).filter((cr) => cr.status === 'pending_approval').length,
+    openClarifications: [...qByProject.values()].reduce((n, c) => n + c, 0),
+    projects: (projects ?? []).map((p) => {
+      const scope = activeScope.get(p.id) ?? latestScope.get(p.id) ?? null;
+      return {
+        projectId: p.id,
+        projectName: p.name,
+        scopeVersion: scope?.version ?? null,
+        scopeStatus: scope?.status ?? null,
+        openChangeRequests: crByProject.get(p.id) ?? 0,
+        openClarifications: qByProject.get(p.id) ?? 0,
+      };
+    }),
+  };
+}
+
+export type PlanCoverage = { planStatus: string | null; planVersion: number | null; hasTestPlan: boolean };
+
+/** Per project: the latest operational plan's status and whether a QA test plan exists — the Development index's two missing columns. */
+export async function readPlanCoverageByProject(): Promise<Map<string, PlanCoverage>> {
+  const supabase = await createClient();
+  const [{ data: plans, error: plansError }, { data: testPlans, error: testPlansError }] = await Promise.all([
+    supabase.schema('projects').from('project_plans').select('project_id, version, status').order('version', { ascending: false }).limit(2000),
+    supabase.schema('qa').from('test_plans').select('project_id').limit(2000),
+  ]);
+  if (plansError) unreadable('readPlanCoverageByProject.plans', plansError);
+  if (testPlansError) unreadable('readPlanCoverageByProject.testPlans', testPlansError);
+
+  const out = new Map<string, PlanCoverage>();
+  for (const pl of plans ?? []) if (!out.has(pl.project_id)) out.set(pl.project_id, { planStatus: pl.status, planVersion: pl.version, hasTestPlan: false });
+  for (const tp of testPlans ?? []) {
+    const cur = out.get(tp.project_id) ?? { planStatus: null, planVersion: null, hasTestPlan: false };
+    out.set(tp.project_id, { ...cur, hasTestPlan: true });
+  }
+  return out;
 }

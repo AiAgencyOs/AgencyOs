@@ -1,11 +1,10 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listPhaseFourEscalations } from '@/modules/projects/queries';
-import { DataTable, EmptyState, IconProjects, PageHeader, StatusBadge, type Column } from '@/ui';
+import { DataTable, EmptyState, IconProjects, PageHeader, StatusBadge, type Column, PermissionDenied } from '@/ui';
 
 export const metadata: Metadata = { title: 'Escalations' };
 
@@ -44,7 +43,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
 export default async function EscalationsPage() {
   const context = await requireInternal('/projects/escalations');
   const clock = await agencyClock();
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const escalations = await listPhaseFourEscalations();
 

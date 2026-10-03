@@ -1,13 +1,13 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useId } from 'react';
 
 import {
   recordPaymentSubmissionAction,
   verifyPaymentSubmissionAction,
 } from '@/modules/finance/actions';
 import type { PaymentClaim } from '@/modules/finance/queries';
-import { SUBMISSION_METHODS } from '@/modules/finance/schema';
+import { isClaimAwaiting, SUBMISSION_METHODS } from '@/modules/finance/schema';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { FormMessage, buttonClass, inputClass, labelClass, selectClass } from '@/ui';
 
@@ -52,6 +52,7 @@ export function RecordClaimForm({
   invoices: { id: string; number: string; status: string }[];
 }) {
   const [state, action, pending] = useActionState(recordPaymentSubmissionAction, IDLE_STATE);
+  const proofFileId = useId();
 
   if (invoices.length === 0) return null;
 
@@ -106,6 +107,13 @@ export function RecordClaimForm({
         <input name="paidAt" type="datetime-local" aria-label="When they say they paid" className={input} />
       </div>
       <input name="proofUrl" type="url" placeholder="Link to a screenshot or receipt" aria-label="Proof" className={input} />
+      <div className="flex flex-col gap-1">
+        <label className={label} htmlFor={proofFileId}>
+          Or upload the proof (optional)
+        </label>
+        <input id={proofFileId} name="proofFile" type="file" className={input} />
+        <span className="text-xs text-muted">Kept with the project files: up to 50 MB, and never a password or key. A link above works too.</span>
+      </div>
 
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
         {pending ? 'Recording…' : 'Record what they said they paid'}
@@ -128,7 +136,7 @@ export function VerifyClaimForm({
   // `verified` and `rejected` are final; the guard refuses a further move.
   // `mismatch` is not — §6 calls it *requires resolution*, and a resolution the
   // row refuses to record is not one.
-  if (claim.status !== 'pending_verification' && claim.status !== 'mismatch') return null;
+  if (!isClaimAwaiting(claim.status)) return null;
 
   return (
     <form action={action} className="mt-2 flex flex-col gap-2 border-t border-line pt-2">

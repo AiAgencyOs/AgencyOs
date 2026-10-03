@@ -1,0 +1,962 @@
+{
+  "source": "docs/AGENCYOS_ADMIN_MASTER_SCREEN_INVENTORY.md",
+  "inventoryHash": "94709e79a53a185234645381ed4a248b43a736f85de6051b66c32accc4059b56",
+  "count": 72,
+  "screens": [
+    {
+      "id": "SCR-001",
+      "title": "Command Center",
+      "module": "Global Control",
+      "route": "/dashboard",
+      "routes": [
+        "/dashboard"
+      ],
+      "capability": "project.read",
+      "reads": "getOverview, getRecentLeads, getActiveProjectsSummary, getRevenueThisMonth, getAgentUsage, getSalesFunnel, getProjectCountsByStatus, listActionItems",
+      "live": "approvals, finance, jobs, leads, projects, agents",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-002",
+      "title": "Global Search",
+      "module": "Global Control",
+      "route": "⌘K palette (every page)",
+      "routes": [],
+      "capability": "rail-filtered",
+      "reads": "globalSearch (lead/client/project/invoice, RLS-scoped)",
+      "live": "—",
+      "status": "GROUPED (in shell)"
+    },
+    {
+      "id": "SCR-003",
+      "title": "Notifications & Action Center",
+      "module": "Global Control",
+      "route": "/notifications + header bell",
+      "routes": [
+        "/notifications"
+      ],
+      "capability": "internal",
+      "reads": "listActionItems (6 sources)",
+      "live": "approvals, finance, jobs, qa, tasks, conversations",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-004",
+      "title": "Quick Create / Command Palette",
+      "module": "Global Control",
+      "route": "⌘K palette → New lead / New client; type a setting or key name (“GST”, “window”, “github”) to jump to its section",
+      "routes": [],
+      "capability": "lead.write / project.write",
+      "reads": "createLeadAction, createClientAccountAction",
+      "live": "—",
+      "status": "GROUPED (in shell)"
+    },
+    {
+      "id": "SCR-005",
+      "title": "Sales Overview & Pipeline",
+      "module": "Sales & CRM",
+      "route": "/sales-funnel",
+      "routes": [
+        "/sales-funnel"
+      ],
+      "capability": "lead.read",
+      "reads": "salesFunnel, listOpportunities (Kanban, 3 open stages)",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-006",
+      "title": "Leads List",
+      "module": "Sales & CRM",
+      "route": "/leads",
+      "routes": [
+        "/leads"
+      ],
+      "capability": "lead.read",
+      "reads": "listLeadsForTable (avatar + company cells), listLeadsNeedingAttention, saved views",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-007",
+      "title": "Lead 360",
+      "module": "Sales & CRM",
+      "route": "/leads/[leadId]",
+      "routes": [
+        "/leads/[leadId]"
+      ],
+      "capability": "lead.read",
+      "reads": "lead + getLeadFacts, conversation, requirements, quotations, meetings, follow-ups, timeline (three panes: information · chat · deal), Files tab (crm.lead_files through crm.add_lead_file / remove_lead_file; links carried once to the project when the deal is converted), contracts on a won deal",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-008",
+      "title": "Qualification & Scoring",
+      "module": "Sales & CRM",
+      "route": "/leads/[leadId] › Sales panel",
+      "routes": [
+        "/leads/[leadId]"
+      ],
+      "capability": "lead.read",
+      "reads": "crm.qualification_coverage, crm.leads.score + score_reasons + score_inputs (scoreLead, crm.set_lead_score, 20260930120000)",
+      "live": "—",
+      "status": "COMPLETE (ADM-88 reversed by the owner 2026-09-29: numeric score, always with reasons)"
+    },
+    {
+      "id": "SCR-009",
+      "title": "Requirements Discovery",
+      "module": "Sales & CRM",
+      "route": "/leads/[leadId] › requirement decision",
+      "routes": [
+        "/leads/[leadId]"
+      ],
+      "capability": "lead.read",
+      "reads": "crm.requirement_versions",
+      "live": "—",
+      "status": "GROUPED"
+    },
+    {
+      "id": "SCR-010",
+      "title": "Meetings",
+      "module": "Sales & CRM",
+      "route": "/meetings, /meetings/[meetingId]",
+      "routes": [
+        "/meetings",
+        "/meetings/[meetingId]"
+      ],
+      "capability": "lead.read",
+      "reads": "meetings, evidence, calendar verification",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-011",
+      "title": "Quotations List",
+      "module": "Sales & CRM",
+      "route": "/quotations",
+      "routes": [
+        "/quotations"
+      ],
+      "capability": "lead.read",
+      "reads": "listProposals, saved views",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-012",
+      "title": "Create / Edit Quotation",
+      "module": "Sales & CRM",
+      "route": "/quotations/new + Lead 360 panels",
+      "routes": [
+        "/quotations/new"
+      ],
+      "capability": "proposal.draft",
+      "reads": "composeQuotationAction → draftProposal, addProposalItem, setProposalPricing, submitProposal; third-party charge picker (listThirdPartyCharges), payment-schedule preview (listPaymentStructures)",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-013",
+      "title": "Follow-ups & Nurture",
+      "module": "Sales & CRM",
+      "route": "/follow-ups",
+      "routes": [
+        "/follow-ups"
+      ],
+      "capability": "lead.read",
+      "reads": "listFollowUpSequences",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-072",
+      "title": "Contracts",
+      "module": "Sales & CRM",
+      "route": "/contracts (+ the contracts on a won deal in Lead 360, and on Client 360 › Quotations)",
+      "routes": [
+        "/contracts"
+      ],
+      "capability": "lead.read (lead.write to record or move one)",
+      "reads": "sales.contracts through sales.create_contract / sales.update_contract_status (owner or ops admin; only a WON deal can have one; draft → sent → signed; signing names the signer and the day; audited); owner decision 10, no e-signature",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-014",
+      "title": "Client Management",
+      "module": "Clients",
+      "route": "/clients",
+      "routes": [
+        "/clients"
+      ],
+      "capability": "project.read",
+      "reads": "listClients, name/email search, CSV export (/api/clients/export)",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-015",
+      "title": "Client 360",
+      "module": "Clients",
+      "route": "/clients/[clientId]",
+      "routes": [
+        "/clients/[clientId]"
+      ],
+      "capability": "project.read",
+      "reads": "getClient (projects, invoices, communication, files, notes)",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-016",
+      "title": "Client Projects & Commercials",
+      "module": "Clients",
+      "route": "/clients/[clientId] › Commercials card",
+      "routes": [
+        "/clients/[clientId]"
+      ],
+      "capability": "project.read",
+      "reads": "getClient.commercials — accepted quote, milestones, invoiced/paid, maintenance plan, paid changes",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-017",
+      "title": "Client Communication, Files & Notes",
+      "module": "Clients",
+      "route": "/clients/[clientId] › communication/files/notes",
+      "routes": [
+        "/clients/[clientId]"
+      ],
+      "capability": "project.read",
+      "reads": "crm.conversations (project_group), project_files, core.client_notes (20260928120000)",
+      "live": "—",
+      "status": "COMPLETE (notes gap closed)"
+    },
+    {
+      "id": "SCR-018",
+      "title": "All Projects",
+      "module": "Projects",
+      "route": "/projects",
+      "routes": [
+        "/projects"
+      ],
+      "capability": "project.read",
+      "reads": "listProjectsForTable (client, milestone progress, stage filter), saved views",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-019",
+      "title": "Project Overview (Project 360)",
+      "module": "Projects",
+      "route": "/projects/[projectId]",
+      "routes": [
+        "/projects/[projectId]"
+      ],
+      "capability": "project.read",
+      "reads": "project, plan, billing ladder, phases 2–4, QA, approvals, deliverables; phase-evidence tiles (design trail, plan, latest test run, handover)",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-020",
+      "title": "Project Board",
+      "module": "Projects",
+      "route": "/projects/[projectId]/board",
+      "routes": [
+        "/projects/[projectId]/board"
+      ],
+      "capability": "task.write to drag",
+      "reads": "projects.tasks (Kanban, validated transitions; audited since 20260929130000)",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-021",
+      "title": "My Tasks",
+      "module": "Projects",
+      "route": "/my-tasks",
+      "routes": [
+        "/my-tasks"
+      ],
+      "capability": "internal",
+      "reads": "listMyTasks",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-022",
+      "title": "Project Calendar",
+      "module": "Projects",
+      "route": "/projects/[projectId]/calendar",
+      "routes": [
+        "/projects/[projectId]/calendar"
+      ],
+      "capability": "project.read",
+      "reads": "tasks + milestones + meetings by date (MonthGrid)",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-023",
+      "title": "Project Milestones / Gantt",
+      "module": "Projects",
+      "route": "/projects/[projectId]/plan (Gantt) + /calendar",
+      "routes": [
+        "/projects/[projectId]/plan",
+        "/calendar"
+      ],
+      "capability": "project.read",
+      "reads": "listPaymentPlan (projects.milestones), plan milestones",
+      "live": "—",
+      "status": "COMPLETE — bars are the planned windows between due dates (derived, labelled as such); the schema holds no start date, and the page says so"
+    },
+    {
+      "id": "SCR-024",
+      "title": "Project Files",
+      "module": "Projects",
+      "route": "/projects/[projectId]/files",
+      "routes": [
+        "/projects/[projectId]/files"
+      ],
+      "capability": "project.write to add/edit",
+      "reads": "projects.project_files (links and stored objects in Supabase Storage: versions, trash, project_file_shares signed links — 20260930110000)",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-025",
+      "title": "Project Team",
+      "module": "Projects",
+      "route": "/projects/[projectId]/team",
+      "routes": [
+        "/projects/[projectId]/team"
+      ],
+      "capability": "project.read (project.write to set the lead)",
+      "reads": "listProjectTeam, listInternalRoster, projects.delivery_lead_id through setDeliveryLead",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-026",
+      "title": "Project Reports",
+      "module": "Projects",
+      "route": "/projects/[projectId]/reports (+ /reports org-wide)",
+      "routes": [
+        "/projects/[projectId]/reports",
+        "/reports"
+      ],
+      "capability": "project.read",
+      "reads": "plan, board, defects, invoices, expenses, agent spend — the tabs' own readers, no stored trend",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-027",
+      "title": "Project Settings, Activity & Templates",
+      "module": "Projects",
+      "route": "/projects/[projectId]/settings, /activity",
+      "routes": [
+        "/projects/[projectId]/settings",
+        "/activity"
+      ],
+      "capability": "project.write",
+      "reads": "visibility, activity timeline; projects.project_templates (\"Save as template\" on Project 360, \"Start from\" in Create project, Settings › Templates — 20260930110000)",
+      "live": "—",
+      "status": "COMPLETE (templates reopened by the owner 2026-09-29)"
+    },
+    {
+      "id": "SCR-028",
+      "title": "Requirements Dashboard",
+      "module": "Requirements & Scope",
+      "route": "/requirements",
+      "routes": [
+        "/requirements"
+      ],
+      "capability": "lead.read",
+      "reads": "pending requirement decisions across leads",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-029",
+      "title": "Requirement Set / Detail",
+      "module": "Requirements & Scope",
+      "route": "/leads/[leadId] › versions",
+      "routes": [
+        "/leads/[leadId]"
+      ],
+      "capability": "lead.read",
+      "reads": "crm.requirement_versions in full",
+      "live": "—",
+      "status": "GROUPED"
+    },
+    {
+      "id": "SCR-030",
+      "title": "Scope Versions & Freeze",
+      "module": "Requirements & Scope",
+      "route": "/projects/[projectId]/scope",
+      "routes": [
+        "/projects/[projectId]/scope"
+      ],
+      "capability": "project.write",
+      "reads": "readScopeBaseline, listScopeVersionHistory, listScopeItemsForVersion (title-matched compare with the current baseline), change-request KPI row",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-031",
+      "title": "Change Requests & Traceability",
+      "module": "Requirements & Scope",
+      "route": "/projects/[projectId]/scope › change requests",
+      "routes": [
+        "/projects/[projectId]/scope"
+      ],
+      "capability": "project.write",
+      "reads": "projects.change_requests (classify / decide / apply)",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-032",
+      "title": "Design Dashboard",
+      "module": "Design & Prototype",
+      "route": "/design (portfolio) → /projects/[projectId]/design",
+      "routes": [
+        "/design",
+        "/projects/[projectId]/design"
+      ],
+      "capability": "project.read",
+      "reads": "readDesignPortfolio (3 reads, grouped); per-project readDesignTrail",
+      "live": "deliverables, projects",
+      "status": "COMPLETE (portfolio index added 2026-09-29)"
+    },
+    {
+      "id": "SCR-033",
+      "title": "UI Theme Finalization",
+      "module": "Design & Prototype",
+      "route": "/projects/[projectId]/design/themes",
+      "routes": [
+        "/projects/[projectId]/design/themes"
+      ],
+      "capability": "project.read",
+      "reads": "theme options, color options, token sets",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-034",
+      "title": "Screen Inventory",
+      "module": "Design & Prototype",
+      "route": "/projects/[projectId]/design › gallery",
+      "routes": [
+        "/projects/[projectId]/design"
+      ],
+      "capability": "project.read",
+      "reads": "projects.screen_baselines, readSampleScreens (representative_screens)",
+      "live": "—",
+      "status": "COMPLETE — gallery of representative screens with stored previews; Figma stays canonical"
+    },
+    {
+      "id": "SCR-035",
+      "title": "Screen Detail / Coverage Matrix",
+      "module": "Design & Prototype",
+      "route": "/projects/[projectId]/ui-versions/[uiVersionId]",
+      "routes": [
+        "/projects/[projectId]/ui-versions/[uiVersionId]"
+      ],
+      "capability": "project.read",
+      "reads": "UI version detail, coverage",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-036",
+      "title": "Design Review & Approval",
+      "module": "Design & Prototype",
+      "route": "/projects/[projectId]/design/final",
+      "routes": [
+        "/projects/[projectId]/design/final"
+      ],
+      "capability": "project.read",
+      "reads": "client decisions, revision history, lock",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-037",
+      "title": "Prototype Builds & Review",
+      "module": "Design & Prototype",
+      "route": "/projects/[projectId]/prototype, /prototype/preview/[uiVersionId]",
+      "routes": [
+        "/projects/[projectId]/prototype",
+        "/prototype/preview/[uiVersionId]"
+      ],
+      "capability": "project.read",
+      "reads": "prototype artifacts, build table with client decision · latest QA run · approval state",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-038",
+      "title": "Assets, Brand Kit & Feedback History",
+      "module": "Design & Prototype",
+      "route": "/design/themes (brand kit) + /design/final (feedback)",
+      "routes": [
+        "/design/themes",
+        "/design/final"
+      ],
+      "capability": "project.read",
+      "reads": "token sets, design assets, decisions",
+      "live": "—",
+      "status": "GROUPED"
+    },
+    {
+      "id": "SCR-039",
+      "title": "Development Dashboard",
+      "module": "Development",
+      "route": "/development (portfolio) → /projects/[projectId]/development",
+      "routes": [
+        "/development",
+        "/projects/[projectId]/development"
+      ],
+      "capability": "project.read",
+      "reads": "readDevelopmentPortfolio (4 reads, grouped)",
+      "live": "tasks, deliverables, projects",
+      "status": "COMPLETE (portfolio index added 2026-09-29)"
+    },
+    {
+      "id": "SCR-040",
+      "title": "Implementation Plan",
+      "module": "Development",
+      "route": "/projects/[projectId]/plan",
+      "routes": [
+        "/projects/[projectId]/plan"
+      ],
+      "capability": "project.write",
+      "reads": "readPlanBoard (6 of 18 registers; rest derived — traceability row 40)",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-041",
+      "title": "Development Task Execution",
+      "module": "Development",
+      "route": "/projects/[projectId]/development",
+      "routes": [
+        "/projects/[projectId]/development"
+      ],
+      "capability": "task.write",
+      "reads": "modules → features → tasks",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-042",
+      "title": "Repository, Branch & Code Review",
+      "module": "Development",
+      "route": "/projects/[projectId]/repository",
+      "routes": [
+        "/projects/[projectId]/repository"
+      ],
+      "capability": "project.write",
+      "reads": "projects.repositories (typed links) + projects.repository_links read live from GitHub (src/lib/git/github.ts, 20260930130000)",
+      "live": "—",
+      "status": "COMPLETE (live Git reopened by the owner 2026-09-29; read-only)"
+    },
+    {
+      "id": "SCR-043",
+      "title": "Builds, Environments & Dependencies",
+      "module": "Development",
+      "route": "/projects/[projectId]/builds",
+      "routes": [
+        "/projects/[projectId]/builds"
+      ],
+      "capability": "project.write",
+      "reads": "builds (deliverables), environments, dependencies",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-044",
+      "title": "QA Dashboard",
+      "module": "QA & Release",
+      "route": "/qa",
+      "routes": [
+        "/qa"
+      ],
+      "capability": "project.read",
+      "reads": "listOpenDefects, readOrgTestCoverage, readSuiteCoverage",
+      "live": "qa, deliverables",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-045",
+      "title": "Test Plan & Cases",
+      "module": "QA & Release",
+      "route": "/projects/[projectId]/qa",
+      "routes": [
+        "/projects/[projectId]/qa"
+      ],
+      "capability": "project.write",
+      "reads": "qa.test_plans, test_plan_items",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-046",
+      "title": "Test Runs",
+      "module": "QA & Release",
+      "route": "/projects/[projectId]/qa",
+      "routes": [
+        "/projects/[projectId]/qa"
+      ],
+      "capability": "project.write",
+      "reads": "qa.test_runs",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-047",
+      "title": "Bugs & Defects",
+      "module": "QA & Release",
+      "route": "/qa + per project",
+      "routes": [
+        "/qa"
+      ],
+      "capability": "project.read",
+      "reads": "qa.defects",
+      "live": "qa",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-048",
+      "title": "Regression, Compatibility & Performance",
+      "module": "QA & Release",
+      "route": "/qa › suites",
+      "routes": [
+        "/qa"
+      ],
+      "capability": "project.read",
+      "reads": "readSuiteCoverage",
+      "live": "qa",
+      "status": "GROUPED"
+    },
+    {
+      "id": "SCR-049",
+      "title": "Production Readiness & Release Candidate",
+      "module": "QA & Release",
+      "route": "/production-readiness",
+      "routes": [
+        "/production-readiness"
+      ],
+      "capability": "organization.settings",
+      "reads": "evidence-based checklist, release gates",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-050",
+      "title": "Finance Overview",
+      "module": "Finance",
+      "route": "/finance",
+      "routes": [
+        "/finance"
+      ],
+      "capability": "invoice.read",
+      "reads": "listInvoices, listPayments, listExpenses, pending claims (income vs expenses, payment status, top revenue, upcoming)",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-051",
+      "title": "Invoices",
+      "module": "Finance",
+      "route": "/invoices",
+      "routes": [
+        "/invoices"
+      ],
+      "capability": "invoice.read",
+      "reads": "listInvoices, saved views",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-052",
+      "title": "Invoice Detail / Create",
+      "module": "Finance",
+      "route": "/invoices/[invoiceId]",
+      "routes": [
+        "/invoices/[invoiceId]"
+      ],
+      "capability": "invoice.issue to act",
+      "reads": "invoice, items, billing profile (mode · GSTIN · address, readInvoiceBillingProfile), GST line, linked milestone, payments, payment claims (listInvoicePaymentClaims), receipts, refunds, receiving accounts",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-053",
+      "title": "Payments",
+      "module": "Finance",
+      "route": "/finance/payments",
+      "routes": [
+        "/finance/payments"
+      ],
+      "capability": "invoice.read",
+      "reads": "listPayments, bank CSV import + proposed matches (finance.bank_statement_lines, 20260930100000)",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-054",
+      "title": "Payment Verification",
+      "module": "Finance",
+      "route": "/invoices/verify",
+      "routes": [
+        "/invoices/verify"
+      ],
+      "capability": "invoice.issue",
+      "reads": "listPendingPaymentClaims (human-only gate)",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-055",
+      "title": "Expenses & Profitability",
+      "module": "Finance",
+      "route": "/finance (net profit, margin, expense breakdown) + /finance/expenses",
+      "routes": [
+        "/finance",
+        "/finance/expenses"
+      ],
+      "capability": "invoice.read (invoice.issue to record/edit)",
+      "reads": "listExpenses, listPayments, listInvoices; recordExpense, updateExpense",
+      "live": "—",
+      "status": "COMPLETE — net = payments received − expenses recorded, margin over received; stated on the tile, not an accounting P&L"
+    },
+    {
+      "id": "SCR-056",
+      "title": "GST, Tax & Financial Reports",
+      "module": "Finance",
+      "route": "/finance/tax (+ /api/finance/tax/export)",
+      "routes": [
+        "/finance/tax",
+        "/api/finance/tax/export"
+      ],
+      "capability": "invoice.read",
+      "reads": "listTaxReportInvoices split by the CONFIRMED billing mode (GST / non-GST / unconfirmed), period selector (month, quarter, Indian FY), receipts (listReceipts), cash-basis P&L against expenses, CSV",
+      "live": "—",
+      "status": "COMPLETE — GSTR-1 / GSTR-3B offline-tool JSON exports (gstr.ts, 20260930160000); no filing API by decision (needs GST-portal integration, stated on the page)"
+    },
+    {
+      "id": "SCR-057",
+      "title": "Communication Center",
+      "module": "Communication",
+      "route": "/communication",
+      "routes": [
+        "/communication"
+      ],
+      "capability": "lead.read",
+      "reads": "conversations, rollups",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-058",
+      "title": "WhatsApp / Conversations",
+      "module": "Communication",
+      "route": "/leads/[leadId] › thread",
+      "routes": [
+        "/leads/[leadId]"
+      ],
+      "capability": "lead.read",
+      "reads": "listMessages (chat view, 24-hour window state)",
+      "live": "—",
+      "status": "GROUPED"
+    },
+    {
+      "id": "SCR-059",
+      "title": "Templates & Announcements",
+      "module": "Communication",
+      "route": "/settings/communication, /communication/campaigns",
+      "routes": [
+        "/settings/communication",
+        "/communication/campaigns"
+      ],
+      "capability": "organization.settings",
+      "reads": "crm.whatsapp_templates registry, outreach limits, sending window; crm.campaigns + campaign_recipients (four-eyes approval, cron worker, 20260930140000)",
+      "live": "—",
+      "status": "COMPLETE (broadcast reopened by the owner 2026-09-30 as a governed campaign)"
+    },
+    {
+      "id": "SCR-060",
+      "title": "Delivery Failures, Outbox & Meeting Notes",
+      "module": "Communication",
+      "route": "/operations + /meetings/[meetingId]",
+      "routes": [
+        "/operations",
+        "/meetings/[meetingId]"
+      ],
+      "capability": "audit.read",
+      "reads": "failed deliveries, deferred sends, meeting evidence",
+      "live": "jobs, conversations, followUps",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-061",
+      "title": "AI Workforce Dashboard",
+      "module": "AI Workforce",
+      "route": "/agents",
+      "routes": [
+        "/agents"
+      ],
+      "capability": "audit.read",
+      "reads": "agent registry, runnability, usage",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-062",
+      "title": "Agent Registry",
+      "module": "AI Workforce",
+      "route": "/agents",
+      "routes": [
+        "/agents"
+      ],
+      "capability": "audit.read",
+      "reads": "ai.agents (owner enables/disables and sets caps from the panel — ai.set_agent_status / set_agent_caps, ADM-82 reversed 2026-09-29)",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-063",
+      "title": "Agent Detail & Permissions",
+      "module": "AI Workforce",
+      "route": "/agents/[agentKey]",
+      "routes": [
+        "/agents/[agentKey]"
+      ],
+      "capability": "audit.read",
+      "reads": "definition, ceilings, recent runs, failures, policy refusals (ai.agent_policy_refusals — the runner enforces tool permissions and assignments), owner status/caps forms",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-064",
+      "title": "Model Routing, Providers & Tools",
+      "module": "AI Workforce",
+      "route": "/agents/routing",
+      "routes": [
+        "/agents/routing"
+      ],
+      "capability": "organization.settings",
+      "reads": "routing policies, provider vault status",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-065",
+      "title": "Agent Runs, Usage, Cost & Automations",
+      "module": "AI Workforce",
+      "route": "/agents/automations, /usage",
+      "routes": [
+        "/agents/automations",
+        "/usage"
+      ],
+      "capability": "audit.read",
+      "reads": "runs, cost ledger, automations",
+      "live": "—",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-066",
+      "title": "Operations Dashboard",
+      "module": "Operations",
+      "route": "/operations",
+      "routes": [
+        "/operations"
+      ],
+      "capability": "audit.read (job.requeue to act)",
+      "reads": "operational_backlog, dead jobs, requeue, job queue (listQueuedJobs), outbox counts and row list (listOutboxEvents, D17 reversed)",
+      "live": "jobs, conversations, followUps",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-067",
+      "title": "System Health, Production Readiness & Alerts",
+      "module": "Operations",
+      "route": "/operations + /production-readiness + /integrations",
+      "routes": [
+        "/operations",
+        "/production-readiness",
+        "/integrations"
+      ],
+      "capability": "audit.read / organization.settings",
+      "reads": "cron age, failed deliveries, integration lifecycle",
+      "live": "jobs",
+      "status": "GROUPED"
+    },
+    {
+      "id": "SCR-068",
+      "title": "Approval Center, Policies & Overrides",
+      "module": "Governance & Security",
+      "route": "/approvals, /approvals/[requestId], /settings/approvals",
+      "routes": [
+        "/approvals",
+        "/approvals/[requestId]",
+        "/settings/approvals"
+      ],
+      "capability": "internal (per-request lock decides)",
+      "reads": "listPendingApprovals, listDecidedApprovals (KPI row, recent decisions), policies",
+      "live": "approvals",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-069",
+      "title": "Security, Roles & Audit Log",
+      "module": "Governance & Security",
+      "route": "/security, /security/users, /audit (+ /api/audit/export)",
+      "routes": [
+        "/security",
+        "/security/users",
+        "/audit",
+        "/api/audit/export"
+      ],
+      "capability": "audit.read",
+      "reads": "invariant scan, roles, audit.audit_log with subject/actor/date filters and per-entry before/after diff",
+      "live": "audit (audit page)",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-070",
+      "title": "Integrations Center & Import",
+      "module": "Integrations",
+      "route": "/integrations, /import, /import/[batchId]",
+      "routes": [
+        "/integrations",
+        "/import",
+        "/import/[batchId]"
+      ],
+      "capability": "organization.settings",
+      "reads": "lifecycle registry, import staging",
+      "live": "jobs",
+      "status": "COMPLETE"
+    },
+    {
+      "id": "SCR-071",
+      "title": "Organization Settings & Business Rules",
+      "module": "Organization Settings",
+      "route": "/settings (General, Commercial, Team, Communication, Approvals, Finance), /security/keys (Keys & secrets)",
+      "routes": [
+        "/settings",
+        "/security/keys"
+      ],
+      "capability": "organization.settings",
+      "reads": "core.organizations.settings through set_organization_setting (whitelist + audit); finance.payment_accounts (Doc 15 §9) through createPaymentAccount / setPaymentAccountStatus; core.secret_credentials (every integration key, encrypted) through core.store_secret / revoke_secret / secret_status / record_secret_check (owner stores and revokes, admin verifies); sales.quotation_clauses (Commercial › Quotation clauses — the four quotation clauses, versioned, appended and never edited) through core.publish_quotation_clause / list_quotation_clauses (owner / ops admin publish, every internal role reads), each issued quotation keeping the versions it printed in sales.proposals.clauses_printed",
+      "live": "—",
+      "status": "COMPLETE"
+    }
+  ]
+}

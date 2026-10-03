@@ -87,7 +87,7 @@ describe('B. the defect controls offer only legal moves', () => {
   test('the sign-off is offered to the role ADM-19 named, not to delivery', () => {
     // A delivery lead declaring their own work production ready is the review
     // signing its own homework.
-    assert.match(PROJECT, /const maySignOff = can\(context\.role, 'project\.sign_off'\);/);
+    assert.match(PROJECT, /const maySignOff = can\(context, 'project\.sign_off'\);/);
     assert.match(PROJECT, /\{maySignOff \? <ProductionReadyForm projectId=\{projectId\} \/> : null\}/);
   });
 
@@ -101,7 +101,7 @@ describe('B. the defect controls offer only legal moves', () => {
 describe('C. the coverage matrix is rendered, and is still not a gate', () => {
   test('Doc 12 §9’s flags reach a screen', () => {
     assert.match(DESIGN, /const screenCoverage = await readUiCoverage\(projectId\);/);
-    assert.match(DESIGN, /<Section\s*\n\s*title="Screen coverage"/);
+    assert.match(DESIGN, /<Section\s*\n\s*title="Screen Coverage"/);
   });
 
   test('and adding a threshold here would be inventing the business rule', () => {

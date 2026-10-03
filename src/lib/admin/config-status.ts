@@ -21,6 +21,7 @@ import { productionConfigProblems, serverSchema, type ConfigProblem } from '@/li
 export type ConfigArea =
   | 'Database'
   | 'Application'
+  | 'Email'
   | 'Scheduler'
   | 'WhatsApp'
   | 'AI provider'
@@ -32,8 +33,14 @@ export type ConfigArea =
   // Its own area: a design-tool credential is not an AI provider, and folding
   // it under one would put that conflation on a screen an owner reads.
   | 'Figma'
+  // A source-host credential, read-only — Decision: reversed by the owner on 2026-09-29.
+  | 'GitHub'
   | 'Calendar'
-  | 'Alerts';
+  | 'Alerts'
+  // Decision 5 of 2026-09-29: project files live in Supabase Storage. Its
+  // own area because "not configured" here means a different thing — the
+  // stack has no storage service — than a missing key does.
+  | 'Files';
 
 export type ConfigItem = {
   key: string;
@@ -43,6 +50,12 @@ export type ConfigItem = {
   requiredInProduction: boolean;
   /** Set and non-empty in this environment. NEVER the value. */
   present: boolean;
+  /**
+   * Where a stored-key slot's value comes from when `configStatusResolved()`
+   * built the item: the deployment environment, the vault, or nowhere.
+   * Absent on the env-only `configStatus()`. Presence only, never a value.
+   */
+  source?: 'env' | 'vault' | 'none';
   /** Safe, value-free explanation of what it does and what "missing" costs. */
   note: string;
 };
@@ -57,6 +70,7 @@ const ITEMS: readonly Omit<ConfigItem, 'present'>[] = [
   { key: 'WHATSAPP_APP_SECRET', area: 'WhatsApp', secret: true, requiredInProduction: false, note: 'Verifies the X-Hub-Signature-256 HMAC on inbound webhooks.' },
   { key: 'WHATSAPP_ACCESS_TOKEN', area: 'WhatsApp', secret: true, requiredInProduction: false, note: 'The token outbound WhatsApp messages are sent with. Unset ⇒ sending disabled.' },
   { key: 'FIGMA_ACCESS_TOKEN', area: 'Figma', secret: true, requiredInProduction: false, note: 'Reads Figma files to check a pasted reference and take the version from the file. Unset ⇒ references are recorded unverified; nothing is ever reported as created in Figma.' },
+  { key: 'GITHUB_TOKEN', area: 'GitHub', secret: true, requiredInProduction: false, note: 'Reads a linked repository from GitHub (commits, open pull requests, branches, checks, reviews) and, with the repo scope, writes through the governed doors (task branch, review, squash-merge, build dispatch) — Decision: reversed by the owner on 2026-09-30. Unset ⇒ the Repository tab shows the link alone and says GitHub is not configured.' },
   { key: 'ANTHROPIC_API_KEY', area: 'AI provider', secret: true, requiredInProduction: false, note: 'Server-only AI key. Unset ⇒ AI_PROVIDER_NOT_CONFIGURED (never a silent fake result).' },
   { key: 'ANTHROPIC_BASE_URL', area: 'AI provider', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
   { key: 'GEMINI_API_KEY', area: 'AI provider', secret: true, requiredInProduction: false, note: 'Serves gemini-* models (ADM-85). Unset ⇒ those models are not served; nothing else changes.' },
@@ -70,11 +84,19 @@ const ITEMS: readonly Omit<ConfigItem, 'present'>[] = [
   { key: 'OPENAI_BASE_URL', area: 'Speech to text', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
   { key: 'GOOGLE_SERVICE_ACCOUNT_EMAIL', area: 'Calendar', secret: false, requiredInProduction: false, note: 'The Google service account’s client_email (ADM-102). Unset ⇒ availability answers unconfigured and nothing can be booked (BLK-005).' },
   { key: 'GOOGLE_SERVICE_ACCOUNT_KEY', area: 'Calendar', secret: true, requiredInProduction: false, note: 'The service account’s private key (PEM). Server-only; signs one short-lived request at a time.' },
-  { key: 'GOOGLE_CALENDAR_ID', area: 'Calendar', secret: false, requiredInProduction: false, note: 'The calendar the agency books against, e.g. meetings@agency. Not a secret.' },
+  { key: 'GOOGLE_CALENDAR_ID', area: 'Calendar', secret: false, requiredInProduction: false, note: 'The calendar the agency books against, e.g. meetings@agency. Not a secret. The fallback: the id saved on Integrations (organization setting google_calendar_id) is read first.' },
   { key: 'GOOGLE_IMPERSONATE', area: 'Calendar', secret: false, requiredInProduction: false, note: 'Workspace only: the user the account acts as, via domain-wide delegation (needed for a Meet link). Leave unset for a plain Gmail calendar shared with the service account — then no Meet link is created.' },
   { key: 'GOOGLE_OAUTH_BASE_URL', area: 'Calendar', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
   { key: 'GOOGLE_CALENDAR_BASE_URL', area: 'Calendar', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
   { key: 'ALERT_WEBHOOK_URL', area: 'Alerts', secret: true, requiredInProduction: false, note: 'Where operational alerts are POSTed. Unset ⇒ alerts log only, never delivered.' },
+  { key: 'RESEND_API_KEY', area: 'Email', secret: true, requiredInProduction: false, note: 'Sends invoices and reminders by email through Resend (SCR-051). Unset, and without SMTP_HOST ⇒ the invoice page says email is not configured; nothing is recorded as sent.' },
+  { key: 'SMTP_HOST', area: 'Email', secret: false, requiredInProduction: false, note: 'SMTP server for invoice email when Resend is not used. Unset, and without RESEND_API_KEY ⇒ email is not configured.' },
+  { key: 'SMTP_PORT', area: 'Email', secret: false, requiredInProduction: false, note: 'SMTP port. Unset ⇒ 587 (465 when SMTP_SECURE=true).' },
+  { key: 'SMTP_USER', area: 'Email', secret: false, requiredInProduction: false, note: 'SMTP login. Unset ⇒ no AUTH is attempted.' },
+  { key: 'SMTP_PASS', area: 'Email', secret: true, requiredInProduction: false, note: 'SMTP password, sent only after STARTTLS or over implicit TLS.' },
+  { key: 'SMTP_SECURE', area: 'Email', secret: false, requiredInProduction: false, note: '"true" for implicit TLS (port 465 style); otherwise STARTTLS when the server offers it.' },
+  { key: 'EMAIL_FROM', area: 'Email', secret: false, requiredInProduction: false, note: 'The sender address on every email. Unset ⇒ email is not configured, whichever transport is set.' },
+  { key: 'SUPABASE_FILES_BUCKET', area: 'Files', secret: false, requiredInProduction: false, note: 'The Storage bucket project files are uploaded to. Unset ⇒ "project-files". The Files tab says when the bucket does not answer.' },
   { key: 'VAULT_ENCRYPTION_KEY', area: 'AI provider', secret: true, requiredInProduction: true, note: 'Encrypts a provider key an admin enters through Settings before it is stored (ADM-84 §9 overturned). Unset ⇒ the vault refuses every write rather than storing an unrecoverable row.' },
 ];
 

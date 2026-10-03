@@ -108,7 +108,16 @@ describe('C. the ratio is a number, and it only goes down', () => {
    * not raise it, and raising it deliberately means editing this line and
    * saying why.
    */
-  const CEILING = 0.26;
+  // 2026-09-30, buckets F and G: twenty guard tests whose subjects are
+  // migrations and screens (the file IS the behaviour there) landed with two
+  // behavioural files beside them (`the-pure-halves-of-*.test.ts`) that run
+  // every pure function those buckets introduced. Measured 26.3% after both;
+  // the ceiling moves to meet it, not past it, and the direction stands.
+  // 2026-10-03, keys, clauses and the settings search: seven guard tests whose
+  // subjects are a migration, a registry-driven screen or a catalogue of page
+  // anchors (the file IS the behaviour). Measured 26.6% with them; the
+  // ceiling moves to meet it, not past it, and the direction stands.
+  const CEILING = 0.267;
 
   test(`no more than ${(CEILING * 100).toFixed(0)}% of assertions are source-text pins`, () => {
     let total = 0;

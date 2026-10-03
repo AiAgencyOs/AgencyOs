@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 
-import { listImportBatches } from '@/lib/import/queries';
+import { IMPORT_BATCH_PAGE, listImportBatches } from '@/lib/import/queries';
+import { normaliseSearch } from '@/lib/db/search';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { PageHeader } from '@/ui';
+import { DomainSearch, PageHeader, PermissionDenied, SearchSummary } from '@/ui';
 
 import { UploadForm } from './forms';
 
@@ -25,12 +25,13 @@ export const metadata: Metadata = { title: 'Import' };
  * committing create identity (contact + lead) only, set no consent, and send
  * nothing.
  */
-export default async function ImportPage() {
+export default async function ImportPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+  const query = normaliseSearch((await searchParams).q);
   const context = await requireInternal('/import');
   const clock = await agencyClock();
-  if (!can(context.role, 'organization.settings')) redirect('/dashboard');
+  if (!can(context, 'organization.settings')) return <PermissionDenied />;
 
-  const batches = await listImportBatches();
+  const batches = await listImportBatches(query || undefined);
 
   return (
     <div className="flex flex-col gap-5">
@@ -55,7 +56,18 @@ export default async function ImportPage() {
         <UploadForm />
       </div>
 
-      {batches.length === 0 ? (
+      {/* SCR-070: batches accumulate, so they can be searched by label or note (server-side) and only the newest page is drawn. */}
+      <div className="flex flex-col gap-2">
+        <div className="max-w-md">
+          <DomainSearch action="/import" value={query} placeholder="Search a batch label or note…" label="Search import batches" />
+        </div>
+        {query ? <SearchSummary q={query} count={batches.length} bounded={batches.length >= IMPORT_BATCH_PAGE} clearHref="/import" /> : null}
+        {!query && batches.length >= IMPORT_BATCH_PAGE ? <p className="text-xs text-muted">Showing the newest {IMPORT_BATCH_PAGE} batches; search to reach an older one.</p> : null}
+      </div>
+
+      {batches.length === 0 && query ? (
+        <p className="rounded-lg border border-line bg-surface px-4 py-8 text-center text-sm text-muted">No batch matches &lsquo;{query}&rsquo;.</p>
+      ) : batches.length === 0 ? (
         <p className="rounded-lg border border-line bg-surface px-4 py-8 text-center text-sm text-muted">
           No import has been staged yet. Upload an export above, or run{' '}
           <code>npm run import:whatsapp:stage -- --org &lt;id&gt; &lt;export&gt;</code>.

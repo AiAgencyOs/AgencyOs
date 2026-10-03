@@ -18,7 +18,7 @@ import { region, TO_END } from './_region.ts';
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), 'utf8');
 const QUERIES_TS = read('src/modules/projects/queries.ts');
 const PAGE = read('app/(internal)/projects/escalations/page.tsx');
-const LAYOUT = read('app/(internal)/layout.tsx');
+const LAYOUT = read('app/(internal)/nav-config.ts');
 
 const queryFn = region(QUERIES_TS, 'export async function listPhaseFourEscalations', TO_END);
 
@@ -60,7 +60,7 @@ describe('C. it is read-only, matching Master\'s own rule for this stop', () => 
 
 describe('D. it is reachable — gated the same way the Projects list is, and in the nav', () => {
   test('the page gates on project.read, the same capability /projects itself uses', () => {
-    assert.match(PAGE, /can\(context\.role, 'project\.read'\)/);
+    assert.match(PAGE, /can\(context, 'project\.read'\)/);
   });
 
   test('it is a real page under the internal route group, not orphaned', () => {
@@ -68,6 +68,6 @@ describe('D. it is reachable — gated the same way the Projects list is, and in
   });
 
   test('it is linked from the sidebar', () => {
-    assert.match(LAYOUT, /\{ href: '\/projects\/escalations', label: 'Escalations', capability: 'project\.read' \}/);
+    assert.match(LAYOUT, /\{ href: '\/projects\/escalations', label: 'Escalations', capability: 'project\.read'/);
   });
 });

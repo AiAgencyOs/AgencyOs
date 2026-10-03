@@ -102,7 +102,7 @@ values
    'agent', now() - interval '2 days' + interval '4 minutes'),
   ('00000000-0000-4000-8000-000000000403', '00000000-0000-4000-8000-000000000001',
    '00000000-0000-4000-8000-000000000302', 'status_change',
-   'Lead qualified with a score of 82.', 'agent', now() - interval '3 days')
+   'Lead qualified.', 'agent', now() - interval '3 days')
 on conflict (id) do nothing;
 
 -- ── Agent registry ────────────────────────────────────────────────────────

@@ -6,7 +6,7 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { getApproval } from '@/modules/approvals/queries';
 import { isOverdue, type ApprovalState } from '@/modules/approvals/schema';
-import { Badge, Card, DetailList, DetailRow, PageHeader, humanize } from '@/ui';
+import { ApprovalBanner, Badge, Card, DetailList, DetailRow, PageHeader, humanize, type ApprovalBannerState } from '@/ui';
 
 import { ApprovalDecisionForm } from '../approval-decision-form';
 
@@ -83,8 +83,17 @@ export default async function ApprovalDetailPage({
         }
       />
 
+      <ApprovalBanner
+        state={request.state as ApprovalBannerState}
+        requiredRole={humanize(request.required_role)}
+        dueLabel={clock.dateTime(request.sla_due_at)}
+        overdue={request.state === 'pending' && overdue}
+        decidedLabel={request.decided_at ? clock.dateTime(request.decided_at) : undefined}
+        note={request.decision_note}
+      />
+
       <p className="text-xs text-muted">
-        <Link href="/approvals" className="underline underline-offset-2 hover:text-ink">
+        <Link href="/approvals" className="underline underline-offset-2 hover:text-foreground">
           Back to the queue
         </Link>
       </p>
@@ -119,7 +128,7 @@ export default async function ApprovalDetailPage({
             href={`/api/quotations/${request.subject_id}/pdf`}
             target="_blank"
             rel="noreferrer"
-            className="mt-3 block w-fit text-xs text-muted underline underline-offset-2 hover:text-ink"
+            className="mt-3 block w-fit text-xs text-muted underline underline-offset-2 hover:text-foreground"
           >
             Read the quotation
           </a>

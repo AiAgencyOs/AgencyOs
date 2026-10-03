@@ -47,6 +47,10 @@ export const CAPABILITIES = [
   // Administration
   'member.invite',
   'audit.read',
+  // Owner decision 11 (round 2): the audit log may be exported as CSV by the owner and the ops admin only,
+  // and every export is itself an audit event (audit.log_audit_export). A capability of its own so the
+  // finance role's read access (if it ever gains one) is never an export right.
+  'audit.export',
   'organization.settings',
 
   // Operations
@@ -85,6 +89,7 @@ const ROLE_CAPABILITIES: Record<Role, readonly (Capability | '*')[]> = {
     'agent.run',
     'member.invite',
     'audit.read',
+    'audit.export',
     'job.requeue',
     'project.sign_off',
   ],
@@ -114,38 +119,88 @@ const ROLE_CAPABILITIES: Record<Role, readonly (Capability | '*')[]> = {
   client_member: ['project.read'],
 };
 
-export function can(role: Role | undefined, capability: Capability): boolean {
-  if (!role) return false;
+/**
+ * Who a check is about — decision 2026-09-30 (F2): secondary roles are
+ * honoured by every permission check.
+ *
+ * A check used to take one role. Now it takes the SUBJECT: either a bare role
+ * (a static question — "may an ops_admin issue an invoice?", the permission
+ * matrix, the nav table's tests) or a role-bearing context (a session —
+ * `requireInternal()`'s `AuthContext`, whose `role` is the primary and whose
+ * `roles` are the primary plus every secondary role an owner granted through
+ * `core.membership_roles`). Given a context, `can` reads the union; given a
+ * role, exactly what it always did. `context.role` stays the primary, so
+ * routing decisions that key on the one role a session carries (`finance`
+ * goes to /invoices) are unchanged; only *permission* checks see the union.
+ *
+ * The one-line rule `tests/a-role-union-is-honoured.test.ts` pins: no check
+ * against a context's `.role` alone survives in src/ or app/, because a check
+ * written against the primary is a check a granted role cannot reach.
+ */
+export type RoleBearer = {
+  readonly role: Role | undefined;
+  /** Every role the session holds — the primary first. Absent = the primary alone. */
+  readonly roles?: readonly Role[];
+};
+
+export type RoleSubject = Role | RoleBearer | undefined;
+
+/** Every role the subject holds: the primary plus its secondary roles, each once. */
+export function rolesOf(subject: RoleSubject): readonly Role[] {
+  if (!subject) return [];
+  if (typeof subject === 'string') return [subject];
+  const out: Role[] = [];
+  if (subject.role) out.push(subject.role);
+  for (const r of subject.roles ?? []) if (!out.includes(r)) out.push(r);
+  return out;
+}
+
+/** True when the subject holds the named role — as primary, or as a granted secondary. */
+export function hasRole(subject: RoleSubject, role: Role): boolean {
+  return rolesOf(subject).includes(role);
+}
+
+function roleCan(role: Role, capability: Capability): boolean {
   const granted = ROLE_CAPABILITIES[role];
   return granted.includes('*') || granted.includes(capability);
 }
 
-/** True when the role holds every listed capability. */
-export function canAll(role: Role | undefined, capabilities: readonly Capability[]): boolean {
-  return capabilities.every((c) => can(role, c));
+export function can(subject: RoleSubject, capability: Capability): boolean {
+  return rolesOf(subject).some((role) => roleCan(role, capability));
 }
 
-/** True when the role holds at least one of the listed capabilities. */
-export function canAny(role: Role | undefined, capabilities: readonly Capability[]): boolean {
-  return capabilities.some((c) => can(role, c));
+/** True when the subject holds every listed capability. */
+export function canAll(subject: RoleSubject, capabilities: readonly Capability[]): boolean {
+  return capabilities.every((c) => can(subject, c));
 }
 
-export function capabilitiesFor(role: Role | undefined): readonly Capability[] {
-  if (!role) return [];
+/** True when the subject holds at least one of the listed capabilities. */
+export function canAny(subject: RoleSubject, capabilities: readonly Capability[]): boolean {
+  return capabilities.some((c) => can(subject, c));
+}
+
+export function capabilitiesFor(subject: RoleSubject): readonly Capability[] {
+  const roles = rolesOf(subject);
+  if (roles.length === 0) return [];
+  if (roles.length > 1) return CAPABILITIES.filter((c) => can(subject, c));
+  const role = roles[0] as Role;
   const granted = ROLE_CAPABILITIES[role];
   return granted.includes('*') ? CAPABILITIES : (granted as readonly Capability[]);
 }
 
 /**
  * Multirole — a membership's PRIMARY role plus zero or more additional roles
- * (`core.membership_roles`, granted by an owner). Additive to everything
- * above it in this file: `can`, `canAll`, `canAny` and `capabilitiesFor` are
- * unchanged and every existing call site keeps checking a single role exactly
- * as before. These three exist for callers that explicitly want the UNION of
- * a membership's roles, and nothing wires them into a hot-path session check
- * by default — see the migration's own comment on why this stops at the
- * application layer and does not reach RLS, which still reads only the JWT's
- * single primary role.
+ * (`core.membership_roles`, granted by an owner). Since decision 2026-09-30
+ * (F2) the union is what every check reads: `requireInternal()` loads the
+ * secondary roles into `context.roles`, and `can(context, …)` above consults
+ * them. The two functions below are the same union spelled out for a caller
+ * that holds a primary role and a list rather than a context — the roster
+ * page, a test — and give the same answer `can(context, …)` would.
+ *
+ * In the database, `core.is_owner()`, `core.is_admin()` and `core.can_write()`
+ * consult `core.holds_role()` (20261001150000), which reads the JWT's primary
+ * role and then the membership's secondary roles; policies spelled as
+ * `core.current_user_role() in (...)` still read the primary alone.
  */
 export function effectiveCapabilitiesFor(
   primaryRole: Role | undefined,

@@ -303,6 +303,26 @@ jobs:
       - name: A deal that is won says what was won (G-230)
         run: npm run db:verify:wongate
 
+      # Owner decisions 10, 11, 14. A contract lives only on a WON deal and is
+      # written only through its doors; a lead's files carry to the project
+      # once (six simultaneous claims, one winner); "when a lead last wrote" is
+      # the newest client message.
+      - name: A won deal has a contract and a lead keeps its files (decisions 10, 11, 14)
+        run: npm run db:verify:contracts
+
+      # W2 (20261006200000): a blocked task keeps its type, owner and next action; an agent task
+      # cannot be completed until verified; the Meetings folder; template clone; the organisation's
+      # project defaults (and the standard folders a new project gets); the audit-trail activity
+      # feed; a meeting attached to the project its client owns.
+      - name: Projects, tasks and plan (W2)
+        run: npm run db:verify:w2-projects
+
+      # Trace B (20261008120000): a task enters Review only from in progress and with evidence (a
+      # trigger, whichever path writes); a milestone's due date change is audited; the schedule-change
+      # door returns the dates that really moved and, for the Notifications inbox, only what concerns the caller.
+      - name: Review hand-off, date history and schedule notices (trace B)
+        run: npm run db:verify:trace-b
+
       # G-227, P0. Idempotency cannot be proved by reading a migration: an
       # index that refuses a duplicate and an index that was never created look
       # identical in source until two callers arrive at once. This fires EIGHT
@@ -382,6 +402,83 @@ jobs:
       # lock, and none can be checked by reading TypeScript.
       - name: A scope baseline moves only by transition — Doc 11
         run: npm run db:verify:scope
+
+      # Every integration key is kept in one encrypted vault. Who may store,
+      # replace and revoke one, that no role can reach the table directly, and
+      # that the audit names the slot and never the value are all database
+      # rules: a policy with no grant, four security-definer doors, an
+      # append-only log. None can be checked by reading TypeScript.
+      - name: A key is kept in one place — the Keys & secrets vault
+        run: npm run db:verify:vault
+
+      # W6 / SCR-064. A model has a monthly budget of its own: only the owner
+      # sets it, the model must be in the registry, no role writes the table
+      # directly and the audit names the model. All database rules.
+      - name: A model has a monthly budget of its own
+        run: npm run db:verify:modelbudget
+
+      # Trace D / SCR-055, SCR-065. Recording or correcting an expense is
+      # audited with before and after (a trigger, so every path is covered),
+      # and the spend-by-project view keeps the runs that belong to no project.
+      - name: An expense is audited and no AI spend is hidden
+        run: npm run db:verify:trace-d
+
+      # Theme W5 — QA, release, communication. A run's tester and environment,
+      # append-only run evidence, editable cases and coverage waivers, an
+      # unsupported device that must say why, a release recorded with no
+      # handover, an announcement tied to its project and drafted by a met
+      # milestone, a retry that says why, and the email lane: all database
+      # rules, none of which reading TypeScript can prove.
+      - name: A run names its tester, a release needs no handover, an announcement has a project
+        run: npm run db:verify:w5
+
+      # UI parity round 2. A task's start never passes its due date, a subtask
+      # is one level deep in its parent's project, labels are bounded and
+      # de-duplicated, and a project note can only be written through its two
+      # audited doors — all database rules (a CHECK, a trigger, a table with
+      # no write grant), none of which reading TypeScript can prove.
+      - name: A task has a start, a parent and labels, and a project keeps notes
+        run: npm run db:verify:taskschedule
+
+      # UI parity round 3, stream R1 (the owner's decisions of 2026-10-03). Each
+      # is a database rule, none of which reading TypeScript can prove:
+      # open sprints of a project never overlap and a task sits only in a
+      # sprint of its own project (a trigger); a department is one of six
+      # names (a CHECK) set only by an owner or ops admin; a project type is
+      # from a fixed list and chips are bounded; a requirement's priority and
+      # assignee change after the freeze without touching the frozen row, and
+      # its attachments are links to the project's own files; a folder is a
+      # record, empty folders exist, and a file can only be filed into a real
+      # folder of its own category.
+      - name: A project runs in sprints of a fixed length
+        run: npm run db:verify:sprints
+      - name: A member belongs to a department
+        run: npm run db:verify:department
+      - name: A project has a type, a technology and tags
+        run: npm run db:verify:classification
+      - name: A requirement has a priority, an assignee and linked files
+        run: npm run db:verify:requirementplan
+      - name: A project has folders that exist before a file is in them
+        run: npm run db:verify:folders
+      - name: Requirements, design, prototype and development doors
+        run: npm run db:verify:w4
+
+      # The wording of a quotation's acceptance, cancellation, liability and
+      # jurisdiction clauses is the owner's, appended a version at a time and
+      # never edited, and a quotation keeps the clause it printed. Who may
+      # publish, that nothing is edited or deleted, that a draft stores no
+      # snapshot and an issued quotation's cannot be rewritten are database
+      # rules: a trigger, a row lock, a policy with no write grant. None can be
+      # checked by reading TypeScript.
+      - name: The clauses a quotation prints are the owner's, and are kept
+        run: npm run db:verify:clauses
+
+      # A requirement is commented on through one audited door, and a comment
+      # on a frozen requirement never reopens the baseline. Who may comment,
+      # that the table has no write grant and that the audit never carries the
+      # words are database rules, none of which reading TypeScript can prove.
+      - name: A requirement can be commented on
+        run: npm run db:verify:reqcomments
 
       # Document 05 is thirteen pages and had no tables. Two rules are
       # structural rather than advisory and both are checked here: a memory
@@ -780,6 +877,98 @@ jobs:
           # returns the agency timezone to unset — which `db:verify:followup`
           # asserts this deployment ships without.
           npm run db:verify:spend
+
+          # PDF gap W1. The finance role reads what it was given, the composer
+          # and need-more-evidence doors, the immutable verification, numbering
+          # and the export log. Plants a client and project under a marker and
+          # removes them in a `finally`; restores the numbering settings.
+          npm run db:verify:finance-w1
+
+          # PDF gap X1. The owner's expense-category list (add / rename / retire,
+          # old expenses keep theirs, a new organization is seeded), the finance
+          # role reading a client's name and only that, the GST setup as three
+          # whitelisted organization settings, and tenant-scoped receipt paths.
+          # Plants a client / category / expenses under a marker; removes them
+          # and restores the settings in a `finally`.
+          npm run db:verify:finance-x1
+
+          # Stream X2 (owner decisions 2, 11, 12, 13). A plan cannot go live without
+          # its internal approval, the audit log is kept forever and an export is
+          # itself an audit event, a new organization starts with the 30/20/30/20
+          # payment structure, and the contract/migration checks dispatched as a
+          # workflow are recorded by two role-gated doors. Plants a project, an
+          # environment and an organization under a marker and removes them.
+          npm run db:verify:x2
+
+          # Decision 14: search by meaning. A stub embedding vendor on :54397
+          # (the runner's OPENAI_BASE_URL); proves the owner-only switch, the
+          # indexing job, ranking, role scoping, hash-skip, the budget gate
+          # and the ledger. Plants and removes its own clients and users.
+          npm run db:verify:semantic
+
+          # Trace C (PDF pages 46 to 63): a person's task reaches done only through
+          # a delivery role with evidence and no unverified defect; a missing client
+          # dependency is requested of the PM and acknowledged. Plants a project,
+          # a plan and users under a marker and removes them.
+          npm run db:verify:trace-c
+
+          # Round 3, stream R3 (owner decisions Q-C1, Q-C6, Q-D1, Q-D2, Q-D3): a build,
+          # a test run, a bug and a meeting can carry an uploaded file (the doors'
+          # role, tenant, size, kind-of-file, credentials and path rules, against the
+          # database; Supabase Storage itself is not exercised here), the Google
+          # Calendar id is an audited organization setting, and "Generate period
+          # report" stores a dated snapshot a period lock may refer to. Creates its
+          # own organizations and users and removes them in a `finally`.
+          npm run db:verify:r3
+
+          # Round 3, stream R2: a task is completed only from In review; project roles
+          # bind (observer read-only, contributor own tasks); a project has default
+          # assignees per project role; Start Task is gated by the requirement and
+          # dependency checks. Plants users, a project, a plan and an organisation
+          # under a marker and removes them.
+          npm run db:verify:r2
+
+          # Round 3b, stream S1 (owner decisions R1-3, R3-2): completing Phase 5
+          # needs the M2 invoice verified paid (the readiness read lists "M2 not
+          # verified paid", the door refuses), and "Generate period report" also
+          # stores payments received (verified basis, net of refunds) and the
+          # profit-and-loss figures. Creates its own organizations and users and
+          # removes them in a `finally`.
+          npm run db:verify:s1
+
+          # Round 3b, stream S2 (owner decisions R2-1, R2-2, R2-3): dependencies are
+          # per task (audited add/remove doors, same project, no loop, tenancy guards;
+          # Start Task names the unfinished task), a project role binds task comments,
+          # time logs and checklist items, and the roster-manager exemption reads the
+          # role union. Plants its own users, projects and organisation, and removes them.
+          npm run db:verify:s2
+
+          # Round 3, stream R1: budget bands are the owner's (audited, validated, tenant-
+          # scoped), a person may override the Hot / Warm / Cold label with a reason (the
+          # computed label is kept, every change audited), and completing Phase 5 or 6
+          # from Development / QA data emits the event that raises M3 / M4 and the PM
+          # message. Creates its own users, a second organization and a project under a
+          # marker and removes them.
+          npm run db:verify:r1
+
+          # Round 3c, stream T1: task attachments obey the project role (observer
+          # refused, contributor own tasks only, roster managers exempt by the role
+          # union), the roster and default-assignee doors read the role union, and a
+          # done dependency is satisfied while one across projects stays refused.
+          npm run db:verify:t1
+
+          # Round 3d, stream U1: a task can be cancelled (open statuses only, terminal
+          # except a roster manager reopens it) or archived through an audited door,
+          # a cancelled or archived task is not outstanding work (dependencies, phase
+          # readiness, module progress, QA hand-off), and the project roster is written
+          # only through the audited add / change-role / remove doors.
+          npm run db:verify:u1
+
+          # Round 3e, stream V1: an archived task is read-only (status, fields,
+          # comments, time, checklists, attachments, evidence, dependencies) until a
+          # roster manager restores it; a cancel needs a reason, keeps it in the audit
+          # row and tells the assignee; a roster change through a door is audited once.
+          npm run db:verify:v1
 
           # Last, and deliberately so: the deploy smoke runs against the app
           # in its most-exercised state, and a tick it fires cannot disturb

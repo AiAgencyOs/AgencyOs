@@ -221,7 +221,7 @@ describe('F. the surface, and the reads behind it', () => {
   });
 
   test('the page renders it behind invoice.read', () => {
-    assert.match(PAGE, /can\(context\.role, 'invoice\.read'\)\s*\n\s*\? await listFreeMaintenance\(projectId\)\s*\n\s*: \[\]/);
+    assert.match(PAGE, /can\(context, 'invoice\.read'\)\s*\n\s*\? await listFreeMaintenance\(projectId\)\s*\n\s*: \[\]/);
     assert.match(PAGE, /<FreeMaintenanceInvoiceButton/);
   });
 

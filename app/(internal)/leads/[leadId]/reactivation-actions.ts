@@ -17,6 +17,8 @@ export async function enrollLeadAction(_prev: FormState, formData: FormData): Pr
   const result = await enrollLeadInReactivation(leadId);
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath(`/leads/${leadId}`);
+  // SCR-013 — the same door is mounted on the Follow-ups cohort rows.
+  revalidatePath('/follow-ups');
   return { status: 'success', message: 'Lead enrolled in the reactivation cohort.' };
 }
 

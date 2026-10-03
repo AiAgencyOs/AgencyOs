@@ -43,7 +43,7 @@ export async function getOpportunityForLead(leadId: string): Promise<Opportunity
 // from the select string's *literal* type, and `a + b` widens it to `string`,
 // at which point every column comes back as an error object.
 const PROPOSAL_SELECT =
-  'id, opportunity_id, version, title, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, approval_request_id, sent_at, decided_at, created_at, plan_set_id, plan_slot, plan_label';
+  'id, opportunity_id, version, title, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, approval_request_id, sent_at, sent_message_ref, decided_at, created_at, plan_set_id, plan_slot, plan_label';
 
 /**
  * Every version raised against a deal, newest first.
@@ -67,7 +67,7 @@ export async function listProposalsForOpportunity(
   return data ?? [];
 }
 
-const PROPOSAL_LIST_SELECT = `${PROPOSAL_SELECT}, opportunities!inner(name, lead_id)`;
+const PROPOSAL_LIST_SELECT = `${PROPOSAL_SELECT}, opportunities!inner(name, lead_id, client_account_id)`;
 
 /**
  * Every quotation across every deal, newest first — SCR-011. The per-lead
@@ -117,6 +117,7 @@ export async function listProposals(filter?: { status?: string; limit?: number }
         opportunityName: opportunities.name,
         leadId: opportunities.lead_id,
         leadTitle: leadTitles.get(opportunities.lead_id) ?? 'Untitled lead',
+        clientAccountId: opportunities.client_account_id,
       };
     });
 }
@@ -194,7 +195,7 @@ export async function getProposal(proposalId: string): Promise<ProposalDetail | 
     .from('proposals')
     // Also a literal, for the reason above: a template string widens too.
     .select(
-      'id, opportunity_id, version, title, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, approval_request_id, sent_at, decided_at, created_at, plan_set_id, plan_slot, plan_label, body',
+      'id, opportunity_id, version, title, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, approval_request_id, sent_at, sent_message_ref, decided_at, created_at, plan_set_id, plan_slot, plan_label, body',
     )
     .eq('id', proposalId)
     .maybeSingle();
@@ -315,4 +316,40 @@ export async function readWonHandoffPacket(opportunityId: string): Promise<Hando
     throw new Error(`readWonHandoffPacket: the packet body was not recognised (${parsed.error.issues[0]?.path.join('.') ?? 'shape'})`);
   }
   return parsed.data;
+}
+
+export type PaymentStructureRow = {
+  name: string;
+  /** The seeded 30/20/30/20: applies only when no other structure matches the amount. */
+  isDefault: boolean;
+  minAmountMinor: number | null;
+  maxAmountMinor: number | null;
+  milestones: Array<{ label: string; pct: number }>;
+};
+
+/**
+ * The agency's active payment structures with their milestone ladders, for
+ * the composer's schedule preview — the rows `readPaymentStructures` in
+ * service.ts returns, read here because a page calls queries.
+ */
+export async function listPaymentStructures(): Promise<PaymentStructureRow[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('sales')
+    .from('payment_structures')
+    .select('name, is_default, min_amount_minor, max_amount_minor, payment_milestones(position, label, pct)')
+    .eq('active', true)
+    .order('name');
+  if (error) unreadable('listPaymentStructures', error);
+
+  return (data ?? []).map((row) => ({
+    name: row.name,
+    isDefault: row.is_default,
+    minAmountMinor: row.min_amount_minor,
+    maxAmountMinor: row.max_amount_minor,
+    milestones: [...(row.payment_milestones ?? [])]
+      .sort((a, b) => a.position - b.position)
+      .map((m) => ({ label: m.label, pct: Number(m.pct) })),
+  }));
 }

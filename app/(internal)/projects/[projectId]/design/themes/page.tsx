@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
@@ -11,9 +11,12 @@ import {
   readTokenSets,
 } from '@/modules/projects/queries';
 import { figmaConfigured } from '@/lib/figma/client';
-import { Badge, PageHeader } from '@/ui';
+import { agencyClock } from '@/lib/admin/agency-clock';
+import { readDesignReviewComments } from '@/modules/projects/design-review-comments-queries';
+import { Badge, DecisionTimeline, PageHeader, PermissionDenied, Stat, StatGrid, type DecisionEntry } from '@/ui';
 
 import { ProjectSubNav } from '../../project-subnav';
+import { DesignCommentThread } from '../design-comment-thread';
 import { DesignSubNav } from '../design-subnav';
 import {
   AdminDecisionForm,
@@ -45,14 +48,14 @@ export default async function ProjectThemesPage({
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/design/themes`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
 
   const trail = await readDesignTrail(projectId);
   const { phase } = trail;
-  const mayDecide = can(context.role, 'project.write');
+  const mayDecide = can(context, 'project.write');
 
   if (!phase) {
     return (
@@ -62,7 +65,7 @@ export default async function ProjectThemesPage({
         <DesignSubNav projectId={projectId} />
         <Nothing>
           Phase 3 has not started for this project.{' '}
-          <Link href={`/projects/${projectId}/design`} className="underline hover:text-fg">
+          <Link href={`/projects/${projectId}/design`} className="underline hover:text-foreground">
             Back to Design
           </Link>
           .
@@ -79,7 +82,11 @@ export default async function ProjectThemesPage({
   // Whether a token exists, never its value. The form's wording changes with
   // it, because a deployment that cannot check a reference must not imply it
   // did.
-  const figmaReady = figmaConfigured();
+  const figmaReady = await figmaConfigured();
+  const [comments, clock] = await Promise.all([readDesignReviewComments(projectId), agencyClock()]);
+  const mayComment = can(context, 'task.write');
+  const colourCombinations = trail.themes.reduce((n, t) => n + t.colors.length, 0);
+  const decided = trail.themes.filter((t) => t.adminStatus === 'approved').length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -90,6 +97,15 @@ export default async function ProjectThemesPage({
 
       <ProjectSubNav projectId={projectId} />
       <DesignSubNav projectId={projectId} />
+
+      {/* SCR-033 — the header figures: screen-list readiness, options, colour combinations, reviewer, decision status. */}
+      <StatGrid cols={5}>
+        <Stat label="Screen list" value={trail.baseline ? (trail.baseline.status === 'finalized' ? 'Finalized' : 'Open') : 'None'} caption={trail.baseline ? `v${trail.baseline.version} · ${trail.baseline.screenCount} screens` : 'No baseline drafted'} tone={trail.baseline?.status === 'finalized' ? 'success' : 'warning'} />
+        <Stat label="Theme Options" value={String(trail.themes.length)} caption={`${decided} approved by Admin`} tone="brand" />
+        <Stat label="Colour Combinations" value={String(colourCombinations)} caption="across every direction" tone="accent" />
+        <Stat label="Design Reviewer" value={phase.reviewerUserId ? 'Assigned' : 'Not assigned'} caption={phase.reviewerUserId ? 'holds the internal gate' : 'the internal gate refuses'} tone={phase.reviewerUserId ? 'success' : 'danger'} />
+        <Stat label="Decision Status" value={`${decided}/${trail.themes.length}`} caption="options confirmed by Admin" tone={trail.themes.length > 0 && decided === trail.themes.length ? 'success' : 'info'} />
+      </StatGrid>
 
       <Section title="Theme options">
         {trail.themes.length === 0 ? (
@@ -117,7 +133,7 @@ export default async function ProjectThemesPage({
                   </Badge>
                   <Link
                     href={`/projects/${projectId}/design/colors`}
-                    className="text-xs underline hover:text-fg"
+                    className="text-xs underline hover:text-foreground"
                   >
                     its colour options
                   </Link>
@@ -125,8 +141,16 @@ export default async function ProjectThemesPage({
                 <p className="text-[13px] text-muted">
                   {t.figmaNodeId ? (
                     <>
-                      Figma node <code className="text-fg">{t.figmaNodeId}</code>
+                      Figma node <code className="text-foreground">{t.figmaNodeId}</code>
                       {t.figmaVersion ? ` · version ${t.figmaVersion}` : ''}
+                      {t.figmaFileKey ? (
+                        <>
+                          {' · '}
+                          <a href={`https://www.figma.com/design/${encodeURIComponent(t.figmaFileKey)}?node-id=${encodeURIComponent(t.figmaNodeId.replace(':', '-'))}`} target="_blank" rel="noreferrer noopener" className="text-brand underline underline-offset-2">
+                            Open Figma reference
+                          </a>
+                        </>
+                      ) : null}
                     </>
                   ) : t.previewAssetUrl ? (
                     'Preview only — no Figma reference recorded. Figma is the canonical artifact for Phase 4.'
@@ -207,6 +231,8 @@ export default async function ProjectThemesPage({
                   );
                 })()}
 
+                <DesignCommentThread projectId={projectId} subjectType="theme_option" subjectId={t.id} comments={comments.get(t.id) ?? []} canComment={mayComment} formatDateTime={(iso) => clock.dateTime(iso)} />
+
                 {/* §10's queues. Offered from the stored status; the doors decide. */}
                 {mayDecide && t.internalReviewStatus !== 'passed' && t.adminStatus !== 'approved' ? (
                   <InternalReviewForm projectId={projectId} themeOptionId={t.id} />
@@ -225,19 +251,18 @@ export default async function ProjectThemesPage({
         {trail.reviews.length === 0 ? (
           <Nothing>No internal review has been recorded.</Nothing>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {trail.reviews.map((r) => (
-              <li key={r.id} className="flex flex-col gap-1 border-l-2 border-line pl-3 text-[13px]">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone={r.result === 'passed' ? 'success' : 'danger'}>{r.result.replace(/_/g, ' ')}</Badge>
-                  <span className="text-muted">
-                    {trail.themes.find((t) => t.id === r.themeOptionId)?.name ?? 'an option not in this phase'} · {when(r.createdAt)}
-                  </span>
-                </div>
-                {r.comments ? <p className="max-w-2xl">{r.comments}</p> : null}
-              </li>
-            ))}
-          </ul>
+          <DecisionTimeline
+            entries={trail.reviews.map(
+              (r): DecisionEntry => ({
+                id: r.id,
+                tone: r.result === 'passed' ? 'success' : 'danger',
+                label: r.result.replace(/_/g, ' '),
+                subject: trail.themes.find((t) => t.id === r.themeOptionId)?.name ?? 'an option not in this phase',
+                when: when(r.createdAt),
+                note: r.comments,
+              }),
+            )}
+          />
         )}
       </Section>
 
@@ -246,19 +271,18 @@ export default async function ProjectThemesPage({
         {trail.adminDecisions.length === 0 ? (
           <Nothing>No Admin decision has been recorded.</Nothing>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {trail.adminDecisions.map((a) => (
-              <li key={a.id} className="flex flex-col gap-1 border-l-2 border-line pl-3 text-[13px]">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone={a.decision === 'confirm' ? 'success' : 'warning'}>{a.decision}</Badge>
-                  <span className="text-muted">
-                    {trail.themes.find((t) => t.id === a.themeOptionId)?.name ?? 'an option not in this phase'} · {when(a.createdAt)}
-                  </span>
-                </div>
-                {a.reason ? <p className="max-w-2xl">{a.reason}</p> : null}
-              </li>
-            ))}
-          </ul>
+          <DecisionTimeline
+            entries={trail.adminDecisions.map(
+              (a): DecisionEntry => ({
+                id: a.id,
+                tone: a.decision === 'confirm' ? 'success' : 'warning',
+                label: a.decision,
+                subject: trail.themes.find((t) => t.id === a.themeOptionId)?.name ?? 'an option not in this phase',
+                when: when(a.createdAt),
+                note: a.reason,
+              }),
+            )}
+          />
         )}
       </Section>
     </div>

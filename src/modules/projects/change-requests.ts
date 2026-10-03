@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
+import { can, hasRole } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
@@ -32,7 +32,7 @@ function oneRow<T>(data: unknown): T | undefined {
 
 async function deliveryActor(): Promise<Result<true>> {
   const context = await requireInternal();
-  if (!can(context.role, 'milestone.write')) {
+  if (!can(context, 'milestone.write')) {
     return err('FORBIDDEN', 'You do not have permission to manage this project’s change requests.');
   }
   return ok(true);
@@ -40,7 +40,7 @@ async function deliveryActor(): Promise<Result<true>> {
 
 async function ownerActor(): Promise<Result<true>> {
   const context = await requireInternal();
-  if (context.role !== 'owner') {
+  if (!hasRole(context, 'owner')) {
     return err('FORBIDDEN', 'Only the owner may approve or reject a change request.');
   }
   return ok(true);
@@ -171,6 +171,11 @@ export async function applyChangeRequest(input: {
       return err('NOT_FOUND', 'That change request does not exist.');
     case 'not_approved':
       return err('CONFLICT', 'Only an approved change request can be applied to the baseline.');
+    // SCR-031 (20261001120000): a paid change is applied after it is paid for.
+    case 'not_invoiced':
+      return err('CONFLICT', 'This is a paid change and no invoice has been raised for it yet. Raise its invoice (Trigger finance) and apply once it is paid.');
+    case 'unpaid':
+      return err('CONFLICT', 'This paid change’s invoice is not paid yet. It is applied to the baseline once the invoice is paid.');
     case 'no_baseline':
       return err('CONFLICT', 'This project has no active scope baseline to open the next version from.');
     case 'draft_exists':

@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/lib/db/server';
+import { ilikeAny } from '@/lib/db/search';
 import { unreadable } from '@/lib/result';
 
 import { summarizeStaged, type StagedRecord, type StagedSummary } from './staged';
@@ -24,21 +25,29 @@ export type ImportBatchListItem = {
 const RECORD_COLUMNS =
   'id, phone, display_name, message_count, source_label, classification, auto_importable, committed_at, committed_contact_id, committed_lead_id';
 
-export async function listImportBatches(): Promise<ImportBatchListItem[]> {
+/** The newest batches a page draws; the list can grow, so it is searched and bounded rather than drawn whole. */
+export const IMPORT_BATCH_PAGE = 50;
+
+export async function listImportBatches(q?: string): Promise<ImportBatchListItem[]> {
   const supabase = await createClient();
 
-  const { data: batches, error: batchesError } = await supabase
+  let batchQuery = supabase
     .schema('crm')
     .from('import_batches')
     .select('id, source_label, note, created_at')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(IMPORT_BATCH_PAGE);
+  // SCR-070: search the batch's label or note, server-side, so it reaches past the newest page.
+  if (q) batchQuery = batchQuery.or(ilikeAny(['source_label', 'note'], q));
+  const { data: batches, error: batchesError } = await batchQuery;
   if (batchesError) unreadable('listImportBatches', batchesError);
   if (!batches || batches.length === 0) return [];
 
   const { data: records, error: recordsError } = await supabase
     .schema('crm')
     .from('import_records')
-    .select('batch_id, classification, auto_importable, committed_at');
+    .select('batch_id, classification, auto_importable, committed_at')
+    .in('batch_id', batches.map((b) => b.id));
   if (recordsError) unreadable('listImportBatches', recordsError);
 
   const byBatch = new Map<string, StagedRecord[]>();

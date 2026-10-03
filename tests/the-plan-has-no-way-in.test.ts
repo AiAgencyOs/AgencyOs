@@ -187,7 +187,7 @@ describe('E. the boundary §6 draws survives the new surface', () => {
   });
 
   test('planning is gated on project.write, and the doors check again', () => {
-    assert.match(PAGE, /const mayPlan = can\(context\.role, 'project\.write'\)/);
+    assert.match(PAGE, /const mayPlan = can\(context, 'project\.write'\)/);
     assert.match(
       PAGE.replace(/\n\s*\/\/ ?/g, ' '),
       /The doors check it again — this only decides what to render/,

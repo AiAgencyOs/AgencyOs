@@ -396,6 +396,8 @@ export const convertToProjectSchema = z.object({
 export const createClientAccountSchema = z.object({
   name: z.string().trim().min(1, 'A client needs a name').max(200),
   billingEmail: z.email().trim().max(320).optional().or(z.literal('')),
+  /** The person saw the records this may duplicate (lead, contact, client) and wants a separate client anyway. */
+  confirmDuplicate: z.boolean().optional(),
 });
 
 export type CreateOpportunityInput = z.infer<typeof createOpportunitySchema>;
@@ -1030,6 +1032,14 @@ export const quotationDocumentSchema = z
     regulatedCategory: z.string().nullish(),
     /** G-182 — the words the client reads above the figures. */
     coveringNote: z.string().nullish().catch(null),
+    /**
+     * SCR-012 (bucket F-B) — the commercial terms as EDITED in the composer.
+     * Null (every quotation before this field, and every one the drafter
+     * left alone) means `commercialTermsFor(validityDays)` prints exactly as
+     * it always did; a stored list is what the owner approved and the
+     * client reads, frozen with the rest of the document by proposals_guard.
+     */
+    commercialTerms: z.array(z.string()).nullish().catch(null),
     /**
      * G-184 — the pre-authorised offer this version carries, in the owner's
      * own words. Written by `sales.apply_approved_offer` while the quotation

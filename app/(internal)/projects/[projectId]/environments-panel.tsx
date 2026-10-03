@@ -11,7 +11,9 @@ import {
 import { ENVIRONMENT_KINDS } from '@/modules/projects/schema';
 import type { ProjectDependency, ProjectEnvironment } from '@/modules/projects/queries';
 import { IDLE_STATE } from '@/modules/identity/types';
-import { buttonClass, Card, FormMessage, humanize, inputClass, labelClass, selectClass, textareaClass } from '@/ui';
+import { Badge, buttonClass, Card, FormMessage, humanize, inputClass, labelClass, selectClass, textareaClass } from '@/ui';
+
+import { DependencyStatusForm } from './builds/dependency-status-form';
 
 /** SCR-043's environment/dependency forms and rows — thin client wrappers over the server actions. */
 
@@ -23,12 +25,12 @@ export function AddEnvironmentForm({ projectId }: { projectId: string }) {
       <form action={action} className="flex flex-col gap-3">
         <input type="hidden" name="projectId" value={projectId} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Label</label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Label</span>
             <input name="label" required maxLength={200} className={inputClass} placeholder="Staging" />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Kind</label>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Kind</span>
             <select name="kind" defaultValue="staging" className={selectClass}>
               {ENVIRONMENT_KINDS.map((k) => (
                 <option key={k} value={k}>
@@ -36,16 +38,16 @@ export function AddEnvironmentForm({ projectId }: { projectId: string }) {
                 </option>
               ))}
             </select>
-          </div>
+          </label>
         </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>URL</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>URL</span>
           <input name="url" type="url" required maxLength={2000} className={inputClass} placeholder="https://staging.example.com" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Notes (optional)</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Notes (optional)</span>
           <textarea name="notes" maxLength={1000} className={textareaClass} rows={2} />
-        </div>
+        </label>
         <div className="flex items-center gap-3">
           <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
             {pending ? 'Adding…' : 'Add environment'}
@@ -110,23 +112,23 @@ export function AddDependencyForm({ projectId }: { projectId: string }) {
       <form action={action} className="flex flex-col gap-3">
         <input type="hidden" name="projectId" value={projectId} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Name</label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Name</span>
             <input name="name" required maxLength={200} className={inputClass} placeholder="Next.js" />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className={labelClass}>Version (optional)</label>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className={labelClass}>Version (optional)</span>
             <input name="version" maxLength={100} className={inputClass} placeholder="16.2.0" />
-          </div>
+          </label>
         </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Reference link (optional)</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Reference link (optional)</span>
           <input name="reference" type="url" maxLength={2000} className={inputClass} placeholder="https://…/changelog" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Notes (optional)</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Notes (optional)</span>
           <textarea name="notes" maxLength={1000} className={textareaClass} rows={2} />
-        </div>
+        </label>
         <div className="flex items-center gap-3">
           <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
             {pending ? 'Adding…' : 'Add dependency'}
@@ -158,7 +160,8 @@ export function DependencyCard({
   projectId,
   editable,
 }: {
-  dependency: ProjectDependency;
+  /** `suppliedAtLabel` is the page's clock-formatted `suppliedAt`, since a client component has no clock. */
+  dependency: ProjectDependency & { suppliedAtLabel?: string };
   projectId: string;
   editable: boolean;
 }) {
@@ -180,9 +183,19 @@ export function DependencyCard({
           )}
           {dependency.version ? <span className="block text-xs text-muted">{dependency.version}</span> : null}
         </div>
-        {editable ? <RemoveDependencyButton projectId={projectId} dependencyId={dependency.id} /> : null}
+        <span className="flex items-center gap-2">
+          {/* SCR-043: open until somebody marks it supplied or waived. */}
+          <Badge tone={dependency.status === 'open' ? 'warning' : dependency.status === 'supplied' ? 'success' : 'neutral'}>{dependency.status}</Badge>
+          {editable ? <RemoveDependencyButton projectId={projectId} dependencyId={dependency.id} /> : null}
+        </span>
       </div>
       {dependency.notes ? <p className="mt-2 text-sm text-muted">{dependency.notes}</p> : null}
+      {dependency.status !== 'open' ? (
+        <p className="mt-1 text-xs text-muted">
+          {humanize(dependency.status)}{dependency.suppliedAtLabel ? ` ${dependency.suppliedAtLabel}` : ''}{dependency.note ? ` — ${dependency.note}` : ''}
+        </p>
+      ) : null}
+      {editable ? <DependencyStatusForm projectId={projectId} dependencyId={dependency.id} current={dependency.status} /> : null}
     </Card>
   );
 }

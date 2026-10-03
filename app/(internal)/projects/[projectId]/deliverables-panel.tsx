@@ -1,11 +1,12 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useId } from 'react';
 
 import { addDeliverableAction, submitDeliverableAction } from '@/modules/projects/actions';
+import { PROTOTYPE_PLATFORMS } from '@/modules/projects/prototype-schema';
 import { DELIVERABLE_KINDS } from '@/modules/projects/schema';
 import { IDLE_STATE } from '@/modules/identity/types';
-import { buttonClass, inputClass, selectClass } from '@/ui';
+import { buttonClass, inputClass, labelClass, selectClass } from '@/ui';
 
 /**
  * Adding a version, and sending one to the client — Phase 12.
@@ -93,6 +94,7 @@ export function AddDeliverableForm({ projectId }: { projectId: string }) {
  */
 export function AddPrototypeForm({ projectId }: { projectId: string }) {
   const [state, action, pending] = useActionState(addDeliverableAction, IDLE_STATE);
+  const fileId = useId();
 
   return (
     <form action={action} className="flex flex-col gap-2">
@@ -116,12 +118,32 @@ export function AddPrototypeForm({ projectId }: { projectId: string }) {
         aria-label="Artifact link"
       />
 
+      {/* Q-C1 (SCR-037 "Upload build"): the build itself, beside the link, under the project-file limits and credentials guard. */}
+      <div className="flex flex-col gap-1">
+        <label htmlFor={fileId} className={labelClass}>
+          Build file (optional — .apk, .ipa or .zip, up to 50 MB)
+        </label>
+        <input id={fileId} name="file" type="file" accept=".apk,.ipa,.zip" className={`${inputClass} h-auto py-1.5`} />
+      </div>
+
       <input
         name="changelog"
         placeholder="What changed since the last build (optional)"
         className={inputClass}
         aria-label="What changed since the last build"
       />
+
+      <div className="flex flex-wrap gap-2">
+        <select name="platform" defaultValue="" className={selectClass} aria-label="Platform">
+          <option value="">Platform (optional)</option>
+          {PROTOTYPE_PLATFORMS.map((pl) => (
+            <option key={pl} value={pl}>
+              {pl.replace('_', ' ')}
+            </option>
+          ))}
+        </select>
+        <input name="commitRef" maxLength={200} placeholder="Commit or ref (optional)" className={inputClass} aria-label="Commit or ref built from" />
+      </div>
 
       <div className="flex items-center gap-3">
         <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm', 'self-start')}>
@@ -138,8 +160,9 @@ export function AddPrototypeForm({ projectId }: { projectId: string }) {
 }
 
 /** The same scoped form as `AddPrototypeForm`, for `kind = 'build'` — SCR-043's Builds half. */
-export function AddBuildForm({ projectId }: { projectId: string }) {
+export function AddBuildForm({ projectId, rollbackChoices }: { projectId: string; rollbackChoices?: { id: string; label: string }[] }) {
   const [state, action, pending] = useActionState(addDeliverableAction, IDLE_STATE);
+  const fileId = useId();
 
   return (
     <form action={action} className="flex flex-col gap-2">
@@ -163,12 +186,34 @@ export function AddBuildForm({ projectId }: { projectId: string }) {
         aria-label="Artifact link"
       />
 
+      {/* Q-C1 (SCR-037 "Upload build"): the build itself, beside the link, under the project-file limits and credentials guard. */}
+      <div className="flex flex-col gap-1">
+        <label htmlFor={fileId} className={labelClass}>
+          Build file (optional — .apk, .ipa or .zip, up to 50 MB)
+        </label>
+        <input id={fileId} name="file" type="file" accept=".apk,.ipa,.zip" className={`${inputClass} h-auto py-1.5`} />
+      </div>
+
       <input
         name="changelog"
         placeholder="What changed since the last build (optional)"
         className={inputClass}
         aria-label="What changed since the last build"
       />
+
+      <div className="flex flex-wrap gap-2">
+        <input name="commitRef" maxLength={200} placeholder="Commit or ref built from" className={inputClass} aria-label="Commit or ref built from" />
+        <input name="buildNumber" maxLength={60} placeholder="Build number" className={inputClass} aria-label="Build number" />
+      </div>
+      <select name="rollbackTargetId" defaultValue="" className={selectClass} aria-label="Roll back to">
+        <option value="">No rollback target yet</option>
+        {(rollbackChoices ?? []).map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.label}
+          </option>
+        ))}
+      </select>
+      <input name="rollbackNote" maxLength={1000} placeholder="How to roll back (optional)" className={inputClass} aria-label="How to roll back" />
 
       <div className="flex items-center gap-3">
         <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm', 'self-start')}>

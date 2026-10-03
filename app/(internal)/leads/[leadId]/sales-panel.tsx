@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useId, useState } from 'react';
 
 import {
   addLeadNoteAction,
@@ -8,6 +8,9 @@ import {
   setLeadFollowUpAction,
   setLeadQualificationAction,
   setLeadStatusAction,
+  pauseAgentRepliesAction,
+  setLeadOwnerAction,
+  setLeadTagsAction,
 } from '@/modules/crm/actions';
 import {
   convertToProjectAction,
@@ -500,6 +503,87 @@ export function ConvertForm({
           {pending ? 'Converting…' : 'Create client & project'}
         </button>
       </div>
+      <Status state={state} />
+    </form>
+  );
+}
+
+/** Who owns the lead — `crm.leads.assigned_to`, chosen from the internal roster. */
+export function AssignOwnerForm({
+  leadId,
+  current,
+  roster,
+}: {
+  leadId: string;
+  current: string | null;
+  roster: { userId: string; fullName: string }[];
+}) {
+  const [state, action, pending] = useActionState(setLeadOwnerAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="leadId" value={leadId} />
+      <div className="flex flex-col gap-1">
+        <label className={label} htmlFor="lead-owner">
+          Assigned to
+        </label>
+        <select id="lead-owner" name="assignedTo" key={current ?? 'none'} defaultValue={current ?? ''} className={`${input} w-auto min-w-[12rem]`}>
+          <option value="">Unassigned</option>
+          {roster.map((m) => (
+            <option key={m.userId} value={m.userId}>
+              {m.fullName}
+            </option>
+          ))}
+        </select>
+      </div>
+      <button type="submit" disabled={pending} className={button}>
+        {pending ? 'Saving…' : 'Assign'}
+      </button>
+      <Status state={state} />
+    </form>
+  );
+}
+
+/** The lead's tags, edited as a comma-separated list — `crm.leads.tags`. */
+export function LeadTagsForm({ leadId, tags }: { leadId: string; tags: string[] }) {
+  const [state, action, pending] = useActionState(setLeadTagsAction, IDLE_STATE);
+  // Rendered more than once on a lead page: a fixed id would tie every label to the first field.
+  const tagsId = useId();
+
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="leadId" value={leadId} />
+      <div className="flex min-w-[12rem] flex-1 flex-col gap-1">
+        <label className={label} htmlFor={tagsId}>
+          Tags (comma-separated)
+        </label>
+        <input id={tagsId} name="tags" defaultValue={tags.join(', ')} maxLength={900} className={input} placeholder="hot lead, mobile, referral" />
+      </div>
+      <button type="submit" disabled={pending} className={button}>
+        {pending ? 'Saving…' : 'Save tags'}
+      </button>
+      <Status state={state} />
+    </form>
+  );
+}
+
+/** Takes the agent off the thread, with the reason a person will read. */
+export function PauseAgentForm({ conversationId, leadId }: { conversationId: string; leadId: string }) {
+  const [state, action, pending] = useActionState(pauseAgentRepliesAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="conversationId" value={conversationId} />
+      <input type="hidden" name="leadId" value={leadId} />
+      <div className="flex min-w-[12rem] flex-1 flex-col gap-1">
+        <label className={label} htmlFor="pause-reason">
+          Pause the agent — why
+        </label>
+        <input id="pause-reason" name="reason" required maxLength={200} className={input} placeholder="Client asked for a call; I am taking over" />
+      </div>
+      <button type="submit" disabled={pending} className={button}>
+        {pending ? 'Pausing…' : 'Pause agent'}
+      </button>
       <Status state={state} />
     </form>
   );

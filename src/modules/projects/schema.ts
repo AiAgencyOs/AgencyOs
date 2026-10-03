@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { decoderSafeSchema } from '@/lib/ai/schema';
+import { PROJECT_ROLES } from './project-members-schema';
 
 /** Same vocabulary as the projects.projects status CHECK (migration 013). */
 export const PROJECT_STATUSES = [
@@ -42,7 +43,12 @@ export const setProjectVisibilitySchema = z.object({
 export const setProjectStatusSchema = z.object({
   projectId: z.uuid(),
   status: z.enum(PROJECT_STATUSES),
+  /** Why — SCR-018. The service requires it for on_hold and cancelled. */
+  reason: z.string().trim().max(1000).optional(),
 });
+
+/** The two moves a project cannot make without saying why (SCR-018). */
+export const PROJECT_STATUSES_NEEDING_REASON: readonly ProjectStatus[] = ['on_hold', 'cancelled'];
 
 /**
  * Same vocabulary as the projects.milestones status CHECK (migration 006).
@@ -356,6 +362,7 @@ export const PROJECT_FILE_CATEGORIES = [
   'deployment',
   'marketing',
   'documents',
+  'meetings',
   'assets',
   'builds',
   'other',
@@ -374,6 +381,37 @@ export type AddProjectFileInput = z.infer<typeof addProjectFileSchema>;
 
 export const removeProjectFileSchema = z.object({ fileId: z.uuid() });
 export type RemoveProjectFileInput = z.infer<typeof removeProjectFileSchema>;
+
+/** SCR-024 — rename or refile a link. The URL is not editable: a different place is a different file. */
+export const updateProjectFileSchema = z.object({
+  fileId: z.uuid(),
+  category: z.enum(PROJECT_FILE_CATEGORIES),
+  title: z.string().trim().min(1, 'A file needs a title').max(200),
+  description: z.string().trim().max(1000).nullable(),
+  // SCR-024 (20261001120000): the folder inside the category — rename/move.
+  folder: z
+    .string()
+    .trim()
+    .max(200)
+    .transform((v) => v.replace(/^\/+|\/+$/g, ''))
+    .refine((v) => v === '' || !/(\/\/|\.\.)/.test(v), 'A folder is a path like mockups/mobile — no empty segments and no "..".')
+    .default(''),
+});
+export type UpdateProjectFileInput = z.infer<typeof updateProjectFileSchema>;
+
+/** SCR-020 — a payment milestone's due date, set or cleared by a person. */
+export const setMilestoneDueOnSchema = z.object({
+  milestoneId: z.uuid(),
+  dueOn: z.iso.date().nullable(),
+});
+export type SetMilestoneDueOnInput = z.infer<typeof setMilestoneDueOnSchema>;
+
+/** SCR-025 — who leads delivery on a project. Null clears it. */
+export const setDeliveryLeadSchema = z.object({
+  projectId: z.uuid(),
+  deliveryLeadId: z.uuid().nullable(),
+});
+export type SetDeliveryLeadInput = z.infer<typeof setDeliveryLeadSchema>;
 
 /** SCR-042 — a repository is a link too. See the migration for why there's no live VCS integration. */
 export const REPOSITORY_PLATFORMS = ['github', 'gitlab', 'bitbucket', 'other'] as const;
@@ -1068,7 +1106,7 @@ export const MODULE_STATUSES = [
   'not_started', 'planned', 'in_progress', 'code_review', 'qa', 'ready_for_client', 'approved',
 ] as const;
 export const FEATURE_STATUSES = ['not_started', 'in_progress', 'blocked', 'done'] as const;
-export const TASK_STATUSES = ['todo', 'in_progress', 'blocked', 'in_review', 'done'] as const;
+export const TASK_STATUSES = ['todo', 'in_progress', 'blocked', 'in_review', 'done', 'cancelled'] as const;
 
 export const createModuleSchema = z.object({
   projectId: z.uuid(),
@@ -1089,11 +1127,28 @@ export const createTaskSchema = z.object({
   featureId: z.uuid().optional(),
   title: z.string().trim().min(1, 'A task needs a title').max(200),
   description: z.string().trim().max(4000).optional(),
+  // SCR-022: a task created from a calendar day carries that day.
+  dueOn: z.iso.date().optional(),
+  /** The person the task is for; omitted, it goes to the project's default assignee. */
+  assigneeId: z.uuid().optional(),
+  /** Q-B4: the project role the task is for; with nobody named it goes to that role's default assignee. */
+  assigneeRole: z.enum(PROJECT_ROLES).optional(),
 });
 
 export const setModuleStatusSchema = z.object({ moduleId: z.uuid(), status: z.enum(MODULE_STATUSES) });
 export const setFeatureStatusSchema = z.object({ featureId: z.uuid(), status: z.enum(FEATURE_STATUSES) });
-export const setTaskStatusSchema = z.object({ taskId: z.uuid(), status: z.enum(TASK_STATUSES) });
+export const setTaskArchivedSchema = z.object({ taskId: z.uuid(), archived: z.boolean() });
+export type SetTaskArchivedInput = z.infer<typeof setTaskArchivedSchema>;
+export const setTaskStatusSchema = z.object({
+  taskId: z.uuid(),
+  status: z.enum(TASK_STATUSES),
+  /** Why the task is blocked — SCR-020/021. The service requires it when status is `blocked`. */
+  reason: z.string().trim().max(1000).optional(),
+  /** SCR-020: what kind of blocker, who must act, and the next action. Required with `blocked` (task-blocker.ts). */
+  blockerType: z.string().trim().max(40).optional(),
+  blockerOwner: z.string().trim().max(120).optional(),
+  nextAction: z.string().trim().max(500).optional(),
+});
 
 export type CreateModuleInput = z.infer<typeof createModuleSchema>;
 export type CreateFeatureInput = z.infer<typeof createFeatureSchema>;
@@ -1134,3 +1189,31 @@ export type OpenScopeVersionInput = z.infer<typeof openScopeVersionSchema>;
 export type AddScopeItemInput = z.infer<typeof addScopeItemSchema>;
 export type RemoveScopeItemInput = z.infer<typeof removeScopeItemSchema>;
 export type FreezeScopeVersionInput = z.infer<typeof freezeScopeVersionSchema>;
+
+/** Editing a task after it exists — the columns the Board's task drawer shows. */
+export const updateTaskSchema = z.object({
+  taskId: z.uuid(),
+  projectId: z.uuid(),
+  title: z.string().trim().min(1, 'A task needs a title').max(200),
+  description: z.string().trim().max(4000).nullable(),
+  priority: z.enum(['p0', 'p1', 'p2', 'p3']),
+  assigneeId: z.uuid().nullable(),
+  /** The day work is planned to begin (migration 20261004100000); never after the due date. */
+  startOn: z.iso.date().nullable().default(null),
+  dueOn: z.iso.date().nullable(),
+  estimateHours: z.number().nonnegative().max(10_000).nullable(),
+}).refine((v) => !v.startOn || !v.dueOn || v.startOn <= v.dueOn, { message: 'The start date cannot be after the due date.', path: ['startOn'] });
+export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
+
+/** The project's own facts — name, description, dates and budget. Status is its own door. */
+export const updateProjectSchema = z
+  .object({
+    projectId: z.uuid(),
+    name: z.string().trim().min(1, 'A project needs a name').max(200),
+    description: z.string().trim().max(4000).nullable(),
+    startsOn: z.iso.date().nullable(),
+    endsOn: z.iso.date().nullable(),
+    budgetMinor: z.number().int().nonnegative().max(1_000_000_000_000).nullable(),
+  })
+  .refine((v) => !v.startsOn || !v.endsOn || v.startsOn <= v.endsOn, { message: 'The due date cannot be before the start date.', path: ['endsOn'] });
+export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;

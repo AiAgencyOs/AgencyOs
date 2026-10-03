@@ -32,8 +32,8 @@ export function RoutingPolicyForm({ policy }: { policy: RoutingPolicyRow }) {
         <span className="text-xs text-muted">{policy.configured ? 'configured' : 'default'}</span>
       </div>
       <div className="flex flex-wrap gap-2">
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Optimise for</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Optimise for</span>
           <select name="optimiseFor" defaultValue={policy.optimiseFor} className={selectClass}>
             {OPTIMISE_FOR.map((o) => (
               <option key={o} value={o}>
@@ -41,20 +41,20 @@ export function RoutingPolicyForm({ policy }: { policy: RoutingPolicyRow }) {
               </option>
             ))}
           </select>
-        </div>
-        <div className="flex min-w-48 flex-1 flex-col gap-1">
-          <label className={labelClass}>Preferred models (comma-separated, in order)</label>
+        </label>
+        <label className="flex min-w-48 flex-1 flex-col gap-1">
+          <span className={labelClass}>Preferred models (comma-separated, in order)</span>
           <input
             name="preferredModels"
             defaultValue={policy.preferredModels.join(', ')}
             className={inputClass}
             placeholder="claude-sonnet-5, gpt-5"
           />
-        </div>
-        <div className="flex min-w-48 flex-1 flex-col gap-1">
-          <label className={labelClass}>Admin override (wins outright)</label>
+        </label>
+        <label className="flex min-w-48 flex-1 flex-col gap-1">
+          <span className={labelClass}>Admin override (wins outright)</span>
           <input name="adminOverrideModel" defaultValue={policy.adminOverrideModel ?? ''} className={inputClass} />
-        </div>
+        </label>
       </div>
       <button type="submit" disabled={pending} className={`${buttonClass('secondary', 'sm')} self-start`}>
         {pending ? 'Saving…' : 'Save'}

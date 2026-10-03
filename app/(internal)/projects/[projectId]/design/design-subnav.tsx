@@ -23,6 +23,8 @@ export function DesignSubNav({ projectId }: { projectId: string }) {
     { href: `${base}/themes`, label: 'Themes' },
     { href: `${base}/colors`, label: 'Colors' },
     { href: `${base}/final`, label: 'Final selection' },
+    { href: `${base}/screens`, label: 'Screens' },
+    { href: `${base}/brand`, label: 'Brand Kit' },
   ];
 
   return (

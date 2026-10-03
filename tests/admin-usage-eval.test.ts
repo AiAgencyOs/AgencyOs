@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { aggregateLedger } from '../src/lib/admin/usage-eval.ts';
+import { aggregateByDay, aggregateLedger } from '../src/lib/admin/usage-eval.ts';
 
 /**
  * Usage & cost aggregation — G-186 replaced what this file used to test.
@@ -76,5 +76,44 @@ describe('aggregateLedger — sums only what was recorded, invents nothing', () 
     assert.equal(perAgent.length, 1);
     assert.equal(perAgent[0]!.runs, 4);
     assert.equal(totals.costMinor, 0);
+  });
+});
+
+describe('aggregateByDay — the trend chart’s own sum, no invented days', () => {
+  test('no rows yields an empty trend', () => {
+    assert.deepEqual(aggregateByDay([]), []);
+  });
+
+  test('two agents on the same day are one point', () => {
+    const trend = aggregateByDay([
+      { day: '2026-09-01', runs: 2, cost_minor: 100 },
+      { day: '2026-09-01', runs: 1, cost_minor: 50 },
+    ]);
+    assert.equal(trend.length, 1);
+    assert.equal(trend[0]!.runs, 3);
+    assert.equal(trend[0]!.costMinor, 150);
+  });
+
+  test('days come back oldest first, for a chart read left to right', () => {
+    const trend = aggregateByDay([
+      { day: '2026-09-03', runs: 1, cost_minor: 10 },
+      { day: '2026-09-01', runs: 1, cost_minor: 10 },
+      { day: '2026-09-02', runs: 1, cost_minor: 10 },
+    ]);
+    assert.deepEqual(
+      trend.map((d) => d.day),
+      ['2026-09-01', '2026-09-02', '2026-09-03'],
+    );
+  });
+
+  test('a day nothing ran is absent, not a manufactured zero', () => {
+    // G-186's whole point: a spend page must never show a number for a day it
+    // did not actually read one for.
+    const trend = aggregateByDay([
+      { day: '2026-09-01', runs: 1, cost_minor: 10 },
+      { day: '2026-09-05', runs: 1, cost_minor: 10 },
+    ]);
+    assert.equal(trend.length, 2);
+    assert.ok(!trend.some((d) => d.day === '2026-09-03'));
   });
 });

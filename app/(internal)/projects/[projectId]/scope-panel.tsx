@@ -50,12 +50,12 @@ function AddItemForm({ projectId, scopeVersionId }: { projectId: string; scopeVe
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="scopeVersionId" value={scopeVersionId} />
       <div className="flex flex-wrap gap-2">
-        <div className="flex min-w-40 flex-1 flex-col gap-1">
-          <label className={labelClass}>Title</label>
+        <label className="flex min-w-40 flex-1 flex-col gap-1">
+          <span className={labelClass}>Title</span>
           <input name="title" required maxLength={200} className={inputClass} placeholder="User login" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Inclusion</label>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Inclusion</span>
           <select name="inclusion" defaultValue="included" className={selectClass}>
             {SCOPE_ITEM_INCLUSIONS.map((i) => (
               <option key={i} value={i}>
@@ -63,16 +63,16 @@ function AddItemForm({ projectId, scopeVersionId }: { projectId: string; scopeVe
               </option>
             ))}
           </select>
-        </div>
+        </label>
       </div>
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Detail (optional)</label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Detail (optional)</span>
         <input name="detail" maxLength={4000} className={inputClass} />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className={labelClass}>Acceptance criteria (optional)</label>
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>Acceptance criteria (optional)</span>
         <input name="acceptanceCriteria" maxLength={2000} className={inputClass} />
-      </div>
+      </label>
       <button type="submit" disabled={pending} className={`${buttonClass('secondary', 'sm')} self-start`}>
         {pending ? 'Adding…' : 'Add item'}
       </button>
@@ -111,14 +111,47 @@ function FreezeButton({ projectId, scopeVersionId }: { projectId: string; scopeV
   );
 }
 
+/** One line of the freeze checklist — computed by the page, decided by the door. */
+export type FreezeCheck = { label: string; ok: boolean };
+
+function FreezeChecklist({ checks }: { checks: FreezeCheck[] }) {
+  const ready = checks.every((c) => c.ok);
+  return (
+    <div className="flex flex-col gap-1 rounded-md border border-line bg-surface-sunken px-3 py-2 text-[13px]">
+      <p className="font-medium">
+        Before freezing
+        <span className="ml-2 text-xs font-normal text-muted">
+          {ready ? 'everything the door will check is in place' : 'the door will refuse until every line holds'}
+        </span>
+      </p>
+      <ul className="flex flex-col gap-0.5">
+        {checks.map((c) => (
+          <li key={c.label} className="flex items-center gap-2">
+            <Badge tone={c.ok ? 'success' : 'warning'}>{c.ok ? 'ok' : 'not yet'}</Badge>
+            <span className={c.ok ? 'text-muted' : ''}>{c.label}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function ScopeVersionCard({
   projectId,
   scopeVersion,
   editable,
+  freezeChecklist,
 }: {
   projectId: string;
   scopeVersion: ScopeVersionRow;
   editable: boolean;
+  /**
+   * SCR-030. Shown above the Freeze button, never instead of it: the list
+   * restates what `freeze_scope_version` refuses (`empty`, an open change
+   * request) and what Doc 11 asks of an item (acceptance criteria), and the
+   * door decides again on submit.
+   */
+  freezeChecklist?: FreezeCheck[];
 }) {
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
@@ -155,6 +188,7 @@ export function ScopeVersionCard({
       {editable ? (
         <>
           <AddItemForm projectId={projectId} scopeVersionId={scopeVersion.id} />
+          {freezeChecklist && freezeChecklist.length > 0 ? <FreezeChecklist checks={freezeChecklist} /> : null}
           {scopeVersion.items.length > 0 ? (
             <FreezeButton projectId={projectId} scopeVersionId={scopeVersion.id} />
           ) : null}

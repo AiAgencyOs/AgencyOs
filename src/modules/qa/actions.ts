@@ -3,8 +3,11 @@
 import { revalidatePath } from 'next/cache';
 
 import type { FormState } from '@/modules/identity/types';
+import { attachChosenFile } from '@/modules/projects/attached-files-form';
 
-import { markProductionReady, raiseDefect, settleDefect, draftTestPlan, addTestPlanItem, removeTestPlanItem, recordTestRun } from './service';
+import { markProductionReady, raiseDefect, settleDefect, draftTestPlan, addTestPlanItem, removeTestPlanItem, recordTestRun,
+  triageDefect,
+} from './service';
 
 /**
  * Server Actions for QA — G-306.
@@ -41,10 +44,16 @@ export async function raiseDefectAction(_prev: FormState, formData: FormData): P
     actual: optional('actual'),
     environment: optional('environment'),
     evidenceUrl: optional('evidenceUrl'),
+    runId: optional('runId'),
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };
+  // Q-C6: the bug's evidence may be an uploaded file (a screenshot, a log), under the project-file rules.
+  const evidenceFile = await attachChosenFile(formData, 'defect', result.data.defectId);
   revalidateProject(formData);
+  if (evidenceFile.status === 'refused') {
+    return { status: 'error', message: `The defect was raised, but its evidence file was not saved: ${evidenceFile.message}` };
+  }
   return {
     status: 'success',
     // Said rather than implied: a blocker stops the next submission, and
@@ -104,6 +113,9 @@ export async function addTestPlanItemAction(_prev: FormState, formData: FormData
     category: String(formData.get('category') ?? '') as never,
     reason: String(formData.get('reason') ?? ''),
     criticalPath: formData.get('criticalPath') === 'on',
+    preconditions: String(formData.get('preconditions') ?? '').trim() || undefined,
+    steps: String(formData.get('steps') ?? '').trim() || undefined,
+    expectedResult: String(formData.get('expectedResult') ?? '').trim() || undefined,
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };
@@ -131,9 +143,36 @@ export async function recordTestRunAction(_prev: FormState, formData: FormData):
     failed: num('failed'),
     skipped: num('skipped'),
     ...(evidenceUrl ? { evidenceUrl } : {}),
+    device: String(formData.get('device') ?? '').trim() || undefined,
+    browser: String(formData.get('browser') ?? '').trim() || undefined,
+    os: String(formData.get('os') ?? '').trim() || undefined,
+    perfNotes: String(formData.get('perfNotes') ?? '').trim() || undefined,
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };
+  const evidenceFile = await attachChosenFile(formData, 'test_run', result.data.testRunId);
   revalidatePath(`/projects/${String(formData.get('projectId') ?? '')}/qa`);
+  if (evidenceFile.status === 'refused') {
+    return { status: 'error', message: `The test run was recorded, but its evidence file was not saved: ${evidenceFile.message}` };
+  }
   return { status: 'success', message: 'Test run recorded.' };
+}
+
+export async function triageDefectAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const result = await triageDefect({
+    defectId: String(formData.get('defectId') ?? ''),
+    projectId,
+    assigneeId: String(formData.get('assigneeId') ?? '').trim() || null,
+    severity: String(formData.get('severity') ?? '') as 'blocker' | 'major' | 'minor' | 'trivial',
+    reason: String(formData.get('reason') ?? '').trim() || undefined,
+    // SCR-047: the form always carries the field; blank means "no task".
+    ...(formData.has('taskId') ? { taskId: String(formData.get('taskId') ?? '').trim() || null } : {}),
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}/qa`);
+  revalidatePath(`/projects/${projectId}/development`);
+  revalidatePath('/qa');
+  return { status: 'success', message: 'Defect triaged.' };
 }

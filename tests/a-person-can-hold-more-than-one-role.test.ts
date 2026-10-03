@@ -193,12 +193,12 @@ describe('E. the limit is stated, not left to be discovered', () => {
 describe('F. the write path is owner-gated at the application layer too (defense in depth)', () => {
   test('grantSecondaryRole checks organization.settings before calling the door', () => {
     const fn = region(SETTINGS, 'export async function grantSecondaryRole');
-    assert.match(fn, /can\(context\.role, 'organization\.settings'\)/);
+    assert.match(fn, /can\(context, 'organization\.settings'\)/);
   });
 
   test('revokeSecondaryRole checks organization.settings before calling the door', () => {
     const fn = region(SETTINGS, 'export async function revokeSecondaryRole');
-    assert.match(fn, /can\(context\.role, 'organization\.settings'\)/);
+    assert.match(fn, /can\(context, 'organization\.settings'\)/);
   });
 
   test('both server actions revalidate the settings page', () => {
@@ -207,7 +207,10 @@ describe('F. the write path is owner-gated at the application layer too (defense
   });
 
   test('the panel is rendered on the settings page, not built and unreachable', () => {
-    assert.match(PAGE, /<MemberRolesPanel members={rosterWithRoles} \/>/);
-    assert.match(PAGE, /const rosterWithRoles = await listInternalRosterWithRoles\(\);/);
+    // Decision E2 of 2026-09-30 put the cost-rate props on the same element;
+    // the pin is that the roster reaches the panel, not that nothing else does.
+    assert.match(PAGE, /<MemberRolesPanel members={rosterWithRoles}[^>]*\/>/);
+    // Bucket G-3: the roster may be read with the page's `?q=` search (server-side, in the reader).
+    assert.match(PAGE, /const rosterWithRoles = await listInternalRosterWithRoles\((?:q \|\| undefined)?\);/);
   });
 });

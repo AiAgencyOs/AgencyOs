@@ -110,7 +110,8 @@ import { resolveImageGenerator, resolveTranscriber } from '@/lib/ai/router';
 import { TRANSCRIPTION_MODEL } from '@/lib/ai/openai';
 import { IMAGE_GENERATION_MODEL } from '@/lib/ai/openrouter-image';
 
-import { dispatchableToolsFor, dispatchTool } from '@/modules/agents/tool-dispatch';
+import { dispatchToolUnderPolicy } from '@/modules/agents/policy-enforcement';
+import { dispatchableToolsFor } from '@/modules/agents/tool-dispatch';
 import { toolsFor } from '@/modules/agents/tools';
 
 import {
@@ -256,6 +257,9 @@ const REQUIREMENT_PROMPT = [
   'they use — if they write Hindi or Hinglish; English if they write English. Never Devanagari script.',
   'Address them directly ("aapka", "aap", "your"), not as "the client" or "Client wants".',
   'Keep names, product terms and every figure exactly as they said them.',
+  // SCR-029 (bucket G-3): the six optional sections. Each is filled only from
+  // what the transcript states; an empty array is the honest answer otherwise.
+  'objectives are the outcomes the client said they want from the project, each in full. userRoles are the kinds of people who will use it. platforms are where it must run. integrations are the systems it must talk to. businessRules are rules the client stated the product must follow. nonFunctionalRequirements are performance, security, availability or compliance needs the client stated. Leave any of these empty when the transcript does not say.',
 ].join(' ');
 
 const REQUIREMENT_EXTRACT: AgentWorkflow = {
@@ -3688,14 +3692,17 @@ const QUALIFICATION_READ: AgentWorkflow = {
       ],
       tools,
       runId,
+      // Decision 3 (2026-09-29): the call is held to this tenant's tool
+      // permissions before `dispatchTool` sees it; a refusal is recorded.
       (toolCall) =>
-        dispatchTool({
+        dispatchToolUnderPolicy({
           admin,
           organizationId: job.organization_id,
           agentKey: ctx.agent.key,
           agentAutonomy: ctx.agent.autonomy_level as 'L0' | 'L1' | 'L2',
           toolName: toolCall.name,
           input: toolCall.input,
+          runId,
         }),
     );
 
@@ -6806,7 +6813,7 @@ async function paymentStructureFor(
   const { data, error } = await admin
     .schema('sales')
     .from('payment_structures')
-    .select('id, name, min_amount_minor, max_amount_minor, payment_milestones(position, label, pct)')
+    .select('id, name, is_default, min_amount_minor, max_amount_minor, payment_milestones(position, label, pct)')
     .eq('organization_id', organizationId)
     .eq('active', true);
 
@@ -6819,16 +6826,22 @@ async function paymentStructureFor(
 
   type Row = {
     name: string;
+    is_default: boolean;
     min_amount_minor: number | null;
     max_amount_minor: number | null;
     payment_milestones: { position: number; label: string; pct: number | string }[] | null;
   };
 
-  const matching = ((data ?? []) as unknown as Row[]).filter(
+  const inBand = ((data ?? []) as unknown as Row[]).filter(
     (row) =>
       (row.min_amount_minor === null || totalMinor >= row.min_amount_minor) &&
       (row.max_amount_minor === null || totalMinor < row.max_amount_minor),
   );
+  // Owner decision 2 (round 2): the seeded 30/20/30/20 is the default for an
+  // agency that has configured nothing. Anything the owner configured that
+  // matches beats it, whatever the band widths; it applies only when nothing
+  // else does.
+  const matching = inBand.some((row) => !row.is_default) ? inBand.filter((row) => !row.is_default) : inBand;
   if (matching.length === 0) return null;
 
   // Narrowest first: a bounded band beats an open one, and a smaller band

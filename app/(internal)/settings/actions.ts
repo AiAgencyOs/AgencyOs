@@ -1,12 +1,12 @@
 'use server';
 
 import { PROBE_MODELS } from '@/lib/ai/providers';
-import { createGoogleCalendar } from '@/lib/scheduling/google';
-import { configuredProviders, resolveProvider } from '@/lib/ai/router';
-import { setProviderCredential, VAULT_PROVIDERS, type VaultProvider } from '@/lib/ai/vault';
+import { resolveGoogleCalendar } from '@/lib/scheduling/google';
+import { configuredProviders, resetProviderRegistry, resolveProvider } from '@/lib/ai/router';
+import { deleteProviderCredential, setProviderCredential, VAULT_PROVIDERS, type VaultProvider } from '@/lib/ai/vault';
 import { sendWhatsAppText } from '@/lib/whatsapp/send';
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
+import { can, hasRole } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 
 import { revalidatePath } from 'next/cache';
@@ -16,10 +16,14 @@ import { setAgencyTimezone, setDefaultDesignReviewer, setOrganizationName, setOr
   revokeSecondaryRole,
   setMembershipStatus,
   readOperationalSettings,
+  recordPrivilegeReason,
+  privilegeReasonIssue,
   settingText,
 } from '@/lib/admin/settings';
 import { verifyWhatsAppConfig } from '@/lib/admin/whatsapp-verify';
 import type { FormState } from '@/modules/identity/types';
+import { publishQuotationClause } from '@/modules/sales/clauses-service';
+import { CLAUSE_LABELS, isClauseKey } from '@/modules/sales/quotation-clauses';
 
 /**
  * Server Actions for the Settings screen. Thin, like the requeue action: they
@@ -202,6 +206,8 @@ export async function setWhatsAppNumberAction(_prev: FormState, formData: FormDa
   const result = await setOrganizationSetting('whatsapp_phone_number_id', String(formData.get('phone_number_id') ?? ''));
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath('/settings');
+  // SCR-070 — the same form is mounted on the integration's own row.
+  revalidatePath('/integrations');
   return {
     status: 'success',
     message: result.data.cleared
@@ -210,10 +216,25 @@ export async function setWhatsAppNumberAction(_prev: FormState, formData: FormDa
   };
 }
 
+/** Q-D1 — the Google Calendar id, through the one settings door (owner / ops admin, whitelisted, validated, audited with old and new). */
+export async function setCalendarIdAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await setOrganizationSetting('google_calendar_id', String(formData.get('calendar_id') ?? ''));
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/integrations');
+  revalidatePath('/meetings');
+  return {
+    status: 'success',
+    message: result.data.cleared
+      ? 'Calendar id cleared. The GOOGLE_CALENDAR_ID environment value, if there is one, is used again.'
+      : 'Calendar id saved. It is read before the environment value; verify the calendar to confirm Google can read it.',
+  };
+}
+
 export async function setTestRecipientAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const result = await setOrganizationSetting('whatsapp_test_recipient', String(formData.get('test_recipient') ?? ''));
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath('/settings');
+  revalidatePath('/integrations');
   return {
     status: 'success',
     message: result.data.cleared
@@ -551,7 +572,7 @@ export async function verifyWhatsAppAction(_prev: FormState, _formData: FormData
  */
 export async function sendWhatsAppTestAction(_prev: FormState, _formData: FormData): Promise<FormState> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may send the test message.' };
+  if (!can(context, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may send the test message.' };
   const settings = await readOperationalSettings();
   const phoneNumberId = settingText(settings, 'whatsapp_phone_number_id');
   const recipient = settingText(settings, 'whatsapp_test_recipient');
@@ -586,7 +607,7 @@ export async function sendWhatsAppTestAction(_prev: FormState, _formData: FormDa
  */
 export async function verifyAiProviderAction(_prev: FormState, _formData: FormData): Promise<FormState> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify the provider.' };
+  if (!can(context, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify the provider.' };
   const registered = await configuredProviders();
   if (registered.length === 0) return { status: 'error', message: 'No AI provider is configured; there is nothing to verify.' };
 
@@ -635,7 +656,7 @@ export async function verifyAiProviderAction(_prev: FormState, _formData: FormDa
  */
 export async function setProviderCredentialAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may set a provider key.' };
+  if (!can(context, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may set a provider key.' };
 
   const provider = String(formData.get('provider') ?? '');
   if (!VAULT_PROVIDERS.includes(provider as VaultProvider)) return { status: 'error', message: `Unknown provider "${provider}".` };
@@ -645,9 +666,37 @@ export async function setProviderCredentialAction(_prev: FormState, formData: Fo
   const result = await setProviderCredential(supabase, provider as VaultProvider, key, context.userId);
   if (!result.ok) return { status: 'error', message: result.error.message };
 
+  // The resolver's registry is cached per process; a key that just landed
+  // must register without waiting for a redeploy (SCR-064).
+  resetProviderRegistry();
   revalidatePath('/agents');
+  revalidatePath('/agents/routing');
   revalidatePath('/production-readiness');
   return { status: 'success', message: `${provider} key stored — encrypted, never shown again here.` };
+}
+
+/**
+ * SCR-064 — revoke a vault-stored provider key. Owner only, narrower than
+ * storing one; `deleteProviderCredential` says why. The key is never read.
+ */
+export async function revokeProviderCredentialAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const context = await requireInternal();
+  if (!hasRole(context, 'owner') || !can(context, 'organization.settings')) {
+    return { status: 'error', message: 'Only the owner may revoke a provider key.' };
+  }
+
+  const provider = String(formData.get('provider') ?? '');
+  if (!VAULT_PROVIDERS.includes(provider as VaultProvider)) return { status: 'error', message: `Unknown provider "${provider}".` };
+
+  const supabase = await createClient();
+  const result = await deleteProviderCredential(supabase, provider as VaultProvider, context);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  resetProviderRegistry();
+  revalidatePath('/agents');
+  revalidatePath('/agents/routing');
+  revalidatePath('/production-readiness');
+  return { status: 'success', message: `${provider} key revoked. Agents routed to it will not run until another key is stored or set in the environment.` };
 }
 
 /**
@@ -658,9 +707,9 @@ export async function setProviderCredentialAction(_prev: FormState, formData: Fo
  */
 export async function verifyCalendarAction(_prev: FormState, _formData: FormData): Promise<FormState> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify the calendar.' };
-  const calendar = createGoogleCalendar();
-  if (!calendar) return { status: 'error', message: 'No calendar is configured: place GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_KEY and GOOGLE_CALENDAR_ID in the deployment environment (ADM-102).' };
+  if (!can(context, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify the calendar.' };
+  const calendar = await resolveGoogleCalendar();
+  if (!calendar) return { status: 'error', message: 'No calendar is configured: place GOOGLE_SERVICE_ACCOUNT_EMAIL in the deployment environment, store the service-account key under Security & Audit › Keys & secrets (or in the environment), and set the calendar id on Integrations (or as GOOGLE_CALENDAR_ID) (ADM-102).' };
   const from = new Date();
   const to = new Date(from.getTime() + 7 * 86_400_000);
   const answer = await calendar.readAvailability({ from: from.toISOString(), to: to.toISOString() });
@@ -770,10 +819,16 @@ export async function grantSecondaryRoleAction(_prev: FormState, formData: FormD
     return { status: 'error', message: 'Choose a person and a role.' };
   }
 
+  const reason = String(formData.get('reason') ?? '');
+  const issue = privilegeReasonIssue(reason);
+  if (issue) return { status: 'error', message: issue };
+
   const result = await grantSecondaryRole(membershipId, role);
   if (!result.ok) return { status: 'error', message: result.error.message };
 
+  await recordPrivilegeReason(membershipId, 'secondary_role_granted', reason, { role });
   revalidatePath('/settings');
+  revalidatePath('/security');
   return { status: 'success', message: `Granted.` };
 }
 
@@ -784,10 +839,16 @@ export async function revokeSecondaryRoleAction(_prev: FormState, formData: Form
     return { status: 'error', message: 'Choose a person and a role.' };
   }
 
+  const reason = String(formData.get('reason') ?? '');
+  const issue = privilegeReasonIssue(reason);
+  if (issue) return { status: 'error', message: issue };
+
   const result = await revokeSecondaryRole(membershipId, role);
   if (!result.ok) return { status: 'error', message: result.error.message };
 
+  if (result.data.revoked) await recordPrivilegeReason(membershipId, 'secondary_role_revoked', reason, { role });
   revalidatePath('/settings');
+  revalidatePath('/security');
   return {
     status: 'success',
     message: result.data.revoked ? 'Revoked.' : 'That role was not granted, so there was nothing to revoke.',
@@ -805,13 +866,247 @@ export async function setMembershipStatusAction(_prev: FormState, formData: Form
     return { status: 'error', message: 'Choose a person and a status.' };
   }
 
+  const reason = String(formData.get('reason') ?? '');
+  const issue = privilegeReasonIssue(reason);
+  if (issue) return { status: 'error', message: issue };
+
   const result = await setMembershipStatus(membershipId, status);
   if (!result.ok) return { status: 'error', message: result.error.message };
 
+  if (result.data.updated) await recordPrivilegeReason(membershipId, 'status_changed', reason, { status });
   revalidatePath('/settings');
+  revalidatePath('/security');
   revalidatePath('/security/users');
   return {
     status: 'success',
     message: result.data.updated ? (status === 'suspended' ? 'Suspended.' : 'Reactivated.') : 'Already in that state.',
+  };
+}
+
+/**
+ * How long a quotation stands — configurability audit B-1.
+ *
+ * Was `VALIDITY_DAYS = 15` in `quotation-standards.ts`, printed on every
+ * quotation PDF as "valid for 15 days". The number is the corpus modal, which
+ * makes it a fine default and a poor rule. Whole days, 1–90; empty clears,
+ * and cleared reads as 15 again — never as zero.
+ */
+export async function setQuotationValidityAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const raw = String(formData.get('validity_days') ?? '').trim();
+  if (raw !== '') {
+    const parsed = Number(raw);
+    if (!/^[0-9]+$/.test(raw) || !Number.isInteger(parsed) || parsed < 1 || parsed > 90) {
+      return { status: 'error', message: 'Validity must be a whole number of days between 1 and 90.' };
+    }
+  }
+  const result = await setOrganizationSetting('quotation_validity_days', raw);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message:
+      raw === ''
+        ? 'Validity cleared — new quotations say 15 days again. Ones already drafted keep the clause they were drafted with.'
+        : `Set. New quotations say they are valid for ${raw} day${raw === '1' ? '' : 's'}; ones already drafted keep the clause they were drafted with.`,
+  };
+}
+
+/**
+ * When follow-ups may be sent — configurability audit B-2.
+ *
+ * Was `WINDOW_START_HOUR = 10` / `WINDOW_END_HOUR = 19` in
+ * `follow-up-rhythms.ts` (ADM-69). The database validates each hour's range;
+ * the ORDER of the pair is checked here, because the one-key-at-a-time door
+ * cannot see both halves, and the reader falls back to the default for a
+ * pair that does not make a window — so a bad save can never send at 03:00.
+ * Both empty clears both, and cleared reads as 10–19 again.
+ */
+export async function setOutreachWindowAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const startRaw = String(formData.get('window_start_hour') ?? '').trim();
+  const endRaw = String(formData.get('window_end_hour') ?? '').trim();
+
+  if ((startRaw === '') !== (endRaw === '')) {
+    return { status: 'error', message: 'Set both hours, or clear both to go back to 10:00–19:00.' };
+  }
+  if (startRaw !== '') {
+    const start = Number(startRaw);
+    const end = Number(endRaw);
+    if (!/^[0-9]+$/.test(startRaw) || !/^[0-9]+$/.test(endRaw) || start < 0 || start > 22 || end < 1 || end > 23) {
+      return { status: 'error', message: 'Hours are on the 24-hour clock: start 0–22, end 1–23.' };
+    }
+    if (start >= end) {
+      return { status: 'error', message: `A window from ${start}:00 to ${end}:00 has no hours in it. The end must be after the start.` };
+    }
+  }
+
+  // Start first, then end: if the second write is refused the reader still
+  // sees an unusable pair and keeps the default, so nothing half-applies.
+  const first = await setOrganizationSetting('outreach_window_start_hour', startRaw);
+  if (!first.ok) return { status: 'error', message: first.error.message };
+  const second = await setOrganizationSetting('outreach_window_end_hour', endRaw);
+  if (!second.ok) return { status: 'error', message: second.error.message };
+
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message:
+      startRaw === ''
+        ? 'Window cleared — follow-ups go out between 10:00 and 19:00 agency time again.'
+        : `Set. Follow-ups go out between ${startRaw}:00 and ${endRaw}:00 agency time, on business days. Ones already due are moved into the window on the next run.`,
+  };
+}
+
+/**
+ * How far ahead a meeting time is offered — configurability audit B-3.
+ *
+ * Was `DEFAULT_HORIZON_DAYS = 7` in `booking.ts`: the days the calendar is
+ * read when a lead named no window. Whole days, 1–60; empty clears, and
+ * cleared reads as 7 again — never as zero.
+ */
+export async function setMeetingOfferHorizonAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const raw = String(formData.get('horizon_days') ?? '').trim();
+  if (raw !== '') {
+    const parsed = Number(raw);
+    if (!/^[0-9]+$/.test(raw) || !Number.isInteger(parsed) || parsed < 1 || parsed > 60) {
+      return { status: 'error', message: 'The horizon must be a whole number of days between 1 and 60.' };
+    }
+  }
+  const result = await setOrganizationSetting('meeting_offer_horizon_days', raw);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message:
+      raw === ''
+        ? 'Horizon cleared — a proposal with no named window reads the next 7 days again.'
+        : `Set. A proposal with no named window reads the next ${raw} day${raw === '1' ? '' : 's'} of the calendar.`,
+  };
+}
+
+/**
+ * How many leads the funnel needs before it names a leak — configurability
+ * audit B-4.
+ *
+ * Was `MIN_LEADS_TO_NAME_A_LEAK = 20` in `sales-funnel.ts`. It changes when the
+ * report speaks, never a count. Whole leads, 5–500; empty clears, and cleared
+ * reads as 20 again.
+ */
+export async function setFunnelSampleFloorAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const raw = String(formData.get('min_leads') ?? '').trim();
+  if (raw !== '') {
+    const parsed = Number(raw);
+    if (!/^[0-9]+$/.test(raw) || !Number.isInteger(parsed) || parsed < 5 || parsed > 500) {
+      return { status: 'error', message: 'The sample floor must be a whole number of leads between 5 and 500.' };
+    }
+  }
+  const result = await setOrganizationSetting('funnel_min_leads_to_name_leak', raw);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  revalidatePath('/sales-funnel');
+  return {
+    status: 'success',
+    message:
+      raw === ''
+        ? 'Sample floor cleared — the funnel names its biggest drop from 20 leads again.'
+        : `Set. The funnel names its biggest drop once a window holds ${raw} leads.`,
+  };
+}
+
+/**
+ * Publish new wording for one quotation clause — configurability audit B-6.
+ *
+ * Appends a version and never edits one: a quotation already issued keeps the
+ * clause it printed, and only quotations first rendered from here on read the
+ * new wording. The database re-checks the role, the length and the shape.
+ */
+export async function publishQuotationClauseAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const key = String(formData.get('clause_key') ?? '');
+  if (!isClauseKey(key)) return { status: 'error', message: 'Choose one of the four clauses.' };
+  const result = await publishQuotationClause({ key, body: String(formData.get('body') ?? '') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings/commercial');
+  revalidatePath('/quotations/new');
+  return {
+    status: 'success',
+    message: result.data.unchanged
+      ? `${CLAUSE_LABELS[key]} already says exactly that (version ${result.data.version}); nothing new was published.`
+      : `${CLAUSE_LABELS[key]} is now version ${result.data.version}. Quotations already issued keep the wording they printed; the next one to be issued prints this.`,
+  };
+}
+
+/**
+ * SCR-070 — verify Figma. Figma's API reads FILES, so the honest check is to
+ * ask it for the most recently recorded design reference: if the token can
+ * read that node, the reference is re-recorded as checked (the same door
+ * linking uses, carrying its preview and page along so nothing is erased) and
+ * its `figma_verified_at` becomes the registry's "last verified". With no
+ * reference recorded there is nothing to check the token against, and the
+ * message says so rather than claiming a pass.
+ */
+export async function verifyFigmaAction(_prev: FormState, _formData: FormData): Promise<FormState> {
+  const context = await requireInternal();
+  if (!can(context, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify Figma.' };
+
+  const { figmaConfigured, lookupNode } = await import('@/lib/figma/client');
+  if (!(await figmaConfigured())) return { status: 'error', message: 'No Figma token is configured: store FIGMA_ACCESS_TOKEN under Security › Keys & secrets, then verify.' };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('theme_options')
+    .select('id, figma_file_key, figma_node_id, figma_page_id, preview_asset_url')
+    .not('figma_file_key', 'is', null)
+    .not('figma_node_id', 'is', null)
+    .order('figma_linked_at', { ascending: false })
+    .limit(1);
+  if (error) return { status: 'error', message: 'The recorded Figma references could not be read, so nothing was verified.' };
+  const ref = data?.[0];
+  if (!ref?.figma_file_key || !ref.figma_node_id) return { status: 'error', message: 'No design reference is recorded yet, so there is nothing to check the token against. Link a Figma frame on a project’s Design tab, then verify.' };
+
+  const lookup = await lookupNode(ref.figma_file_key, ref.figma_node_id);
+  if (!lookup.ok) {
+    const said = {
+      not_configured: 'No Figma token is configured.',
+      unauthorized: 'Figma rejected the token — it has probably been revoked and needs reissuing.',
+      forbidden: 'The token is accepted but cannot see the most recent reference’s file. Share the file with the token’s account.',
+      not_found: 'Figma no longer has the most recent reference’s file or node.',
+      unreachable: 'Figma did not answer. Nothing was changed; try again later.',
+    }[lookup.reason];
+    return { status: 'error', message: said };
+  }
+
+  const { linkThemeFigma } = await import('@/modules/projects/design');
+  const recorded = await linkThemeFigma({
+    themeOptionId: ref.id,
+    fileKey: ref.figma_file_key,
+    nodeId: ref.figma_node_id,
+    ...(ref.figma_page_id ? { pageId: ref.figma_page_id } : {}),
+    ...(ref.preview_asset_url ? { previewUrl: ref.preview_asset_url } : {}),
+  });
+  if (!recorded.ok) return { status: 'error', message: `Figma answered, but the check could not be recorded: ${recorded.error.message}` };
+
+  revalidatePath('/integrations');
+  revalidatePath('/production-readiness');
+  return { status: 'success', message: `Reachable — Figma answered for “${lookup.nodeName}” (version ${lookup.version}). Recorded as checked.` };
+}
+
+/**
+ * A single on/off organization switch — today the payment half of the WON gate
+ * (`won_requires_payment_evidence`). The key is checked against an allow-list
+ * here and again by the database whitelist; checked = 'on', unchecked clears
+ * the key (the gate then enforces only the accepted quotation, as before).
+ */
+export async function setOrganizationSettingAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const key = String(formData.get('key') ?? '');
+  if (key !== 'won_requires_payment_evidence') return { status: 'error', message: 'That setting cannot be changed here.' };
+  const on = formData.get('on') === 'on';
+  const result = await setOrganizationSetting('won_requires_payment_evidence', on ? 'on' : '');
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings/finance');
+  return {
+    status: 'success',
+    message: on
+      ? 'On. A deal cannot be marked won until a payment, or an approved no-advance exception, is on record.'
+      : 'Off. A deal needs only its accepted quotation to be marked won.',
   };
 }

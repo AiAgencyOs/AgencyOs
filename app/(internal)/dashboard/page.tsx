@@ -1,52 +1,134 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { agencyClock } from '@/lib/admin/agency-clock';
+import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { listFollowUpReminders } from '@/lib/admin/dashboard-reminders';
+import {
+  getActiveProjectsSummary,
+  getMessagesSentThisMonth,
+  getProjectCountsByStatus,
+  getRecentLeads,
+  getRevenueThisMonth,
+  getTotalLeadsCount,
+} from '@/lib/admin/dashboard';
+import { getDashboardDeltas } from '@/lib/admin/dashboard-deltas';
+import { periodDelta, trendOf } from '@/lib/admin/period-delta';
+import { OVERVIEW_WINDOWS, overviewWindow } from '@/lib/admin/dashboard-window';
+import { listUnpaidMilestoneInvoices } from '@/lib/admin/finance-gate';
 import { getOverview } from '@/lib/admin/overview';
 import { isAvailable, levelLabel, overallStatus, type Avail } from '@/lib/admin/overview-eval';
+import { getSalesFunnel } from '@/lib/admin/sales-funnel';
+import { getAgentUsage } from '@/lib/admin/usage';
 import { requireInternal } from '@/lib/auth/session';
 import { can, type Capability } from '@/lib/authz/permissions';
+import { LiveRefresh } from '@/lib/realtime';
 import {
+  ActivityFeed,
+  Avatar,
   Badge,
   Callout,
   Card,
   CardHeader,
   cx,
+  DataTable,
   EmptyState,
+  humanize,
+  IconAgents,
   IconAlert,
+  IconApprovals,
   IconChevronRight,
+  IconClock,
+  IconCheck,
+  IconInbox,
+  IconInvoices,
+  IconMessage,
+  IconOperations,
+  IconProjects,
+  IconRefresh,
+  IconSettings,
+  IconSparkle,
+  IconUsers,
+  PipelineStrip,
+  ProgressBar,
   Stat,
-  TONE_DOT,
-  TONE_TEXT,
+  StatGrid,
+  StatusBadge,
+  StatusList,
+  ViewAll,
+  type Column,
+  type PipelineStage,
+  type StatusRow,
   type Tone,
+  FilterChips,
+  buttonClass,
 } from '@/ui';
 
-export const metadata: Metadata = { title: 'Overview' };
+import { listPendingPaymentClaims } from '@/modules/finance/queries';
+import { healthOfProject } from '@/modules/projects/project-health';
+import { LIFECYCLE_PHASE_LABEL, LIFECYCLE_PHASES, type LifecyclePhase } from '@/modules/projects/project-archive-schema';
+import { readProjectLifecycles } from '@/modules/projects/project-lifecycle-queries';
+import { listMyTasks, listPhaseFourEscalations, listProjectsForTable } from '@/modules/projects/queries';
+
+import { categoryOf } from '../notifications/action-items';
+import { listAnnotatedActionItems } from '../notifications/annotated-items';
+import { AcknowledgeButton } from '../notifications/acknowledge-button';
+import { EscalateControl } from '../notifications/escalate-form';
+import { TodayCard } from '../today-card';
+import { QuickActionsRow } from './quick-actions-row';
+
+export const metadata: Metadata = { title: 'Command Center' };
 
 /**
- * The Overview command center — the front door of the Admin control plane.
+ * The Command Center — the front door of the Admin control plane, laid out
+ * as the reference deck's first screen: a greeting, five business KPIs, the
+ * pipeline strip, recent leads and active projects on the left, and the
+ * rail on the right — Tasks & Approvals, System Status, Usage & Cost.
  *
- * It answers the owner's first questions (is the system healthy? what needs
- * attention? what needs me?) from the SAME authoritative reads the detail pages
- * use, composed in `getOverview()`. Nothing here is hard-coded or estimated.
+ * Every figure is a fresh read for this request from the SAME authoritative
+ * readers the detail pages use; nothing here is cached, estimated or
+ * hard-coded. A signal that could not be READ shows DATA UNAVAILABLE, never
+ * 0 — a monitor that invents zeros manufactures false calm — and a quiet
+ * organisation shows quiet numbers rather than the deck's always-busy demo
+ * data. Each card links to the page that owns the detail and is shown only
+ * to a role that may open that page.
  *
- * The one rule this page exists to keep: a signal that could not be READ shows
- * DATA UNAVAILABLE, never 0 — a monitor that invents zeros manufactures false
- * calm. Every card links to the page that owns the detail, and is shown only to
- * a role that may open that page.
- *
- * That rule is also why the unreadable case is rendered differently rather than
- * just coloured differently: at a glance a red 0 and a green 0 are the same
- * shape, and the whole point is that one of them is not a number at all.
+ * Bucket F (stream F-A) finished SCR-001's list: the Today card carries the
+ * follow-up reminders; the project table carries a health column on the
+ * SAME at-risk rule the projects list uses (`project-health.ts`); a finance
+ * gate queue lists the unpaid milestone invoices holding a phase and the
+ * claims awaiting a decision; a quick-actions row opens the same create
+ * forms the header does; every KPI tile links to the list filtered to
+ * exactly that number; and the Tasks & approvals feed carries the recorded
+ * escalate / acknowledge door (`core.escalations`).
  */
 
-/** The page's four states map onto the design system's tones. */
-const TONE: Record<string, Tone> = {
-  good: 'success',
-  warn: 'warning',
-  bad: 'danger',
-  muted: 'neutral',
-};
+const TONE: Record<string, Tone> = { good: 'success', warn: 'warning', bad: 'danger', muted: 'neutral' };
+
+/** "Good morning" / "Good afternoon" / "Good evening", by the hour in the agency's own zone — not the server's. */
+function greeting(clock: AgencyClock, now: Date): string {
+  const hour = Number(
+    new Intl.DateTimeFormat('en-US', { hour: 'numeric', hour12: false, timeZone: clock.timeZone }).format(now),
+  );
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+function money(minor: number, currency: string): string {
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(minor / 100);
+}
+
+/** "2m ago" / "3h ago" / "4d ago" — the reference's Last Activity wording. */
+function ago(at: string | Date, now: Date): string {
+  const secs = Math.max(0, Math.round((now.getTime() - new Date(at).getTime()) / 1000));
+  if (secs < 3600) return `${Math.max(1, Math.floor(secs / 60))}m ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  return `${Math.floor(secs / 86400)}d ago`;
+}
+
+function compact(n: number): string {
+  return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n);
+}
 
 /** A value tile that honours the read: number when read, DATA UNAVAILABLE when not. */
 function num<T>(a: Avail<T>, pick: (v: T) => string): string {
@@ -61,40 +143,224 @@ function Value({ value }: { value: string }) {
   return <>{value}</>;
 }
 
-function HealthRow({
-  label,
-  state,
-}: {
-  label: string;
-  state: { text: string; tone: 'good' | 'warn' | 'bad' | 'muted' };
-}) {
-  const tone = TONE[state.tone] ?? 'neutral';
-  return (
-    <li className="flex items-center justify-between gap-3 px-4 py-3 text-sm sm:px-5">
-      <span className="text-foreground">{label}</span>
-      <span className={cx('flex items-center gap-1.5 text-xs font-medium', TONE_TEXT[tone])}>
-        <span className={cx('h-1.5 w-1.5 shrink-0 rounded-full', TONE_DOT[tone])} />
-        {state.text}
-      </span>
-    </li>
-  );
-}
-
-export default async function OverviewPage() {
+export default async function OverviewPage({ searchParams }: { searchParams: Promise<{ days?: string }> }) {
   const context = await requireInternal('/dashboard');
-  const role = context.role;
-  const show = (cap: Capability) => can(role, cap);
+  const show = (cap: Capability) => can(context, cap);
 
-  const [o, clock] = await Promise.all([getOverview(), agencyClock()]);
+  // SCR-001's global date range. The funnel strip and the four "happened
+  // over time" counts honour it (see dashboard-window.ts); "this month" and
+  // "right now" tiles have no window to honour and say so in their captions.
+  const { days } = await searchParams;
+  const sinceDays = overviewWindow(days);
+
+  const [o, clock] = await Promise.all([getOverview({ sinceDays }), agencyClock()]);
   const status = overallStatus({ backlog: o.backlog, cronAgeSeconds: o.cronAgeSeconds, failedDeliveries: o.failedDeliveries });
   const label = levelLabel(status.level);
 
+  const canSeeLeads = show('lead.read');
+  const canSeeProjects = show('project.read');
+  const canSeeRevenue = show('invoice.read');
+  const canSeeUsage = show('audit.read');
+
+  const canCreateInvoice = show('invoice.create');
+  const canVerifyClaims = show('invoice.issue');
+  const todayWindow = clock.today();
+
+  const [recentLeads, activeProjects, revenue, messagesSent, totalLeads, usage, funnel, projectCounts, actionItems, escalations, myTasks, reminders, gateInvoices, gateClaims, deltas, projectRows, lifecycles] =
+    await Promise.all([
+      canSeeLeads ? getRecentLeads(5) : Promise.resolve([]),
+      canSeeProjects ? getActiveProjectsSummary(5) : Promise.resolve([]),
+      canSeeRevenue ? getRevenueThisMonth() : Promise.resolve([]),
+      canSeeLeads ? getMessagesSentThisMonth() : Promise.resolve(null),
+      canSeeLeads ? getTotalLeadsCount() : Promise.resolve(null),
+      canSeeUsage ? getAgentUsage() : Promise.resolve(null),
+      canSeeLeads ? getSalesFunnel(sinceDays) : Promise.resolve(null),
+      canSeeProjects ? getProjectCountsByStatus() : Promise.resolve(null),
+      listAnnotatedActionItems(context, clock),
+      canSeeProjects ? listPhaseFourEscalations() : Promise.resolve([]),
+      listMyTasks(context.userId),
+      canSeeLeads ? listFollowUpReminders(todayWindow) : Promise.resolve([]),
+      canSeeRevenue ? listUnpaidMilestoneInvoices() : Promise.resolve([]),
+      canVerifyClaims ? listPendingPaymentClaims() : Promise.resolve([]),
+      getDashboardDeltas(new Date(), { leads: canSeeLeads, projects: canSeeProjects, revenue: canSeeRevenue, usage: canSeeUsage }),
+      canSeeProjects ? listProjectsForTable(200) : Promise.resolve([]),
+      canSeeProjects ? readProjectLifecycles(todayWindow ? clock.dayKey(new Date()) : undefined) : Promise.resolve(new Map()),
+    ]);
+
+  const now = new Date();
+  const todayKey = clock.dayKey(now);
+  const dueToday = myTasks.filter((t) => t.dueOn === todayKey);
+  const overdueMine = myTasks.filter((t) => t.dueOn !== null && t.dueOn < todayKey);
+  const firstName = context.fullName?.split(' ')[0] ?? context.email.split('@')[0];
+  // Every KPI tile opens the list filtered to exactly its number (bucket F).
+  const windowFrom = clock.dayKey(new Date(now.getTime() - sinceDays * 24 * 60 * 60 * 1000));
+  const escalatedProjectIds = new Set(escalations.map((e) => e.projectId));
+  const openProjects = projectCounts ? ['planning', 'onboarding', 'active', 'on_hold'].reduce((n, st) => n + (projectCounts[st] ?? 0), 0) : null;
+  const canAnswerEscalations = show('audit.read');
+
+  // ONE health rule — the projects list's (`healthOfProject`) — for the
+  // Blocked Projects tile, the phase distribution and the health column, so
+  // the Command Center cannot say On track where /projects says Blocked.
+  const claimsByProject = new Map<string, number>();
+  for (const c of gateClaims) if (c.projectId) claimsByProject.set(c.projectId, (claimsByProject.get(c.projectId) ?? 0) + 1);
+  const EMPTY_FACTS = { blockedTasks: 0, unmetDependencies: 0, overdueTasks: 0, overdueMilestones: 0, blockingDefects: 0 };
+  const healthOf = (p: { id: string; status: string; endsOn: string | null }) =>
+    healthOfProject(p, lifecycles.get(p.id) ?? EMPTY_FACTS, { escalated: escalatedProjectIds.has(p.id), pendingClaims: claimsByProject.get(p.id) ?? 0, todayKey });
+  const liveProjects = projectRows.filter((p) => !lifecycles.get(p.id)?.archivedAt);
+  const phaseOf = (p: { id: string; status: string }): LifecyclePhase => lifecycles.get(p.id)?.phase ?? (p.status === 'completed' ? 'completed' : 'onboarding');
+  const phaseCounts = new Map<LifecyclePhase, number>();
+  for (const p of liveProjects) phaseCounts.set(phaseOf(p), (phaseCounts.get(phaseOf(p)) ?? 0) + 1);
+  const blockedProjectCount = liveProjects.filter((p) => healthOf(p).level === 'blocked').length;
+  const needsActionCount = actionItems.filter((i) => i.attention).length;
+
+  const pipeline: PipelineStage[] = [
+    ...(funnel
+      ? ([
+          { label: 'Leads', count: funnel.counts.leads, tone: 'info', href: '/leads' },
+          { label: 'Qualified', count: funnel.counts.qualified, tone: 'brand', href: '/leads?status=qualified' },
+          { label: 'Quoted', count: funnel.counts.quoted, tone: 'warning', href: '/quotations' },
+        ] satisfies PipelineStage[])
+      : []),
+    ...(projectCounts
+      ? ([
+          { label: 'Onboarding', count: projectCounts.onboarding ?? 0, tone: 'warning', href: '/projects?status=onboarding' },
+          { label: 'In Progress', count: projectCounts.active ?? 0, tone: 'success', href: '/projects?status=active' },
+          { label: 'In QA', count: projectCounts.inQa ?? 0, tone: 'info', href: '/projects?status=in_qa' },
+          { label: 'Launched', count: projectCounts.completed ?? 0, tone: 'success', href: '/projects?status=completed' },
+        ] satisfies PipelineStage[])
+      : []),
+  ];
+
+  const leadColumns: Column<(typeof recentLeads)[number]>[] = [
+    {
+      key: 'title',
+      header: 'Name',
+      primary: true,
+      cell: (l) => (
+        <span className="flex items-center gap-2.5">
+          <Avatar name={l.title} size="sm" />
+          <span className="min-w-0 max-w-[6.5rem]">
+            <span className="block truncate font-medium">{l.title}</span>
+            {l.contactPhone ? <span className="block font-mono text-[11px] text-muted lg:hidden">{l.contactPhone}</span> : null}
+          </span>
+        </span>
+      ),
+    },
+    { key: 'phone', header: 'Phone', desktopOnly: true, cellClassName: 'text-muted whitespace-nowrap', cell: (l) => l.contactPhone ?? '—' },
+    { key: 'source', header: 'Source', desktopOnly: true, cellClassName: 'text-muted', cell: (l) => humanize(l.source) },
+    { key: 'status', header: 'Status', badge: true, cell: (l) => <StatusBadge status={l.status} dot={false} /> },
+    { key: 'assigned', header: 'Assigned', desktopOnly: true, cellClassName: 'text-muted', cell: (l) => (l.assignedEmail ? l.assignedEmail.split('@')[0] : '—') },
+    { key: 'activity', header: 'Last Activity', cellClassName: 'text-muted whitespace-nowrap', cell: (l) => ago(l.lastActivityAt, now) },
+  ];
+
+  const projectColumns: Column<(typeof activeProjects)[number]>[] = [
+    {
+      key: 'name',
+      header: 'Project Name',
+      primary: true,
+      cell: (p) => (
+        <span className="flex items-center gap-2.5">
+          <Avatar name={p.name} size="sm" square tone="sidebar" />
+          <span className="truncate font-medium">{p.name}</span>
+        </span>
+      ),
+    },
+    { key: 'client', header: 'Client', desktopOnly: true, cellClassName: 'text-muted', cell: (p) => p.clientName ?? 'Internal' },
+    {
+      key: 'status',
+      header: 'Stage',
+      badge: true,
+      cell: (p) => (p.inQa ? <Badge tone="info" dot={false}>In QA</Badge> : <StatusBadge status={p.status} dot={false} />),
+    },
+    {
+      // SCR-001 "Project health table": the projects list's own rule, with
+      // the reasons it gives there.
+      key: 'health',
+      header: 'Health',
+      badge: true,
+      cell: (p) => {
+        const h = healthOf({ id: p.id, status: p.status, endsOn: p.endsOn });
+        const tone = h.level === 'healthy' ? 'success' : h.level === 'blocked' ? 'danger' : 'warning';
+        return (
+          <span className="flex flex-col items-start gap-0.5">
+            <Badge tone={tone} dot>{h.label}</Badge>
+            {h.reasons[0] ? <span className="max-w-[10rem] truncate text-[11px] text-muted" title={h.reasons.join('; ')}>{h.reasons[0]}</span> : null}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'progress',
+      header: 'Progress',
+      width: '11rem',
+      cell: (p) =>
+        p.milestonesTotal > 0 ? (
+          <ProgressBar value={(p.milestonesMet / p.milestonesTotal) * 100} label={`${p.name} milestones met`} />
+        ) : (
+          <span className="text-xs text-muted">No plan yet</span>
+        ),
+    },
+    { key: 'due', header: 'Due Date', cellClassName: 'text-muted whitespace-nowrap', cell: (p) => (p.endsOn ? clock.date(p.endsOn) : '—') },
+  ];
+
   const cronText =
     o.cronAgeSeconds === null
-      ? { text: 'unknown', tone: 'muted' as const }
+      ? { text: 'Unknown', tone: 'muted' as const }
       : o.cronAgeSeconds > 15 * 60
-        ? {text: `${o.cronAgeSeconds > 3600 ? `${Math.floor(o.cronAgeSeconds / 3600)}h` : `${Math.floor(o.cronAgeSeconds / 60)}m`} ago — may be stopped`, tone: 'bad' as const }
-        : { text: 'ticking', tone: 'good' as const };
+        ? { text: `${o.cronAgeSeconds > 3600 ? `${Math.floor(o.cronAgeSeconds / 3600)}h` : `${Math.floor(o.cronAgeSeconds / 60)}m`} ago — may be stopped`, tone: 'bad' as const }
+        : { text: 'Running', tone: 'good' as const };
+
+  const systemRows: StatusRow[] = [
+    // SCR-001 "System health: app, …". The app answered this request, so it is serving; what can be wrong
+    // with it is its configuration, counted by the same production checks Production Readiness lists.
+    {
+      label: 'Application',
+      icon: <IconSettings size={13} />,
+      ...(o.environment.productionProblems > 0
+        ? {
+            state: show('organization.settings') ? (
+              <Link href="/production-readiness" className="underline underline-offset-2">{o.environment.productionProblems} configuration problem{o.environment.productionProblems === 1 ? '' : 's'}</Link>
+            ) : (
+              `${o.environment.productionProblems} configuration problem${o.environment.productionProblems === 1 ? '' : 's'}`
+            ),
+            tone: 'warning' as Tone,
+          }
+        : { state: 'Serving · configuration clear', tone: 'success' as Tone }),
+    },
+    {
+      label: 'Database (Supabase)',
+      icon: <IconOperations size={13} />,
+      ...(isAvailable(o.backlog) ? { state: 'Connected', tone: 'success' } : { state: 'DATA UNAVAILABLE', tone: 'danger' }),
+    },
+    {
+      label: 'AI Provider',
+      icon: <IconSparkle size={13} />,
+      ...(isAvailable(o.ai)
+        ? o.ai.value.providerConfigured
+          ? { state: 'Configured', tone: 'success' as Tone }
+          : { state: <Link href="/security/keys#ai" className="underline underline-offset-2">Not configured — add a key</Link>, tone: 'warning' as Tone }
+        : { state: 'DATA UNAVAILABLE', tone: 'danger' as Tone }),
+    },
+    {
+      label: 'WhatsApp (Meta)',
+      icon: <IconMessage size={13} />,
+      ...(!isAvailable(o.whatsapp.numberConfigured)
+        ? { state: 'DATA UNAVAILABLE', tone: 'danger' as Tone }
+        : o.whatsapp.tokenConfigured && o.whatsapp.numberConfigured.value
+          ? { state: 'Configured · verify', tone: 'warning' as Tone }
+          : { state: <Link href="/security/keys#messaging" className="underline underline-offset-2">Not configured — add a key</Link>, tone: 'warning' as Tone }),
+    },
+    { label: 'Scheduler (Cron)', icon: <IconClock size={13} />, state: cronText.text, tone: TONE[cronText.tone] ?? 'neutral' },
+    {
+      label: 'Operational Alerts',
+      icon: <IconAlert size={13} />,
+      ...(isAvailable(o.failedDeliveries)
+        ? o.failedDeliveries.value > 0
+          ? { state: `${o.failedDeliveries.value} failed`, tone: 'danger' as Tone }
+          : { state: 'Clear', tone: 'success' as Tone }
+        : { state: 'DATA UNAVAILABLE', tone: 'danger' as Tone }),
+    },
+  ];
 
   const destinations = (
     [
@@ -102,234 +368,422 @@ export default async function OverviewPage() {
       ['Integrations', 'Every dependency & its lifecycle', '/integrations', 'organization.settings'],
       ['Security', 'Structural invariants, live', '/security', 'audit.read'],
       ['Operations', 'Jobs, outbox, failed deliveries', '/operations', 'audit.read'],
-      ['Approvals', 'What needs a decision', '/approvals', null],
       ['Agents', 'Registry & provider posture', '/agents', 'audit.read'],
-      ['Usage & costs', 'What the agents consumed', '/usage', 'audit.read'],
       ['Audit log', 'Who changed what', '/audit', 'audit.read'],
       ['Import', 'Historical-lead review desk', '/import', 'organization.settings'],
       ['Settings', 'Configuration & reactivation', '/settings', 'organization.settings'],
     ] as [string, string, string, Capability | null][]
   ).filter(([, , , cap]) => cap === null || show(cap));
 
+  const urgentCount = actionItems.filter((i) => i.urgent && i.attention).length;
+
   return (
     <div className="flex flex-col gap-5">
       <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Overview</h1>
-          <p className="mt-1.5 text-[13px] text-muted">
-            Signed in as {context.email} · environment{' '}
-            <span className="font-mono">{o.environment.nodeEnv}</span>
-            {o.environment.looksLocal ? ' · local' : ''}
+          <p className="text-[13px] text-muted">{clock.day(now)}</p>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-[28px]">
+            {greeting(clock, now)}, {firstName}! <span aria-hidden>👋</span>
+          </h1>
+          <p className="mt-1 text-[13px] text-muted sm:text-sm">
+            Here&apos;s what&apos;s happening with your agency today.
+            {o.environment.looksLocal ? (
+              <>
+                {' '}
+                · <span className="font-mono">{o.environment.nodeEnv}</span> · local
+              </>
+            ) : null}
           </p>
         </div>
-        <Badge tone={TONE[label.tone] ?? 'neutral'} dot className="px-2.5 py-1 text-[13px]">
-          {label.text}
-        </Badge>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <Badge tone={TONE[label.tone] ?? 'neutral'} dot className="px-3 py-1.5 text-[13px]">
+            {status.level === 'operational' ? 'Everything is running' : label.text}
+          </Badge>
+          <LiveRefresh topics={['approvals', 'finance', 'jobs', 'leads', 'projects', 'agents']} />
+        </div>
       </header>
 
       {status.level !== 'operational' ? (
         <Callout tone={label.tone === 'bad' ? 'danger' : 'warning'} icon={<IconAlert size={16} />}>
-          {status.reason}
+          <span className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+            <span>{status.reason}</span>
+            {show('audit.read') ? (
+              <Link href="/operations" className="font-semibold underline underline-offset-2">Open Operations to retry or review</Link>
+            ) : (
+              <Link href="/notifications" className="font-semibold underline underline-offset-2">Open your inbox</Link>
+            )}
+          </span>
         </Callout>
       ) : null}
 
-      {/* Operational KPI tiles — real reads only, each linking to its detail page. */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-        {show('audit.read') ? (
-          <Stat
-            label="Dead jobs"
-            href="/operations"
-            value={<Value value={num(o.backlog, (b) => String(b.dead_jobs))} />}
-            tone={isAvailable(o.backlog) && o.backlog.value.dead_jobs > 0 ? 'danger' : 'neutral'}
-          />
-        ) : null}
-        {show('audit.read') ? (
-          <Stat
-            label="Failed deliveries"
-            href="/operations"
-            value={<Value value={num(o.failedDeliveries, String)} />}
-            tone={isAvailable(o.failedDeliveries) && o.failedDeliveries.value > 0 ? 'danger' : 'neutral'}
-          />
-        ) : null}
+      {/* ── Needs attention — SCR-001's five named header counters ───────── */}
+      <StatGrid cols={5}>
+        <Stat label="Needs Action" href="/notifications" value={String(needsActionCount)} caption={urgentCount > 0 ? `${urgentCount} urgent` : 'Open inbox items'} tone={urgentCount > 0 ? 'danger' : needsActionCount > 0 ? 'warning' : 'neutral'} icon={<IconInbox size={16} />} />
         <Stat
-          label="Pending approvals"
+          label="Pending Approvals"
           href="/approvals"
           value={<Value value={num(o.approvals, (a) => String(a.pending))} />}
           caption={isAvailable(o.approvals) && o.approvals.value.overdue > 0 ? `${o.approvals.value.overdue} overdue` : undefined}
           tone={isAvailable(o.approvals) && o.approvals.value.overdue > 0 ? 'warning' : 'neutral'}
+          icon={<IconApprovals size={16} />}
         />
-        {show('audit.read') ? (
-          <Stat
-            label="Agents runnable"
-            href="/agents"
-            value={<Value value={num(o.ai, (a) => `${a.agentsRunnable}/${a.agentsTotal}`)} />}
-          />
-        ) : null}
-        {show('organization.settings') ? (
-          <Stat
-            label="Reactivation enrolled"
-            href="/import"
-            value={<Value value={num(o.reactivation, (r) => String(r.enrolled))} />}
-            caption={isAvailable(o.reactivation) ? (o.reactivation.value.pilotEnabled ? 'pilot on' : 'pilot off') : undefined}
-            tone={isAvailable(o.reactivation) && o.reactivation.value.pilotEnabled ? 'success' : 'neutral'}
-          />
-        ) : null}
-        {show('organization.settings') ? (
-          <Stat
-            label="Config problems"
-            href="/settings"
-            value={String(o.environment.productionProblems)}
-            tone={o.environment.productionProblems > 0 ? 'warning' : 'success'}
-          />
-        ) : null}
         {show('invoice.read') ? (
-          <Stat
-            label="Payments awaiting verification"
-            href="/invoices/verify"
-            value={<Value value={num(o.paymentsPendingVerification, String)} />}
-            tone={isAvailable(o.paymentsPendingVerification) && o.paymentsPendingVerification.value > 0 ? 'warning' : 'neutral'}
-          />
+          <Stat label="Payment Verification" href="/invoices/verify" value={<Value value={num(o.paymentsPendingVerification, String)} />} caption="Claims awaiting a decision" tone={isAvailable(o.paymentsPendingVerification) && o.paymentsPendingVerification.value > 0 ? 'warning' : 'neutral'} icon={<IconInvoices size={16} />} />
         ) : null}
-        {show('project.read') ? (
-          <Stat
-            label="Projects on hold"
-            href="/projects"
-            value={<Value value={num(o.projectsOnHold, String)} />}
-            tone={isAvailable(o.projectsOnHold) && o.projectsOnHold.value > 0 ? 'warning' : 'neutral'}
-          />
+        {canSeeProjects ? (
+          <Stat label="Blocked Projects" href="/projects?health=blocked" value={String(blockedProjectCount)} caption="Same rule as the projects list" tone={blockedProjectCount > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} />
         ) : null}
-      </div>
+        {show('audit.read') ? (
+          <Stat label="Failed Deliveries" href="/operations#failed-deliveries" value={<Value value={num(o.failedDeliveries, String)} />} tone={isAvailable(o.failedDeliveries) && o.failedDeliveries.value > 0 ? 'danger' : 'neutral'} icon={<IconMessage size={16} />} />
+        ) : null}
+      </StatGrid>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        {/* Needs attention — the prioritised queue SCR-001 calls for: overdue
-            approvals and recent delivery failures, oldest first. */}
-        <Card>
-          <CardHeader title="Needs attention" description="Soonest deadline or oldest failure first." />
-          {!isAvailable(o.needsAttention) ? (
-            <div className="px-4 py-4 sm:px-5">
-              <Value value="DATA UNAVAILABLE" />
-            </div>
-          ) : o.needsAttention.value.length === 0 ? (
-            <EmptyState
-              icon={<IconAlert size={22} />}
-              title="Nothing needs attention"
-              description="No overdue approvals and no recent delivery failures."
+      {/* ── Business snapshot ─────────────────────────────────────────── */}
+      {canSeeLeads || canSeeProjects || canSeeRevenue || canSeeUsage ? (
+        <StatGrid cols={5}>
+          {canSeeLeads ? (
+            <Stat label="Total Leads" href="/leads" value={String(totalLeads ?? 0)} caption="All time" trend={trendOf(periodDelta(deltas.leads))} tone="brand" icon={<IconUsers size={16} />} />
+          ) : null}
+          {canSeeProjects ? (
+            <Stat
+              label="Active Projects"
+              href="/projects?status=open"
+              value={openProjects === null ? 'DATA UNAVAILABLE' : String(openProjects)}
+              caption={projectCounts ? `${projectCounts.active ?? 0} in development` : undefined}
+              trend={trendOf(periodDelta(deltas.projects))}
+              tone="info"
+              icon={<IconProjects size={16} />}
             />
-          ) : (
-            <ul className="divide-y divide-line">
-              {o.needsAttention.value.map((item) => (
-                <li key={item.id}>
-                  <Link
-                    href={item.href}
-                    className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover sm:px-5"
-                  >
-                    <span
-                      className={cx(
-                        'h-1.5 w-1.5 shrink-0 rounded-full',
-                        item.kind === 'approval' ? TONE_DOT.warning : TONE_DOT.danger,
-                      )}
+          ) : null}
+          {canSeeRevenue ? (
+            <Stat
+              label="Revenue (This Month)"
+              href="/finance"
+              value={revenue.length === 0 ? money(0, 'INR') : revenue.map((r) => money(r.paidMinor, r.currency)).join(' + ')}
+              caption="Verified payments"
+              trend={trendOf(periodDelta(deltas.revenue))}
+              tone="success"
+              icon={<IconInvoices size={16} />}
+            />
+          ) : null}
+          {canSeeUsage ? (
+            <Stat
+              label="AI Agent Runs"
+              href="/usage"
+              value={compact(usage?.totals.runs ?? 0)}
+              caption={isAvailable(o.ai) ? `${o.ai.value.agentsRunnable}/${o.ai.value.agentsTotal} agents runnable` : undefined}
+              trend={trendOf(periodDelta(deltas.runs))}
+              tone="accent"
+              icon={<IconAgents size={16} />}
+            />
+          ) : null}
+          {canSeeLeads ? (
+            <Stat label="Messages Sent" href="/communication" value={compact(messagesSent ?? 0)} caption="This month" trend={trendOf(periodDelta(deltas.messages))} tone="warning" icon={<IconMessage size={16} />} />
+          ) : null}
+        </StatGrid>
+      ) : null}
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(22rem,1fr)]">
+        {/* ── Left column ──────────────────────────────────────────── */}
+        <div className="flex min-w-0 flex-col gap-4">
+          {pipeline.length > 0 ? (
+            <Card>
+              <CardHeader title="Project Pipeline" actions={<ViewAll href={`/sales-funnel?days=${sinceDays}`} />} />
+              <div className="p-4 sm:p-5">
+                <PipelineStrip stages={pipeline} />
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-faint">Date range</span>
+                    <FilterChips
+                      options={OVERVIEW_WINDOWS.map((d) => ({
+                        key: String(d),
+                        label: `Last ${d} days`,
+                        href: d === 30 ? '/dashboard' : `/dashboard?days=${d}`,
+                        active: sinceDays === d,
+                      }))}
                     />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-foreground">{item.title}</span>
-                      <span className="block truncate text-[13px] text-muted">{item.detail}</span>
-                    </span>
-                    <span className="shrink-0 text-xs text-faint">{clock.dateTime(item.at)}</span>
-                    <IconChevronRight
-                      size={16}
-                      className="shrink-0 text-faint transition-transform group-hover:translate-x-0.5"
-                    />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+                  </div>
+                  {canSeeProjects ? (
+                    <Link href="/reports" className={buttonClass('secondary', 'sm')}>
+                      Generate report
+                    </Link>
+                  ) : null}
+                </div>
+              </div>
+            </Card>
+          ) : null}
 
-        {/* Today — what's on the calendar, in the agency's own zone. */}
-        <Card>
-          <CardHeader title="Today" description={clock.day(new Date())} />
-          {!isAvailable(o.today) ? (
-            <div className="px-4 py-4 sm:px-5">
-              <Value value="DATA UNAVAILABLE" />
-            </div>
-          ) : o.today.value.length === 0 ? (
-            <EmptyState title="No meetings today" description="Nothing on the calendar for today." />
-          ) : (
-            <ul className="divide-y divide-line">
-              {o.today.value.map((m) => (
-                <li key={m.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm sm:px-5">
-                  <span className="min-w-0 truncate text-foreground">{m.title}</span>
-                  <span className="shrink-0 text-xs font-medium text-muted">
-                    {m.at ? clock.clock(m.at) : 'time TBD'}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-      </div>
+          {canSeeProjects ? (
+            <Card>
+              <CardHeader title="Project Phases" description="Active projects by delivery phase." actions={<ViewAll href="/projects" />} />
+              <div className="px-4 pb-4 sm:px-5">
+                {liveProjects.length === 0 ? (
+                  <p className="text-[13px] text-muted">No projects yet.</p>
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {LIFECYCLE_PHASES.filter((ph) => ph !== 'archived').map((ph) => {
+                      const n = phaseCounts.get(ph) ?? 0;
+                      return (
+                        <li key={ph}>
+                          <Link href={`/projects?phase=${ph}`} className="flex items-center gap-3 text-[13px] hover:text-brand">
+                            <span className="w-28 shrink-0 text-muted">{LIFECYCLE_PHASE_LABEL[ph]}</span>
+                            <span className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-hover" aria-hidden>
+                              <span className="block h-full rounded-full bg-brand" style={{ width: `${(n / liveProjects.length) * 100}%` }} />
+                            </span>
+                            <span className="tabular w-6 shrink-0 text-right font-medium">{n}</span>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </Card>
+          ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        {/* System health — each row reflects a real read, or admits it can't. */}
-        <Card>
-          <CardHeader
-            title="System health"
-            description="Configured is not verified. Confirm WhatsApp and the AI provider from their pages before relying on them."
-          />
-          <ul className="divide-y divide-line">
-            <HealthRow label="Application" state={{ text: 'serving', tone: 'good' }} />
-            <HealthRow
-              label="Database"
-              state={isAvailable(o.backlog) ? { text: 'reachable', tone: 'good' } : { text: 'DATA UNAVAILABLE', tone: 'bad' }}
-            />
-            <HealthRow label="Cron scheduler" state={cronText} />
-            <HealthRow
-              label="AI provider"
-              state={
-                isAvailable(o.ai)
-                  ? o.ai.value.providerConfigured
-                    ? { text: 'configured', tone: 'good' }
-                    : { text: 'not configured', tone: 'warn' }
-                  : { text: 'DATA UNAVAILABLE', tone: 'bad' }
-              }
-            />
-            <HealthRow
-              label="WhatsApp"
-              state={
-                !isAvailable(o.whatsapp.numberConfigured)
-                  ? { text: 'DATA UNAVAILABLE', tone: 'bad' }
-                  : o.whatsapp.tokenConfigured && o.whatsapp.numberConfigured.value
-                    ? { text: 'configured (verify to confirm)', tone: 'warn' }
-                    : { text: 'not configured', tone: 'warn' }
-              }
-            />
-          </ul>
-        </Card>
+          {canSeeLeads ? (
+            <Card>
+              <CardHeader title="Recent Leads" actions={<ViewAll href="/leads" />} />
+              <div className="px-4 pb-4 sm:px-5">
+                {recentLeads.length === 0 ? (
+                  <EmptyState icon={<IconUsers size={22} />} title="No leads yet" description="Leads arrive from WhatsApp, referrals and the website — or are entered by hand." action={<Link href="/leads" className={buttonClass('secondary', 'sm')}>Open leads</Link>} />
+                ) : (
+                  <DataTable dense rows={recentLeads} columns={leadColumns} getKey={(l) => l.id} href={(l) => `/leads/${l.id}`} rowActions={(l) => [{ key: 'open', label: 'Open lead', href: `/leads/${l.id}` }]} />
+                )}
+              </div>
+            </Card>
+          ) : null}
 
-        {/* Where to go next — capability-gated links into the control plane. */}
-        <Card>
-          <CardHeader title="Control plane" />
-          <ul className="divide-y divide-line">
-            {destinations.map(([name, blurb, href]) => (
-              <li key={href}>
-                <Link
-                  href={href}
-                  className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover sm:px-5"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium text-foreground">{name}</span>
-                    <span className="block text-[13px] text-muted">{blurb}</span>
-                  </span>
-                  <IconChevronRight
-                    size={16}
-                    className="shrink-0 text-faint transition-transform group-hover:translate-x-0.5"
+          {canSeeProjects ? (
+            <Card>
+              <CardHeader title="Active Projects" actions={<ViewAll href="/projects" />} />
+              <div className="px-4 pb-4 sm:px-5">
+                {activeProjects.length === 0 ? (
+                  <EmptyState icon={<IconProjects size={22} />} title="No active projects" description="A project starts from a won deal, a template, or by hand from the header's Create." action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>} />
+                ) : (
+                  <DataTable dense rows={activeProjects} columns={projectColumns} getKey={(p) => p.id} href={(p) => `/projects/${p.id}`} rowActions={(p) => [{ key: 'open', label: 'Open project', href: `/projects/${p.id}` }]} />
+                )}
+              </div>
+            </Card>
+          ) : null}
+
+        </div>
+
+        {/* ── Right rail ───────────────────────────────────────────── */}
+        <div className="flex min-w-0 flex-col gap-4">
+          <ActivityFeed
+            title={
+              <span className="flex items-center gap-2">
+                Tasks &amp; Approvals
+                {urgentCount > 0 ? (
+                  <span className="tabular flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1.5 text-[11px] font-semibold text-white">{urgentCount}</span>
+                ) : null}
+              </span>
+            }
+            viewAllHref="/notifications"
+            items={actionItems
+              .filter((i) => i.attention)
+              .slice(0, 6)
+              .map((i) => ({
+                id: i.key,
+                title: i.title,
+                detail: i.detail,
+                when: i.urgent ? 'Urgent' : '',
+                tone: i.urgent ? 'danger' : 'brand',
+                icon: <IconInbox size={13} />,
+                href: i.href,
+                // SCR-001 "Acknowledge / escalate an operational item" — the
+                // same recorded door the inbox uses (core.escalations).
+                action: (
+                  <div className="flex flex-wrap items-start gap-1.5">
+                  <AcknowledgeButton itemKey={i.key} />
+                  <EscalateControl
+                    subjectType={categoryOf(i)}
+                    subjectKey={i.key}
+                    title={i.title}
+                    escalation={
+                      i.escalation
+                        ? {
+                            id: i.escalation.id,
+                            toRole: i.escalation.toRole,
+                            reason: i.escalation.reason,
+                            state: i.escalation.state,
+                            fromUserName: i.escalation.fromUserName,
+                            acknowledgedByName: i.escalation.acknowledgedByName,
+                            createdAtLabel: clock.dateTime(i.escalation.createdAt),
+                          }
+                        : null
+                    }
+                    canAnswer={canAnswerEscalations}
+                    compact
                   />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </Card>
+                  </div>
+                ),
+              }))}
+            emptyTitle="Nothing needs you"
+            emptyDescription="No approvals, claims, defects or failures are waiting."
+            compact
+          />
+
+          <Card>
+            <CardHeader
+              title="System Status"
+              actions={
+                <span className="flex items-center gap-2">
+                  <Badge tone={TONE[label.tone] ?? 'neutral'} dot>
+                    {label.text}
+                  </Badge>
+                  {show('organization.settings') ? <ViewAll href="/production-readiness" /> : null}
+                </span>
+              }
+            />
+            <StatusList rows={systemRows} className="py-1" />
+          </Card>
+
+          {canSeeUsage ? (
+            <Card>
+              <CardHeader title="Usage & Cost (This Month)" actions={<ViewAll href="/usage" label="View Details" />} />
+              <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4 sm:p-5">
+                {[
+                  ['Agent runs', compact(usage?.totals.runs ?? 0)],
+                  ['Input tokens', compact(usage?.totals.inputTokens ?? 0)],
+                  ['Output tokens', compact(usage?.totals.outputTokens ?? 0)],
+                  ['Total cost', money(usage?.totals.costMinor ?? 0, 'INR')],
+                ].map(([l, v]) => (
+                  <div key={l} className="min-w-0">
+                    <p className="tabular truncate text-lg font-semibold leading-tight text-foreground">{v}</p>
+                    <p className="text-[11px] text-muted">{l}</p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ) : null}
+
+        </div>
       </div>
+
+      {/* Everything the reference deck does not draw but the Command Center
+          still owes the operator: the window counts, the shortcuts, the finance
+          gate, the operational tiles, today's list and the control plane. */}
+      <section aria-labelledby="dash-more" className="flex flex-col gap-4">
+        <h2 id="dash-more" className="text-base font-bold tracking-tight text-foreground">More from your agency</h2>
+      {/* SCR-001 "Quick actions" — the header's own create forms, and the queue. */}
+      <QuickActionsRow canCreateLead={show('lead.write')} canCreateProject={show('project.write')} canCreateInvoice={canCreateInvoice} pendingApprovals={isAvailable(o.approvals) ? o.approvals.value.pending : null} />
+
+      <StatGrid cols={4}>
+        <Stat label="Leads created" href={canSeeLeads ? `/leads?createdFrom=${windowFrom}` : undefined} value={<Value value={num(o.window, (w) => String(w.leadsCreated))} />} caption={`in the last ${sinceDays} days`} />
+        <Stat label="Deals won" href={canSeeLeads ? `/sales-funnel?days=${sinceDays}` : undefined} value={<Value value={num(o.window, (w) => String(w.dealsWon))} />} caption={`closed won in the last ${sinceDays} days`} />
+        <Stat label="Invoices issued" href={canSeeRevenue ? `/invoices?issuedFrom=${windowFrom}` : undefined} value={<Value value={num(o.window, (w) => String(w.invoicesIssued))} />} caption={`issued in the last ${sinceDays} days`} />
+        <Stat label="Meetings completed" href={canSeeLeads ? '/meetings?window=past&status=completed' : undefined} value={<Value value={num(o.window, (w) => String(w.meetingsCompleted))} />} caption={`completed in the last ${sinceDays} days`} />
+      </StatGrid>
+
+        <div className="grid gap-4 xl:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-4">
+          {/* SCR-001 "Finance gate queue" — the unpaid milestone invoices holding
+              a phase (finance-gate.ts) and the claims awaiting a decision, from
+              the same readers /invoices and /invoices/verify use. */}
+          {canSeeRevenue || canVerifyClaims ? (
+            <Card>
+              <CardHeader
+                title="Finance gate queue"
+                description="Milestone invoices unpaid — each one holds the phase behind it — and payment claims waiting for a decision."
+                actions={<ViewAll href={canVerifyClaims ? '/invoices/verify' : '/invoices?status=unpaid'} />}
+              />
+              {gateInvoices.length === 0 && gateClaims.length === 0 ? (
+                <EmptyState
+                  icon={<IconInvoices size={22} />}
+                  title="Nothing at the gate"
+                  description="No milestone invoice is unpaid and no claim is waiting."
+                  action={canSeeRevenue ? <Link href="/invoices" className={buttonClass('secondary', 'sm')}>Open invoices</Link> : undefined}
+                />
+              ) : (
+                <ul className="divide-y divide-line">
+                  {gateInvoices.map((g) => (
+                    <li key={g.invoiceId}>
+                      <Link href={`/invoices/${g.invoiceId}`} className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-warning-soft text-warning"><IconInvoices size={13} /></span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium text-foreground">
+                            {g.number} · {g.projectName ?? 'no project'}
+                          </span>
+                          <span className="block truncate text-xs text-muted">
+                            {g.milestonePosition !== null ? `M${g.milestonePosition} ` : ''}{g.milestoneName ?? 'milestone'} · {money(g.totalMinor - g.paidMinor, g.currency)} outstanding
+                            {g.dueAt ? ` · due ${clock.date(g.dueAt)}` : ''}
+                          </span>
+                        </span>
+                        <StatusBadge status={g.status} dot={false} />
+                      </Link>
+                    </li>
+                  ))}
+                  {gateClaims.slice(0, 5).map((c) => (
+                    <li key={c.id}>
+                      <Link href="/invoices/verify" className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-info-soft text-info"><IconCheck size={13} /></span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium text-foreground">Claim on {c.invoiceNumber} · {c.clientName ?? 'unknown client'}</span>
+                          <span className="block truncate text-xs text-muted">claimed {clock.dateTime(c.submitted_at)} · awaiting verification</span>
+                        </span>
+                        <Badge tone={c.status === 'mismatch' ? 'danger' : 'warning'} dot={false}>{humanize(c.status)}</Badge>
+                      </Link>
+                    </li>
+                  ))}
+                  {gateClaims.length > 5 ? (
+                    <li className="px-4 py-2 text-xs text-muted sm:px-5">{gateClaims.length - 5} more claim{gateClaims.length - 5 === 1 ? '' : 's'} on /invoices/verify.</li>
+                  ) : null}
+                </ul>
+              )}
+            </Card>
+          ) : null}
+
+          </div>
+          <div className="flex min-w-0 flex-col gap-4">
+          {/* Shared with the Sales dashboard (SCR-005): one component, the same rows. */}
+          <TodayCard
+            clock={clock}
+            now={now}
+            meetings={o.today}
+            reminders={reminders}
+            dueToday={dueToday}
+            overdueCount={overdueMine.length}
+            paymentsToVerify={show('invoice.read') && isAvailable(o.paymentsPendingVerification) ? o.paymentsPendingVerification.value : null}
+          />
+
+          {destinations.length > 0 ? (
+            <Card>
+              <CardHeader title="Control plane" />
+              <ul className="divide-y divide-line">
+                {destinations.map(([name, blurb, href]) => (
+                  <li key={href}>
+                    <Link href={href} className="group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-hover sm:px-5">
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[13px] font-medium text-foreground">{name}</span>
+                        <span className="block text-xs text-muted">{blurb}</span>
+                      </span>
+                      <IconChevronRight size={16} className={cx('shrink-0 text-faint transition-transform group-hover:translate-x-0.5')} />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
+          </div>
+        </div>
+          {/* Operational KPI tiles — real reads only, each linking to its detail page. */}
+        <StatGrid cols={4}>
+            {show('audit.read') ? (
+              <Stat label="Dead jobs" href="/operations#dead-letters" value={<Value value={num(o.backlog, (b) => String(b.dead_jobs))} />} tone={isAvailable(o.backlog) && o.backlog.value.dead_jobs > 0 ? 'danger' : 'neutral'} icon={<IconOperations size={16} />} />
+            ) : null}
+            {show('project.read') ? (
+              <Stat label="Projects on hold" href="/projects?status=on_hold" value={<Value value={num(o.projectsOnHold, String)} />} tone={isAvailable(o.projectsOnHold) && o.projectsOnHold.value > 0 ? 'warning' : 'neutral'} icon={<IconProjects size={16} />} />
+            ) : null}
+            {show('organization.settings') ? (
+              <Stat label="Reactivation enrolled" href="/import" value={<Value value={num(o.reactivation, (r) => String(r.enrolled))} />} caption={isAvailable(o.reactivation) ? (o.reactivation.value.pilotEnabled ? 'Pilot on' : 'Pilot off') : undefined} icon={<IconRefresh size={16} />} />
+            ) : null}
+            {show('organization.settings') ? (
+              <Stat label="Config problems" href="/settings" value={String(o.environment.productionProblems)} tone={o.environment.productionProblems > 0 ? 'warning' : 'success'} icon={<IconSettings size={16} />} />
+            ) : null}
+          </StatGrid>
+      </section>
     </div>
   );
 }

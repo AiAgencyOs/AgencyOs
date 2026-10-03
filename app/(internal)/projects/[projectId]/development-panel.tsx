@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState } from 'react';
 
 import {
@@ -10,7 +11,9 @@ import {
   setModuleStatusAction,
   setTaskStatusAction,
 } from '@/modules/projects/actions';
+import { PROJECT_ROLE_LABEL, PROJECT_ROLES } from '@/modules/projects/project-members-schema';
 import { FEATURE_STATUSES, MODULE_STATUSES, TASK_STATUSES } from '@/modules/projects/schema';
+import { isCountedTask, selectableStatuses } from '@/modules/projects/task-transitions';
 import type { DevelopmentFeature, DevelopmentModule, DevelopmentTask } from '@/modules/projects/queries';
 import { IDLE_STATE, type FormState } from '@/modules/identity/types';
 import { FormMessage, buttonClass, inputClass, labelClass, selectClass } from '@/ui';
@@ -43,6 +46,7 @@ function StatusForm({
       <input type="hidden" name={hiddenName} value={hiddenValue} />
       <select
         name="status"
+        aria-label="Status"
         defaultValue={status}
         className={`${selectClass} py-1 text-xs`}
         disabled={pending}
@@ -59,11 +63,14 @@ function StatusForm({
   );
 }
 
-function TaskRow({ task }: { task: DevelopmentTask }) {
+function TaskRow({ task, projectId }: { task: DevelopmentTask; projectId: string }) {
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
       <span className="flex flex-wrap items-baseline gap-2">
-        <span className="font-medium">{task.title}</span>
+        {/* SCR-041 — the title opens the task's own surface. */}
+        <Link href={`/projects/${projectId}/development/tasks/${task.id}`} className="font-medium underline-offset-2 hover:underline">
+          {task.title}
+        </Link>
         <span className="text-xs text-muted">{task.priority}</span>
       </span>
       <StatusForm
@@ -71,7 +78,7 @@ function TaskRow({ task }: { task: DevelopmentTask }) {
         hiddenName="taskId"
         hiddenValue={task.id}
         status={task.status}
-        options={TASK_STATUSES}
+        options={selectableStatuses(TASK_STATUSES, task.status)}
       />
     </li>
   );
@@ -84,13 +91,24 @@ function AddTaskForm({ projectId, moduleId, features }: { projectId: string; mod
     <form action={action} className="flex flex-wrap items-end gap-2 border-t border-line pt-2">
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="moduleId" value={moduleId} />
-      <div className="flex min-w-40 flex-1 flex-col gap-1">
-        <label className={labelClass}>Task</label>
+      <label className="flex min-w-40 flex-1 flex-col gap-1">
+        <span className={labelClass}>Task</span>
         <input name="title" required maxLength={200} className={inputClass} placeholder="Build the login form" />
-      </div>
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className={labelClass}>For project role</span>
+        <select name="assigneeRole" className={selectClass} defaultValue="">
+          <option value="">none</option>
+          {PROJECT_ROLES.map((r) => (
+            <option key={r} value={r}>
+              {PROJECT_ROLE_LABEL[r]}
+            </option>
+          ))}
+        </select>
+      </label>
       {features.length > 0 ? (
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Feature</label>
+        <label className="flex flex-col gap-1">
+          <span className={labelClass}>Feature</span>
           <select name="featureId" className={selectClass} defaultValue="">
             <option value="">none</option>
             {features.map((f) => (
@@ -99,7 +117,7 @@ function AddTaskForm({ projectId, moduleId, features }: { projectId: string; mod
               </option>
             ))}
           </select>
-        </div>
+        </label>
       ) : null}
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
         {pending ? 'Adding…' : 'Add task'}
@@ -116,10 +134,10 @@ function AddFeatureForm({ projectId, moduleId }: { projectId: string; moduleId: 
     <form action={action} className="flex flex-wrap items-end gap-2">
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="moduleId" value={moduleId} />
-      <div className="flex min-w-40 flex-1 flex-col gap-1">
-        <label className={labelClass}>Feature</label>
+      <label className="flex min-w-40 flex-1 flex-col gap-1">
+        <span className={labelClass}>Feature</span>
         <input name="name" required maxLength={200} className={inputClass} placeholder="OTP login" />
-      </div>
+      </label>
       <button type="submit" disabled={pending} className={buttonClass('ghost', 'sm')}>
         {pending ? 'Adding…' : 'Add feature'}
       </button>
@@ -139,7 +157,9 @@ export function ModuleCard({
   tasks: DevelopmentTask[];
   projectId: string;
 }) {
-  const done = tasks.filter((t) => t.status === 'done').length;
+  // T1-1: a cancelled or archived task is listed but is not outstanding work, so it is not in "x of y done".
+  const counted = tasks.filter(isCountedTask);
+  const done = counted.filter((t) => t.status === 'done').length;
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
@@ -147,9 +167,9 @@ export function ModuleCard({
         <div>
           <h3 className="text-sm font-semibold">{module.name}</h3>
           {module.description ? <p className="mt-0.5 text-xs text-muted">{module.description}</p> : null}
-          {tasks.length > 0 ? (
+          {counted.length > 0 ? (
             <p className="mt-1 text-xs text-muted">
-              {done} of {tasks.length} task{tasks.length === 1 ? '' : 's'} done
+              {done} of {counted.length} task{counted.length === 1 ? '' : 's'} done
             </p>
           ) : null}
         </div>
@@ -182,7 +202,7 @@ export function ModuleCard({
       {tasks.length > 0 ? (
         <ul className="flex flex-col gap-1">
           {tasks.map((t) => (
-            <TaskRow key={t.id} task={t} />
+            <TaskRow key={t.id} task={t} projectId={projectId} />
           ))}
         </ul>
       ) : null}
@@ -201,14 +221,14 @@ export function AddModuleForm({ projectId }: { projectId: string }) {
   return (
     <form action={action} className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-line p-4">
       <input type="hidden" name="projectId" value={projectId} />
-      <div className="flex min-w-48 flex-1 flex-col gap-1">
-        <label className={labelClass}>New module</label>
+      <label className="flex min-w-48 flex-1 flex-col gap-1">
+        <span className={labelClass}>New module</span>
         <input name="name" required maxLength={200} className={inputClass} placeholder="Authentication" />
-      </div>
-      <div className="flex min-w-48 flex-[2] flex-col gap-1">
-        <label className={labelClass}>Description (optional)</label>
+      </label>
+      <label className="flex min-w-48 flex-[2] flex-col gap-1">
+        <span className={labelClass}>Description (optional)</span>
         <input name="description" maxLength={4000} className={inputClass} />
-      </div>
+      </label>
       <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
         {pending ? 'Adding…' : 'Add module'}
       </button>
@@ -224,7 +244,7 @@ export function UnassignedTasks({ projectId, tasks }: { projectId: string; tasks
       {tasks.length > 0 ? (
         <ul className="flex flex-col gap-1">
           {tasks.map((t) => (
-            <TaskRow key={t.id} task={t} />
+            <TaskRow key={t.id} task={t} projectId={projectId} />
           ))}
         </ul>
       ) : (
@@ -241,10 +261,10 @@ function AddTaskFormNoModule({ projectId }: { projectId: string }) {
   return (
     <form action={action} className="flex flex-wrap items-end gap-2 border-t border-line pt-2">
       <input type="hidden" name="projectId" value={projectId} />
-      <div className="flex min-w-40 flex-1 flex-col gap-1">
-        <label className={labelClass}>Task</label>
+      <label className="flex min-w-40 flex-1 flex-col gap-1">
+        <span className={labelClass}>Task</span>
         <input name="title" required maxLength={200} className={inputClass} placeholder="Set up CI" />
-      </div>
+      </label>
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
         {pending ? 'Adding…' : 'Add task'}
       </button>

@@ -2,7 +2,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { authorizeCronRequest } from '@/lib/cron-auth';
 import { createAdminClient } from '@/lib/db/admin';
-import { failJob, logJobParked, type Admin, type JobRow } from './agent-run';
+import { failJob, logJobParked, parkBudgetRefusedJob, parkRefusedJob, requeuePausedJob, settleCancelledJob, type Admin, type JobRow } from './agent-run';
+import { AgentPolicyRefusal } from '@/lib/ai/agent-policy';
+import { AgentBudgetRefusal, AgentsPaused, JobCancelled } from '@/lib/ai/run-gates';
 import { AGENT_JOB_KINDS, workflowFor } from './workflows';
 import { serverEnv } from '@/lib/env';
 import { newCorrelationId } from '@/lib/errors';
@@ -12,11 +14,17 @@ import { reapStalledJobs } from '@/lib/jobs/reaper';
 import { expireOverdueApprovals } from '@/lib/approvals/expire';
 import { lapseOverdueProposals } from '@/lib/sales/lapse';
 import { runFollowUps } from '@/modules/crm/follow-up-worker';
+import { runInvoiceReminders } from '@/modules/finance/reminder-worker';
+import { runCampaigns } from '@/modules/crm/campaign-worker';
+import { publishDueAnnouncements } from '@/modules/crm/announcement-worker';
+import { runSuiteSchedules } from '@/modules/qa/schedule-worker';
 import { detectUpsellSignals } from '@/lib/sales/upsell';
 import { markOverdueInvoices } from '@/lib/finance/overdue';
 import { mayAgentRun } from '@/lib/ai/autonomy';
 import { alertOnBacklog } from '@/lib/observability/alert';
 import { stampAgentDefinitions } from '@/modules/agents/stamp';
+import { runSemanticIndexing } from '@/lib/search/semantic-indexer';
+import { AGENT_DEFINITIONS } from '@/modules/agents/registry';
 import { settlementFor } from '@/lib/jobs/retry';
 import {
   handleApprovalRequested,
@@ -33,6 +41,8 @@ import {
   announcePrototypeSubmitted,
   announcePrototypeChangeRequested,
   announceTask2Complete,
+  announceTask3Complete,
+  announceTask4Complete,
   announceM2PaymentVerified,
 } from '@/modules/crm/handlers';
 import {
@@ -45,7 +55,7 @@ import {
   type HandlerResult,
   type UnlockJob,
 } from '@/modules/projects/handlers';
-import { handleBillingModeConfirmed, handlePhaseFourCompletedForFinance } from '@/modules/finance/handlers';
+import { handleBillingModeConfirmed, handlePhaseFourCompletedForFinance, handlePhaseFiveCompletedForFinance, handlePhaseSixCompletedForFinance } from '@/modules/finance/handlers';
 import { learnFromDecision, learnFromRevision } from '@/modules/sales/handlers';
 import { handleRouteTask2Design, handleRequestUIVersionAdminReview } from '@/modules/orchestrator/handlers';
 import { handleReviewUIVersion, handleReviewPrototypeBuild } from '@/modules/qa/handlers';
@@ -255,6 +265,49 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const followUps = await runFollowUps(admin);
 
   /**
+   * ── past-due invoices chased on WhatsApp (owner decision 2026-09-29) ──
+   *
+   * The same shape as the follow-ups, one schema over: observe, pick the
+   * thread, claim (the invoice_sends row), queue through
+   * `crm.send_outbound_message` and the `followup.queued` handler, so
+   * consent, the 24-hour window and the approved `invoice_reminder`
+   * template keep deciding. Off until an owner turns it on under Settings ›
+   * Finance; then one reminder per invoice per interval, never more.
+   */
+  const invoiceReminders = await runInvoiceReminders(admin);
+
+  /**
+   * ── campaigns, one governed send at a time (owner decision 2026-09-30) ──
+   *
+   * Broadcast reopened as a governed campaign: an approved plan expands to
+   * one recipient row per lead, and this claims up to 25 of them per tick
+   * (FOR UPDATE SKIP LOCKED) and sends each through the composer's own
+   * template door, so consent, the phone, the outreach limits and the
+   * template's facts decide every recipient separately. A refused
+   * recipient is recorded with its reason; a spent organization allowance
+   * holds the rest for a later tick rather than refusing them.
+   */
+  const campaigns = await runCampaigns(admin);
+
+  /**
+   * ── scheduled announcements (SCR-059, bucket F) ────────────────────────
+   *
+   * A draft with a moment set becomes published at that moment. A record,
+   * not a send; audited as by the schedule.
+   */
+  const dueAnnouncements = await publishDueAnnouncements(admin);
+
+  /**
+   * ── suite schedules (SCR-048, bucket F) ────────────────────────────────
+   *
+   * A suite on a cron expression: when it is due, the tick OPENS a run
+   * against the scheduled build and advances the schedule. The panel has no
+   * test runner, so a fired schedule is a run somebody fills and closes —
+   * nothing here claims a suite passed.
+   */
+  const suiteSchedules = await runSuiteSchedules(admin);
+
+  /**
    * ── invoices whose date has passed (G-004) ────────────────────────────
    *
    * The transition INVOICE_TRANSITIONS has admitted since the first day and
@@ -278,6 +331,18 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    * costs one select per tick and no write at all.
    */
   const stamps = await stampAgentDefinitions(admin);
+
+  /**
+   * ── search by meaning (decision 14) ────────────────────────────────────
+   *
+   * For an organisation whose owner turned it on: embed new and changed
+   * records, a bounded page at a time, under the monthly budget gates. A
+   * failure is logged inside and never stops the tick.
+   */
+  const semantic = await runSemanticIndexing(admin, AGENT_DEFINITIONS).catch((error) => {
+    console.error(JSON.stringify({ level: 'error', scope: 'jobs/run.semantic', detail: error instanceof Error ? error.message : String(error) }));
+    return null;
+  });
 
   const alerted = await alertOnBacklog(admin);
 
@@ -307,6 +372,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       unlocks: unlocks.results,
@@ -346,6 +413,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       phaseTwo: phaseTwo.results,
@@ -382,6 +451,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       phaseThree: phaseThree.results,
@@ -413,6 +484,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       phaseFour: phaseFour.results,
@@ -444,6 +517,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       task2Route: task2Route.results,
@@ -475,6 +550,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       uiVersionQa: uiVersionQa.results,
@@ -505,6 +582,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       uiVersionAdminReview: uiVersionAdminReview.results,
@@ -536,6 +615,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       prototypeQa: prototypeQa.results,
@@ -569,6 +650,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       m1Invoices: m1Invoices.results,
@@ -598,6 +681,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       phaseFourCompletions: phaseFourCompletions.results,
@@ -628,11 +713,45 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       m2Invoices: m2Invoices.results,
       correlationId,
     });
+  }
+
+  /**
+   * ── M3 / M4 invoice auto-generation (Q-PH56) ────────────────────────────
+   *
+   * Exactly as M2 above: pure database work, drained right after the phase
+   * completion that triggers it.
+   */
+  for (const [kind, handler, label] of [
+    [M3_INVOICE_JOB_KIND, handlePhaseFiveCompletedForFinance, 'runM3InvoiceJobs'],
+    [M4_INVOICE_JOB_KIND, handlePhaseSixCompletedForFinance, 'runM4InvoiceJobs'],
+  ] as const) {
+    const later = await runEventJobs(admin, kind, handler, label);
+    if (later.claimed > 0) {
+      return NextResponse.json({
+        claimed: later.claimed,
+        kind,
+        dispatched,
+        reaped,
+        alerted,
+        expired,
+        lapsed,
+        upsell,
+        followUps,
+        invoiceReminders,
+        campaigns,
+        overdue,
+        stamps,
+        laterInvoices: later.results,
+        correlationId,
+      });
+    }
   }
 
   /**
@@ -660,6 +779,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       lapsed,
       upsell,
       followUps,
+      invoiceReminders,
+      campaigns,
       overdue,
       stamps,
       scopeChangeRequests: scopeChangeRequests.results,
@@ -785,6 +906,10 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     announceTask2Complete,
     'runTask2CompleteAnnouncementJobs',
   );
+
+  // Q-PH56: the PM's Task 3 / Task 4 Complete messages, beside Task 2's.
+  const task3CompleteAnnouncements = await runEventJobs(admin, TASK3_COMPLETE_JOB_KIND, announceTask3Complete, 'runTask3CompleteAnnouncementJobs');
+  const task4CompleteAnnouncements = await runEventJobs(admin, TASK4_COMPLETE_JOB_KIND, announceTask4Complete, 'runTask4CompleteAnnouncementJobs');
 
   const m2PaymentVerifiedAnnouncements = await runEventJobs(
     admin,
@@ -978,6 +1103,11 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     reaped,
     dispatched,
     followUps,
+    invoiceReminders,
+    campaigns,
+    dueAnnouncements,
+    suiteSchedules,
+    semantic,
     unlocks: unlocks.results,
     announcements: announcements.results,
     escalations: escalations.results,
@@ -990,6 +1120,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     prototypeSubmittedAnnouncements: prototypeSubmittedAnnouncements.results,
     prototypeChangeRequestedAnnouncements: prototypeChangeRequestedAnnouncements.results,
     task2CompleteAnnouncements: task2CompleteAnnouncements.results,
+    task3CompleteAnnouncements: task3CompleteAnnouncements.results,
+    task4CompleteAnnouncements: task4CompleteAnnouncements.results,
     m2PaymentVerifiedAnnouncements: m2PaymentVerifiedAnnouncements.results,
     dispatches: dispatches.results,
     offerNotices: offerNotices.results,
@@ -1028,7 +1160,7 @@ async function runOneAgentJob(
   const { data: agent } = await admin
     .schema('ai')
     .from('agents')
-    .select('key, enabled, default_model, default_effort, autonomy_level')
+    .select('key, enabled, default_model, default_effort, autonomy_level, allowed_work_classes')
     .eq('key', workflow.agentKey)
     .maybeSingle();
 
@@ -1051,10 +1183,41 @@ async function runOneAgentJob(
     return { jobId: job.id, agent: workflow.agentKey, status: 'failed', reason: 'agent autonomy' };
   }
 
-  // ── and then the work, which is the only part that differs ──────────────
-  const outcome = await workflow.run({ admin, job, agent, correlationId, workClass: workflow.workClass });
+  // SCR-063: the owner's list of work classes for this agent, beside the
+  // autonomy gate. Empty is every class; a non-empty list is exhaustive.
+  const allowed = agent.allowed_work_classes ?? [];
+  if (allowed.length > 0 && !allowed.includes(workflow.workClass)) {
+    await failJob(admin, job, `agent "${workflow.agentKey}" is not allowed ${workflow.workClass} work (allowed: ${allowed.join(', ')})`);
+    return { jobId: job.id, agent: workflow.agentKey, status: 'failed', reason: 'agent work class' };
+  }
 
-  return { jobId: job.id, agent: workflow.agentKey, ...outcome };
+  // ── and then the work, which is the only part that differs ──────────────
+  //
+  // Decision 3 (2026-09-29): a workflow that opens a run on a project the
+  // agent is not assigned to is stopped by `openRun` throwing
+  // AgentPolicyRefusal — recorded and audited there. Caught here, and the
+  // job is parked rather than retried: a retry would not change the policy.
+  try {
+    const outcome = await workflow.run({ admin, job, agent, correlationId, workClass: workflow.workClass });
+    return { jobId: job.id, agent: workflow.agentKey, ...outcome };
+  } catch (error) {
+    // Stream F-F: the three between-step gates, each settled its own way.
+    if (error instanceof JobCancelled) {
+      await settleCancelledJob(admin, error);
+      return { jobId: job.id, agent: workflow.agentKey, status: 'cancelled', reason: 'cancelled while running', detail: error.reason, runId: error.runId };
+    }
+    if (error instanceof AgentsPaused) {
+      await requeuePausedJob(admin, job, error);
+      return { jobId: job.id, agent: workflow.agentKey, status: 'requeued', reason: 'agents paused', detail: error.message, runId: error.runId };
+    }
+    if (error instanceof AgentBudgetRefusal) {
+      await parkBudgetRefusedJob(admin, job, error);
+      return { jobId: job.id, agent: workflow.agentKey, status: 'failed', reason: 'provider budget', detail: error.message, runId: error.runId };
+    }
+    if (!(error instanceof AgentPolicyRefusal)) throw error;
+    await parkRefusedJob(admin, job, error);
+    return { jobId: job.id, agent: workflow.agentKey, status: 'failed', reason: 'agent policy', detail: error.message, runId: error.runId };
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -1083,6 +1246,8 @@ const PROTOTYPE_QA_JOB_KIND = HANDLER_JOB_KIND['quality_assurance:reviewPrototyp
 const M1_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM1Invoice'];
 const PHASE_FOUR_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['projects:completePhaseFourOnPrototypeApproval'];
 const M2_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM2Invoice'];
+const M3_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM3Invoice'];
+const M4_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM4Invoice'];
 const SCOPE_CHANGE_REQUEST_JOB_KIND = HANDLER_JOB_KIND['projects:openChangeRequestFromScopeEscalation'];
 const ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceApproval'];
 const ESCALATION_JOB_KIND = HANDLER_JOB_KIND['crm:announceEscalation'];
@@ -1100,6 +1265,8 @@ const UI_VERSION_LOCKED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceUiVers
 const PROTOTYPE_SUBMITTED_JOB_KIND = HANDLER_JOB_KIND['crm:announcePrototypeSubmitted'];
 const PROTOTYPE_CHANGE_REQUESTED_JOB_KIND = HANDLER_JOB_KIND['crm:announcePrototypeChangeRequested'];
 const TASK2_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['crm:announceTask2Complete'];
+const TASK3_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['crm:announceTask3Complete'];
+const TASK4_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['crm:announceTask4Complete'];
 const M2_PAYMENT_VERIFIED_JOB_KIND = HANDLER_JOB_KIND['crm:announceM2PaymentVerified'];
 
 /**

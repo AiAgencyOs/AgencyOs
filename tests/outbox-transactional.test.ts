@@ -490,8 +490,21 @@ describe('F. nothing can publish from the application', () => {
   // and finds no helper. So the property is stated directly — no application
   // code inserts into the outbox — rather than asserting the absence of one
   // particular file, which any new filename would evade.
+  //
+  // Decision: reversed by the owner on 2026-09-29 — ONE reader joins the
+  // dispatcher. The Operations page may LIST unpublished and dead outbox rows,
+  // read-only, and the lister lives in src/lib/observability/queries.ts. The
+  // assertions below were widened by exactly that file and no further: a
+  // third file touching the table still fails, and the lister itself is
+  // checked to contain no insert, update, upsert, delete or rpc after any
+  // `from('outbox_events')` — the dispatcher stays the only thing that
+  // changes a row, and core.emit_event the only thing that adds one.
 
   const SOURCE_DIRS = ['../src', '../app'];
+
+  /** The two files that may name the outbox table: the dispatcher, and the read-only lister. */
+  const DISPATCHER = 'lib/events/dispatch.ts';
+  const LISTER = 'lib/observability/queries.ts';
 
   /** Every .ts/.tsx file under the application, read once. */
   const sources: { path: string; text: string }[] = [];
@@ -546,11 +559,65 @@ describe('F. nothing can publish from the application', () => {
     );
   });
 
-  test('and the only remaining callers of the outbox table are the dispatcher', () => {
+  test('and the only callers of the outbox table are the dispatcher and the one read-only lister', () => {
     const touching = sources
       .filter(({ text }) => text.includes("from('outbox_events')"))
+      .map(({ path }) => path.split('/').slice(-3).join('/'))
+      .sort();
+
+    // Exactly these two. A third file — under any name — is a new caller
+    // that must argue for itself here rather than slip in beside the lister.
+    assert.deepEqual(touching, [DISPATCHER, LISTER].sort());
+  });
+
+  test('the lister names the table exactly once', () => {
+    // One read, one place. A second `from('outbox_events')` in the same file
+    // is a second reader hiding behind the file the exception names.
+    const lister = sources.find(({ path }) => path.endsWith(`/${LISTER}`));
+    assert.ok(lister, `${LISTER} is missing — the lister the owner allowed is gone`);
+    const occurrences = [...lister.text.matchAll(/from\('outbox_events'\)/g)].length;
+    assert.equal(occurrences, 1, `${LISTER} names the outbox ${occurrences} times; the exception is for one lister`);
+  });
+
+  test('and the lister only reads — no insert, update, upsert, delete or rpc near the table', () => {
+    // Everything from `from('outbox_events')` to the end of that statement,
+    // which is where a chained write would have to be. The chain in the
+    // lister is built across a `let query = …` and a later `await query…`,
+    // so the window runs to the `unreadable(` refusal that closes the read.
+    const lister = sources.find(({ path }) => path.endsWith(`/${LISTER}`));
+    assert.ok(lister);
+    const start = lister.text.indexOf("from('outbox_events')");
+    assert.ok(start >= 0);
+    const end = lister.text.indexOf('unreadable(', start);
+    assert.ok(end > start, 'the lister must refuse a failed read with unreadable() — a silent empty list is G-054');
+    const window = lister.text.slice(start, end);
+
+    for (const verb of ['insert', 'update', 'upsert', 'delete', 'rpc']) {
+      assert.doesNotMatch(
+        window,
+        new RegExp(`\\.\\s*${verb}\\s*\\(`),
+        `the outbox lister calls .${verb}( — it is allowed to read the table and nothing else`,
+      );
+    }
+    // And what it does do is a select — not merely the absence of a write.
+    assert.match(window, /\.\s*select\s*\(/, 'the lister does not select — what is it doing with the table?');
+  });
+
+  test('and nothing outside the dispatcher updates or deletes outbox rows', () => {
+    // The dispatcher stamps published_at and parks dead; that is its job. A
+    // second file doing either is a second owner of the row's state — the
+    // D17 shape one column at a time.
+    const NEEDLE = "from('outbox_events')";
+    const writers = sources
+      .filter(({ path }) => !path.endsWith(`/${DISPATCHER}`))
+      .filter(({ text }) =>
+        [...text.matchAll(/from\('outbox_events'\)/g)].some((match) => {
+          const after = text.slice(match.index + NEEDLE.length, match.index + NEEDLE.length + 400);
+          return /\.\s*(update|upsert|delete)\s*\(/.test(after);
+        }),
+      )
       .map(({ path }) => path.split('/').slice(-3).join('/'));
 
-    assert.deepEqual(touching, ['lib/events/dispatch.ts']);
+    assert.deepEqual(writers, [], 'only the dispatcher may change an outbox row');
   });
 });

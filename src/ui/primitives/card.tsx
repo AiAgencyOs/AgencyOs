@@ -36,20 +36,20 @@ export function CardHeader({
   return (
     <div
       className={cx(
-        'flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3.5 sm:px-5',
+        'flex flex-wrap items-start justify-between gap-3 px-4 pb-2 pt-4 sm:px-5 sm:pt-5',
         className,
       )}
     >
       <div className="flex min-w-0 items-start gap-2.5">
         {icon ? <span className="mt-0.5 shrink-0 text-muted">{icon}</span> : null}
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold tracking-tight text-foreground">{title}</h2>
+          <h2 className="text-base font-bold tracking-tight text-foreground">{title}</h2>
           {description ? (
             <p className="mt-0.5 text-[13px] leading-relaxed text-muted">{description}</p>
           ) : null}
         </div>
       </div>
-      {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
+      {actions ? <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
   );
 }

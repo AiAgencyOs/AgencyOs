@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache';
 
 import type { FormState } from '@/modules/identity/types';
 
+import { PROJECT_ROLES, type ProjectRole } from './project-members-schema';
+
 import {
   assignDesignReviewer,
   finalizeDesignTokenSet,
@@ -61,6 +63,7 @@ import {
   createTask,
   setModuleStatus,
   setFeatureStatus,
+  setTaskArchived,
   setTaskStatus,
   openScopeVersion,
   addScopeItem,
@@ -74,10 +77,18 @@ import {
   removeEnvironment,
   addDependency,
   removeDependency,
+  updateTask,
+  updateProject,
+  updateProjectFile,
+  setMilestoneDueOn,
+  setDeliveryLead,
   shareUiVersionWithClient,
   recordUiVersionClientDecision,
   lockUiVersion,
 } from './service';
+import { setDeliverableDetails } from './build-details-service';
+import { attachChosenFile } from './attached-files-form';
+import { PROTOTYPE_PLATFORMS, type PrototypePlatform } from './prototype-schema';
 
 /** Server Actions for delivery — thin wrappers over service.ts. */
 
@@ -87,9 +98,11 @@ export async function setProjectStatusAction(
 ): Promise<FormState> {
   const projectId = String(formData.get('projectId') ?? '');
 
+  const reason = String(formData.get('reason') ?? '').trim();
   const result = await setProjectStatus({
     projectId,
     status: String(formData.get('status') ?? '') as never,
+    ...(reason ? { reason } : {}),
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };
@@ -202,8 +215,43 @@ export async function addDeliverableAction(
 
   if (!result.ok) return { status: 'error', message: result.error.message };
 
+  // W4 (SCR-037/043): a prototype or build may be added with its platform,
+  // commit ref, build number and rollback target; they go through their own door.
+  const platform = String(formData.get('platform') ?? '').trim();
+  const commitRef = String(formData.get('commitRef') ?? '').trim();
+  const buildNumber = String(formData.get('buildNumber') ?? '').trim();
+  const rollbackTargetId = String(formData.get('rollbackTargetId') ?? '').trim();
+  const rollbackNote = String(formData.get('rollbackNote') ?? '').trim();
+  if (platform || commitRef || buildNumber || rollbackTargetId || rollbackNote) {
+    const details = await setDeliverableDetails({
+      projectId,
+      deliverableId: result.data.deliverableId,
+      platform: (PROTOTYPE_PLATFORMS as readonly string[]).includes(platform) ? (platform as PrototypePlatform) : undefined,
+      commitRef,
+      buildNumber,
+      rollbackTargetId: rollbackTargetId || undefined,
+      rollbackNote,
+    });
+    if (!details.ok) {
+      revalidatePath(`/projects/${projectId}`);
+      revalidatePath(`/projects/${projectId}/builds`);
+      revalidatePath(`/projects/${projectId}/prototype`);
+      return { status: 'error', message: `Version ${result.data.version} was added, but its details were not saved: ${details.error.message}` };
+    }
+  }
+
+  // Q-C1 (SCR-037 "Upload build"): a prototype or build may also carry a build
+  // file (apk, ipa, zip), under the project-file limits and credentials guard.
+  const kind = String(formData.get('kind') ?? '');
+  const buildFile = kind === 'prototype' || kind === 'build' ? await attachChosenFile(formData, 'build', result.data.deliverableId) : ({ status: 'none' } as const);
+
   revalidatePath(`/projects/${projectId}`);
-  return { status: 'success', message: `Version ${result.data.version} added.` };
+  revalidatePath(`/projects/${projectId}/builds`);
+  revalidatePath(`/projects/${projectId}/prototype`);
+  if (buildFile.status === 'refused') {
+    return { status: 'error', message: `Version ${result.data.version} was added, but its build file was not saved: ${buildFile.message}` };
+  }
+  return { status: 'success', message: buildFile.status === 'attached' ? `Version ${result.data.version} added with ${buildFile.fileName}.` : `Version ${result.data.version} added.` };
 }
 
 /** Put a version in front of the client, through the approval engine. */
@@ -1107,6 +1155,8 @@ export async function createTaskAction(_prev: FormState, formData: FormData): Pr
   const moduleId = String(formData.get('moduleId') ?? '').trim();
   const featureId = String(formData.get('featureId') ?? '').trim();
   const description = String(formData.get('description') ?? '').trim();
+  const dueOn = String(formData.get('dueOn') ?? '').trim();
+  const assigneeRole = String(formData.get('assigneeRole') ?? '').trim();
 
   const result = await createTask({
     projectId,
@@ -1114,10 +1164,14 @@ export async function createTaskAction(_prev: FormState, formData: FormData): Pr
     ...(moduleId ? { moduleId } : {}),
     ...(featureId ? { featureId } : {}),
     ...(description ? { description } : {}),
+    ...(dueOn ? { dueOn } : {}),
+    ...((PROJECT_ROLES as readonly string[]).includes(assigneeRole) ? { assigneeRole: assigneeRole as ProjectRole } : {}),
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath(`/projects/${projectId}/development`);
+  revalidatePath(`/projects/${projectId}/calendar`);
+  revalidatePath(`/projects/${projectId}/board`);
   return { status: 'success', message: 'Task added.' };
 }
 
@@ -1147,17 +1201,46 @@ export async function setFeatureStatusAction(_prev: FormState, formData: FormDat
   return { status: 'success', message: 'Updated.' };
 }
 
+/** The blocker's type, owner and next action, when the form carries them (SCR-020). */
+function blockerFields(formData: FormData) {
+  const pick = (key: string) => String(formData.get(key) ?? '').trim();
+  const out: { blockerType?: string; blockerOwner?: string; nextAction?: string } = {};
+  if (pick('blockerType')) out.blockerType = pick('blockerType');
+  if (pick('blockerOwner')) out.blockerOwner = pick('blockerOwner');
+  if (pick('nextAction')) out.nextAction = pick('nextAction');
+  return out;
+}
+
 export async function setTaskStatusAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const projectId = String(formData.get('projectId') ?? '');
 
+  const reason = String(formData.get('reason') ?? '').trim();
   const result = await setTaskStatus({
     taskId: String(formData.get('taskId') ?? ''),
     status: String(formData.get('status') ?? '') as never,
+    ...(reason ? { reason } : {}),
+    ...blockerFields(formData),
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath(`/projects/${projectId}/development`);
+  revalidatePath('/my-tasks');
+  // The Board (SCR-020) reads the same `listDevelopmentBreakdown()` grouped
+  // by status instead of by module — added when the board grew a drag-and-
+  // drop write path onto this same action, so it needs revalidating too.
+  revalidatePath(`/projects/${projectId}/board`);
   return { status: 'success', message: 'Updated.' };
+}
+
+/** T1-1: archive or restore a task (roster managers, through the audited door). */
+export async function setTaskArchivedAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const archived = String(formData.get('archived') ?? '') === 'true';
+  const result = await setTaskArchived({ taskId: String(formData.get('taskId') ?? ''), archived });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}`, 'layout');
+  revalidatePath('/my-tasks');
+  return { status: 'success', message: archived ? 'Archived.' : 'Restored.' };
 }
 
 /**
@@ -1459,4 +1542,94 @@ export async function lockUiVersionAction(_prev: FormState, formData: FormData):
       ? 'Already locked — this did not change anything.'
       : 'Locked. This is now the exact prototype source.',
   };
+}
+
+export async function updateTaskAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const estimateRaw = String(formData.get('estimateHours') ?? '').trim();
+  const result = await updateTask({
+    taskId: String(formData.get('taskId') ?? ''),
+    projectId,
+    title: String(formData.get('title') ?? ''),
+    description: String(formData.get('description') ?? '').trim() || null,
+    priority: String(formData.get('priority') ?? 'p2') as 'p0' | 'p1' | 'p2' | 'p3',
+    assigneeId: String(formData.get('assigneeId') ?? '').trim() || null,
+    startOn: String(formData.get('startOn') ?? '').trim() || null,
+    dueOn: String(formData.get('dueOn') ?? '').trim() || null,
+    estimateHours: estimateRaw ? Number(estimateRaw) : null,
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}/board`);
+  revalidatePath(`/projects/${projectId}/timeline`);
+  revalidatePath(`/projects/${projectId}/development`);
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath('/my-tasks');
+  return { status: 'success', message: 'Task saved.' };
+}
+
+export async function updateProjectAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const budgetRaw = String(formData.get('budget') ?? '').trim();
+  const budget = budgetRaw === '' ? null : Math.round(Number(budgetRaw) * 100);
+  const result = await updateProject({
+    projectId,
+    name: String(formData.get('name') ?? ''),
+    description: String(formData.get('description') ?? '').trim() || null,
+    startsOn: String(formData.get('startsOn') ?? '').trim() || null,
+    endsOn: String(formData.get('endsOn') ?? '').trim() || null,
+    budgetMinor: budget !== null && Number.isFinite(budget) ? budget : null,
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}/settings`);
+  revalidatePath('/projects');
+  return { status: 'success', message: 'Project saved.' };
+}
+
+/* ── PDF gap pass 6 ─────────────────────────────────────────────────────── */
+
+export async function updateProjectFileAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const description = String(formData.get('description') ?? '').trim();
+
+  const result = await updateProjectFile({
+    fileId: String(formData.get('fileId') ?? ''),
+    category: String(formData.get('category') ?? '') as never,
+    title: String(formData.get('title') ?? ''),
+    description: description || null,
+    // SCR-024 (20261001120000): rename/move — the folder inside the category.
+    folder: String(formData.get('folder') ?? '').trim(),
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/files`);
+  return { status: 'success', message: 'File updated.' };
+}
+
+export async function setMilestoneDueOnAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const dueOn = String(formData.get('dueOn') ?? '').trim();
+
+  const result = await setMilestoneDueOn({
+    milestoneId: String(formData.get('milestoneId') ?? ''),
+    dueOn: dueOn || null,
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}/plan`);
+  revalidatePath(`/projects/${projectId}/calendar`);
+  return { status: 'success', message: result.data.dueOn ? `Due ${result.data.dueOn}.` : 'Due date cleared.' };
+}
+
+export async function setDeliveryLeadAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const deliveryLeadId = String(formData.get('deliveryLeadId') ?? '').trim();
+
+  const result = await setDeliveryLead({ projectId, deliveryLeadId: deliveryLeadId || null });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}/team`);
+  return { status: 'success', message: result.data.deliveryLeadId ? 'Delivery lead set.' : 'Delivery lead cleared.' };
 }

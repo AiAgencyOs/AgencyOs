@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { serverEnv } from '@/lib/env';
+import { resolveSecret } from '@/lib/secrets/resolve';
 
 /**
  * Talking to WhatsApp — gap G-014, decision ADM-09.
@@ -72,8 +73,9 @@ export async function sendWhatsAppText(input: {
   recipientType?: 'individual' | 'group';
 }): Promise<SendResult> {
   const env = serverEnv();
+  const accessToken = await resolveSecret('WHATSAPP_ACCESS_TOKEN');
 
-  if (!env.WHATSAPP_ACCESS_TOKEN) {
+  if (!accessToken) {
     // Transient: a deployment that has not set its token yet may set it, and
     // permanently stopping a follow-up sequence over a deploy gap would be
     // the wrong answer to a fixable state.
@@ -93,7 +95,7 @@ export async function sendWhatsAppText(input: {
     response = await fetch(`${base}/${input.phoneNumberId}/messages`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}`,
+        Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -196,8 +198,9 @@ export async function uploadWhatsAppMedia(input: {
   filename: string;
 }): Promise<UploadResult> {
   const env = serverEnv();
+  const accessToken = await resolveSecret('WHATSAPP_ACCESS_TOKEN');
 
-  if (!env.WHATSAPP_ACCESS_TOKEN) {
+  if (!accessToken) {
     return { ok: false, permanent: false, message: 'WhatsApp sending is not configured on this deployment.' };
   }
 
@@ -220,7 +223,7 @@ export async function uploadWhatsAppMedia(input: {
   try {
     response = await fetch(`${base}/${input.phoneNumberId}/media`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}` },
+      headers: { Authorization: `Bearer ${accessToken}` },
       body: form,
       cache: 'no-store',
       signal: AbortSignal.timeout(20_000),
@@ -287,8 +290,9 @@ export async function sendWhatsAppDocument(input: {
   recipientType?: 'individual' | 'group';
 }): Promise<SendResult> {
   const env = serverEnv();
+  const accessToken = await resolveSecret('WHATSAPP_ACCESS_TOKEN');
 
-  if (!env.WHATSAPP_ACCESS_TOKEN) {
+  if (!accessToken) {
     return { ok: false, permanent: false, message: 'WhatsApp sending is not configured on this deployment.' };
   }
 
@@ -303,7 +307,7 @@ export async function sendWhatsAppDocument(input: {
     response = await fetch(`${base}/${input.phoneNumberId}/messages`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}`,
+        Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -391,8 +395,9 @@ export async function sendWhatsAppTemplate(input: {
   recipientType?: 'individual' | 'group';
 }): Promise<SendResult> {
   const env = serverEnv();
+  const accessToken = await resolveSecret('WHATSAPP_ACCESS_TOKEN');
 
-  if (!env.WHATSAPP_ACCESS_TOKEN) {
+  if (!accessToken) {
     return { ok: false, permanent: false, message: 'WhatsApp sending is not configured on this deployment.' };
   }
   if (!input.phoneNumberId) {
@@ -412,7 +417,7 @@ export async function sendWhatsAppTemplate(input: {
     response = await fetch(`${base}/${input.phoneNumberId}/messages`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}`,
+        Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({

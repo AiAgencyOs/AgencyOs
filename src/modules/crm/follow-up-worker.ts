@@ -2,6 +2,8 @@ import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
 import { evaluate, type SuppressionReason } from './follow-up-contract';
+import { outreachWindow, type OutreachWindow } from '@/lib/admin/operational-defaults';
+
 import { earliestAfter, nextSendAt, type Rhythm } from './follow-up-rhythms';
 import { isRunnable, situationFor } from './follow-up-situations';
 import { internalChannel } from './handlers';
@@ -370,6 +372,20 @@ async function consentStatus(
   return data?.status === 'granted' ? 'granted' : data?.status === 'withdrawn' ? 'withdrawn' : null;
 }
 
+/**
+ * The organization's sending hours (configurability audit B-2). Unset means
+ * ADM-69's 10–19, which is what every sequence used before this existed.
+ */
+async function agencyOutreachWindow(admin: Admin, organizationId: string): Promise<OutreachWindow> {
+  const { data } = await admin
+    .schema('core')
+    .from('organizations')
+    .select('settings')
+    .eq('id', organizationId)
+    .maybeSingle();
+  return outreachWindow(data?.settings as Record<string, unknown> | null | undefined);
+}
+
 /** The agency timezone, or null. Never defaulted — see the module note. */
 async function agencyTimeZone(admin: Admin, organizationId: string): Promise<string | null> {
   const { data } = await admin
@@ -452,6 +468,18 @@ export async function runFollowUps(admin: Admin, clock: FollowUpClock = {}): Pro
     return value;
   };
 
+  // The organization's sending hours (configurability audit B-2), read once
+  // per organization per run and passed to every due-time computation. Unset
+  // means ADM-69's 10–19, which is what every sequence used before this.
+  const outreachWindows = new Map<string, OutreachWindow>();
+  const outreachWindowFor = async (organizationId: string): Promise<OutreachWindow> => {
+    const cached = outreachWindows.get(organizationId);
+    if (cached) return cached;
+    const value = await agencyOutreachWindow(admin, organizationId);
+    outreachWindows.set(organizationId, value);
+    return value;
+  };
+
   // ── observe, and start what is owed ────────────────────────────────────
   const { data: candidates, error: observeError } = await admin
     .schema('crm')
@@ -499,6 +527,7 @@ export async function runFollowUps(admin: Admin, clock: FollowUpClock = {}): Pro
           rhythm: situation.rhythm as Rhythm,
           attemptsSoFar: 0,
           timeZone: zone,
+          window: await outreachWindowFor(candidate.organization_id),
         });
         if (due) {
           await admin.schema('crm').from('follow_up_sequences')
@@ -575,6 +604,7 @@ export async function runFollowUps(admin: Admin, clock: FollowUpClock = {}): Pro
       rhythm: situation.rhythm as Rhythm,
       attemptsSoFar: seq.attempts_sent,
       timeZone: zone,
+      window: await outreachWindowFor(seq.organization_id),
     });
     if (due) {
       await admin.schema('crm').from('follow_up_sequences')
@@ -916,12 +946,14 @@ async function recordSent(
     const sentAt = new Date();
 
     // The absolute schedule ADM-69 records, from day 0.
+    const window = await agencyOutreachWindow(admin, seq.organization_id);
     const scheduled = nextSendAt({
       triggeredAt: new Date(seq.triggered_at),
       rhythm,
       attemptsSoFar: attempt,
       timeZone: zone,
       slaDueAt,
+      window,
     });
 
     // …floored at the same spacing after the message that was *actually* sent.
@@ -933,7 +965,7 @@ async function recordSent(
     // intervals ADM-69 already states and only ever makes a follow-up later.
     // On the rhythm's own clock: ADM-103's is hours, and the pair this
     // replaced (`notBefore(spacingAfter(...))`) silently meant business days.
-    const floor = earliestAfter(rhythm, attempt, sentAt, zone);
+    const floor = earliestAfter(rhythm, attempt, sentAt, zone, window);
     const nextDue =
       scheduled === null ? null : new Date(Math.max(scheduled.getTime(), floor.getTime()));
 

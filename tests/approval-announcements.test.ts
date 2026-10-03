@@ -166,6 +166,9 @@ const admin = {
     },
     rpc: async (fn: string, args: Record<string, unknown>) => {
       seen.rpc.push([fn, args]);
+      // Audit B-6: the clauses a quotation prints come through one snapshot
+      // door; these tests describe an organization that never edited them.
+      if (fn === 'clauses_for_proposal') return { data: [{ outcome: 'frozen', clauses: {} }], error: null };
       if (fn === 'template_for') {
         // G-217: the choice moved into the database with the contact's
         // language; these tests describe a matched one.

@@ -2,6 +2,7 @@ import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
 
+import { OUTBOUND_PAUSED, outboundPaused } from './kill-switch';
 import { deferSend, markAsOutreach, planOutbound } from './outbound-window';
 
 import {
@@ -27,6 +28,9 @@ import {
   prototypeChangeRequestedAnnouncementFor,
   phaseFourCompletedEventSchema,
   task2CompleteAnnouncementFor,
+  task3CompleteAnnouncementFor,
+  task4CompleteAnnouncementFor,
+  phaseCompletedEventSchema,
   m2PaymentVerifiedAnnouncementFor,
   invoicePaidForM2EventSchema,
   type ApprovalRequestedEvent,
@@ -503,7 +507,7 @@ export async function handleApprovalRequested(
 
   const queued = (Array.isArray(data) ? data[0] : data) as
     | {
-        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent';
+        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent' | 'outbound_paused';
         message_id: string | null;
         to_phone: string | null;
         from_phone_number_id: string | null;
@@ -515,6 +519,7 @@ export async function handleApprovalRequested(
   if (!queued) {
     return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
   }
+  if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
 
   if (queued.outcome === 'not_found') {
     // The group was read a moment ago and is gone now. Permanent: a retry
@@ -763,7 +768,19 @@ async function renderQuotationDocument(
       // so a line drafted before the column existed draws exactly as it did.
       ...(Array.isArray(i.serves) ? { serves: i.serves as string[] } : {}),
   }));
-  const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems);
+  const { quotationValidityDays } = await import('@/lib/admin/operational-defaults');
+  // Audit B-6 — the clause wording this quotation printed: the snapshot it
+  // took when first rendered outside draft, never today's clauses. A failed
+  // read is `unreadable` (worth a retry), not a PDF with the defaults on it.
+  const { clausesForProposal } = await import('@/modules/sales/quotation-clauses');
+  const clauses = await clausesForProposal(admin, proposal.id);
+  if (!clauses.ok) {
+    return { ok: false, kind: 'unreadable', detail: `could not read the quotation's clauses: ${clauses.error.message}` };
+  }
+  const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems, {
+    validityDays: quotationValidityDays(org.settings as Record<string, unknown> | null),
+    clauses: clauses.data,
+  });
 
   try {
     const rendered = await renderQuotationPdf({
@@ -901,7 +918,7 @@ async function announceQuotationPdf(
 
   const queued = (Array.isArray(data) ? data[0] : data) as
     | {
-        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent' | 'bad_shape';
+        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent' | 'bad_shape' | 'outbound_paused';
         message_id: string | null;
         to_phone: string | null;
         from_phone_number_id: string | null;
@@ -913,6 +930,7 @@ async function announceQuotationPdf(
   if (!queued) {
     return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing for the document' };
   }
+  if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
   if (queued.outcome === 'not_found') {
     return { status: 'failed', permanent: true, detail: 'the internal group no longer exists' };
   }
@@ -1060,7 +1078,7 @@ export async function deliverFollowUp(admin: Admin, job: AnnounceJob): Promise<H
 
   const queued = (Array.isArray(data) ? data[0] : data) as
     | {
-        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent';
+        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent' | 'outbound_paused';
         message_id: string | null;
         to_phone: string | null;
         from_phone_number_id: string | null;
@@ -1070,6 +1088,7 @@ export async function deliverFollowUp(admin: Admin, job: AnnounceJob): Promise<H
     | undefined;
 
   if (!queued) return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
+  if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
 
   if (queued.outcome === 'not_found') {
     return { status: 'failed', permanent: true, detail: 'the conversation no longer exists' };
@@ -1315,6 +1334,7 @@ export async function handleConversationEscalated(
   if (!queued) {
     return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
   }
+  if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
 
   if (queued.outcome === 'not_found') {
     return { status: 'failed', permanent: true, detail: 'the internal channel no longer exists' };
@@ -1504,6 +1524,7 @@ export async function handleRevisionLimitEscalated(
   if (!queued) {
     return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
   }
+  if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
 
   if (queued.outcome === 'not_found') {
     return { status: 'failed', permanent: true, detail: 'the internal channel no longer exists' };
@@ -1663,6 +1684,7 @@ export async function handlePhaseThreeCompleted(
   if (!queued) {
     return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
   }
+  if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
 
   if (queued.outcome === 'not_found') {
     return { status: 'failed', permanent: true, detail: 'the internal channel no longer exists' };
@@ -1790,6 +1812,7 @@ async function announceToInternalChannel(
   if (!queued) {
     return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
   }
+  if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
   if (queued.outcome === 'not_found') {
     return { status: 'failed', permanent: true, detail: 'the internal channel no longer exists' };
   }
@@ -2031,6 +2054,37 @@ export async function announceTask2Complete(admin: Admin, job: AnnounceJob): Pro
     body: task2CompleteAnnouncementFor({ projectName }),
     externalRef: `task2-complete:${event.phaseFourId}`,
   });
+}
+
+/**
+ * Q-PH56 — `project.phase_five_completed` / `project.phase_six_completed` → the
+ * PM's Task 3 / Task 4 Complete message, independent of the invoicing chain
+ * that listens to the same event (as `announceTask2Complete` above).
+ */
+async function announceLaterTaskComplete(
+  admin: Admin,
+  job: AnnounceJob,
+  step: { eventName: string; refPrefix: string; message: (input: { projectName: string | null }) => string },
+): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = phaseCompletedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed ${step.eventName} payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const event = parsed.data;
+  const projectName = await projectNameFor(admin, job.organization_id, event.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: step.message({ projectName }),
+    externalRef: `${step.refPrefix}:${event.phaseCompletionId}`,
+  });
+}
+
+export function announceTask3Complete(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  return announceLaterTaskComplete(admin, job, { eventName: 'project.phase_five_completed', refPrefix: 'task3-complete', message: task3CompleteAnnouncementFor });
+}
+
+export function announceTask4Complete(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  return announceLaterTaskComplete(admin, job, { eventName: 'project.phase_six_completed', refPrefix: 'task4-complete', message: task4CompleteAnnouncementFor });
 }
 
 /**
@@ -2364,7 +2418,7 @@ export async function dispatchApprovedQuotation(
   }
 
   type Queued = {
-    outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent' | 'bad_shape';
+    outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent' | 'bad_shape' | 'outbound_paused';
     message_id: string | null;
     to_phone: string | null;
     from_phone_number_id: string | null;
@@ -2377,6 +2431,7 @@ export async function dispatchApprovedQuotation(
   if (!queued) {
     return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
   }
+  if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
   if (queued.outcome === 'not_found') {
     return { status: 'failed', permanent: true, detail: 'the conversation no longer exists' };
   }
@@ -2560,6 +2615,7 @@ export async function dispatchApprovedQuotation(
         detail: 'send_outbound_message answered nothing for the document',
       };
     }
+    if (doc.outcome === OUTBOUND_PAUSED) return outboundPaused();
 
     if (doc.outcome === 'not_found') {
       return { status: 'failed', permanent: true, detail: 'the conversation no longer exists' };
@@ -2811,6 +2867,7 @@ export async function announceOfferApplied(admin: Admin, job: AnnounceJob): Prom
   if (!queued || queued.outcome === 'not_found') {
     return { status: 'failed', permanent: true, detail: 'the internal channel no longer exists' };
   }
+  if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
   if (queued.outcome === 'already_sent') {
     return { status: 'succeeded', outcome: 'already_announced', detail: 'the owner was already told' };
   }

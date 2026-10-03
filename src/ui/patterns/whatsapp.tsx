@@ -104,7 +104,7 @@ export function ChatHeader({
       <div className="min-w-0 flex-1">
         <p className="truncate text-[15px] font-semibold leading-tight">{name}</p>
         {status ? (
-          <p className="truncate text-[12px] leading-tight opacity-80">{status}</p>
+          <p className="truncate text-[12px] leading-tight">{status}</p>
         ) : null}
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}
@@ -141,7 +141,7 @@ export function ChatCanvas({
   children: React.ReactNode;
 }) {
   return (
-    <div className={cx('wa-wallpaper relative flex-1 overflow-y-auto', className)}>
+    <div tabIndex={0} role="region" aria-label="Messages" className={cx('wa-wallpaper relative flex-1 overflow-y-auto', className)}>
       <div className="relative flex flex-col gap-1 px-3 py-4 sm:px-6">{children}</div>
     </div>
   );
@@ -295,7 +295,7 @@ export function ChatBubble({
         )}
       >
         {author ? (
-          <p className="mb-0.5 text-[12.5px] font-semibold text-[var(--wa-header)] dark:text-[var(--wa-accent)]">
+          <p className="mb-0.5 text-[12.5px] font-semibold text-[var(--wa-sender)] dark:text-[var(--wa-accent)]">
             {author}
           </p>
         ) : null}
@@ -397,12 +397,16 @@ export function ChatListItem({
 export function ComposerBar({
   className,
   children,
+  id,
 }: {
   className?: string;
   children: React.ReactNode;
+  /** An anchor target, so a "Send message" button can jump to the composer. */
+  id?: string;
 }) {
   return (
     <div
+      id={id}
       className={cx(
         'shrink-0 border-t border-[var(--wa-divider)] bg-[var(--wa-composer)] px-2 py-2 sm:px-3',
         className,

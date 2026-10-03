@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { ilikeAny } from '@/lib/db/search';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -29,18 +30,43 @@ const LIST_SELECT =
  * more urgent than one raised this morning under a week's. Backed by
  * `approval_requests_queue_idx`.
  */
-export async function listPendingApprovals(limit = 100): Promise<ApprovalListItem[]> {
+export async function listPendingApprovals(limit = 100, q?: string): Promise<ApprovalListItem[]> {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
+  let query = supabase
     .schema('approvals')
     .from('approval_requests')
     .select(LIST_SELECT)
     .eq('state', 'pending')
     .order('sla_due_at', { ascending: true })
     .limit(limit);
+  // Search within domain (bucket G-3): the request's summary or subject type, server-side.
+  if (q) query = query.or(ilikeAny(['summary', 'subject_type'], q));
+  const { data, error } = await query;
 
   if (error) unreadable('listPendingApprovals', error);
+
+  return data ?? [];
+}
+
+/**
+ * Requests already settled, newest decision first — the approvals screen's
+ * history and its KPI row. Every row a decision somebody (or the SLA) made.
+ */
+export async function listDecidedApprovals(limit = 100, q?: string): Promise<ApprovalListItem[]> {
+  const supabase = await createClient();
+
+  let query = supabase
+    .schema('approvals')
+    .from('approval_requests')
+    .select(LIST_SELECT)
+    .neq('state', 'pending')
+    .order('decided_at', { ascending: false, nullsFirst: false })
+    .limit(limit);
+  if (q) query = query.or(ilikeAny(['summary', 'subject_type'], q));
+  const { data, error } = await query;
+
+  if (error) unreadable('listDecidedApprovals', error);
 
   return data ?? [];
 }

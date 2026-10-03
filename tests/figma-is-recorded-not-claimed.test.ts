@@ -178,13 +178,15 @@ describe('F. the token is configuration, never a value on a screen', () => {
   });
 
   test('and the page never reads the value, only whether there is one', () => {
-    assert.match(PAGE, /const figmaReady = figmaConfigured\(\);/);
+    assert.match(PAGE, /const figmaReady = await figmaConfigured\(\);/);
     assert.doesNotMatch(PAGE, /FIGMA_ACCESS_TOKEN/);
     assert.doesNotMatch(FORMS, /FIGMA_ACCESS_TOKEN/);
   });
 
   test('the token is read at call time, so one added later works without a redeploy', () => {
-    assert.match(CLIENT, /const token = \(\) => process\.env\.FIGMA_ACCESS_TOKEN\?\.trim\(\) \|\| null;/);
+    // Through the resolver (environment, then the key vault), asked on every call — never captured at module load.
+    assert.match(CLIENT, /const token = async \(\): Promise<string \| null> => \{/);
+    assert.match(CLIENT, /return await resolveSecret\('FIGMA_ACCESS_TOKEN'\);/);
   });
 });
 

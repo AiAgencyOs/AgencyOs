@@ -124,7 +124,7 @@ describe('B. what each level may do, and to which work', () => {
     const at = service.indexOf('export async function decideRequirementVersion');
     const body = service.slice(at, at + 500);
     assert.match(body, /requireInternal\(\)/);
-    assert.match(body, /can\(context\.role, 'lead\.write'\)/);
+    assert.match(body, /can\(context, 'lead\.write'\)/);
 
     const tools = read('../src/modules/agents/tools.ts');
     assert.doesNotMatch(tools, /decideRequirement/);

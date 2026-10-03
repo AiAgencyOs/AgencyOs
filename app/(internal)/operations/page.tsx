@@ -1,26 +1,45 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
 import { aiStatus } from '@/lib/admin/agent-status';
 import { wouldRun } from '@/lib/admin/agent-eval';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
-import { Badge, Callout, IconAlert, IconClock, PageHeader, Stat, type Tone } from '@/ui';
+import { Badge, Callout, DomainSearch, SearchSummary, IconAlert, IconClock, PageHeader, Stat, StaleDataWarning, type Tone, PermissionDenied } from '@/ui';
+import type { IconProps } from '@/ui';
 import { can } from '@/lib/authz/permissions';
+import { readEscalationsByKey } from '@/lib/admin/escalations';
+import { listAcknowledgedAlerts, listOpenAlerts } from '@/lib/observability/alerts';
 import { describeBacklog, severityOf } from '@/lib/observability/backlog';
+import { KILL_SWITCH_LABEL, listKillSwitches } from '@/lib/observability/kill-switches';
 import { viewFailedDelivery } from '@/lib/observability/delivery';
+import { readRetryHistory } from '@/lib/observability/retry-queries';
+import { RetryDeliveryForm } from './retry-delivery-form';
+import { LiveRefresh } from '@/lib/realtime';
+import { listRecentWorkflows } from '@/lib/admin/run-chain';
+import { listMeetingsAwaitingNotes } from '@/modules/crm/meeting-notes-queries';
 import { listPendingGroupSetups } from '@/modules/projects/queries';
+
+import { CancelJobForm } from './cancel-job-form';
+import { OutboxList } from './outbox-list';
+import { WorkflowList } from './workflow-list';
 import {
   listDeadJobs,
   listDeferredSends,
   listFailedDeliveries,
+  listOutboxEvents,
+  listQueuedJobs,
+  parseOutboxStatus,
   readBacklog,
   readCronAgeSeconds,
   readWedgedFollowUps,
 } from '@/lib/observability/queries';
 
-import { RequeueForm } from './requeue-form';
+import { AlertsPanel } from './alerts-panel';
+import { DeadLettersList } from './dead-letters-list';
+import { narrow, workflowSearchText } from '@/lib/observability/operations-search';
+import { normaliseSearch } from '@/lib/db/search';
+import { EscalateControl } from '../notifications/escalate-form';
 
 export const metadata: Metadata = { title: 'Operations' };
 
@@ -57,18 +76,40 @@ export const metadata: Metadata = { title: 'Operations' };
  * reuses the row rather than inserting one that would collide on its dedupe
  * key.
  */
-export default async function OperationsPage() {
+export default async function OperationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ outbox?: string; outboxPage?: string; q?: string }>;
+}) {
   const context = await requireInternal('/operations');
   const clock = await agencyClock();
-  if (!can(context.role, 'audit.read')) redirect('/dashboard');
+  if (!can(context, 'audit.read')) return <PermissionDenied />;
+
+  // D17, reversed by the owner on 2026-09-29: the outbox rows may be listed
+  // read-only. The filter and page live in the URL (GET form), like every
+  // other list here.
+  const { outbox: outboxStatus, outboxPage, q: rawQuery } = await searchParams;
+  const query = normaliseSearch(rawQuery);
+  const outboxPageNumber = Math.max(1, Number.parseInt(outboxPage ?? '1', 10) || 1);
 
   // Reading the failures and reviving them are different permissions, even
   // though both resolve to owner and ops_admin today. Drawing the button from
   // the capability rather than from "they got this far" keeps that true when
   // one of the two lists changes.
-  const canRequeue = can(context.role, 'job.requeue');
+  const canRequeue = can(context, 'job.requeue');
 
-  const [backlog, dead, cronAge, wedged, failedRows, deferred, ai, groupSetups] = await Promise.all([
+  const [openAlerts, acknowledgedAlerts, switches, escalationsByKey] = await Promise.all([listOpenAlerts(100), listAcknowledgedAlerts(10), listKillSwitches(), readEscalationsByKey()]);
+  // SCR-066 "Escalate operational failure": the same escalation, on every kind of row that can be stuck.
+  const escalationView = (key: string) => {
+    const e = escalationsByKey.get(key);
+    return e ? { id: e.id, toRole: e.toRole, reason: e.reason, state: e.state, fromUserName: e.fromUserName, acknowledgedByName: e.acknowledgedByName, createdAtLabel: clock.dateTime(e.createdAt) } : null;
+  };
+  const engaged = switches.filter((s) => s.active);
+  const alertView = (a: (typeof openAlerts)[number]) => ({ ...a, firstSeenLabel: clock.dateTime(a.firstSeenAt), lastSeenLabel: clock.dateTime(a.lastSeenAt), acknowledgedLabel: a.acknowledgedAt ? clock.dateTime(a.acknowledgedAt) : null });
+  const criticalOpen = openAlerts.filter((a) => a.severity === 'critical').length;
+  const warningOpen = openAlerts.filter((a) => a.severity === 'warning').length;
+
+  const [backlog, dead, cronAge, wedged, failedRows, deferred, ai, groupSetups, queued, awaitingNotes, workflows, outbox] = await Promise.all([
     readBacklog(),
     listDeadJobs(),
     readCronAgeSeconds(),
@@ -77,29 +118,43 @@ export default async function OperationsPage() {
     listDeferredSends(),
     aiStatus(),
     listPendingGroupSetups(),
+    listQueuedJobs(),
+    listMeetingsAwaitingNotes(),
+    listRecentWorkflows(20),
+    listOutboxEvents({ status: parseOutboxStatus(outboxStatus), page: outboxPageNumber, pageSize: 25 }),
   ]);
 
   const severity = severityOf(backlog);
   const lines = describeBacklog(backlog);
 
   const failed = failedRows.map(viewFailedDelivery);
+  // SCR-066: one text box narrows what is drawn in the lists below; the counts above are never narrowed.
+  const deadShown = narrow(query, dead, (j) => [j.kind, j.last_error]);
+  const queuedShown = narrow(query, queued, (j) => [j.kind, j.lastError, j.status]);
+  const failedShown = narrow(query, failed, (f) => [f.reason, f.preview, f.providerRef]);
+  const workflowsShown = narrow(query, workflows, workflowSearchText);
+  // SCR-060 — how each failed message's retries went, newest attempt first.
+  const retryHistory = await readRetryHistory(failed.map((f) => f.id).filter((id): id is string => id !== null));
+  const mayRetry = can(context, 'lead.write');
+  // SCR-060 (bucket F): "Escalate to Admin" on a failed delivery — F-A's
+  // core.escalations, subject_type 'delivery', the message id as the key.
+  const canAnswerEscalation = can(context, 'audit.read');
+
+  // SCR-060 — failures by code. Meta's errors open with a code or a short
+  // phrase before the first colon/parenthesis; grouping on that prefix turns
+  // fifty rows into the three reasons they actually are. The prefix is the
+  // provider's own words, cut, never a classification of ours.
+  const failedByCode = new Map<string, number>();
+  for (const f of failed) {
+    const code = f.reason.split(/[:(]/)[0]?.trim().slice(0, 48) || 'unstated';
+    failedByCode.set(code, (failedByCode.get(code) ?? 0) + 1);
+  }
+  const topCodes = [...failedByCode.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
 
   // Provider/agent health, compact: the /agents page has the detail. "Would
   // run" reuses the exact gate that page shows, so the two can never disagree.
   const agentsEnabled = ai.agents.filter((a) => a.enabled).length;
   const agentsRunnable = ai.agents.filter((a) => wouldRun(a, ai.providerConfigured)).length;
-
-  // A tick older than the reaper's staleness window means the scheduler has
-  // stopped — the failure the in-app monitoring cannot alert on itself.
-  const cronStale = cronAge === null || cronAge > 15 * 60;
-  const cronLabel =
-    cronAge === null
-      ? 'unknown'
-      : cronAge > 3600
-        ? `${Math.floor(cronAge / 3600)}h ago`
-        : cronAge > 90
-          ? `${Math.floor(cronAge / 60)}m ago`
-          : `${cronAge}s ago`;
 
   const tone: Tone =
     severity === 'failing' ? 'danger' : severity === 'degraded' ? 'warning' : 'neutral';
@@ -115,6 +170,7 @@ export default async function OperationsPage() {
               ? 'Work has been lost and nothing will retry it.'
               : 'Work is late but still moving.'
         }
+        actions={<LiveRefresh topics={['jobs', 'conversations', 'followUps', 'alerts']} />}
         meta={
           <Badge tone={tone} dot>
             {severity === 'clear' ? 'Clear' : severity === 'failing' ? 'Failing' : 'Degraded'}
@@ -122,15 +178,36 @@ export default async function OperationsPage() {
         }
       />
 
-      <Callout
-        tone={cronStale ? 'danger' : 'info'}
-        icon={<IconClock size={16} />}
-        title="Scheduler"
-      >
-        {cronStale
-          ? `no tick in ${cronLabel} — the scheduler may be stopped`
-          : `last tick ${cronLabel}`}
-      </Callout>
+      {/* SCR-066: the lists below can grow, so they can be searched. It narrows what is drawn, never a count. */}
+      <div className="flex flex-col gap-2">
+        <div className="max-w-md">
+          <DomainSearch action="/operations" value={query} placeholder="Search a job kind, error or agent…" label="Search operations" preserve={{ outbox: outboxStatus }} className="[flex-wrap:nowrap]" />
+        </div>
+        {query ? (
+          <SearchSummary
+            q={query}
+            count={deadShown.rows.length + failedShown.rows.length + workflowsShown.rows.length + queuedShown.rows.length}
+            clearHref="/operations"
+          />
+        ) : null}
+      </div>
+
+      {engaged.length > 0 ? (
+        <Callout tone="danger" icon={<IconAlert size={16} />} title="Emergency control engaged">
+          {engaged.map((s) => `${KILL_SWITCH_LABEL[s.switch]} — “${s.reason}”`).join(' · ')}{' '}
+          <Link href="/governance/overrides#emergency" className="underline-offset-2 hover:underline">
+            Release on Governance › Overrides &amp; controls
+          </Link>
+        </Callout>
+      ) : null}
+
+      <StaleDataWarning
+        label="Scheduler"
+        ageSeconds={cronAge}
+        staleAfterSeconds={15 * 60}
+        staleMessage={(age) => `no tick in ${age} — the scheduler may be stopped`}
+        freshMessage={(age) => `last tick ${age}`}
+      />
 
       {lines.length > 0 ? (
         <Callout tone={severity === 'failing' ? 'danger' : 'warning'} icon={<IconAlert size={16} />}>
@@ -145,26 +222,60 @@ export default async function OperationsPage() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-7">
         {(
           [
-            ['Dead jobs', backlog.dead_jobs],
-            ['Stalled', backlog.stalled_jobs],
-            ['Queued > 15m', backlog.stuck_queued_jobs],
-            ['Unpublished', backlog.unpublished_events],
-            ['Dead events', backlog.dead_events],
-            ['Approvals late', backlog.overdue_approvals],
+            ['Dead jobs', backlog.dead_jobs, IconAlert],
+            ['Stalled', backlog.stalled_jobs, IconClock],
+            ['Queued > 15m', backlog.stuck_queued_jobs, IconClock],
+            ['Unpublished', backlog.unpublished_events, IconAlert],
+            ['Dead events', backlog.dead_events, IconAlert],
+            ['Approvals late', backlog.overdue_approvals, IconClock],
             // G-176. Separate from "Approvals late" on purpose: late means a
             // person has not answered, nobody told means the system never
             // asked one. The fix for the first is a nudge and for the second
             // is linking a WhatsApp number on /settings.
-            ['Nobody told', backlog.unannounced_approvals],
-          ] as [string, number][]
-        ).map(([label, count]) => (
+            ['Nobody told', backlog.unannounced_approvals, IconAlert],
+          ] as [string, number, (p: IconProps) => React.ReactElement][]
+        ).map(([label, count, Icon]) => (
           <Stat
             key={label}
             label={label}
             value={count}
             tone={count > 0 ? 'danger' : 'neutral'}
+            icon={<Icon size={16} />}
           />
         ))}
+      </div>
+
+      {topCodes.length > 0 || awaitingNotes.length > 0 ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+          <Stat
+            label="Meetings awaiting notes"
+            value={awaitingNotes.length}
+            tone={awaitingNotes.length > 0 ? 'warning' : 'neutral'}
+            caption="completed, nothing attached — cannot be analysed"
+            href="/meetings?window=past"
+          />
+          {topCodes.map(([code, count]) => (
+            <Stat key={code} label={`Failed · ${code}`} value={count} tone="danger" caption="of the most recent deliveries refused" />
+          ))}
+        </div>
+      ) : null}
+
+      {/* SCR-067: alerts a person acknowledges — raised by the runner, closed with a reason. */}
+      <div id="alerts" className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-[13px] font-semibold tracking-tight">Alerts</h2>
+          <span className="text-xs text-muted">
+            In-app, acknowledged here by a person; the webhook destination (ALERT_WEBHOOK_URL) is reported on{' '}
+            <Link href="/settings" className="underline-offset-2 hover:underline">Settings</Link> and kept under{' '}
+            <Link href="/security/keys#ALERT_WEBHOOK_URL" className="underline-offset-2 hover:underline">Keys &amp; secrets</Link>.
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <Stat label="Critical open" value={criticalOpen} tone={criticalOpen > 0 ? 'danger' : 'neutral'} caption="On the banner until acknowledged" icon={<IconAlert size={16} />} />
+          <Stat label="Warnings open" value={warningOpen} tone={warningOpen > 0 ? 'warning' : 'neutral'} caption="Awaiting a person" icon={<IconAlert size={16} />} />
+          <Stat label="Emergency controls" value={`${engaged.length}/${switches.length}`} tone={engaged.length > 0 ? 'danger' : 'success'} caption={engaged.length > 0 ? 'engaged' : 'all released'} href="/governance/overrides#emergency" icon={<IconAlert size={16} />} />
+        </div>
+        <AlertsPanel open={openAlerts.map(alertView)} acknowledged={acknowledgedAlerts.map(alertView)} canAcknowledge={canRequeue} />
       </div>
 
       {/*
@@ -217,9 +328,10 @@ export default async function OperationsPage() {
                 <span className="font-medium tabular">
                   {w.wedged} <span className="font-normal text-muted">{w.reason}</span>
                 </span>
-                {w.oldest_due_at ? (
-                  <span className="text-xs text-muted">oldest due {clock.dateTime(w.oldest_due_at)}</span>
-                ) : null}
+                <span className="flex flex-wrap items-center gap-3">
+                  {w.oldest_due_at ? <span className="text-xs text-muted">oldest due {clock.dateTime(w.oldest_due_at)}</span> : null}
+                  <EscalateControl subjectType="stalled_work" subjectKey={`wedged-${w.reason}`} title={`${w.wedged} follow-up sequence${w.wedged === 1 ? '' : 's'} wedged: ${w.reason}`} escalation={escalationView(`wedged-${w.reason}`)} canAnswer={canAnswerEscalation} compact />
+                </span>
               </li>
             ))}
           </ul>
@@ -264,33 +376,31 @@ export default async function OperationsPage() {
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-2">
+      {/* Anchored so the Command Center's "Dead jobs" tile lands here (bucket F: a count opens its own list). */}
+      <div id="dead-letters" className="flex flex-col gap-2 scroll-mt-20">
         <h2 className="text-[13px] font-semibold tracking-tight">Dead letters</h2>
 
-        {dead.length === 0 ? (
+        {deadShown.rows.length === 0 ? (
           <p className="rounded-lg border border-line bg-surface px-4 py-6 text-center text-sm text-muted">
-            No job has been given up on.
+            {query && dead.length > 0 ? 'No dead letter matches that search.' : 'No job has been given up on.'}
           </p>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {dead.map((job) => (
-              <li
-                key={job.id}
-                className="rounded-lg border border-line bg-surface px-4 py-3 text-sm"
-              >
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="font-medium">{job.kind}</span>
-                  <span className="text-xs text-muted">
-                    {job.attempts}/{job.max_attempts} attempts · {clock.dateTime(job.updated_at)}
-                  </span>
-                </div>
-                <p className="mt-1 break-words text-muted">
-                  {job.last_error ?? 'No error was recorded, which is itself worth investigating.'}
-                </p>
-                {canRequeue ? <RequeueForm jobId={job.id} /> : null}
-              </li>
-            ))}
-          </ul>
+          <DeadLettersList
+            canRequeue={canRequeue}
+            canAnswerEscalation={can(context, 'audit.read')}
+            jobs={deadShown.rows.map((job) => {
+              const e = escalationsByKey.get(`job-${job.id}`);
+              return {
+                id: job.id,
+                kind: job.kind,
+                attempts: job.attempts,
+                maxAttempts: job.max_attempts,
+                updatedAtDisplay: clock.dateTime(job.updated_at),
+                lastError: job.last_error,
+                escalation: e ? { id: e.id, toRole: e.toRole, reason: e.reason, state: e.state, fromUserName: e.fromUserName, acknowledgedByName: e.acknowledgedByName, createdAtLabel: clock.dateTime(e.createdAt) } : null,
+              };
+            })}
+          />
         )}
       </div>
 
@@ -305,19 +415,19 @@ export default async function OperationsPage() {
         act from the lead's own thread. The reason shown is the provider's,
         verbatim.
       */}
-      <div className="flex flex-col gap-2">
+      <div id="failed-deliveries" className="flex flex-col gap-2 scroll-mt-20">
         <h2 className="text-[13px] font-semibold tracking-tight">Failed client deliveries</h2>
 
-        {failed.length === 0 ? (
+        {failedShown.rows.length === 0 ? (
           <p className="rounded-lg border border-line bg-surface px-4 py-6 text-center text-sm text-muted">
-            No outbound message has been refused by the provider.
+            {query && failed.length > 0 ? 'No refused message matches that search.' : 'No outbound message has been refused by the provider.'}
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {failed.map((m, i) => (
+            {failedShown.rows.map((m, i) => (
               <li
                 key={`${m.occurredAt}:${i}`}
-                className="rounded-lg border border-red-500/20 px-4 py-3 text-sm dark:border-red-500/25"
+                className="rounded-lg border border-danger/20 px-4 py-3 text-sm"
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span className="font-medium text-danger">{m.reason}</span>
@@ -330,6 +440,39 @@ export default async function OperationsPage() {
                   <p className="mt-1 text-xs text-muted">
                     provider ref <code>{m.providerRef}</code>
                   </p>
+                ) : null}
+                {/* SCR-060 — retry history: attempts from the row's own
+                    count, the last outcome from the newest retry row. */}
+                <p className="mt-1 text-xs text-muted">
+                  {m.retryCount === 0
+                    ? 'Not retried.'
+                    : `Retried ${m.retryCount} time${m.retryCount === 1 ? '' : 's'}${(() => {
+                        const last = m.id ? retryHistory.get(m.id)?.last : undefined;
+                        return last ? ` · last attempt ${last.delivery ?? 'unrecorded'} ${clock.dateTime(last.at)}${last.error ? ` — ${last.error}` : ''}` : '';
+                      })()}`}
+                  {(() => {
+                    const reason = m.id ? retryHistory.get(m.id)?.lastReason : null;
+                    return reason ? ` · reason given: ${reason}` : '';
+                  })()}
+                  {m.retryOf ? ' · itself a retry' : ''}
+                </p>
+                {/* SCR-057 — a retry is a new send through the same door; the
+                    window and consent decide it again. */}
+                {mayRetry && m.id ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <RetryDeliveryForm messageId={m.id} />
+                    <EscalateControl
+                      subjectType="delivery"
+                      subjectKey={m.id}
+                      title={`Failed delivery: ${m.reason}`}
+                      canAnswer={canAnswerEscalation}
+                      compact
+                      escalation={(() => {
+                        const e = escalationsByKey.get(m.id);
+                        return e ? { id: e.id, toRole: e.toRole, reason: e.reason, state: e.state, fromUserName: e.fromUserName, acknowledgedByName: e.acknowledgedByName, createdAtLabel: clock.dateTime(e.createdAt) } : null;
+                      })()}
+                    />
+                  </div>
                 ) : null}
               </li>
             ))}
@@ -372,6 +515,73 @@ export default async function OperationsPage() {
       </div>
 
       {/*
+        SCR-066 — workflow runs by correlation id: the runs and the jobs one
+        piece of work produced, and a drawer that shows the whole event chain
+        (jobs, runs, audit rows) for one id. "Cancel workflow" stops every
+        unsettled job of the chain through the same audited job doors, with
+        one reason.
+      */}
+      <div className="flex flex-col gap-2">
+        <h2 className="text-[13px] font-semibold tracking-tight">Workflow runs <span className="text-muted">({query ? `${workflowsShown.rows.length} of ${workflowsShown.held}` : workflows.length})</span></h2>
+        <p className="text-xs text-muted">Recent agent runs grouped by correlation id, with the jobs that share it. Inspect one to see its event chain.</p>
+        <WorkflowList workflows={workflowsShown.rows} canCancel={can(context, 'job.requeue')} canAnswerEscalation={canAnswerEscalation} escalations={Object.fromEntries(workflows.map((w) => [`workflow-${w.correlationId}`, escalationView(`workflow-${w.correlationId}`)]))} />
+      </div>
+
+      {/*
+        SCR-066's job queue and outbox, as they stand. The runner owns both;
+        the two human acts are requeueing a dead job (above) and cancelling a
+        queued one (core.cancel_job, on the row).
+      */}
+      <div className="grid gap-4 xl:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-2">
+          <h2 className="text-[13px] font-semibold tracking-tight">Job queue <span className="text-muted">({query ? `${queuedShown.rows.length} of ${queuedShown.held}` : queued.length})</span></h2>
+          <p className="text-xs text-muted">Every job not yet done, in the order it will run. Dead jobs are listed above, not here.</p>
+          {queuedShown.rows.length === 0 ? (
+            <p className="rounded-lg border border-line bg-surface px-4 py-6 text-center text-sm text-muted">{query && queued.length > 0 ? 'No queued job matches that search.' : 'The queue is empty.'}</p>
+          ) : (
+            <ul className="divide-y divide-line rounded-lg border border-line bg-surface">
+              {queuedShown.rows.map((j) => (
+                <li key={j.id} className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-2 text-[13px]">
+                  <span className="flex min-w-0 flex-wrap items-center gap-2">
+                    <span className="break-all font-mono text-xs">{j.kind}</span>
+                    <Badge tone={j.status === 'running' ? 'info' : j.status === 'failed' || j.status === 'retry' ? 'warning' : 'neutral'}>{j.status}</Badge>
+                    {j.attempts > 0 ? <span className="text-xs text-muted">{j.attempts}/{j.maxAttempts} attempts</span> : null}
+                  </span>
+                  <span className="text-xs text-muted">runs {clock.dateTime(j.runAt)}</span>
+                  {j.lastError ? <span className="w-full truncate text-xs text-danger">{j.lastError}</span> : null}
+                  {/* SCR-066: only a queued (or retry-pending) job can be stopped; core.cancel_job refuses the rest. */}
+                  {j.status === 'queued' || j.status === 'failed' || j.status === 'retry' ? (
+                    <span className="w-full">
+                      <CancelJobForm jobId={j.id} />
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="flex flex-col gap-2">
+          <h2 className="text-[13px] font-semibold tracking-tight">Outbox</h2>
+          <p className="text-xs text-muted">
+            Events written but not yet published to their consumers. The dispatcher is the only thing that
+            changes these rows; this page may list them read-only (D17 — Decision: reversed by the owner on
+            2026-09-29). The counts are the backlog view&apos;s; the rows are the table&apos;s own.
+          </p>
+          <dl className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-line bg-surface px-4 py-3">
+              <dt className="text-xs uppercase tracking-wide text-muted">Unpublished</dt>
+              <dd className={`text-xl font-semibold tabular ${backlog.unpublished_events > 0 ? 'text-danger' : ''}`}>{backlog.unpublished_events}</dd>
+            </div>
+            <div className="rounded-lg border border-line bg-surface px-4 py-3">
+              <dt className="text-xs uppercase tracking-wide text-muted">Dead events</dt>
+              <dd className={`text-xl font-semibold tabular ${backlog.dead_events > 0 ? 'text-danger' : ''}`}>{backlog.dead_events}</dd>
+            </div>
+          </dl>
+          <OutboxList page={outbox} dateTime={(iso) => clock.dateTime(iso)} canAnswerEscalation={canAnswerEscalation} escalations={Object.fromEntries(outbox.rows.map((e) => [`outbox-${e.id}`, escalationView(`outbox-${e.id}`)]))} />
+        </div>
+      </div>
+
+      {/*
         Said on the page rather than left to be discovered. The requeue button
         is new (G-099); what has not changed is that nothing brings a dead job
         back on its own, and that the alert only reaches a person where
@@ -380,7 +590,9 @@ export default async function OperationsPage() {
       <p className="text-xs text-muted">
         Dead jobs are never retried on their own. Requeueing one gives it a fresh set of attempts
         and records who asked for it. Alerts reach a person only where <code>ALERT_WEBHOOK_URL</code>{' '}
-        is configured; otherwise the situation is written to the log, once per situation.
+        is configured (add it under{' '}
+        <Link href="/security/keys#ALERT_WEBHOOK_URL" className="underline underline-offset-2">Governance &amp; Security › Keys &amp; secrets</Link>
+        {' '}or set it in the deployment environment); otherwise the situation is written to the log, once per situation.
       </p>
     </div>
   );

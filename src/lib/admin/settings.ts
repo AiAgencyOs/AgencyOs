@@ -37,7 +37,7 @@ export async function setOrganizationName(name: string): Promise<Result<{ name: 
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'Only an owner may rename the agency.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
@@ -72,7 +72,7 @@ export async function setAgencyTimezone(timezone: string): Promise<Result<{ time
   }
 
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change organization settings.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
@@ -110,7 +110,7 @@ type PilotRow = { outcome: 'enabled' | 'disabled' | 'forbidden' | 'not_found' };
 
 export async function setReactivationPilot(enabled: boolean): Promise<Result<{ enabled: boolean }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change organization settings.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
@@ -150,7 +150,7 @@ type WakeRow = { outcome: 'enabled' | 'disabled' | 'forbidden' | 'not_found' };
  */
 export async function setWakeRunnerOnInbound(enabled: boolean): Promise<Result<{ enabled: boolean }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change organization settings.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
@@ -196,6 +196,12 @@ export const TEMPLATE_SITUATIONS = [
   // ADM-103. A no-show has by definition not just written to you, so the
   // second nudge at +26h is always outside the 24-hour window.
   'missed_meeting',
+  // Owner decision 2026-09-29: a past-due invoice reminder outside the
+  // 24-hour window goes as the template registered here (20260930100000).
+  'invoice_reminder',
+  // Owner decision 2026-09-30: the template a campaign carries (SCR-059,
+  // broadcast reopened as a governed campaign; 20260930140000).
+  'campaign',
 ] as const;
 
 export type TemplateSituation = (typeof TEMPLATE_SITUATIONS)[number];
@@ -218,7 +224,7 @@ export async function setWhatsAppTemplateStatus(input: {
   status: TemplateStatus;
 }): Promise<Result<{ situationKey: string }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change template status.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
@@ -251,7 +257,7 @@ export async function setWhatsAppTemplate(input: {
   parameters?: readonly string[];
 }): Promise<Result<{ situationKey: string }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to register WhatsApp templates.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
@@ -301,7 +307,7 @@ export async function clearWhatsAppTemplate(
   languageCode?: string,
 ): Promise<Result<{ situationKey: string }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change WhatsApp templates.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
@@ -367,7 +373,30 @@ export type OrganizationSettingKey =
   | 'ai_provider_verified_at'
   | 'ai_provider_verified_model'
   | 'calendar_verified_at'
-  | 'calendar_verified_calendar';
+  | 'calendar_verified_calendar'
+  // Configurability audit B-1/B-2 — two constants that became the owner's:
+  // how long a quotation stands, and the agency-local hours inside which
+  // follow-ups go out. Unset means the code's old default, exactly as before.
+  | 'quotation_validity_days'
+  | 'outreach_window_start_hour'
+  | 'outreach_window_end_hour'
+  // Configurability audit B-3/B-4 — how many days ahead a meeting time is
+  // offered, and how many leads the funnel needs before it names a leak.
+  | 'meeting_offer_horizon_days'
+  | 'funnel_min_leads_to_name_leak'
+  // G-230 — the payment half of the WON gate: 'on' requires payment or an
+  // approved exception before a deal may be won; unset means only the accepted
+  // quotation is required. Its form is Settings › Finance (PDF §7 "Milestone
+  // rules where user explicitly changes policy").
+  | 'won_requires_payment_evidence'
+  // PDF gap X1 (owner decision 9, 2026-10-01) — the agency's GST setup. Unset
+  // means regular / monthly / calendar month (src/modules/finance/gst-settings.ts).
+  | 'gst_registration_type'
+  | 'gst_filing_frequency'
+  | 'gst_period_basis'
+  // Round 3, Q-D1 — the Google Calendar id the agency books against. Read
+  // BEFORE the GOOGLE_CALENDAR_ID environment value (src/lib/scheduling/google.ts).
+  | 'google_calendar_id';
 
 const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   whatsapp_phone_number_id: 'a numeric WhatsApp phone_number_id (digits only)',
@@ -393,6 +422,16 @@ const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   ai_provider_verified_model: 'the model that answered, up to 80 characters',
   calendar_verified_at: 'an ISO-8601 instant — written by Verify calendar, not by hand',
   calendar_verified_calendar: 'the calendar that answered, e.g. google:meetings@agency, up to 80 characters',
+  quotation_validity_days: 'a whole number of days between 1 and 90',
+  outreach_window_start_hour: 'an hour on the 24-hour clock, 0 to 22',
+  outreach_window_end_hour: 'an hour on the 24-hour clock, 1 to 23, after the start',
+  meeting_offer_horizon_days: 'a whole number of days between 1 and 60',
+  funnel_min_leads_to_name_leak: 'a whole number of leads between 5 and 500',
+  won_requires_payment_evidence: "the single word 'on' — clear it to turn the payment requirement off",
+  gst_registration_type: "'regular' or 'composition'",
+  gst_filing_frequency: "'monthly' or 'quarterly'",
+  gst_period_basis: "'calendar_month'",
+  google_calendar_id: 'a calendar id with no spaces, like meetings@agency.example or primary (3 to 200 characters)',
 };
 
 /**
@@ -434,7 +473,7 @@ export async function setOrganizationSetting(
   value: string,
 ): Promise<Result<{ key: OrganizationSettingKey; cleared: boolean }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change organization settings.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
@@ -517,7 +556,7 @@ export async function readOutreachLimits(): Promise<Result<OutreachLimits>> {
 
 export async function setOutreachLimits(input: OutreachLimits): Promise<Result<OutreachLimits>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change outreach limits.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
@@ -559,7 +598,7 @@ export async function setDefaultDesignReviewer(
   userId: string | null,
 ): Promise<Result<{ cleared: boolean; seeded: number }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change organization settings.');
   }
 
@@ -615,7 +654,7 @@ export async function grantSecondaryRole(
   role: string,
 ): Promise<Result<{ granted: boolean }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'Only an owner may grant an additional role.');
   }
 
@@ -654,7 +693,7 @@ export async function revokeSecondaryRole(
   role: string,
 ): Promise<Result<{ revoked: boolean }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'Only an owner may revoke an additional role.');
   }
 
@@ -695,7 +734,7 @@ export async function setMembershipStatus(
   status: 'active' | 'suspended',
 ): Promise<Result<{ updated: boolean }>> {
   const context = await requireInternal();
-  if (!can(context.role, 'organization.settings')) {
+  if (!can(context, 'organization.settings')) {
     return err('FORBIDDEN', 'Only an owner may change a membership’s status.');
   }
 
@@ -729,4 +768,34 @@ export async function setMembershipStatus(
     default:
       return err('FORBIDDEN', 'Only an owner may change a membership’s status.');
   }
+}
+
+/**
+ * The reason the owner gave for a privileged membership change — appended to
+ * the audit trail as `membership.change_reason` straight after the door that
+ * made the change succeeds (the doors themselves take no reason). The audit
+ * insert policy admits only an entry authored by the caller, so the reason
+ * cannot be attributed to somebody else. See `src/lib/audit/privileged.ts` for
+ * how a change is paired with it. Failure is logged by `recordAudit` and never
+ * undoes the change.
+ */
+export async function recordPrivilegeReason(membershipId: string, kind: 'status_changed' | 'secondary_role_granted' | 'secondary_role_revoked', reason: string, detail: Record<string, unknown> = {}): Promise<void> {
+  const context = await requireInternal();
+  if (!context.organizationId) return;
+  const { recordAudit } = await import('@/lib/audit');
+  await recordAudit({
+    organizationId: context.organizationId,
+    action: 'membership.change_reason',
+    subjectType: 'membership',
+    subjectId: membershipId,
+    after: { kind, reason: reason.trim(), ...detail },
+  });
+}
+
+/** A reason is required for a privileged change: a few words at least, bounded. */
+export function privilegeReasonIssue(raw: string): string | null {
+  const reason = raw.trim();
+  if (reason.length < 3) return 'Say why — a privileged change needs a reason, and it is kept in the audit log.';
+  if (reason.length > 500) return 'Keep the reason under 500 characters.';
+  return null;
 }

@@ -55,7 +55,7 @@ describe('A. the query reads real content, not a re-derived summary', () => {
 
 describe('B. the page is gated and scoped the same way the prototype preview page is', () => {
   test('staff-only, matching the identical named boundary', () => {
-    assert.match(PAGE, /can\(context\.role, 'project\.read'\)/);
+    assert.match(PAGE, /can\(context, 'project\.read'\)/);
     const prose = PAGE.replace(/\n\s*\*\s?/g, ' ');
     assert.match(prose, /Staff-only, matching the identical, already-reviewed boundary/);
   });

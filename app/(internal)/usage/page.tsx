@@ -1,18 +1,28 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
+import Link from 'next/link';
 
 import { formatCostMinor } from '@/lib/admin/agent-eval';
+import { formatDurationMs } from '@/lib/admin/agent-runs-eval';
 import { getAgentUsage } from '@/lib/admin/usage';
+import { readSpendByProject } from '@/lib/admin/spend-by-project';
+import type { SpendLine } from '@/lib/admin/spend-by-project-eval';
+import { LATENCY_SAMPLE, readLatencyKpis } from '@/lib/admin/usage-latency';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import {
+  buttonClass,
+  Card,
+  CardHeader,
   DataTable,
   EmptyState,
+  IconInvoices,
   IconUsage,
   PageHeader,
   Stat,
   StatGrid,
+  TrendChart,
   type Column,
+  PermissionDenied,
 } from '@/ui';
 
 export const metadata: Metadata = { title: 'Usage & costs' };
@@ -31,10 +41,20 @@ type Row = Awaited<ReturnType<typeof getAgentUsage>>['perAgent'][number];
 
 export default async function UsagePage() {
   const context = await requireInternal('/usage');
-  if (!can(context.role, 'audit.read')) redirect('/dashboard');
+  if (!can(context, 'audit.read')) return <PermissionDenied />;
 
-  const { perAgent, totals, capped } = await getAgentUsage();
+  const [{ perAgent, totals, capped, dailyTrend }, latency, spend] = await Promise.all([getAgentUsage(), readLatencyKpis(), readSpendByProject()]);
+  const ms = (v: number | null) => formatDurationMs(v) ?? '—';
   const cost = (minor: number) => `₹${formatCostMinor(minor) ?? '0.00'}`;
+  const trendData = dailyTrend.map((d) => ({ day: d.day.slice(5), costRupees: d.costMinor / 100 }));
+
+  const projectSpendColumns: Column<SpendLine>[] = [
+    { key: 'project', header: 'Project', primary: true, cell: (l) => l.name ?? 'No project' },
+    { key: 'runs', header: 'Runs', align: 'right', cellClassName: 'tabular', cell: (l) => N.format(l.runs) },
+    { key: 'tokens', header: 'Tokens', align: 'right', desktopOnly: true, cellClassName: 'tabular text-muted', cell: (l) => N.format(l.inputTokens + l.outputTokens) },
+    { key: 'cost', header: 'Cost', align: 'right', cellClassName: 'tabular', cell: (l) => cost(l.costMinor) },
+    { key: 'share', header: 'Share', align: 'right', desktopOnly: true, cellClassName: 'tabular text-muted', cell: (l) => (l.sharePercent === null ? '—' : `${l.sharePercent}%`) },
+  ];
 
   const columns: Column<Row>[] = [
     { key: 'agent', header: 'Agent', primary: true, cell: (a) => a.agentKey },
@@ -73,13 +93,32 @@ export default async function UsagePage() {
       <PageHeader
         title="Usage & costs"
         description="What the AI agents actually consumed — recorded per run and per step, never estimated. Cost is what the runtime wrote down; there is no rate card here."
+        actions={
+          <>
+            <a href="/api/usage/ledger" className={buttonClass('secondary', 'sm')}>
+              Export cost ledger (rows)
+            </a>
+            <Link href="/usage/runs" className={buttonClass('secondary', 'sm')}>
+              <IconUsage size={14} />
+              Agent runs
+            </Link>
+          </>
+        }
       />
 
       <StatGrid>
-        <Stat label="Agent runs" value={N.format(totals.runs)} />
-        <Stat label="Input tokens" value={N.format(totals.inputTokens)} />
-        <Stat label="Output tokens" value={N.format(totals.outputTokens)} />
-        <Stat label="Cost" value={cost(totals.costMinor)} tone="brand" />
+        <Stat label="Agent runs" value={N.format(totals.runs)} icon={<IconUsage size={16} />} />
+        <Stat label="Input tokens" value={N.format(totals.inputTokens)} icon={<IconUsage size={16} />} />
+        <Stat label="Output tokens" value={N.format(totals.outputTokens)} icon={<IconUsage size={16} />} />
+        <Stat label="Cost" value={cost(totals.costMinor)} tone="brand" icon={<IconInvoices size={16} />} />
+      </StatGrid>
+
+      {/* SCR-065: latency, from ai.agent_runs.latency_ms — stamped when a run settles, never derived on the page. */}
+      <StatGrid>
+        <Stat label="Average run latency" value={ms(latency.averageMs)} caption={latency.timedRuns > 0 ? `Over the last ${latency.timedRuns} settled runs` : `No settled run has a latency yet`} tone="info" icon={<IconUsage size={16} />} />
+        <Stat label="Median run latency" value={ms(latency.medianMs)} caption="Half the runs finish faster" icon={<IconUsage size={16} />} />
+        <Stat label="p95 run latency" value={ms(latency.p95Ms)} caption={latency.slowestMs !== null ? `Slowest ${ms(latency.slowestMs)}` : `Sample of up to ${LATENCY_SAMPLE}`} tone={latency.p95Ms !== null && latency.p95Ms > 120_000 ? 'warning' : 'neutral'} icon={<IconUsage size={16} />} />
+        <Stat label="Average model call" value={ms(latency.averageModelCallMs)} caption="Per model_call step of those runs" icon={<IconUsage size={16} />} />
       </StatGrid>
 
       {perAgent.length === 0 ? (
@@ -87,9 +126,43 @@ export default async function UsagePage() {
           icon={<IconUsage size={22} />}
           title="No agent usage recorded yet"
           description="Agents run only when enabled and a provider is configured — usage and cost appear here once they do."
+          action={<Link href="/agents" className={buttonClass('secondary', 'sm')}>Open agents</Link>}
         />
       ) : (
-        <DataTable rows={perAgent} columns={columns} getKey={(a) => a.agentKey} />
+        <>
+          {trendData.length > 1 ? (
+            <Card className="p-4 sm:p-5">
+              <CardHeader
+                title="Daily spend"
+                description="Days with at least one settled run — a day nothing ran is simply absent, not a zero."
+              />
+              <TrendChart
+                data={trendData}
+                xKey="day"
+                series={[{ key: 'costRupees', label: 'Cost' }]}
+                currency="INR"
+              />
+            </Card>
+          ) : null}
+          <DataTable rows={perAgent} columns={columns} getKey={(a) => a.agentKey} />
+          {/* SCR-065 "No hidden spend": every settled run, by project, with the work that belongs to no project kept as its own line. */}
+          <Card>
+            <CardHeader
+              title="Spend by Project"
+              description={
+                spend.unattributed.runs > 0
+                  ? `${spend.unattributed.runs} of ${spend.total.runs} settled runs (${cost(spend.unattributed.costMinor)}) belong to no project, such as a lead's reply or the search index. They are listed, not left out.`
+                  : 'Every settled run belongs to a project.'
+              }
+            />
+            <DataTable
+              rows={spend.lines}
+              columns={projectSpendColumns}
+              getKey={(l) => l.projectId ?? 'no-project'}
+              href={(l) => `/usage/runs?project=${l.projectId ?? 'none'}`}
+            />
+          </Card>
+        </>
       )}
 
       <p className="text-xs leading-relaxed text-muted">

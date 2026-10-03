@@ -183,11 +183,18 @@ export const selectClass =
   'hover:border-line-strong focus:border-brand focus:ring-2 focus:ring-brand/20 ' +
   'disabled:opacity-50 md:h-9 md:text-sm';
 
-export const labelClass = 'text-xs font-semibold uppercase tracking-wider text-muted';
+export const labelClass = 'text-[13px] font-medium text-muted';
 
 export const cardClass = 'rounded-xl border border-line bg-surface shadow-xs';
 
-export type ButtonVariant = 'primary' | 'accent' | 'secondary' | 'ghost' | 'danger' | 'whatsapp';
+export type ButtonVariant =
+  | 'primary'
+  | 'accent'
+  | 'secondary'
+  | 'ghost'
+  | 'danger'
+  | 'whatsapp'
+  | 'sidebar';
 export type ButtonSize = 'sm' | 'md';
 
 const VARIANT: Record<ButtonVariant, string> = {
@@ -204,6 +211,11 @@ const VARIANT: Record<ButtonVariant, string> = {
   // needs 4.5:1 — which no bright WhatsApp green reaches against white.
   whatsapp:
     'bg-[var(--wa-header)] text-[var(--wa-header-fg)] shadow-xs hover:brightness-110 active:scale-[.98]',
+  // `secondary` reads as `border-line bg-surface text-foreground`, which is
+  // invisible on the permanently-dark sidebar rail — this is that control on
+  // the rail's own tokens instead of the canvas's.
+  sidebar:
+    'border border-sidebar-border bg-transparent text-sidebar-fg hover:bg-sidebar-hover active:scale-[.98]',
 };
 
 const SIZE: Record<ButtonSize, string> = {

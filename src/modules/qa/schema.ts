@@ -58,6 +58,8 @@ export const raiseDefectSchema = z.object({
   actual: z.string().trim().max(2000).optional(),
   environment: z.string().trim().max(500).optional(),
   evidenceUrl: z.url().optional(),
+  /** SCR-046 (bucket F): the test run that found it, when raised from a run row. */
+  runId: z.uuid().optional(),
 });
 
 export type RaiseDefectInput = z.infer<typeof raiseDefectSchema>;
@@ -163,6 +165,11 @@ export const addTestPlanItemSchema = z.object({
   category: z.enum(TEST_CATEGORIES),
   reason: z.string().trim().min(1, 'Say why this category applies to this item').max(600),
   criticalPath: z.boolean().default(false),
+  // SCR-045 — the case itself, as a tester follows it. Optional: an agent
+  // names the category and the reason; a person fills these in.
+  preconditions: z.string().trim().max(2000).optional(),
+  steps: z.string().trim().max(4000).optional(),
+  expectedResult: z.string().trim().max(2000).optional(),
 });
 
 export const removeTestPlanItemSchema = z.object({ itemId: z.uuid() });
@@ -176,6 +183,10 @@ export const TEST_RUN_SUITES = [
   'functional', 'ui', 'api', 'integration', 'e2e',
   'regression', 'smoke', 'security', 'performance', 'compatibility',
 ] as const;
+
+/** SCR-046 — where a build ran when it was tested (the vocabulary of `projects.environments`). */
+export const RUN_ENVIRONMENTS = ['development', 'staging', 'production', 'other'] as const;
+export type RunEnvironment = (typeof RUN_ENVIRONMENTS)[number];
 
 /**
  * Recording one run of evidence against a build — qa.record_test_run
@@ -192,6 +203,16 @@ export const recordTestRunSchema = z
     failed: z.number().int().min(0),
     skipped: z.number().int().min(0).default(0),
     evidenceUrl: z.url().optional(),
+    // SCR-048 — where the run ran (the cells of the compatibility matrix)
+    // and, for a performance suite, what it measured. Free text: Doc 14 §16
+    // forbids inventing thresholds, so there is no number to validate.
+    device: z.string().trim().max(120).optional(),
+    browser: z.string().trim().max(120).optional(),
+    os: z.string().trim().max(120).optional(),
+    perfNotes: z.string().trim().max(4000).optional(),
+    /** SCR-046: the deployment environment the build ran in, and who ran the suite (default: the recorder). */
+    environment: z.enum(RUN_ENVIRONMENTS).optional(),
+    testerId: z.uuid().optional(),
   })
   .refine((v) => v.passed + v.failed + v.skipped === v.total, {
     message: 'Passed + failed + skipped must equal the total.',
@@ -199,3 +220,17 @@ export const recordTestRunSchema = z
   });
 
 export type RecordTestRunInput = z.infer<typeof recordTestRunSchema>;
+
+
+/** Triage: who takes a defect and how bad it is — `qa.defects.assignee_id` / `severity`. */
+export const triageDefectSchema = z.object({
+  defectId: z.uuid(),
+  projectId: z.uuid(),
+  assigneeId: z.uuid().nullable(),
+  severity: z.enum(DEFECT_SEVERITIES),
+  /** Required when the severity changes — a downgrade with no reason is a bug hidden by silence. */
+  reason: z.string().trim().max(500).optional(),
+  /** SCR-047: the task the defect is about (`qa.defects.task_id`). Null unlinks; omitted leaves it alone. */
+  taskId: z.uuid().nullable().optional(),
+});
+export type TriageDefectInput = z.infer<typeof triageDefectSchema>;

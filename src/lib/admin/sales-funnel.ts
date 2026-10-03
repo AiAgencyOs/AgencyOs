@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { funnelMinLeadsToNameLeak } from '@/lib/admin/operational-defaults';
+import { readOperationalSettings } from '@/lib/admin/settings';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -96,20 +98,25 @@ export type SalesFunnel = {
    * system — which is a finding worth surfacing rather than a number to fix.
    */
   outOfOrder: boolean;
+  /** The sample floor in force — the owner's setting, or the default when unset. */
+  minLeadsToNameLeak: number;
 };
 
 /**
  * Fewer than this and the drops are noise rather than signal.
  *
  * Twenty is not a statistical claim; it is a refusal to name a leak from four
- * leads. The page says so where a reader can see it.
+ * leads. The page says so where a reader can see it. The number is the
+ * owner's to change (`funnel_min_leads_to_name_leak`, 5–500, configurability
+ * audit B-4); `getSalesFunnel` returns the one in force as `minLeadsToNameLeak`
+ * and 20 is what unset means (`DEFAULT_FUNNEL_MIN_LEADS_TO_NAME_LEAK`).
  */
-export const MIN_LEADS_TO_NAME_A_LEAK = 20;
 
 const pct = (n: number, of: number): number | null => (of > 0 ? Math.round((n / of) * 1000) / 10 : null);
 
 export async function getSalesFunnel(sinceDays = 90): Promise<SalesFunnel> {
   const supabase = await createClient();
+  const minLeadsToNameLeak = funnelMinLeadsToNameLeak(await readOperationalSettings());
 
   const from = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();
 
@@ -172,7 +179,7 @@ export async function getSalesFunnel(sinceDays = 90): Promise<SalesFunnel> {
   const outOfOrder = steps.some((s, i) => i > 0 && s.count > steps[i - 1]!.count);
 
   let biggestDrop: SalesFunnel['biggestDrop'] = null;
-  if (counts.leads >= MIN_LEADS_TO_NAME_A_LEAK) {
+  if (counts.leads >= minLeadsToNameLeak) {
     for (let i = 1; i < steps.length; i += 1) {
       const from_ = steps[i - 1]!;
       const to = steps[i]!;
@@ -197,7 +204,7 @@ export async function getSalesFunnel(sinceDays = 90): Promise<SalesFunnel> {
     share: Number(row.share),
   }));
 
-  return { counts, steps, biggestDrop, outOfOrder, lostReasons };
+  return { counts, steps, biggestDrop, outOfOrder, lostReasons, minLeadsToNameLeak };
 }
 
 /**
@@ -238,6 +245,40 @@ type ReferenceRow = {
   title: string;
   document: { pricingReference?: { referenceRupees?: unknown; proposedRupees?: unknown } } | null;
 };
+
+export type LeadSourceCount = { source: string; count: number };
+
+/**
+ * SCR-005's "lead source breakdown" — leads created in the same window the
+ * funnel above counts, grouped by `crm.leads.source`. A direct read, not an
+ * RPC: `source` is a five-value enum column
+ * (`manual|whatsapp|web_form|email|referral|import`, `crm.leads`' own check
+ * constraint), so an in-memory group-by is exactly as much work as writing a
+ * view for it, without adding a second place the definition of "the window"
+ * has to agree with `getSalesFunnel`'s.
+ */
+export async function getLeadSourceBreakdown(sinceDays = 90): Promise<LeadSourceCount[]> {
+  const supabase = await createClient();
+  const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('leads')
+    .select('source')
+    .gte('created_at', since)
+    .is('deleted_at', null);
+
+  if (error) unreadable('getLeadSourceBreakdown', error);
+
+  const counts = new Map<string, number>();
+  for (const row of data ?? []) {
+    counts.set(row.source, (counts.get(row.source) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .map(([source, count]) => ({ source, count }))
+    .sort((a, b) => b.count - a.count);
+}
 
 export async function getPricingReflex(sinceDays = 90): Promise<PricingReflex> {
   const supabase = await createClient();

@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useId } from 'react';
 import {
   TEMPLATE_PARAMETERS,
   TEMPLATE_PARAMETER_LABELS,
@@ -20,6 +20,10 @@ import {
   setNegotiationLimitsAction,
   setOrganizationNameAction,
   setOutreachLimitsAction,
+  setFunnelSampleFloorAction,
+  setMeetingOfferHorizonAction,
+  setOutreachWindowAction,
+  setQuotationValidityAction,
   setPaymentTermsAction,
   setPricingModelAction,
   setProjectGroupIdentifierAction,
@@ -27,6 +31,7 @@ import {
   setProviderCredentialAction,
   setReactivationCapAction,
   setReactivationPilotAction,
+  setCalendarIdAction,
   setTestRecipientAction,
   setThirdPartyChargeAction,
   setTimezoneAction,
@@ -36,6 +41,7 @@ import {
   setWhatsAppTemplateStatusAction,
   verifyAiProviderAction,
   verifyCalendarAction,
+  verifyFigmaAction,
   verifyWhatsAppAction,
 } from './actions';
 
@@ -139,6 +145,47 @@ export function WhatsAppNumberForm({ current }: { current: string | null }) {
       >
         {pending ? 'Saving…' : current ? 'Update' : 'Set number id'}
       </button>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/**
+ * Q-D1 — the Google Calendar id the agency books against, an organization
+ * setting read BEFORE the GOOGLE_CALENDAR_ID environment value. It names a
+ * calendar and grants nothing; the service-account key stays in the vault.
+ */
+export function CalendarIdForm({ current, environmentSet }: { current: string | null; environmentSet: boolean }) {
+  const [state, action, pending] = useActionState(setCalendarIdAction, IDLE_STATE);
+  const inputId = useId();
+
+  return (
+    <form action={action} className="flex flex-col gap-1">
+      <label htmlFor={inputId} className="text-xs font-medium text-muted">
+        Calendar id
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          id={inputId}
+          type="text"
+          name="calendar_id"
+          defaultValue={current ?? ''}
+          placeholder="meetings@agency.example"
+          maxLength={200}
+          autoComplete="off"
+          className={`${inputClass} min-w-0 max-w-full`}
+        />
+        <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+          {pending ? 'Saving…' : current ? 'Update' : 'Set calendar id'}
+        </button>
+      </div>
+      <span className="text-xs text-muted">
+        {current
+          ? 'Read before the environment value.'
+          : environmentSet
+            ? 'Not set here, so the GOOGLE_CALENDAR_ID environment value is used. A value saved here is read first.'
+            : 'Not set here and not in the environment, so no calendar is booked against.'}
+      </span>
       <Message status={state.status} message={state.message} />
     </form>
   );
@@ -636,6 +683,8 @@ const TEMPLATE_SITUATION_LABELS: Readonly<Record<string, string>> = {
   post_project: 'After a project finished',
   internal_approval: 'Internal approval reminder',
   missed_meeting: 'Missed a booked meeting',
+  invoice_reminder: 'Past-due invoice reminder',
+  campaign: 'Campaign (governed broadcast)',
 };
 
 export function WhatsAppTemplatesForm({
@@ -1168,6 +1217,23 @@ export function VerifyCalendarForm({ lastVerifiedAt, calendar }: { lastVerifiedA
   );
 }
 
+/** SCR-070 — Figma, exercised against the most recent recorded design reference and recorded. */
+export function VerifyFigmaForm({ lastVerifiedAt, references }: { lastVerifiedAt: string | null; references: number }) {
+  const [state, action, pending] = useActionState(verifyFigmaAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Asking Figma…' : 'Verify Figma'}
+      </button>
+      <span className="text-xs text-muted">
+        {lastVerifiedAt ? `a reference was checked ${lastVerifiedAt}` : 'never checked against Figma'} · {references} reference{references === 1 ? '' : 's'} recorded
+      </span>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
 /**
  * The default internal design reviewer — Designer §4; G-300.
  *
@@ -1222,6 +1288,113 @@ export function DefaultDesignReviewerForm({
         changing this does not move a gate a person decided. Projects with nobody assigned will be
         given them now, and the count is reported.
       </p>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** How many days a quotation stands — configurability audit B-1. */
+export function QuotationValidityForm({ current }: { current: string | null }) {
+  const [state, action, pending] = useActionState(setQuotationValidityAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <label className="flex flex-col gap-1">
+        <span className="text-xs font-medium">Valid for (days)</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          name="validity_days"
+          defaultValue={current ?? ''}
+          placeholder="15"
+          className={`${inputClass} w-24 tabular`}
+        />
+      </label>
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Saving…' : 'Save validity'}
+      </button>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** The agency-local hours inside which follow-ups are sent — configurability audit B-2. */
+export function OutreachWindowForm({ start, end }: { start: string | null; end: string | null }) {
+  const [state, action, pending] = useActionState(setOutreachWindowAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <label className="flex flex-col gap-1">
+        <span className="text-xs font-medium">From (hour, 0–22)</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          name="window_start_hour"
+          defaultValue={start ?? ''}
+          placeholder="10"
+          className={`${inputClass} w-24 tabular`}
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="text-xs font-medium">Until (hour, 1–23)</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          name="window_end_hour"
+          defaultValue={end ?? ''}
+          placeholder="19"
+          className={`${inputClass} w-24 tabular`}
+        />
+      </label>
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Saving…' : 'Save window'}
+      </button>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** How many days ahead a meeting time is offered when the lead named none — configurability audit B-3. */
+export function MeetingOfferHorizonForm({ current }: { current: string | null }) {
+  const [state, action, pending] = useActionState(setMeetingOfferHorizonAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <label className="flex flex-col gap-1">
+        <span className="text-xs font-medium">Look ahead (days, 1–60)</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          name="horizon_days"
+          defaultValue={current ?? ''}
+          placeholder="7"
+          className={`${inputClass} w-24 tabular`}
+        />
+      </label>
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Saving…' : 'Save horizon'}
+      </button>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** How many leads the funnel needs before it names its biggest drop — configurability audit B-4. */
+export function FunnelSampleFloorForm({ current }: { current: string | null }) {
+  const [state, action, pending] = useActionState(setFunnelSampleFloorAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <label className="flex flex-col gap-1">
+        <span className="text-xs font-medium">Leads needed (5–500)</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          name="min_leads"
+          defaultValue={current ?? ''}
+          placeholder="20"
+          className={`${inputClass} w-24 tabular`}
+        />
+      </label>
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Saving…' : 'Save floor'}
+      </button>
       <Message status={state.status} message={state.message} />
     </form>
   );

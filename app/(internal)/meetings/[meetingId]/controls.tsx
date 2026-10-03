@@ -1,13 +1,14 @@
 'use client';
 
-import { useActionState, type ComponentType } from 'react';
+import { useActionState, useId, type ComponentType } from 'react';
 
 import type { MeetingDoor } from '@/lib/scheduler/meeting-commands-eval';
 import { IDLE_STATE } from '@/modules/identity/types';
+import { MEETING_FILE_KINDS } from '@/modules/projects/attachment-rules';
 import type { MeetingControl } from '@/modules/crm/meetings-view';
 import { Badge, FormMessage, buttonClass, inputClass } from '@/ui';
 
-import { addEvidenceAction, bookSlotAction, cancelMeetingAction, completeMeetingAction, proposeSlotsAction, recordNoShowAction, requestAnalysisAction, rescheduleMeetingAction } from './actions';
+import { addEvidenceAction, uploadEvidenceFileAction, bookSlotAction, cancelMeetingAction, completeMeetingAction, proposeSlotsAction, recordNoShowAction, requestAnalysisAction, rescheduleMeetingAction } from './actions';
 
 /**
  * A09's controls — G-237. Every control is rendered (Blueprint §11: a hidden
@@ -19,6 +20,8 @@ import { addEvidenceAction, bookSlotAction, cancelMeetingAction, completeMeeting
  */
 
 const input = inputClass;
+// Text is kept word for word; a recording, image, PDF or Word file is stored as it is (Q-D3).
+const MEETING_FILE_ACCEPT = ['.txt', '.md', '.vtt', '.srt', ...Object.values(MEETING_FILE_KINDS).flat().map((e) => `.${e}`)].join(',');
 const primary = buttonClass('primary', 'sm');
 const secondary = buttonClass('secondary', 'sm');
 
@@ -84,6 +87,41 @@ function EvidenceForm({ meetingId }: FormProps) {
       <button type="submit" disabled={pending} className={`${secondary} self-start`}>{pending ? 'Attaching…' : 'Attach'}</button>
       <FormMessage status={state.status} message={state.message} />
     </form>
+  );
+}
+
+/**
+ * SCR-060 "Meeting note upload": the notes or transcript as a text file, its
+ * text kept verbatim as the evidence (the human source), or a recording, image,
+ * PDF or Word file stored as it is (Q-D3) under the project-file rules. The
+ * file's name, type and size are on the row; a summary is a separate row.
+ */
+function EvidenceFileForm({ meetingId }: FormProps) {
+  const [state, action, pending] = useActionState(uploadEvidenceFileAction, IDLE_STATE);
+  const fileId = useId();
+  const visibilityId = useId();
+  return (
+    <form action={action} className="flex flex-col gap-2 border-t border-line pt-3">
+      <input type="hidden" name="meetingId" value={meetingId} />
+      <label htmlFor={fileId} className="text-xs font-medium text-muted">Upload notes, a transcript, a recording, an image, a PDF or a Word file (up to 50 MB)</label>
+      <input id={fileId} name="file" type="file" required accept={MEETING_FILE_ACCEPT} className={`${input} h-auto py-1.5`} />
+      <label htmlFor={visibilityId} className="sr-only">Visibility of the uploaded file</label>
+      <select id={visibilityId} name="visibility" defaultValue="internal" className={`${input} w-auto`}>
+        <option value="internal">Internal</option>
+        <option value="client_visible">Client-visible</option>
+      </select>
+      <button type="submit" disabled={pending} className={`${secondary} self-start`}>{pending ? 'Uploading…' : 'Upload file'}</button>
+      <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+function EvidenceForms(props: FormProps) {
+  return (
+    <div className="flex flex-col gap-3">
+      <EvidenceForm {...props} />
+      <EvidenceFileForm {...props} />
+    </div>
   );
 }
 
@@ -170,7 +208,7 @@ const FORMS: Partial<Record<MeetingDoor, ComponentType<FormProps>>> = {
   'crm.cancel_meeting': CancelForm,
   'crm.complete_meeting': CompleteForm,
   'crm.record_no_show': NoShowForm,
-  'crm.add_meeting_evidence': EvidenceForm,
+  'crm.add_meeting_evidence': EvidenceForms,
   'crm.request_meeting_analysis': AnalysisForm,
 };
 

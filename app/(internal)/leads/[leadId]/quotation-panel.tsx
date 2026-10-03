@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
 import { FormMessage, buttonClass, inputClass, labelClass } from '@/ui';
@@ -45,12 +45,15 @@ export function DraftQuotationForm({
   opportunityId,
   defaultTitle,
   supersedes,
+  requirementVersionId,
 }: {
   leadId: string;
   opportunityId: string;
   defaultTitle: string;
   /** The version this draft would supersede, if one is live (§16). */
   supersedes: number | null;
+  /** SCR-007 — the accepted requirement version the price is built against (§12), cited on the row. */
+  requirementVersionId?: string | null;
 }) {
   const [state, action, pending] = useActionState(draftProposalAction, IDLE_STATE);
 
@@ -58,6 +61,7 @@ export function DraftQuotationForm({
     <form action={action} className="flex flex-col gap-2">
       <input type="hidden" name="leadId" value={leadId} />
       <input type="hidden" name="opportunityId" value={opportunityId} />
+      {requirementVersionId ? <input type="hidden" name="requirementVersionId" value={requirementVersionId} /> : null}
 
       <label className={label} htmlFor="quotation-title">
         Quotation title
@@ -75,6 +79,25 @@ export function DraftQuotationForm({
         Valid until
       </label>
       <input id="quotation-valid" name="validUntil" type="date" className={input} />
+
+      {/* SCR-012 — project type and duration. `sales.proposals` has no
+          column for either, so the action writes them as the first lines
+          of the scope summary (`body`); the labels say so rather than
+          implying a field the row does not have. */}
+      <div className="flex flex-wrap gap-2">
+        <div className="flex flex-1 flex-col gap-1">
+          <label className={label} htmlFor="quotation-project-type">
+            Project type <span className="font-normal normal-case tracking-normal text-faint">(kept in the scope summary)</span>
+          </label>
+          <input id="quotation-project-type" name="projectType" maxLength={120} placeholder="e.g. Web app + admin panel" className={input} />
+        </div>
+        <div className="flex flex-1 flex-col gap-1">
+          <label className={label} htmlFor="quotation-duration">
+            Duration <span className="font-normal normal-case tracking-normal text-faint">(kept in the scope summary)</span>
+          </label>
+          <input id="quotation-duration" name="duration" maxLength={80} placeholder="e.g. 8 weeks" className={input} />
+        </div>
+      </div>
 
       <label className={label} htmlFor="quotation-body">
         Scope summary
@@ -133,18 +156,40 @@ export function QuotationLineForm({ leadId, proposalId }: { leadId: string; prop
   );
 }
 
+/** India's standard GST rate on services, in basis points — the toggle's arithmetic, stated once. */
+const GST_BP = 1800;
+
 export function QuotationPricingForm({
   leadId,
   proposalId,
   discountMinor,
   taxMinor,
+  subtotalMinor = 0,
+  billingMode = null,
 }: {
   leadId: string;
   proposalId: string;
   discountMinor: number;
   taxMinor: number;
+  /** For the GST toggle's arithmetic: tax = (subtotal − discount) × 18%. */
+  subtotalMinor?: number;
+  /**
+   * SCR-012 — the project's CONFIRMED billing mode, when this deal already
+   * has a project with one; null before conversion or before the mode is
+   * confirmed, in which case the toggle starts off and the field is manual.
+   */
+  billingMode?: 'gst' | 'non_gst' | null;
 }) {
   const [state, action, pending] = useActionState(setProposalPricingAction, IDLE_STATE);
+  const [discount, setDiscount] = useState((discountMinor / 100).toFixed(2));
+  const [tax, setTax] = useState((taxMinor / 100).toFixed(2));
+  const [gst, setGst] = useState(billingMode === 'gst');
+
+  const gstFor = (discountValue: string) => {
+    const discountMinorNow = Math.round(Number(discountValue || 0) * 100);
+    const base = Math.max(subtotalMinor - (Number.isFinite(discountMinorNow) ? discountMinorNow : 0), 0);
+    return (Math.round((base * GST_BP) / 10_000) / 100).toFixed(2);
+  };
 
   return (
     <form action={action} className="flex flex-col gap-2">
@@ -162,7 +207,11 @@ export function QuotationPricingForm({
             type="number"
             step="0.01"
             min="0"
-            defaultValue={(discountMinor / 100).toFixed(2)}
+            value={discount}
+            onChange={(e) => {
+              setDiscount(e.target.value);
+              if (gst) setTax(gstFor(e.target.value));
+            }}
             className={input}
           />
         </div>
@@ -176,11 +225,34 @@ export function QuotationPricingForm({
             type="number"
             step="0.01"
             min="0"
-            defaultValue={(taxMinor / 100).toFixed(2)}
+            value={tax}
+            onChange={(e) => {
+              setTax(e.target.value);
+              setGst(false);
+            }}
             className={input}
           />
         </div>
       </div>
+
+      <label className="flex items-center gap-2 text-[12.5px] text-muted">
+        <input
+          type="checkbox"
+          checked={gst}
+          onChange={(e) => {
+            setGst(e.target.checked);
+            if (e.target.checked) setTax(gstFor(discount));
+          }}
+        />
+        <span>
+          GST 18% on the discounted subtotal
+          {billingMode === 'gst'
+            ? ' — pre-filled from the project’s confirmed GST billing mode'
+            : billingMode === 'non_gst'
+              ? ' — the project’s confirmed mode is non-GST; left off'
+              : ' — no confirmed billing mode on this deal yet; manual'}
+        </span>
+      </label>
 
       <button type="submit" disabled={pending} className={button}>
         Update pricing

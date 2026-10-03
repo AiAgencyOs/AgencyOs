@@ -198,6 +198,9 @@ beforeEach(() => {
     { description: 'Customer app', quantity: 1, amount_minor: 4000000 },
     { description: 'Driver app', quantity: 1, amount_minor: 3000000 },
   ]);
+  // Audit B-6: the clauses a quotation prints come through one snapshot door;
+  // these tests describe an organization that never edited them.
+  results.set('clauses_for_proposal', { data: [{ outcome: 'frozen', clauses: {} }], error: null });
   results.set('draft_proposal', {
     data: [{ outcome: 'created', proposal_id: PROPOSAL, version: 1, superseded: null }],
     error: null,

@@ -49,7 +49,9 @@ export const LEAD_TRANSITIONS: Record<LeadStatus, readonly LeadStatus[]> = {
   // ready yet" is something you learn at any point — including from a client
   // who was about to sign.
   qualifying: ['qualified', 'nurture', 'disqualified'],
-  qualified: ['converted', 'nurture', 'disqualified'],
+  // SCR-008: back to discovery when the evidence turns out incomplete —
+  // `crm.leads_guard` (20261001110000) admits the same move.
+  qualified: ['qualifying', 'converted', 'nurture', 'disqualified'],
   // And it is a waiting room, not a terminus: a lead comes back OUT of it,
   // which is the entire reason it is not `disqualified`.
   nurture: ['qualifying', 'qualified', 'disqualified'],
@@ -279,6 +281,30 @@ export const requirementPayloadSchema = z.object({
   niceToHaves: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
   exclusions: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
   designReferences: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
+  /**
+   * SCR-009 (bucket F-B). Four facts the PDF's requirement screen shows as
+   * part of the versioned requirement rather than as coverage quotes: who
+   * will use it, on what, what it must talk to, and what the client said
+   * about time and money. All default empty so every historical payload
+   * still parses; jsonb shape only, no DDL.
+   */
+  userRoles: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
+  platforms: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
+  integrations: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
+  timelineBudgetNotes: z.string().trim().max(2_000).default(''),
+  /**
+   * SCR-029 (bucket G-3). The three sections the PDF's Requirement Set
+   * lists that the payload had folded away: every objective in full (the
+   * summary is a sentence, not the list), the business rules, and the
+   * non-functional requirements. `constraints` stays for every version
+   * written before these existed — the panel renders it under "Business
+   * rules" and says which version recorded it as constraints. All default
+   * empty so every historical payload still parses; the collector may fill
+   * them and never invents one when the transcript is silent.
+   */
+  objectives: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
+  businessRules: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
+  nonFunctionalRequirements: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
 });
 
 /**
@@ -1563,6 +1589,41 @@ export function task2CompleteAnnouncementFor(input: { projectName: string | null
 }
 
 /**
+ * Q-PH56 — the PM's Task 3 (development) and Task 4 (testing) Complete
+ * messages, the same shape as PM4-M07 above and announced to the INTERNAL group
+ * the same way (a person sends anything client-facing). Off
+ * `project.phase_five_completed` / `project.phase_six_completed`, which
+ * `projects.complete_phase` emits with the project as subject.
+ */
+export const phaseCompletedEventSchema = z
+  .object({
+    projectId: z.uuid(),
+    phaseCompletionId: z.uuid(),
+    phase: z.number().int().optional(),
+  })
+  .strip();
+
+export type PhaseCompletedEvent = z.infer<typeof phaseCompletedEventSchema>;
+
+/** PM Task 3 Complete — Phase 5, development. */
+export function task3CompleteAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Task 3 (development) is complete. The M3 invoice is being raised.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Open the project in AgencyOS.',
+  ].join('\n');
+}
+
+/** PM Task 4 Complete — Phase 6, testing and QA. */
+export function task4CompleteAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Task 4 (testing and QA) is complete. The M4 invoice is being raised.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Open the project in AgencyOS.',
+  ].join('\n');
+}
+
+/**
  * `invoice.paid`, crm's own copy — ARCHITECTURE.md §3.2: cross-module access
  * goes through service.ts, never another module's schema.ts directly, so
  * this is deliberately its own small vocabulary rather than an import of
@@ -1722,3 +1783,32 @@ export function completionIsAuthorized(meeting: {
   if (meeting.status !== 'completed' && meeting.status !== 'no_show') return true;
   return meeting.completedAt !== null && meeting.completedBy !== null;
 }
+
+/** Lead ownership and tags — the two `crm.leads` columns the PDF's list and 360 act on. */
+export const setLeadOwnerSchema = z.object({
+  leadId: z.uuid(),
+  /** null clears the owner. */
+  assignedTo: z.uuid().nullable(),
+});
+
+export const setLeadTagsSchema = z.object({
+  leadId: z.uuid(),
+  tags: z.array(z.string().trim().min(1).max(40)).max(20),
+});
+
+export const pauseAgentRepliesSchema = z.object({
+  conversationId: z.uuid(),
+  reason: z.string().trim().min(1).max(200),
+});
+
+export type SetLeadOwnerInput = z.infer<typeof setLeadOwnerSchema>;
+export type SetLeadTagsInput = z.infer<typeof setLeadTagsSchema>;
+export type PauseAgentRepliesInput = z.infer<typeof pauseAgentRepliesSchema>;
+
+export const stopFollowUpSequenceSchema = z.object({
+  sequenceId: z.uuid(),
+  reason: z.string().trim().min(1).max(200),
+});
+export const resumeFollowUpSequenceSchema = z.object({ sequenceId: z.uuid() });
+export type StopFollowUpSequenceInput = z.infer<typeof stopFollowUpSequenceSchema>;
+export type ResumeFollowUpSequenceInput = z.infer<typeof resumeFollowUpSequenceSchema>;

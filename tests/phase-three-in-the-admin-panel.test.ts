@@ -60,7 +60,7 @@ describe('A. §8’s areas are all present', () => {
                          'Internal review', 'Admin decisions', 'What was sent to the client',
                          'What the client said', 'Revision history',
                          'Final direction and Phase 4 handoff', 'Cost and usage']) {
-      assert.match(PAGE, new RegExp(`title="${title}"`), `${title} has no section`);
+      assert.match(PAGE, new RegExp(`title="${title}"`, 'i'), `${title} has no section`);
     }
   });
 
@@ -146,7 +146,8 @@ describe('D. it shows the trail and takes no decisions', () => {
     // page reads and decides what to offer; it holds no interactive state.
     for (const page of ALL_PAGES) {
       assert.doesNotMatch(page, /'use client'/);
-      assert.doesNotMatch(page, /useActionState|<form /);
+      // A GET form (the screen search) decides nothing; any other form on these pages would.
+      assert.doesNotMatch(page, /useActionState|<form (?![^>]*method="get")/);
     }
   });
 
@@ -155,12 +156,15 @@ describe('D. it shows the trail and takes no decisions', () => {
     // still absent from the Themes/Colors routes on purpose — it is the
     // completion gate and belongs with the handoff, on Final selection.
     // Asserting the SET, so a seventh form cannot appear unnoticed.
+    // SCR-038 (20260929200000) added the two asset-link forms on the Overview's
+    // reference-imagery folders: a link says where an image was used and takes
+    // no Phase 3 decision, which is why they are noticed here and admitted.
     assert.deepEqual(
       [...PAGE.matchAll(/<(\w+Form)\b/g)].map((m) => m[1] ?? '').filter((v, i, a) => a.indexOf(v) === i).sort(),
       ['AdminDecisionForm', 'AssignReviewerForm', 'FigmaReferenceForm', 'InternalReviewForm',
-       'LockDirectionForm',
+       'LinkAssetForm', 'LockDirectionForm',
        'OpenRevisionForm', 'RecordClientReplyForm', 'RecordSampleForm', 'RecordShareForm',
-       'TokenSetForm'],
+       'TokenSetForm', 'UnlinkAssetForm'],
     );
   });
 
@@ -198,7 +202,7 @@ describe('E. it is reachable', () => {
 
   test('and every route refuses a reader without permission', () => {
     for (const page of ALL_PAGES) {
-      assert.match(page, /if \(!can\(context\.role, 'project\.read'\)\) redirect\('\/dashboard'\)/);
+      assert.match(page, /if \(!can\(context, 'project\.read'\)\) return <PermissionDenied \/>;/);
     }
     assert.match(OVERVIEW, /await requireInternal\(`\/projects\/\$\{projectId\}\/design`\)/);
   });

@@ -50,9 +50,39 @@ export const getAgencyTimeZone = cache(async (): Promise<string> => {
   return data?.timezone ?? FALLBACK;
 });
 
-/** The clock for this request's organisation. */
-export async function agencyClock(): Promise<AgencyClock> {
-  return clockFor(await getAgencyTimeZone());
+/**
+ * The zone dates are DISPLAYED in for this request: the signed-in person's
+ * own preference (core.user_preferences.timezone, bucket E decision E3) when
+ * they have set one, else the organisation's. `cache()` resolves it once per
+ * request — the internal layout asks first, every page and component after
+ * it gets the same answer without a second read.
+ *
+ * The preference row is read under RLS, which admits only the caller's own
+ * row: with no session there is no row, and the organisation's zone stands.
+ * A table PostgREST cannot see yet, or any other failed read, is not a reason
+ * to refuse a page — the organisation's zone stands for the same reason the
+ * fallback above is UTC.
+ */
+export const getDisplayTimeZone = cache(async (): Promise<string> => {
+  const supabase = await createClient();
+
+  const [preference, organization] = await Promise.all([
+    supabase.schema('core').from('user_preferences').select('timezone').limit(1).maybeSingle(),
+    getAgencyTimeZone(),
+  ]);
+
+  if (preference.error) return organization;
+  const own = preference.data?.timezone?.trim();
+  return own && own.length > 0 ? own : organization;
+});
+
+/**
+ * The clock for this request. Defaults to the display zone above — the
+ * person's preference, else the organisation's; an explicit `timeZone` pins
+ * it (a PDF rendered in the agency's zone regardless of who pressed print).
+ */
+export async function agencyClock(timeZone?: string): Promise<AgencyClock> {
+  return clockFor(timeZone ?? (await getDisplayTimeZone()));
 }
 
 export { clockFor, type AgencyClock } from './clock';

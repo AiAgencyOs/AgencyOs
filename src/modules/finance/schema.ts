@@ -115,6 +115,29 @@ export const generateMilestoneInvoiceSchema = z.object({
   notes: z.string().trim().max(2000).optional(),
 });
 
+/**
+ * The composer's input (SCR-052). The client sends TYPED TEXT — the lines as
+ * the person wrote them — and the door recomputes every amount; it never
+ * accepts a total from the form.
+ */
+export const composeInvoiceSchema = z.object({
+  projectId: z.uuid(),
+  lines: z
+    .array(
+      z.object({
+        description: z.string().trim().min(1).max(300),
+        quantity: z.string().trim().min(1).max(12),
+        unitPrice: z.string().trim().min(1).max(20),
+      }),
+    )
+    .min(1)
+    .max(50),
+  /** A calendar due date; absent falls back to the owner's default terms, else none. */
+  dueOn: z.iso.date().optional(),
+  notes: z.string().trim().max(2000).optional(),
+});
+export type ComposeInvoiceInput = z.infer<typeof composeInvoiceSchema>;
+
 export const issueInvoiceSchema = z.object({
   invoiceId: z.uuid(),
   /** Overrides the due date carried over from the milestone. */
@@ -170,6 +193,17 @@ export const SUBMISSION_METHODS = [
 ] as const;
 export type SubmissionMethod = (typeof SUBMISSION_METHODS)[number];
 
+/**
+ * The statuses a claim may be answered from. `mismatch` ("requires resolution",
+ * §6) and `evidence_requested` (sent back for more proof — SCR-054) are not
+ * settled: a person can still confirm, reject or flag them. `verified` and
+ * `rejected` are final.
+ */
+export const CLAIM_AWAITING_STATUSES = ['pending_verification', 'mismatch', 'evidence_requested'] as const;
+export function isClaimAwaiting(status: string): boolean {
+  return (CLAIM_AWAITING_STATUSES as readonly string[]).includes(status);
+}
+
 /** §12's three answers — G-271 put `mismatch` in the door; this is its caller. */
 export const SUBMISSION_DECISIONS = ['confirm', 'reject', 'mismatch'] as const;
 export type SubmissionDecision = (typeof SUBMISSION_DECISIONS)[number];
@@ -214,6 +248,13 @@ export const verifyPaymentSubmissionSchema = z
     path: ['reason'],
   });
 
+export const requestPaymentEvidenceSchema = z.object({
+  submissionId: z.uuid(),
+  /** What is missing — required: "need what?" is the whole message. */
+  note: z.string().trim().min(1, 'Say what evidence is missing').max(2000),
+});
+export type RequestPaymentEvidenceInput = z.infer<typeof requestPaymentEvidenceSchema>;
+
 export type RecordPaymentSubmissionInput = z.infer<typeof recordPaymentSubmissionSchema>;
 export type VerifyPaymentSubmissionInput = z.infer<typeof verifyPaymentSubmissionSchema>;
 
@@ -227,27 +268,44 @@ export type RecordManualPaymentInput = z.infer<typeof recordManualPaymentSchema>
 const NUMBER_PREFIX = 'INV';
 const NUMBER_PAD = 4;
 
+/** The prefix the code always used; the owner may set their own (`invoice_number_prefix`). */
+export const DEFAULT_INVOICE_PREFIX = NUMBER_PREFIX;
+
+/**
+ * The owner's numbering prefix from `organization.settings`, or the default.
+ * 1-8 of A-Z / 0-9 — the same shape `finance.set_invoice_numbering` enforces —
+ * so a hand-edited row that broke it falls back rather than producing a
+ * number nobody can parse back.
+ */
+export function invoicePrefixFrom(raw: unknown): string {
+  const text = typeof raw === 'string' ? raw.trim().toUpperCase() : '';
+  return /^[A-Z0-9]{1,8}$/.test(text) ? text : NUMBER_PREFIX;
+}
+
 /** `INV-2026-0001`. Per-organization, per-year, zero padded so it sorts. */
-export function formatInvoiceNumber(year: number, sequence: number): string {
-  return `${NUMBER_PREFIX}-${year}-${String(sequence).padStart(NUMBER_PAD, '0')}`;
+export function formatInvoiceNumber(year: number, sequence: number, prefix: string = NUMBER_PREFIX): string {
+  return `${prefix}-${year}-${String(sequence).padStart(NUMBER_PAD, '0')}`;
 }
 
 /** The `like` pattern that selects one year's numbers. */
-export function invoiceNumberPrefix(year: number): string {
-  return `${NUMBER_PREFIX}-${year}-`;
+export function invoiceNumberPrefix(year: number, prefix: string = NUMBER_PREFIX): string {
+  return `${prefix}-${year}-`;
 }
 
 /**
  * Sequence encoded in an invoice number, or 0 when it is not one of ours.
  *
  * Tolerant by design: a number typed in by hand, or imported from whatever the
- * agency used before, must not break numbering for everything after it.
+ * agency used before, must not break numbering for everything after it. A
+ * number under a DIFFERENT prefix (the owner changed it) is "not one of ours"
+ * too, so the new prefix starts again at 1 instead of inheriting a count that
+ * belongs to the old series.
  */
-export function parseInvoiceSequence(number: string | null | undefined, year: number): number {
+export function parseInvoiceSequence(number: string | null | undefined, year: number, prefix: string = NUMBER_PREFIX): number {
   if (!number) return 0;
-  const prefix = invoiceNumberPrefix(year);
-  if (!number.startsWith(prefix)) return 0;
-  const parsed = Number.parseInt(number.slice(prefix.length), 10);
+  const head = invoiceNumberPrefix(year, prefix);
+  if (!number.startsWith(head)) return 0;
+  const parsed = Number.parseInt(number.slice(head.length), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
@@ -260,8 +318,8 @@ export function parseInvoiceSequence(number: string | null | undefined, year: nu
  * than re-reading and racing again, so concurrent generation converges instead
  * of livelocking.
  */
-export function nextInvoiceNumber(year: number, highestSequence: number, attempt = 0): string {
-  return formatInvoiceNumber(year, highestSequence + 1 + attempt);
+export function nextInvoiceNumber(year: number, highestSequence: number, attempt = 0, prefix: string = NUMBER_PREFIX): string {
+  return formatInvoiceNumber(year, highestSequence + 1 + attempt, prefix);
 }
 
 // ── Money ──────────────────────────────────────────────────────────────────
@@ -593,18 +651,74 @@ export const recordBillingDetailsSchema = z
 export type ConfirmBillingModeInput = z.infer<typeof confirmBillingModeSchema>;
 export type RecordBillingDetailsInput = z.infer<typeof recordBillingDetailsSchema>;
 
-/** Same vocabulary as the finance.expenses category CHECK (migration 20260921150000). */
-export const EXPENSE_CATEGORIES = ['infrastructure', 'ai', 'tooling', 'vendor', 'contractor', 'other'] as const;
-export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
+/**
+ * The category an expense is filed under is a KEY of the owner's list
+ * (`finance.expense_categories`, owner decision 6 of 2026-10-01), not a fixed
+ * enum: the database's guard refuses a key that is not an active category of
+ * the organization, and `src/modules/finance/expense-categories.ts` holds the
+ * list's pure half.
+ */
+const expenseCategoryKey = z.string().trim().regex(/^[a-z][a-z0-9_]{0,39}$/, 'Pick a category');
 
 export const recordExpenseSchema = z.object({
   projectId: z.uuid().optional(),
-  category: z.enum(EXPENSE_CATEGORIES),
+  category: expenseCategoryKey,
   vendor: z.string().trim().max(200).optional(),
   description: z.string().trim().min(1, 'Say what this was for').max(2000),
   amountMinor: z.number().int().min(0),
   currency: z.string().trim().length(3).optional(),
   incurredOn: z.string().trim().min(1, 'Say when this was incurred'),
+  /** SCR-055 — where the receipt lives, as a URL (finance.expenses.receipt_url). */
+  receiptUrl: z.string().trim().url('A link to the receipt, starting with http').max(2000).optional(),
 });
 
 export type RecordExpenseInput = z.infer<typeof recordExpenseSchema>;
+
+/** Doc 15 §9's own list of receiving channels — mirrors the payment_accounts CHECK. */
+export const PAYMENT_ACCOUNT_KINDS = ['bank', 'upi', 'upi_qr', 'gateway', 'other'] as const;
+export type PaymentAccountKind = (typeof PAYMENT_ACCOUNT_KINDS)[number];
+
+export const PAYMENT_ACCOUNT_KIND_LABEL: Record<PaymentAccountKind, string> = {
+  bank: 'Bank transfer',
+  upi: 'UPI',
+  upi_qr: 'UPI QR',
+  gateway: 'Payment gateway',
+  other: 'Other',
+};
+
+/**
+ * The instruction fields each kind prints on an invoice. Kept as a label
+ * map rather than columns for the reason the migration gives: a channel
+ * added later must be expressible without a migration.
+ */
+export const PAYMENT_ACCOUNT_FIELDS: Record<PaymentAccountKind, readonly { key: string; label: string }[]> = {
+  bank: [
+    { key: 'account_name', label: 'Account name' },
+    { key: 'account_number', label: 'Account number' },
+    { key: 'ifsc', label: 'IFSC' },
+    { key: 'bank_name', label: 'Bank' },
+    { key: 'branch', label: 'Branch' },
+  ],
+  upi: [{ key: 'vpa', label: 'UPI ID' }, { key: 'payee_name', label: 'Payee name' }],
+  upi_qr: [{ key: 'vpa', label: 'UPI ID' }, { key: 'qr_url', label: 'QR image URL' }],
+  gateway: [{ key: 'provider', label: 'Provider' }, { key: 'link', label: 'Payment link' }],
+  other: [{ key: 'instructions', label: 'Instructions' }],
+};
+
+export const createPaymentAccountSchema = z.object({
+  kind: z.enum(PAYMENT_ACCOUNT_KINDS),
+  label: z.string().trim().min(1, 'Give the account a label').max(120),
+  instructions: z.record(z.string(), z.string().trim().max(500)),
+  effectiveFrom: z.string().trim().optional(),
+});
+export type CreatePaymentAccountInput = z.infer<typeof createPaymentAccountSchema>;
+
+export const setPaymentAccountStatusSchema = z.object({
+  accountId: z.uuid(),
+  status: z.enum(['active', 'inactive']),
+});
+export type SetPaymentAccountStatusInput = z.infer<typeof setPaymentAccountStatusSchema>;
+
+/** SCR-055 — correct a recorded expense. Same fields as recording; the row keeps its id and recorder. */
+export const updateExpenseSchema = recordExpenseSchema.extend({ expenseId: z.uuid() });
+export type UpdateExpenseInput = z.infer<typeof updateExpenseSchema>;

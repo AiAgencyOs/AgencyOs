@@ -1,7 +1,7 @@
 import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
-import { generateFirstMilestoneInvoice, generateM2Invoice } from './service';
+import { generateFirstMilestoneInvoice, generateM2Invoice, generateM3Invoice, generateM4Invoice } from './service';
 
 /**
  * Job handlers for the finance module.
@@ -126,4 +126,40 @@ export async function handlePhaseFourCompletedForFinance(admin: Admin, job: Bill
         : `M2 invoice ${result.data.number} already existed.`,
     invoiceId: result.data.invoiceId,
   };
+}
+
+/**
+ * Q-PH56 — `project.phase_five_completed` → the M3 invoice,
+ * `project.phase_six_completed` → the M4 invoice. The same shape as
+ * `handlePhaseFourCompletedForFinance`: the decision lives in the service, this
+ * claims the job and translates its outcome. `projects.complete_phase` emits
+ * with `subject_id` set to the project.
+ */
+async function handleLaterPhaseCompleted(
+  admin: Admin,
+  job: BillingModeJob,
+  label: 'M3' | 'M4',
+  generate: typeof generateM3Invoice,
+): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const projectId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+  if (!projectId) return { status: 'failed', permanent: true, detail: 'the event named no project' };
+
+  const result = await generate(admin, { organizationId: job.organization_id, projectId });
+  if (!result.ok) return { status: 'failed', permanent: result.error.code !== 'INTERNAL', detail: result.error.message };
+  if (result.data.outcome === 'skipped') return { status: 'succeeded', outcome: 'skipped', detail: result.data.reason };
+  return {
+    status: 'succeeded',
+    outcome: result.data.outcome,
+    detail: result.data.outcome === 'created' ? `${label} invoice ${result.data.number} raised automatically.` : `${label} invoice ${result.data.number} already existed.`,
+    invoiceId: result.data.invoiceId,
+  };
+}
+
+export function handlePhaseFiveCompletedForFinance(admin: Admin, job: BillingModeJob): Promise<HandlerResult> {
+  return handleLaterPhaseCompleted(admin, job, 'M3', generateM3Invoice);
+}
+
+export function handlePhaseSixCompletedForFinance(admin: Admin, job: BillingModeJob): Promise<HandlerResult> {
+  return handleLaterPhaseCompleted(admin, job, 'M4', generateM4Invoice);
 }

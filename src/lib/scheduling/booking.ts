@@ -2,6 +2,8 @@ import 'server-only';
 
 import { z } from 'zod';
 
+import { meetingOfferHorizonDays } from '@/lib/admin/operational-defaults';
+import { readOperationalSettings } from '@/lib/admin/settings';
 import { getAgencyTimeZone } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
@@ -11,7 +13,7 @@ import { err, ok, type Result } from '@/lib/result';
 import { interpretBook, interpretPropose } from '@/lib/scheduler/meeting-commands-eval';
 
 import { bufferedSlot, offerableSlots, proposalWindow, readAvailabilityFrom, sliceWindows, slotStillFree, type Slot } from './availability';
-import { createGoogleCalendar } from './google';
+import { resolveGoogleCalendar } from './google';
 
 /**
  * Proposing and booking a slot from the meeting page — G-243, §5 and §6.
@@ -37,14 +39,12 @@ const meetingId = z.string().uuid();
 const DEFAULT_DURATIONS = [30, 45, 60] as const;
 /** §5.1's local rules for an agency with no policy rows yet: an hour's notice, a quarter-hour either side. */
 const CONSTRAINTS = { minimumNoticeMinutes: 60, bufferMinutes: 15 };
-/** How far ahead the calendar is read when the lead named no window. */
-const DEFAULT_HORIZON_DAYS = 7;
 
 export type Proposed = { message: string; leadId: string | null; slots: Slot[] };
 
 async function authorise(): Promise<Result<true>> {
   const context = await requireInternal();
-  if (!can(context.role, 'lead.write')) return err('FORBIDDEN', 'Your role cannot offer or book a time; the owner or an ops admin can.');
+  if (!can(context, 'lead.write')) return err('FORBIDDEN', 'Your role cannot offer or book a time; the owner or an ops admin can.');
   return ok(true);
 }
 
@@ -90,11 +90,15 @@ export async function proposeSlots(id: string, durationMinutes: number): Promise
   const meeting = await readMeeting(parsed.data.id);
   if (!meeting.ok) return meeting;
 
-  const calendar = createGoogleCalendar();
+  const calendar = await resolveGoogleCalendar();
   if (!calendar) return err('VALIDATION', 'No calendar is configured, so nothing can be offered — availability answers unconfigured (BLK-005).');
 
+  // How far ahead the calendar is read when the lead named no window: the
+  // owner's `meeting_offer_horizon_days`, or 7 when unset (audit B-3). A
+  // failed read of the setting throws rather than quietly offering 7 days.
+  const horizonDays = meetingOfferHorizonDays(await readOperationalSettings());
   const now = new Date();
-  const window = proposalWindow(now.toISOString(), { requestedStartAt: meeting.data.requested_start_at, requestedWindowEnd: meeting.data.requested_window_end }, DEFAULT_HORIZON_DAYS);
+  const window = proposalWindow(now.toISOString(), { requestedStartAt: meeting.data.requested_start_at, requestedWindowEnd: meeting.data.requested_window_end }, horizonDays);
 
   const answer = await readAvailabilityFrom(calendar, { from: window.from, to: window.to });
   if (answer.state === 'unreadable') return err('INTERNAL', `The calendar did not answer: ${answer.reason}. Nothing was offered.`);
@@ -125,7 +129,7 @@ export async function proposeSlots(id: string, durationMinutes: number): Promise
   const decision = interpretPropose(row?.outcome, slots.length);
   if (decision.kind === 'error') return err(decision.code, decision.message);
   return ok({
-    message: window.fellBack ? `${decision.message} (The time the lead named has passed, so the next ${DEFAULT_HORIZON_DAYS} days were read instead.)` : decision.message,
+    message: window.fellBack ? `${decision.message} (The time the lead named has passed, so the next ${horizonDays} days were read instead.)` : decision.message,
     leadId: row?.lead_id ?? null,
     slots,
   });
@@ -153,7 +157,7 @@ export async function bookProposedSlot(id: string, startAt: string, mode: string
   const chosen = offered.find((s) => Date.parse(s.startAt) === Date.parse(parsed.data.startAt));
   if (!chosen) return err('VALIDATION', 'That time was not among the slots offered. Propose again if the client wants another.');
 
-  const calendar = createGoogleCalendar();
+  const calendar = await resolveGoogleCalendar();
   if (!calendar) return err('VALIDATION', 'No calendar is configured, so nothing can be booked (BLK-005).');
 
   // A slot offered days ago may be gone by the time somebody clicks: the

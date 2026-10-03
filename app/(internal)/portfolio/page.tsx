@@ -1,8 +1,7 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
-import { PageHeader } from '@/ui';
+import { PageHeader, PermissionDenied } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 import { listPortfolioItems } from '@/modules/crm/queries';
 import { PORTFOLIO_KIND_LABELS, type PortfolioKind } from '@/modules/crm/schema';
@@ -32,7 +31,7 @@ export const metadata: Metadata = { title: 'Portfolio' };
  */
 export default async function PortfolioPage() {
   const context = await requireInternal();
-  if (!can(context.role, 'portfolio.write')) redirect('/dashboard');
+  if (!can(context, 'portfolio.write')) return <PermissionDenied />;
 
   const items = await listPortfolioItems();
   const active = items.filter((item) => item.is_active).length;
