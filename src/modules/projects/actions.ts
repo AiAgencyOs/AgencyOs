@@ -40,6 +40,7 @@ import {
   raiseClarification,
   recordClarificationAnswer,
   recordKickoff,
+  requestProjectPlanning,
   resolveClarification,
   routeClarificationToChangeRequest,
 } from './planning';
@@ -559,6 +560,18 @@ export async function draftProjectPlanAction(
       ? `Version ${result.data.version} is already open as a draft.`
       : `Draft v${result.data.version} opened.`,
   };
+}
+
+export async function requestPlanningAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const result = await requestProjectPlanning({ projectId });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  planPath(projectId);
+  return { status: 'success', message: 'Asked. The Planning Agent will draft the blueprint within a minute; you will see it here to review and approve.' };
 }
 
 export async function addPlanDeliverableAction(

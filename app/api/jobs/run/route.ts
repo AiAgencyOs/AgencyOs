@@ -56,6 +56,7 @@ import {
   type HandlerResult,
   type UnlockJob,
 } from '@/modules/projects/handlers';
+import { handleAskClarification, handleReadClarificationAnswer } from '@/modules/projects/pm-clarifications';
 import { handleWelcomeClient, handleAskGstDetails, handlePaymentUpdate, handleReadBillingReply } from '@/modules/projects/pm-client-comms';
 import { handleBillingModeConfirmed, handleInvoiceIssuedForDelivery, handlePhaseFourCompletedForFinance, handlePhaseFiveCompletedForFinance, handlePhaseSixCompletedForFinance } from '@/modules/finance/handlers';
 import { learnFromDecision, learnFromRevision } from '@/modules/sales/handlers';
@@ -950,6 +951,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const pmGstDetails = await runEventJobs(admin, PM_GST_DETAILS_JOB_KIND, handleAskGstDetails, 'runPmGstDetailsJobs');
   const pmPaymentUpdates = await runEventJobs(admin, PM_PAYMENT_UPDATE_JOB_KIND, handlePaymentUpdate, 'runPmPaymentUpdateJobs');
   const pmBillingReplies = await runEventJobs(admin, PM_BILLING_REPLY_JOB_KIND, handleReadBillingReply, 'runPmBillingReplyJobs');
+  const pmClarifications = await runEventJobs(admin, PM_CLARIFY_JOB_KIND, handleAskClarification, 'runPmClarifyJobs');
+  const pmClarificationAnswers = await runEventJobs(admin, PM_CLARIFICATION_ANSWER_JOB_KIND, handleReadClarificationAnswer, 'runPmClarificationAnswerJobs');
 
   const m2PaymentVerifiedAnnouncements = await runEventJobs(
     admin,
@@ -1157,6 +1160,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     pmGstDetails: pmGstDetails.results,
     pmPaymentUpdates: pmPaymentUpdates.results,
     pmBillingReplies: pmBillingReplies.results,
+    pmClarifications: pmClarifications.results,
+    pmClarificationAnswers: pmClarificationAnswers.results,
     revisionLimitAnnouncements: revisionLimitAnnouncements.results,
     phaseThreeCompletedAnnouncements: phaseThreeCompletedAnnouncements.results,
     phaseFourStartedAnnouncements: phaseFourStartedAnnouncements.results,
@@ -1295,6 +1300,8 @@ const PM_WELCOME_JOB_KIND = HANDLER_JOB_KIND['projects:welcomeClient'];
 const PM_GST_DETAILS_JOB_KIND = HANDLER_JOB_KIND['projects:askGstDetails'];
 const PM_PAYMENT_UPDATE_JOB_KIND = HANDLER_JOB_KIND['projects:updateClientOnPayment'];
 const PM_BILLING_REPLY_JOB_KIND = HANDLER_JOB_KIND['projects:readBillingReply'];
+const PM_CLARIFY_JOB_KIND = HANDLER_JOB_KIND['projects:askClarification'];
+const PM_CLARIFICATION_ANSWER_JOB_KIND = HANDLER_JOB_KIND['projects:readClarificationAnswer'];
 const PHASE_FOUR_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['projects:completePhaseFourOnPrototypeApproval'];
 const M2_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM2Invoice'];
 const M3_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM3Invoice'];

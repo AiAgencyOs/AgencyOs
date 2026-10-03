@@ -12923,6 +12923,25 @@ export type Database = {
           outcome: string
         }[]
       }
+      agent_mark_clarification_asked: {
+        Args: { p_clarification_id: string; p_message_id: string }
+        Returns: string
+      }
+      agent_record_clarification_answer: {
+        Args: { p_clarification_id: string; p_message_id: string }
+        Returns: string
+      }
+      request_project_planning: {
+        Args: { p_project_id: string }
+        Returns: string
+      }
+      agent_draft_blueprint: {
+        Args: { p_blueprint: Json; p_project_id: string }
+        Returns: {
+          outcome: string
+          plan_id: string | null
+        }[]
+      }
       draft_project_plan: {
         Args: { p_change_reason?: string; p_objective?: string; p_project_id: string }
         Returns: {

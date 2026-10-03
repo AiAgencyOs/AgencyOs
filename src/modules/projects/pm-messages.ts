@@ -115,3 +115,34 @@ export function pmKickoff(language: PmLanguage): string {
     language,
   );
 }
+
+/**
+ * A planning question the planner raised, put to the client by the PM.
+ *
+ * The QUESTION is a model's words, so it is the one client-facing sentence in
+ * this file that is not code-written. `isSafeClientQuestion` is what stands
+ * between it and the client: it must read as a single plain question, with no
+ * amount, no discount, no date and no promise in it. Anything else is held for
+ * a person.
+ */
+export function pmClarificationAsk(language: PmLanguage, question: string): string {
+  const q = question.trim();
+  return pick(
+    {
+      en: `One quick question so we plan your project properly: ${q}`,
+      hinglish: `Aapka project theek se plan karne ke liye ek chhota sa sawaal: ${q}`,
+      hindi: `आपके प्रोजेक्ट की सही योजना बनाने के लिए एक छोटा सा सवाल: ${q}`,
+    },
+    language,
+  );
+}
+
+export function isSafeClientQuestion(question: string): boolean {
+  const q = question.trim();
+  if (q.length < 8 || q.length > 400) return false;
+  if ((q.match(/[?？]/g) ?? []).length > 2) return false;
+  if (/[₹$]|\brs\.?\s*\d|\binr\b|\busd\b|\d[\d,]*\s*(k\b|lakh|lac|crore|rupees?|dollars?)|%/i.test(q)) return false;
+  if (/\b(discount|free of charge|guarantee[ds]?|we promise|deadline|by (monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|next week))\b/i.test(q)) return false;
+  if (/https?:\/\/|```/.test(q)) return false;
+  return true;
+}

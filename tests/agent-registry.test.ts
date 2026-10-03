@@ -46,7 +46,7 @@ const seed = installer;
 const migration = read('../supabase/migrations/20260814120002_an_agent_that_cannot_run_says_why.sql');
 
 describe('A. what is defined is what exists', () => {
-  test('the whole ADM-82 roster is defined, thirteen in three layers', () => {
+  test('the whole ADM-82 roster is defined, plus the Phase 2 Project Planning Agent, in three layers', () => {
     // ADM-82 grants thirteen agents in three layers and requires "each layer
     // passing its architecture and verification gates before the next is
     // activated". All thirteen are now defined, and TWELVE OF THEM ARE
@@ -66,13 +66,14 @@ describe('A. what is defined is what exists', () => {
         // layer 1 — foundation
         'requirement_collector', 'orchestrator', 'developer', 'quality_assurance',
         // layer 2 — core delivery
-        'sales', 'project_manager', 'ui_designer', 'ui_prototype', 'handover',
+        'sales', 'project_manager', 'project_planning', 'ui_designer', 'ui_prototype', 'handover',
         // layer 3 — operations
         'finance', 'support', 'customer_success', 'upsell',
       ],
     );
     assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'foundation').length, 4);
-    assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'core').length, 5);
+    // six since Phase 2 Planning §1 named the Project Planning Agent separately from the PM
+    assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'core').length, 6);
     assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'operations').length, 4);
   });
 

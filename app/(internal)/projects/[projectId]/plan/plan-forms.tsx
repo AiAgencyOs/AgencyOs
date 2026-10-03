@@ -10,6 +10,7 @@ import {
   addPlanNoteAction,
   answerClarificationAction,
   draftProjectPlanAction,
+  requestPlanningAction,
   gatePlanMilestoneAction,
   markClarificationAskedAction,
   raiseClarificationAction,
@@ -70,6 +71,20 @@ function Feedback({ state }: { state: { status: string; message?: string } }) {
   if (state.status === 'error') return <span className="text-[13px] text-danger">{state.message}</span>;
   if (state.status === 'success') return <span className="text-[13px] text-muted">{state.message}</span>;
   return null;
+}
+
+/** Phase 2 Planning §2: the same request the verified advance makes, by hand. */
+export function AskPlannerForm({ projectId }: { projectId: string }) {
+  const [state, action, pending] = useActionState(requestPlanningAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <button type="submit" disabled={pending} className={buttonClass('primary')}>
+        {pending ? 'Asking…' : 'Have the Planning Agent draft the blueprint'}
+      </button>
+      <Feedback state={state} />
+    </form>
+  );
 }
 
 export function DraftPlanForm({ projectId, hasPlan }: { projectId: string; hasPlan: boolean }) {

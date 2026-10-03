@@ -47,6 +47,7 @@ export const AGENT_CATEGORY: Readonly<Record<string, RoutingCategory>> = {
   quality_assurance: 'certification',
   sales: 'client_facing',
   project_manager: 'coordination',
+  project_planning: 'coordination',
   ui_designer: 'design',
   ui_prototype: 'design',
   handover: 'certification',
