@@ -14302,6 +14302,8 @@ export type Database = {
           requirement_version_id: string | null
           responded_by_contact_id: string | null
           response_note: string | null
+          sent_back_at: string | null
+          sent_back_note: string | null
           sent_at: string | null
           sent_message_ref: string | null
           status: string
@@ -14337,6 +14339,8 @@ export type Database = {
           requirement_version_id?: string | null
           responded_by_contact_id?: string | null
           response_note?: string | null
+          sent_back_at?: string | null
+          sent_back_note?: string | null
           sent_at?: string | null
           sent_message_ref?: string | null
           status?: string
@@ -14372,6 +14376,8 @@ export type Database = {
           requirement_version_id?: string | null
           responded_by_contact_id?: string | null
           response_note?: string | null
+          sent_back_at?: string | null
+          sent_back_note?: string | null
           sent_at?: string | null
           sent_message_ref?: string | null
           status?: string

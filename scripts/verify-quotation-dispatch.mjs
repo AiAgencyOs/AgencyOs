@@ -532,7 +532,7 @@ try {
 
   const v2 = await tickUntil(async () => {
     const row = one(await rest('GET', 'sales',
-      `proposals?opportunity_id=eq.${b.opp.id}&version=eq.2&select=id,status,title,total_minor,generated_by_run_id`));
+      `proposals?opportunity_id=eq.${b.opp.id}&version=eq.2&select=id,status,title,total_minor,generated_by_run_id,sent_back_note`));
     return row?.status === 'pending_approval' ? row : null;
   });
   check(Boolean(v2), 'v2 exists and is already SUBMITTED — the loop closes without a person drafting', v2 ? v2.status : 'no v2');
@@ -546,6 +546,14 @@ try {
     String(v2?.total_minor),
   );
   check(Boolean(v2?.generated_by_run_id), 'and v2 names the run that drafted it');
+
+  // The owner's reason lives ON the version it was given about. The approval
+  // request that carried it is cleared from the draft the moment it settles.
+  const v1Row = one(await rest('GET', 'sales',
+    `proposals?id=eq.${quoteB.proposalId}&select=sent_back_note,sent_back_at,status`));
+  check(v1Row?.sent_back_note === NOTE && Boolean(v1Row?.sent_back_at),
+    'the version that was sent back keeps the owner\'s reason and when', String(v1Row?.sent_back_note).slice(0, 60));
+  check(v2?.sent_back_note === null, 'and the new version carries none — it has not been sent back', String(v2?.sent_back_note));
 
   // ── G-180: what the owner's decision teaches the next quotation ──────────
   //

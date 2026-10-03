@@ -1049,11 +1049,20 @@ try {
     fifthKind.ok ? 'IT WAS ACCEPTED' : `${fifthKind.status}`,
   );
 
+  // A round is a turn, not a count of complaints: the SAME kind twice in a
+  // round is still refused, and a DIFFERENT kind in it is the one message
+  // that raised two things (20261011110000).
   const sameRound = await rest('POST', 'sales', 'objections', {
+    organization_id: ORG, lead_id: lead.id, round: 1, kind: 'price',
+    concern: 'and I said the price again', raised_by_agent: 'sales',
+  });
+  check(!sameRound.ok, 'and a kind happens once in a round — Doc 09 §20 is a state machine', sameRound.ok ? 'IT WAS ACCEPTED' : `${sameRound.status}`);
+
+  const otherKindSameRound = await rest('POST', 'sales', 'objections', {
     organization_id: ORG, lead_id: lead.id, round: 1, kind: 'trust',
     concern: 'and I have been burned before', raised_by_agent: 'sales',
   });
-  check(!sameRound.ok, 'and a round happens once — Doc 09 §20 is a state machine', sameRound.ok ? 'IT WAS ACCEPTED' : `${sameRound.status}`);
+  check(otherKindSameRound.ok, 'but a second KIND in the same round is the same turn, recorded', otherKindSameRound.ok ? 'recorded' : `${otherKindSameRound.status} ${JSON.stringify(otherKindSameRound.json)}`);
 
   // ── D2i ─────────────────────────────────────────────────────────────────
   console.log('\n  D2i. the language they actually wrote in — Doc 08 §8');

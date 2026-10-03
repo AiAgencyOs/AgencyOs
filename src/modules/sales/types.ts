@@ -7,6 +7,8 @@ type ProposalItemRow = Database['sales']['Tables']['proposal_items']['Row'];
 export type ProposalListItem = Pick<
   ProposalRow,
   | 'id'
+  | 'sent_back_note'
+  | 'sent_back_at'
   | 'opportunity_id'
   | 'version'
   | 'title'

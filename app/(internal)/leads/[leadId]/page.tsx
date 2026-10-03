@@ -971,6 +971,14 @@ export default async function LeadConversationPage({
                         PDF
                       </a>
                     </div>
+                    {/* Why this version was sent back — the owner's own note,
+                        kept on the version so the history says it (it used to
+                        live only on the approval, which is cleared). */}
+                    {p.sent_back_note ? (
+                      <p className="text-[11px] text-muted">
+                        Sent back{p.sent_back_at ? ` ${clock.date(p.sent_back_at)}` : ''}: {p.sent_back_note}
+                      </p>
+                    ) : null}
                   </li>
                 ))}
               </ol>
