@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { ilikeAny } from '@/lib/db/search';
+import { providerOfModel } from '@/lib/ai/model-provider';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -29,6 +30,8 @@ export type AgentRunListRow = {
   subjectId: string | null;
   status: string;
   model: string | null;
+  /** The provider that actually served the run (recorded by the router); null on a run from before routing recorded it. */
+  providerId: string | null;
   inputTokens: number;
   outputTokens: number;
   costMinor: number;
@@ -51,7 +54,7 @@ export type AgentRunFilters = {
 };
 
 const RUN_COLUMNS =
-  'id, agent_key, trigger, subject_type, subject_id, status, model, input_tokens, output_tokens, cost_minor, step_count, error, created_at, project_id, latency_ms';
+  'id, agent_key, trigger, subject_type, subject_id, status, model, provider_id, input_tokens, output_tokens, cost_minor, step_count, error, created_at, project_id, latency_ms';
 
 const DEFAULT_LIMIT = 100;
 /** How far back the filter rail looks for distinct agents / statuses / models. */
@@ -87,6 +90,7 @@ export async function listAgentRuns(filters: AgentRunFilters = {}): Promise<Agen
     subjectId: r.subject_id,
     status: r.status,
     model: r.model,
+    providerId: r.provider_id,
     inputTokens: r.input_tokens,
     outputTokens: r.output_tokens,
     costMinor: r.cost_minor,
@@ -102,6 +106,8 @@ export type AgentRunFacets = {
   agents: string[];
   statuses: string[];
   models: string[];
+  /** Providers that served recent runs: the recorded one where there is one, else the built-in naming rule over the model. */
+  providers: string[];
 };
 
 /**
@@ -117,7 +123,7 @@ export async function listAgentRunFacets(): Promise<AgentRunFacets> {
   const { data, error } = await supabase
     .schema('ai')
     .from('agent_runs')
-    .select('agent_key, status, model')
+    .select('agent_key, status, model, provider_id')
     .order('created_at', { ascending: false })
     .limit(FACET_SCAN);
   if (error) unreadable('listAgentRunFacets', error);
@@ -127,6 +133,7 @@ export async function listAgentRunFacets(): Promise<AgentRunFacets> {
     agents: distinctValues(rows, (r) => r.agent_key).sort(),
     statuses: distinctValues(rows, (r) => r.status).sort(),
     models: distinctValues(rows, (r) => r.model).sort(),
+    providers: distinctValues(rows, (r) => r.provider_id ?? providerOfModel(r.model)).sort(),
   };
 }
 
@@ -196,6 +203,7 @@ export async function getAgentRunWithSteps(runId: string): Promise<AgentRunWithS
       subjectId: run.subject_id,
       status: run.status,
       model: run.model,
+      providerId: run.provider_id,
       inputTokens: run.input_tokens,
       outputTokens: run.output_tokens,
       costMinor: run.cost_minor,

@@ -281,3 +281,58 @@ function summarise(before: unknown, after: unknown): string {
   const a = pick(after);
   return b && a ? `${b} → ${a}` : a || b || '';
 }
+
+export type UsageByModel = { modelId: string; runs: number; failed: number; inputTokens: number; outputTokens: number; costMinor: number; pricedRuns: number };
+export type ProviderUsage = {
+  since: string;
+  runs: number;
+  failed: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** Only what an Admin-recorded price produced - never an estimate. */
+  costMinor: number;
+  /** Runs whose model had no price, so their cost is unknown rather than zero. */
+  unpricedRuns: number;
+  byModel: UsageByModel[];
+  capMinor: number | null;
+  spentAgainstCapMinor: number | null;
+  fallbackServed: number;
+};
+
+/** This calendar month's usage of one provider, from the runs that recorded it as the provider that actually served them. */
+export async function readProviderUsage(providerId: string, now = new Date()): Promise<ProviderUsage> {
+  const supabase = await createClient();
+  const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  const [runs, budget, fallbacks] = await Promise.all([
+    supabase.schema('ai').from('agent_runs').select('model, status, input_tokens, output_tokens, cost_minor').eq('provider_id', providerId).gte('created_at', since).limit(5000),
+    supabase.schema('ai').from('provider_budget_status').select('monthly_cap_minor, spent_minor').eq('provider', providerId).maybeSingle(),
+    supabase.schema('ai').from('routing_decisions').select('id', { count: 'exact', head: true }).eq('provider_id', providerId).eq('fallback_used', true).gte('created_at', since),
+  ]);
+  if (runs.error) unreadable('readProviderUsage.runs', runs.error);
+  if (budget.error) unreadable('readProviderUsage.budget', budget.error);
+  if (fallbacks.error) unreadable('readProviderUsage.fallbacks', fallbacks.error);
+
+  const byModel = new Map<string, UsageByModel>();
+  const usage: ProviderUsage = { since, runs: 0, failed: 0, inputTokens: 0, outputTokens: 0, costMinor: 0, unpricedRuns: 0, byModel: [], capMinor: budget.data?.monthly_cap_minor === null || budget.data?.monthly_cap_minor === undefined ? null : Number(budget.data.monthly_cap_minor), spentAgainstCapMinor: budget.data?.spent_minor === null || budget.data?.spent_minor === undefined ? null : Number(budget.data.spent_minor), fallbackServed: fallbacks.count ?? 0 };
+  for (const r of runs.data ?? []) {
+    const model = r.model ?? 'unknown';
+    const m = byModel.get(model) ?? { modelId: model, runs: 0, failed: 0, inputTokens: 0, outputTokens: 0, costMinor: 0, pricedRuns: 0 };
+    const failed = r.status === 'failed' || r.status === 'budget_exceeded';
+    const cost = Number(r.cost_minor ?? 0);
+    m.runs += 1;
+    m.failed += failed ? 1 : 0;
+    m.inputTokens += Number(r.input_tokens ?? 0);
+    m.outputTokens += Number(r.output_tokens ?? 0);
+    m.costMinor += cost;
+    m.pricedRuns += cost > 0 ? 1 : 0;
+    byModel.set(model, m);
+    usage.runs += 1;
+    usage.failed += failed ? 1 : 0;
+    usage.inputTokens += Number(r.input_tokens ?? 0);
+    usage.outputTokens += Number(r.output_tokens ?? 0);
+    usage.costMinor += cost;
+    usage.unpricedRuns += cost > 0 ? 0 : 1;
+  }
+  usage.byModel = [...byModel.values()].sort((a, b) => b.runs - a.runs);
+  return usage;
+}

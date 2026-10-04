@@ -70,8 +70,8 @@ function seal(secret) {
 
 // ── the stub provider (OpenAI-compatible) ───────────────────────────────────────
 
-const SECRETS = { v1: `sk-${MARKER}-v-key-one-0001`, v2: `sk-${MARKER}-v-key-two-0002`, w1: `sk-${MARKER}-w-key-one-0003` };
-const behaviour = { [SECRETS.v1]: 'ok', [SECRETS.v2]: 'ok', [SECRETS.w1]: 'ok' };
+const SECRETS = { v1: `sk-${MARKER}-v-key-one-0001`, v2: `sk-${MARKER}-v-key-two-0002`, w1: `sk-${MARKER}-w-key-one-0003`, m1: `sk-${MARKER}-m-key-one-0004` };
+const behaviour = { [SECRETS.v1]: 'ok', [SECRETS.v2]: 'ok', [SECRETS.w1]: 'ok', [SECRETS.m1]: 'ok' };
 const calls = []; // { path, key, model, status }
 
 /** A value that satisfies the JSON schema the runner sent (required fields only) - enough for the call to count as answered. */
@@ -104,7 +104,11 @@ const stub = createServer((req, res) => {
     const parsed = body ? JSON.parse(body) : {};
     const path = req.url ?? '';
     const send = (status, payload) => { calls.push({ path, key, model: parsed.model ?? null, status }); res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(payload)); };
-    if (req.method === 'GET' && path.endsWith('/models')) return send(200, { data: [{ id: 'acme-m1' }, { id: 'acme-m2' }] });
+    if (req.method === 'GET' && path.endsWith('/models')) {
+      if (behaviour[key] === '401') return send(401, { error: { message: 'bad key' } });
+      // The maintenance provider lists models of its own; the others list two shared names (a stub provider is not the point there).
+      return send(200, { data: path.startsWith('/m/') ? [{ id: `acme-m-${MARKER}-x1` }, { id: `acme-m-${MARKER}-x2` }] : [{ id: 'acme-m1' }, { id: 'acme-m2' }] });
+    }
     if (req.method === 'POST' && path.endsWith('/chat/completions')) {
       const mode = behaviour[key] ?? 'unknown';
       if (mode === '401') return send(401, { error: { message: 'bad key' } });
@@ -122,7 +126,7 @@ const dbNow = async () => new Date((await fetch(`${target.url}/rest/v1/`, { head
 const tick = () => fetch(`${APP}/api/jobs/run`, { method: 'POST', headers: { Authorization: `Bearer ${target.cronSecret}` }, cache: 'no-store' }).then((r) => r.status);
 
 let owner;
-const created = { providers: ['acme-v', 'acme-w'].map((p) => `${p}-${MARKER}`), models: [] };
+const created = { providers: ['acme-v', 'acme-w', 'acme-m', 'acme-n'].map((p) => `${p}-${MARKER}`), models: [] };
 const PV = `acme-v-${MARKER}`;
 const PW = `acme-w-${MARKER}`;
 const M1 = `${PV}-m1`;
@@ -303,6 +307,40 @@ try {
   const still = one(await rest('GET', 'ai', `routing_decisions?id=eq.${someDecision?.id}&select=id,mode`));
   check(Boolean(someDecision?.id) && !del.ok && !upd.ok && still?.mode === someDecision?.mode, 'a recorded decision can be neither edited nor removed, even by the service role', `delete ${del.status}, update ${upd.status}`);
 
+  section('6c. The cron tick keeps providers honest without anybody pressing a button');
+  const PM = `acme-m-${MARKER}`;
+  const PN = `acme-n-${MARKER}`;
+  await door('upsert_provider', provider(PM, '/m/v1'));
+  await door('upsert_provider', provider(PN, '/n/v1'));
+  await door('add_provider_key', { p_provider_id: PM, p_label: 'one', p_environment: 'production', ...seal(SECRETS.m1), p_hint: SECRETS.m1.slice(-4), p_priority: 10 });
+  const providerRow = async (id) => one(await rest('GET', 'ai', `providers?provider_id=eq.${id}&select=health_state,health_checked_at,health_detail,last_model_sync_at,enabled`));
+  const sweepUntil = async (done) => { for (let i = 0; i < 8; i += 1) { await tick(); await sleep(300); if (await done()) return true; } return false; };
+  const modelsOf = async (id) => (await rest('GET', 'ai', `models?organization_id=eq.${ORG}&provider=eq.${id}&select=model_id,enabled,source`)).json ?? [];
+
+  check(await sweepUntil(async () => (await providerRow(PM))?.health_state === 'healthy'), 'a provider that was never checked is probed by the tick and recorded healthy');
+  const found = await modelsOf(PM);
+  check(found.length === 2 && found.every((m) => m.source === 'discovered' && m.enabled === false), 'its models were listed - and arrive DISABLED, nothing is routable by itself', `${found.length} found`);
+  check(Boolean((await providerRow(PM))?.last_model_sync_at), 'the sync is recorded on the provider');
+  check(await sweepUntil(async () => /no usable key/.test((await providerRow(PN))?.health_detail ?? '')), 'a provider with no key is marked "not checked" with the reason - never failed, never silently skipped', String((await providerRow(PN))?.health_detail));
+  check((await providerRow(PN))?.health_state === 'unknown', 'and its state stays unknown');
+
+  // The vendor revokes the key: the next check finds it, parks the key and tells the Admin once.
+  behaviour[SECRETS.m1] = '401';
+  await rest('PATCH', 'ai', `providers?provider_id=eq.${PM}`, { health_checked_at: null });
+  check(await sweepUntil(async () => (await providerRow(PM))?.health_state === 'auth_error'), 'a key revoked at the vendor turns the provider auth_error at the next check');
+  const keyAfter = (await fx.call(owner.token, 'POST', 'ai', 'rpc/provider_key_status', { p_provider_id: PM })).json?.[0];
+  check(keyAfter?.health_state === 'auth_error', 'and the key itself is parked', String(keyAfter?.health_state));
+  const bad = (await rest('GET', 'core', `alerts?fingerprint=eq.ai-provider:${PM}:auth_error&select=summary`)).json ?? [];
+  check(bad.length === 1 && /auth error/.test(bad[0].summary), 'the Admin is alerted - once', String(bad[0]?.summary).slice(0, 70));
+
+  // What the Admin turned off is left alone.
+  await door('set_provider_enabled', { p_provider_id: PM, p_enabled: false, p_reason: `${MARKER} off` });
+  await rest('PATCH', 'ai', `providers?provider_id=eq.${PM}`, { health_checked_at: null });
+  calls.length = 0;
+  for (let i = 0; i < 4; i += 1) { await tick(); await sleep(250); }
+  check((await providerRow(PM))?.health_checked_at === null && !calls.some((c) => c.path.startsWith('/m/')), 'a disabled provider is not probed', `${calls.filter((c) => c.path.startsWith('/m/')).length} calls`);
+  await rest('DELETE', 'core', `alerts?fingerprint=like.ai-provider:acme-%25`).catch(() => {});
+
   section('7. No secret appears in what was recorded');
   const everything = JSON.stringify({
     decisions: (await rest('GET', 'ai', `routing_decisions?organization_id=eq.${ORG}&select=*&limit=200`)).json,
@@ -312,7 +350,7 @@ try {
     alerts: (await rest('GET', 'core', 'alerts?select=summary&order=created_at.desc&limit=100')).json,
     keyStatus: (await fx.call(owner.token, 'POST', 'ai', 'rpc/provider_key_status', {})).json,
   });
-  check(!Object.values(SECRETS).some((s) => everything.includes(s)) && !Object.values(SECRETS).some((s) => everything.includes(s.slice(0, 22))), 'none of the three keys appears in a decision, run, step, audit row, alert or key status');
+  check(!Object.values(SECRETS).some((s) => everything.includes(s)) && !Object.values(SECRETS).some((s) => everything.includes(s.slice(0, 22))), 'none of the four keys appears in a decision, run, step, audit row, alert or key status');
 } catch (e) {
   console.error(e);
   failures += 1;

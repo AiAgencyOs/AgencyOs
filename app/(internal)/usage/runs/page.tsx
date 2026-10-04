@@ -3,7 +3,7 @@ import Link from 'next/link';
 
 import { formatCostMinor } from '@/lib/admin/agent-eval';
 import { agencyClock } from '@/lib/admin/agency-clock';
-import { listRunProjectFacets, providerFacetsFrom } from '@/lib/admin/agent-run-filters';
+import { listRunProjectFacets } from '@/lib/admin/agent-run-filters';
 import { listAgentRunFacets, listAgentRuns, type AgentRunListRow } from '@/lib/admin/agent-runs';
 import { formatDurationMs } from '@/lib/admin/agent-runs-eval';
 import { providerOfModel } from '@/lib/ai/model-provider';
@@ -104,11 +104,10 @@ export default async function AgentRunsPage({ searchParams }: { searchParams: Pr
     listAgentRunFacets(),
     listRunProjectFacets(),
   ]);
-  // SCR-065: the provider is the adapters' own naming rule over the model the
-  // run carried; there is no provider column, so the filter is applied to the
-  // rows read rather than in the query.
-  const runs = filters.provider ? fetched.filter((r) => providerOfModel(r.model) === filters.provider) : fetched;
-  const providerFacets = providerFacetsFrom(facets.models);
+  // SCR-065: the provider is the one the router recorded as serving the run, or - for a run from before it recorded that - the
+  // built-in naming rule over the model it carried. Applied to the rows read rather than in the query.
+  const runs = filters.provider ? fetched.filter((r) => (r.providerId ?? providerOfModel(r.model)) === filters.provider) : fetched;
+  const providerFacets = facets.providers;
   const projectName = new Map(projectFacets.map((p) => [p.id, p.name]));
   const summary = summariseRuns(runs);
   const cost = (minor: number) => `₹${formatCostMinor(minor) ?? '0.00'}`;
@@ -140,7 +139,7 @@ export default async function AgentRunsPage({ searchParams }: { searchParams: Pr
     },
     { key: 'status', header: 'Status', badge: true, cell: (r) => <StatusBadge status={r.status} /> },
     { key: 'model', header: 'Model', desktopOnly: true, cellClassName: 'font-mono text-xs text-muted', cell: (r) => r.model ?? '—' },
-    { key: 'provider', header: 'Provider', desktopOnly: true, cellClassName: 'text-muted', cell: (r) => providerOfModel(r.model) ?? '—' },
+    { key: 'provider', header: 'Provider', desktopOnly: true, cellClassName: 'text-muted', cell: (r) => r.providerId ?? providerOfModel(r.model) ?? '—' },
     { key: 'project', header: 'Project', desktopOnly: true, cellClassName: 'text-muted', cell: (r) => (r.projectId ? (projectName.get(r.projectId) ?? r.projectId.slice(0, 8)) : '—') },
     { key: 'latency', header: 'Latency', align: 'right', desktopOnly: true, cellClassName: 'tabular text-muted', cell: (r) => formatDurationMs(r.latencyMs) ?? '—' },
     { key: 'steps', header: 'Steps', align: 'right', cellClassName: 'tabular', cell: (r) => String(r.stepCount) },

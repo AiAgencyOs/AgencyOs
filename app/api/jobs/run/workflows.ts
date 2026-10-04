@@ -6201,7 +6201,7 @@ async function hear(
   const { admin, job } = ctx;
   const { message, runId, audio, lastAttempt, markRead } = args;
 
-  const transcriber = resolveTranscriber();
+  const transcriber = await resolveTranscriber();
 
   if (!transcriber.ok) {
     await finishRun(admin, runId, 'failed', transcriber.error.message);

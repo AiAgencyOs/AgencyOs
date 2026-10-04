@@ -18,6 +18,8 @@ process.env.SUPABASE_SERVICE_ROLE_KEY ??= 'placeholder-service-key-not-a-real-on
 const envState: { VAULT_ENCRYPTION_KEY: string | undefined } = { VAULT_ENCRYPTION_KEY: 'test-vault-encryption-key-32-bytes-minimum' };
 let adminClientCalls = 0;
 let storedRow: { ciphertext: string; iv: string; auth_tag: string } | null = null;
+// What the key store says about the stored key's health (a person re-enabling or rotating it resets this).
+let storedHealth: { health_state: string; cooldown_until: string | null; enabled: boolean } = { health_state: 'unknown', cooldown_until: null, enabled: true };
 
 const { mock: nodeMock } = await import('node:test');
 
@@ -33,13 +35,15 @@ nodeMock.module('@/lib/db/admin', {
       adminClientCalls += 1;
       return {
         schema: () => ({
-          // ai.provider_keys: .select().eq().eq().order().order().limit() -> the best enabled key (the legacy single-key table is frozen)
-          from: () => {
-            const chain: Record<string, unknown> = {};
-            for (const m of ['select', 'eq', 'order']) chain[m] = () => chain;
-            chain.limit = async () => ({ data: storedRow ? [storedRow] : [], error: null });
-            return chain;
-          },
+          // ai.provider_keys: .select().eq() -> every key of the provider; the caller picks the best USABLE one (the legacy table is frozen)
+          from: () => ({
+            select: () => ({
+              eq: async () => ({
+                data: storedRow ? [{ ...storedRow, label: 'primary', priority: 100, ...storedHealth }] : [],
+                error: null,
+              }),
+            }),
+          }),
         }),
       };
     },
@@ -95,6 +99,25 @@ describe('A. a key round-trips through the vault, and nothing but ciphertext is 
     const recovered = await getProviderCredential('openai');
     assert.equal(recovered, 'sk-a-second-real-secret');
     assert.equal(adminClientCalls, before + 1, 'the admin client is used, never the per-request one');
+  });
+
+  test('a key the Provider Manager has parked is not handed out - rejected, disabled or resting', async () => {
+    const was = storedHealth;
+    try {
+      for (const parked of [
+        { health_state: 'auth_error', cooldown_until: null, enabled: true },
+        { health_state: 'unknown', cooldown_until: null, enabled: false },
+        { health_state: 'rate_limited', cooldown_until: new Date(Date.now() + 60_000).toISOString(), enabled: true },
+      ]) {
+        storedHealth = parked;
+        assert.equal(await getProviderCredential('openai'), null, JSON.stringify(parked));
+      }
+      // And its positive twin: the same key, usable again, is handed out.
+      storedHealth = { health_state: 'healthy', cooldown_until: null, enabled: true };
+      assert.equal(await getProviderCredential('openai'), 'sk-a-second-real-secret');
+    } finally {
+      storedHealth = was;
+    }
   });
 
   test('two writes of the same key produce different ciphertext (a fresh IV every time)', async () => {

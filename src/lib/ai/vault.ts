@@ -8,6 +8,8 @@ import { serverEnv } from '@/lib/env';
 import { hasRole, type RoleSubject } from '@/lib/authz/permissions';
 import { err, ok, type Result } from '@/lib/result';
 
+import { orderUsableKeys, type HealthState } from './provider-match';
+
 /**
  * The vault the owner asked for — ADM-84 §9 overturned 2026-09-20.
  *
@@ -151,19 +153,25 @@ export async function getProviderCredential(provider: VaultProvider): Promise<st
   // is new and optional), the vault is never reached over the network.
   if (!serverEnv().VAULT_ENCRYPTION_KEY) return null;
 
-  // The legacy single-key table is frozen: the key a provider uses first is now its best enabled key in ai.provider_keys.
+  // The legacy single-key table is frozen: the key a provider uses first is now its best USABLE key in ai.provider_keys - the same
+  // rule the router follows (enabled, not rejected, not resting), so transcription, embeddings and images never take a key the
+  // Provider Manager has parked.
   const supabase = createAdminClient();
   const { data: rows, error } = await supabase
     .schema('ai')
     .from('provider_keys')
-    .select('ciphertext, iv, auth_tag')
-    .eq('provider_id', provider)
-    .eq('enabled', true)
-    .order('priority')
-    .order('label')
-    .limit(1);
-  const data = rows?.[0];
-  if (error || !data) return null;
+    .select('ciphertext, iv, auth_tag, label, enabled, priority, health_state, cooldown_until')
+    .eq('provider_id', provider);
+  if (error) return null;
+  const data = orderUsableKeys(
+    (rows ?? []).map((k) => ({
+      ...k,
+      health: k.health_state as HealthState,
+      cooldownUntil: k.cooldown_until ? new Date(k.cooldown_until) : null,
+    })),
+    new Date(),
+  )[0];
+  if (!data) return null;
   try {
     return decrypt(data.ciphertext, data.iv, data.auth_tag);
   } catch {

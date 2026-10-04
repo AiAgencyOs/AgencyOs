@@ -98,7 +98,7 @@ export default async function AgentRunPage({ params }: { params: Promise<{ runId
     },
     { label: 'Work class', value: run.workClass ? humanize(run.workClass) : '—' },
     { label: 'Model', value: run.model ? <code className="text-xs">{run.model}</code> : '—' },
-    { label: 'Provider', value: providerOfModel(run.model) ?? '—' },
+    { label: 'Provider', value: run.providerId ?? providerOfModel(run.model) ?? '—' },
     { label: 'Project', value: run.projectId ? <Link href={`/projects/${run.projectId}`} className="text-brand hover:underline">{run.projectId.slice(0, 8)}</Link> : '—' },
     {
       label: 'Prompt',

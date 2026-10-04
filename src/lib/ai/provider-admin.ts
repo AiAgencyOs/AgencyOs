@@ -7,10 +7,11 @@ import type { createClient } from '@/lib/db/server';
 import { serverEnv } from '@/lib/env';
 import { err, ok, type Result } from '@/lib/result';
 
-import { discoverModels, type DiscoveredModel, type ProviderEndpoint } from './provider-discovery';
+import { discoverModels, type DiscoveredModel } from './provider-discovery';
+import { endpointAndSecret, recordProbe } from './provider-endpoint';
 import { checkProviderBaseUrl, privateHostsAllowed } from './provider-url';
 import { resetProviderRegistry } from './router';
-import { decrypt, encrypt } from './vault';
+import { encrypt } from './vault';
 
 type RequestClient = Awaited<ReturnType<typeof createClient>>;
 const first = <T>(data: unknown): T | undefined => (Array.isArray(data) ? data[0] : data) as T | undefined;
@@ -223,50 +224,6 @@ export async function removeKey(supabase: RequestClient, keyId: string): Promise
 
 export type TestResult = { ok: boolean; state: string; detail: string; latencyMs: number; modelCount: number; noModelList: boolean };
 
-async function endpointAndSecret(providerId: string, keyId: string | null): Promise<Result<{ endpoint: ProviderEndpoint; secret: string; keyId: string | null }>> {
-  const admin = createAdminClient();
-  const { data: provider } = await admin.schema('ai').from('providers').select('*').eq('provider_id', providerId).maybeSingle();
-  if (!provider) return err('NOT_FOUND', 'That provider was not found.');
-  const { data: keys } = await admin
-    .schema('ai')
-    .from('provider_keys')
-    .select('id, ciphertext, iv, auth_tag, enabled, priority, label, health_state')
-    .eq('provider_id', providerId)
-    .order('priority')
-    .order('label');
-  const candidates = (keys ?? []).filter((k) => (keyId ? k.id === keyId : k.enabled && k.health_state !== 'auth_error'));
-  const key = candidates[0];
-  if (!key) {
-    // The environment key of a built-in is a key too: the same test applies to it.
-    const env = serverEnv() as unknown as Record<string, string | undefined>;
-    const envKey = { anthropic: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY', gemini: 'GEMINI_API_KEY', xai: 'XAI_API_KEY', openrouter: 'OPENROUTER_API_KEY' }[providerId];
-    const fromEnv = envKey ? env[envKey]?.trim() : undefined;
-    if (!keyId && fromEnv) {
-      return ok({ endpoint: endpointOf(provider), secret: fromEnv, keyId: null });
-    }
-    return err('CONFLICT', 'This provider has no usable key to test with. Add a key first.');
-  }
-  try {
-    return ok({ endpoint: endpointOf(provider), secret: decrypt(key.ciphertext, key.iv, key.auth_tag), keyId: key.id });
-  } catch {
-    return err('CONFLICT', 'The stored key could not be decrypted (VAULT_ENCRYPTION_KEY changed since it was stored). Rotate the key.');
-  }
-}
-
-function endpointOf(p: { kind: string; base_url: string; auth_scheme: string; models_path: string; extra_headers: unknown; api_version: string | null; timeout_ms: number; provider_id: string }): ProviderEndpoint {
-  const env = serverEnv() as unknown as Record<string, string | undefined>;
-  const override = { anthropic: 'ANTHROPIC_BASE_URL', openai: 'OPENAI_BASE_URL', gemini: 'GEMINI_BASE_URL', xai: 'XAI_BASE_URL', openrouter: 'OPENROUTER_BASE_URL' }[p.provider_id];
-  return {
-    kind: p.kind as ProviderEndpoint['kind'],
-    baseUrl: (override ? env[override]?.trim() : undefined) || p.base_url,
-    authScheme: p.auth_scheme === 'x-api-key' ? 'x-api-key' : 'bearer',
-    modelsPath: p.models_path,
-    extraHeaders: (p.extra_headers ?? {}) as Record<string, string>,
-    apiVersion: p.api_version,
-    timeoutMs: Math.min(p.timeout_ms, 15_000),
-  };
-}
-
 /** Test the connection with a stored key (or the best usable one) and record what the provider said about itself. */
 export async function testProvider(providerId: string, keyId: string | null = null): Promise<Result<TestResult>> {
   const g = await gate('ai.provider.read');
@@ -274,17 +231,7 @@ export async function testProvider(providerId: string, keyId: string | null = nu
   const target = await endpointAndSecret(providerId, keyId);
   if (!target.ok) return target;
   const outcome = await discoverModels(target.data.endpoint, target.data.secret);
-  const admin = createAdminClient();
-  await admin.schema('ai').rpc('record_provider_health', { p_provider_id: providerId, p_state: outcome.state, p_detail: outcome.detail, p_latency_ms: outcome.latencyMs, p_counted: false });
-  if (target.data.keyId) {
-    await admin.schema('ai').rpc('record_key_outcome', {
-      p_key_id: target.data.keyId,
-      p_ok: outcome.ok,
-      p_error: outcome.ok ? '' : outcome.detail,
-      p_kind: outcome.ok ? 'ok' : outcome.state === 'auth_error' ? 'auth' : outcome.state === 'rate_limited' ? 'rate_limit' : outcome.state === 'quota_exhausted' ? 'quota' : 'unavailable',
-      p_cooldown_seconds: 60,
-    });
-  }
+  await recordProbe(createAdminClient(), providerId, target.data.keyId, outcome);
   resetProviderRegistry();
   return ok({ ok: outcome.ok, state: outcome.state, detail: outcome.detail, latencyMs: outcome.latencyMs, modelCount: outcome.models.length, noModelList: outcome.noModelList });
 }
