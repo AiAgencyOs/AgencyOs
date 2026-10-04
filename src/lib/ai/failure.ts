@@ -20,10 +20,28 @@ import { err, type Result } from '@/lib/result';
  * parsed anywhere: the adapter that knows the cause says so.
  */
 const KEY = 'failure';
+const KIND_KEY = 'failure_kind';
 const UNAVAILABLE = 'unavailable';
 
-export function providerUnavailable<T = never>(message: string): Result<T> {
-  return err('PROVIDER_ERROR', message, { details: { [KEY]: [UNAVAILABLE] } });
+/**
+ * WHY a vendor could not serve the call, in the one distinction key rotation needs.
+ *
+ *   auth           the key was rejected (401/403): never retried until a person acts - a bad key stays bad
+ *   rate_limit     this key is resting (429): try another key, retry this one later
+ *   model_missing  the model does not exist (404): every key of this vendor would say the same
+ *   server         the vendor failed (5xx): another key does not help, another vendor might
+ *   timeout/network no answer: the same
+ *
+ * Carried in `details` beside `failure`, set by the adapter that knows the cause; no message is ever parsed.
+ */
+export type FailureKind = 'auth' | 'rate_limit' | 'model_missing' | 'server' | 'timeout' | 'network';
+
+export function providerUnavailable<T = never>(message: string, kind?: FailureKind): Result<T> {
+  return err('PROVIDER_ERROR', message, { details: { [KEY]: [UNAVAILABLE], ...(kind ? { [KIND_KEY]: [kind] } : {}) } });
+}
+
+export function failureKindOf(error: AppError): FailureKind | null {
+  return (error.details?.[KIND_KEY]?.[0] as FailureKind | undefined) ?? null;
 }
 
 export function isProviderUnavailable(error: AppError): boolean {

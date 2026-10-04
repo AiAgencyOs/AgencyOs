@@ -2,10 +2,9 @@ import 'server-only';
 
 import { err, ok, type Result } from '@/lib/result';
 
-import { createClaudeProvider } from './claude';
 import { createOpenAiTranscriber } from './openai';
 import { createOpenRouterImageGenerator } from './openrouter-image';
-import { PROVIDER_ENV_KEYS, createGeminiProvider, createOpenAiProvider, createOpenRouterProvider, createXaiProvider } from './providers';
+import { configuredProviderIds, resetProviderRegistry as resetRegistry, resolveRegisteredProvider } from './provider-registry';
 import type { AiImageGenerator, AiProvider, AiTranscriber } from './types';
 
 /**
@@ -27,78 +26,39 @@ import type { AiImageGenerator, AiProvider, AiTranscriber } from './types';
  */
 
 /**
- * Built on first use rather than at import.
+ * The provider registry now lives in `provider-registry.ts`: it is built from DATA (ai.providers and ai.provider_keys, managed in the
+ * AI Provider Manager) with the five built-ins' environment keys still tried first. Everything below keeps the contract this file always
+ * had - callers name a model and the router picks the vendor - and adds the one thing a manual assignment needs: naming the provider too.
  *
- * `createClaudeProvider()` reads `serverEnv()`, so building the registry at
- * module scope made *importing* this file read the environment — and Next
- * imports it during `next build`'s page-data collection, by way of the Agents
- * page. The build therefore demanded `SUPABASE_SERVICE_ROLE_KEY`, the one
- * required entry in the server schema, and failed on any deployment that
- * (correctly) withholds secrets from the build. CI has always said that is a
- * defect rather than a secret to supply:
- *
- *   "The build must not need real credentials — if it ever does, that is a
- *    defect worth failing on rather than a secret."   (.github/workflows/verify.yml)
- *
- * Cached after the first call, so the registry is still resolved once per
- * process and a deployment cannot half-register a provider mid-run.
- *
- * Async since ADM-84 §9 was overturned (2026-09-20): a factory that finds no
- * env key now checks the vault (ai.provider_credentials), a database read.
- * The promise itself is cached, not just its resolution, so two callers
- * racing on the very first request build the registry once rather than twice.
+ * Built lazily (never at import: reading the environment at import made `next build` demand real credentials) and cached briefly, so an
+ * Admin's change reaches the running process without a redeploy.
  */
-let registry: Promise<readonly AiProvider[]> | null = null;
 
-function providers(): Promise<readonly AiProvider[]> {
-  // Order is routing precedence. OpenRouter last: its ids carry a slash, and
-  // it would otherwise claim `openai/gpt-…` from the vendor with the direct account.
-  registry ??= Promise.all([createClaudeProvider(), createOpenAiProvider(), createGeminiProvider(), createXaiProvider(), createOpenRouterProvider()]).then(
-    (built) => built.filter((provider): provider is AiProvider => provider !== null),
-  );
-  return registry;
-}
-
-/** The ids of every registered provider — never a key. For the Agents page. */
+/** The ids of every enabled provider that has a usable key - never a key. For the Agents page. */
 export async function configuredProviders(): Promise<readonly string[]> {
-  return (await providers()).map((p) => p.id);
+  return configuredProviderIds();
 }
 
 /**
- * Forgets the cached registry so the next call rebuilds it from the
- * environment and the vault as they are NOW.
- *
- * SCR-064: a key stored or revoked through Settings changes which providers
- * exist, and a registry cached for the life of the process would keep
- * reporting — and routing to — a vendor whose key is gone. Called by the two
- * vault actions after their write lands; a process that never touches the
- * vault never pays for a rebuild. Covers the image generators too, since the
- * OpenRouter key serves both.
+ * Forgets the cached registry so the next call rebuilds it from the database and the environment as they are NOW.
+ * Called after every provider, key or model change in this process; other processes pick the change up when their cache expires.
  */
 export function resetProviderRegistry(): void {
-  registry = null;
+  resetRegistry();
   imageGenerators = null;
 }
 
-export async function resolveProvider(model: string): Promise<Result<AiProvider>> {
-  const registered = await providers();
-  const provider = registered.find((p) => p.supports(model));
-
-  if (!provider) {
-    return err(
-      'PROVIDER_ERROR',
-      registered.length === 0
-        ? `No AI provider is configured, so model "${model}" cannot be served. Set one of ${PROVIDER_ENV_KEYS.join(', ')}, place a key through Settings, or register another provider in src/lib/ai/router.ts.`
-        : `No configured AI provider serves model "${model}" (registered: ${registered.map((p) => p.id).join(', ')}).`,
-    );
-  }
-
-  return ok(provider);
+/**
+ * The provider that serves a model. With `providerId` (a MANUAL assignment) exactly that provider, or a clear error when it is
+ * disabled or has no usable key - never a silent substitute.
+ */
+export async function resolveProvider(model: string, options: { providerId?: string } = {}): Promise<Result<AiProvider>> {
+  return resolveRegisteredProvider(model, options);
 }
 
 /** True when at least one provider is registered. Lets callers skip work. */
 export async function hasConfiguredProvider(): Promise<boolean> {
-  return (await providers()).length > 0;
+  return (await configuredProviderIds()).length > 0;
 }
 
 /**

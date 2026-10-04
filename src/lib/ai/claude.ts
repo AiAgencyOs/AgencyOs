@@ -16,7 +16,7 @@ import type {
   ToolUseRequest,
 } from './types';
 import { getProviderCredential } from './vault';
-import { providerUnavailable } from './failure';
+import { providerUnavailable, type FailureKind } from './failure';
 import { fromWireToolName, toWireToolName } from './tool-names';
 
 /**
@@ -62,8 +62,18 @@ async function apiKey(): Promise<string | undefined> {
  * the existing error contract intact: with no key, router.ts still reports
  * AI_PROVIDER_NOT_CONFIGURED exactly as it did before this file existed.
  */
-export async function createClaudeProvider(): Promise<AiProvider | null> {
-  const key = await apiKey();
+export type ClaudeProviderOptions = {
+  /** A registered provider's own identity (an Anthropic-compatible gateway). Defaults to the built-in 'anthropic'. */
+  id?: string;
+  /** A specific key (the provider manager hands one per key). Absent: the legacy env-then-vault lookup. */
+  apiKey?: string;
+  baseUrl?: string;
+  timeoutMs?: number;
+  supports?: (model: string) => boolean;
+};
+
+export async function createClaudeProvider(options: ClaudeProviderOptions = {}): Promise<AiProvider | null> {
+  const key = options.apiKey ?? (await apiKey());
   if (!key) return null;
 
   /**
@@ -88,19 +98,19 @@ export async function createClaudeProvider(): Promise<AiProvider | null> {
   // default (which in production is the real API, because the var is unset)
   // takes over, and the code does not pretend to guard what the boot check
   // guards.
-  const baseURL = serverEnv().ANTHROPIC_BASE_URL;
+  const baseURL = options.baseUrl ?? serverEnv().ANTHROPIC_BASE_URL;
   const client = new Anthropic({
     apiKey: key,
     ...(baseURL ? { baseURL } : {}),
-    timeout: REQUEST_TIMEOUT_MS,
+    timeout: options.timeoutMs ?? REQUEST_TIMEOUT_MS,
     maxRetries: MAX_RETRIES,
   });
 
   return {
-    id: PROVIDER_ID,
+    id: options.id ?? PROVIDER_ID,
 
     supports(model: string): boolean {
-      return model.startsWith(MODEL_PREFIX);
+      return options.supports ? options.supports(model) : model.startsWith(MODEL_PREFIX);
     },
 
     /**
@@ -325,7 +335,21 @@ function providerFailure(error: unknown): Result<never> {
     error instanceof Anthropic.APIConnectionTimeoutError ||
     error instanceof Anthropic.APIConnectionError ||
     (error instanceof Anthropic.APIError && typeof error.status === 'number' && error.status >= 500);
-  return unavailable ? providerUnavailable(message) : err('PROVIDER_ERROR', message);
+  const kind: FailureKind | undefined =
+    error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError
+      ? 'auth'
+      : error instanceof Anthropic.NotFoundError
+        ? 'model_missing'
+        : error instanceof Anthropic.RateLimitError
+          ? 'rate_limit'
+          : error instanceof Anthropic.APIConnectionTimeoutError
+            ? 'timeout'
+            : error instanceof Anthropic.APIConnectionError
+              ? 'network'
+              : error instanceof Anthropic.APIError && typeof error.status === 'number' && error.status >= 500
+                ? 'server'
+                : undefined;
+  return unavailable ? providerUnavailable(message, kind) : err('PROVIDER_ERROR', message);
 }
 
 export function describeProviderError(error: unknown): string {
