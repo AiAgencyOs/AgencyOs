@@ -360,3 +360,37 @@ describe('the database holds the line', () => {
     assert.match(body, /health_state = 'unknown', consecutive_failures = 0, cooldown_until = null, last_error = null/);
   });
 });
+
+describe('how an Anthropic-compatible provider is authenticated', async () => {
+  const { createClaudeProvider } = await import('../src/lib/ai/claude.ts');
+  let server: Server;
+  let port = 0;
+  let headers: Record<string, string | string[] | undefined> = {};
+  await new Promise<void>((resolve) => {
+    server = createServer((req, res) => {
+      headers = req.headers;
+      req.resume();
+      res.writeHead(401, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'no' } }));
+    }).listen(0, '127.0.0.1', () => { port = (server.address() as { port: number }).port; resolve(); });
+  });
+  const call = async (authScheme: 'bearer' | 'x-api-key') => {
+    headers = {};
+    const p = await createClaudeProvider({ apiKey: 'sk-test-key-123456', authScheme, baseUrl: `http://127.0.0.1:${port}`, timeoutMs: 3000 });
+    await p!.generateStructured({ model: 'claude-x', system: 's', messages: [{ role: 'user', content: 'hi' }], jsonSchema: { type: 'object' }, schemaName: 'x' });
+  };
+
+  test('a gateway that takes a bearer token gets Authorization: Bearer, and no x-api-key', async () => {
+    await call('bearer');
+    assert.equal(headers.authorization, 'Bearer sk-test-key-123456');
+    assert.equal(headers['x-api-key'], undefined);
+  });
+
+  test('and its twin: the real API default still gets x-api-key, and no bearer header', async () => {
+    await call('x-api-key');
+    assert.equal(headers['x-api-key'], 'sk-test-key-123456');
+    assert.equal(headers.authorization, undefined);
+  });
+
+  test('close', () => { server.closeAllConnections(); server.close(); });
+});
