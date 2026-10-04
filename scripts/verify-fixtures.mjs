@@ -59,11 +59,13 @@ export function fixturesFor(target, org) {
    */
   function mint(userId, role, orgId = org) {
     const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    // A local Docker VM whose clock runs behind rejects a token "issued in the future" (PGRST303): VERIFY_JWT_SKEW_SECONDS backdates iat.
     const now = Math.floor(Date.now() / 1000);
+    const skew = Number(process.env.VERIFY_JWT_SKEW_SECONDS ?? 0) || 0;
     const h = b64({ alg: 'HS256', typ: 'JWT' });
     const b = b64({
       sub: userId, aud: 'authenticated', role: 'authenticated',
-      app_metadata: { organization_id: orgId, role }, iat: now, exp: now + 900,
+      app_metadata: { organization_id: orgId, role }, iat: now - skew, exp: now + 900,
     });
     return `${h}.${b}.${createHmac('sha256', target.jwtSecret).update(`${h}.${b}`).digest('base64url')}`;
   }

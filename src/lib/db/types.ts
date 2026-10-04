@@ -8640,6 +8640,62 @@ export type Database = {
           },
         ]
       }
+      client_secrets: {
+        Row: {
+          auth_tag: string | null
+          ciphertext: string | null
+          created_at: string
+          hint: string | null
+          id: string
+          iv: string | null
+          kind: string
+          label: string
+          organization_id: string
+          project_id: string
+          revoked_at: string | null
+          revoked_by: string | null
+          stored_by: string
+        }
+        Insert: {
+          auth_tag?: string | null
+          ciphertext?: string | null
+          created_at?: string
+          hint?: string | null
+          id?: string
+          iv?: string | null
+          kind?: string
+          label: string
+          organization_id: string
+          project_id: string
+          revoked_at?: string | null
+          revoked_by?: string | null
+          stored_by: string
+        }
+        Update: {
+          auth_tag?: string | null
+          ciphertext?: string | null
+          created_at?: string
+          hint?: string | null
+          id?: string
+          iv?: string | null
+          kind?: string
+          label?: string
+          organization_id?: string
+          project_id?: string
+          revoked_at?: string | null
+          revoked_by?: string | null
+          stored_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_secrets_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       project_default_assignees: {
         Row: {
           created_at: string
@@ -12938,6 +12994,42 @@ export type Database = {
       request_project_planning: {
         Args: { p_project_id: string }
         Returns: string
+      }
+      store_client_secret: {
+        Args: { p_auth_tag: string; p_ciphertext: string; p_hint?: string; p_iv: string; p_kind: string; p_label: string; p_project_id: string }
+        Returns: {
+          outcome: string
+          secret_id: string | null
+        }[]
+      }
+      client_secret_list: {
+        Args: { p_project_id: string }
+        Returns: {
+          created_at: string
+          hint: string | null
+          id: string
+          kind: string
+          label: string
+          revoked_at: string | null
+          revoked_by_name: string | null
+          stored_by_name: string | null
+        }[]
+      }
+      reveal_client_secret: {
+        Args: { p_secret_id: string }
+        Returns: {
+          auth_tag: string | null
+          ciphertext: string | null
+          iv: string | null
+          label: string | null
+          outcome: string
+        }[]
+      }
+      revoke_client_secret: {
+        Args: { p_secret_id: string }
+        Returns: {
+          outcome: string
+        }[]
       }
       agent_draft_blueprint: {
         Args: { p_blueprint: Json; p_project_id: string }
