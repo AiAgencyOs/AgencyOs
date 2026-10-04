@@ -3,7 +3,9 @@
 import { useActionState } from 'react';
 
 import {
+  cancelHandoffAction,
   decideDuplicateReviewAction,
+  saveHandoffSettingsAction,
   saveChannelSettingsAction,
   saveIcpAction,
   saveServiceAction,
@@ -148,6 +150,34 @@ export function DuplicateDecisionForm({ reviewId }: { reviewId: string }) {
       <button type="submit" name="decision" value="kept_separate" disabled={pending} className={buttonClass('secondary')}>Different people</button>
       <button type="submit" name="decision" value="confirmed_same" disabled={pending} className={buttonClass('primary')}>Same person</button>
       <button type="submit" name="decision" value="dismissed" disabled={pending} className={buttonClass('ghost')}>Dismiss</button>
+      <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+export function HandoffSettingsForm({ initial }: { initial: { businessNumber: string; linkTtlDays: number } }) {
+  const [state, action, pending] = useActionState(saveHandoffSettingsAction, IDLE_STATE);
+  return (
+    <form action={action} className="grid gap-3 sm:grid-cols-[2fr_1fr_auto] sm:items-end">
+      <Field label="WhatsApp business number" hint="With the country code. This is the number a handoff link opens - not the API id.">
+        <input name="businessNumber" defaultValue={initial.businessNumber} placeholder="+91 98765 43210" className={inputClass} />
+      </Field>
+      <Field label="Link lifetime (days)" hint="1 to 90.">
+        <input name="linkTtlDays" inputMode="numeric" defaultValue={initial.linkTtlDays} className={inputClass} />
+      </Field>
+      <button type="submit" disabled={pending} className={buttonClass('primary')}>Save</button>
+      <div className="sm:col-span-3"><FormMessage status={state.status} message={state.message} /></div>
+    </form>
+  );
+}
+
+export function CancelHandoffForm({ handoffId }: { handoffId: string }) {
+  const [state, action, pending] = useActionState(cancelHandoffAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex items-end gap-2">
+      <input type="hidden" name="handoffId" value={handoffId} />
+      <input name="reason" required maxLength={500} placeholder="Why cancel?" className={inputClass} />
+      <button type="submit" disabled={pending} className={buttonClass('danger')}>Cancel link</button>
       <FormMessage status={state.status} message={state.message} />
     </form>
   );

@@ -206,6 +206,9 @@ create policy target_services_select on crm.target_services
   for select to authenticated
   using (organization_id = (select core.current_organization_id()) and (select core.is_internal()));
 
+-- The platform's default privileges would otherwise hand anon SELECT and authenticated INSERT/UPDATE/DELETE on a new table;
+-- RLS would still refuse the rows, but a grant that is wider than the intent is the first thing a policy mistake exposes.
+revoke all on table crm.target_services from public, anon, authenticated;
 grant select on crm.target_services to authenticated;
 grant select, insert, update on crm.target_services to service_role;
 
@@ -222,6 +225,9 @@ create policy icp_versions_select on crm.icp_versions
   for select to authenticated
   using (organization_id = (select core.current_organization_id()) and (select core.is_internal()));
 
+-- The platform's default privileges would otherwise hand anon SELECT and authenticated INSERT/UPDATE/DELETE on a new table;
+-- RLS would still refuse the rows, but a grant that is wider than the intent is the first thing a policy mistake exposes.
+revoke all on table crm.icp_versions from public, anon, authenticated;
 grant select on crm.icp_versions to authenticated;
 grant select, insert, update on crm.icp_versions to service_role;
 
@@ -238,6 +244,9 @@ create policy acquisition_channels_select on crm.acquisition_channels
   for select to authenticated
   using (organization_id = (select core.current_organization_id()) and (select core.is_internal()));
 
+-- The platform's default privileges would otherwise hand anon SELECT and authenticated INSERT/UPDATE/DELETE on a new table;
+-- RLS would still refuse the rows, but a grant that is wider than the intent is the first thing a policy mistake exposes.
+revoke all on table crm.acquisition_channels from public, anon, authenticated;
 grant select on crm.acquisition_channels to authenticated;
 grant select, insert, update on crm.acquisition_channels to service_role;
 

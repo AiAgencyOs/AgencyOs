@@ -266,6 +266,9 @@ alter table crm.identity_keys force row level security;
 drop policy if exists identity_keys_select on crm.identity_keys;
 create policy identity_keys_select on crm.identity_keys for select to authenticated
   using (organization_id = (select core.current_organization_id()) and (select core.is_internal()));
+-- The platform's default privileges would otherwise hand anon SELECT and authenticated INSERT/UPDATE/DELETE on a new table;
+-- RLS would still refuse the rows, but a grant that is wider than the intent is the first thing a policy mistake exposes.
+revoke all on table crm.identity_keys from public, anon, authenticated;
 grant select on crm.identity_keys to authenticated;
 grant select, insert, update, delete on crm.identity_keys to service_role;
 
@@ -283,6 +286,9 @@ alter table crm.duplicate_reviews force row level security;
 drop policy if exists duplicate_reviews_select on crm.duplicate_reviews;
 create policy duplicate_reviews_select on crm.duplicate_reviews for select to authenticated
   using (organization_id = (select core.current_organization_id()) and (select core.is_internal()));
+-- The platform's default privileges would otherwise hand anon SELECT and authenticated INSERT/UPDATE/DELETE on a new table;
+-- RLS would still refuse the rows, but a grant that is wider than the intent is the first thing a policy mistake exposes.
+revoke all on table crm.duplicate_reviews from public, anon, authenticated;
 grant select on crm.duplicate_reviews to authenticated;
 grant select, insert, update on crm.duplicate_reviews to service_role;
 
@@ -297,6 +303,9 @@ alter table crm.lead_touchpoints force row level security;
 drop policy if exists lead_touchpoints_select on crm.lead_touchpoints;
 create policy lead_touchpoints_select on crm.lead_touchpoints for select to authenticated
   using (organization_id = (select core.current_organization_id()) and (select core.is_internal()));
+-- The platform's default privileges would otherwise hand anon SELECT and authenticated INSERT/UPDATE/DELETE on a new table;
+-- RLS would still refuse the rows, but a grant that is wider than the intent is the first thing a policy mistake exposes.
+revoke all on table crm.lead_touchpoints from public, anon, authenticated;
 grant select on crm.lead_touchpoints to authenticated;
 grant select, insert on crm.lead_touchpoints to service_role;
 
@@ -311,6 +320,9 @@ alter table crm.lead_conversation_owner force row level security;
 drop policy if exists lead_conversation_owner_select on crm.lead_conversation_owner;
 create policy lead_conversation_owner_select on crm.lead_conversation_owner for select to authenticated
   using (organization_id = (select core.current_organization_id()) and (select core.is_internal()));
+-- The platform's default privileges would otherwise hand anon SELECT and authenticated INSERT/UPDATE/DELETE on a new table;
+-- RLS would still refuse the rows, but a grant that is wider than the intent is the first thing a policy mistake exposes.
+revoke all on table crm.lead_conversation_owner from public, anon, authenticated;
 grant select on crm.lead_conversation_owner to authenticated;
 grant select, insert, update on crm.lead_conversation_owner to service_role;
 
@@ -325,6 +337,9 @@ alter table crm.conversation_owner_transfers force row level security;
 drop policy if exists conversation_owner_transfers_select on crm.conversation_owner_transfers;
 create policy conversation_owner_transfers_select on crm.conversation_owner_transfers for select to authenticated
   using (organization_id = (select core.current_organization_id()) and (select core.is_internal()));
+-- The platform's default privileges would otherwise hand anon SELECT and authenticated INSERT/UPDATE/DELETE on a new table;
+-- RLS would still refuse the rows, but a grant that is wider than the intent is the first thing a policy mistake exposes.
+revoke all on table crm.conversation_owner_transfers from public, anon, authenticated;
 grant select on crm.conversation_owner_transfers to authenticated;
 grant select, insert on crm.conversation_owner_transfers to service_role;
 

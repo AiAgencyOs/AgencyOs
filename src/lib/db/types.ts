@@ -3947,6 +3947,123 @@ export type Database = {
   }
   crm: {
     Tables: {
+      whatsapp_handoff_settings: {
+        Row: {
+          organization_id: string
+          business_number: string | null
+          link_ttl_days: number
+          updated_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          organization_id: string
+          business_number?: string | null
+          link_ttl_days?: number
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          organization_id?: string
+          business_number?: string | null
+          link_ttl_days?: number
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      channel_handoffs: {
+        Row: {
+          id: string
+          organization_id: string
+          lead_id: string
+          contact_id: string | null
+          opportunity_id: string | null
+          source_channel: string
+          source_platform: string | null
+          source_agent: string
+          destination_channel: string
+          destination_agent: string
+          status: string
+          token_hash: string
+          context_version: number
+          context: Json
+          next_action: string | null
+          expires_at: string
+          opened_at: string | null
+          resolved_at: string | null
+          resolved_phone: string | null
+          bind_outcome: string | null
+          consumed_at: string | null
+          consumed_contact_id: string | null
+          consumed_lead_id: string | null
+          consume_outcome: string | null
+          cancel_reason: string | null
+          created_by: string | null
+          correlation_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id: string
+          organization_id: string
+          lead_id: string
+          contact_id?: string | null
+          opportunity_id?: string | null
+          source_channel: string
+          source_platform?: string | null
+          source_agent: string
+          destination_channel?: string
+          destination_agent?: string
+          status?: string
+          token_hash: string
+          context_version?: number
+          context: Json
+          next_action?: string | null
+          expires_at: string
+          opened_at?: string | null
+          resolved_at?: string | null
+          resolved_phone?: string | null
+          bind_outcome?: string | null
+          consumed_at?: string | null
+          consumed_contact_id?: string | null
+          consumed_lead_id?: string | null
+          consume_outcome?: string | null
+          cancel_reason?: string | null
+          created_by?: string | null
+          correlation_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          lead_id?: string
+          contact_id?: string | null
+          opportunity_id?: string | null
+          source_channel?: string
+          source_platform?: string | null
+          source_agent?: string
+          destination_channel?: string
+          destination_agent?: string
+          status?: string
+          token_hash?: string
+          context_version?: number
+          context?: Json
+          next_action?: string | null
+          expires_at?: string
+          opened_at?: string | null
+          resolved_at?: string | null
+          resolved_phone?: string | null
+          bind_outcome?: string | null
+          consumed_at?: string | null
+          consumed_contact_id?: string | null
+          consumed_lead_id?: string | null
+          consume_outcome?: string | null
+          cancel_reason?: string | null
+          created_by?: string | null
+          correlation_id?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       identity_keys: {
         Row: {
           id: string
@@ -6663,6 +6780,34 @@ export type Database = {
       }
     }
     Functions: {
+      set_handoff_settings: {
+        Args: { p_business_number: string; p_link_ttl_days: number }
+        Returns: { outcome: string | null }[]
+      }
+      create_channel_handoff: {
+        Args: { p_correlation_id?: string; p_handoff_id: string; p_lead: string; p_next_action?: string; p_organization_id: string; p_source_agent: string; p_source_channel: string; p_source_platform: string; p_token_hash: string; p_ttl_days?: number }
+        Returns: { outcome: string | null; handoff_id: string | null; expires_at: string | null }[]
+      }
+      open_channel_handoff: {
+        Args: { p_token_hash: string }
+        Returns: { outcome: string | null; business_number: string | null }[]
+      }
+      bind_handoff_from_message: {
+        Args: { p_code_hash: string; p_from: string; p_phone_number_id: string }
+        Returns: { outcome: string | null; handoff_id: string | null; organization_id: string | null }[]
+      }
+      consume_channel_handoff: {
+        Args: { p_contact_id: string; p_handoff_id: string; p_lead_id: string; p_organization_id: string }
+        Returns: { outcome: string | null }[]
+      }
+      cancel_channel_handoff: {
+        Args: { p_handoff_id: string; p_reason: string }
+        Returns: { outcome: string | null }[]
+      }
+      expire_channel_handoffs: {
+        Args: { p_limit?: number }
+        Returns: number
+      }
       resolve_identity: {
         Args: { p_organization_id: string; p_signals: Json; p_source?: string }
         Returns: { outcome: string | null; contact_id: string | null; review_id: string | null; created: boolean | null }[]

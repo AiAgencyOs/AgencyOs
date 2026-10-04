@@ -157,3 +157,49 @@ export async function readIdentitySummary(): Promise<IdentitySummary> {
     truncated: (keyRows ?? []).length >= LIMIT || (touchRows ?? []).length >= LIMIT || (ownerRows ?? []).length >= LIMIT,
   };
 }
+
+export type HandoffSettings = { businessNumber: string | null; linkTtlDays: number };
+
+export async function readHandoffSettings(): Promise<HandoffSettings> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('whatsapp_handoff_settings').select('business_number, link_ttl_days').maybeSingle();
+  if (error) unreadable('readHandoffSettings', error);
+  return { businessNumber: data?.business_number ?? null, linkTtlDays: data?.link_ttl_days ?? 14 };
+}
+
+export type HandoffView = {
+  id: string;
+  status: string;
+  sourceChannel: string;
+  sourcePlatform: string | null;
+  sourceAgent: string;
+  leadId: string;
+  leadTitle: string;
+  expiresAt: string;
+  createdAt: string;
+  consumeOutcome: string | null;
+  bindOutcome: string | null;
+  nextAction: string | null;
+};
+
+/** Recent handoffs, newest first. The token hash is not even readable by a session, so it cannot appear here. */
+export async function listHandoffs(limit = 30): Promise<{ rows: HandoffView[]; live: number }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('channel_handoffs')
+    .select('id, status, source_channel, source_platform, source_agent, lead_id, expires_at, created_at, consume_outcome, bind_outcome, next_action')
+    .order('created_at', { ascending: false }).limit(limit);
+  if (error) unreadable('listHandoffs', error);
+  const ids = [...new Set((data ?? []).map((h) => h.lead_id))];
+  const titles = new Map<string, string>();
+  if (ids.length > 0) {
+    const { data: leads, error: leadsError } = await supabase.schema('crm').from('leads').select('id, title').in('id', ids);
+    if (leadsError) unreadable('listHandoffs.leads', leadsError);
+    for (const l of leads ?? []) titles.set(l.id, l.title);
+  }
+  const rows = (data ?? []).map((h) => ({
+    id: h.id, status: h.status, sourceChannel: h.source_channel, sourcePlatform: h.source_platform, sourceAgent: h.source_agent,
+    leadId: h.lead_id, leadTitle: titles.get(h.lead_id) ?? 'Lead', expiresAt: h.expires_at, createdAt: h.created_at,
+    consumeOutcome: h.consume_outcome, bindOutcome: h.bind_outcome, nextAction: h.next_action,
+  }));
+  return { rows, live: rows.filter((h) => ['CREATED', 'OPENED', 'RESOLVED'].includes(h.status)).length };
+}

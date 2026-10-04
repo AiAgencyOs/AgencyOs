@@ -2,10 +2,10 @@ import type { Metadata } from 'next';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { listTargetServices, readCurrentIcp } from '@/modules/acquisition/queries';
+import { listTargetServices, readCurrentIcp, readHandoffSettings } from '@/modules/acquisition/queries';
 import { Callout, Card, CardBody, CardHeader, EmptyState, PageHeader, PermissionDenied } from '@/ui';
 
-import { IcpForm, ServiceForm } from '../forms';
+import { HandoffSettingsForm, IcpForm, ServiceForm } from '../forms';
 
 export const metadata: Metadata = { title: 'Lead generation settings' };
 
@@ -13,7 +13,7 @@ export default async function LeadGenerationSettingsPage() {
   const context = await requireInternal('/lead-generation/settings');
   if (!can(context, 'acquisition.read')) return <PermissionDenied />;
   const mayManage = can(context, 'acquisition.manage');
-  const [services, { current, versions }] = await Promise.all([listTargetServices(), readCurrentIcp()]);
+  const [services, { current, versions }, handoff] = await Promise.all([listTargetServices(), readCurrentIcp(), readHandoffSettings()]);
 
   return (
     <div className="flex flex-col gap-5">
@@ -34,6 +34,14 @@ export default async function LeadGenerationSettingsPage() {
         <CardHeader title="Ideal customer profile" description={current ? `Version ${current.version} of ${versions}. Saving creates the next version; earlier ones are kept so past decisions stay explainable.` : 'Not set yet.'} />
         <CardBody>
           {mayManage ? <IcpForm key={current?.version ?? 0} initial={current?.definition ?? {}} /> : <Callout tone="info" title="Read only">Only an owner or ops admin can change the profile.</Callout>}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader title="Moving a prospect to WhatsApp" description="A prospect on email, a profile or a marketplace can be sent a link that opens WhatsApp. Their first message continues the lead they already are - nothing is asked twice and no second lead is made." />
+        <CardBody>
+          {!handoff.businessNumber ? <Callout tone="warning" title="No WhatsApp number set">Handoff links cannot open WhatsApp until the business number is saved below.</Callout> : null}
+          {mayManage ? <HandoffSettingsForm key={`${handoff.businessNumber}-${handoff.linkTtlDays}`} initial={{ businessNumber: handoff.businessNumber ?? '', linkTtlDays: handoff.linkTtlDays }} /> : <p className="text-[13px]">{handoff.businessNumber ?? 'Not set'} · links last {handoff.linkTtlDays} days</p>}
         </CardBody>
       </Card>
     </div>

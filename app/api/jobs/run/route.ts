@@ -18,6 +18,7 @@ import { runInvoiceReminders } from '@/modules/finance/reminder-worker';
 import { runCampaigns } from '@/modules/crm/campaign-worker';
 import { runOutreach } from '@/modules/crm/outreach/worker';
 import { runInboundEmail } from '@/modules/crm/inbound-email';
+import { expireHandoffs } from '@/modules/acquisition/handoff';
 import { runProviderMaintenance } from '@/lib/ai/provider-maintenance';
 import { publishDueAnnouncements } from '@/modules/crm/announcement-worker';
 import { runSuiteSchedules } from '@/modules/qa/schedule-worker';
@@ -322,6 +323,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const emailOutreach = await runOutreach(admin);
   // The replies, bounces and unsubscribes that arrived on the two mailboxes (paced inside, and only when IMAP is configured).
   await runInboundEmail(admin);
+  // Tracked WhatsApp handoff links that were never used past their expiry (lead generation, 20261015300000).
+  await expireHandoffs(admin);
   // AI providers: probe the ones that are due and refresh their model lists (best effort, bounded per tick).
   await runProviderMaintenance(admin);
 

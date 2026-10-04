@@ -150,3 +150,39 @@ export async function decideDuplicateReview(input: { reviewId: string; decision:
       return err('FORBIDDEN', FORBIDDEN);
   }
 }
+
+export async function saveHandoffSettings(input: { businessNumber: string; linkTtlDays: number }): Promise<Result<true>> {
+  const gate = await manager();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('set_handoff_settings', { p_business_number: input.businessNumber, p_link_ttl_days: input.linkTtlDays });
+  if (error) return err('INTERNAL', 'Could not save the handoff settings.');
+  switch (first<{ outcome?: string }>(data)?.outcome) {
+    case 'saved':
+      return ok(true);
+    case 'invalid':
+      return err('VALIDATION', 'Use the number with its country code, like +91 98765 43210, and a lifetime of 1 to 90 days.');
+    default:
+      return err('FORBIDDEN', FORBIDDEN);
+  }
+}
+
+export async function cancelHandoff(input: { handoffId: string; reason: string }): Promise<Result<true>> {
+  const gate = await manager();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('cancel_channel_handoff', { p_handoff_id: input.handoffId, p_reason: input.reason });
+  if (error) return err('INTERNAL', 'Could not cancel the handoff.');
+  switch (first<{ outcome?: string }>(data)?.outcome) {
+    case 'cancelled':
+      return ok(true);
+    case 'needs_reason':
+      return err('VALIDATION', 'Say why - the reason is kept.');
+    case 'not_live':
+      return err('CONFLICT', 'That handoff is no longer live.');
+    case 'not_found':
+      return err('NOT_FOUND', 'That handoff no longer exists.');
+    default:
+      return err('FORBIDDEN', FORBIDDEN);
+  }
+}

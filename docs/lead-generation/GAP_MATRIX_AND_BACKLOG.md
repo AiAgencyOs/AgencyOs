@@ -67,7 +67,7 @@ Design decisions this implies (recorded here so they are made once):
 |---|---|---|---|
 | 1 | Admin config (target services, versioned ICP, per-channel settings), global + per-channel pause, Lead Generation shell + overview, capabilities | — | **BUILT, see §4** |
 | 2 | Unified identity: normalised identity keys, `DUPLICATE_REVIEW` queue, touchpoints (first/last/multi), canonical outcome (derived), primary conversation owner | 1 | **BUILT, see §4** (contact consolidation after `confirmed_same` is NOT built) |
-| 3 | Tracked WhatsApp handoff: opaque token (hash stored), expiry, replay/tenant protection, context package, ownership transfer to Sales | 2 | not started |
+| 3 | Tracked WhatsApp handoff: opaque token (hash stored), expiry, replay/tenant protection, context package, ownership transfer to Sales | 2 | **BUILT** (engines that create handoffs arrive with 6-10) |
 | 4 | Connector registry (tenant-scoped credentials, capability model, health, Test Connection), policy-decision function, approval subject types + content-hash binding | 1 | not started |
 | 5 | Scheduler + Quotation Master structured handoffs (agent-callable, return to channel owner) | 2, 3 | not started |
 | 6 | Email engine: prospect discovery → research → qualification → drafting → nurture → meeting/quote → handoff; follow-up engine state checks | 2–5 | not started |
@@ -116,6 +116,20 @@ Design decisions this implies (recorded here so they are made once):
   they convert a prospect (slices 6-7); (c) `lead_outcome` has no lead-level LOST of its own: it reads the opportunity;
   (d) Lead 360 / activity timeline UI (spec §126-127) - only counts and the review queue exist; (e) events
   (`LeadMatched`, `LeadDuplicateReviewRequired`) - audit rows exist, outbox events arrive with their consumers.
+
+### Slice 3 (tracked WhatsApp handoff) - built and verified
+
+* Migration `20261015300000_a_prospect_who_moves_to_whatsapp_stays_one_lead.sql`: `crm.channel_handoffs` (state machine,
+  frozen context, one live per lead), `crm.whatsapp_handoff_settings`, and the doors `create / open / bind_handoff_from_message /
+  consume / cancel / expire`. The existing ingest function is NOT re-emitted: the bind makes it continue the original lead.
+* `src/modules/acquisition/handoff-code.ts` (HMAC-derived 80-bit reference), `handoff.ts` (create, sweep), `handoff-bind.ts`
+  (called by ingest, never throws), public route `app/api/handoff/[code]`, settings + list/cancel on the Lead Generation screens.
+* `scripts/verify-acquisition-handoff.sql`: one lead through the real ingest; replay, tamper, cross-tenant, expiry,
+  cancel, closed lead, number held by another contact; privilege audit. Red-proved.
+* **Not built:** consolidating the two leads a `linked_for_review` handoff leaves; any engine creating handoffs;
+  the Sales agent reading the review-path context; a rate limiter on the public link.
+* **Cross-cutting finding fixed in all three migrations:** platform default privileges granted anon/authenticated broad
+  table rights; every acquisition table now revokes them first.
 
 ## 5. Human dependencies (known now; asked for only when the engine reaches them)
 

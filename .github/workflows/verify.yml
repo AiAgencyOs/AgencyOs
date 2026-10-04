@@ -829,6 +829,9 @@ jobs:
           # Slice 2 adds the identity layer: one person across email, LinkedIn and the REAL WhatsApp ingest stays one contact;
           # uncertain matches open a review and merge nothing; first touch survives later channels; exactly one conversation owner.
           # (psql, not PostgREST: the checks are about the doors, and the doors are SQL.)
+          # Slice 3: a prospect who moves to WhatsApp through a tracked reference stays ONE lead (through the real ingest function);
+          # a replayed, tampered, cross-tenant, expired, cancelled or closed-lead reference fails safely; a number that belongs to
+          # someone else is a review, never a guess. Also asserts the platform's default table privileges were revoked.
           npm run db:verify:acquisition
 
           # The AI Provider Manager's contract: who may manage providers, models and keys; no path returns a secret;

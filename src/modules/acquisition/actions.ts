@@ -6,7 +6,7 @@ import { setKillSwitch } from '@/lib/observability/kill-switches';
 import type { FormState } from '@/modules/identity/types';
 
 import { ACQUISITION_CHANNELS, ICP_LIST_KEYS, buildIcpDefinition, type AcquisitionChannel } from './schema';
-import { decideDuplicateReview, saveChannelSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
+import { cancelHandoff, decideDuplicateReview, saveChannelSettings, saveHandoffSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
 
 const text = (f: FormData, n: string) => String(f.get(n) ?? '').trim();
 const BASE = '/lead-generation';
@@ -96,4 +96,20 @@ export async function decideDuplicateReviewAction(_p: FormState, f: FormData): P
   if (!r.ok) return { status: 'error', message: r.error.message };
   refresh();
   return { status: 'success', message: 'Recorded.' };
+}
+
+export async function saveHandoffSettingsAction(_p: FormState, f: FormData): Promise<FormState> {
+  const days = Number(text(f, 'linkTtlDays') || '14');
+  if (!Number.isInteger(days)) return { status: 'error', message: 'The lifetime must be a whole number of days.' };
+  const r = await saveHandoffSettings({ businessNumber: text(f, 'businessNumber'), linkTtlDays: days });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: 'Saved.' };
+}
+
+export async function cancelHandoffAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await cancelHandoff({ handoffId: text(f, 'handoffId'), reason: text(f, 'reason') });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: 'Cancelled. The link no longer works.' };
 }

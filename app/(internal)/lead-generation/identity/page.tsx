@@ -3,10 +3,10 @@ import Link from 'next/link';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { listOpenDuplicateReviews, readIdentitySummary } from '@/modules/acquisition/queries';
+import { listHandoffs, listOpenDuplicateReviews, readIdentitySummary } from '@/modules/acquisition/queries';
 import { Badge, Callout, Card, CardBody, CardHeader, EmptyState, PageHeader, PermissionDenied, Stat, StatGrid } from '@/ui';
 
-import { DuplicateDecisionForm } from '../forms';
+import { CancelHandoffForm, DuplicateDecisionForm } from '../forms';
 
 export const metadata: Metadata = { title: 'Lead generation identity' };
 
@@ -36,7 +36,7 @@ export default async function IdentityPage() {
   const context = await requireInternal('/lead-generation/identity');
   if (!can(context, 'acquisition.read')) return <PermissionDenied />;
   const mayManage = can(context, 'acquisition.manage');
-  const [{ rows, totalOpen }, summary] = await Promise.all([listOpenDuplicateReviews(), readIdentitySummary()]);
+  const [{ rows, totalOpen }, summary, handoffs] = await Promise.all([listOpenDuplicateReviews(), readIdentitySummary(), listHandoffs()]);
   const touches = Object.entries(summary.touchpointsByChannel).sort((a, b) => b[1] - a[1]);
   const keyTotal = Object.values(summary.keys).reduce((a, b) => a + b, 0);
   const touchTotal = touches.reduce((n, [, c]) => n + c, 0);
@@ -69,6 +69,27 @@ export default async function IdentityPage() {
                   <div className="flex items-center gap-2"><Badge tone="warning">Needs a decision</Badge><span className="text-[13px] text-muted">{REASON[r.reason] ?? r.reason}</span></div>
                   <div className="grid gap-3 sm:grid-cols-2"><PersonCard p={r.a} /><PersonCard p={r.b} /></div>
                   {mayManage ? <DuplicateDecisionForm reviewId={r.id} /> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader title="Moves to WhatsApp" description={`${handoffs.live} link${handoffs.live === 1 ? '' : 's'} waiting to be used. A used link continues the same lead; if the number belongs to someone else it waits for a decision above.`} />
+        <CardBody>
+          {handoffs.rows.length === 0 ? (
+            <EmptyState title="No handoffs yet" description="They are created when an engine asks a prospect to continue on WhatsApp." action={<Link href="/lead-generation/settings" className="text-[13px] text-brand hover:underline">Set the WhatsApp number</Link>} />
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {handoffs.rows.map((h) => (
+                <li key={h.id} className="flex flex-col gap-2 border-b border-line pb-3 text-[13px] last:border-0 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-col gap-0.5">
+                    <Link href={`/leads/${h.leadId}`} className="font-medium text-brand hover:underline">{h.leadTitle}</Link>
+                    <span className="text-muted">from {h.sourcePlatform ?? h.sourceChannel.replace('_', ' ')} · {h.status.toLowerCase()}{h.consumeOutcome === 'linked_for_review' ? ' · needs a decision' : ''} · expires {new Date(h.expiresAt).toLocaleDateString('en-IN')}</span>
+                  </div>
+                  {mayManage && ['CREATED', 'OPENED', 'RESOLVED'].includes(h.status) ? <CancelHandoffForm handoffId={h.id} /> : <Badge tone={h.status === 'CONSUMED' ? 'success' : 'neutral'}>{h.status.toLowerCase()}</Badge>}
                 </li>
               ))}
             </ul>
