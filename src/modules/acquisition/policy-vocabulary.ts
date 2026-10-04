@@ -5,7 +5,7 @@ export const ACTION_TYPES = [
   'payment_terms', 'high_volume_messaging',
 ] as const;
 
-export const NEVER_AUTO_ACTIONS: readonly (typeof ACTION_TYPES)[number][] = ['social_publish', 'b2b_proposal_submit', 'ad_launch', 'landing_page_deploy', 'profile_update'];
+export const NEVER_AUTO_ACTIONS: readonly (typeof ACTION_TYPES)[number][] = ['social_publish', 'b2b_proposal_submit', 'ad_launch', 'landing_page_deploy', 'profile_update', 'ad_budget_increase', 'ad_targeting_change'];
 
 export const ACTION_LABEL: Record<(typeof ACTION_TYPES)[number], string> = {
   email_outreach: 'Send an outreach email',

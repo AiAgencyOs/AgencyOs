@@ -36,7 +36,7 @@ describe('lead generation, slice 1 - what the Admin decides and the brake the Ad
 
     test('an engine is never described as built unless it is - email and social are partly built (no provider adapters yet), nothing is fully built', () => {
       for (const c of ACQUISITION_CHANNELS) {
-        assert.equal(ENGINE_STATUS[c].build, c === 'email' || c === 'social' ? 'partial' : 'not_built', c);
+        assert.equal(ENGINE_STATUS[c].build, c === 'b2b' ? 'not_built' : 'partial', c);
         assert.ok(ENGINE_STATUS[c].summary.length > 20);
       }
     });

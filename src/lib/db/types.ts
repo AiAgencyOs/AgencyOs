@@ -4259,6 +4259,282 @@ export type Database = {
         }
         Relationships: []
       }
+      ad_campaigns: {
+        Row: {
+          id: string
+          organization_id: string
+          platform: string
+          name: string
+          objective: string
+          target_service: string | null
+          currency: string
+          status: string
+          current_version_id: string | null
+          live_version_id: string | null
+          provider_sync_pending: string | null
+          created_by_type: string
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          platform: string
+          name: string
+          objective?: string
+          target_service?: string | null
+          currency?: string
+          status?: string
+          current_version_id?: string | null
+          live_version_id?: string | null
+          provider_sync_pending?: string | null
+          created_by_type: string
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          platform?: string
+          name?: string
+          objective?: string
+          target_service?: string | null
+          currency?: string
+          status?: string
+          current_version_id?: string | null
+          live_version_id?: string | null
+          provider_sync_pending?: string | null
+          created_by_type?: string
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      ad_campaign_versions: {
+        Row: {
+          id: string
+          organization_id: string
+          campaign_id: string
+          version: number
+          plan: Json
+          budget_daily_minor: number
+          budget_total_minor: number | null
+          start_date: string | null
+          end_date: string | null
+          change_kind: string
+          change_amount_minor: number
+          content_hash: string
+          state: string
+          review: Json | null
+          approval_request_id: string | null
+          supersedes_version_id: string | null
+          created_by_type: string
+          created_by: string | null
+          created_at: string
+          state_changed_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          campaign_id: string
+          version: number
+          plan: Json
+          budget_daily_minor: number
+          budget_total_minor?: number | null
+          start_date?: string | null
+          end_date?: string | null
+          change_kind?: string
+          change_amount_minor?: number
+          content_hash: string
+          state?: string
+          review?: Json | null
+          approval_request_id?: string | null
+          supersedes_version_id?: string | null
+          created_by_type: string
+          created_by?: string | null
+          created_at?: string
+          state_changed_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          campaign_id?: string
+          version?: number
+          plan?: Json
+          budget_daily_minor?: number
+          budget_total_minor?: number | null
+          start_date?: string | null
+          end_date?: string | null
+          change_kind?: string
+          change_amount_minor?: number
+          content_hash?: string
+          state?: string
+          review?: Json | null
+          approval_request_id?: string | null
+          supersedes_version_id?: string | null
+          created_by_type?: string
+          created_by?: string | null
+          created_at?: string
+          state_changed_at?: string
+        }
+        Relationships: []
+      }
+      ad_provider_objects: {
+        Row: {
+          id: string
+          organization_id: string
+          campaign_id: string
+          platform: string
+          object_type: string
+          provider_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          campaign_id: string
+          platform: string
+          object_type: string
+          provider_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          campaign_id?: string
+          platform?: string
+          object_type?: string
+          provider_id?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      ad_applications: {
+        Row: {
+          id: string
+          organization_id: string
+          version_id: string
+          execution_id: string
+          provider_campaign_id: string
+          applied_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          version_id: string
+          execution_id: string
+          provider_campaign_id: string
+          applied_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          version_id?: string
+          execution_id?: string
+          provider_campaign_id?: string
+          applied_at?: string
+        }
+        Relationships: []
+      }
+      ad_metrics: {
+        Row: {
+          id: string
+          organization_id: string
+          campaign_id: string
+          metric_date: string
+          reported_at: string
+          spend_minor: number
+          impressions: number
+          clicks: number
+          platform_leads: number
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          campaign_id: string
+          metric_date: string
+          reported_at?: string
+          spend_minor: number
+          impressions?: number
+          clicks?: number
+          platform_leads?: number
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          campaign_id?: string
+          metric_date?: string
+          reported_at?: string
+          spend_minor?: number
+          impressions?: number
+          clicks?: number
+          platform_leads?: number
+        }
+        Relationships: []
+      }
+      ad_provider_statuses: {
+        Row: {
+          id: string
+          organization_id: string
+          campaign_id: string
+          status: string
+          detail: string | null
+          reported_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          campaign_id: string
+          status: string
+          detail?: string | null
+          reported_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          campaign_id?: string
+          status?: string
+          detail?: string | null
+          reported_at?: string
+        }
+        Relationships: []
+      }
+      campaign_health_records: {
+        Row: {
+          id: string
+          organization_id: string
+          campaign_id: string
+          kind: string
+          severity: string
+          detail: Json
+          recommended_action: string
+          assessed_on: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          campaign_id: string
+          kind: string
+          severity: string
+          detail?: Json
+          recommended_action: string
+          assessed_on?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          campaign_id?: string
+          kind?: string
+          severity?: string
+          detail?: Json
+          recommended_action?: string
+          assessed_on?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       social_metrics: {
         Row: {
           id: string
@@ -7779,6 +8055,74 @@ export type Database = {
       due_content: {
         Args: { p_limit?: number }
         Returns: { organization_id: string | null; version_id: string | null; platform: string | null; scheduled_for: string | null }[]
+      }
+      ad_plan_problems: {
+        Args: { p_plan: Json; p_platform: string }
+        Returns: Json
+      }
+      create_ad_campaign: {
+        Args: { p_by_type?: string; p_name: string; p_objective?: string; p_organization_id: string; p_platform: string; p_target_service?: string }
+        Returns: { outcome: string | null; campaign_id: string | null }[]
+      }
+      add_ad_version: {
+        Args: { p_by_type?: string; p_campaign: string; p_daily_minor: number; p_end?: string; p_organization_id: string; p_plan: Json; p_start?: string; p_total_minor?: number }
+        Returns: { outcome: string | null; version_id: string | null }[]
+      }
+      check_ad_version: {
+        Args: { p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; problems: Json | null }[]
+      }
+      submit_ad_version: {
+        Args: { p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; approval_request_id: string | null }[]
+      }
+      begin_ad_apply: {
+        Args: { p_correlation_id?: string; p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; reason: string | null; execution_id: string | null }[]
+      }
+      record_ad_apply: {
+        Args: { p_evidence?: Json; p_execution: string; p_objects?: Json; p_organization_id: string; p_provider_campaign_id: string; p_status: string; p_version: string }
+        Returns: { outcome: string | null }[]
+      }
+      request_ad_change: {
+        Args: { p_action: string; p_campaign: string; p_organization_id: string; p_reason: string }
+        Returns: { outcome: string | null }[]
+      }
+      confirm_ad_change: {
+        Args: { p_campaign: string; p_confirmed: boolean; p_detail?: string; p_organization_id: string }
+        Returns: { outcome: string | null }[]
+      }
+      enforce_ad_stops: {
+        Args: { p_limit?: number }
+        Returns: number
+      }
+      pending_ad_changes: {
+        Args: { p_limit?: number }
+        Returns: { organization_id: string | null; campaign_id: string | null; platform: string | null; action: string | null }[]
+      }
+      sync_ad_approvals: {
+        Args: { p_limit?: number }
+        Returns: number
+      }
+      record_ad_metrics: {
+        Args: { p_campaign: string; p_clicks: number; p_date: string; p_impressions: number; p_organization_id: string; p_platform_leads: number; p_spend_minor: number }
+        Returns: { outcome: string | null; counted_minor: number | null }[]
+      }
+      record_ad_status: {
+        Args: { p_campaign: string; p_detail?: string; p_organization_id: string; p_status: string }
+        Returns: { outcome: string | null }[]
+      }
+      ad_outcomes: {
+        Args: { p_campaign?: string }
+        Returns: { campaign_id: string | null; platform: string | null; name: string | null; spend_minor: number | null; impressions: number | null; clicks: number | null; platform_leads: number | null; leads: number | null; qualified: number | null; meetings: number | null; quotes: number | null; won: number | null; revenue_minor: number | null; cost_per_lead_minor: number | null; cost_per_qualified_minor: number | null; cost_per_meeting_minor: number | null; cost_per_won_minor: number | null; insufficient_data: boolean | null }[]
+      }
+      ad_recommendations: {
+        Args: Record<PropertyKey, never>
+        Returns: { campaign_id: string | null; name: string | null; recommendation: string | null; basis: Json | null }[]
+      }
+      assess_campaign_health: {
+        Args: { p_campaign: string; p_organization_id: string }
+        Returns: { outcome: string | null; recorded: number | null }[]
       }
       save_qualification_model: {
         Args: { p_note: string; p_weights: Json }

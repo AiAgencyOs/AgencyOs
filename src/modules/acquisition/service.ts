@@ -388,3 +388,99 @@ export async function activateSocialStrategy(strategyId: string): Promise<Result
       return err('FORBIDDEN', FORBIDDEN);
   }
 }
+
+export type AdPlanInput = {
+  platform: string; campaignId: string | null; name: string; service: string; plan: Record<string, unknown>;
+  dailyMinor: number; totalMinor: number | null; startDate: string | null; endDate: string | null;
+};
+
+/** Save a plan as the NEXT version of a campaign, creating the campaign first when it is new. Nothing is sent to a platform. */
+export async function saveAdPlan(input: AdPlanInput): Promise<Result<{ versionId: string }>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const org = gate.data.organizationId;
+  let campaignId = input.campaignId;
+  if (!campaignId) {
+    const { data, error } = await supabase.schema('crm').rpc('create_ad_campaign', { p_organization_id: org, p_platform: input.platform, p_name: input.name, p_target_service: (input.service || undefined) as never });
+    if (error) return err('INTERNAL', 'Could not start the campaign.');
+    const made = first<{ outcome?: string; campaign_id?: string }>(data);
+    if (made?.outcome !== 'created' || !made.campaign_id) return err(made?.outcome === 'forbidden' ? 'FORBIDDEN' : 'VALIDATION', made?.outcome === 'forbidden' ? FORBIDDEN : 'Check the platform and give the campaign a name of a few words.');
+    campaignId = made.campaign_id;
+  }
+  const { data, error } = await supabase.schema('crm').rpc('add_ad_version', {
+    p_organization_id: org, p_campaign: campaignId, p_plan: input.plan as never, p_daily_minor: input.dailyMinor,
+    p_total_minor: (input.totalMinor ?? undefined) as never, p_start: (input.startDate ?? undefined) as never, p_end: (input.endDate ?? undefined) as never,
+  });
+  if (error) return err('INTERNAL', 'Could not save the plan.');
+  const v = first<{ outcome?: string; version_id?: string }>(data);
+  switch (v?.outcome) {
+    case 'added':
+      return ok({ versionId: v.version_id as string });
+    case 'apply_in_progress':
+      return err('CONFLICT', 'A change is being applied to the platform right now. Wait until it is confirmed or reconciled.');
+    case 'campaign_ended':
+      return err('CONFLICT', 'That campaign has ended. Start a new one.');
+    case 'forbidden':
+      return err('FORBIDDEN', FORBIDDEN);
+    default:
+      return err('VALIDATION', 'Check the budget (it must be above zero, the total not below the daily amount) and the dates.');
+  }
+}
+
+export async function checkAdVersion(versionId: string): Promise<Result<{ passed: boolean; problems: string[] }>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('check_ad_version', { p_organization_id: gate.data.organizationId, p_version: versionId });
+  if (error) return err('INTERNAL', 'Could not run the checks.');
+  const r = first<{ outcome?: string; problems?: unknown }>(data);
+  if (r?.outcome === 'wrong_state') return err('CONFLICT', 'That version has already been checked.');
+  if (r?.outcome !== 'checked' && r?.outcome !== 'check_failed') return err(r?.outcome === 'forbidden' ? 'FORBIDDEN' : 'NOT_FOUND', r?.outcome === 'forbidden' ? FORBIDDEN : 'That version no longer exists.');
+  return ok({ passed: r.outcome === 'checked', problems: Array.isArray(r.problems) ? (r.problems as string[]) : [] });
+}
+
+export async function submitAdVersion(versionId: string): Promise<Result<true>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('submit_ad_version', { p_organization_id: gate.data.organizationId, p_version: versionId });
+  if (error) return err('INTERNAL', 'Could not submit it.');
+  switch (first<{ outcome?: string }>(data)?.outcome) {
+    case 'submitted':
+    case 'already_pending':
+      return ok(true);
+    case 'not_checked':
+      return err('CONFLICT', 'Only a version that passed the checks can go to an admin.');
+    case 'content_changed':
+      return err('CONFLICT', 'This version changed after it was first submitted. Make a new version.');
+    case 'forbidden':
+      return err('FORBIDDEN', FORBIDDEN);
+    default:
+      return err('CONFLICT', 'Set up lead generation first - it creates the approval rule for ad campaigns.');
+  }
+}
+
+export async function requestAdChange(input: { campaignId: string; action: 'pause' | 'resume' | 'end'; reason: string }): Promise<Result<true>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('request_ad_change', { p_organization_id: gate.data.organizationId, p_campaign: input.campaignId, p_action: input.action, p_reason: input.reason });
+  if (error) return err('INTERNAL', 'Could not record the request.');
+  switch (first<{ outcome?: string }>(data)?.outcome) {
+    case 'requested':
+      return ok(true);
+    case 'invalid':
+      return err('VALIDATION', 'Say why - the reason is kept.');
+    case 'blocked':
+      return err('CONFLICT', 'The channel is stopped, so it cannot be resumed. Lift the stop first.');
+    case 'not_running':
+    case 'not_paused':
+    case 'not_live':
+      return err('CONFLICT', 'The campaign is not in a state where that applies.');
+    case 'not_found':
+      return err('NOT_FOUND', 'That campaign no longer exists.');
+    default:
+      return err('FORBIDDEN', FORBIDDEN);
+  }
+}

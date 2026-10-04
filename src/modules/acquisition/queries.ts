@@ -396,3 +396,72 @@ export async function readSocialPerformance(): Promise<PerformanceRow[]> {
   return ((data ?? []) as { platform: string | null; objective: string | null; format: string | null; published: number | null; impressions: number | null; engagements: number | null; clicks: number | null }[])
     .map((r) => ({ platform: r.platform ?? '', objective: r.objective ?? '', format: r.format ?? '', published: Number(r.published ?? 0), impressions: Number(r.impressions ?? 0), engagements: Number(r.engagements ?? 0), clicks: Number(r.clicks ?? 0) }));
 }
+
+export type AdVersionView = {
+  id: string; version: number; state: string; changeKind: string; changeAmountMinor: number; budgetDailyMinor: number; budgetTotalMinor: number | null;
+  startDate: string | null; endDate: string | null; problems: string[]; createdAt: string;
+};
+export type AdCampaignView = {
+  id: string; platform: string; name: string; targetService: string | null; status: string; pending: string | null; currency: string;
+  liveVersionId: string | null; versions: AdVersionView[];
+};
+
+/** Campaigns with their newest versions. A pending pause/resume/end is shown as pending: the platform has not confirmed it. */
+export async function listAdCampaigns(platform: string): Promise<AdCampaignView[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('ad_campaigns').select('id, platform, name, target_service, status, provider_sync_pending, currency, live_version_id')
+    .eq('platform', platform).order('created_at', { ascending: false }).limit(30);
+  if (error) unreadable('listAdCampaigns', error);
+  const ids = (data ?? []).map((c) => c.id);
+  const byCampaign = new Map<string, AdVersionView[]>();
+  if (ids.length > 0) {
+    const { data: versions, error: versionsError } = await supabase.schema('crm').from('ad_campaign_versions')
+      .select('id, campaign_id, version, state, change_kind, change_amount_minor, budget_daily_minor, budget_total_minor, start_date, end_date, review, created_at').in('campaign_id', ids).order('version', { ascending: false }).limit(300);
+    if (versionsError) unreadable('listAdCampaigns.versions', versionsError);
+    for (const v of versions ?? []) {
+      const problems = (v.review as { problems?: unknown } | null)?.problems;
+      const list = byCampaign.get(v.campaign_id) ?? [];
+      if (list.length < 5) list.push({ id: v.id, version: v.version, state: v.state, changeKind: v.change_kind, changeAmountMinor: v.change_amount_minor, budgetDailyMinor: v.budget_daily_minor, budgetTotalMinor: v.budget_total_minor, startDate: v.start_date, endDate: v.end_date, problems: Array.isArray(problems) ? (problems as string[]) : [], createdAt: v.created_at });
+      byCampaign.set(v.campaign_id, list);
+    }
+  }
+  return (data ?? []).map((c) => ({ id: c.id, platform: c.platform, name: c.name, targetService: c.target_service, status: c.status, pending: c.provider_sync_pending, currency: c.currency, liveVersionId: c.live_version_id, versions: byCampaign.get(c.id) ?? [] }));
+}
+
+export type AdOutcomeView = {
+  campaignId: string; platform: string; name: string; spendMinor: number; impressions: number; clicks: number; platformLeads: number; leads: number; qualified: number; meetings: number; quotes: number; won: number; revenueMinor: number;
+  costPerLeadMinor: number | null; costPerQualifiedMinor: number | null; costPerMeetingMinor: number | null; costPerWonMinor: number | null; insufficientData: boolean;
+};
+
+/** Results read from the CRM by first touch. A cost with nothing to divide by is null, never a guess. */
+export async function readAdOutcomes(): Promise<AdOutcomeView[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('ad_outcomes', {});
+  if (error) unreadable('readAdOutcomes', error);
+  const n = (v: number | null) => (v === null ? null : Number(v));
+  return (data ?? []).filter((r) => r.campaign_id).map((r) => ({
+    campaignId: r.campaign_id as string, platform: r.platform ?? '', name: r.name ?? '', spendMinor: Number(r.spend_minor ?? 0), impressions: Number(r.impressions ?? 0), clicks: Number(r.clicks ?? 0),
+    platformLeads: Number(r.platform_leads ?? 0), leads: Number(r.leads ?? 0), qualified: Number(r.qualified ?? 0), meetings: Number(r.meetings ?? 0), quotes: Number(r.quotes ?? 0), won: Number(r.won ?? 0),
+    revenueMinor: Number(r.revenue_minor ?? 0), costPerLeadMinor: n(r.cost_per_lead_minor), costPerQualifiedMinor: n(r.cost_per_qualified_minor), costPerMeetingMinor: n(r.cost_per_meeting_minor),
+    costPerWonMinor: n(r.cost_per_won_minor), insufficientData: r.insufficient_data !== false,
+  }));
+}
+
+export type AdRecommendationView = { campaignId: string; name: string; recommendation: string };
+
+export async function readAdRecommendations(): Promise<AdRecommendationView[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('ad_recommendations', {});
+  if (error) unreadable('readAdRecommendations', error);
+  return (data ?? []).filter((r) => r.campaign_id && r.recommendation).map((r) => ({ campaignId: r.campaign_id as string, name: r.name ?? '', recommendation: r.recommendation as string }));
+}
+
+export type CampaignHealthView = { id: string; campaignId: string; kind: string; severity: string; recommendedAction: string; assessedOn: string };
+
+export async function listCampaignHealth(): Promise<CampaignHealthView[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('campaign_health_records').select('id, campaign_id, kind, severity, recommended_action, assessed_on')
+    .order('assessed_on', { ascending: false }).limit(40);
+  if (error) unreadable('listCampaignHealth', error);
+  return (data ?? []).map((h) => ({ id: h.id, campaignId: h.campaign_id, kind: h.kind, severity: h.severity, recommendedAction: h.recommended_action, assessedOn: h.assessed_on }));
+}

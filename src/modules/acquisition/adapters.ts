@@ -17,3 +17,12 @@ import type { SocialPlatform } from './social-vocabulary';
  * ASSISTED_ACTION_REQUIRED - a person is told and posts it by hand - never silently skipped and never faked as published.
  */
 export const SOCIAL_PUBLISHERS: Partial<Record<SocialPlatform, SocialPublisher>> = {};
+
+import type { AdPlatform } from './ad-vocabulary';
+import type { AdProvider } from './ads';
+
+/**
+ * The ad platforms that actually exist. EMPTY, deliberately, like ADAPTERS: an approved launch with no provider stays approved and
+ * waiting, and a person is told it cannot be applied automatically - it is never faked as live.
+ */
+export const AD_PROVIDERS: Partial<Record<AdPlatform, AdProvider>> = {};

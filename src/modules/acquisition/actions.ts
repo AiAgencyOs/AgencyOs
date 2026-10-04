@@ -8,7 +8,7 @@ import type { FormState } from '@/modules/identity/types';
 import { QUALIFICATION_FACTORS } from './qualification-vocabulary';
 import { ACQUISITION_CHANNELS, ICP_LIST_KEYS, buildIcpDefinition, type AcquisitionChannel } from './schema';
 import { registerIntegration, saveAcquisitionPolicy, setIntegrationState, storeConnectorSecret, testConnection } from './integrations';
-import { activateSocialStrategy, cancelContentVersion, createContentDraft, reviewContentVersion, scheduleContentVersion, submitContentForApproval, blockProspect, liftProspectBlock, saveQualificationModel, cancelSubtask, cancelHandoff, decideDuplicateReview, saveChannelSettings, saveHandoffSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
+import { checkAdVersion, requestAdChange, saveAdPlan, submitAdVersion, activateSocialStrategy, cancelContentVersion, createContentDraft, reviewContentVersion, scheduleContentVersion, submitContentForApproval, blockProspect, liftProspectBlock, saveQualificationModel, cancelSubtask, cancelHandoff, decideDuplicateReview, saveChannelSettings, saveHandoffSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
 
 const text = (f: FormData, n: string) => String(f.get(n) ?? '').trim();
 const BASE = '/lead-generation';
@@ -245,4 +245,69 @@ export async function activateStrategyAction(_p: FormState, f: FormData): Promis
   if (!r.ok) return { status: 'error', message: r.error.message };
   refresh();
   return { status: 'success', message: 'Activated. The previous strategy for that platform and horizon is superseded.' };
+}
+
+/** Money is typed in whole rupees; the database holds paise. An empty box is "none", never zero. */
+function majorToMinor(raw: string): number | null | 'bad' {
+  if (raw === '') return null;
+  if (!/^\d+(\.\d{1,2})?$/.test(raw)) return 'bad';
+  return Math.round(Number(raw) * 100);
+}
+const lines = (raw: string) => raw.split('\n').map((l) => l.trim()).filter(Boolean);
+const commas = (raw: string) => raw.split(',').map((l) => l.trim()).filter(Boolean);
+
+export async function saveAdPlanAction(_p: FormState, f: FormData): Promise<FormState> {
+  const platform = text(f, 'platform');
+  const daily = majorToMinor(text(f, 'daily'));
+  const total = majorToMinor(text(f, 'total'));
+  if (daily === 'bad' || daily === null || daily <= 0) return { status: 'error', message: 'Enter the daily budget as an amount above zero.' };
+  if (total === 'bad') return { status: 'error', message: 'Enter the total budget as an amount, or leave it empty.' };
+  let plan: Record<string, unknown>;
+  if (platform === 'meta_ads') {
+    plan = {
+      destination: { type: 'whatsapp' },
+      adsets: [{ name: 'Main', audience: { locations: commas(text(f, 'locations')), age_min: Number(text(f, 'ageMin') || 0), age_max: Number(text(f, 'ageMax') || 65) }, placements: commas(text(f, 'placements') || 'feed') }],
+      creatives: [{ headline: text(f, 'headline'), primary_text: text(f, 'primaryText'), cta: 'WHATSAPP_MESSAGE' }],
+    };
+  } else if (platform === 'google_ads') {
+    plan = {
+      destination: { type: 'landing_page', landing_page_version_id: text(f, 'landingPageVersionId') },
+      ad_groups: [{ name: 'Main', keywords: lines(String(f.get('keywords') ?? '')).map((l) => { const [t, m] = l.split('|').map((x) => x.trim()); return { text: t ?? '', match: m || 'phrase' }; }) }],
+      negative_keywords: lines(String(f.get('negatives') ?? '')),
+      ads: [{ headlines: lines(String(f.get('headlines') ?? '')), descriptions: lines(String(f.get('descriptions') ?? '')) }],
+    };
+  } else {
+    return { status: 'error', message: 'Choose Meta or Google.' };
+  }
+  const r = await saveAdPlan({
+    platform, campaignId: text(f, 'campaignId') || null, name: text(f, 'name'), service: text(f, 'service'), plan,
+    dailyMinor: daily, totalMinor: total, startDate: text(f, 'startDate') || null, endDate: text(f, 'endDate') || null,
+  });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: 'Saved as a draft version. Run the checks next. Nothing has been sent to the platform.' };
+}
+
+export async function checkAdVersionAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await checkAdVersion(text(f, 'versionId'));
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return r.data.passed ? { status: 'success', message: 'Passed the checks. This is not approval - submit it for an admin.' } : { status: 'error', message: 'Failed the checks. See the list on the version, then write the next one.' };
+}
+
+export async function submitAdVersionAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await submitAdVersion(text(f, 'versionId'));
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  revalidatePath('/approvals');
+  return { status: 'success', message: 'Sent to the Approval Center. It is approved only as exactly this plan and budget.' };
+}
+
+export async function requestAdChangeAction(_p: FormState, f: FormData): Promise<FormState> {
+  const action = text(f, 'action');
+  if (action !== 'pause' && action !== 'resume' && action !== 'end') return { status: 'error', message: 'Unknown change.' };
+  const r = await requestAdChange({ campaignId: text(f, 'campaignId'), action, reason: text(f, 'reason') });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: 'Requested. It shows as pending until the platform confirms it.' };
 }

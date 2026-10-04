@@ -170,6 +170,14 @@ Design decisions this implies (recorded here so they are made once):
 * `scripts/verify-acquisition-social.sql`: the four mandatory cases through the real approval engine; red-proved thirteen ways.
 * **Not built:** a LinkedIn / Instagram / Facebook publisher (a due post alerts a person), account analytics, AI planning and writing, media generation, social prospecting and outreach.
 
+### Slice 8 (Ad campaign engine: Meta and Google) - built and verified
+
+* Migration `20261020100000_an_ad_campaign_launches_as_exactly_what_was_approved.sql`: campaigns, immutable versions (derived hash and derived kind of change: launch, budget increase or decrease, targeting change, creative change), provider objects, applications, metrics, provider statuses, health records; the pure plan rules (`ad_plan_problems`); doors for create / add version / check / submit / apply / pause-resume-end / confirm; the emergency stop made to reach live campaigns; spend counted once; results read from the CRM by first touch; health findings; advisory recommendations. `ad_budget_increase` and `ad_targeting_change` join the never-automatic actions (constraint, door and TypeScript).
+* `src/modules/acquisition/ads.ts` (`applyAdVersion`, `runAdOperations` in the cron tick), `ad-vocabulary.ts`, the Meta and Google tab sections and forms. `AD_PROVIDERS` is empty by design: an approved launch with no connector alerts a person to apply it by hand.
+* `scripts/verify-acquisition-ads.sql`: the spec's mandatory ad tests through the real approval engine and governed door; red-proved seventeen ways (two initial proofs were found GREEN - a mangle that hit the wrong occurrence, and an untested pause path - and fixed before being counted).
+* **Not built:** the Meta and Google connectors (nothing is pushed to or read from a platform), pulling the platform's metrics (a worker would call `record_ad_metrics`), landing pages and Hostinger deployment (slice 9; a Google plan references a landing page version id that cannot be produced yet and is not verified to exist), creative generation, A/B testing, and the AI that plans and optimises.
+* **Human dependencies surfaced:** Meta Business/ad account and OAuth, Google Ads developer token - neither requested.
+
 ## 5. Human dependencies (known now; asked for only when the engine reaches them)
 
 | Provider | Needed for | When |

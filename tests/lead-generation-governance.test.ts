@@ -169,9 +169,12 @@ describe('lead generation, slice 4 - connectors, one policy question, exact-vers
     test('the action list and the never-auto list are the same in SQL and TypeScript', () => {
       const actions = listIn(sql.match(/action_type\s+text not null check \(action_type in \(([^)]*)\)\)/)?.[1] ?? '');
       assert.deepEqual(actions, [...ACTION_TYPES]);
-      const gate = listIn(sql.match(/check \(mode <> 'auto' or action_type not in\s*\(([^)]*)\)\)/)?.[1] ?? '');
+      // The LIVE gate is the one the latest migration defining it carries (slice 8 added two actions).
+      const latest = read('supabase/migrations/20261020100000_an_ad_campaign_launches_as_exactly_what_was_approved.sql');
+      const gate = listIn(latest.match(/check \(mode <> 'auto' or action_type not in\s*\(([^)]*)\)\)/)?.[1] ?? '');
       assert.deepEqual(new Set(gate), new Set(NEVER_AUTO));
-      for (const a of NEVER_AUTO) assert.ok(fn('crm.set_acquisition_policy').includes(`'${a}'`), `${a} in the door's own refusal`);
+      const door = latest.slice(latest.indexOf('create or replace function crm.set_acquisition_policy('), latest.indexOf('$function$;', latest.indexOf('create or replace function crm.set_acquisition_policy(')));
+      for (const a of NEVER_AUTO) assert.ok(door.includes(`'${a}'`), `${a} in the door's own refusal`);
     });
 
     test('the order is: stops, then the connector, then the limits, then the policy - and no policy is never permission', () => {

@@ -19,7 +19,8 @@ import { runCampaigns } from '@/modules/crm/campaign-worker';
 import { runOutreach } from '@/modules/crm/outreach/worker';
 import { runInboundEmail } from '@/modules/crm/inbound-email';
 import { expireHandoffs } from '@/modules/acquisition/handoff';
-import { SOCIAL_PUBLISHERS } from '@/modules/acquisition/adapters';
+import { AD_PROVIDERS, SOCIAL_PUBLISHERS } from '@/modules/acquisition/adapters';
+import { runAdOperations } from '@/modules/acquisition/ads';
 import { runSocialPublishing } from '@/modules/acquisition/social';
 import { runProviderMaintenance } from '@/lib/ai/provider-maintenance';
 import { publishDueAnnouncements } from '@/modules/crm/announcement-worker';
@@ -329,6 +330,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   await expireHandoffs(admin);
   // Scheduled social posts that are due: published through the governed door, or surfaced for a person when no publisher exists.
   await runSocialPublishing(admin, SOCIAL_PUBLISHERS);
+  // Approved ad changes, pending pauses, emergency stops and campaign health (lead generation, 20261020100000).
+  await runAdOperations(admin, AD_PROVIDERS);
   // AI providers: probe the ones that are due and refresh their model lists (best effort, bounded per tick).
   await runProviderMaintenance(admin);
 
