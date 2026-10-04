@@ -212,75 +212,103 @@ export async function createClaudeProvider(options: ClaudeProviderOptions = {}):
 
     async generateStructured(request: StructuredRequest): Promise<Result<StructuredResponse>> {
       try {
-        const response = await client.messages.create({
-          model: request.model,
-          max_tokens: request.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
-          system: withSchema(request.system, request.jsonSchema),
-          messages: request.messages.map((m) => ({ role: m.role, content: toContent(m.content) })),
-          output_config: {
-            ...(request.effort ? { effort: request.effort } : {}),
-            format: { type: 'json_schema', schema: request.jsonSchema },
-          },
-          // Sampling parameters are deliberately absent: current Claude models
-          // reject temperature/top_p/top_k outright. Behaviour is steered by
-          // the prompt and by effort instead.
-        });
+        // A gateway that does not enforce the schema sometimes answers with prose, or with nothing: ONE repair attempt re-asks, showing
+        // the model what it said and what is wanted. The real API enforces the schema and is never asked twice.
+        const mayRepair = options.schemaInPrompt === true;
+        let extra: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+        let inputTokens = 0;
+        let outputTokens = 0;
 
-        // A safety classifier can decline the request. This arrives as a
-        // successful HTTP 200 with an empty or partial content array, so it
-        // has to be checked before reading content at all.
-        if (response.stop_reason === 'refusal') {
-          return err(
-            'PROVIDER_ERROR',
-            'The model declined to process this conversation.',
-          );
-        }
+        for (let attempt = 0; ; attempt += 1) {
+          const response = await client.messages.create({
+            model: request.model,
+            max_tokens: request.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+            system: withSchema(request.system, request.jsonSchema),
+            messages: [...request.messages.map((m) => ({ role: m.role, content: toContent(m.content) })), ...extra],
+            output_config: {
+              ...(request.effort ? { effort: request.effort } : {}),
+              format: { type: 'json_schema', schema: request.jsonSchema },
+            },
+            // Sampling parameters are deliberately absent: current Claude models
+            // reject temperature/top_p/top_k outright. Behaviour is steered by
+            // the prompt and by effort instead.
+          });
+          inputTokens += response.usage.input_tokens;
+          outputTokens += response.usage.output_tokens;
 
-        if (response.stop_reason === 'max_tokens') {
-          return err(
-            'PROVIDER_ERROR',
-            'The model ran out of output budget before completing the extraction.',
-          );
-        }
+          // A safety classifier can decline the request. This arrives as a
+          // successful HTTP 200 with an empty or partial content array, so it
+          // has to be checked before reading content at all.
+          if (response.stop_reason === 'refusal') {
+            return err('PROVIDER_ERROR', 'The model declined to process this conversation.');
+          }
 
-        const text = response.content
-          .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-          .map((block) => block.text)
-          .join('');
+          if (response.stop_reason === 'max_tokens') {
+            return err('PROVIDER_ERROR', 'The model ran out of output budget before completing the extraction.');
+          }
 
-        if (!text.trim()) {
-          return err('PROVIDER_ERROR', 'The model returned no output.');
-        }
+          const text = structuredText(response.content);
 
-        // Constrained decoding should make prose unreachable, but a provider asserting conformance is not proof of it (and a gateway
-        // may ignore the schema altogether): a fenced or lightly wrapped object is read, anything else is refused.
-        const parsed = parseModelJson(text);
-        if (!parsed.ok) {
+          // Constrained decoding should make prose unreachable, but a provider asserting conformance is not proof of it (and a gateway
+          // may ignore the schema altogether): a fenced or lightly wrapped object is read, anything else is refused.
+          const parsed = text.trim() ? parseModelJson(text) : null;
+          if (parsed?.ok) {
+            return ok({
+              json: parsed.json,
+              model: response.model,
+              usage: {
+                inputTokens,
+                outputTokens,
+                // Reported as 0 rather than estimated. Converting Anthropic's
+                // per-token USD rates into the minor units of an organization's
+                // currency needs both a per-model price table and an FX rate;
+                // inventing either here would put a fabricated number into
+                // ai.agent_runs.cost_minor, which exists to make spend auditable.
+                costMinor: 0,
+              },
+            });
+          }
+
+          if (mayRepair && attempt === 0) {
+            extra = text.trim()
+              ? [
+                  { role: 'assistant', content: text.slice(0, 20_000) },
+                  { role: 'user', content: 'That was not a single valid JSON object. Reply again with ONLY the JSON object that conforms to the schema - no prose, no markdown fence.' },
+                ]
+              : [{ role: 'user', content: 'You returned nothing. Reply with ONLY the JSON object that conforms to the schema.' }];
+            continue;
+          }
+
+          if (!text.trim()) return err('PROVIDER_ERROR', 'The model returned no output.');
           // How it ended says whether it was cut off, wrapped in prose or something else - the first thing anyone asks.
           const tail = text.trim().slice(-60).replace(/\s+/g, ' ');
           return err('PROVIDER_ERROR', `The model returned output that was not valid JSON (${text.length} characters, ending "${tail}").`);
         }
-        const json = parsed.json;
-
-        return ok({
-          json,
-          model: response.model,
-          usage: {
-            inputTokens: response.usage.input_tokens,
-            outputTokens: response.usage.output_tokens,
-            // Reported as 0 rather than estimated. Converting Anthropic's
-            // per-token USD rates into the minor units of an organization's
-            // currency needs both a per-model price table and an FX rate;
-            // inventing either here would put a fabricated number into
-            // ai.agent_runs.cost_minor, which exists to make spend auditable.
-            costMinor: 0,
-          },
-        });
       } catch (error) {
         return providerFailure(error);
       }
     },
   };
+}
+
+/**
+ * The answer's text. Normally the text blocks. A gateway that carries structured output as a tool call (found live: a Bedrock-style
+ * gateway answered with ONLY a tool_use block whose input held the JSON as a string) has no text block at all, so the one tool call's
+ * input is read instead: its string field if that is where the JSON is, else the input object itself. Nothing is invented - an
+ * answer with neither still reads as "no output".
+ */
+function structuredText(content: readonly Anthropic.ContentBlock[]): string {
+  const text = content
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+    .map((block) => block.text)
+    .join('');
+  if (text.trim()) return text;
+  const call = content.find((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use');
+  if (!call || typeof call.input !== 'object' || call.input === null) return '';
+  const input = call.input as Record<string, unknown>;
+  const keys = Object.keys(input);
+  if (keys.length === 1 && typeof input[keys[0] as string] === 'string') return input[keys[0] as string] as string;
+  return keys.length > 0 ? JSON.stringify(input) : '';
 }
 
 /**

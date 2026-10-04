@@ -31,6 +31,16 @@ const target = await resolveTarget(fail, { cron: true, anon: false, jwt: true })
 await announceTarget(target, 'a won deal to an official kickoff');
 
 const ORG = '00000000-0000-4000-8000-000000000001';
+const REAL_MODEL = process.env.REAL_MODEL === '1';
+// A real model reads the scope as a person would: a line saying "What item 1 does" is rightly answered with a question. The stub never
+// reads it, so only a real run needs words that mean something.
+const REAL_SCOPE = REAL_MODEL
+  ? [
+      { title: 'Customer app: browse and order medicines', detail: 'Search a catalogue by name, add to a basket, choose home delivery or store pickup, pay by UPI or card, and see the order status.' },
+      { title: 'Prescription upload and pharmacist review', detail: 'The customer photographs a prescription; a pharmacist reviews it in a web panel, approves or rejects with a reason, and the customer is notified.' },
+      { title: 'Store admin panel', detail: 'Store staff manage stock levels and prices, see incoming orders, mark them packed and out for delivery, and view a daily sales summary.' },
+    ]
+  : [];
 const MARKER = `zztest-p3e2e-${randomUUID().slice(0, 8)}`;
 const APP = target.appUrl ?? 'http://localhost:3000';
 const GRAPH_PORT = 54398;
@@ -185,7 +195,7 @@ try {
   // The approved scope the planner will read (items go in while the version is a draft; freezing approves it).
   const scope = one(await rest('POST', 'projects', 'scope_versions', { organization_id: ORG, project_id: project.id, version: 1, status: 'draft' }));
   for (let i = 1; i <= 3; i += 1) {
-    await rest('POST', 'projects', 'scope_items', { organization_id: ORG, scope_version_id: scope.id, title: `Scope item ${i}`, detail: `What item ${i} does`, inclusion: 'included', position: i });
+    await rest('POST', 'projects', 'scope_items', { organization_id: ORG, scope_version_id: scope.id, title: REAL_SCOPE[i - 1]?.title ?? `Scope item ${i}`, detail: REAL_SCOPE[i - 1]?.detail ?? `What item ${i} does`, inclusion: 'included', position: i });
   }
   await rest('PATCH', 'projects', `scope_versions?id=eq.${scope.id}`, { status: 'active', frozen_at: new Date().toISOString() });
 
@@ -306,7 +316,28 @@ try {
   check(plan?.status === 'draft' && plan?.created_by === null, 'a DRAFT blueprint appears, drafted by the planner and no person', String(plan?.status));
   const deliverables = (await rest('GET', 'projects', `plan_deliverables?plan_id=eq.${plan.id}&select=scope_item_id`)).json ?? [];
   const gates = (await rest('GET', 'projects', `plan_milestones?plan_id=eq.${plan.id}&kind=eq.finance_gate&select=payment_milestone_id`)).json ?? [];
-  check(deliverables.length === 3 && gates.length === 4, 'it covers every approved scope item and maps every payment milestone', `${deliverables.length} deliverables, ${gates.length} gates`);
+  // With a real model (REAL_MODEL=1) the planner may write several deliverables per scope item; the stub writes exactly one each.
+  const coversAll = REAL_MODEL ? new Set(deliverables.map((d) => d.scope_item_id)).size >= 3 && gates.length === 4 : deliverables.length === 3 && gates.length === 4;
+  check(coversAll, 'it covers every approved scope item and maps every payment milestone', `${deliverables.length} deliverables, ${gates.length} gates`);
+  if (REAL_MODEL) {
+    // A real planner asks what it does not know, and it asks the way the product says: the PM puts ONE question at a time to the client,
+    // the client answers in the group, and a person resolves it (a clarification cannot be closed without the client's answer).
+    const all = async () => (await rest('GET', 'projects', `plan_clarifications?plan_id=eq.${plan.id}&select=id,question,status&order=created_at`)).json ?? [];
+    const total = (await all()).length;
+    let settled = 0;
+    for (let i = 0; i < total; i += 1) {
+      const asked = await until(async () => (await all()).find((c) => c.status === 'asked'), 40);
+      if (!asked) break;
+      console.log(`    ↳ the PM asked the client: ${String(asked.question).slice(0, 110)}`);
+      const seqNow = ((await rest('GET', 'crm', `conversation_messages?conversation_id=eq.${groupConvId}&select=seq&order=seq.desc&limit=1`)).json?.[0]?.seq ?? 0) + 1;
+      await rest('POST', 'crm', 'conversation_messages', { organization_id: ORG, conversation_id: groupConvId, seq: seqNow, author_type: 'client', body: 'It is a standard flow - login, a list, a detail screen and a form. Nothing unusual; please proceed with the usual approach.', external_ref: `${MARKER}:answer${i}`, occurred_at: new Date().toISOString() });
+      const answered = await until(async () => (await all()).find((c) => c.id === asked.id && c.status === 'answered'), 40);
+      if (!answered) break;
+      const done = await asOwner('projects', 'resolve_clarification', { p_clarification_id: asked.id });
+      if (one(done)?.outcome === 'resolved') settled += 1;
+    }
+    check(total > 0 ? settled === total : true, `the real planner raised ${total} clarification(s): each put to the client, answered, resolved by a person`, `${settled}/${total}`);
+  }
   check(Boolean(await until(async () => (await stateOf()) === 'waiting_planning', 12)), 'the phase reads WAITING PLANNING', String(await stateOf()));
   const earlyAgain = one(await asOwner('projects', 'record_kickoff', { p_project_id: project.id, p_evidence_ref: 'still-too-early' }));
   check(earlyAgain?.outcome === 'not_ready' && (earlyAgain?.unmet ?? []).join() === 'no_active_plan', 'a kickoff before the plan is active is refused, naming exactly that', (earlyAgain?.unmet ?? []).join());
