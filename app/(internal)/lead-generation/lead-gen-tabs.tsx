@@ -11,6 +11,7 @@ export function LeadGenTabs() {
       label="Lead generation"
       tabs={[
         { href: '/lead-generation', label: 'Overview', icon: <IconActivity size={15} />, exact: true },
+        { href: '/lead-generation/performance', label: 'Performance', icon: <IconActivity size={15} /> },
         ...ACQUISITION_CHANNELS.map((c) => ({ href: `/lead-generation/${CHANNEL_SLUG[c]}`, label: CHANNEL_LABEL[c] })),
         { href: '/lead-generation/connections', label: 'Connections', icon: <IconIntegrations size={15} /> },
         { href: '/lead-generation/identity', label: 'Identity', icon: <IconUsers size={15} /> },

@@ -8661,6 +8661,22 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: { platform: string | null; found: number | null; shortlisted: number | null; submitted: number | null; won: number | null; lost: number | null; revenue_minor: number | null; connects_spent: number | null; win_rate_pct: number | null; insufficient_data: boolean | null }[]
       }
+      acquisition_funnel: {
+        Args: { p_days?: number }
+        Returns: { channel: string | null; leads: number | null; qualified: number | null; meetings: number | null; quotes: number | null; won: number | null; revenue: Json | null; spend_minor: number | null; cost_per_lead_minor: number | null; cost_per_qualified_minor: number | null; cost_per_won_minor: number | null; last_touch_leads: number | null; touched_leads: number | null; won_last_touch: number | null; insufficient_data: boolean | null }[]
+      }
+      acquisition_goal_progress: {
+        Args: Record<PropertyKey, never>
+        Returns: { channel: string | null; enabled: boolean | null; paused: boolean | null; qualified_target: number | null; qualified_this_month: number | null; pace_pct: number | null; on_pace: boolean | null; budget_minor: number | null; spend_this_month_minor: number | null; budget_used_pct: number | null; days_elapsed: number | null; days_in_month: number | null }[]
+      }
+      acquisition_failures: {
+        Args: { p_limit?: number }
+        Returns: { kind: string | null; severity: string | null; channel: string | null; ref_id: string | null; summary: string | null; since: string | null; advice: string | null }[]
+      }
+      acquisition_recommendations: {
+        Args: { p_days?: number }
+        Returns: { channel: string | null; recommendation: string | null; basis: Json | null }[]
+      }
       save_qualification_model: {
         Args: { p_note: string; p_weights: Json }
         Returns: { outcome: string | null; version: number | null }[]

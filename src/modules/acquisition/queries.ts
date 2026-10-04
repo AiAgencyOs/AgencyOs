@@ -584,3 +584,54 @@ export async function readB2bOutcomes(): Promise<B2bOutcomeView[]> {
     revenueMinor: Number(r.revenue_minor ?? 0), connectsSpent: Number(r.connects_spent ?? 0), winRatePct: r.win_rate_pct === null ? null : Number(r.win_rate_pct), insufficientData: r.insufficient_data !== false,
   }));
 }
+
+export type FunnelRow = {
+  channel: string; leads: number; qualified: number; meetings: number; quotes: number; won: number; revenue: Record<string, unknown>; spendMinor: number;
+  costPerLeadMinor: number | null; costPerQualifiedMinor: number | null; costPerWonMinor: number | null; lastTouchLeads: number; touchedLeads: number; insufficientData: boolean;
+};
+
+/** Results by the channel of each lead's first touch. A cost with nothing to divide by is null, never a guess. */
+export async function readAcquisitionFunnel(days: number): Promise<FunnelRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('acquisition_funnel', { p_days: days });
+  if (error) unreadable('readAcquisitionFunnel', error);
+  const n = (v: number | null) => (v === null ? null : Number(v));
+  return (data ?? []).filter((r) => r.channel).map((r) => ({
+    channel: r.channel as string, leads: Number(r.leads ?? 0), qualified: Number(r.qualified ?? 0), meetings: Number(r.meetings ?? 0), quotes: Number(r.quotes ?? 0), won: Number(r.won ?? 0),
+    revenue: (r.revenue ?? {}) as Record<string, unknown>, spendMinor: Number(r.spend_minor ?? 0), costPerLeadMinor: n(r.cost_per_lead_minor), costPerQualifiedMinor: n(r.cost_per_qualified_minor),
+    costPerWonMinor: n(r.cost_per_won_minor), lastTouchLeads: Number(r.last_touch_leads ?? 0), touchedLeads: Number(r.touched_leads ?? 0), insufficientData: r.insufficient_data !== false,
+  }));
+}
+
+export type GoalRow = {
+  channel: string; enabled: boolean; paused: boolean; target: number | null; qualifiedThisMonth: number; pacePct: number | null; onPace: boolean | null;
+  budgetMinor: number | null; spendThisMonthMinor: number; budgetUsedPct: number | null; daysElapsed: number; daysInMonth: number;
+};
+
+export async function readGoalProgress(): Promise<GoalRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('acquisition_goal_progress');
+  if (error) unreadable('readGoalProgress', error);
+  return (data ?? []).filter((r) => r.channel).map((r) => ({
+    channel: r.channel as string, enabled: r.enabled === true, paused: r.paused === true, target: r.qualified_target, qualifiedThisMonth: Number(r.qualified_this_month ?? 0), pacePct: r.pace_pct,
+    onPace: r.on_pace, budgetMinor: r.budget_minor, spendThisMonthMinor: Number(r.spend_this_month_minor ?? 0), budgetUsedPct: r.budget_used_pct, daysElapsed: r.days_elapsed ?? 1, daysInMonth: r.days_in_month ?? 30,
+  }));
+}
+
+export type FailureRow = { kind: string; severity: string; channel: string | null; refId: string | null; summary: string; since: string | null; advice: string };
+
+export async function listAcquisitionFailures(limit = 60): Promise<FailureRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('acquisition_failures', { p_limit: limit });
+  if (error) unreadable('listAcquisitionFailures', error);
+  return (data ?? []).filter((r) => r.kind).map((r) => ({ kind: r.kind as string, severity: r.severity ?? 'info', channel: r.channel, refId: r.ref_id, summary: r.summary ?? '', since: r.since, advice: r.advice ?? '' }));
+}
+
+export type RecommendationRow = { channel: string; recommendation: string; basis: Record<string, unknown> };
+
+export async function readAcquisitionRecommendations(days: number): Promise<RecommendationRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('acquisition_recommendations', { p_days: days });
+  if (error) unreadable('readAcquisitionRecommendations', error);
+  return (data ?? []).filter((r) => r.channel && r.recommendation).map((r) => ({ channel: r.channel as string, recommendation: r.recommendation as string, basis: (r.basis ?? {}) as Record<string, unknown> }));
+}

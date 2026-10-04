@@ -194,6 +194,14 @@ Design decisions this implies (recorded here so they are made once):
 * **Not built:** any marketplace connector (nothing is read from or sent to a platform), automated discovery, the AI that finds and writes proposals, creating a lead from a won client (a person links one), Clutch/GoodFirms review management.
 * **Human dependencies surfaced:** marketplace accounts and, where terms permit, API access - none requested. The owner must confirm each marketplace's terms before loosening a rule.
 
+### Slice 11 (Analytics, attribution, goals, failures) - built and verified
+
+* Migration `20261023100000_results_are_read_from_the_crm_and_failures_are_loud.sql`: four STABLE read functions - `acquisition_funnel` (by first-touch channel, with last-touch and touched-by counts alongside, revenue per currency, spend from the usage ledger, costs null when there is nothing to divide by), `acquisition_goal_progress`, `acquisition_failures` (one list, critical first), `acquisition_recommendations` (advice with its numbers, silent when the sample is too thin).
+* `src/modules/acquisition/analytics-vocabulary.ts`, queries, and the Performance tab (`/lead-generation/performance`).
+* `scripts/verify-acquisition-analytics.sql` red-proved sixteen ways. **It found a real defect in its own slice before it shipped:** `acquisition_recommendations` summed the usage ledger across ALL organisations, so a second tenant could be told its channel was "acting without producing a lead" because of the first tenant's actions (and see the count). Scoped to the caller and re-proved.
+* **Not built:** multi-touch / weighted attribution models beyond first, last and touched-by; cohort and trend charts; scheduled digests; an optimisation loop that ACTS (by design: recommendations are advice, and every change an agent might make is a governed action a person approves).
+* **Optimisation loops - decision for the owner:** the master prompt asks for "optimisation loops". They exist here as advice with evidence, not as self-acting loops, because every channel action is governed (never automatic for launches, budget and targeting changes, publishing, proposals, deploys). Enabling an agent to propose its own version changes from these recommendations would be a small, safe next step.
+
 ## 5. Human dependencies (known now; asked for only when the engine reaches them)
 
 | Provider | Needed for | When |
