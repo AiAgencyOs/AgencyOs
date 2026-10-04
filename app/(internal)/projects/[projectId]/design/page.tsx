@@ -57,6 +57,8 @@ import { DesignCommentThread } from './design-comment-thread';
 import { DesignSubNav } from './design-subnav';
 import { readDesignReviewComments, type DesignReviewComment } from '@/modules/projects/design-review-comments-queries';
 import { AssignReviewerForm, ResolveStopForm } from './design-forms';
+import { ReplyInbox } from './design-reply-inbox';
+import { readDesignReplies } from '@/modules/projects/design-reply-queries';
 import { Nothing, PHASE_TONE, Section, when } from './design-shared';
 
 export const metadata: Metadata = { title: 'Design direction' };
@@ -179,6 +181,7 @@ export default async function ProjectDesignPage({ params, searchParams }: { para
   const [clock, clientName] = await Promise.all([agencyClock(), project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null)]);
   const { phase } = trail;
   const mayDecide = can(context, 'project.write');
+  const clientReplies = phase ? await readDesignReplies(phase.id) : [];
 
   if (!phase) {
     // Phase 3 has no record for this project — it may not have started, or the project may have been built without it
@@ -331,6 +334,9 @@ export default async function ProjectDesignPage({ params, searchParams }: { para
             <ResolveStopForm projectId={projectId} phaseThreeId={phase.id} state={phase.state} />
           ) : null}
           {!phase.reviewerUserId ? <Nothing>No internal design reviewer is assigned. The internal gate refuses until somebody holds it, and nothing reaches Admin until it passes.</Nothing> : null}
+        </Section>
+        <Section title="Client replies" hint="What the project manager read from the client’s answers to the options. A final confirmation, a possible scope change, or a reading it was unsure of waits here for a person.">
+          <ReplyInbox projectId={projectId} replies={clientReplies} mayAct={mayDecide} dateTime={(iso) => when(iso)} />
         </Section>
         <Section title="Screen baseline" hint="The screen list and its content baseline, as finalized. A later change is a new version.">
           {!trail.baseline ? (

@@ -40,6 +40,7 @@ import { objectionReadingJsonSchema, quotationScopeJsonSchema } from '../src/mod
 import {
   breakdownJsonSchema,
   designDirectionsJsonSchema,
+  designReplyJsonSchema,
   handoverPackageJsonSchema,
   maintenanceTriageJsonSchema,
   screenInventoryJsonSchema,
@@ -100,6 +101,7 @@ const FLEET: Record<string, () => unknown> = {
   maintenanceTriageJsonSchema,
   screenInventoryJsonSchema,
   designDirectionsJsonSchema,
+  designReplyJsonSchema,
   // Phase 4 gap-analysis step 3 — the UI Designer's Task 2 draft.
   uiVersionDraftJsonSchema,
   // Phase 4 gap-analysis step 4 — the Prototype Agent's build.

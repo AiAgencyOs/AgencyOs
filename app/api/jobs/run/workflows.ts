@@ -18,6 +18,18 @@
  */
 
 import { isAdvanceMilestone } from '@/modules/projects/advance-milestone';
+import { sendSystemText } from '@/modules/crm/system-message';
+import {
+  DESIGN_REPLY_PROMPT,
+  decideReplyAction,
+  designReplyBrief,
+  fallbackClarification,
+  isAcknowledgement,
+  isPlainYes,
+  type ReplyIntent,
+} from '@/modules/projects/design-reply';
+import { loadContext as loadPmContext, projectForConversation } from '@/modules/projects/pm-client-comms';
+import { isSafeClientQuestion } from '@/modules/projects/pm-messages';
 import { assembleBlueprint, BLUEPRINT_PROMPT, blueprintDraftJsonSchema, blueprintDraftSchema, renderPlanningContext } from '@/modules/projects/blueprint';
 import { raiseAlert } from '@/lib/ai/run-gates';
 import { LEAD_OUTCOME_PROMPT, decideOutcome, leadOutcomeJsonSchema, leadOutcomeReadingSchema } from '@/modules/sales/lead-outcome';
@@ -110,6 +122,8 @@ import {
   prototypeBuildSchema,
   clientFeedbackClassificationJsonSchema,
   clientFeedbackClassificationSchema,
+  designReplyJsonSchema,
+  designReplySchema,
 } from '@/modules/projects/schema';
 
 import { resolveImageGenerator, resolveTranscriber } from '@/lib/ai/router';
@@ -1733,6 +1747,233 @@ const CLASSIFY_CLIENT_FEEDBACK: AgentWorkflow = {
     await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
 
     return { status: 'succeeded', reason: classification, runId };
+  },
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// project_manager - reading a client's reply to the design options (Phase 3)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * `message.received` -> when a client replies in the thread of a project whose Phase 3 is waiting on them,
+ * READ the reply (Phase 3 PM section 4.5-4.9, 12) and record what it concluded.
+ *
+ * The cost is controlled before a model is ever asked: no waiting phase, no share, an acknowledgement, a
+ * reply already read (the message id is the key) - all settle for free, and a plain "yes" to the
+ * confirmation question is read by a rule. The model gets one short call with the options NUMBERED (it
+ * cannot name an id) and returns a reading; `decideReplyAction` and the database decide what happens.
+ *
+ * It applies only the reversible set (a selection, a visual change - which opens the revision round -, a
+ * reference, a question). A final confirmation and a possible scope change ALWAYS wait for a person.
+ */
+const READ_DESIGN_REPLY: AgentWorkflow = {
+  jobKind: 'design.read_reply',
+  agentKey: 'project_manager',
+  systemPrompt: DESIGN_REPLY_PROMPT,
+  schemaName: 'DesignReply',
+  jsonSchema: designReplyJsonSchema,
+  workClass: 'draft',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const settle = async (outcome: string, reason: string): Promise<WorkflowResult> => {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', outcome, reason };
+    };
+    const messageId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+    if (!messageId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    const { data: msg, error: msgError } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .select('id, body, author_type, conversation_id, metadata, media_description')
+      .eq('id', messageId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+    if (msgError) {
+      await failJob(admin, job, `could not read the message: ${msgError.message}`);
+      return { status: 'failed', reason: msgError.message };
+    }
+    if (!msg || msg.author_type !== 'client' || !msg.body || msg.body.trim().length === 0) return settle('not_applicable', 'not a client text message');
+
+    const { data: conversation } = await admin
+      .schema('crm')
+      .from('conversations')
+      .select('id, kind, project_id, lead_id')
+      .eq('id', msg.conversation_id)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+    if (!conversation) return settle('not_applicable', 'the conversation is gone');
+    const projectId = await projectForConversation(admin as never, job.organization_id, conversation);
+    if (!projectId) return settle('not_applicable', 'this thread belongs to no project');
+
+    const { data: phase } = await admin
+      .schema('projects')
+      .from('phase_three')
+      .select('id, state')
+      .eq('project_id', projectId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+    if (!phase || !['waiting_client', 'client_review', 'final_confirmation', 'revision'].includes(phase.state)) {
+      return settle('not_applicable', 'Phase 3 is not waiting on the client');
+    }
+
+    const { data: shares } = await admin
+      .schema('projects')
+      .from('client_design_shares')
+      .select('id, shared_options')
+      .eq('phase_three_id', phase.id)
+      .order('share_number', { ascending: false })
+      .limit(1);
+    const share = shares?.[0];
+    if (!share) return settle('not_applicable', 'nothing has been shared with the client yet');
+
+    const { data: already } = await admin.schema('projects').from('design_reply_proposals').select('id').eq('message_id', msg.id).maybeSingle();
+    if (already) return settle('already_read', `reply already read (${already.id})`);
+
+    if (isAcknowledgement(msg.body)) return settle('acknowledgement', 'a thank-you needs no reading');
+
+    type Shown = { themeOptionId: string; name: string; optionIndex: number; colors: { colorOptionId: string; paletteName: string }[] };
+    const shown = (Array.isArray(share.shared_options) ? share.shared_options : []) as unknown as Shown[];
+    const propose = async (args: {
+      source: 'rule' | 'model';
+      intent: ReplyIntent;
+      themeId: string | null;
+      colorId: string | null;
+      referenceUrl?: string | null;
+      referenceNote?: string | null;
+      confidence: number;
+      reasoning: string;
+      question?: string | null;
+      action: 'apply' | 'person' | 'clarify' | 'ignore';
+    }) => {
+      const { data, error } = await admin.schema('projects').rpc('agent_propose_design_reply', {
+        p_message_id: msg.id,
+        p_share_id: share.id,
+        p_source: args.source,
+        p_intent: args.intent,
+        p_theme_option_id: args.themeId,
+        p_color_option_id: args.colorId,
+        p_reference_url: args.referenceUrl ?? null,
+        p_reference_note: args.referenceNote ?? null,
+        p_confidence: args.confidence,
+        p_reasoning: args.reasoning,
+        p_clarifying_question: args.question ?? null,
+        p_action: args.action,
+      } as never);
+      const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; proposal_id?: string; action?: string; status?: string } | undefined;
+      return { row, error };
+    };
+
+    // The cheap path: a plain "yes" to the confirmation question we asked. Still only a PROPOSAL.
+    if (phase.state === 'final_confirmation' && isPlainYes(msg.body)) {
+      const { data: picked } = await admin
+        .schema('projects')
+        .from('client_design_decisions')
+        .select('selected_theme_option_id, selected_color_option_id')
+        .eq('phase_three_id', phase.id)
+        .eq('decision', 'client_selected')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (picked?.selected_theme_option_id) {
+        const theme = shown.find((o) => o.themeOptionId === picked.selected_theme_option_id);
+        const colorId = picked.selected_color_option_id ?? (theme && theme.colors.length === 1 ? theme.colors[0]?.colorOptionId ?? null : null);
+        const { row, error } = await propose({
+          source: 'rule', intent: 'final_confirmed', themeId: picked.selected_theme_option_id, colorId,
+          confidence: 0.95, reasoning: 'A plain yes to the confirmation question, read by rule - a person confirms it.', action: 'person',
+        });
+        if (error) {
+          await failJob(admin, job, error.message);
+          return { status: 'failed', reason: error.message };
+        }
+        return settle('proposed_by_rule', `${row?.outcome} -> ${row?.status}`);
+      }
+    }
+
+    const runId = await openRun(ctx, {
+      type: 'projects.client_design_shares',
+      id: share.id,
+      input: { messageId: msg.id, shareId: share.id } as unknown as Json,
+    });
+    const call = await callModel(
+      ctx,
+      this,
+      [{ role: 'user', content: designReplyBrief(shown.map((o) => ({ index: o.optionIndex, name: o.name, palettes: o.colors.map((c) => c.paletteName) })), msg.body, phase.state === 'final_confirmation' ? 'confirmation' : 'selection') }],
+      runId,
+    );
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return { status: 'failed', reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error', detail: call.detail, runId };
+    }
+    const validated = designReplySchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+    const reading = validated.data;
+
+    // Number -> option the client was SHOWN. A number outside the list is dropped, never guessed.
+    const theme = reading.optionNumber ? shown.find((o) => o.optionIndex === reading.optionNumber) ?? null : null;
+    const colour = theme && reading.paletteName ? theme.colors.find((c) => c.paletteName.toLowerCase() === reading.paletteName?.toLowerCase()) ?? null : null;
+    const action = decideReplyAction({
+      intent: reading.intent,
+      confidence: reading.confidence,
+      themeShown: Boolean(theme),
+      sharedOptionCount: shown.length,
+      hasReference: Boolean(reading.referenceUrl || reading.referenceNote),
+    });
+
+    const { row, error } = await propose({
+      source: 'model', intent: reading.intent, themeId: theme?.themeOptionId ?? null, colorId: colour?.colorOptionId ?? null,
+      referenceUrl: reading.referenceUrl, referenceNote: reading.referenceNote, confidence: reading.confidence,
+      reasoning: reading.reasoning, question: reading.clarifyingQuestion, action,
+    });
+    if (error || !row?.proposal_id) {
+      const detail = error?.message ?? `the proposal was not recorded (${row?.outcome})`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    let handled = `${row.action}`;
+    if (row.outcome === 'proposed' && row.action === 'apply') {
+      const { data: applied, error: applyError } = await admin.schema('projects').rpc('agent_apply_design_reply', { p_proposal_id: row.proposal_id } as never);
+      if (applyError) {
+        await finishRun(admin, runId, 'failed', applyError.message, call.stepCount);
+        await failJob(admin, job, applyError.message);
+        return { status: 'failed', reason: applyError.message, runId };
+      }
+      handled = `apply:${(Array.isArray(applied) ? applied[0] : applied)?.outcome}`;
+    } else if (row.outcome === 'proposed' && row.action === 'clarify') {
+      const ctxConv = msg.conversation_id;
+      const pmContext = await loadPmContext(admin as never, job.organization_id, projectId);
+      const language = typeof pmContext === 'object' ? pmContext.language : 'en';
+      const question =
+        reading.clarifyingQuestion && isSafeClientQuestion(reading.clarifyingQuestion)
+          ? reading.clarifyingQuestion.trim()
+          : fallbackClarification(language, shown.map((o) => `${o.optionIndex}. ${o.name}`));
+      const sent = await sendSystemText(admin as never, { organizationId: job.organization_id, conversationId: ctxConv, body: question, ref: `pm:design-clarify:${msg.id}` });
+      if (sent.kind === 'sent' || sent.kind === 'already_sent') {
+        await admin.schema('projects').rpc('agent_mark_design_reply_asked', { p_proposal_id: row.proposal_id } as never);
+        handled = 'clarify:asked';
+      } else {
+        // Could not ask (no consent, paused...): leave it for a person rather than lose the reply.
+        handled = `clarify:${sent.kind}`;
+        await admin.schema('projects').from('design_reply_proposals').update({ status: 'awaiting_person', resolution_note: `The clarifying question could not be sent (${sent.kind}).` }).eq('id', row.proposal_id);
+      }
+    }
+
+    await succeedRun(admin, runId, reading as unknown as Json, call.usage, call.stepCount);
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+    return { status: 'succeeded', reason: `${reading.intent} -> ${handled}`, runId };
   },
 };
 
@@ -9593,6 +9834,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   UI_VERSION_DRAFT,
   UI_VERSION_REVISE,
   CLASSIFY_CLIENT_FEEDBACK,
+  READ_DESIGN_REPLY,
   PROTOTYPE_BUILD,
   PROTOTYPE_BUILD_REVISE,
   MESSAGE_INTENT,
