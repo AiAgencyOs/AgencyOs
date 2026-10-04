@@ -111,6 +111,11 @@ export type UnlinkDesignAssetInput = z.infer<typeof unlinkDesignAssetSchema>;
 /** Q-B7 / SCR-035 — draft the next screen baseline from a screen whose baseline is finalized. From v2 a reason is required (the door says so). */
 export const draftNextScreenBaselineSchema = z.object({
   projectId: z.uuid(),
-  changeReason: z.string().trim().min(1, 'Say why the baseline is being reopened.').max(2000),
+  // Required from v2 (the door says so); the FIRST baseline has nothing to reopen, so it may be blank.
+  changeReason: z.string().trim().max(2000).default(''),
 });
-export type DraftNextScreenBaselineInput = z.infer<typeof draftNextScreenBaselineSchema>;
+export type DraftNextScreenBaselineInput = z.input<typeof draftNextScreenBaselineSchema>;
+
+/** Master §7.3 - the person who agrees the COMPLETE screen list closes the open baseline. */
+export const finalizeScreenBaselineSchema = z.object({ projectId: z.uuid(), baselineId: z.uuid() });
+export type FinalizeScreenBaselineInput = z.infer<typeof finalizeScreenBaselineSchema>;

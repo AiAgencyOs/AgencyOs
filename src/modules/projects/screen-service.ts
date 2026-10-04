@@ -9,6 +9,8 @@ import { addTestPlanItem } from '@/modules/qa/service';
 import {
   addScreenSchema,
   draftNextScreenBaselineSchema,
+  finalizeScreenBaselineSchema,
+  type FinalizeScreenBaselineInput,
   linkDesignAssetSchema,
   mergeScreensSchema,
   screenScopeItemSchema,
@@ -410,7 +412,7 @@ export async function draftNextScreenBaseline(input: DraftNextScreenBaselineInpu
   const supabase = await createClient();
   const { data, error } = await supabase.schema('projects').rpc('draft_screen_baseline', {
     p_project_id: parsed.data.projectId,
-    p_change_reason: parsed.data.changeReason,
+    p_change_reason: parsed.data.changeReason || undefined,
   });
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'draftNextScreenBaseline', detail: error.message }));
@@ -430,5 +432,39 @@ export async function draftNextScreenBaseline(input: DraftNextScreenBaselineInpu
       return err('VALIDATION', 'Say why the baseline is being reopened.');
     default:
       return err('FORBIDDEN', 'The database refused: your role may not draft a screen baseline.');
+  }
+}
+
+/**
+ * Master §7.3 - finalize the screen list: "the COMPLETE screen list" is agreed by a person, and the
+ * baseline freezes into the snapshot Phase 4 inherits. `projects.finalize_screen_baseline` re-checks
+ * the role, refuses an empty list or an included requirement no screen covers, and emits
+ * `project.screen_list_finalized` - the event the UI Designer's direction run is subscribed to.
+ */
+export async function finalizeScreenBaseline(input: FinalizeScreenBaselineInput): Promise<Result<{ screenCount: number; alreadyFinalized: boolean }>> {
+  const parsed = finalizeScreenBaselineSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid request.');
+  const gated = await gate('finalize the screen baseline');
+  if (!gated.ok) return gated;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('finalize_screen_baseline', { p_baseline_id: parsed.data.baselineId });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'finalizeScreenBaseline', detail: error.message }));
+    return err('INTERNAL', 'Could not finalize the screen baseline.');
+  }
+  const row = first<{ outcome?: string; screen_count?: number | null; findings?: string[] | null }>(data);
+  switch (row?.outcome) {
+    case 'finalized':
+    case 'already_finalized':
+      return ok({ screenCount: row.screen_count ?? 0, alreadyFinalized: row.outcome === 'already_finalized' });
+    case 'no_screens':
+      return err('CONFLICT', 'There are no screens yet, so there is no list to finalize. Add the screens first.');
+    case 'uncovered_scope':
+      return err('CONFLICT', `Some included requirements have no screen (${(row.findings ?? []).join(', ')}). Map each to a screen before finalizing.`);
+    case 'unknown_baseline':
+      return err('NOT_FOUND', 'That screen baseline was not found.');
+    default:
+      return err('FORBIDDEN', 'The database refused: your role may not finalize a screen baseline.');
   }
 }

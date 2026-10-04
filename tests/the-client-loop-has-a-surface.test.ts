@@ -38,8 +38,12 @@ describe('A. it records; it does not send', () => {
     assert.match(FORMS, />\s*Record what they said\s*</);
   });
 
-  test('and the share form says outright that AgencyOS cannot send it', () => {
-    assert.match(FORMS, /AgencyOS cannot send this — there is no channel configured\. Send it yourself, then record\s*\n?\s*what you sent\./);
+  test('and the share form says what each button does: send-and-record, or record only', () => {
+    // AgencyOS now HAS a channel (the project group), so the form offers to send. It must still say which of
+    // the two a button does - "Send" over a bare record would be the lie this suite exists to prevent.
+    assert.match(FORMS, /<strong>send them to the client<\/strong> in the project\s+group/);
+    assert.match(FORMS, /Send to the client and record/);
+    assert.match(FORMS, /If the client\s+has no thread here, send it yourself and record what you sent below\./);
   });
 
   test('the door it fronts still refuses to be a sender', () => {
@@ -177,7 +181,7 @@ describe('F. what is offered comes from stored state', () => {
     const end = ACTIONS.indexOf('The completion gate', start);
     const loop = ACTIONS.slice(start, end > 0 ? end : undefined);
     assert.ok(loop.length > 0 && loop.length < ACTIONS.length, 'the client-loop section is not bounded');
-    assert.equal((loop.match(/revalidatePath\(`\/projects\/\$\{projectId\}\/design`\)/g) ?? []).length, 3);
+    assert.equal((loop.match(/revalidatePath\(`\/projects\/\$\{projectId\}\/design`\)/g) ?? []).length, 5); // the share, the reply, the revision, the send-and-record share, and the stop resolution
   });
 
   test('the share action reads every ticked option, not just the first', () => {

@@ -56,7 +56,7 @@ import { ApproveAssetButton, SubmitDesignReviewPanel, UploadDesignAssetPanel } f
 import { DesignCommentThread } from './design-comment-thread';
 import { DesignSubNav } from './design-subnav';
 import { readDesignReviewComments, type DesignReviewComment } from '@/modules/projects/design-review-comments-queries';
-import { AssignReviewerForm } from './design-forms';
+import { AssignReviewerForm, ResolveStopForm } from './design-forms';
 import { Nothing, PHASE_TONE, Section, when } from './design-shared';
 
 export const metadata: Metadata = { title: 'Design direction' };
@@ -327,6 +327,9 @@ export default async function ProjectDesignPage({ params, searchParams }: { para
             <span className="text-[13px] text-muted">· {phase.revisionCount} of {phase.revisionLimit} client revision rounds used · {`${sampleScreens.samples.length} sample screens, ${withPreview} with a preview`}</span>
           </div>
           {phase.blockedReason ? <p className="max-w-2xl rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-[13px] text-danger">{phase.blockedReason}</p> : null}
+          {['scope_escalation', 'revision_limit_escalation', 'blocked_requirement'].includes(phase.state) && can(context, 'audit.read') ? (
+            <ResolveStopForm projectId={projectId} phaseThreeId={phase.id} state={phase.state} />
+          ) : null}
           {!phase.reviewerUserId ? <Nothing>No internal design reviewer is assigned. The internal gate refuses until somebody holds it, and nothing reaches Admin until it passes.</Nothing> : null}
         </Section>
         <Section title="Screen baseline" hint="The screen list and its content baseline, as finalized. A later change is a new version.">

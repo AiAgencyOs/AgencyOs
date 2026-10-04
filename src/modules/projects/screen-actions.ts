@@ -8,6 +8,7 @@ import { DESIGN_STATES, type DesignState } from './screen-schema';
 import {
   addScreen,
   draftNextScreenBaseline,
+  finalizeScreenBaseline,
   linkDesignAsset,
   mapScreenToScopeItem,
   mergeScreens,
@@ -170,5 +171,17 @@ export async function draftNextScreenBaselineAction(_prev: FormState, formData: 
   return {
     status: 'success',
     message: result.data.alreadyDrafting ? `Baseline v${result.data.version} is already open — map the requirement there.` : `Baseline v${result.data.version} drafted — you can map requirements again.`,
+  };
+}
+
+export async function finalizeScreenBaselineAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await finalizeScreenBaseline({ projectId: str(formData, 'projectId'), baselineId: str(formData, 'baselineId') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateScreens(formData);
+  return {
+    status: 'success',
+    message: result.data.alreadyFinalized
+      ? 'The screen list was already finalized.'
+      : `Screen list finalized - ${result.data.screenCount} screens frozen. The UI Designer now drafts the theme directions.`,
   };
 }

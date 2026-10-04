@@ -36,7 +36,7 @@ import {
 import { ProjectSubNav } from '../../project-subnav';
 import { WorkspaceHeader } from '../../workspace-header';
 import { DesignSubNav } from '../design-subnav';
-import { AddScreenForm, DESIGN_STATE_LABEL, DesignStateForm, MERGE_FORM_ID, MergeScreensForm, SplitScreenForm } from './screen-forms';
+import { AddScreenForm, DESIGN_STATE_LABEL, DesignStateForm, MERGE_FORM_ID, MergeScreensForm, ScreenBaselinePanel, SplitScreenForm } from './screen-forms';
 
 export const metadata: Metadata = { title: 'Screen inventory' };
 
@@ -265,6 +265,8 @@ export default async function ProjectScreensPage({
           A finalized baseline is what was agreed. Draft the next baseline version from the Design overview to add, merge or split a screen or change what it covers; the database refuses those writes until then. Design state, Figma links and QA hand-off stay open.
         </Callout>
       ) : null}
+
+      {mayEdit && listState.open ? <ScreenBaselinePanel projectId={projectId} latest={listState.latest} /> : null}
 
       {editable ? (
         <div className="flex flex-col gap-3">

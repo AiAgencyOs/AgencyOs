@@ -2,9 +2,12 @@ import 'server-only';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { createAdminClient } from '@/lib/db/admin';
 import { createClient } from '@/lib/db/server';
 import { lookupNode } from '@/lib/figma/client';
 import { err, ok, type Result } from '@/lib/result';
+
+import { sendDesignOptions } from './pm-design-comms';
 
 /**
  * Phase 3's write surface — Master §16, §10; Designer §15; PM §7; G-287.
@@ -249,6 +252,98 @@ export async function recordDesignShare(input: {
       return err('CONFLICT', 'Phase 3 has not started for this project.');
     default:
       return err('FORBIDDEN', 'You do not have permission to record a share on this project.');
+  }
+}
+
+/**
+ * §7.6 - the PM shares the Admin-approved options with the client. AgencyOS now HAS a channel
+ * (the project group), so this sends the message itself and records the share with that message
+ * as its evidence - the record points at a message this system holds, not at a pasted reference.
+ *
+ * Order matters: the approved check and the send come first, the record second. The record door
+ * re-checks everything (only approved options, something to show) and is the authority; if it
+ * refuses after a send, the refusal is reported with the fact that the message already went.
+ * A replay of the same share sends nothing twice (the send is keyed by phase and share number).
+ */
+export async function shareDesignWithClient(input: { projectId: string; themeOptionIds: string[] }): Promise<Result<{ shareId: string | null; sent: boolean }>> {
+  const gate = await designActor();
+  if (!gate.ok) return gate;
+  if (input.themeOptionIds.length === 0) return err('VALIDATION', 'Pick at least one option to send.');
+
+  const supabase = await createClient();
+  const { data: phase, error } = await supabase.schema('projects').from('phase_three').select('id, organization_id').eq('project_id', input.projectId).maybeSingle();
+  if (error) return err('INTERNAL', 'Could not read the Phase 3 workspace.');
+  if (!phase) return err('CONFLICT', 'Phase 3 has not started for this project.');
+
+  const { data: shares, error: sharesError } = await supabase.schema('projects').from('client_design_shares').select('share_number').eq('phase_three_id', phase.id).order('share_number', { ascending: false }).limit(1);
+  if (sharesError) return err('INTERNAL', 'Could not read the earlier shares.');
+  const shareNumber = (shares?.[0]?.share_number ?? 0) + 1;
+
+  // A revised round: an earlier share exists and a delivered revision's new option is among those picked.
+  let revised = false;
+  if (shareNumber > 1) {
+    const { data: delivered } = await supabase.schema('projects').from('design_revisions').select('to_theme_option_id').eq('phase_three_id', phase.id).eq('status', 'delivered');
+    revised = (delivered ?? []).some((r) => r.to_theme_option_id && input.themeOptionIds.includes(r.to_theme_option_id));
+  }
+
+  const sent = await sendDesignOptions(createAdminClient(), {
+    organizationId: phase.organization_id,
+    projectId: input.projectId,
+    phaseThreeId: phase.id,
+    shareNumber,
+    themeOptionIds: input.themeOptionIds,
+    revised,
+  });
+  if ('error' in sent) return err('CONFLICT', sent.error);
+  if (sent.result.kind === 'paused') return err('CONFLICT', 'Outbound messaging is paused by the owner, so nothing was sent. Release the switch and try again.');
+  if (sent.result.kind === 'no_consent') return err('CONFLICT', 'The client has not consented to WhatsApp messages, so nothing was sent.');
+  if (sent.result.kind === 'failed') return err('CONFLICT', `The message could not be sent: ${sent.result.detail}`);
+  if (sent.result.kind === 'in_flight') return err('CONFLICT', 'That message is already being sent - give it a moment and check the share history.');
+
+  const recorded = await recordDesignShare({
+    projectId: input.projectId,
+    themeOptionIds: input.themeOptionIds,
+    channel: 'whatsapp',
+    evidenceRef: `agencyos:${sent.ref}`,
+    conversationId: sent.conversationId,
+  });
+  if (!recorded.ok) return err(recorded.error.code, `${recorded.error.message} (The message to the client had already been sent.)`);
+  return ok({ shareId: recorded.data.shareId, sent: sent.result.kind === 'sent' });
+}
+
+/**
+ * Master §16-§17, PM §4.8: a stopped Phase 3 (a scope question, the revision limit, a missing requirement) is
+ * resumed only by a person's recorded decision. `projects.resolve_phase_three_stop` is admin-only, needs a note
+ * and names which way the stop was answered; nothing resumes a stop on its own.
+ */
+export async function resolvePhaseThreeStop(input: { phaseThreeId: string; resolution: string; note: string; extraRounds?: number }): Promise<Result<{ resumedState: string }>> {
+  const gate = await designActor();
+  if (!gate.ok) return gate;
+  if (!input.note.trim()) return err('VALIDATION', 'Say why you are letting the phase continue - it goes on the record.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('resolve_phase_three_stop', {
+    p_phase_three_id: input.phaseThreeId,
+    p_resolution: input.resolution,
+    p_note: input.note,
+    p_extra_rounds: input.extraRounds,
+  });
+  if (error) return err('INTERNAL', 'Could not record the decision.');
+
+  const row = oneRow<{ outcome?: string; resumed_state?: string | null }>(data);
+  switch (row?.outcome ?? 'no answer') {
+    case 'resolved':
+      return ok({ resumedState: row?.resumed_state ?? '' });
+    case 'not_stopped':
+      return err('CONFLICT', 'This phase is not stopped, so there is nothing to resolve.');
+    case 'bad_resolution':
+      return err('VALIDATION', 'That decision does not belong to the way this phase stopped.');
+    case 'needs_extra_rounds':
+      return err('VALIDATION', 'Say how many more client rounds to allow (1 to 3).');
+    case 'needs_note':
+      return err('VALIDATION', 'Say why you are letting the phase continue - it goes on the record.');
+    default:
+      return err('FORBIDDEN', 'Only the owner or an ops admin may let a stopped phase continue.');
   }
 }
 

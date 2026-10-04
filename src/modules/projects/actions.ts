@@ -17,6 +17,8 @@ import {
   recordRepresentativeScreen,
   recordClientDesignDecision,
   recordDesignShare,
+  resolvePhaseThreeStop,
+  shareDesignWithClient,
   submitAdminDesignDecision,
   submitInternalDesignReview,
 } from './design';
@@ -889,6 +891,33 @@ export async function assignDesignReviewerAction(
  * sends anything, and the messages say so: this deployment has no channel
  * (BLK-003, BLK-007).
  */
+
+export async function resolvePhaseThreeStopAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const extra = Number(formData.get('extraRounds') ?? '');
+  const outcome = await resolvePhaseThreeStop({
+    phaseThreeId: String(formData.get('phaseThreeId') ?? ''),
+    resolution: String(formData.get('resolution') ?? ''),
+    note: String(formData.get('note') ?? ''),
+    extraRounds: Number.isFinite(extra) && extra > 0 ? extra : undefined,
+  });
+  if (!outcome.ok) return { status: 'error', message: outcome.error.message };
+  revalidatePath(`/projects/${projectId}/design`);
+  return { status: 'success', message: `Recorded. The phase continues (${outcome.data.resumedState.replace(/_/g, ' ')}).` };
+}
+
+export async function sendDesignOptionsAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const themeOptionIds = formData.getAll('themeOptionIds').map(String).filter(Boolean);
+  const outcome = await shareDesignWithClient({ projectId, themeOptionIds });
+  if (!outcome.ok) return { status: 'error', message: outcome.error.message };
+  revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/final`);
+  return {
+    status: 'success',
+    message: `Sent to the client in the project group and recorded - ${themeOptionIds.length} option${themeOptionIds.length === 1 ? '' : 's'} now shows as sent.`,
+  };
+}
 
 export async function recordDesignShareAction(
   _prev: FormState,
