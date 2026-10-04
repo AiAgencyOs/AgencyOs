@@ -4,12 +4,14 @@ import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can, hasRole } from '@/lib/authz/permissions';
-import { listActiveBlocks, listRecentQualifications, readChannelSettings, readEmailFunnel, readQualificationModel } from '@/modules/acquisition/queries';
+import { listActiveBlocks, listContentQueue, listRecentQualifications, listSocialStrategies, listTargetServices, readSocialPerformance, readChannelSettings, readEmailFunnel, readQualificationModel } from '@/modules/acquisition/queries';
+import { OBJECTIVE_LABEL, FORMAT_LABEL, PLATFORM_LABEL, STATUS_WORDS, reviewWords, type SocialPlatform } from '@/modules/acquisition/social-vocabulary';
 import { disqualifierWords, FACTOR_LABEL, FUNNEL_LABEL, FUNNEL_STAGES, QUALIFICATION_FACTORS } from '@/modules/acquisition/qualification-vocabulary';
 import { CHANNEL_LABEL, ENGINE_STATUS, channelFromSlug } from '@/modules/acquisition/schema';
 import { Badge, Callout, Card, CardBody, CardHeader, EmptyState, PageHeader, PermissionDenied, Stat, StatGrid } from '@/ui';
 
 import { BlockForm, LiftBlockForm, QualificationModelForm } from '../email-forms';
+import { ActivateStrategyButton, CancelVersionForm, NewDraftForm, ReviewButton, ScheduleForm, SubmitButton } from '../social-forms';
 import { ChannelPauseForm, ChannelSettingsForm } from '../forms';
 
 export const metadata: Metadata = { title: 'Lead generation channel' };
@@ -28,6 +30,7 @@ export default async function ChannelPage({ params }: { params: Promise<{ channe
   const c = channels.find((x) => x.channel === channel)!;
   const engine = ENGINE_STATUS[channel];
   const isOwner = hasRole(context, 'owner');
+  const social = channel === 'social' ? await Promise.all([listContentQueue(), listSocialStrategies(), readSocialPerformance(), listTargetServices()]) : null;
   const email = channel === 'email' ? await Promise.all([readEmailFunnel(), readQualificationModel(), listActiveBlocks(), listRecentQualifications()]) : null;
 
   return (
@@ -123,6 +126,86 @@ export default async function ChannelPage({ params }: { params: Promise<{ channe
                     </li>
                   ))}
                 </ul>
+              )}
+            </CardBody>
+          </Card>
+        </>
+      ) : null}
+
+      {social ? (
+        <>
+          <Callout tone="info" title="How a post goes out">
+            Draft, then the automated review, then an admin approves it, then you schedule it, then it is published once. The approval is for exactly these words and this image: change anything and it is a new version that needs approving again. The automated review can fail a draft; it can never approve one. Nothing can be published to LinkedIn, Instagram or Facebook from here yet - a due post is flagged for a person to post by hand.
+          </Callout>
+
+          <Card>
+            <CardHeader title="Content queue" description="Newest work first. The label comes from the approval engine, so it cannot disagree with the decision it reports." />
+            <CardBody>
+              {social[0].length === 0 ? (
+                <EmptyState title="No content yet" description="Write a draft below." />
+              ) : (
+                <ul className="flex flex-col gap-4">
+                  {social[0].map((q) => {
+                    const words = STATUS_WORDS[q.status] ?? { label: q.status, tone: 'neutral' as const, meaning: '' };
+                    return (
+                      <li key={q.versionId} className="flex flex-col gap-2 border-b border-line pb-4 last:border-0">
+                        <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                          <Badge tone={words.tone}>{words.label}</Badge>
+                          <strong>{q.title}</strong>
+                          <span className="text-muted">{PLATFORM_LABEL[q.platform as SocialPlatform] ?? q.platform} · {OBJECTIVE_LABEL[q.objective as keyof typeof OBJECTIVE_LABEL] ?? q.objective} · {FORMAT_LABEL[q.format as keyof typeof FORMAT_LABEL] ?? q.format} · version {q.version}{q.scheduledFor ? ` · ${new Date(q.scheduledFor).toLocaleString('en-IN')}` : ''}</span>
+                        </div>
+                        <p className="text-[13px] text-muted">{q.bodyPreview}</p>
+                        <p className="text-xs text-muted">{words.meaning}</p>
+                        {q.blocking.length > 0 ? <p className="text-xs text-danger">{q.blocking.map(reviewWords).join(' · ')}</p> : null}
+                        {q.warnings.length > 0 ? <p className="text-xs text-muted">Worth a look: {q.warnings.map(reviewWords).join(' · ')}</p> : null}
+                        {mayManage ? (
+                          <div className="flex flex-wrap items-start gap-4">
+                            {q.state === 'DRAFT' ? <ReviewButton versionId={q.versionId} /> : null}
+                            {q.state === 'AI_REVIEWED' ? <SubmitButton versionId={q.versionId} /> : null}
+                            {q.status === 'APPROVED' ? <ScheduleForm versionId={q.versionId} /> : null}
+                            {q.state === 'ADMIN_REVIEW' && q.status !== 'APPROVED' ? <Link href="/approvals" className="text-[13px] text-brand hover:underline">Open the Approval Center</Link> : null}
+                            {['DRAFT', 'AI_REVIEWED', 'AI_REVIEW_FAILED', 'ADMIN_REVIEW', 'SCHEDULED'].includes(q.state) ? <CancelVersionForm versionId={q.versionId} /> : null}
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </CardBody>
+          </Card>
+
+          {mayManage ? (
+            <Card>
+              <CardHeader title="New draft" description="Written by a person here; an agent's drafts arrive in the same queue and are held to the same rules." />
+              <CardBody><NewDraftForm services={social[3].filter((s) => s.active).map((s) => s.name)} /></CardBody>
+            </Card>
+          ) : null}
+
+          <Card>
+            <CardHeader title="Strategies" description="3, 6 and 9 month plans per platform. A revision is a new version; activating one supersedes the previous." />
+            <CardBody>
+              {social[1].length === 0 ? <p className="text-[13px] text-muted">No strategy yet.</p> : (
+                <ul className="flex flex-col gap-3 text-[13px]">
+                  {social[1].map((st) => (
+                    <li key={st.id} className="flex flex-col gap-1 border-b border-line pb-3 sm:flex-row sm:items-center sm:justify-between">
+                      <span><Badge tone={st.status === 'active' ? 'success' : 'neutral'}>{st.status}</Badge> {PLATFORM_LABEL[st.platform as SocialPlatform] ?? st.platform} · {st.horizon} months · version {st.version}{st.rationale ? ` - ${st.rationale}` : ''}</span>
+                      {mayManage && st.status === 'draft' ? <ActivateStrategyButton strategyId={st.id} /> : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader title="Performance by what the content was for" description="Reach and engagement are diagnostic. Success is qualified conversations and won clients, which come from the lead records." />
+            <CardBody>
+              {social[2].length === 0 ? <p className="text-[13px] text-muted">Nothing published yet.</p> : (
+                <table className="w-full text-[13px]">
+                  <thead><tr className="text-left text-xs text-muted"><th className="py-1">Platform</th><th>Objective</th><th>Format</th><th>Posts</th><th>Impressions</th><th>Engagements</th><th>Clicks</th></tr></thead>
+                  <tbody>{social[2].map((p, n) => <tr key={n} className="border-t border-line"><td className="py-1.5">{PLATFORM_LABEL[p.platform as SocialPlatform] ?? p.platform}</td><td>{OBJECTIVE_LABEL[p.objective as keyof typeof OBJECTIVE_LABEL] ?? p.objective}</td><td>{FORMAT_LABEL[p.format as keyof typeof FORMAT_LABEL] ?? p.format}</td><td>{p.published}</td><td>{p.impressions}</td><td>{p.engagements}</td><td>{p.clicks}</td></tr>)}</tbody>
+                </table>
               )}
             </CardBody>
           </Card>

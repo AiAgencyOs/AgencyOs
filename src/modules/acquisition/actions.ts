@@ -8,7 +8,7 @@ import type { FormState } from '@/modules/identity/types';
 import { QUALIFICATION_FACTORS } from './qualification-vocabulary';
 import { ACQUISITION_CHANNELS, ICP_LIST_KEYS, buildIcpDefinition, type AcquisitionChannel } from './schema';
 import { registerIntegration, saveAcquisitionPolicy, setIntegrationState, storeConnectorSecret, testConnection } from './integrations';
-import { blockProspect, liftProspectBlock, saveQualificationModel, cancelSubtask, cancelHandoff, decideDuplicateReview, saveChannelSettings, saveHandoffSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
+import { activateSocialStrategy, cancelContentVersion, createContentDraft, reviewContentVersion, scheduleContentVersion, submitContentForApproval, blockProspect, liftProspectBlock, saveQualificationModel, cancelSubtask, cancelHandoff, decideDuplicateReview, saveChannelSettings, saveHandoffSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
 
 const text = (f: FormData, n: string) => String(f.get(n) ?? '').trim();
 const BASE = '/lead-generation';
@@ -198,4 +198,51 @@ export async function liftBlockAction(_p: FormState, f: FormData): Promise<FormS
   if (!r.ok) return { status: 'error', message: r.error.message };
   refresh();
   return { status: 'success', message: 'Lifted. The record of the block is kept.' };
+}
+
+export async function createDraftAction(_p: FormState, f: FormData): Promise<FormState> {
+  const hashtags = text(f, 'hashtags').split(/[\s,]+/).map((h) => h.trim()).filter(Boolean).map((h) => (h.startsWith('#') ? h : `#${h}`)).slice(0, 30);
+  const r = await createContentDraft({
+    platform: text(f, 'platform'), objective: text(f, 'objective'), format: text(f, 'format'), title: text(f, 'title'), service: text(f, 'service'),
+    body: String(f.get('body') ?? '').trim(), cta: text(f, 'cta'), hashtags,
+  });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: 'Saved as a draft. Run the automated review next.' };
+}
+
+export async function reviewVersionAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await reviewContentVersion(text(f, 'versionId'));
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return r.data.passed ? { status: 'success', message: 'Passed the automated review. This is not approval - submit it for an admin.' } : { status: 'error', message: `Failed the review: ${r.data.blocking.join(', ').replaceAll('_', ' ')}. Write the next version.` };
+}
+
+export async function submitVersionAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await submitContentForApproval(text(f, 'versionId'));
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  revalidatePath('/approvals');
+  return { status: 'success', message: 'Sent to the Approval Center. It is approved only as exactly these words.' };
+}
+
+export async function scheduleVersionAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await scheduleContentVersion({ versionId: text(f, 'versionId'), when: text(f, 'when') });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: 'Scheduled.' };
+}
+
+export async function cancelVersionAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await cancelContentVersion({ versionId: text(f, 'versionId'), reason: text(f, 'reason') });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: 'Cancelled.' };
+}
+
+export async function activateStrategyAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await activateSocialStrategy(text(f, 'strategyId'));
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: 'Activated. The previous strategy for that platform and horizon is superseded.' };
 }

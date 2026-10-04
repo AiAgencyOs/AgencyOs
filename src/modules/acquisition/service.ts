@@ -266,3 +266,125 @@ export async function liftProspectBlock(input: { blockId: string; reason: string
       return err('FORBIDDEN', FORBIDDEN);
   }
 }
+
+async function managerWithOrg(): Promise<Result<{ organizationId: string }>> {
+  const gate = await manager();
+  if (!gate.ok) return gate;
+  const context = await requireInternal();
+  if (!context.organizationId) return err('FORBIDDEN', 'Your account is not attached to an organisation.');
+  return ok({ organizationId: context.organizationId });
+}
+
+export async function createContentDraft(input: {
+  platform: string; objective: string; format: string; title: string; service: string; body: string; cta: string; hashtags: string[];
+}): Promise<Result<{ versionId: string }>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const org = gate.data.organizationId;
+  const { data: made, error } = await supabase.schema('crm').rpc('create_content_item', {
+    p_organization_id: org, p_platform: input.platform, p_objective: input.objective, p_format: input.format, p_strategy: undefined as never,
+    p_service: (input.service || null) as never, p_title: input.title, p_by_type: 'human',
+  });
+  if (error) return err('INTERNAL', 'Could not start the draft.');
+  const item = first<{ outcome?: string; item_id?: string }>(made);
+  if (item?.outcome !== 'created' || !item.item_id) return err('VALIDATION', 'Check the platform, objective, format and a title of a few words.');
+  const { data, error: vError } = await supabase.schema('crm').rpc('add_content_version', {
+    p_organization_id: org, p_item: item.item_id, p_body: input.body, p_cta: (input.cta || null) as never, p_hashtags: input.hashtags,
+    p_asset_ids: [], p_reference_ids: [], p_by_type: 'human',
+  });
+  if (vError) return err('INTERNAL', 'Could not save the draft.');
+  const v = first<{ outcome?: string; version_id?: string }>(data);
+  if (v?.outcome !== 'created' || !v.version_id) return err('VALIDATION', 'The text is empty or too long for that platform (LinkedIn 3,000, Instagram 2,200 characters).');
+  return ok({ versionId: v.version_id });
+}
+
+export async function reviewContentVersion(versionId: string): Promise<Result<{ passed: boolean; blocking: string[] }>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('review_content_version', { p_organization_id: gate.data.organizationId, p_version: versionId });
+  if (error) return err('INTERNAL', 'Could not run the review.');
+  const r = first<{ outcome?: string; passed?: boolean; blocking?: unknown }>(data);
+  if (r?.outcome === 'wrong_state') return err('CONFLICT', 'That version has already been reviewed.');
+  if (r?.outcome !== 'reviewed') return err('NOT_FOUND', 'That version no longer exists.');
+  return ok({ passed: r.passed === true, blocking: Array.isArray(r.blocking) ? (r.blocking as string[]) : [] });
+}
+
+export async function submitContentForApproval(versionId: string): Promise<Result<true>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('submit_for_admin_review', { p_organization_id: gate.data.organizationId, p_version: versionId });
+  if (error) return err('INTERNAL', 'Could not submit it.');
+  switch (first<{ outcome?: string }>(data)?.outcome) {
+    case 'submitted':
+    case 'already_pending':
+      return ok(true);
+    case 'not_reviewed':
+      return err('CONFLICT', 'Only a version that passed the automated review can go to an admin.');
+    case 'no_policy':
+      return err('CONFLICT', 'Set up lead generation first - it creates the approval rule for social content.');
+    default:
+      return err('FORBIDDEN', FORBIDDEN);
+  }
+}
+
+export async function scheduleContentVersion(input: { versionId: string; when: string }): Promise<Result<true>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const when = new Date(input.when);
+  if (Number.isNaN(when.getTime())) return err('VALIDATION', 'Choose a date and time.');
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('schedule_content', { p_organization_id: gate.data.organizationId, p_version: input.versionId, p_when: when.toISOString() });
+  if (error) return err('INTERNAL', 'Could not schedule it.');
+  const r = first<{ outcome?: string; reason?: string }>(data);
+  switch (r?.outcome) {
+    case 'scheduled':
+      return ok(true);
+    case 'not_approved':
+      return err('CONFLICT', r.reason === 'expired' ? 'The approval has expired. Submit it again.' : 'It has not been approved yet - an admin must approve exactly this version first.');
+    case 'wrong_state':
+      return err('CONFLICT', 'It is not waiting for approval any more.');
+    case 'invalid_time':
+      return err('VALIDATION', 'Choose a time that is not in the past.');
+    default:
+      return err('FORBIDDEN', FORBIDDEN);
+  }
+}
+
+export async function cancelContentVersion(input: { versionId: string; reason: string }): Promise<Result<true>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('cancel_content_version', { p_organization_id: gate.data.organizationId, p_version: input.versionId, p_reason: input.reason });
+  if (error) return err('INTERNAL', 'Could not cancel it.');
+  switch (first<{ outcome?: string }>(data)?.outcome) {
+    case 'cancelled':
+      return ok(true);
+    case 'needs_reason':
+      return err('VALIDATION', 'Say why - the reason is kept.');
+    case 'publishing_in_progress':
+      return err('CONFLICT', 'It is being posted right now.');
+    case 'not_live':
+      return err('CONFLICT', 'It has already ended.');
+    default:
+      return err('FORBIDDEN', FORBIDDEN);
+  }
+}
+
+export async function activateSocialStrategy(strategyId: string): Promise<Result<true>> {
+  const gate = await manager();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('activate_social_strategy', { p_strategy: strategyId });
+  if (error) return err('INTERNAL', 'Could not activate it.');
+  switch (first<{ outcome?: string }>(data)?.outcome) {
+    case 'activated':
+      return ok(true);
+    case 'not_a_draft':
+      return err('CONFLICT', 'Only a draft strategy can be activated.');
+    default:
+      return err('FORBIDDEN', FORBIDDEN);
+  }
+}

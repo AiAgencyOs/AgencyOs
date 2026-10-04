@@ -357,3 +357,42 @@ export async function listRecentQualifications(limit = 10): Promise<Qualificatio
     createdAt: q.created_at,
   }));
 }
+
+export type ContentQueueRow = {
+  itemId: string; versionId: string; version: number; platform: string; objective: string; format: string; title: string; bodyPreview: string;
+  state: string; status: string; scheduledFor: string | null; blocking: string[]; warnings: string[]; createdAt: string;
+};
+
+/** The content a person works, with the specification's labels derived from the approval engine. */
+export async function listContentQueue(limit = 40): Promise<ContentQueueRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('content_queue', { p_limit: limit });
+  if (error) unreadable('listContentQueue', error);
+  return ((data ?? []) as { item_id: string | null; version_id: string | null; version: number | null; platform: string | null; objective: string | null; format: string | null; title: string | null; body_preview: string | null; state: string | null; status: string | null; scheduled_for: string | null; review: { blocking?: string[]; warnings?: string[] } | null; created_at: string | null }[])
+    .filter((r) => r.item_id && r.version_id)
+    .map((r) => ({
+      itemId: r.item_id as string, versionId: r.version_id as string, version: r.version ?? 1, platform: r.platform ?? '', objective: r.objective ?? '', format: r.format ?? '',
+      title: r.title ?? '', bodyPreview: r.body_preview ?? '', state: r.state ?? '', status: r.status ?? r.state ?? '', scheduledFor: r.scheduled_for,
+      blocking: Array.isArray(r.review?.blocking) ? r.review.blocking : [], warnings: Array.isArray(r.review?.warnings) ? r.review.warnings : [], createdAt: r.created_at ?? '',
+    }));
+}
+
+export type StrategyView = { id: string; platform: string; horizon: number; version: number; status: string; rationale: string | null; content: Record<string, unknown>; createdAt: string };
+
+export async function listSocialStrategies(): Promise<StrategyView[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('social_strategies').select('id, platform, horizon_months, version, status, rationale, content, created_at')
+    .order('platform').order('horizon_months').order('version', { ascending: false }).limit(40);
+  if (error) unreadable('listSocialStrategies', error);
+  return (data ?? []).map((s) => ({ id: s.id, platform: s.platform, horizon: s.horizon_months, version: s.version, status: s.status, rationale: s.rationale, content: (s.content ?? {}) as Record<string, unknown>, createdAt: s.created_at }));
+}
+
+export type PerformanceRow = { platform: string; objective: string; format: string; published: number; impressions: number; engagements: number; clicks: number };
+
+export async function readSocialPerformance(): Promise<PerformanceRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('social_performance', {});
+  if (error) unreadable('readSocialPerformance', error);
+  return ((data ?? []) as { platform: string | null; objective: string | null; format: string | null; published: number | null; impressions: number | null; engagements: number | null; clicks: number | null }[])
+    .map((r) => ({ platform: r.platform ?? '', objective: r.objective ?? '', format: r.format ?? '', published: Number(r.published ?? 0), impressions: Number(r.impressions ?? 0), engagements: Number(r.engagements ?? 0), clicks: Number(r.clicks ?? 0) }));
+}

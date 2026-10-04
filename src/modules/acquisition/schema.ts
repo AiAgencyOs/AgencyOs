@@ -43,7 +43,10 @@ export const ENGINE_STATUS: Record<AcquisitionChannel, { build: EngineBuild; sum
     summary: 'Governed sending from info@, opt-out, bounce handling and reply reading are live. A reply is adopted into the shared identity with the email agent as owner; prospects are qualified against the Admin\'s weights and rules; drafts are checked against recorded research; a follow-up is re-checked when it is sent. Finding prospects on the open web and an AI writing the message are NOT built yet - they need a discovery source and a funded model.',
     link: { href: '/communication/email-outreach', label: 'Open email outreach' },
   },
-  social: { build: 'not_built', summary: 'The Social Media Marketing agent, content approval pipeline and publishing are not built yet.' },
+  social: {
+    build: 'partial',
+    summary: 'The content pipeline is built: drafts, an automated review that can fail but never approve, exact-version admin approval, scheduling, and publish-once. Strategies and audits are recorded. NOT built: connecting LinkedIn, Instagram or Facebook (so a due post is flagged for a person to post by hand), reading account analytics, and the AI that plans and writes.',
+  },
   google_ads: { build: 'not_built', summary: 'The Google Ads connector, landing-page engine and Hostinger deployment are not built yet.' },
   b2b: { build: 'not_built', summary: 'The B2B opportunity agent and platform connectors are not built yet.' },
 };

@@ -19,6 +19,8 @@ import { runCampaigns } from '@/modules/crm/campaign-worker';
 import { runOutreach } from '@/modules/crm/outreach/worker';
 import { runInboundEmail } from '@/modules/crm/inbound-email';
 import { expireHandoffs } from '@/modules/acquisition/handoff';
+import { SOCIAL_PUBLISHERS } from '@/modules/acquisition/adapters';
+import { runSocialPublishing } from '@/modules/acquisition/social';
 import { runProviderMaintenance } from '@/lib/ai/provider-maintenance';
 import { publishDueAnnouncements } from '@/modules/crm/announcement-worker';
 import { runSuiteSchedules } from '@/modules/qa/schedule-worker';
@@ -325,6 +327,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   await runInboundEmail(admin);
   // Tracked WhatsApp handoff links that were never used past their expiry (lead generation, 20261015300000).
   await expireHandoffs(admin);
+  // Scheduled social posts that are due: published through the governed door, or surfaced for a person when no publisher exists.
+  await runSocialPublishing(admin, SOCIAL_PUBLISHERS);
   // AI providers: probe the ones that are due and refresh their model lists (best effort, bounded per tick).
   await runProviderMaintenance(admin);
 
