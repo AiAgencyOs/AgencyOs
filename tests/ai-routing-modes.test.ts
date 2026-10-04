@@ -29,6 +29,44 @@ const base = (over: Partial<RouteInput> = {}): RouteInput => ({
 });
 const ids = (plan: ReturnType<typeof planRoute>) => plan.candidates.map((c) => `${c.providerId}/${c.model}`);
 
+describe('one model id, two providers (the real API and a gateway in front of it)', () => {
+  const twin = (a: Partial<ModelSnapshot> = {}, b: Partial<ModelSnapshot> = {}) => [model('claude-x', 'real', a), model('claude-x', 'gateway', b)];
+  const two = (over: Partial<RouteInput> = {}) => base({ agentDefault: 'claude-x', providers: [provider('real', { priority: 10 }, 'claude-'), provider('gateway', { priority: 20 }, 'claude-')], models: twin(), ...over });
+
+  test('AUTO offers the id through BOTH providers, best provider first - one being down does not lose the model', () => {
+    assert.deepEqual(ids(planRoute(two())), ['real/claude-x', 'gateway/claude-x']);
+    const down = planRoute(two({ providers: [provider('real', { priority: 10, enabled: false }, 'claude-'), provider('gateway', { priority: 20 }, 'claude-')] }));
+    assert.deepEqual(ids(down), ['gateway/claude-x']);
+  });
+
+  test("switching one provider's copy off does not switch the id off for the other", () => {
+    const plan = planRoute(two({ models: twin({ enabled: false }, {}) }));
+    assert.deepEqual(ids(plan), ['gateway/claude-x']);
+    assert.equal(plan.considered.find((c) => c.providerId === 'real')?.excluded, 'model claude-x is disabled');
+  });
+
+  test('MANUAL picks exactly the provider named, and says so when the id exists only under the other', () => {
+    const picked = planRoute(two({ mode: 'manual', assignment: { providerId: 'gateway', modelId: 'claude-x', fallbacks: [] } }));
+    assert.deepEqual(ids(picked), ['gateway/claude-x']);
+    const only = planRoute(two({ mode: 'manual', assignment: { providerId: 'gateway', modelId: 'claude-x', fallbacks: [] }, models: [model('claude-x', 'real')] }));
+    assert.match(only.blocked?.reason ?? '', /registered under real, not gateway/);
+  });
+
+  test('each offer has its own price: a cost is looked up per provider, never by id alone', () => {
+    const src = read('src/lib/ai/routing-config.ts') + read('app/api/jobs/run/agent-run.ts');
+    assert.match(src, /priceKey\(m\.provider, m\.model_id\)/);
+    assert.match(src, /prices\.get\(priceKey\(candidate\.providerId, candidate\.model\)\)/);
+    assert.ok(!/prices\.get\(candidate\.model\)/.test(src));
+  });
+
+  test('the database keys a model by (organization, provider, model) and its doors say which provider or refuse', () => {
+    const m = read('supabase/migrations/20261014300000_a_model_belongs_to_a_provider.sql');
+    assert.match(m, /primary key \(organization_id, provider, model_id\)/);
+    assert.match(m, /return query select 'ambiguous'::text/);
+    assert.match(m, /on conflict \(organization_id, provider, model_id\)/);
+  });
+});
+
 describe('AUTO: the orchestrator chooses, but only from what the Admin allowed', () => {
   test('SCENARIO 1: a disabled provider is never considered; models come from the active ones', () => {
     const plan = planRoute(base({ providers: [provider('a'), provider('b'), provider('c', { enabled: false })] }));
@@ -138,7 +176,7 @@ describe('MANUAL: the Admin\'s assignment is honoured exactly', () => {
     for (const [models, why] of [
       [[model('b-fast', 'b', { enabled: false })], /disabled/],
       [[model('b-fast', 'b', { status: 'retired' })], /retired/],
-      [[model('b-fast', 'c')], /belongs to c/],
+      [[model('b-fast', 'c')], /registered under c, not b/],
       [[], /not in the registry/],
     ] as const) {
       const plan = planRoute(base({ mode: 'manual', assignment, models: [...models] }));

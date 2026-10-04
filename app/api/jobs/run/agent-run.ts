@@ -18,7 +18,7 @@
 import { parseModelJson } from '@/lib/ai/model-json';
 import { AgentPolicyRefusal, loadAgentPolicy, recordAgentPolicyRefusal } from '@/lib/ai/agent-policy';
 import { routedCandidatesFor } from '@/lib/ai/agent-routing';
-import { costMinorFor, loadRouting, requiredCapabilitiesFor, type LoadedRouting } from '@/lib/ai/routing-config';
+import { costMinorFor, loadRouting, priceKey, requiredCapabilitiesFor, type LoadedRouting } from '@/lib/ai/routing-config';
 import { planRoute, type RoutePlan } from '@/lib/ai/route-plan';
 import { categoryForAgent } from '@/lib/ai/model-choice';
 import { runWithFallback, type Candidate } from '@/lib/ai/fallback';
@@ -463,7 +463,7 @@ export async function callModel(
       const latencyMs = Date.now() - started;
       // Cost only from a price the Admin recorded for this model; an adapter reports 0 and nothing is ever estimated.
       const response: Result<StructuredResponse> = raw.ok
-        ? { ok: true, data: { ...raw.data, usage: { ...raw.data.usage, costMinor: costMinorFor(plan.routing?.loaded.prices.get(candidate.model), raw.data.usage) || raw.data.usage.costMinor } } }
+        ? { ok: true, data: { ...raw.data, usage: { ...raw.data.usage, costMinor: costMinorFor(plan.routing?.loaded.prices.get(priceKey(candidate.providerId, candidate.model)), raw.data.usage) || raw.data.usage.costMinor } } }
         : raw;
 
       seq = await recordModelCall(ctx.admin, {
@@ -821,7 +821,7 @@ export async function callModelWithTools(
         const latencyMs = Date.now() - started;
         // Cost only from a price the Admin recorded for this model; an adapter reports 0 and nothing is ever estimated.
         const attempted = rawAttempt.ok
-          ? { ...rawAttempt, data: { ...rawAttempt.data, usage: { ...rawAttempt.data.usage, costMinor: costMinorFor(plan.routing?.loaded.prices.get(candidate.model), rawAttempt.data.usage) || rawAttempt.data.usage.costMinor } } }
+          ? { ...rawAttempt, data: { ...rawAttempt.data, usage: { ...rawAttempt.data.usage, costMinor: costMinorFor(plan.routing?.loaded.prices.get(priceKey(candidate.providerId, candidate.model)), rawAttempt.data.usage) || rawAttempt.data.usage.costMinor } } }
           : rawAttempt;
 
         seq = await recordModelCall(ctx.admin, {

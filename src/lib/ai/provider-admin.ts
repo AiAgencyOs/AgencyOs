@@ -282,10 +282,11 @@ export async function registerManualModel(supabase: RequestClient, input: { prov
   }
 }
 
-export async function setModelEnabled(supabase: RequestClient, modelId: string, enabled: boolean): Promise<Result<true>> {
+/** `providerId` names WHICH provider's offer of the model: the same id can be served by two (the real API and a gateway). */
+export async function setModelEnabled(supabase: RequestClient, modelId: string, enabled: boolean, providerId?: string): Promise<Result<true>> {
   const g = await gate('ai.provider.manage');
   if (!g.ok) return g;
-  const { data, error } = await supabase.schema('ai').rpc('set_model_enabled', { p_model_id: modelId, p_enabled: enabled });
+  const { data, error } = await supabase.schema('ai').rpc('set_model_enabled', { p_model_id: modelId, p_enabled: enabled, ...(providerId ? { p_provider: providerId } : {}) });
   if (error) return err('INTERNAL', 'Could not change the model.');
   switch (first<{ outcome?: string }>(data)?.outcome) {
     case 'enabled':
@@ -294,6 +295,8 @@ export async function setModelEnabled(supabase: RequestClient, modelId: string, 
       return ok(true);
     case 'unknown_model':
       return err('NOT_FOUND', 'That model was not found.');
+    case 'ambiguous':
+      return err('CONFLICT', 'Two providers offer that model id - say which one.');
     default:
       return err('FORBIDDEN', 'Only the owner or an ops admin may enable or disable a model.');
   }

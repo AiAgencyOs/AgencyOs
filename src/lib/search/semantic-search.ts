@@ -100,7 +100,7 @@ export async function semanticSearch(filter: SemanticFilter): Promise<SemanticOu
   try {
     const embedded = await provider.embed([q]);
     vector = embedded.vectors[0] ?? [];
-    const price = await db.schema('ai').from('models').select('input_cost_minor_per_mtok').eq('model_id', provider.model).maybeSingle();
+    const price = await db.schema('ai').from('models').select('input_cost_minor_per_mtok').eq('provider', provider.id).eq('model_id', provider.model).maybeSingle();
     const perMtok = typeof price.data?.input_cost_minor_per_mtok === 'number' || typeof price.data?.input_cost_minor_per_mtok === 'string' ? Number(price.data.input_cost_minor_per_mtok) : null;
     // A failure to record is logged, not shown: the search itself succeeded.
     const recorded = await supabase.schema('ai').rpc('record_query_embedding_usage', {

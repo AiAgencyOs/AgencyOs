@@ -106,16 +106,24 @@ const healthRank: Record<HealthState, number> = { healthy: 0, unknown: 1, degrad
 
 export function planRoute(input: RouteInput): RoutePlan {
   const providerById = new Map(input.providers.map((p) => [p.id, p]));
-  const modelById = new Map(input.models.map((m) => [m.modelId, m]));
+  // A model id is unique only within a provider: the same id may be offered by two (the real API and a gateway in front of it).
+  const modelByKey = new Map(input.models.map((m) => [`${m.provider}::${m.modelId}`, m]));
+  const offersOf = (model: string): ModelSnapshot[] => input.models.filter((m) => m.modelId === model);
+  const byPriority = (a: ProviderSnapshot, b: ProviderSnapshot) => a.priority - b.priority || a.id.localeCompare(b.id);
   const considered: Considered[] = [];
   const warnings: string[] = [];
 
-  /** The provider that serves a model: the registry's own assignment of it, else the first provider (by priority) that recognises its id. */
-  const providerFor = (model: string): ProviderSnapshot | undefined => {
-    const registered = modelById.get(model);
-    if (registered) return providerById.get(registered.provider);
-    return [...input.providers].sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id)).find((p) => p.supports(model));
+  /** The providers that serve a model id: those that registered it (best priority first), else the first one that recognises its id. */
+  const providersFor = (model: string): ProviderSnapshot[] => {
+    const registered = offersOf(model)
+      .map((m) => providerById.get(m.provider))
+      .filter((p): p is ProviderSnapshot => p !== undefined)
+      .sort(byPriority);
+    if (registered.length > 0) return registered;
+    const recognised = [...input.providers].sort(byPriority).find((p) => p.supports(model));
+    return recognised ? [recognised] : [];
   };
+  const providerFor = (model: string): ProviderSnapshot | undefined => providersFor(model)[0];
 
   if (input.mode === 'manual') {
     const a = input.assignment;
@@ -137,8 +145,11 @@ export function planRoute(input: RouteInput): RoutePlan {
     const check = (providerId: string, model: string, source: RouteSource, reason: string): string | null => {
       const p = providerById.get(providerId);
       const pv = providerVerdict(p, { strictHealth: false });
-      const m = modelById.get(model);
-      const mv = !m ? ({ ok: false, why: `model ${model} is not in the registry` } as const) : m.provider !== providerId ? ({ ok: false, why: `model ${model} belongs to ${m.provider}, not ${providerId}` } as const) : modelVerdict(m);
+      const m = modelByKey.get(`${providerId}::${model}`);
+      const elsewhere = offersOf(model).map((o) => o.provider);
+      const mv = !m
+        ? ({ ok: false, why: elsewhere.length > 0 ? `model ${model} is registered under ${elsewhere.join(', ')}, not ${providerId}` : `model ${model} is not in the registry` } as const)
+        : modelVerdict(m);
       const why = !pv.ok ? pv.why : !mv.ok ? mv.why : input.needsTools && m?.toolCalling === false ? `model ${model} does not support tool calling` : null;
       considered.push({ providerId, model, excluded: why });
       if (!why) candidates.push({ providerId, model, source, reason });
@@ -160,17 +171,23 @@ export function planRoute(input: RouteInput): RoutePlan {
   // ── AUTO ──
   const out: RouteCandidate[] = [];
   const seen = new Set<string>();
-  const consider = (model: string, source: RouteSource, reason: string): void => {
-    if (seen.has(model)) return;
-    seen.add(model);
-    const p = providerFor(model);
-    const m = modelById.get(model);
+  const considerOffer = (p: ProviderSnapshot | undefined, m: ModelSnapshot | undefined, model: string, source: RouteSource, reason: string): void => {
+    const key = `${p?.id ?? ''}::${model}`;
+    if (seen.has(key)) return;
+    seen.add(key);
     const pv = providerVerdict(p, { strictHealth: true });
     const mv = modelVerdict(m);
     const toolsWhy = input.needsTools && m?.toolCalling === false ? `model ${model} does not support tool calling` : null;
     const why = !pv.ok ? pv.why : !mv.ok ? mv.why : toolsWhy;
     considered.push({ providerId: p?.id ?? null, model, excluded: why });
     if (!why && p) out.push({ providerId: p.id, model, source, reason });
+  };
+  // A model id the Admin ranked is offered by EVERY provider that registered it, best provider first - a gateway and the real API
+  // for the same id are two candidates, so one being down does not lose the model.
+  const consider = (model: string, source: RouteSource, reason: string): void => {
+    const providers = providersFor(model);
+    if (providers.length === 0) return considerOffer(undefined, undefined, model, source, reason);
+    for (const p of providers) considerOffer(p, modelByKey.get(`${p.id}::${model}`), model, source, reason);
   };
 
   // 1. the Admin's own preferences, in their order (the agent default is always last of them)
@@ -194,7 +211,7 @@ export function planRoute(input: RouteInput): RoutePlan {
   };
   const extras: ModelSnapshot[] = [];
   for (const m of input.models) {
-    if (seen.has(m.modelId)) continue;
+    if (seen.has(`${m.provider}::${m.modelId}`)) continue;
     const why = extraWhy(m);
     if (why) considered.push({ providerId: m.provider, model: m.modelId, excluded: why });
     else extras.push(m);
@@ -210,7 +227,7 @@ export function planRoute(input: RouteInput): RoutePlan {
     const pb = providerById.get(b.provider) as ProviderSnapshot;
     return healthRank[pa.health] - healthRank[pb.health] || rate(a) - rate(b) || pa.priority - pb.priority || a.modelId.localeCompare(b.modelId);
   });
-  for (const m of extras.slice(0, MAX_EXTRAS)) consider(m.modelId, 'auto_ranked', `an enabled model ranked by ${input.optimiseFor ?? 'quality'}${rate(m) === Number.POSITIVE_INFINITY ? ' (unrated)' : ''}`);
+  for (const m of extras.slice(0, MAX_EXTRAS)) considerOffer(providerById.get(m.provider), m, m.modelId, 'auto_ranked', `an enabled model ranked by ${input.optimiseFor ?? 'quality'}${rate(m) === Number.POSITIVE_INFINITY ? ' (unrated)' : ''}`);
 
   // Providers in a rate-limited or unavailable state are still allowed, but after healthy ones: stale health must not deadlock routing.
   const sorted = out

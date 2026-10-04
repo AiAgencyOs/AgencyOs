@@ -1429,7 +1429,7 @@ export type Database = {
         }[]
       }
       set_model_enabled: {
-        Args: { p_enabled: boolean; p_model_id: string }
+        Args: { p_enabled: boolean; p_model_id: string; p_provider?: string }
         Returns: {
           outcome: string | null
         }[]
@@ -1617,6 +1617,7 @@ export type Database = {
       retire_model: {
         Args: {
           p_model_id: string
+          p_provider?: string
           p_reason: string
         }
         Returns: {

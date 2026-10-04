@@ -32,6 +32,8 @@ export type AddModelInput = z.infer<typeof addModelSchema>;
 
 export const retireModelSchema = z.object({
   modelId,
+  /** Which provider's offer, when two providers serve the same id. */
+  provider: z.string().trim().max(60).optional(),
   reason: z.string().trim().min(1, 'Say why the model is being retired.').max(500),
 });
 export type RetireModelInput = z.infer<typeof retireModelSchema>;

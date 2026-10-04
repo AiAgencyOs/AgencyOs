@@ -72,12 +72,13 @@ export function AddModelForm({ providers }: { providers: readonly string[] }) {
   );
 }
 
-export function RetireModelForm({ modelId }: { modelId: string }) {
+export function RetireModelForm({ modelId, provider }: { modelId: string; provider?: string }) {
   const [state, action, pending] = useActionState(retireModelAction, IDLE_STATE);
 
   return (
     <form action={action} className="flex flex-wrap items-center gap-1">
       <input type="hidden" name="modelId" value={modelId} />
+      {provider ? <input type="hidden" name="provider" value={provider} /> : null}
       <input name="reason" required maxLength={500} placeholder="why retire" aria-label={`Reason for retiring ${modelId}`} className={`${inputClass} h-7 w-36 text-xs`} />
       <button type="submit" disabled={pending} className={buttonClass('ghost', 'sm')}>
         {pending ? '…' : 'Retire'}

@@ -341,6 +341,30 @@ try {
   check((await providerRow(PM))?.health_checked_at === null && !calls.some((c) => c.path.startsWith('/m/')), 'a disabled provider is not probed', `${calls.filter((c) => c.path.startsWith('/m/')).length} calls`);
   await rest('DELETE', 'core', `alerts?fingerprint=like.ai-provider:acme-%25`).catch(() => {});
 
+  section('6d. One model id, two providers');
+  const SHARED = `${MARKER}-shared`;
+  for (const prov of [PV, PW]) {
+    await door('register_manual_model', { p_provider_id: prov, p_model_id: SHARED, p_display_name: SHARED, p_capabilities: ['structured_output'], p_context_tokens: 32000, p_tool_calling: true, p_structured_output: true });
+  }
+  const offers = (await rest('GET', 'ai', `models?organization_id=eq.${ORG}&model_id=eq.${SHARED}&select=provider,enabled`)).json ?? [];
+  check(offers.length === 2 && new Set(offers.map((o) => o.provider)).size === 2, 'the same id is registered under BOTH providers, each its own row', offers.map((o) => o.provider).join(' & '));
+  const amb = one(await door('set_model_enabled', { p_model_id: SHARED, p_enabled: false }));
+  check(amb?.outcome === 'ambiguous', 'switching it off without saying which provider is refused, not applied to both', String(amb?.outcome));
+  const offOne = one(await door('set_model_enabled', { p_model_id: SHARED, p_enabled: false, p_provider: PV }));
+  const after = (await rest('GET', 'ai', `models?organization_id=eq.${ORG}&model_id=eq.${SHARED}&select=provider,enabled`)).json ?? [];
+  check(offOne?.outcome === 'disabled' && after.find((o) => o.provider === PV)?.enabled === false && after.find((o) => o.provider === PW)?.enabled === true, 'switching one provider\'s copy off leaves the other\'s on', JSON.stringify(after.map((o) => [o.provider.slice(0, 6), o.enabled])));
+  const refusedOff = one(await door('set_agent_assignment', { p_agent_key: 'sales', p_provider_id: PV, p_model_id: SHARED, p_fallbacks: [], p_note: '' }));
+  check(refusedOff?.outcome === 'model_not_enabled', 'an assignment to the disabled copy is refused', String(refusedOff?.outcome));
+  const mismatch2 = one(await door('set_agent_assignment', { p_agent_key: 'sales', p_provider_id: 'anthropic', p_model_id: SHARED, p_fallbacks: [], p_note: '' }));
+  check(mismatch2?.outcome === 'provider_mismatch', 'and one to a provider that does not offer it names that', String(mismatch2?.outcome));
+  const okOn = one(await door('set_agent_assignment', { p_agent_key: 'sales', p_provider_id: PW, p_model_id: SHARED, p_fallbacks: [], p_note: 'shared id' }));
+  check(okOn?.outcome === 'saved', 'the enabled copy can be assigned', String(okOn?.outcome));
+  await sleep(21_000);
+  const rShared = await run('which of the two serves this?');
+  const sharedCalls = rShared.calls.filter((c) => c.path.endsWith('chat/completions'));
+  check(sharedCalls.length > 0 && sharedCalls.every((c) => c.path.startsWith('/w/') && c.model === SHARED), 'the run goes to exactly the assigned provider\'s copy - the other provider receives nothing', `${sharedCalls.length} call(s) on /w/`);
+  check(rShared.decisions.filter((d) => d.outcome === 'succeeded').every((d) => d.provider_id === PW && d.model_id === SHARED), 'and the decision names that provider and that model');
+
   section('7. No secret appears in what was recorded');
   const everything = JSON.stringify({
     decisions: (await rest('GET', 'ai', `routing_decisions?organization_id=eq.${ORG}&select=*&limit=200`)).json,
