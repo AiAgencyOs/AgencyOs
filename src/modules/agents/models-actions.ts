@@ -50,6 +50,7 @@ export async function addModelAction(_prev: FormState, formData: FormData): Prom
 export async function retireModelAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const result = await retireModel({
     modelId: String(formData.get('modelId') ?? ''),
+    provider: String(formData.get('provider') ?? '') || undefined,
     reason: String(formData.get('reason') ?? ''),
   });
   if (!result.ok) return { status: 'error', message: result.error.message };

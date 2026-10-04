@@ -120,7 +120,7 @@ export async function estimateBackfill(agents: readonly AgentSource[]): Promise<
   byGroup.push({ group: 'Agent', records: agentCount });
   records += agentCount;
 
-  const price = await db.schema('ai').from('models').select('input_cost_minor_per_mtok').eq('model_id', provider.model).maybeSingle();
+  const price = await db.schema('ai').from('models').select('input_cost_minor_per_mtok').eq('provider', provider.id).eq('model_id', provider.model).maybeSingle();
   if (price.error) unreadable('estimateBackfill.price', price.error);
   const pricePerMtokMinor = typeof price.data?.input_cost_minor_per_mtok === 'number' || typeof price.data?.input_cost_minor_per_mtok === 'string' ? Number(price.data.input_cost_minor_per_mtok) : null;
 

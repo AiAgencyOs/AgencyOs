@@ -181,7 +181,7 @@ export async function registerModelAction(_prev: FormState, fd: FormData): Promi
 
 export async function setModelEnabledAction(_prev: FormState, fd: FormData): Promise<FormState> {
   const enabled = text(fd, 'enabled') === 'true';
-  const result = await setModelEnabled(await createClient(), text(fd, 'modelId'), enabled);
+  const result = await setModelEnabled(await createClient(), text(fd, 'modelId'), enabled, text(fd, 'providerId') || undefined);
   if (!result.ok) return fail(result.error.message);
   refresh(text(fd, 'providerId'));
   return done(enabled ? 'Model enabled.' : 'Model disabled.');

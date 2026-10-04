@@ -63,6 +63,9 @@ export async function readModelDetail(modelId: string, recentLimit = 20): Promis
     .from('models')
     .select('model_id, provider, status, capabilities, context_tokens, input_cost_minor_per_mtok, output_cost_minor_per_mtok, created_at, updated_at')
     .eq('model_id', modelId)
+    // The same id can be offered by two providers; this page shows the first (by provider id) - the Provider Manager has each offer.
+    .order('provider')
+    .limit(1)
     .maybeSingle();
   if (modelError) unreadable('readModelDetail.model', modelError);
   if (!row) return null;

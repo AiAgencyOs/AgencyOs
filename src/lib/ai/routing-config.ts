@@ -27,6 +27,9 @@ const BUILTIN_KEY_ENV: Record<string, 'ANTHROPIC_API_KEY' | 'OPENAI_API_KEY' | '
 };
 
 /** The pieces a decision row and the cost calculation need beyond the plan itself. */
+/** A price belongs to a provider's offer of a model: the same id can cost different amounts through a gateway. */
+export const priceKey = (provider: string, model: string): string => `${provider}::${model}`;
+
 export type LoadedRouting = {
   readonly input: Omit<RouteInput, 'needsTools' | 'requiredCapabilities'>;
   readonly category: string | null;
@@ -97,7 +100,7 @@ export async function loadRouting(
     const prices = new Map<string, { input: number; output: number }>();
     for (const m of models.data ?? []) {
       if (m.input_cost_minor_per_mtok !== null && m.output_cost_minor_per_mtok !== null) {
-        prices.set(m.model_id, { input: Number(m.input_cost_minor_per_mtok), output: Number(m.output_cost_minor_per_mtok) });
+        prices.set(priceKey(m.provider, m.model_id), { input: Number(m.input_cost_minor_per_mtok), output: Number(m.output_cost_minor_per_mtok) });
       }
     }
 
