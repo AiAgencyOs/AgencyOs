@@ -93,6 +93,8 @@ export function serverEnv(): ServerEnv {
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     SMTP_HOST: process.env.SMTP_HOST,
     SMTP_PORT: process.env.SMTP_PORT,
+    IMAP_HOST: process.env.IMAP_HOST,
+    IMAP_PORT: process.env.IMAP_PORT,
     SMTP_USER: process.env.SMTP_USER,
     SMTP_PASS: process.env.SMTP_PASS,
     SMTP_SECURE: process.env.SMTP_SECURE,

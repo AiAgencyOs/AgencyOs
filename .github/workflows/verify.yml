@@ -819,6 +819,10 @@ jobs:
           # and the public unsubscribe cannot be triggered by a link scanner.
           npm run db:verify:emailoutreach
 
+          # Inbound email: a reply stops a sequence, an unsubscribe or hard bounce suppresses for good, a client's email lands in
+          # their own thread, a stranger is raised and put nowhere, the same message twice changes nothing.
+          npm run db:verify:inboundemail
+
           # The AI Provider Manager's contract: who may manage providers, models and keys; no path returns a secret;
           # discovered models arrive disabled; a rejected key stays rejected; history is never orphaned.
           npm run db:verify:aiproviders

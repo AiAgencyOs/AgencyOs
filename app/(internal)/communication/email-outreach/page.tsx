@@ -5,8 +5,9 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can, hasRole } from '@/lib/authz/permissions';
 import { emailTransportState } from '@/lib/email/transport';
+import { readInboundEmail } from '@/modules/crm/inbound-email-queries';
 import { listEmailCampaigns, listEmailTemplates, listProspects, listSuppressions, readOutreachSettings } from '@/modules/crm/outreach/queries';
-import { Callout, Card, CardBody, CardHeader, EmptyState, PageHeader, PermissionDenied, Stat, StatGrid, StatusBadge } from '@/ui';
+import { Badge, Callout, Card, CardBody, CardHeader, EmptyState, PageHeader, PermissionDenied, Stat, StatGrid, StatusBadge } from '@/ui';
 
 import { ApproveTemplateForm, CampaignForm, ImportForm, ProspectActions, SettingsForm, SuppressForm, TemplateForm } from './forms';
 
@@ -25,7 +26,7 @@ export default async function EmailOutreachPage() {
   const isOwner = hasRole(context, 'owner');
   const mayApprove = can(context, 'audit.read');
 
-  const [settings, transport, prospects, templates, campaigns, suppressions, clock] = await Promise.all([
+  const [settings, transport, prospects, templates, campaigns, suppressions, clock, inbound] = await Promise.all([
     readOutreachSettings(),
     emailTransportState('outreach'),
     listProspects(),
@@ -33,6 +34,7 @@ export default async function EmailOutreachPage() {
     listEmailCampaigns(),
     listSuppressions(),
     agencyClock(),
+    readInboundEmail(),
   ]);
   const approved = templates.filter((t) => t.status === 'approved');
   const identityMissing = !settings?.senderName || !settings?.postalAddress;
@@ -77,6 +79,40 @@ export default async function EmailOutreachPage() {
               coldBasisEnabled: settings?.coldBasisEnabled ?? false,
             }}
           />
+        </CardBody>
+      </Card>
+
+      <Card id="replies">
+        <CardHeader title="Replies, bounces and unsubscribes" description="What arrived on the mailboxes. A reply stops that person's sequence; an unsubscribe request and a hard bounce suppress the address for good. Nothing is answered automatically." />
+        <CardBody className="flex flex-col gap-3">
+          <ul className="flex flex-wrap gap-3 text-xs">
+            {['outreach', 'client'].map((lane) => {
+              const m = inbound.mailboxes.find((x) => x.lane === lane);
+              return (
+                <li key={lane} className="flex items-center gap-2">
+                  <Badge tone={m?.lastError ? 'danger' : m?.lastOkAt ? 'success' : 'neutral'} dot>{lane === 'outreach' ? 'info@' : 'care@'}</Badge>
+                  <span className="text-muted">
+                    {m?.lastError ? `could not read: ${m.lastError}` : m?.lastOkAt ? `checked ${clock.dateTime(m.lastOkAt)}` : 'not read yet - set the IMAP server under Security › Keys & secrets › Email'}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          {inbound.rows.length === 0 ? (
+            <p className="text-[13px] text-muted">Nothing has been read yet.</p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {inbound.rows.map((r) => (
+                <li key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-[13px]">
+                  <span className="text-xs text-muted">{clock.dateTime(r.receivedAt)}</span>
+                  <Badge tone="neutral">{r.lane === 'outreach' ? 'info@' : 'care@'}</Badge>
+                  <span className="font-mono text-xs">{r.fromEmail}</span>
+                  <Badge tone={r.kind === 'reply' ? 'info' : r.kind === 'auto_reply' ? 'neutral' : 'warning'}>{r.kind.replace('_', ' ')}</Badge>
+                  <span className="text-xs text-muted">{r.outcome.replace(/_/g, ' ')}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </CardBody>
       </Card>
 

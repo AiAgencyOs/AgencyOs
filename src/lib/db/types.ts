@@ -3986,6 +3986,58 @@ export type Database = {
         }
         Relationships: []
       }
+      inbound_emails: {
+        Row: {
+          conversation_id: string | null
+          from_email: string
+          id: string
+          kind: string
+          lane: string
+          message_id: string
+          organization_id: string
+          outcome: string
+          prospect_id: string | null
+          received_at: string
+          recorded_at: string
+          subject: string | null
+        }
+        Insert: {
+          conversation_id?: string | null
+          from_email: string
+          id?: string
+          kind: string
+          lane: string
+          message_id: string
+          organization_id: string
+          outcome: string
+          prospect_id?: string | null
+          received_at: string
+          recorded_at?: string
+          subject?: string | null
+        }
+        Update: Partial<{ outcome: string }>
+        Relationships: []
+      }
+      inbound_email_state: {
+        Row: {
+          lane: string
+          last_error: string | null
+          last_handled: number
+          last_ok_at: string | null
+          last_polled_at: string | null
+          organization_id: string
+        }
+        Insert: {
+          lane: string
+          last_error?: string | null
+          last_handled?: number
+          last_ok_at?: string | null
+          last_polled_at?: string | null
+          organization_id: string
+        }
+        Update: Partial<{ last_error: string | null }>
+        Relationships: []
+      }
       email_suppressions: {
         Row: {
           id: string
@@ -6315,6 +6367,22 @@ export type Database = {
         Args: { p_bounce_pause_percent: number; p_cold_basis_enabled?: boolean; p_daily_cap: number; p_postal_address: string; p_reply_to: string; p_sender_name: string }
         Returns: {
           outcome: string | null
+        }[]
+      }
+      claim_inbound_poll: {
+        Args: { p_lane: string; p_min_interval_seconds: number; p_organization_id: string }
+        Returns: boolean
+      }
+      record_inbound_poll: {
+        Args: { p_detail: string; p_handled: number; p_lane: string; p_ok: boolean; p_organization_id: string }
+        Returns: undefined
+      }
+      ingest_inbound_email: {
+        Args: { p_body: string; p_bounced_email?: string; p_from: string; p_kind: string; p_lane: string; p_message_id: string; p_organization_id: string; p_received_at: string; p_subject: string }
+        Returns: {
+          conversation_id: string | null
+          outcome: string | null
+          prospect_id: string | null
         }[]
       }
       suppress_email: {

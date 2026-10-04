@@ -17,6 +17,7 @@ import { runFollowUps } from '@/modules/crm/follow-up-worker';
 import { runInvoiceReminders } from '@/modules/finance/reminder-worker';
 import { runCampaigns } from '@/modules/crm/campaign-worker';
 import { runOutreach } from '@/modules/crm/outreach/worker';
+import { runInboundEmail } from '@/modules/crm/inbound-email';
 import { runProviderMaintenance } from '@/lib/ai/provider-maintenance';
 import { publishDueAnnouncements } from '@/modules/crm/announcement-worker';
 import { runSuiteSchedules } from '@/modules/qa/schedule-worker';
@@ -319,6 +320,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const campaigns = await runCampaigns(admin);
   // Email outreach (info@): every send passes crm.claim_outreach_sends, inside the sending window only.
   const emailOutreach = await runOutreach(admin);
+  // The replies, bounces and unsubscribes that arrived on the two mailboxes (paced inside, and only when IMAP is configured).
+  await runInboundEmail(admin);
   // AI providers: probe the ones that are due and refresh their model lists (best effort, bounded per tick).
   await runProviderMaintenance(admin);
 
