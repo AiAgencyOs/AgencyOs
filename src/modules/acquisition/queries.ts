@@ -514,3 +514,73 @@ export async function listPortfolioChoices(): Promise<PortfolioChoice[]> {
   if (error) unreadable('listPortfolioChoices', error);
   return (data ?? []).map((i) => ({ id: i.id, title: i.title, kind: i.kind }));
 }
+
+export type B2bRuleView = { platform: string; offplatform: string; mode: string; note: string | null };
+export type B2bSettingsView = { minBudgetMinor: number | null; excludedTerms: string[]; scoreThreshold: number; monthlyConnectsCap: number | null };
+
+export async function readB2bSetup(): Promise<{ ready: boolean; rules: B2bRuleView[]; settings: B2bSettingsView | null }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('b2b_platform_rules').select('platform, offplatform_contact, automation_mode, note').order('platform');
+  if (error) unreadable('readB2bSetup', error);
+  const { data: s, error: sError } = await supabase.schema('crm').from('b2b_settings').select('min_budget_minor, excluded_terms, score_threshold, monthly_connects_cap').maybeSingle();
+  if (sError) unreadable('readB2bSetup.settings', sError);
+  return {
+    ready: (data ?? []).length > 0,
+    rules: (data ?? []).map((r) => ({ platform: r.platform, offplatform: r.offplatform_contact, mode: r.automation_mode, note: r.note })),
+    settings: s ? { minBudgetMinor: s.min_budget_minor, excludedTerms: s.excluded_terms, scoreThreshold: s.score_threshold, monthlyConnectsCap: s.monthly_connects_cap } : null,
+  };
+}
+
+export type B2bProposalView = { id: string; version: number; state: string; priceMinor: number | null; currency: string; connects: number; problems: string[]; externalRef: string | null; bodyPreview: string };
+export type B2bOpportunityView = {
+  id: string; platform: string; title: string; url: string | null; status: string; score: number | null; reasons: string[]; budgetMaxMinor: number | null; currency: string;
+  skipReason: string | null; leadId: string | null; proposals: B2bProposalView[];
+};
+
+export async function listB2bOpportunities(limit = 40): Promise<B2bOpportunityView[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('b2b_opportunities')
+    .select('id, platform, title, url, status, fit_score, fit_reasons, budget_max_minor, currency, skip_reason, lead_id').order('created_at', { ascending: false }).limit(limit);
+  if (error) unreadable('listB2bOpportunities', error);
+  const ids = (data ?? []).map((o) => o.id);
+  const byOpp = new Map<string, B2bProposalView[]>();
+  if (ids.length > 0) {
+    const { data: proposals, error: proposalsError } = await supabase.schema('crm').from('b2b_proposal_versions')
+      .select('id, opportunity_id, version, state, price_minor, currency, connects_cost, review, external_ref, body').in('opportunity_id', ids).order('version', { ascending: false }).limit(200);
+    if (proposalsError) unreadable('listB2bOpportunities.proposals', proposalsError);
+    for (const p of proposals ?? []) {
+      const problems = (p.review as { problems?: unknown } | null)?.problems;
+      const list = byOpp.get(p.opportunity_id) ?? [];
+      if (list.length < 3) list.push({ id: p.id, version: p.version, state: p.state, priceMinor: p.price_minor, currency: p.currency, connects: p.connects_cost, problems: Array.isArray(problems) ? (problems as string[]) : [], externalRef: p.external_ref, bodyPreview: p.body.slice(0, 160) });
+      byOpp.set(p.opportunity_id, list);
+    }
+  }
+  return (data ?? []).map((o) => ({
+    id: o.id, platform: o.platform, title: o.title, url: o.url, status: o.status, score: o.fit_score, reasons: Array.isArray(o.fit_reasons) ? (o.fit_reasons as string[]) : [],
+    budgetMaxMinor: o.budget_max_minor, currency: o.currency, skipReason: o.skip_reason, leadId: o.lead_id, proposals: byOpp.get(o.id) ?? [],
+  }));
+}
+
+export type B2bProfileView = { id: string; platform: string; version: number; state: string; headline: string; problems: string[]; evidenceUrl: string | null };
+
+export async function listB2bProfiles(): Promise<B2bProfileView[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('b2b_profile_versions').select('id, platform, version, state, content, review, evidence_url').order('created_at', { ascending: false }).limit(30);
+  if (error) unreadable('listB2bProfiles', error);
+  return (data ?? []).map((p) => {
+    const problems = (p.review as { problems?: unknown } | null)?.problems;
+    return { id: p.id, platform: p.platform, version: p.version, state: p.state, headline: String((p.content as { headline?: string } | null)?.headline ?? ''), problems: Array.isArray(problems) ? (problems as string[]) : [], evidenceUrl: p.evidence_url };
+  });
+}
+
+export type B2bOutcomeView = { platform: string; found: number; shortlisted: number; submitted: number; won: number; lost: number; revenueMinor: number; connectsSpent: number; winRatePct: number | null; insufficientData: boolean };
+
+export async function readB2bOutcomes(): Promise<B2bOutcomeView[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('b2b_outcomes');
+  if (error) unreadable('readB2bOutcomes', error);
+  return (data ?? []).filter((r) => r.platform).map((r) => ({
+    platform: r.platform as string, found: Number(r.found ?? 0), shortlisted: Number(r.shortlisted ?? 0), submitted: Number(r.submitted ?? 0), won: Number(r.won ?? 0), lost: Number(r.lost ?? 0),
+    revenueMinor: Number(r.revenue_minor ?? 0), connectsSpent: Number(r.connects_spent ?? 0), winRatePct: r.win_rate_pct === null ? null : Number(r.win_rate_pct), insufficientData: r.insufficient_data !== false,
+  }));
+}

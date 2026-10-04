@@ -54,7 +54,10 @@ export const ENGINE_STATUS: Record<AcquisitionChannel, { build: EngineBuild; sum
     build: 'partial',
     summary: 'The campaign pipeline is the same as Meta\'s, with Google\'s rules (keywords, negatives, headline lengths). Landing pages are built too: versions approved as exactly their content, address and WhatsApp number, a governed deploy, and a verification of the public address - a Google ad can only launch to a VERIFIED page, and a visit that becomes a WhatsApp message is credited to its campaign. NOT built: the Google Ads connector and the Hostinger deployer, so an approved launch or page is applied by hand and nothing here is shown live until it has been checked.',
   },
-  b2b: { build: 'not_built', summary: 'The B2B opportunity agent and platform connectors are not built yet.' },
+  b2b: {
+    build: 'partial',
+    summary: 'The opportunity pipeline is built: jobs you record are scored against your own thresholds, proposals are checked, approved as exactly these words and this price (only a person sets a price) and recorded as sent once, profile changes follow the same path, and a marketplace\'s own rule decides whether a conversation may be taken to WhatsApp (the default is never). NOT built: any marketplace connector - nothing is read from or sent to a platform, so a person finds the jobs and sends the approved proposals - and the AI that finds and writes them.',
+  },
 };
 
 export const ICP_LIST_KEYS = ['industries', 'geographies', 'company_sizes', 'personas', 'exclusions'] as const;

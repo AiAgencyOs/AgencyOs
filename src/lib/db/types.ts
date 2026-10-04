@@ -4691,6 +4691,267 @@ export type Database = {
         }
         Relationships: []
       }
+      b2b_platform_rules: {
+        Row: {
+          id: string
+          organization_id: string
+          platform: string
+          offplatform_contact: string
+          automation_mode: string
+          note: string | null
+          updated_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          platform: string
+          offplatform_contact?: string
+          automation_mode?: string
+          note?: string | null
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          platform?: string
+          offplatform_contact?: string
+          automation_mode?: string
+          note?: string | null
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      b2b_settings: {
+        Row: {
+          organization_id: string
+          min_budget_minor: number | null
+          excluded_terms: string[]
+          score_threshold: number
+          monthly_connects_cap: number | null
+          updated_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          organization_id: string
+          min_budget_minor?: number | null
+          excluded_terms?: string[]
+          score_threshold?: number
+          monthly_connects_cap?: number | null
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          organization_id?: string
+          min_budget_minor?: number | null
+          excluded_terms?: string[]
+          score_threshold?: number
+          monthly_connects_cap?: number | null
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      b2b_opportunities: {
+        Row: {
+          id: string
+          organization_id: string
+          platform: string
+          external_ref: string
+          url: string | null
+          title: string
+          description: string
+          budget_min_minor: number | null
+          budget_max_minor: number | null
+          currency: string
+          client_country: string | null
+          posted_at: string | null
+          source: string
+          status: string
+          fit_score: number | null
+          fit_reasons: Json
+          skip_reason: string | null
+          lead_id: string | null
+          outcome_value_minor: number | null
+          outcome_note: string | null
+          closed_at: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          platform: string
+          external_ref: string
+          url?: string | null
+          title: string
+          description?: string
+          budget_min_minor?: number | null
+          budget_max_minor?: number | null
+          currency?: string
+          client_country?: string | null
+          posted_at?: string | null
+          source: string
+          status?: string
+          fit_score?: number | null
+          fit_reasons?: Json
+          skip_reason?: string | null
+          lead_id?: string | null
+          outcome_value_minor?: number | null
+          outcome_note?: string | null
+          closed_at?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          platform?: string
+          external_ref?: string
+          url?: string | null
+          title?: string
+          description?: string
+          budget_min_minor?: number | null
+          budget_max_minor?: number | null
+          currency?: string
+          client_country?: string | null
+          posted_at?: string | null
+          source?: string
+          status?: string
+          fit_score?: number | null
+          fit_reasons?: Json
+          skip_reason?: string | null
+          lead_id?: string | null
+          outcome_value_minor?: number | null
+          outcome_note?: string | null
+          closed_at?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      b2b_proposal_versions: {
+        Row: {
+          id: string
+          organization_id: string
+          opportunity_id: string
+          version: number
+          body: string
+          currency: string
+          price_minor: number | null
+          timeline_days: number | null
+          connects_cost: number
+          portfolio_item_ids: string[]
+          content_hash: string
+          state: string
+          review: Json | null
+          approval_request_id: string | null
+          external_ref: string | null
+          submitted_via: string | null
+          created_by_type: string
+          created_by: string | null
+          created_at: string
+          state_changed_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          opportunity_id: string
+          version: number
+          body: string
+          currency?: string
+          price_minor?: number | null
+          timeline_days?: number | null
+          connects_cost?: number
+          portfolio_item_ids?: string[]
+          content_hash: string
+          state?: string
+          review?: Json | null
+          approval_request_id?: string | null
+          external_ref?: string | null
+          submitted_via?: string | null
+          created_by_type: string
+          created_by?: string | null
+          created_at?: string
+          state_changed_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          opportunity_id?: string
+          version?: number
+          body?: string
+          currency?: string
+          price_minor?: number | null
+          timeline_days?: number | null
+          connects_cost?: number
+          portfolio_item_ids?: string[]
+          content_hash?: string
+          state?: string
+          review?: Json | null
+          approval_request_id?: string | null
+          external_ref?: string | null
+          submitted_via?: string | null
+          created_by_type?: string
+          created_by?: string | null
+          created_at?: string
+          state_changed_at?: string
+        }
+        Relationships: []
+      }
+      b2b_profile_versions: {
+        Row: {
+          id: string
+          organization_id: string
+          platform: string
+          version: number
+          content: Json
+          content_hash: string
+          state: string
+          review: Json | null
+          approval_request_id: string | null
+          evidence_url: string | null
+          created_by_type: string
+          created_by: string | null
+          created_at: string
+          state_changed_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          platform: string
+          version: number
+          content: Json
+          content_hash: string
+          state?: string
+          review?: Json | null
+          approval_request_id?: string | null
+          evidence_url?: string | null
+          created_by_type: string
+          created_by?: string | null
+          created_at?: string
+          state_changed_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          platform?: string
+          version?: number
+          content?: Json
+          content_hash?: string
+          state?: string
+          review?: Json | null
+          approval_request_id?: string | null
+          evidence_url?: string | null
+          created_by_type?: string
+          created_by?: string | null
+          created_at?: string
+          state_changed_at?: string
+        }
+        Relationships: []
+      }
       social_metrics: {
         Row: {
           id: string
@@ -8323,6 +8584,82 @@ export type Database = {
       record_landing_arrival: {
         Args: { p_lead: string; p_message: string; p_message_at?: string; p_organization_id: string }
         Returns: { outcome: string | null }[]
+      }
+      ensure_b2b_defaults: {
+        Args: Record<PropertyKey, never>
+        Returns: { outcome: string | null }[]
+      }
+      set_b2b_platform_rule: {
+        Args: { p_mode: string; p_note: string; p_offplatform: string; p_platform: string }
+        Returns: { outcome: string | null }[]
+      }
+      set_b2b_settings: {
+        Args: { p_excluded_terms: string[]; p_min_budget_minor: number; p_monthly_connects_cap: number; p_score_threshold: number }
+        Returns: { outcome: string | null }[]
+      }
+      record_b2b_opportunity: {
+        Args: { p_budget_max_minor: number; p_budget_min_minor: number; p_client_country: string; p_currency: string; p_description: string; p_external_ref: string; p_organization_id: string; p_platform: string; p_posted_at: string; p_source?: string; p_title: string; p_url: string }
+        Returns: { outcome: string | null; opportunity_id: string | null; status: string | null; score: number | null }[]
+      }
+      decide_b2b_opportunity: {
+        Args: { p_decision: string; p_opportunity: string; p_organization_id: string; p_reason?: string }
+        Returns: { outcome: string | null }[]
+      }
+      record_b2b_outcome: {
+        Args: { p_note: string; p_opportunity: string; p_organization_id: string; p_outcome: string; p_value_minor: number }
+        Returns: { outcome: string | null }[]
+      }
+      link_b2b_opportunity_lead: {
+        Args: { p_lead: string; p_opportunity: string; p_organization_id: string }
+        Returns: { outcome: string | null }[]
+      }
+      add_b2b_proposal_version: {
+        Args: { p_body: string; p_by_type?: string; p_connects_cost: number; p_opportunity: string; p_organization_id: string; p_portfolio_item_ids: string[]; p_price_minor: number; p_timeline_days: number }
+        Returns: { outcome: string | null; version_id: string | null }[]
+      }
+      check_b2b_proposal: {
+        Args: { p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; problems: Json | null }[]
+      }
+      submit_b2b_proposal: {
+        Args: { p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; approval_request_id: string | null }[]
+      }
+      begin_b2b_submit: {
+        Args: { p_correlation_id?: string; p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; reason: string | null; execution_id: string | null }[]
+      }
+      record_b2b_submit: {
+        Args: { p_evidence?: Json; p_execution: string; p_external_ref: string; p_organization_id: string; p_status: string; p_version: string }
+        Returns: { outcome: string | null }[]
+      }
+      record_manual_b2b_submission: {
+        Args: { p_external_ref: string; p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; reason: string | null }[]
+      }
+      sync_b2b_approvals: {
+        Args: { p_limit?: number }
+        Returns: number
+      }
+      add_b2b_profile_version: {
+        Args: { p_by_type?: string; p_content: Json; p_organization_id: string; p_platform: string }
+        Returns: { outcome: string | null; version_id: string | null }[]
+      }
+      check_b2b_profile: {
+        Args: { p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; problems: Json | null }[]
+      }
+      submit_b2b_profile: {
+        Args: { p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; approval_request_id: string | null }[]
+      }
+      record_manual_profile_update: {
+        Args: { p_evidence_url: string; p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; reason: string | null }[]
+      }
+      b2b_outcomes: {
+        Args: Record<PropertyKey, never>
+        Returns: { platform: string | null; found: number | null; shortlisted: number | null; submitted: number | null; won: number | null; lost: number | null; revenue_minor: number | null; connects_spent: number | null; win_rate_pct: number | null; insufficient_data: boolean | null }[]
       }
       save_qualification_model: {
         Args: { p_note: string; p_weights: Json }

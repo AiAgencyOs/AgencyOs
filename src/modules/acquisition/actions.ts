@@ -8,7 +8,7 @@ import type { FormState } from '@/modules/identity/types';
 import { QUALIFICATION_FACTORS } from './qualification-vocabulary';
 import { ACQUISITION_CHANNELS, ICP_LIST_KEYS, buildIcpDefinition, type AcquisitionChannel } from './schema';
 import { registerIntegration, saveAcquisitionPolicy, setIntegrationState, storeConnectorSecret, testConnection } from './integrations';
-import { checkLandingVersion, retireLandingPage, saveLandingVersion, submitLandingVersion, checkAdVersion, requestAdChange, saveAdPlan, submitAdVersion, activateSocialStrategy, cancelContentVersion, createContentDraft, reviewContentVersion, scheduleContentVersion, submitContentForApproval, blockProspect, liftProspectBlock, saveQualificationModel, cancelSubtask, cancelHandoff, decideDuplicateReview, saveChannelSettings, saveHandoffSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
+import { linkB2bLead, checkB2bProfile, checkB2bProposal, decideB2bOpportunity, importB2bOpportunity, readyB2b, recordB2bOutcome, recordB2bProfileApplied, recordB2bSent, saveB2bProfile, saveB2bProposal, saveB2bRule, saveB2bSettings, submitB2bProfile, submitB2bProposal, checkLandingVersion, retireLandingPage, saveLandingVersion, submitLandingVersion, checkAdVersion, requestAdChange, saveAdPlan, submitAdVersion, activateSocialStrategy, cancelContentVersion, createContentDraft, reviewContentVersion, scheduleContentVersion, submitContentForApproval, blockProspect, liftProspectBlock, saveQualificationModel, cancelSubtask, cancelHandoff, decideDuplicateReview, saveChannelSettings, saveHandoffSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
 
 const text = (f: FormData, n: string) => String(f.get(n) ?? '').trim();
 const BASE = '/lead-generation';
@@ -348,4 +348,114 @@ export async function retireLandingAction(_p: FormState, f: FormData): Promise<F
   if (!r.ok) return { status: 'error', message: r.error.message };
   refresh();
   return { status: 'success', message: 'Retired.' };
+}
+
+const b2bDone = (message: string): FormState => { refresh(); return { status: 'success', message }; };
+const intOrNull = (raw: string): number | null | 'bad' => (raw === '' ? null : /^\d+$/.test(raw) ? Number(raw) : 'bad');
+
+export async function readyB2bAction(): Promise<FormState> {
+  const r = await readyB2b();
+  return r.ok ? b2bDone('B2B is set up. Every marketplace starts as: no contact off the platform, a person does everything.') : { status: 'error', message: r.error.message };
+}
+
+export async function saveB2bRuleAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await saveB2bRule({ platform: text(f, 'platform'), offplatform: text(f, 'offplatform'), mode: text(f, 'mode'), note: text(f, 'note') });
+  return r.ok ? b2bDone('Saved.') : { status: 'error', message: r.error.message };
+}
+
+export async function saveB2bSettingsAction(_p: FormState, f: FormData): Promise<FormState> {
+  const min = majorToMinor(text(f, 'minBudget'));
+  const cap = intOrNull(text(f, 'connectsCap'));
+  const threshold = intOrNull(text(f, 'threshold'));
+  if (min === 'bad') return { status: 'error', message: 'Enter the minimum budget as an amount, or leave it empty.' };
+  if (cap === 'bad') return { status: 'error', message: 'Enter the connects budget as a whole number, or leave it empty.' };
+  if (threshold === 'bad' || threshold === null || threshold > 100) return { status: 'error', message: 'The score threshold is a whole number from 0 to 100.' };
+  const r = await saveB2bSettings({ minBudgetMinor: min, excludedTerms: commas(text(f, 'excluded')), scoreThreshold: threshold, monthlyConnectsCap: cap });
+  return r.ok ? b2bDone('Saved. It applies to the next job scored and the next proposal sent.') : { status: 'error', message: r.error.message };
+}
+
+export async function importOpportunityAction(_p: FormState, f: FormData): Promise<FormState> {
+  const min = majorToMinor(text(f, 'budgetMin'));
+  const max = majorToMinor(text(f, 'budgetMax'));
+  if (min === 'bad' || max === 'bad') return { status: 'error', message: 'Enter budgets as amounts, or leave them empty.' };
+  const r = await importB2bOpportunity({
+    platform: text(f, 'platform'), externalRef: text(f, 'externalRef'), url: text(f, 'url'), title: text(f, 'title'), description: String(f.get('description') ?? '').trim(),
+    budgetMinMinor: min, budgetMaxMinor: max, currency: text(f, 'currency') || 'USD', country: text(f, 'country'),
+  });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  return b2bDone(r.data.status === 'excluded' ? 'Recorded, and excluded by one of your terms.' : `Recorded. Fit score ${r.data.score}: ${r.data.status === 'scored' ? 'worth a look' : 'below your threshold'}.`);
+}
+
+export async function decideOpportunityAction(_p: FormState, f: FormData): Promise<FormState> {
+  const decision = text(f, 'decision');
+  if (decision !== 'shortlist' && decision !== 'skip') return { status: 'error', message: 'Unknown decision.' };
+  const r = await decideB2bOpportunity({ opportunityId: text(f, 'opportunityId'), decision, reason: text(f, 'reason') });
+  return r.ok ? b2bDone(decision === 'shortlist' ? 'Shortlisted. You can write a proposal now.' : 'Skipped.') : { status: 'error', message: r.error.message };
+}
+
+export async function saveProposalAction(_p: FormState, f: FormData): Promise<FormState> {
+  const price = majorToMinor(text(f, 'price'));
+  const timeline = intOrNull(text(f, 'timeline'));
+  const connects = intOrNull(text(f, 'connects')) ?? 0;
+  if (price === 'bad' || price === null || price <= 0) return { status: 'error', message: 'Enter the price as an amount above zero - a person sets it.' };
+  if (timeline === 'bad' || connects === 'bad') return { status: 'error', message: 'Enter the timeline and connects as whole numbers.' };
+  const r = await saveB2bProposal({ opportunityId: text(f, 'opportunityId'), body: String(f.get('body') ?? '').trim(), priceMinor: price, timelineDays: timeline, connects, portfolioIds: commas(text(f, 'portfolio')) });
+  return r.ok ? b2bDone('Saved as a draft version. Run the checks next.') : { status: 'error', message: r.error.message };
+}
+
+export async function checkProposalAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await checkB2bProposal(text(f, 'versionId'));
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return r.data.passed ? { status: 'success', message: 'Passed the checks. This is not approval - submit it for an admin.' } : { status: 'error', message: 'Failed the checks. See the list on the version, then write the next one.' };
+}
+
+export async function submitProposalAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await submitB2bProposal(text(f, 'versionId'));
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  revalidatePath('/approvals');
+  return b2bDone('Sent to the Approval Center. It is approved only as exactly these words and this price.');
+}
+
+export async function recordSentAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await recordB2bSent({ versionId: text(f, 'versionId'), externalRef: text(f, 'externalRef') });
+  return r.ok ? b2bDone('Recorded as sent. It will not be recorded again.') : { status: 'error', message: r.error.message };
+}
+
+export async function recordOutcomeAction(_p: FormState, f: FormData): Promise<FormState> {
+  const outcome = text(f, 'outcome');
+  if (outcome !== 'won' && outcome !== 'lost') return { status: 'error', message: 'Choose won or lost.' };
+  const value = majorToMinor(text(f, 'value'));
+  if (value === 'bad') return { status: 'error', message: 'Enter the value as an amount.' };
+  const r = await recordB2bOutcome({ opportunityId: text(f, 'opportunityId'), outcome, valueMinor: value, note: text(f, 'note') });
+  return r.ok ? b2bDone('Recorded.') : { status: 'error', message: r.error.message };
+}
+
+export async function saveProfileAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await saveB2bProfile({ platform: text(f, 'platform'), content: { headline: text(f, 'headline'), summary: String(f.get('summary') ?? '').trim() } });
+  return r.ok ? b2bDone('Saved as a draft version. Run the checks next.') : { status: 'error', message: r.error.message };
+}
+
+export async function checkProfileAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await checkB2bProfile(text(f, 'versionId'));
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return r.data.passed ? { status: 'success', message: 'Passed the checks. This is not approval - submit it for an admin.' } : { status: 'error', message: 'Failed the checks. See the list on the version.' };
+}
+
+export async function submitProfileAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await submitB2bProfile(text(f, 'versionId'));
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  revalidatePath('/approvals');
+  return b2bDone('Sent to the Approval Center.');
+}
+
+export async function recordProfileAppliedAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await recordB2bProfileApplied({ versionId: text(f, 'versionId'), evidenceUrl: text(f, 'evidenceUrl') });
+  return r.ok ? b2bDone('Recorded as applied, with your evidence.') : { status: 'error', message: r.error.message };
+}
+
+export async function linkLeadAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await linkB2bLead({ opportunityId: text(f, 'opportunityId'), leadId: text(f, 'leadId') });
+  return r.ok ? b2bDone('Linked. The marketplace is now a touchpoint on that lead.') : { status: 'error', message: r.error.message };
 }

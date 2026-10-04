@@ -34,3 +34,12 @@ import type { LandingDeployer } from './landing';
  * and is never reported as live. When it exists it lands here with its own contract tests.
  */
 export const LANDING_DEPLOYER: LandingDeployer | undefined = undefined;
+
+import type { B2bPlatform } from './b2b-vocabulary';
+import type { B2bConnector } from './b2b';
+
+/**
+ * The marketplace connectors. EMPTY, deliberately: most marketplaces forbid automation, and no connector has been written. An approved
+ * proposal is waiting for a person to send it on the platform and record it; it is never faked as sent.
+ */
+export const B2B_CONNECTORS: Partial<Record<B2bPlatform, B2bConnector>> = {};

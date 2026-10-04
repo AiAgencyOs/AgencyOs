@@ -205,6 +205,9 @@ reset role;
 insert into fx select 'c3', contact_id from (select * from crm.resolve_identity(:'ORG', '{"name":"Dev Nair","email":"dev@handoff.example.org"}', 'email')) q;
 insert into crm.leads (organization_id, contact_id, title, source, source_ref, status) values (:'ORG', (select v from fx where k = 'c3'), 'Dev', 'email', 'outreach:dev', 'new') returning id \gset L3_
 insert into fx values ('l3', :'L3_id');
+-- A marketplace's own rule decides whether a B2B handoff may exist (slice 10): with no rule it is refused, so the rule is set here.
+select pg_temp.check((select outcome from crm.create_channel_handoff(:'ORG', gen_random_uuid(), pg_temp.h('AOS-ZZZZ-0000-ZZZZ-0001'), (select v from fx where k = 'l3'), 'b2b', 'upwork', 'b2b_opportunity')) = 'offplatform_forbidden', 'a B2B handoff with no marketplace rule is refused (fail closed)');
+insert into crm.b2b_platform_rules (organization_id, platform, offplatform_contact) values (:'ORG', 'upwork', 'allowed') on conflict (organization_id, platform) do update set offplatform_contact = 'allowed';
 select crm.create_channel_handoff(:'ORG', gen_random_uuid(), pg_temp.h(:'C4'), (select v from fx where k = 'l3'), 'b2b', 'upwork', 'b2b_opportunity') \gset
 alter table crm.channel_handoffs disable trigger channel_handoff_guard;
 update crm.channel_handoffs set expires_at = now() - interval '1 hour' where token_hash = pg_temp.h(:'C4');

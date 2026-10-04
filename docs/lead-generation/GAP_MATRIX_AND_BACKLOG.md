@@ -186,6 +186,14 @@ Design decisions this implies (recorded here so they are made once):
 * **Not built:** the Hostinger deployer, DNS/SSL steps, a visual page builder, A/B testing, one-click rollback (redeploying an older version is a new governed execution), and server-side click tracking (the tag is a claim about where a visit came from, never authority).
 * **Human dependencies surfaced:** a Hostinger deployment token or SSH scope and the domain/DNS for the public address - neither requested.
 
+### Slice 10 (B2B marketplaces) - built and verified
+
+* Migration `20261022100000_a_marketplace_rule_decides_whether_a_conversation_may_leave_it.sql`: per-marketplace rules (contact off the platform: forbidden / after award / allowed; automation: manual / assisted / automated - restrictive by default, loosened only by the owner), the Admin's thresholds, opportunities as frozen facts with an explainable fit score, immutable proposal versions (derived hash; a price only on a version a person wrote), profile versions, governed submission once, connects budget, results by marketplace; `create_channel_handoff` carried forward so a B2B handoff needs the marketplace's permission.
+* `src/modules/acquisition/b2b.ts` (`sendB2bProposal`, `runB2bOperations` in the cron tick), `b2b-vocabulary.ts`, the B2B tab. `B2B_CONNECTORS` is empty by design: an approved proposal waits for a person to send it on the platform and record it.
+* `scripts/verify-acquisition-b2b.sql` red-proved twenty-six ways (one proof first ran against a table the re-applied migration could not change, and was redone by dropping the constraint); TypeScript red-proved six ways. The slice-3 handoff verifier gained the rule it now needs.
+* **Not built:** any marketplace connector (nothing is read from or sent to a platform), automated discovery, the AI that finds and writes proposals, creating a lead from a won client (a person links one), Clutch/GoodFirms review management.
+* **Human dependencies surfaced:** marketplace accounts and, where terms permit, API access - none requested. The owner must confirm each marketplace's terms before loosening a rule.
+
 ## 5. Human dependencies (known now; asked for only when the engine reaches them)
 
 | Provider | Needed for | When |

@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can, hasRole } from '@/lib/authz/permissions';
-import { listLandingPages, listPortfolioChoices, listAdCampaigns, listCampaignHealth, readAdOutcomes, readAdRecommendations, listActiveBlocks, listContentQueue, listRecentQualifications, listSocialStrategies, listTargetServices, readSocialPerformance, readChannelSettings, readEmailFunnel, readQualificationModel } from '@/modules/acquisition/queries';
+import { listB2bOpportunities, listB2bProfiles, readB2bOutcomes, readB2bSetup, listLandingPages, listPortfolioChoices, listAdCampaigns, listCampaignHealth, readAdOutcomes, readAdRecommendations, listActiveBlocks, listContentQueue, listRecentQualifications, listSocialStrategies, listTargetServices, readSocialPerformance, readChannelSettings, readEmailFunnel, readQualificationModel } from '@/modules/acquisition/queries';
 import { AD_PLATFORM_LABEL, CHANGE_LABEL, HEALTH_WORDS, RECOMMENDATION_WORDS, VERSION_STATE_WORDS, planProblemWords, type AdPlatform } from '@/modules/acquisition/ad-vocabulary';
 import { OBJECTIVE_LABEL, FORMAT_LABEL, PLATFORM_LABEL, STATUS_WORDS, reviewWords, type SocialPlatform } from '@/modules/acquisition/social-vocabulary';
 import { disqualifierWords, FACTOR_LABEL, FUNNEL_LABEL, FUNNEL_STAGES, QUALIFICATION_FACTORS } from '@/modules/acquisition/qualification-vocabulary';
@@ -12,6 +12,8 @@ import { CHANNEL_LABEL, ENGINE_STATUS, channelFromSlug } from '@/modules/acquisi
 import { Badge, Callout, Card, CardBody, CardHeader, EmptyState, PageHeader, PermissionDenied, Stat, StatGrid } from '@/ui';
 
 import { BlockForm, LiftBlockForm, QualificationModelForm } from '../email-forms';
+import { AUTOMATION_LABEL, B2B_PLATFORM_LABEL, OFFPLATFORM_LABEL, OPPORTUNITY_WORDS, PROPOSAL_STATE_WORDS, b2bProblemWords, fitReasonWords } from '@/modules/acquisition/b2b-vocabulary';
+import { CheckProfileButton, CheckProposalButton, B2bSettingsForm, ImportOpportunityForm, OutcomeForm, ProfileForm, ProposalForm, RecordProfileAppliedForm, LinkLeadForm, RecordSentForm, RuleForm, SetupB2bButton, ShortlistButton, SkipForm, SubmitProfileButton, SubmitProposalButton } from '../b2b-forms';
 import { LANDING_STATE_WORDS, VERIFICATION_CHECK_LABEL, landingProblemWords } from '@/modules/acquisition/landing-vocabulary';
 import { CheckLandingButton, LandingForm, RetireLandingForm, SubmitLandingButton } from '../landing-forms';
 import { AdChangeForm, AdPlanForm, CheckAdButton, SubmitAdButton } from '../ads-forms';
@@ -38,6 +40,7 @@ export default async function ChannelPage({ params }: { params: Promise<{ channe
   const isAds = channel === 'meta_ads' || channel === 'google_ads';
   const ads = isAds ? await Promise.all([listAdCampaigns(channel), readAdOutcomes(), listCampaignHealth(), readAdRecommendations(), listTargetServices()]) : null;
   const landing = channel === 'google_ads' ? await Promise.all([listLandingPages(), listPortfolioChoices()]) : null;
+  const b2b = channel === 'b2b' ? await Promise.all([readB2bSetup(), listB2bOpportunities(), listB2bProfiles(), readB2bOutcomes(), listPortfolioChoices()]) : null;
   const email = channel === 'email' ? await Promise.all([readEmailFunnel(), readQualificationModel(), listActiveBlocks(), listRecentQualifications()]) : null;
 
   return (
@@ -404,6 +407,130 @@ export default async function ChannelPage({ params }: { params: Promise<{ channe
               </CardBody>
             </Card>
           ) : null}
+        </>
+      ) : null}
+
+
+      {b2b ? (
+        <>
+          <Callout tone="info" title="How B2B works here">
+            You find jobs on the marketplace and record them here; the fit is judged from your own thresholds, and you shortlist. A proposal is checked, approved as exactly these words and this price, then <strong>you send it on the platform yourself</strong> and record it - most marketplaces forbid automation, and no connector is built. Where a marketplace forbids contact off its platform, a proposal may not contain an email, phone, messaging app or link, and no WhatsApp handoff can be made for it. Only a person sets a price.
+          </Callout>
+
+          {!b2b[0].ready ? (
+            <Card><CardHeader title="Set up B2B" description="Creates a rule for each marketplace (no contact off the platform, a person does everything) and your thresholds." /><CardBody>{mayManage ? <SetupB2bButton /> : <p className="text-[13px] text-muted">An admin needs to set this up.</p>}</CardBody></Card>
+          ) : (
+            <>
+              <Card>
+                <CardHeader title="Marketplace rules" description={isOwner ? 'As the owner you may allow contact off a platform or automation. Do so only where the marketplace\'s terms permit it.' : 'You may tighten a rule. Only the owner may allow contact off a platform, or automation.'} />
+                <CardBody>
+                  <div className="flex flex-col gap-3">
+                    {b2b[0].rules.map((r) => mayManage ? <RuleForm key={`${r.platform}-${r.offplatform}-${r.mode}`} platform={r.platform} offplatform={r.offplatform} mode={r.mode} note={r.note} /> : (
+                      <p key={r.platform} className="text-[13px]">{B2B_PLATFORM_LABEL[r.platform as keyof typeof B2B_PLATFORM_LABEL] ?? r.platform}: {OFFPLATFORM_LABEL[r.offplatform as keyof typeof OFFPLATFORM_LABEL]} · {AUTOMATION_LABEL[r.mode as keyof typeof AUTOMATION_LABEL]}</p>
+                    ))}
+                  </div>
+                </CardBody>
+              </Card>
+
+              {b2b[0].settings && mayManage ? (
+                <Card>
+                  <CardHeader title="Your thresholds" description="Read every time a job is scored or a proposal is sent." />
+                  <CardBody><B2bSettingsForm key={JSON.stringify(b2b[0].settings)} minBudgetMajor={b2b[0].settings.minBudgetMinor === null ? null : b2b[0].settings.minBudgetMinor / 100} excluded={b2b[0].settings.excludedTerms} threshold={b2b[0].settings.scoreThreshold} cap={b2b[0].settings.monthlyConnectsCap} /></CardBody>
+                </Card>
+              ) : null}
+
+              <Card>
+                <CardHeader title="Jobs" description="Newest first. The facts are kept exactly as recorded; the fit says why." />
+                <CardBody>
+                  {b2b[1].length === 0 ? <EmptyState title="No jobs yet" description="Record one below." /> : (
+                    <ul className="flex flex-col gap-5">
+                      {b2b[1].map((o) => {
+                        const st = OPPORTUNITY_WORDS[o.status] ?? { label: o.status, tone: 'neutral' as const };
+                        return (
+                          <li key={o.id} className="flex flex-col gap-2 border-b border-line pb-5 last:border-0">
+                            <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                              <Badge tone={st.tone}>{st.label}</Badge>
+                              <strong>{o.title}</strong>
+                              <span className="text-muted">{B2B_PLATFORM_LABEL[o.platform as keyof typeof B2B_PLATFORM_LABEL] ?? o.platform}{o.score !== null ? ` · fit ${o.score}` : ''}{o.budgetMaxMinor !== null ? ` · up to ${o.currency} ${(o.budgetMaxMinor / 100).toLocaleString('en-IN')}` : ''}</span>
+                              {o.url ? <a href={o.url} rel="noopener noreferrer" className="text-xs text-brand hover:underline">Open on the platform</a> : null}
+                            </div>
+                            <p className="text-xs text-muted">{o.reasons.map(fitReasonWords).join(' · ')}{o.skipReason ? ` · skipped: ${o.skipReason}` : ''}</p>
+                            {mayManage && ['scored', 'below_threshold'].includes(o.status) ? <div className="flex flex-wrap items-start gap-4"><ShortlistButton opportunityId={o.id} /><SkipForm opportunityId={o.id} /></div> : null}
+                            <ul className="flex flex-col gap-2">
+                              {o.proposals.map((p) => {
+                                const w = PROPOSAL_STATE_WORDS[p.state] ?? { label: p.state, tone: 'neutral' as const, meaning: '' };
+                                return (
+                                  <li key={p.id} className="flex flex-col gap-1 rounded border border-line p-3 text-[13px]">
+                                    <div className="flex flex-wrap items-center gap-2"><Badge tone={w.tone}>{w.label}</Badge><span>Version {p.version}{p.priceMinor !== null ? ` · ${p.currency} ${(p.priceMinor / 100).toLocaleString('en-IN')}` : ''} · {p.connects} connects{p.externalRef ? ` · platform ref ${p.externalRef}` : ''}</span></div>
+                                    <p className="text-xs text-muted">{p.bodyPreview}…</p>
+                                    <p className="text-xs text-muted">{w.meaning}</p>
+                                    {p.problems.length > 0 ? <p className="text-xs text-danger">{p.problems.map(b2bProblemWords).join(' · ')}</p> : null}
+                                    {mayManage ? (
+                                      <div className="flex flex-wrap items-start gap-4">
+                                        {p.state === 'DRAFT' || p.state === 'CHECK_FAILED' ? <CheckProposalButton versionId={p.id} /> : null}
+                                        {p.state === 'CHECKED' ? <SubmitProposalButton versionId={p.id} /> : null}
+                                        {p.state === 'ADMIN_REVIEW' ? <><Link href="/approvals" className="text-[13px] text-brand hover:underline">Open the Approval Center</Link><RecordSentForm versionId={p.id} /></> : null}
+                                      </div>
+                                    ) : null}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                            {mayManage && o.status === 'shortlisted' ? <details className="text-[13px]"><summary className="cursor-pointer text-brand">Write a proposal</summary><div className="pt-3"><ProposalForm opportunityId={o.id} portfolio={b2b[4]} /></div></details> : null}
+                            {mayManage && o.status === 'submitted' ? <OutcomeForm opportunityId={o.id} /> : null}
+                            {mayManage && !o.leadId && ['submitted', 'won'].includes(o.status) ? <LinkLeadForm opportunityId={o.id} /> : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </CardBody>
+              </Card>
+
+              {mayManage ? <Card><CardHeader title="Record a job" description="Paste in a job you found. Nothing is read from a marketplace automatically." /><CardBody><ImportOpportunityForm /></CardBody></Card> : null}
+
+              <Card>
+                <CardHeader title="Profiles" description="What a marketplace profile should say. Changing it on the platform is your act; you record it here with a link as evidence." />
+                <CardBody>
+                  <div className="flex flex-col gap-4">
+                    {b2b[2].length === 0 ? <p className="text-[13px] text-muted">No profile versions yet.</p> : (
+                      <ul className="flex flex-col gap-3">
+                        {b2b[2].map((p) => {
+                          const w = PROPOSAL_STATE_WORDS[p.state] ?? { label: p.state, tone: 'neutral' as const, meaning: '' };
+                          return (
+                            <li key={p.id} className="flex flex-col gap-1 rounded border border-line p-3 text-[13px]">
+                              <div className="flex flex-wrap items-center gap-2"><Badge tone={w.tone}>{w.label}</Badge><span>{B2B_PLATFORM_LABEL[p.platform as keyof typeof B2B_PLATFORM_LABEL] ?? p.platform} · version {p.version} · {p.headline}</span></div>
+                              {p.problems.length > 0 ? <p className="text-xs text-danger">{p.problems.map(b2bProblemWords).join(' · ')}</p> : null}
+                              {mayManage ? (
+                                <div className="flex flex-wrap items-start gap-4">
+                                  {p.state === 'DRAFT' || p.state === 'CHECK_FAILED' ? <CheckProfileButton versionId={p.id} /> : null}
+                                  {p.state === 'CHECKED' ? <SubmitProfileButton versionId={p.id} /> : null}
+                                  {p.state === 'ADMIN_REVIEW' ? <><Link href="/approvals" className="text-[13px] text-brand hover:underline">Open the Approval Center</Link><RecordProfileAppliedForm versionId={p.id} /></> : null}
+                                </div>
+                              ) : null}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                    {mayManage ? <ProfileForm /> : null}
+                  </div>
+                </CardBody>
+              </Card>
+
+              <Card>
+                <CardHeader title="Results" description="From the records themselves. Fewer than ten decided jobs is too thin to judge." />
+                <CardBody>
+                  {b2b[3].length === 0 ? <p className="text-[13px] text-muted">Nothing to report yet.</p> : (
+                    <table className="w-full text-[13px]">
+                      <thead><tr className="text-left text-xs text-muted"><th className="py-1">Marketplace</th><th>Found</th><th>Shortlisted</th><th>Sent</th><th>Won</th><th>Lost</th><th>Win rate</th><th>Revenue</th><th>Connects</th></tr></thead>
+                      <tbody>{b2b[3].map((r) => <tr key={r.platform} className="border-t border-line"><td className="py-1.5">{B2B_PLATFORM_LABEL[r.platform as keyof typeof B2B_PLATFORM_LABEL] ?? r.platform}{r.insufficientData ? <div className="text-xs text-muted">Too thin to judge</div> : null}</td><td>{r.found}</td><td>{r.shortlisted}</td><td>{r.submitted}</td><td>{r.won}</td><td>{r.lost}</td><td>{r.winRatePct === null ? '-' : `${r.winRatePct}%`}</td><td>{r.revenueMinor === 0 ? '-' : (r.revenueMinor / 100).toLocaleString('en-IN')}</td><td>{r.connectsSpent}</td></tr>)}</tbody>
+                    </table>
+                  )}
+                </CardBody>
+              </Card>
+            </>
+          )}
         </>
       ) : null}
 

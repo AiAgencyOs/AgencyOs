@@ -136,7 +136,7 @@
     "db:verify:phase3e2e": "node scripts/verify-phase-three-e2e.mjs",
     "db:verify:emailoutreach": "node scripts/verify-email-outreach.mjs",
     "db:verify:aiproviders": "node scripts/verify-ai-providers.mjs",
-    "db:verify:acquisition": "psql \"${VERIFY_DB_URL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}\" -v ON_ERROR_STOP=1 -q -f scripts/verify-acquisition-foundation.sql -f scripts/verify-acquisition-email-pause.sql -f scripts/verify-acquisition-identity.sql -f scripts/verify-acquisition-handoff.sql -f scripts/verify-acquisition-governance.sql -f scripts/verify-acquisition-subtasks.sql -f scripts/verify-acquisition-email-engine.sql -f scripts/verify-acquisition-social.sql -f scripts/verify-acquisition-ads.sql -f scripts/verify-acquisition-landing.sql",
+    "db:verify:acquisition": "psql \"${VERIFY_DB_URL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}\" -v ON_ERROR_STOP=1 -q -f scripts/verify-acquisition-foundation.sql -f scripts/verify-acquisition-email-pause.sql -f scripts/verify-acquisition-identity.sql -f scripts/verify-acquisition-handoff.sql -f scripts/verify-acquisition-governance.sql -f scripts/verify-acquisition-subtasks.sql -f scripts/verify-acquisition-email-engine.sql -f scripts/verify-acquisition-social.sql -f scripts/verify-acquisition-ads.sql -f scripts/verify-acquisition-landing.sql -f scripts/verify-acquisition-b2b.sql",
     "db:verify:inboundemail": "node scripts/verify-inbound-email.mjs",
     "db:verify:airouting": "node scripts/verify-ai-routing.mjs",
     "db:verify:phase2": "node scripts/verify-phase-two-e2e.mjs",

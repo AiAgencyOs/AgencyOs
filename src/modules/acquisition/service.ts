@@ -572,3 +572,198 @@ export async function retireLandingPage(input: { pageId: string; reason: string 
       return err('FORBIDDEN', FORBIDDEN);
   }
 }
+
+// ── B2B (20261022100000) ───────────────────────────────────────────────────
+
+const B2B_FAILURES: Record<string, { code: 'VALIDATION' | 'CONFLICT' | 'NOT_FOUND' | 'FORBIDDEN'; message: string }> = {
+  forbidden: { code: 'FORBIDDEN', message: FORBIDDEN },
+  not_owner: { code: 'FORBIDDEN', message: 'Only the owner may loosen a marketplace rule: allowing contact off a platform, or automation.' },
+  invalid: { code: 'VALIDATION', message: 'Check the values: lengths, amounts and the platform.' },
+  unknown_platform: { code: 'VALIDATION', message: 'Set up B2B first - it creates a rule for each marketplace.' },
+  not_found: { code: 'NOT_FOUND', message: 'That no longer exists.' },
+  duplicate: { code: 'CONFLICT', message: 'That job is already recorded for this marketplace.' },
+  excluded: { code: 'CONFLICT', message: 'It mentions a term you excluded, so it cannot be shortlisted.' },
+  already_past_that: { code: 'CONFLICT', message: 'It has already been sent or decided.' },
+  needs_reason: { code: 'VALIDATION', message: 'Say why - the reason is kept.' },
+  not_shortlisted: { code: 'CONFLICT', message: 'Shortlist the job before writing a proposal, and a job that was already sent takes no further proposal.' },
+  already_submitted: { code: 'CONFLICT', message: 'A proposal for this job has already been recorded as sent.' },
+  not_submitted: { code: 'CONFLICT', message: 'Only a job you sent a proposal for can be won or lost, and only once.' },
+  not_checked: { code: 'CONFLICT', message: 'Only a version that passed the checks can go to an admin.' },
+  wrong_state: { code: 'CONFLICT', message: 'That has already moved on.' },
+  unknown_lead: { code: 'NOT_FOUND', message: 'That lead does not exist.' },
+  already_linked: { code: 'CONFLICT', message: 'A lead is already linked.' },
+  needs_reference: { code: 'VALIDATION', message: 'Enter the platform\'s own reference for the proposal.' },
+  needs_evidence: { code: 'VALIDATION', message: 'Enter the https link to the profile on the platform as evidence.' },
+  already_applied: { code: 'CONFLICT', message: 'That profile version was already recorded as applied.' },
+};
+const b2bFail = (outcome: string | undefined, reason?: string | null): Result<never> => {
+  if (outcome === 'blocked' || outcome === 'not_covered') {
+    const why = reason ? ` (${reason.replaceAll('_', ' ')})` : '';
+    return err('CONFLICT', outcome === 'blocked' ? `It is blocked right now${why}.` : `It has not been approved as exactly this version${why}.`);
+  }
+  const f = B2B_FAILURES[outcome ?? ''];
+  return f ? err(f.code, f.message) : err('INTERNAL', 'That did not work. Nothing was changed.');
+};
+
+export async function readyB2b(): Promise<Result<true>> {
+  const gate = await manager();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('ensure_b2b_defaults');
+  if (error) return err('INTERNAL', 'Could not set up B2B.');
+  return first<{ outcome?: string }>(data)?.outcome === 'ready' ? ok(true) : b2bFail(first<{ outcome?: string }>(data)?.outcome);
+}
+
+export async function saveB2bRule(input: { platform: string; offplatform: string; mode: string; note: string }): Promise<Result<true>> {
+  const gate = await manager();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('set_b2b_platform_rule', { p_platform: input.platform, p_offplatform: input.offplatform, p_mode: input.mode, p_note: input.note });
+  if (error) return err('INTERNAL', 'Could not save the rule.');
+  const o = first<{ outcome?: string }>(data)?.outcome;
+  return o === 'saved' ? ok(true) : b2bFail(o);
+}
+
+export async function saveB2bSettings(input: { minBudgetMinor: number | null; excludedTerms: string[]; scoreThreshold: number; monthlyConnectsCap: number | null }): Promise<Result<true>> {
+  const gate = await manager();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('set_b2b_settings', {
+    p_min_budget_minor: input.minBudgetMinor as never, p_excluded_terms: input.excludedTerms, p_score_threshold: input.scoreThreshold, p_monthly_connects_cap: input.monthlyConnectsCap as never,
+  });
+  if (error) return err('INTERNAL', 'Could not save the thresholds.');
+  const o = first<{ outcome?: string }>(data)?.outcome;
+  return o === 'saved' ? ok(true) : b2bFail(o);
+}
+
+export type OpportunityInput = { platform: string; externalRef: string; url: string; title: string; description: string; budgetMinMinor: number | null; budgetMaxMinor: number | null; currency: string; country: string };
+
+/** A person pastes in a job they found. The fit is judged by the database, from the Admin's own thresholds. */
+export async function importB2bOpportunity(input: OpportunityInput): Promise<Result<{ opportunityId: string; status: string; score: number }>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('record_b2b_opportunity', {
+    p_organization_id: gate.data.organizationId, p_platform: input.platform, p_external_ref: input.externalRef, p_url: input.url as never, p_title: input.title, p_description: input.description,
+    p_budget_min_minor: input.budgetMinMinor as never, p_budget_max_minor: input.budgetMaxMinor as never, p_currency: input.currency, p_client_country: input.country as never, p_posted_at: undefined as never, p_source: 'assisted_import',
+  });
+  if (error) return err('INTERNAL', 'Could not record the job.');
+  const r = first<{ outcome?: string; opportunity_id?: string; status?: string; score?: number }>(data);
+  return r?.outcome === 'recorded' && r.opportunity_id ? ok({ opportunityId: r.opportunity_id, status: r.status ?? '', score: r.score ?? 0 }) : b2bFail(r?.outcome);
+}
+
+export async function decideB2bOpportunity(input: { opportunityId: string; decision: 'shortlist' | 'skip'; reason: string }): Promise<Result<true>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('decide_b2b_opportunity', { p_organization_id: gate.data.organizationId, p_opportunity: input.opportunityId, p_decision: input.decision, p_reason: input.reason });
+  if (error) return err('INTERNAL', 'Could not record the decision.');
+  const o = first<{ outcome?: string }>(data)?.outcome;
+  return o === 'decided' ? ok(true) : b2bFail(o);
+}
+
+export async function saveB2bProposal(input: { opportunityId: string; body: string; priceMinor: number | null; timelineDays: number | null; connects: number; portfolioIds: string[] }): Promise<Result<{ versionId: string }>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('add_b2b_proposal_version', {
+    p_organization_id: gate.data.organizationId, p_opportunity: input.opportunityId, p_body: input.body, p_price_minor: input.priceMinor as never, p_timeline_days: input.timelineDays as never,
+    p_connects_cost: input.connects, p_portfolio_item_ids: input.portfolioIds, p_by_type: 'human',
+  });
+  if (error) return err('INTERNAL', 'Could not save the proposal.');
+  const r = first<{ outcome?: string; version_id?: string }>(data);
+  return r?.outcome === 'added' && r.version_id ? ok({ versionId: r.version_id }) : b2bFail(r?.outcome);
+}
+
+export async function checkB2bProposal(versionId: string): Promise<Result<{ passed: boolean; problems: string[] }>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('check_b2b_proposal', { p_organization_id: gate.data.organizationId, p_version: versionId });
+  if (error) return err('INTERNAL', 'Could not run the checks.');
+  const r = first<{ outcome?: string; problems?: unknown }>(data);
+  if (r?.outcome !== 'checked' && r?.outcome !== 'check_failed') return b2bFail(r?.outcome);
+  return ok({ passed: r.outcome === 'checked', problems: Array.isArray(r.problems) ? (r.problems as string[]) : [] });
+}
+
+export async function submitB2bProposal(versionId: string): Promise<Result<true>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('submit_b2b_proposal', { p_organization_id: gate.data.organizationId, p_version: versionId });
+  if (error) return err('INTERNAL', 'Could not submit it.');
+  const o = first<{ outcome?: string }>(data)?.outcome;
+  return o === 'submitted' || o === 'already_pending' ? ok(true) : b2bFail(o);
+}
+
+/** A person sent the approved proposal on the platform and records it. Accepted only for the exact approved version, once. */
+export async function recordB2bSent(input: { versionId: string; externalRef: string }): Promise<Result<true>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('record_manual_b2b_submission', { p_organization_id: gate.data.organizationId, p_version: input.versionId, p_external_ref: input.externalRef });
+  if (error) return err('INTERNAL', 'Could not record it.');
+  const r = first<{ outcome?: string; reason?: string | null }>(data);
+  return r?.outcome === 'recorded' ? ok(true) : b2bFail(r?.outcome, r?.reason);
+}
+
+export async function recordB2bOutcome(input: { opportunityId: string; outcome: 'won' | 'lost'; valueMinor: number | null; note: string }): Promise<Result<true>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('record_b2b_outcome', { p_organization_id: gate.data.organizationId, p_opportunity: input.opportunityId, p_outcome: input.outcome, p_value_minor: input.valueMinor as never, p_note: input.note });
+  if (error) return err('INTERNAL', 'Could not record the outcome.');
+  const o = first<{ outcome?: string }>(data)?.outcome;
+  return o === 'recorded' ? ok(true) : b2bFail(o);
+}
+
+export async function saveB2bProfile(input: { platform: string; content: Record<string, unknown> }): Promise<Result<{ versionId: string }>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('add_b2b_profile_version', { p_organization_id: gate.data.organizationId, p_platform: input.platform, p_content: input.content as never, p_by_type: 'human' });
+  if (error) return err('INTERNAL', 'Could not save the profile.');
+  const r = first<{ outcome?: string; version_id?: string }>(data);
+  return r?.outcome === 'added' && r.version_id ? ok({ versionId: r.version_id }) : b2bFail(r?.outcome);
+}
+
+export async function checkB2bProfile(versionId: string): Promise<Result<{ passed: boolean; problems: string[] }>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('check_b2b_profile', { p_organization_id: gate.data.organizationId, p_version: versionId });
+  if (error) return err('INTERNAL', 'Could not run the checks.');
+  const r = first<{ outcome?: string; problems?: unknown }>(data);
+  if (r?.outcome !== 'checked' && r?.outcome !== 'check_failed') return b2bFail(r?.outcome);
+  return ok({ passed: r.outcome === 'checked', problems: Array.isArray(r.problems) ? (r.problems as string[]) : [] });
+}
+
+export async function submitB2bProfile(versionId: string): Promise<Result<true>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('submit_b2b_profile', { p_organization_id: gate.data.organizationId, p_version: versionId });
+  if (error) return err('INTERNAL', 'Could not submit it.');
+  const o = first<{ outcome?: string }>(data)?.outcome;
+  return o === 'submitted' || o === 'already_pending' ? ok(true) : b2bFail(o);
+}
+
+export async function recordB2bProfileApplied(input: { versionId: string; evidenceUrl: string }): Promise<Result<true>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('record_manual_profile_update', { p_organization_id: gate.data.organizationId, p_version: input.versionId, p_evidence_url: input.evidenceUrl });
+  if (error) return err('INTERNAL', 'Could not record it.');
+  const r = first<{ outcome?: string; reason?: string | null }>(data);
+  return r?.outcome === 'recorded' ? ok(true) : b2bFail(r?.outcome, r?.reason);
+}
+
+export async function linkB2bLead(input: { opportunityId: string; leadId: string }): Promise<Result<true>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('link_b2b_opportunity_lead', { p_organization_id: gate.data.organizationId, p_opportunity: input.opportunityId, p_lead: input.leadId });
+  if (error) return err('INTERNAL', 'Could not link it.');
+  const o = first<{ outcome?: string }>(data)?.outcome;
+  return o === 'linked' ? ok(true) : b2bFail(o);
+}
