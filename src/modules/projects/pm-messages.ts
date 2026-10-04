@@ -146,3 +146,25 @@ export function isSafeClientQuestion(question: string): boolean {
   if (/https?:\/\/|```/.test(q)) return false;
   return true;
 }
+
+/**
+ * A gentle reminder of an onboarding ask the client has not answered - Phase 2
+ * PM §4.2. Says what is still needed and why, never who is late, never a date or
+ * a consequence.
+ */
+export function pmFollowUp(language: PmLanguage, what: 'billing' | 'gst_details'): string {
+  return pick(
+    what === 'billing'
+      ? {
+          en: 'A gentle reminder: we are still waiting to know whether you need a GST invoice or a Non-GST invoice, so we can send your first invoice.',
+          hinglish: 'Ek chhota sa reminder: humein abhi bhi jaanna hai ki aapko GST invoice chahiye ya Non-GST, taaki hum aapka pehla invoice bhej sakein.',
+          hindi: 'एक छोटा सा अनुरोध: हमें अभी भी जानना है कि आपको GST इनवॉइस चाहिए या Non-GST, ताकि हम आपका पहला इनवॉइस भेज सकें।',
+        }
+      : {
+          en: 'A gentle reminder: for your GST invoice we still need your registered business name, GSTIN, billing address and state.',
+          hinglish: 'Ek chhota sa reminder: aapke GST invoice ke liye humein abhi bhi registered business name, GSTIN, billing address aur state chahiye.',
+          hindi: 'एक छोटा सा अनुरोध: आपके GST इनवॉइस के लिए हमें अभी भी पंजीकृत व्यवसाय का नाम, GSTIN, बिलिंग पता और राज्य चाहिए।',
+        },
+    language,
+  );
+}

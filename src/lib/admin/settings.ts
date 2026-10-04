@@ -403,7 +403,9 @@ export type OrganizationSettingKey =
   | 'approved_trust_facts'
   // Phase 1 live run (O-2) — 'on' prints the agency's standard quotation terms in the
   // client's language (Hinglish or Hindi) too; unset prints them in English.
-  | 'quotation_translate_standards';
+  | 'quotation_translate_standards'
+  // Phase 2 PM §4.2 / ADM-109 — whole days the PM waits before reminding a client of an onboarding ask; unset = never.
+  | 'onboarding_followup_days';
 
 const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   whatsapp_phone_number_id: 'a numeric WhatsApp phone_number_id (digits only)',
@@ -441,6 +443,7 @@ const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   google_calendar_id: 'a calendar id with no spaces, like meetings@agency.example or primary (3 to 200 characters)',
   approved_trust_facts: 'up to 12 statements, one per line, each up to 240 characters and 1500 in all',
   quotation_translate_standards: "the single word 'on' — clear it to print the standard terms in English",
+  onboarding_followup_days: 'a whole number of days between 1 and 30 — clear it and the project manager never chases on its own',
 };
 
 /**

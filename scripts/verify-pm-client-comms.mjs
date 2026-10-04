@@ -270,6 +270,51 @@ try {
   await emit('payment.submitted', 'payment_submission', submission.id);
   await ticks(8);
   check(graphSends.length === cBefore, 'a replayed payment event sends nothing again', `${graphSends.length - cBefore} send(s)`);
+
+  // ── 5. a client who has not answered is reminded - if the owner chose to ───
+  section('5. A client who has not answered is reminded only when the owner chose a wait, inside the sending window, and never twice in a row');
+  const orgNow = one(await rest('GET', 'core', `organizations?id=eq.${ORG}&select=settings,timezone`));
+  const zone = orgNow?.timezone ?? 'UTC';
+  const local = new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'short', hour: 'numeric', hourCycle: 'h23' }).formatToParts(new Date());
+  const weekday = local.find((p) => p.type === 'weekday')?.value;
+  const hour = Number(local.find((p) => p.type === 'hour')?.value);
+  const win = { start: Number(orgNow?.settings?.outreach_window_start_hour ?? 10), end: Number(orgNow?.settings?.outreach_window_end_hour ?? 19) };
+  const inWindow = !['Sat', 'Sun'].includes(weekday) && hour >= win.start && hour < win.end;
+
+  const f = await plant('f');
+  await rest('PATCH', 'projects', `phase_two?project_id=eq.${f.project.id}`, { state: 'waiting_client' });
+  const three = new Date(Date.now() - 3 * 86_400_000).toISOString();
+  const asked3 = await rest('POST', 'crm', 'conversation_messages', {
+    organization_id: ORG, conversation_id: f.conv.id, seq: 3, author_type: 'user', body: 'For billing, please confirm whether you need a GST invoice or a Non-GST invoice.',
+    external_ref: `pm:billing-question:${f.project.id}`, occurred_at: three, created_at: three,
+  });
+  check(asked3.ok, 'the billing question was asked three days ago and not answered (fixture)');
+
+  await ticks(6);
+  check(!texts(f.phone).some((t) => /gentle reminder/i.test(t)), 'with no wait chosen by the owner, nothing chases');
+
+  await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { settings: { ...(orgNow?.settings ?? {}), whatsapp_phone_number_id: 'PN.STUB.PMCOMMS', onboarding_followup_days: '2' } });
+  const reminded = await tickUntil(async () => texts(f.phone).some((t) => /gentle reminder/i.test(t)), 10);
+  if (inWindow) {
+    check(Boolean(reminded), 'a wait of two days is chosen: the reminder goes (we are inside the sending window)');
+    await ticks(6);
+    check(texts(f.phone).filter((t) => /gentle reminder/i.test(t)).length === 1, 'and only one - the second waits the same number of days from the first');
+  } else {
+    check(!reminded, 'outside the sending window (night or weekend) the reminder is HELD, not sent', `${weekday} ${hour}:00 ${zone}`);
+  }
+
+  const g = await plant('g');
+  await rest('PATCH', 'projects', `phase_two?project_id=eq.${g.project.id}`, { state: 'waiting_client' });
+  await rest('POST', 'crm', 'conversation_messages', {
+    organization_id: ORG, conversation_id: g.conv.id, seq: 3, author_type: 'user', body: 'For billing, please confirm whether you need a GST invoice or a Non-GST invoice.',
+    external_ref: `pm:billing-question:${g.project.id}`, occurred_at: three, created_at: three,
+  });
+  await rest('POST', 'crm', 'conversation_messages', {
+    organization_id: ORG, conversation_id: g.conv.id, seq: 4, author_type: 'client', body: 'one minute, checking with my accountant', external_ref: `${MARKER}:g-reply`, occurred_at: new Date().toISOString(),
+  });
+  await ticks(8);
+  check(!texts(g.phone).some((t) => /gentle reminder/i.test(t)), 'a client who has written since the ask is never chased');
+  await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { settings: orgNow?.settings ?? {} });
 } catch (e) {
   console.error(e);
   failures += 1;
