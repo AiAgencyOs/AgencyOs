@@ -40,7 +40,7 @@ export const ENGINE_STATUS: Record<AcquisitionChannel, { build: EngineBuild; sum
   meta_ads: { build: 'not_built', summary: 'The Ad Manager agent and the Meta connector are not built yet. Click-to-WhatsApp ad attribution is already captured on a lead.' },
   email: {
     build: 'partial',
-    summary: 'Governed sending from info@, opt-out, bounce handling and reply reading are live. Prospect discovery, research, personalised drafting, nurture and the meeting/quote handoffs are not built yet.',
+    summary: 'Governed sending from info@, opt-out, bounce handling and reply reading are live. A reply is adopted into the shared identity with the email agent as owner; prospects are qualified against the Admin\'s weights and rules; drafts are checked against recorded research; a follow-up is re-checked when it is sent. Finding prospects on the open web and an AI writing the message are NOT built yet - they need a discovery source and a funded model.',
     link: { href: '/communication/email-outreach', label: 'Open email outreach' },
   },
   social: { build: 'not_built', summary: 'The Social Media Marketing agent, content approval pipeline and publishing are not built yet.' },

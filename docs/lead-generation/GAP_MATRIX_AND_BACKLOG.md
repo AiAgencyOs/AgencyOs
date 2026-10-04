@@ -70,7 +70,7 @@ Design decisions this implies (recorded here so they are made once):
 | 3 | Tracked WhatsApp handoff: opaque token (hash stored), expiry, replay/tenant protection, context package, ownership transfer to Sales | 2 | **BUILT** (engines that create handoffs arrive with 6-10) |
 | 4 | Connector registry (tenant-scoped credentials, capability model, health, Test Connection), policy-decision function, approval subject types + content-hash binding | 1 | **BUILT** (no provider adapter exists yet) |
 | 5 | Scheduler + Quotation Master structured handoffs (agent-callable, return to channel owner) | 2, 3 | **BUILT** (the Scheduler/Quotation Master LLM agents themselves are not) |
-| 6 | Email engine: prospect discovery → research → qualification → drafting → nurture → meeting/quote → handoff; follow-up engine state checks | 2–5 | not started |
+| 6 | Email engine: prospect discovery → research → qualification → drafting → nurture → meeting/quote → handoff; follow-up engine state checks | 2–5 | **PARTLY BUILT**: qualification, grounded-draft validation, reply adoption, follow-up recheck, funnel. NOT built: discovery, AI research, AI drafting (need a source and a funded model) |
 | 7 | Social: audit, strategy (3/6/9 mo), content versioning + exact-version approval + publish idempotency, analytics, then prospecting/outreach | 4, 5 | not started |
 | 8 | Meta Ads: audit, campaign (policy/approval/budget limits), monitoring, WhatsApp attribution | 3, 4 | not started |
 | 9 | Google Ads + landing-page engine + Hostinger deployment + verification | 3, 4 | not started |
@@ -152,6 +152,15 @@ Design decisions this implies (recorded here so they are made once):
 * `src/modules/acquisition/subtasks.ts` (typed doors; no price field exists), a requests card on the Identity screen.
 * `scripts/verify-acquisition-subtasks.sql`: driven through the real meeting doors; red-proved eleven ways.
 * **Not built:** an LLM Scheduler / Quotation Master agent; calendar availability; a no-show outcome (the existing door lacks one).
+
+### Slice 6 (the Email engine's decisions) - built and verified
+
+* Migrations `20261018100000_the_email_engine_qualifies_adopts_and_stays_in_its_lane.sql` (weights, block list, facts, qualifications, draft validator,
+  reply adoption, follow-up blockers, funnel) and `20261018110000_a_follow_up_is_rechecked_when_it_is_sent.sql` (the send chokepoint, one marked edit).
+* `src/modules/acquisition/email-engine.ts` (typed doors; a missing answer is a failure), `qualification-vocabulary.ts`, funnel / weights / blocks on the Email tab.
+* `scripts/verify-acquisition-email-engine.sql`: through the real chokepoint and the real inbound function; red-proved eleven ways.
+* **Not built:** prospect discovery, an AI research agent, an AI drafting agent, nurture beyond lead nurture, an automatic meeting/quote request on a positive reply.
+* **Human dependencies surfaced:** a funded model key (drafting, research, scoring agents) and a prospect discovery source - neither requested yet.
 
 ## 5. Human dependencies (known now; asked for only when the engine reaches them)
 

@@ -211,3 +211,58 @@ export async function cancelSubtask(input: { subtaskId: string; reason: string }
       return err('FORBIDDEN', FORBIDDEN);
   }
 }
+
+export async function saveQualificationModel(input: { weights: Record<string, number>; note: string }): Promise<Result<{ version: number }>> {
+  const gate = await manager();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('save_qualification_model', { p_weights: input.weights as never, p_note: input.note as never });
+  if (error) return err('INTERNAL', 'Could not save the weights.');
+  const row = first<{ outcome?: string; version?: number }>(data);
+  switch (row?.outcome) {
+    case 'saved':
+      return ok({ version: row.version ?? 0 });
+    case 'invalid':
+      return err('VALIDATION', 'Weights are numbers from 0 to 100, and at least one must be above zero.');
+    default:
+      return err('FORBIDDEN', FORBIDDEN);
+  }
+}
+
+export async function blockProspect(input: { kind: string; value: string; reason: string }): Promise<Result<true>> {
+  const gate = await manager();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('block_prospect', { p_kind: input.kind, p_value: input.value, p_reason: input.reason });
+  if (error) return err('INTERNAL', 'Could not add the block.');
+  switch (first<{ outcome?: string }>(data)?.outcome) {
+    case 'blocked':
+      return ok(true);
+    case 'already_blocked':
+      return err('CONFLICT', 'That is already blocked.');
+    case 'invalid':
+      return err('VALIDATION', 'Give a real email address, domain or company, and a reason of a few words.');
+    default:
+      return err('FORBIDDEN', FORBIDDEN);
+  }
+}
+
+export async function liftProspectBlock(input: { blockId: string; reason: string }): Promise<Result<true>> {
+  const gate = await manager();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('lift_prospect_block', { p_block: input.blockId, p_reason: input.reason });
+  if (error) return err('INTERNAL', 'Could not lift the block.');
+  switch (first<{ outcome?: string }>(data)?.outcome) {
+    case 'lifted':
+      return ok(true);
+    case 'needs_reason':
+      return err('VALIDATION', 'Say why - the reason is kept.');
+    case 'already_lifted':
+      return err('CONFLICT', 'That block was already lifted.');
+    case 'not_owner':
+      return err('FORBIDDEN', 'Only the owner can lift a block - it removes a safety rule.');
+    default:
+      return err('FORBIDDEN', FORBIDDEN);
+  }
+}

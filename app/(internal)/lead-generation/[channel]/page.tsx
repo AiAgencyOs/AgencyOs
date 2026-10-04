@@ -3,11 +3,13 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
-import { readChannelSettings } from '@/modules/acquisition/queries';
+import { can, hasRole } from '@/lib/authz/permissions';
+import { listActiveBlocks, listRecentQualifications, readChannelSettings, readEmailFunnel, readQualificationModel } from '@/modules/acquisition/queries';
+import { disqualifierWords, FACTOR_LABEL, FUNNEL_LABEL, FUNNEL_STAGES, QUALIFICATION_FACTORS } from '@/modules/acquisition/qualification-vocabulary';
 import { CHANNEL_LABEL, ENGINE_STATUS, channelFromSlug } from '@/modules/acquisition/schema';
-import { Badge, Callout, Card, CardBody, CardHeader, PageHeader, PermissionDenied } from '@/ui';
+import { Badge, Callout, Card, CardBody, CardHeader, EmptyState, PageHeader, PermissionDenied, Stat, StatGrid } from '@/ui';
 
+import { BlockForm, LiftBlockForm, QualificationModelForm } from '../email-forms';
 import { ChannelPauseForm, ChannelSettingsForm } from '../forms';
 
 export const metadata: Metadata = { title: 'Lead generation channel' };
@@ -25,6 +27,8 @@ export default async function ChannelPage({ params }: { params: Promise<{ channe
   const { seeded, channels } = await readChannelSettings();
   const c = channels.find((x) => x.channel === channel)!;
   const engine = ENGINE_STATUS[channel];
+  const isOwner = hasRole(context, 'owner');
+  const email = channel === 'email' ? await Promise.all([readEmailFunnel(), readQualificationModel(), listActiveBlocks(), listRecentQualifications()]) : null;
 
   return (
     <div className="flex flex-col gap-5">
@@ -63,6 +67,66 @@ export default async function ChannelPage({ params }: { params: Promise<{ channe
           <CardHeader title="Pause" description="The emergency brake for this channel. It is checked when work runs, not when it is queued." />
           <CardBody><ChannelPauseForm key={`${channel}-${c.paused}`} channel={channel} paused={c.paused} reason={c.pauseReason} /></CardBody>
         </Card>
+      ) : null}
+
+      {email ? (
+        <>
+          <Card>
+            <CardHeader title="Funnel" description="Counted from the records themselves: prospects, qualification decisions, meeting and quotation requests, and lead outcomes." />
+            <CardBody>
+              <StatGrid>
+                {FUNNEL_STAGES.map((st) => <Stat key={st} label={FUNNEL_LABEL[st]} value={String(email[0][st] ?? 0)} caption="" tone={st === 'won' ? 'success' : st === 'opted_out' || st === 'lost' ? 'warning' : 'neutral'} />)}
+              </StatGrid>
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader title="How prospects are scored" description={email[1].current ? `Version ${email[1].current.version} of ${email[1].versions}. A change is saved as the next version; earlier decisions keep the one they were made under. A strong score never overrides a rule: the exclusion list, the block list, the target countries, industries and services, and anyone who asked not to be emailed.` : 'No weights saved yet, so every factor counts equally. Set them below.'} />
+            <CardBody>
+              {mayManage ? <QualificationModelForm key={email[1].current?.version ?? 0} weights={email[1].current?.weights ?? {}} /> : (
+                <ul className="text-[13px]">{QUALIFICATION_FACTORS.map((f) => <li key={f}>{FACTOR_LABEL[f]}: {email[1].current?.weights[f] ?? 'equal'}</li>)}</ul>
+              )}
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader title="Never prospect" description="People, domains and companies the agency will not approach. Lifting a block is the owner's decision and the record is kept." />
+            <CardBody>
+              <div className="flex flex-col gap-4">
+                {mayManage ? <BlockForm /> : null}
+                {email[2].length === 0 ? <p className="text-[13px] text-muted">Nothing blocked.</p> : (
+                  <ul className="flex flex-col gap-2 text-[13px]">
+                    {email[2].map((b) => (
+                      <li key={b.id} className="flex flex-col gap-1 border-b border-line pb-2 sm:flex-row sm:items-center sm:justify-between">
+                        <span><Badge tone="danger">{b.kind}</Badge> {b.value} - {b.reason}</span>
+                        {mayManage ? <LiftBlockForm blockId={b.id} isOwner={isOwner} /> : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader title="Recent qualification decisions" description="With the rule that decided, and what was missing." />
+            <CardBody>
+              {email[3].length === 0 ? (
+                <EmptyState title="Nothing qualified yet" description="Decisions appear here when a person or an agent scores a prospect." />
+              ) : (
+                <ul className="flex flex-col gap-2 text-[13px]">
+                  {email[3].map((q) => (
+                    <li key={q.id} className="flex flex-col gap-0.5 border-b border-line pb-2">
+                      <span><strong>{q.prospectEmail}</strong> · <Badge tone={q.decision === 'qualified' ? 'success' : q.decision === 'disqualified' ? 'danger' : 'warning'}>{q.decision.replaceAll('_', ' ')}</Badge> · score {q.score} (needs {q.threshold})</span>
+                      {q.disqualifiers.length > 0 ? <span className="text-muted">{q.disqualifiers.map(disqualifierWords).join(' · ')}</span> : null}
+                      {q.missing.length > 0 ? <span className="text-muted">Still needed: {q.missing.join(', ').replaceAll('_', ' ')}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardBody>
+          </Card>
+        </>
       ) : null}
 
       <Card>

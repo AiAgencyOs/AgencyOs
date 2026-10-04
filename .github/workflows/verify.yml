@@ -838,6 +838,9 @@ jobs:
           # Slice 5: a meeting or quotation request is a SUBTASK. Only the conversation owner may ask; it may not carry a price; a quote
           # names the confirmed requirements; the link follows the REAL meeting lifecycle (incl. a reschedule's new row) and the real
           # proposal versions; control returns to the owner at the time it ends.
+          # Slice 6: qualification is arithmetic then rules that outrank it (a 100 never beats an exclusion, a block or an opt-out); a message may
+          # only cite recorded research about THAT prospect; a reply (through the real inbound function) is adopted into ONE identity with the
+          # email agent as owner and never takes a lead Sales owns; the real send chokepoint will not cold-email a client or a Sales-owned lead.
           npm run db:verify:acquisition
 
           # The AI Provider Manager's contract: who may manage providers, models and keys; no path returns a secret;

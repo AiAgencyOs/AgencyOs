@@ -3947,6 +3947,171 @@ export type Database = {
   }
   crm: {
     Tables: {
+      qualification_models: {
+        Row: {
+          id: string
+          organization_id: string
+          version: number
+          weights: Json
+          note: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          version: number
+          weights: Json
+          note?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          version?: number
+          weights?: Json
+          note?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      blocked_prospects: {
+        Row: {
+          id: string
+          organization_id: string
+          kind: string
+          value: string
+          reason: string
+          created_by: string | null
+          created_at: string
+          lifted_at: string | null
+          lifted_by: string | null
+          lift_reason: string | null
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          kind: string
+          value: string
+          reason: string
+          created_by?: string | null
+          created_at?: string
+          lifted_at?: string | null
+          lifted_by?: string | null
+          lift_reason?: string | null
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          kind?: string
+          value?: string
+          reason?: string
+          created_by?: string | null
+          created_at?: string
+          lifted_at?: string | null
+          lifted_by?: string | null
+          lift_reason?: string | null
+        }
+        Relationships: []
+      }
+      prospect_facts: {
+        Row: {
+          id: string
+          organization_id: string
+          prospect_id: string
+          fact: string
+          source_kind: string
+          source_url: string | null
+          observed_at: string
+          recorded_by_type: string
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          prospect_id: string
+          fact: string
+          source_kind: string
+          source_url?: string | null
+          observed_at?: string
+          recorded_by_type?: string
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          prospect_id?: string
+          fact?: string
+          source_kind?: string
+          source_url?: string | null
+          observed_at?: string
+          recorded_by_type?: string
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      prospect_qualifications: {
+        Row: {
+          id: string
+          organization_id: string
+          prospect_id: string
+          model_version: number
+          icp_version: number | null
+          score: number
+          factor_scores: Json
+          reasoning: string | null
+          signals: Json
+          missing_information: Json
+          disqualifiers: Json
+          decision: string
+          threshold: number
+          evaluated_by_type: string
+          evaluated_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          prospect_id: string
+          model_version: number
+          icp_version?: number | null
+          score: number
+          factor_scores: Json
+          reasoning?: string | null
+          signals?: Json
+          missing_information?: Json
+          disqualifiers?: Json
+          decision: string
+          threshold: number
+          evaluated_by_type: string
+          evaluated_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          prospect_id?: string
+          model_version?: number
+          icp_version?: number | null
+          score?: number
+          factor_scores?: Json
+          reasoning?: string | null
+          signals?: Json
+          missing_information?: Json
+          disqualifiers?: Json
+          decision?: string
+          threshold?: number
+          evaluated_by_type?: string
+          evaluated_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       subtask_requests: {
         Row: {
           id: string
@@ -7191,6 +7356,42 @@ export type Database = {
       }
     }
     Functions: {
+      save_qualification_model: {
+        Args: { p_note: string; p_weights: Json }
+        Returns: { outcome: string | null; version: number | null }[]
+      }
+      current_qualification_weights: {
+        Args: { p_organization_id: string }
+        Returns: Json
+      }
+      block_prospect: {
+        Args: { p_kind: string; p_reason: string; p_value: string }
+        Returns: { outcome: string | null }[]
+      }
+      lift_prospect_block: {
+        Args: { p_block: string; p_reason: string }
+        Returns: { outcome: string | null }[]
+      }
+      add_prospect_fact: {
+        Args: { p_fact: string; p_organization_id: string; p_prospect: string; p_recorded_by_type?: string; p_source_kind: string; p_source_url: string }
+        Returns: { outcome: string | null; fact_id: string | null }[]
+      }
+      qualify_prospect: {
+        Args: { p_evaluated_by_type?: string; p_factors: Json; p_organization_id: string; p_prospect: string; p_reasoning: string; p_signals: Json }
+        Returns: { outcome: string | null; qualification_id: string | null; decision: string | null; score: number | null; disqualifiers: Json | null; missing: Json | null }[]
+      }
+      validate_outreach_draft: {
+        Args: { p_body: string; p_claims: Json; p_organization_id: string; p_prospect: string; p_subject: string }
+        Returns: { valid: boolean | null; problems: Json | null }[]
+      }
+      email_followup_blockers: {
+        Args: { p_organization_id: string; p_prospect: string }
+        Returns: string[]
+      }
+      email_funnel: {
+        Args: { p_since?: string }
+        Returns: { stage: string | null; n: number | null }[]
+      }
       request_subtask: {
         Args: { p_correlation_id?: string; p_idempotency_key: string; p_input: Json; p_kind: string; p_lead: string; p_objective: string; p_organization_id: string; p_priority?: number; p_requesting_agent: string }
         Returns: { outcome: string | null; subtask_id: string | null; meeting_id: string | null }[]

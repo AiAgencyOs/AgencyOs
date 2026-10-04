@@ -5,9 +5,10 @@ import { revalidatePath } from 'next/cache';
 import { setKillSwitch } from '@/lib/observability/kill-switches';
 import type { FormState } from '@/modules/identity/types';
 
+import { QUALIFICATION_FACTORS } from './qualification-vocabulary';
 import { ACQUISITION_CHANNELS, ICP_LIST_KEYS, buildIcpDefinition, type AcquisitionChannel } from './schema';
 import { registerIntegration, saveAcquisitionPolicy, setIntegrationState, storeConnectorSecret, testConnection } from './integrations';
-import { cancelSubtask, cancelHandoff, decideDuplicateReview, saveChannelSettings, saveHandoffSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
+import { blockProspect, liftProspectBlock, saveQualificationModel, cancelSubtask, cancelHandoff, decideDuplicateReview, saveChannelSettings, saveHandoffSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
 
 const text = (f: FormData, n: string) => String(f.get(n) ?? '').trim();
 const BASE = '/lead-generation';
@@ -168,4 +169,33 @@ export async function cancelSubtaskAction(_p: FormState, f: FormData): Promise<F
   if (!r.ok) return { status: 'error', message: r.error.message };
   refresh();
   return { status: 'success', message: 'Cancelled. Control is back with the conversation owner.' };
+}
+
+export async function saveQualificationModelAction(_p: FormState, f: FormData): Promise<FormState> {
+  const weights: Record<string, number> = {};
+  for (const factor of QUALIFICATION_FACTORS) {
+    const raw = text(f, factor);
+    if (raw === '') continue;
+    if (!/^\d{1,3}$/.test(raw) || Number(raw) > 100) return { status: 'error', message: 'Weights are whole numbers from 0 to 100.' };
+    weights[factor] = Number(raw);
+  }
+  if (Object.keys(weights).length === 0) return { status: 'error', message: 'Give at least one factor a weight.' };
+  const r = await saveQualificationModel({ weights, note: text(f, 'note') });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: `Saved as version ${r.data.version}. Earlier decisions keep the version they were made under.` };
+}
+
+export async function blockProspectAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await blockProspect({ kind: text(f, 'kind'), value: text(f, 'value'), reason: text(f, 'reason') });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: 'Blocked. Nobody matching it will be qualified or emailed.' };
+}
+
+export async function liftBlockAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await liftProspectBlock({ blockId: text(f, 'blockId'), reason: text(f, 'reason') });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: 'Lifted. The record of the block is kept.' };
 }

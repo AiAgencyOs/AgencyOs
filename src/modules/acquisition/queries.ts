@@ -304,3 +304,56 @@ export async function listSubtasks(limit = 30): Promise<{ rows: SubtaskView[]; o
   rows.sort((a, b) => Number(['REQUESTED', 'IN_PROGRESS'].includes(b.status)) - Number(['REQUESTED', 'IN_PROGRESS'].includes(a.status)));
   return { rows, open: rows.filter((r) => ['REQUESTED', 'IN_PROGRESS'].includes(r.status)).length };
 }
+
+export type FunnelView = Record<string, number>;
+
+/** The email funnel, derived from the records themselves (prospects, qualifications, subtasks, lead outcomes) - not from a counter. */
+export async function readEmailFunnel(): Promise<FunnelView> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('email_funnel', {});
+  if (error) unreadable('readEmailFunnel', error);
+  const out: FunnelView = {};
+  for (const r of (data ?? []) as { stage: string | null; n: number | null }[]) if (r.stage) out[r.stage] = Number(r.n ?? 0);
+  return out;
+}
+
+export type QualificationModelView = { version: number; weights: Record<string, number>; note: string | null; createdAt: string } | null;
+
+export async function readQualificationModel(): Promise<{ current: QualificationModelView; versions: number }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('qualification_models').select('version, weights, note, created_at').order('version', { ascending: false }).limit(1);
+  if (error) unreadable('readQualificationModel', error);
+  const { count, error: countError } = await supabase.schema('crm').from('qualification_models').select('version', { count: 'exact', head: true });
+  if (countError) unreadable('readQualificationModel.count', countError);
+  const row = data?.[0];
+  return { current: row ? { version: row.version, weights: (row.weights ?? {}) as Record<string, number>, note: row.note, createdAt: row.created_at } : null, versions: count ?? 0 };
+}
+
+export type BlockView = { id: string; kind: string; value: string; reason: string; createdAt: string };
+
+export async function listActiveBlocks(): Promise<BlockView[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('blocked_prospects').select('id, kind, value, reason, created_at').is('lifted_at', null).order('created_at', { ascending: false });
+  if (error) unreadable('listActiveBlocks', error);
+  return (data ?? []).map((b) => ({ id: b.id, kind: b.kind, value: b.value, reason: b.reason, createdAt: b.created_at }));
+}
+
+export type QualificationView = { id: string; prospectEmail: string; decision: string; score: number; threshold: number; disqualifiers: string[]; missing: string[]; createdAt: string };
+
+export async function listRecentQualifications(limit = 10): Promise<QualificationView[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('prospect_qualifications').select('id, prospect_id, decision, score, threshold, disqualifiers, missing_information, created_at').order('created_at', { ascending: false }).limit(limit);
+  if (error) unreadable('listRecentQualifications', error);
+  const ids = [...new Set((data ?? []).map((q) => q.prospect_id))];
+  const emails = new Map<string, string>();
+  if (ids.length > 0) {
+    const { data: prospects, error: prospectsError } = await supabase.schema('crm').from('outreach_prospects').select('id, email').in('id', ids);
+    if (prospectsError) unreadable('listRecentQualifications.prospects', prospectsError);
+    for (const p of prospects ?? []) emails.set(p.id, p.email);
+  }
+  return (data ?? []).map((q) => ({
+    id: q.id, prospectEmail: emails.get(q.prospect_id) ?? 'unknown', decision: q.decision, score: q.score, threshold: q.threshold,
+    disqualifiers: Array.isArray(q.disqualifiers) ? (q.disqualifiers as string[]) : [], missing: Array.isArray(q.missing_information) ? (q.missing_information as string[]) : [],
+    createdAt: q.created_at,
+  }));
+}
