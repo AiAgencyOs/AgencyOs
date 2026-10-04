@@ -23,9 +23,9 @@ export function pmWelcome(input: { language: PmLanguage; agencyName: string; pro
   const { agencyName: a, projectName: p } = input;
   return pick(
     {
-      en: `Welcome aboard! I'm the project manager at ${a} for "${p}". I'll guide you through the setup and be your point of contact. I'll only ask for what we don't already have.`,
-      hinglish: `Welcome! Main ${a} me "${p}" ka project manager hoon. Setup me main aapko guide karunga aur aapka point of contact rahunga. Jo humare paas pehle se hai wo dobara nahi poochunga.`,
-      hindi: `स्वागत है! मैं ${a} में "${p}" का प्रोजेक्ट मैनेजर हूँ। सेटअप में मैं आपका मार्गदर्शन करूँगा और आपका संपर्क-बिंदु रहूँगा। जो जानकारी हमारे पास पहले से है, वह दोबारा नहीं पूछूँगा।`,
+      en: `Welcome aboard! I'm the project manager at ${a} for "${p}". I'll guide you through the setup and be your point of contact. I'll only ask for what we don't already have. Please never send passwords or keys in this chat — if we need access to anything, a colleague will arrange a secure way.`,
+      hinglish: `Welcome! Main ${a} me "${p}" ka project manager hoon. Setup me main aapko guide karunga aur aapka point of contact rahunga. Jo humare paas pehle se hai wo dobara nahi poochunga. Kripya password ya keys is chat me kabhi na bhejein — agar kisi cheez ka access chahiye hoga to hamare colleague surakshit tareeka bata denge.`,
+      hindi: `स्वागत है! मैं ${a} में "${p}" का प्रोजेक्ट मैनेजर हूँ। सेटअप में मैं आपका मार्गदर्शन करूँगा और आपका संपर्क-बिंदु रहूँगा। जो जानकारी हमारे पास पहले से है, वह दोबारा नहीं पूछूँगा। कृपया पासवर्ड या कुंजियाँ (keys) इस चैट में कभी न भेजें — किसी चीज़ का एक्सेस चाहिए होगा तो हमारे सहयोगी सुरक्षित तरीका बता देंगे।`,
     },
     input.language,
   );

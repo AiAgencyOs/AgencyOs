@@ -129,6 +129,8 @@ import { ProjectUpdatePanel } from './project-update-form';
 import { readMyWatch } from '@/modules/projects/project-defaults-queries';
 import { RecordClaimForm, VerifyClaimForm } from './claims-panel';
 import { ProjectGroupPanel } from './group-panel';
+import { RevealClientSecretForm, RevokeClientSecretForm, StoreClientSecretForm } from './client-secrets-panel';
+import { CLIENT_SECRET_KIND_LABELS, listClientSecrets } from '@/modules/projects/client-secrets-service';
 import { PhaseTwoPanel } from './phase-two-panel';
 import { PhaseFourPanel } from './phase-four-panel';
 import { PhaseCompletionPanel } from './phase-completion-panel';
@@ -243,6 +245,8 @@ export default async function ProjectPage({
    */
   const billing = can(context, 'invoice.read') ? await readProjectBilling(projectId) : null;
   const mayWriteProject = can(context, 'project.write');
+  const clientSecretsRead = await listClientSecrets(projectId);
+  const clientSecrets = clientSecretsRead.ok ? clientSecretsRead.data : [];
   // ADM-19's own role set, deliberately NOT delivery_lead: a delivery lead
   // declaring their own work production ready is the review signing its own
   // homework.
@@ -820,6 +824,54 @@ export default async function ProjectPage({
               ),
             )}
           </ol>
+        </section>
+      ) : null}
+
+      {can(context, 'audit.read') ? (
+        <section aria-labelledby="client-secrets-heading" className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
+          <div>
+            <h2 id="client-secrets-heading" className="text-base font-semibold">
+              Client secrets
+            </h2>
+            <p className="text-xs text-muted">
+              Logins and keys the client sent through a secure channel — never the project group. Stored encrypted; the owner and ops admins can open
+              one, and every opening is recorded against their name.
+            </p>
+          </div>
+          {!clientSecretsRead.ok ? (
+            <p role="alert" className="text-sm text-danger">The stored secrets could not be read — {clientSecretsRead.error.message}</p>
+          ) : clientSecrets.length === 0 ? (
+            <p className="text-sm text-muted">Nothing stored for this project.</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {clientSecrets.map((s) => (
+                <li key={s.id} className="flex flex-wrap items-start justify-between gap-3 rounded border border-line px-3 py-2 text-sm">
+                  <div>
+                    <p className="font-medium">
+                      {s.label} <span className="text-xs font-normal text-muted">· {CLIENT_SECRET_KIND_LABELS[s.kind as keyof typeof CLIENT_SECRET_KIND_LABELS] ?? s.kind}</span>
+                    </p>
+                    <p className="text-xs text-muted">
+                      {s.revokedAt
+                        ? `Revoked ${clock.dateTime(s.revokedAt)}${s.revokedByName ? ` by ${s.revokedByName}` : ''} — value deleted`
+                        : `Stored ${clock.dateTime(s.createdAt)}${s.storedByName ? ` by ${s.storedByName}` : ''}${s.hint ? ` · ends …${s.hint}` : ''}`}
+                    </p>
+                  </div>
+                  {s.revokedAt ? null : (
+                    <div className="flex items-start gap-2">
+                      <RevealClientSecretForm secretId={s.id} />
+                      <RevokeClientSecretForm projectId={projectId} secretId={s.id} label={s.label} />
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          <details className="rounded-lg border border-line bg-surface px-3 py-2">
+            <summary className="cursor-pointer text-sm font-medium">Store a client secret</summary>
+            <div className="pt-3">
+              <StoreClientSecretForm projectId={projectId} />
+            </div>
+          </details>
         </section>
       ) : null}
 

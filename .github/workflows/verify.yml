@@ -810,6 +810,10 @@ jobs:
           # and delivers it; refused while payment is below 100% verified.
           npm run db:verify:freemaint
 
+          # ADM-106: the per-project client-secret vault - admins store and open, every opening
+          # is audited, nothing else reads the table, a revoked value is gone.
+          npm run db:verify:clientsecrets
+
           # Phase 2 end to end: a won deal to the official kickoff and Phase 3, every human
           # gate a person acting, every automatic step the system alone, the negatives at
           # the moment they matter. (Found six defects the unit suites could not.)
