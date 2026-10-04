@@ -268,7 +268,7 @@ describe('E. the doors and the send callers', () => {
 
   test('the registry page mounts the doors for the owner and the runs page filters by project and provider', () => {
     const routing = read('app/(internal)/agents/routing/page.tsx');
-    assert.match(routing, /<AddModelForm \/>/);
+    assert.match(routing, /<AddModelForm providers=\{budgets\.map\(\(b\) => b\.provider\)\} \/>/);
     assert.match(routing, /<FallbackChainsPanel chains=\{chains\}/);
     assert.match(routing, /<ProviderBudgetsPanel budgets=\{budgets\}/);
     const runs = read('app/(internal)/usage/runs/page.tsx');

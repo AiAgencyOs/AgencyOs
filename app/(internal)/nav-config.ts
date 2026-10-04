@@ -135,6 +135,7 @@ export const NAV_MODULES: readonly NavModule[] = [
     title: 'AI Workforce',
     items: [
       { href: '/agents', label: 'Agents', capability: 'audit.read', screens: ['SCR-061', 'SCR-062', 'SCR-063'] },
+      { href: '/agents/providers', label: 'AI providers', capability: 'audit.read', screens: [] },
       { href: '/agents/routing', label: 'Model routing', capability: 'audit.read', screens: ['SCR-064'] },
       { href: '/agents/automations', label: 'Automations', capability: 'audit.read', screens: ['SCR-065'] },
     ],

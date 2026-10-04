@@ -12,13 +12,11 @@ import { readOperationalSettings, settingInstant, settingText } from '@/lib/admi
 import { getAgentUsage } from '@/lib/admin/usage';
 import { listModels } from '@/lib/admin/model-registry';
 import { providerOfModel } from '@/lib/ai/model-provider';
-import { providerCredentialStatus } from '@/lib/ai/vault';
 import { AGENT_KEYS } from '@/modules/agents/registry';
 import { boundToolKeysFor, listToolDefinitions } from '@/modules/agents/permissions-schema';
 import { listLatestAgentValidations } from '@/modules/agents/validation-queries';
 import { requireInternal } from '@/lib/auth/session';
-import { can, hasRole } from '@/lib/authz/permissions';
-import { createClient } from '@/lib/db/server';
+import { can } from '@/lib/authz/permissions';
 import {
   ActivityFeed,
   Avatar,
@@ -50,8 +48,7 @@ import {
   type Column,
 } from '@/ui';
 
-import { SetProviderCredentialForm, VerifyAiProviderForm } from '../settings/forms';
-import { RevokeProviderCredentialForm } from '../settings/revoke-provider-form';
+import { VerifyAiProviderForm } from '../settings/forms';
 
 export const metadata: Metadata = { title: 'AI Workforce' };
 
@@ -104,7 +101,6 @@ export default async function AgentsPage() {
 
   const isAdmin = can(context, 'organization.settings');
   const workflowCount = workflowDefinitions(AGENT_KEYS).length;
-  const vaultStatus = isAdmin ? await providerCredentialStatus(await createClient()) : null;
   // SCR-062: the last time a person validated each agent (ai.agent_validations).
   const personValidations = await listLatestAgentValidations();
 
@@ -245,7 +241,7 @@ export default async function AgentsPage() {
 
       {!providerConfigured ? (
         <Callout tone="warning" icon={<IconAlert size={16} />} title="AI provider not configured">
-          Add ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY or OPENROUTER_API_KEY (ADM-85) under <Link href="/security/keys" className="underline underline-offset-2">Governance &amp; Security › Keys &amp; secrets</Link> (or set it in the deployment environment), or store a key in the vault below. Until then no agent can run and nothing is faked.
+          Add ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY or OPENROUTER_API_KEY (ADM-85) under <Link href="/security/keys" className="underline underline-offset-2">Governance &amp; Security › Keys &amp; secrets</Link> (or set it in the deployment environment), or add one in AI providers. Until then no agent can run and nothing is faked.
         </Callout>
       ) : null}
       <StatGrid cols={5}>
@@ -458,7 +454,7 @@ export default async function AgentsPage() {
               actions={
                 <span className="flex items-center gap-2">
                   <Badge tone={providerConfigured ? 'success' : 'warning'} dot>{providerConfigured ? 'Configured' : 'Not configured'}</Badge>
-                  {providerConfigured ? null : <Link href="/security/keys#ai" className="text-xs underline underline-offset-2">Add a key</Link>}
+                  {providerConfigured ? null : <Link href="/agents/providers" className="text-xs underline underline-offset-2">Add a key</Link>}
                 </span>
               }
               description={
@@ -475,23 +471,11 @@ export default async function AgentsPage() {
               </div>
             ) : null}
             {isAdmin ? (
-              <div id="vault" className="flex flex-col gap-2.5 border-t border-line px-4 py-4 text-sm sm:px-5">
-                <span className="font-semibold">Provider key vault</span>
-                <p className="text-xs text-muted">
-                  A key entered here is encrypted and stored (ADM-84 §9 overturned 2026-09-20); env-set keys still take precedence. Once stored, a key is never shown again — only whether it is present and when it was last set.
-                </p>
-                {vaultStatus?.ok ? (
-                  <ul className="flex flex-wrap gap-3 text-xs">
-                    {vaultStatus.data.map((row) => (
-                      <li key={row.provider} className="flex flex-wrap items-center gap-1">
-                        <Badge tone={row.configured ? 'success' : 'neutral'}>{row.provider}</Badge>
-                        <span className="text-muted">{row.configured ? `set ${row.updatedAt}` : 'not set'}</span>
-                        {row.configured && hasRole(context, 'owner') ? <RevokeProviderCredentialForm provider={row.provider} /> : null}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                <SetProviderCredentialForm />
+              <div id="vault" className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-4 text-sm sm:px-5">
+                <p className="max-w-2xl text-xs text-muted">Provider keys, models, health and routing are managed in one place. A key is encrypted when stored and never shown again.</p>
+                <Link href="/agents/providers" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
+                  Open AI providers
+                </Link>
               </div>
             ) : null}
           </Card>

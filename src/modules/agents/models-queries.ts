@@ -1,7 +1,6 @@
 import 'server-only';
 
 import { WORK_CLASSES, type WorkClass } from '@/lib/ai/autonomy';
-import { PROVIDER_IDS, type ProviderId } from '@/lib/ai/model-provider';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -32,7 +31,7 @@ export async function listFallbackChains(): Promise<FallbackChainRow[]> {
 }
 
 export type ProviderBudgetRow = {
-  provider: ProviderId;
+  provider: string;
   /** Null when the owner has set no cap. */
   monthlyCapMinor: number | null;
   /** What the provider has cost this calendar month — from the steps, never estimated. Null when no cap is set (not computed). */
@@ -45,8 +44,12 @@ export async function listProviderBudgets(): Promise<ProviderBudgetRow[]> {
   const { data, error } = await supabase.schema('ai').from('provider_budget_status').select('provider, monthly_cap_minor, spent_minor, updated_at');
   if (error) unreadable('listProviderBudgets', error);
 
+  // One row per registered, un-archived provider - built-in or custom - so a custom provider can be capped like any other.
+  const providers = await supabase.schema('ai').from('providers').select('provider_id').is('archived_at', null).order('priority').order('provider_id');
+  if (providers.error) unreadable('listProviderBudgets.providers', providers.error);
+
   const byProvider = new Map((data ?? []).map((r) => [r.provider, r]));
-  return PROVIDER_IDS.map((provider) => {
+  return (providers.data ?? []).map(({ provider_id: provider }) => {
     const row = byProvider.get(provider);
     return {
       provider,

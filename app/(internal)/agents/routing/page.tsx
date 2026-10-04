@@ -3,7 +3,6 @@ import Link from 'next/link';
 
 import { listAgentRoutingOverrides } from '@/lib/admin/agent-routing';
 import { aiStatus } from '@/lib/admin/agent-status';
-import { agencyClock } from '@/lib/admin/agency-clock';
 import { listRoutingPolicies } from '@/lib/admin/model-routing';
 import { listModels, listVaultEntries } from '@/lib/admin/model-registry';
 import { listFallbackChains, listModelBudgets, listProviderBudgets } from '@/modules/agents/models-queries';
@@ -15,9 +14,8 @@ import { listToolPermissionsForTool } from '@/modules/agents/tool-detail-queries
 import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
 import { Badge, Callout, Card, CardHeader, DataTable, IconAgents, IconSettings, IconSparkle, IconUsage, PageHeader, PermissionDenied, Stat, StatGrid, StatusBadge, type Column } from '@/ui';
 
-import { SetProviderCredentialForm, VerifyAiProviderForm } from '../../settings/forms';
+import { VerifyAiProviderForm } from '../../settings/forms';
 
-import { RevokeProviderCredentialForm } from '../../settings/revoke-provider-form';
 import { AddModelForm, FallbackChainsPanel, ModelBudgetsPanel, ProviderBudgetsPanel, RetireModelForm } from './model-registry-panel';
 import { RoutingOverrideForm } from './override-form';
 import { RoutingPolicyForm } from './routing-form';
@@ -57,7 +55,6 @@ const VAULT_PROVIDERS = ['anthropic', 'openai', 'gemini', 'xai', 'openrouter'] a
 export default async function ModelRoutingPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const context = await requireInternal('/agents/routing');
   if (!can(context, 'organization.settings')) return <PermissionDenied />;
-  const clock = await agencyClock();
   const isOwner = hasRole(context, 'owner');
   const params = await searchParams;
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? '';
@@ -80,7 +77,6 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
   const configuredPolicies = policies.filter((p) => p.configured).length;
   const chainsSet = chains.filter((c) => c.modelIds.length > 0).length;
   const availableModels = models.filter((m) => m.status === 'available').map((m) => m.modelId);
-  const vaultByProvider = new Map(vault.map((v) => [v.provider, v]));
   const policyByCategory = new Map(policies.map((p) => [p.category, p]));
   const overrideByCell = new Map(overrides.map((o) => [`${o.agentKey}:${o.category}`, o]));
 
@@ -232,43 +228,15 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
 
       <Card id="vault">
         <CardHeader
-          title="Provider vault"
-          description="Which providers hold a stored key, when it was set and by whom. The key itself is never read here. Env-set keys still take precedence."
+          title="Providers, keys and models"
+          description="Moved: every provider, its keys (several per provider), its models and its health, and the AUTO / MANUAL routing mode, are managed in AI providers."
           actions={
-            <Link href="/agents#vault" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
-              Registry vault
+            <Link href="/agents/providers" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
+              Open AI providers
             </Link>
           }
         />
-        <ul className="divide-y divide-line">
-          {VAULT_PROVIDERS.map((provider) => {
-            const entry = vaultByProvider.get(provider);
-            const registered = ai.providers.includes(provider);
-            return (
-              <li key={provider} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[13px] sm:px-5">
-                <span className="flex items-center gap-2">
-                  <Badge tone={entry ? 'success' : 'neutral'} dot>
-                    {provider}
-                  </Badge>
-                  {registered ? <span className="text-xs text-success">registered with the resolver</span> : null}
-                </span>
-                <span className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                  {entry ? `stored ${clock.dateTime(entry.updatedAt)} by ${entry.updatedByName}` : 'no vault key'}
-                  {entry && isOwner ? <RevokeProviderCredentialForm provider={provider} /> : null}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-        {isOwner ? (
-          <div className="flex flex-col gap-2 border-t border-line px-4 py-3 sm:px-5">
-            <span className="text-[13px] font-medium">Store a key</span>
-            <SetProviderCredentialForm />
-          </div>
-        ) : null}
-        <p className="px-4 pb-3 text-xs text-muted sm:px-5">
-          Storing a new key replaces the old one. Revoking is the owner&apos;s alone and is audited; a key set in the environment cannot be revoked from here.
-        </p>
+        <p className="px-4 pb-4 text-xs text-muted sm:px-5">{storedKeys} of {VAULT_PROVIDERS.length} built-in providers hold a stored key.</p>
       </Card>
 
       {/* SCR-064 — Decision 2026-09-30: ADM-84 reversed, the owner manages models in the panel. */}
@@ -288,7 +256,7 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
             <DataTable dense rows={models} columns={modelColumns} getKey={(m) => `${m.provider}/${m.modelId}`} />
           </div>
         )}
-        {isOwner ? <AddModelForm /> : <p className="border-t border-line px-4 py-3 text-xs text-muted sm:px-5">Adding and retiring models is the owner&apos;s alone; shown read-only for your role.</p>}
+        {isOwner ? <AddModelForm providers={budgets.map((b) => b.provider)} /> : <p className="border-t border-line px-4 py-3 text-xs text-muted sm:px-5">Adding and retiring models is the owner&apos;s alone; shown read-only for your role.</p>}
       </Card>
 
       <Card id="fallback">

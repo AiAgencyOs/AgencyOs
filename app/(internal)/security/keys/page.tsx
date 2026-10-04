@@ -193,18 +193,25 @@ function KeyRowView({ row, isOwner, vaultReady, dateTime }: { row: KeyRow; isOwn
         <p className="text-xs text-muted">Environment only. {slot.envOnlyReason}</p>
       ) : (
         <div className="flex flex-col gap-3">
-          {isOwner && vaultReady ? (
+          {providerVault ? (
+            <p className="text-[13px] text-muted">
+              AI provider keys are managed in one place - several keys per provider, rotation, health and the models they serve.{' '}
+              <Link href={`/agents/providers/${providerVault}?tab=credentials`} className="font-medium text-brand underline-offset-2 hover:underline">
+                Manage in AI providers
+              </Link>
+            </p>
+          ) : isOwner && vaultReady ? (
             <details className="group rounded-lg border border-line bg-surface-sunken px-3 py-2">
               <summary className="cursor-pointer text-[13px] font-medium text-foreground">{slot.plain ? (hasVaultCopy ? 'Change this setting' : 'Set this') : hasVaultCopy ? 'Replace the stored key' : 'Store a key'}</summary>
               <div className="mt-3">
-                <StoreSecretForm slot={slot.key} label={slot.label} plain={slot.plain} canExpire={slot.canExpire} replace={hasVaultCopy} providerVault={providerVault} whereToGetIt={slot.whereToGetIt} />
+                <StoreSecretForm slot={slot.key} label={slot.label} plain={slot.plain} canExpire={slot.canExpire} replace={hasVaultCopy} whereToGetIt={slot.whereToGetIt} />
               </div>
             </details>
           ) : null}
-          {!isOwner ? <p className="text-xs text-muted">Only the owner may store or revoke a key.</p> : null}
+          {!isOwner && !providerVault ? <p className="text-xs text-muted">Only the owner may store or revoke a key.</p> : null}
           <div className="flex flex-wrap items-start gap-3">
             {slot.verifier && row.source !== 'none' ? <VerifySecretForm slot={slot.key} /> : null}
-            {isOwner && hasVaultCopy ? <RevokeSecretForm slot={slot.key} label={slot.label} providerVault={providerVault} /> : null}
+            {isOwner && hasVaultCopy && !providerVault ? <RevokeSecretForm slot={slot.key} label={slot.label} /> : null}
           </div>
         </div>
       )}

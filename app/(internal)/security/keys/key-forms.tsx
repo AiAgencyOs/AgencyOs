@@ -5,7 +5,6 @@ import { useActionState } from 'react';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { FormMessage, buttonClass, inputClass, labelClass } from '@/ui';
 
-import { revokeProviderCredentialAction, setProviderCredentialAction } from '../../settings/actions';
 import { revokeSecretAction, storeSecretAction, verifySecretAction } from './actions';
 
 /**
@@ -22,7 +21,6 @@ export function StoreSecretForm({
   canExpire,
   plain,
   replace,
-  providerVault,
   whereToGetIt,
 }: {
   slot: string;
@@ -32,21 +30,19 @@ export function StoreSecretForm({
   plain?: boolean;
   /** A key is already stored: the form replaces it, and says so. */
   replace: boolean;
-  /** An AI provider key goes through the older provider vault's own door. */
-  providerVault?: string;
   whereToGetIt?: string;
 }) {
-  const [state, action, pending] = useActionState(providerVault ? setProviderCredentialAction : storeSecretAction, IDLE_STATE);
+  const [state, action, pending] = useActionState(storeSecretAction, IDLE_STATE);
 
   return (
     <form action={action} className="flex flex-col gap-2">
-      {providerVault ? <input type="hidden" name="provider" value={providerVault} /> : <input type="hidden" name="slot" value={slot} />}
+      <input type="hidden" name="slot" value={slot} />
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex min-w-[16rem] flex-1 flex-col gap-1">
           <span className={labelClass}>{replace ? `New ${label} (replaces the stored one)` : label}</span>
-          <input type={plain ? 'text' : 'password'} name={providerVault ? 'key' : 'value'} autoComplete={plain ? 'off' : 'new-password'} spellCheck={false} required className={inputClass} />
+          <input type={plain ? 'text' : 'password'} name="value" autoComplete={plain ? 'off' : 'new-password'} spellCheck={false} required className={inputClass} />
         </label>
-        {canExpire && !providerVault ? (
+        {canExpire ? (
           <label className="flex flex-col gap-1">
             <span className={labelClass}>Expires on (optional)</span>
             <input type="date" name="expiresOn" className={inputClass} />
@@ -62,8 +58,8 @@ export function StoreSecretForm({
   );
 }
 
-export function RevokeSecretForm({ slot, label, providerVault }: { slot: string; label: string; providerVault?: string }) {
-  const [state, action, pending] = useActionState(providerVault ? revokeProviderCredentialAction : revokeSecretAction, IDLE_STATE);
+export function RevokeSecretForm({ slot, label }: { slot: string; label: string }) {
+  const [state, action, pending] = useActionState(revokeSecretAction, IDLE_STATE);
 
   return (
     <form
@@ -73,7 +69,7 @@ export function RevokeSecretForm({ slot, label, providerVault }: { slot: string;
       }}
       className="flex flex-wrap items-center gap-2"
     >
-      {providerVault ? <input type="hidden" name="provider" value={providerVault} /> : <input type="hidden" name="slot" value={slot} />}
+      <input type="hidden" name="slot" value={slot} />
       <button type="submit" disabled={pending} className={buttonClass('danger', 'sm')}>
         {pending ? 'Revoking…' : 'Revoke'}
       </button>
