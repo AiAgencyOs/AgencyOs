@@ -5,7 +5,7 @@ import type { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
 import { ageDays, expiryState, needsRotation, SECRET_SLOTS, type ExpiryState, type SecretSlotDef } from './registry';
-import { secretSource, type SecretSource } from './resolve';
+import { resolveSecret, secretSource, type SecretSource } from './resolve';
 import { secretStatus, vaultConfigured, type SecretStatusRow } from './vault';
 
 type RequestClient = Awaited<ReturnType<typeof createClient>>;
@@ -17,6 +17,8 @@ export type KeyRow = {
   /** A vault copy exists but the environment copy shadows it. */
   vaultShadowed: boolean;
   hint: string | null;
+  /** For a `plain` slot only: the value itself (a mail host is not a secret). */
+  plainValue: string | null;
   expiresOn: string | null;
   expiry: ExpiryState;
   updatedAt: string | null;
@@ -61,6 +63,7 @@ export async function readKeysOverview(supabase: RequestClient, now: Date): Prom
         source: src.source,
         vaultShadowed: src.vaultShadowed,
         hint: v?.hint ?? null,
+        plainValue: slot.plain && src.source !== 'none' ? await resolveSecret(slot.key) : null,
         expiresOn: v?.expiresOn ?? null,
         expiry,
         updatedAt,

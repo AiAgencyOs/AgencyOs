@@ -66,13 +66,23 @@ export type SecretSlotDef = {
   readonly envOnlyReason?: string;
   /** What a value looks like, for the door's format check. */
   readonly format?: SecretFormat;
+  /**
+   * Not a secret - a setting that happens to live beside the keys (a mail host,
+   * a sender address). Same vault, same owner-only door, same audit; the screen
+   * shows the current value instead of the last four characters.
+   */
+  readonly plain?: boolean;
 };
 
 export type SecretFormat =
   | { readonly kind: 'min'; readonly min: number }
   | { readonly kind: 'prefix'; readonly prefixes: readonly string[]; readonly min: number }
   | { readonly kind: 'url' }
-  | { readonly kind: 'pem' };
+  | { readonly kind: 'pem' }
+  | { readonly kind: 'email' }
+  | { readonly kind: 'host' }
+  | { readonly kind: 'port' }
+  | { readonly kind: 'bool' };
 
 export const SECRET_SLOTS: readonly SecretSlotDef[] = [
   // ── AI providers (the older vault) ──────────────────────────────────────
@@ -100,6 +110,15 @@ export const SECRET_SLOTS: readonly SecretSlotDef[] = [
   { key: 'RESEND_API_KEY', label: 'Resend API key', category: 'email', storage: 'vault', maxAgeDays: 180, purpose: 'Sending invoices and receipts by email. Without it (and without SMTP) the email button says not configured.', usedBy: ['Invoice email send'], whereToGetIt: 'resend.com → API Keys', format: { kind: 'prefix', prefixes: ['re_'], min: 12 } },
   { key: 'SMTP_PASS', label: 'SMTP password', category: 'email', storage: 'vault', maxAgeDays: 180, purpose: 'The password for the SMTP account, when email goes through SMTP rather than Resend. The host, port and user are not secrets and stay in the environment.', usedBy: ['Invoice email send'], format: { kind: 'min', min: 4 } },
   { key: 'SMTP_OUTREACH_PASS', label: 'SMTP password (outreach mailbox)', category: 'email', storage: 'vault', maxAgeDays: 180, purpose: 'The password of the second mailbox (info@), used only for outreach / lead-generation email. The host, port and user are not secrets and stay in the environment.', usedBy: ['Outreach email'], format: { kind: 'min', min: 4 } },
+
+  // The mail server and the two mailboxes. Not secrets, so the screen shows what is set.
+  { key: 'SMTP_HOST', label: 'Mail server (SMTP host)', category: 'email', storage: 'vault', plain: true, maxAgeDays: 0, purpose: 'The mail server both mailboxes send through - for Hostinger, smtp.hostinger.com.', usedBy: ['Invoice and quotation email', 'Outreach email'], whereToGetIt: 'Hostinger hPanel → Emails → Connect apps & devices → Server settings → Outgoing server (SMTP).', format: { kind: 'host' } },
+  { key: 'SMTP_PORT', label: 'Mail server port', category: 'email', storage: 'vault', plain: true, maxAgeDays: 0, purpose: 'The SMTP port. 465 with "secure" set to true is Hostinger’s encrypted port.', usedBy: ['Invoice and quotation email', 'Outreach email'], format: { kind: 'port' } },
+  { key: 'SMTP_SECURE', label: 'Mail server uses TLS from the start (true or false)', category: 'email', storage: 'vault', plain: true, maxAgeDays: 0, purpose: 'true for port 465, false for port 587 (which upgrades with STARTTLS).', usedBy: ['Invoice and quotation email', 'Outreach email'], format: { kind: 'bool' } },
+  { key: 'SMTP_USER', label: 'Client mailbox login (care@)', category: 'email', storage: 'vault', plain: true, maxAgeDays: 0, purpose: 'The mailbox that sends everything a client is owed: quotation, invoice, confirmation, update, delivery, handover. Its password is the SMTP password below.', usedBy: ['Invoice and quotation email'], format: { kind: 'email' } },
+  { key: 'EMAIL_FROM', label: 'Client mailbox "From" address (care@)', category: 'email', storage: 'vault', plain: true, maxAgeDays: 0, purpose: 'The sender address clients see. Without it no client email is sent.', usedBy: ['Invoice and quotation email'], format: { kind: 'email' } },
+  { key: 'SMTP_OUTREACH_USER', label: 'Outreach mailbox login (info@)', category: 'email', storage: 'vault', plain: true, maxAgeDays: 0, purpose: 'The separate mailbox for lead generation and marketing only. It never borrows the client mailbox.', usedBy: ['Outreach email'], format: { kind: 'email' } },
+  { key: 'EMAIL_OUTREACH_FROM', label: 'Outreach mailbox "From" address (info@)', category: 'email', storage: 'vault', plain: true, maxAgeDays: 0, purpose: 'The sender address prospects see.', usedBy: ['Outreach email'], format: { kind: 'email' } },
 
   // ── Alerting ────────────────────────────────────────────────────────────
   { key: 'ALERT_WEBHOOK_URL', label: 'Alert webhook URL', category: 'alerting', storage: 'vault', maxAgeDays: 365, purpose: 'Where failures are sent so a person is paged, not just the log. The URL itself is the secret — anyone holding it can post to that channel.', usedBy: ['Operations alerts'], whereToGetIt: 'Slack → Incoming Webhooks, or your paging tool’s webhook URL', format: { kind: 'url' } },
@@ -161,6 +180,16 @@ export function validateSecretValue(key: string, raw: string): string | null {
         return 'That is not a URL.';
       }
     }
+    case 'email':
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? null : 'That is not an email address.';
+    case 'host':
+      return /^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/.test(value) && value.includes('.') ? null : 'That is not a server name like smtp.example.com (no https://, no port).';
+    case 'port': {
+      const n = Number(value);
+      return Number.isInteger(n) && n >= 1 && n <= 65535 ? null : 'A port is a whole number from 1 to 65535.';
+    }
+    case 'bool':
+      return value === 'true' || value === 'false' ? null : 'Type true or false.';
     case 'pem':
       return /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]+-----END [A-Z ]*PRIVATE KEY-----/.test(value) ? null : 'Paste the whole private key, from the BEGIN line to the END line.';
   }

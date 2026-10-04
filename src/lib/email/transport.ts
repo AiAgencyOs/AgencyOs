@@ -3,7 +3,6 @@ import 'server-only';
 import { connect as netConnect, type Socket } from 'node:net';
 import { connect as tlsConnect } from 'node:tls';
 
-import { serverEnv } from '@/lib/env';
 import { resolveSecret, secretConfigured } from '@/lib/secrets/resolve';
 
 /**
@@ -50,30 +49,48 @@ export type EmailSendResult = { ok: true; kind: 'resend' | 'smtp'; messageRef: s
 
 const RESEND_API = 'https://api.resend.com/emails';
 
+/**
+ * Everything the mail lanes need, read through the resolver: a value set in the
+ * hosting environment wins, the Keys & secrets screen is the fallback, so the
+ * whole thing can be managed from the admin panel with no redeploy.
+ */
+async function mailConfig() {
+  const [host, port, secure, user, from, outreachUser, outreachFrom] = await Promise.all([
+    resolveSecret('SMTP_HOST'),
+    resolveSecret('SMTP_PORT'),
+    resolveSecret('SMTP_SECURE'),
+    resolveSecret('SMTP_USER'),
+    resolveSecret('EMAIL_FROM'),
+    resolveSecret('SMTP_OUTREACH_USER'),
+    resolveSecret('EMAIL_OUTREACH_FROM'),
+  ]);
+  return { host, port: port ? Number(port) : null, secure: secure === 'true', user, from, outreachUser, outreachFrom };
+}
+
 export async function emailTransportState(lane: EmailLane = 'client'): Promise<EmailTransportState> {
-  const env = serverEnv();
+  const cfg = await mailConfig();
   if (lane === 'outreach') {
     const missing = [
-      !env.SMTP_HOST && 'SMTP_HOST',
-      !env.EMAIL_OUTREACH_FROM && 'EMAIL_OUTREACH_FROM',
-      !env.SMTP_OUTREACH_USER && 'SMTP_OUTREACH_USER',
+      !cfg.host && 'SMTP_HOST',
+      !cfg.outreachFrom && 'EMAIL_OUTREACH_FROM',
+      !cfg.outreachUser && 'SMTP_OUTREACH_USER',
       !(await secretConfigured('SMTP_OUTREACH_PASS')) && 'SMTP_OUTREACH_PASS',
     ].filter(Boolean);
     if (missing.length > 0) {
-      return { configured: false, reason: `The outreach mailbox is not configured (missing ${missing.join(', ')}). It never borrows the client mailbox.` };
+      return { configured: false, reason: `The outreach mailbox is not configured (missing ${missing.join(', ')}) - set it under Security › Keys & secrets. It never borrows the client mailbox.` };
     }
-    return { configured: true, kind: 'smtp', from: env.EMAIL_OUTREACH_FROM!, label: `SMTP via ${env.SMTP_HOST}, outreach from ${env.EMAIL_OUTREACH_FROM}` };
+    return { configured: true, kind: 'smtp', from: cfg.outreachFrom!, label: `SMTP via ${cfg.host}, outreach from ${cfg.outreachFrom}` };
   }
-  if (!env.EMAIL_FROM) {
-    return { configured: false, reason: 'EMAIL_FROM is not set — the sender address every email needs.' };
+  if (!cfg.from) {
+    return { configured: false, reason: 'EMAIL_FROM is not set - the sender address every email needs. Set it under Security › Keys & secrets.' };
   }
   if (await secretConfigured('RESEND_API_KEY')) {
-    return { configured: true, kind: 'resend', from: env.EMAIL_FROM, label: `Resend, from ${env.EMAIL_FROM}` };
+    return { configured: true, kind: 'resend', from: cfg.from, label: `Resend, from ${cfg.from}` };
   }
-  if (env.SMTP_HOST) {
-    return { configured: true, kind: 'smtp', from: env.EMAIL_FROM, label: `SMTP via ${env.SMTP_HOST}, from ${env.EMAIL_FROM}` };
+  if (cfg.host) {
+    return { configured: true, kind: 'smtp', from: cfg.from, label: `SMTP via ${cfg.host}, from ${cfg.from}` };
   }
-  return { configured: false, reason: 'No email transport is configured. Set RESEND_API_KEY, or SMTP_HOST with SMTP_PORT, SMTP_USER and SMTP_PASS, in the deployment environment, or add them under Security & Audit › Keys & secrets.' };
+  return { configured: false, reason: 'No email transport is configured. Set the mail server, mailbox and password under Security › Keys & secrets (or RESEND_API_KEY).' };
 }
 
 export async function sendEmail(message: EmailMessage): Promise<EmailSendResult> {
@@ -221,12 +238,12 @@ function wrap(base64: string): string {
 }
 
 async function sendViaSmtp(from: string, message: EmailMessage, lane: EmailLane): Promise<EmailSendResult> {
-  const env = serverEnv();
-  const smtpUser = lane === 'outreach' ? env.SMTP_OUTREACH_USER : env.SMTP_USER;
+  const cfg = await mailConfig();
+  const smtpUser = lane === 'outreach' ? cfg.outreachUser : cfg.user;
   const smtpPass = (lane === 'outreach' ? await resolveSecret('SMTP_OUTREACH_PASS') : await resolveSecret('SMTP_PASS')) ?? '';
-  const host = env.SMTP_HOST!;
-  const secure = env.SMTP_SECURE === 'true';
-  const port = env.SMTP_PORT ?? (secure ? 465 : 587);
+  const host = cfg.host!;
+  const secure = cfg.secure;
+  const port = cfg.port ?? (secure ? 465 : 587);
 
   const socket: Socket = await new Promise((resolve, reject) => {
     const s = secure ? tlsConnect({ host, port, servername: host }) : netConnect({ host, port });

@@ -20,6 +20,7 @@ export function StoreSecretForm({
   slot,
   label,
   canExpire,
+  plain,
   replace,
   providerVault,
   whereToGetIt,
@@ -27,6 +28,8 @@ export function StoreSecretForm({
   slot: string;
   label: string;
   canExpire?: boolean;
+  /** Not a secret: a visible text field, and the wording says setting, not key. */
+  plain?: boolean;
   /** A key is already stored: the form replaces it, and says so. */
   replace: boolean;
   /** An AI provider key goes through the older provider vault's own door. */
@@ -41,7 +44,7 @@ export function StoreSecretForm({
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex min-w-[16rem] flex-1 flex-col gap-1">
           <span className={labelClass}>{replace ? `New ${label} (replaces the stored one)` : label}</span>
-          <input type="password" name={providerVault ? 'key' : 'value'} autoComplete="new-password" spellCheck={false} required className={inputClass} />
+          <input type={plain ? 'text' : 'password'} name={providerVault ? 'key' : 'value'} autoComplete={plain ? 'off' : 'new-password'} spellCheck={false} required className={inputClass} />
         </label>
         {canExpire && !providerVault ? (
           <label className="flex flex-col gap-1">
@@ -50,7 +53,7 @@ export function StoreSecretForm({
           </label>
         ) : null}
         <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
-          {pending ? 'Encrypting…' : replace ? 'Replace key' : 'Store key'}
+          {pending ? 'Saving…' : plain ? 'Save' : replace ? 'Replace key' : 'Store key'}
         </button>
       </div>
       {whereToGetIt ? <p className="text-xs text-muted">Where to get it: {whereToGetIt}</p> : null}

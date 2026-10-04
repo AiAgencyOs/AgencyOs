@@ -166,7 +166,8 @@ function fakeSmtp(refuseRecipient: boolean): Promise<Fake> {
 describe('the email lane sends through the transport and reports the provider honestly', () => {
   const env: Record<string, unknown> = {};
   mock.module('@/lib/env', { exports: { serverEnv: () => env } });
-  mock.module('@/lib/secrets/resolve', { exports: { secretConfigured: async () => false, resolveSecret: async () => '' } });
+  const fromEnv = (k: string) => (env[k] === undefined || env[k] === null ? null : String(env[k]));
+  mock.module('@/lib/secrets/resolve', { exports: { secretConfigured: async () => false, resolveSecret: async (k: string) => fromEnv(k) } });
 
   test('an accepted message is delivered to the fake and carries its queue reference', async () => {
     const fake = await fakeSmtp(false);
