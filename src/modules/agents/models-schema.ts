@@ -1,7 +1,6 @@
 import { z } from 'zod';
 
 import { WORK_CLASSES } from '@/lib/ai/autonomy';
-import { PROVIDER_IDS } from '@/lib/ai/model-provider';
 
 /**
  * SCR-064 — Decision 2026-09-30: ADM-84 reversed, the owner manages models in
@@ -17,9 +16,12 @@ export const modelId = z
 
 export const MODEL_CAPABILITIES = ['reasoning', 'coding', 'long_context', 'structured_output', 'multimodal'] as const;
 
+/** A provider id as the registry stores it (built-in or custom); the door checks it is registered and not archived. */
+const providerIdSchema = z.string().regex(/^[a-z][a-z0-9_-]{1,39}$/, 'Choose a provider.');
+
 export const addModelSchema = z.object({
   modelId,
-  provider: z.enum(PROVIDER_IDS),
+  provider: providerIdSchema,
   capabilities: z.array(z.enum(MODEL_CAPABILITIES)).max(5).default([]),
   contextTokens: z.number().int().positive().max(100_000_000).optional(),
   /** Minor units per million tokens, as the registry stores them. */
@@ -42,7 +44,7 @@ export const setFallbackChainSchema = z.object({
 export type SetFallbackChainInput = z.infer<typeof setFallbackChainSchema>;
 
 export const setProviderBudgetSchema = z.object({
-  provider: z.enum(PROVIDER_IDS),
+  provider: providerIdSchema,
   /** Minor units; 0 clears the cap. */
   monthlyCapMinor: z.number().int().min(0).max(100_000_000_000),
 });

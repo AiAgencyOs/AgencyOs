@@ -165,6 +165,9 @@ try {
   const run = async (text, wait = 8) => {
     const since = (await dbNow()).toISOString();
     calls.length = 0;
+    // Work left behind by an earlier run (retries waiting their turn) must not take this run's place in the queue.
+    await rest('DELETE', 'core', 'outbox_events?published_at=is.null');
+    await rest('PATCH', 'core', 'jobs?status=eq.queued', { status: 'cancelled' });
     await say(text);
     for (let i = 0; i < wait; i += 1) { await tick(); await sleep(250); }
     return { since, decisions: await decisions(since), calls: [...calls] };
@@ -186,6 +189,7 @@ try {
   const assigned = one(await door('set_agent_assignment', { p_agent_key: 'sales', p_provider_id: PV, p_model_id: M1, p_fallbacks: [], p_note: 'verifier' }));
   check(assigned?.outcome === 'saved', 'the Sales agent is assigned provider A, model 1', String(assigned?.outcome));
 
+  await sleep(21_000); // the app reads the provider registry through a 20-second cache: a provider added just now is not yet visible to it
   const r1 = await run('hello, I would like a quote for a pharmacy app');
   const d1 = r1.decisions.filter((d) => d.outcome === 'succeeded');
   check(d1.length > 0, 'the runner called the assigned provider through the real job runner', `${d1.length} decision(s), ${r1.calls.filter((c) => c.path.endsWith('chat/completions')).length} call(s)`);
@@ -280,6 +284,18 @@ try {
   check(['ai_routing.mode_changed', 'ai_routing.assignment_set'].every((a) => hist.some((h) => h.action === a)), 'every mode and assignment change is audited with before and after');
 
   // ── 7. no secret anywhere ─────────────────────────────────────────────────────────
+  section('6a. A custom provider can be capped like any other, and the cap is enforced');
+  const capBad = one(await door('set_provider_budget', { p_provider: 'no-such-provider', p_monthly_cap_minor: 100 }));
+  check(capBad?.outcome === 'bad_provider', 'a cap on an unregistered provider is refused', String(capBad?.outcome));
+  const capSet = one(await door('set_provider_budget', { p_provider: PV, p_monthly_cap_minor: 1 }));
+  check(capSet?.outcome === 'set', 'the owner caps the custom provider (one paisa a month)', String(capSet?.outcome));
+  await door('set_agent_assignment', { p_agent_key: 'sales', p_provider_id: PV, p_model_id: M1, p_fallbacks: [], p_note: 'cap test' });
+  const rCap = await run('one more thing about the budget');
+  check(rCap.calls.filter((c) => c.path.endsWith('chat/completions')).length === 0, 'once spend passes the cap, the provider receives no further call', `${rCap.calls.length} calls`);
+  const refusals = (await rest('GET', 'ai', `agent_policy_refusals?organization_id=eq.${ORG}&kind=eq.provider_budget_exceeded&created_at=gte.${rCap.since}&select=reason`)).json ?? [];
+  check(refusals.length > 0 && /monthly budget/.test(refusals[0].reason), 'and the refusal is recorded with its reason', String(refusals[0]?.reason).slice(0, 70));
+  check(one(await door('set_provider_budget', { p_provider: PV, p_monthly_cap_minor: 0 }))?.outcome === 'cleared', 'the owner clears the cap');
+
   section('6b. A decision is history');
   const someDecision = one(await rest('GET', 'ai', `routing_decisions?organization_id=eq.${ORG}&select=id,mode&limit=1`));
   const del = await rest('DELETE', 'ai', `routing_decisions?id=eq.${someDecision?.id}`);
@@ -308,6 +324,7 @@ try {
   await rest('DELETE', 'ai', `agent_model_assignments?organization_id=eq.${ORG}&agent_key=eq.sales`).catch(() => {});
   await rest('DELETE', 'ai', `agent_routing_overrides?organization_id=eq.${ORG}&agent_key=eq.sales&category=eq.client_facing`).catch(() => {});
   await rest('PATCH', 'ai', `routing_settings?organization_id=eq.${ORG}`, { mode: savedMode }).catch(() => {});
+  await rest('DELETE', 'ai', `provider_budgets?organization_id=eq.${ORG}&provider=in.(${created.providers.join(',')})`).catch(() => {});
   await rest('DELETE', 'core', 'alerts?fingerprint=eq.router-manual:sales').catch(() => {});
   await rest('PATCH', 'ai', `providers?provider_id=in.(${created.providers.join(',')})`, { enabled: false, archived_at: new Date().toISOString() }).catch(() => {});
   await fx.cleanup().catch(() => {});

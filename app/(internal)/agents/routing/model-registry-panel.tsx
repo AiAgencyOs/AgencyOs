@@ -2,7 +2,6 @@
 
 import { useActionState } from 'react';
 
-import { PROVIDER_IDS } from '@/lib/ai/model-provider';
 import { addModelAction, retireModelAction, setFallbackChainAction, setModelBudgetAction, setProviderBudgetAction } from '@/modules/agents/models-actions';
 import type { FallbackChainRow, ModelBudgetRow, ProviderBudgetRow } from '@/modules/agents/models-queries';
 import { MODEL_CAPABILITIES } from '@/modules/agents/models-schema';
@@ -20,7 +19,7 @@ import { Badge, FormMessage, buttonClass, inputClass, labelClass, selectClass } 
 
 const INR = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' });
 
-export function AddModelForm() {
+export function AddModelForm({ providers }: { providers: readonly string[] }) {
   const [state, action, pending] = useActionState(addModelAction, IDLE_STATE);
 
   return (
@@ -33,8 +32,8 @@ export function AddModelForm() {
         </label>
         <label className="flex flex-col gap-1">
           <span className={labelClass}>Provider</span>
-          <select name="provider" defaultValue="anthropic" className={selectClass}>
-            {PROVIDER_IDS.map((p) => (
+          <select name="provider" defaultValue={providers[0] ?? ''} className={selectClass}>
+            {providers.map((p) => (
               <option key={p} value={p}>
                 {p}
               </option>
