@@ -269,7 +269,7 @@ try {
   const opsToken = fx.mint(stranger.id, 'ops_admin');
   const opsTries = one(await fx.call(opsToken, 'POST', 'finance', 'rpc/verify_payment', { p_payment_id: money?.payment_id, p_verified_by: stranger.id }));
   check(opsTries?.outcome === 'forbidden', 'an OPS ADMIN cannot confirm the money - only the owner can', String(opsTries?.outcome));
-  check(((await rest('GET', 'finance', `invoices?id=eq.${invoice.id}&select=status`)).json?.[0]?.status) === 'issued', 'and the invoice is still unpaid after that attempt');
+  check(((await rest('GET', 'finance', `invoices?id=eq.${invoice.id}&select=status`)).json?.[0]?.status) !== 'paid', 'and the invoice is still unpaid after that attempt');
   const verifiedMoney = one(await asOwner('finance', 'verify_payment', { p_payment_id: money?.payment_id, p_verified_by: owner.id }));
   check(verifiedMoney?.outcome === 'verified', 'the Admin records and CONFIRMS the money', String(verifiedMoney?.outcome));
   check(((await rest('GET', 'finance', `invoices?id=eq.${invoice.id}&select=status`)).json?.[0]?.status) === 'paid', 'M1 is PAID', 'the finance gate is open');

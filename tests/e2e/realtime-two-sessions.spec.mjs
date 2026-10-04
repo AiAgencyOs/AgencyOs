@@ -540,9 +540,13 @@ try {
     c.ok('A shows the claim without a reload');
     await shot(a, 'claim-pending-A');
 
+    // Owner decision 2026-10-04: only the owner confirms that money arrived. B (an ops_admin) sees no verify button.
     await b.goto(`${APP}/invoices/verify`, { waitUntil: 'networkidle' });
-    // W1 (SCR-054): the decision is four explicit buttons over one note; PAYMENT VERIFIED is the confirm.
-    const decisionForm = b.locator('form', { has: b.locator(`input[name="submissionId"][value="${claim.id}"]`) });
+    c.assert((await b.getByRole('button', { name: 'PAYMENT VERIFIED' }).count()) === 0, 'B (ops_admin) is offered no PAYMENT VERIFIED button');
+    await shot(b, 'claim-pending-no-verify-B');
+    // W1 (SCR-054): the decision is four explicit buttons over one note; PAYMENT VERIFIED is the confirm. A is the owner.
+    await a.reload({ waitUntil: 'networkidle' });
+    const decisionForm = a.locator('form', { has: a.locator(`input[name="submissionId"][value="${claim.id}"]`) });
     await decisionForm.getByLabel('Verification note').fill(`bank statement line ${reference}`);
     await decisionForm.getByRole('button', { name: 'PAYMENT VERIFIED' }).click();
     let verified = null;
@@ -557,18 +561,18 @@ try {
     c.notes.push(
       `the verify door records the verification only (finance.verify_payment_submission "does NOT write money"); the invoice stays ${inv?.status} until record_manual_payment — the screen shows the claim as verified, which is what §5's "PAID" means on this page`,
     );
-    await shot(b, 'claim-verified-B');
+    await shot(a, 'claim-verified-A');
 
-    await a.waitForFunction(
+    await b.waitForFunction(
       (ref) => {
         const text = document.body.innerText;
         return text.includes(ref) && /verified by/.test(text);
       },
       reference,
       { timeout: PUSH_MS },
-    ).catch(() => c.fail('A shows the claim as verified without a reload', `not within ${PUSH_MS} ms`));
-    c.ok('A shows the claim as verified without a reload');
-    await shot(a, 'claim-verified-A');
+    ).catch(() => c.fail('B shows the claim as verified without a reload', `not within ${PUSH_MS} ms`));
+    c.ok('B shows the claim as verified without a reload');
+    await shot(b, 'claim-verified-B');
     await b.close();
     await a.close();
   });
