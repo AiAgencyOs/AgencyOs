@@ -157,7 +157,7 @@ describe('A. a timeout is handled in-process, with the reaper only as backstop',
 
 describe('B. the provider takes its bounds from the budget module', () => {
   test('both options are passed to the Anthropic constructor', () => {
-    assert.match(claudeSource, /new Anthropic\(\{[\s\S]*?timeout: REQUEST_TIMEOUT_MS[\s\S]*?\}\)/);
+    assert.match(claudeSource, /new Anthropic\(\{[\s\S]*?timeout: (?:options\.timeoutMs \?\? )?REQUEST_TIMEOUT_MS[\s\S]*?\}\)/);
     assert.match(claudeSource, /new Anthropic\(\{[\s\S]*?maxRetries: MAX_RETRIES[\s\S]*?\}\)/);
   });
 

@@ -9,6 +9,183 @@ export type Json =
 export type Database = {
   ai: {
     Tables: {
+      providers: {
+        Row: {
+          provider_id: string
+          kind: string
+          display_name: string
+          is_builtin: boolean
+          enabled: boolean
+          base_url: string
+          auth_scheme: string
+          api_version: string | null
+          match_prefixes: string[]
+          match_contains: string[]
+          extra_headers: Json
+          models_path: string
+          timeout_ms: number
+          retry_max: number
+          priority: number
+          archived_at: string | null
+          health_state: string
+          health_detail: string | null
+          health_checked_at: string | null
+          last_success_at: string | null
+          last_failure_at: string | null
+          last_latency_ms: number | null
+          recent_calls: number
+          recent_failures: number
+          last_model_sync_at: string | null
+          last_model_sync_ok: boolean | null
+          last_model_sync_detail: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          provider_id: string
+          kind: string
+          display_name: string
+          is_builtin?: boolean
+          enabled?: boolean
+          base_url: string
+          auth_scheme?: string
+          api_version?: string | null
+          match_prefixes?: string[]
+          match_contains?: string[]
+          extra_headers?: Json
+          models_path?: string
+          timeout_ms?: number
+          retry_max?: number
+          priority?: number
+          archived_at?: string | null
+          health_state?: string
+          health_detail?: string | null
+          health_checked_at?: string | null
+          last_success_at?: string | null
+          last_failure_at?: string | null
+          last_latency_ms?: number | null
+          recent_calls?: number
+          recent_failures?: number
+          last_model_sync_at?: string | null
+          last_model_sync_ok?: boolean | null
+          last_model_sync_detail?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          provider_id?: string
+          kind?: string
+          display_name?: string
+          is_builtin?: boolean
+          enabled?: boolean
+          base_url?: string
+          auth_scheme?: string
+          api_version?: string | null
+          match_prefixes?: string[]
+          match_contains?: string[]
+          extra_headers?: Json
+          models_path?: string
+          timeout_ms?: number
+          retry_max?: number
+          priority?: number
+          archived_at?: string | null
+          health_state?: string
+          health_detail?: string | null
+          health_checked_at?: string | null
+          last_success_at?: string | null
+          last_failure_at?: string | null
+          last_latency_ms?: number | null
+          recent_calls?: number
+          recent_failures?: number
+          last_model_sync_at?: string | null
+          last_model_sync_ok?: boolean | null
+          last_model_sync_detail?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      provider_keys: {
+        Row: {
+          id: string
+          provider_id: string
+          label: string
+          environment: string
+          ciphertext: string
+          iv: string
+          auth_tag: string
+          hint: string | null
+          enabled: boolean
+          priority: number
+          expires_on: string | null
+          notes: string | null
+          health_state: string
+          last_used_at: string | null
+          last_success_at: string | null
+          last_error: string | null
+          last_error_at: string | null
+          consecutive_failures: number
+          cooldown_until: string | null
+          rotated_at: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          provider_id: string
+          label: string
+          environment?: string
+          ciphertext: string
+          iv: string
+          auth_tag: string
+          hint?: string | null
+          enabled?: boolean
+          priority?: number
+          expires_on?: string | null
+          notes?: string | null
+          health_state?: string
+          last_used_at?: string | null
+          last_success_at?: string | null
+          last_error?: string | null
+          last_error_at?: string | null
+          consecutive_failures?: number
+          cooldown_until?: string | null
+          rotated_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          provider_id?: string
+          label?: string
+          environment?: string
+          ciphertext?: string
+          iv?: string
+          auth_tag?: string
+          hint?: string | null
+          enabled?: boolean
+          priority?: number
+          expires_on?: string | null
+          notes?: string | null
+          health_state?: string
+          last_used_at?: string | null
+          last_success_at?: string | null
+          last_error?: string | null
+          last_error_at?: string | null
+          consecutive_failures?: number
+          cooldown_until?: string | null
+          rotated_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       agent_handoff_targets: {
         Row: {
           from_agent: string
@@ -763,40 +940,73 @@ export type Database = {
       }
       models: {
         Row: {
+          organization_id: string
+          model_id: string
+          provider: string
           capabilities: string[]
           context_tokens: number | null
-          created_at: string
           input_cost_minor_per_mtok: number | null
-          model_id: string
-          organization_id: string
           output_cost_minor_per_mtok: number | null
-          provider: string
           status: string
+          created_at: string
           updated_at: string
+          enabled: boolean
+          source: string
+          display_name: string | null
+          discovered_at: string | null
+          last_seen_at: string | null
+          modalities: string[]
+          tool_calling: boolean | null
+          structured_output: boolean | null
+          quality_tier: number | null
+          latency_tier: number | null
+          cost_tier: number | null
         }
         Insert: {
+          organization_id: string
+          model_id: string
+          provider: string
           capabilities?: string[]
           context_tokens?: number | null
-          created_at?: string
           input_cost_minor_per_mtok?: number | null
-          model_id: string
-          organization_id: string
           output_cost_minor_per_mtok?: number | null
-          provider: string
           status?: string
+          created_at?: string
           updated_at?: string
+          enabled?: boolean
+          source?: string
+          display_name?: string | null
+          discovered_at?: string | null
+          last_seen_at?: string | null
+          modalities?: string[]
+          tool_calling?: boolean | null
+          structured_output?: boolean | null
+          quality_tier?: number | null
+          latency_tier?: number | null
+          cost_tier?: number | null
         }
         Update: {
+          organization_id?: string
+          model_id?: string
+          provider?: string
           capabilities?: string[]
           context_tokens?: number | null
-          created_at?: string
           input_cost_minor_per_mtok?: number | null
-          model_id?: string
-          organization_id?: string
           output_cost_minor_per_mtok?: number | null
-          provider?: string
           status?: string
+          created_at?: string
           updated_at?: string
+          enabled?: boolean
+          source?: string
+          display_name?: string | null
+          discovered_at?: string | null
+          last_seen_at?: string | null
+          modalities?: string[]
+          tool_calling?: boolean | null
+          structured_output?: boolean | null
+          quality_tier?: number | null
+          latency_tier?: number | null
+          cost_tier?: number | null
         }
         Relationships: []
       }
@@ -958,6 +1168,118 @@ export type Database = {
       }
     }
     Functions: {
+      upsert_provider: {
+        Args: { p_api_version: string; p_auth_scheme: string; p_base_url: string; p_display_name: string; p_extra_headers: Json; p_kind: string; p_match_contains: string[]; p_match_prefixes: string[]; p_models_path: string; p_priority: number; p_provider_id: string; p_retry_max: number; p_timeout_ms: number }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      set_provider_enabled: {
+        Args: { p_enabled: boolean; p_provider_id: string; p_reason?: string }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      archive_provider: {
+        Args: { p_provider_id: string }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      delete_provider: {
+        Args: { p_provider_id: string }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      add_provider_key: {
+        Args: { p_auth_tag: string; p_ciphertext: string; p_environment: string; p_hint: string; p_iv: string; p_label: string; p_priority: number; p_provider_id: string }
+        Returns: {
+          outcome: string | null
+          key_id: string | null
+        }[]
+      }
+      rotate_provider_key: {
+        Args: { p_auth_tag: string; p_ciphertext: string; p_hint: string; p_iv: string; p_key_id: string }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      set_provider_key_state: {
+        Args: { p_enabled: boolean; p_key_id: string; p_priority?: number }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      remove_provider_key: {
+        Args: { p_key_id: string }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      provider_key_status: {
+        Args: { p_provider_id?: string }
+        Returns: {
+          id: string | null
+          provider_id: string | null
+          label: string | null
+          environment: string | null
+          hint: string | null
+          enabled: boolean | null
+          priority: number | null
+          expires_on: string | null
+          notes: string | null
+          health_state: string | null
+          last_used_at: string | null
+          last_success_at: string | null
+          last_error: string | null
+          last_error_at: string | null
+          consecutive_failures: number | null
+          cooldown_until: string | null
+          rotated_at: string | null
+          created_at: string | null
+          created_by_name: string | null
+        }[]
+      }
+      record_key_outcome: {
+        Args: { p_cooldown_seconds: number; p_error: string; p_key_id: string; p_kind: string; p_ok: boolean }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      record_provider_health: {
+        Args: { p_counted?: boolean; p_detail: string; p_latency_ms: number; p_provider_id: string; p_state: string }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      record_model_sync: {
+        Args: { p_detail: string; p_ok: boolean; p_provider_id: string }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      set_model_enabled: {
+        Args: { p_enabled: boolean; p_model_id: string }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      register_manual_model: {
+        Args: { p_capabilities: string[]; p_context_tokens?: number; p_display_name: string; p_model_id: string; p_provider_id: string; p_structured_output?: boolean; p_tool_calling?: boolean }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      record_discovered_models: {
+        Args: { p_models: Json; p_provider_id: string }
+        Returns: {
+          outcome: string | null
+          added: number | null
+          refreshed: number | null
+          gone: number | null
+        }[]
+      }
       attach_meeting_summary_to_memory: {
         Args: { p_meeting_id: string; p_project_id: string }
         Returns: {

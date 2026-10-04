@@ -52,30 +52,22 @@ export async function listModels(): Promise<ModelRow[]> {
 
 export type VaultEntry = { provider: string; updatedAt: string; updatedByName: string };
 
-/** Which providers hold a vault key, when it was last set and by whom. Never the key. */
+/** Which providers hold a stored key, when it was last set and by whom. Never the key. (Read from the Provider Manager's key store.) */
 export async function listVaultEntries(): Promise<VaultEntry[]> {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .schema('ai')
-    .from('provider_credentials')
-    .select('provider, updated_at, updated_by')
-    .order('provider', { ascending: true });
-
+  const { data, error } = await supabase.schema('ai').rpc('provider_key_status', {});
   if (error) unreadable('listVaultEntries', error);
 
-  const rows = data ?? [];
-  const userIds = [...new Set(rows.map((r) => r.updated_by))];
-  const names = new Map<string, string>();
-  if (userIds.length > 0) {
-    const { data: users, error: usersError } = await supabase.schema('core').from('users').select('id, full_name, email').in('id', userIds);
-    if (usersError) unreadable('listVaultEntries.users', usersError);
-    for (const u of users ?? []) names.set(u.id, u.full_name ?? u.email);
+  // One entry per provider: the most recently set of its keys.
+  const latest = new Map<string, { updatedAt: string; by: string }>();
+  for (const k of data ?? []) {
+    const at = k.rotated_at ?? k.created_at;
+    if (!k.provider_id || !at) continue;
+    const seen = latest.get(k.provider_id);
+    if (!seen || at > seen.updatedAt) latest.set(k.provider_id, { updatedAt: at, by: k.created_by_name ?? 'recorded' });
   }
-
-  return rows.map((r) => ({
-    provider: r.provider,
-    updatedAt: r.updated_at,
-    updatedByName: names.get(r.updated_by) ?? r.updated_by.slice(0, 8),
-  }));
+  return [...latest.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([provider, v]) => ({ provider, updatedAt: v.updatedAt, updatedByName: v.by }));
 }

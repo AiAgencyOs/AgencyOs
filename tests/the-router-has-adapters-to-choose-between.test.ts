@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
-import { after, before, describe, test } from 'node:test';
+import { after, before, beforeEach, describe, test } from 'node:test';
 
 /**
  * The router has adapters to choose between — G-238, ADM-85.
@@ -216,6 +216,11 @@ describe('C. answers that are not usable output', () => {
 });
 
 describe('D. provider failures, said by name, retried only when a moment would help', () => {
+  // A rejected key is parked until a person acts (the Provider Manager's rule), so each case starts from a fresh registry.
+  beforeEach(async () => {
+    (await router()).resetProviderRegistry();
+  });
+
   test('a connection dropped mid-body is a Result, never a throw — and it is retried', async () => {
     // Review: the first draft read the body outside the try, so an abort
     // during streaming escaped generateStructured as an exception.
@@ -230,10 +235,13 @@ describe('D. provider failures, said by name, retried only when a moment would h
   });
 
   test('a rejected key, a missing model, a forbidden model — one request each', async () => {
-    const { resolveProvider } = await router();
-    const provider = await resolveProvider('gpt-4o');
-    assert.ok(provider.ok);
     for (const [status, expected] of [[401, /OpenAI API key was rejected/], [404, /ai\.agents\.default_model/], [403, /may not use this model/]] as const) {
+      // One fresh registry per case: after the 401 the rejected key is parked (never retried until a person acts).
+      const { resolveProvider, resetProviderRegistry } = await router();
+      resetProviderRegistry();
+      const provider = await resolveProvider('gpt-4o');
+      assert.ok(provider.ok);
+      requests = 0;
       willReply({ status, body: { error: { message: 'no' } } });
       const result = await provider.data.generateStructured(request('gpt-4o'));
       assert.equal(result.ok, false);

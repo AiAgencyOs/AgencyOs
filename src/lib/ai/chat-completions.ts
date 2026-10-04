@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { providerUnavailable } from './failure';
+import { providerUnavailable, type FailureKind } from './failure';
 import { err, ok, type Result } from '@/lib/result';
 
 import { MAX_RETRIES, REQUEST_TIMEOUT_MS, retryBackoffWorstCaseMs } from './budget';
@@ -81,6 +81,10 @@ export type ChatCompletionsConfig = {
   maxTokensParam?: 'max_tokens' | 'max_completion_tokens';
   /** Patterns of this vendor's key shapes, redacted from any echoed error text. */
   keyPatterns: readonly RegExp[];
+  /** How the key is presented. Default is a bearer token; some gateways want an `x-api-key` header. */
+  authScheme?: 'bearer' | 'x-api-key';
+  /** Per-provider wall clock; defaults to the platform's REQUEST_TIMEOUT_MS. */
+  timeoutMs?: number;
 };
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 8_000;
@@ -121,19 +125,19 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Ai
     return safe === '' ? null : safe.slice(0, DETAIL_LIMIT);
   };
 
-  const describeStatus = (status: number, raw: string): { message: string; retry: boolean; unavailable: boolean } => {
+  const describeStatus = (status: number, raw: string): { message: string; retry: boolean; unavailable: boolean; kind?: FailureKind } => {
     const detail = detailOf(raw);
     switch (status) {
       case 401:
-        return { message: `The configured ${config.name} API key was rejected.`, retry: false, unavailable: true };
+        return { message: `The configured ${config.name} API key was rejected.`, retry: false, unavailable: true, kind: 'auth' };
       case 403:
-        return { message: `The configured ${config.name} API key may not use this model.`, retry: false, unavailable: true };
+        return { message: `The configured ${config.name} API key may not use this model.`, retry: false, unavailable: true, kind: 'auth' };
       case 404:
-        return { message: 'The configured model does not exist. Check ai.agents.default_model.', retry: false, unavailable: true };
+        return { message: 'The configured model does not exist. Check ai.agents.default_model.', retry: false, unavailable: true, kind: 'model_missing' };
       case 429:
-        return { message: `Rate limited by ${config.name}. The job will be retried.`, retry: true, unavailable: true };
+        return { message: `Rate limited by ${config.name}. The job will be retried.`, retry: true, unavailable: true, kind: 'rate_limit' };
       default:
-        if (status >= 500) return { message: `${config.name} returned ${status}. The job will be retried.`, retry: true, unavailable: true };
+        if (status >= 500) return { message: `${config.name} returned ${status}. The job will be retried.`, retry: true, unavailable: true, kind: 'server' };
         return { message: detail ? `${config.name} returned ${status}: ${detail}` : `${config.name} returned ${status}.`, retry: false, unavailable: false };
     }
   };
@@ -162,7 +166,7 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Ai
         if (attempt > 0) await sleep(retryBackoffWorstCaseMs(attempt) - retryBackoffWorstCaseMs(attempt - 1));
         const outcome = await once(body);
         if (outcome.kind === 'ok') return ok(outcome.response);
-        last = outcome.unavailable ? providerUnavailable(outcome.message) : err('PROVIDER_ERROR', outcome.message);
+        last = outcome.unavailable ? providerUnavailable(outcome.message, outcome.failure) : err('PROVIDER_ERROR', outcome.message);
         if (!outcome.retry) return last;
       }
       return last;
@@ -194,7 +198,7 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Ai
         if (attempt > 0) await sleep(retryBackoffWorstCaseMs(attempt) - retryBackoffWorstCaseMs(attempt - 1));
         const sent = await post(body);
         if (sent.kind === 'fail') {
-          last = sent.unavailable ? providerUnavailable(sent.message) : err('PROVIDER_ERROR', sent.message);
+          last = sent.unavailable ? providerUnavailable(sent.message, sent.failure) : err('PROVIDER_ERROR', sent.message);
           if (!sent.retry) return last;
           continue;
         }
@@ -209,11 +213,11 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Ai
 
   type Posted =
     | { kind: 'parsed'; parsed: Completion }
-    | { kind: 'fail'; message: string; retry: boolean; unavailable?: boolean };
+    | { kind: 'fail'; message: string; retry: boolean; unavailable?: boolean; failure?: FailureKind };
 
   type Once =
     | { kind: 'ok'; response: StructuredResponse }
-    | { kind: 'fail'; message: string; retry: boolean; unavailable?: boolean };
+    | { kind: 'fail'; message: string; retry: boolean; unavailable?: boolean; failure?: FailureKind };
 
   /** One tool-using turn, read: the calls the model asked for, or its final text. */
   function readToolTurn(
@@ -276,13 +280,13 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Ai
       response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${config.apiKey}`,
+          ...(config.authScheme === 'x-api-key' ? { 'x-api-key': config.apiKey } : { Authorization: `Bearer ${config.apiKey}` }),
           'Content-Type': 'application/json',
           ...(config.headers ?? {}),
         },
         body: JSON.stringify(body),
         cache: 'no-store',
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(config.timeoutMs ?? REQUEST_TIMEOUT_MS),
       });
       raw = await response.text();
     } catch (cause) {
@@ -291,6 +295,7 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Ai
         kind: 'fail',
         retry: true,
         unavailable: true,
+        failure: timedOut ? 'timeout' : 'network',
         message: timedOut
           ? `The model did not respond within ${Math.round(REQUEST_TIMEOUT_MS / 1000)}s. The job will be retried.`
           : `Could not reach ${config.name}.`,
@@ -302,8 +307,8 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Ai
         // Redact before truncating: a key straddling the cut would leave its prefix.
         JSON.stringify({ level: 'error', scope: `${config.id}.chat`, status: response.status, detail: redact(raw).slice(0, 500) }),
       );
-      const { message, retry, unavailable } = describeStatus(response.status, raw);
-      return { kind: 'fail', message, retry, unavailable };
+      const { message, retry, unavailable, kind } = describeStatus(response.status, raw);
+      return { kind: 'fail', message, retry, unavailable, failure: kind };
     }
 
     let parsed: Completion;

@@ -75,13 +75,21 @@ export async function setProviderCredential(
   if (!VAULT_PROVIDERS.includes(provider)) return err('VALIDATION', `Unknown provider "${provider}".`);
 
   const { ciphertext, iv, authTag } = encrypt(trimmed);
-  const { error } = await supabase
-    .schema('ai')
-    .from('provider_credentials')
-    .upsert({ provider, ciphertext, iv, auth_tag: authTag, updated_by: userId });
+  const hint = trimmed.length >= 20 ? trimmed.slice(-4) : null;
+  void userId; // the doors use the signed-in caller (auth.uid()), never an id passed in
 
-  if (error) return err('INTERNAL', `Could not store the key: ${error.message}`);
-  return ok(undefined);
+  // The legacy form's "the key" is the key labelled "primary" in the provider's key list (the AI Provider Manager).
+  const { data: existing, error: readError } = await supabase.schema('ai').rpc('provider_key_status', { p_provider_id: provider });
+  if (readError) return err('INTERNAL', 'Could not store the key.');
+  const primary = (existing ?? []).find((k) => k.label === 'primary');
+
+  const outcome = primary
+    ? (await supabase.schema('ai').rpc('rotate_provider_key', { p_key_id: primary.id as string, p_ciphertext: ciphertext, p_iv: iv, p_auth_tag: authTag, p_hint: hint ?? '' })).data
+    : (await supabase.schema('ai').rpc('add_provider_key', { p_provider_id: provider, p_label: 'primary', p_environment: 'production', p_ciphertext: ciphertext, p_iv: iv, p_auth_tag: authTag, p_hint: hint ?? '', p_priority: 10 })).data;
+  const row = (Array.isArray(outcome) ? outcome[0] : outcome) as { outcome?: string } | undefined;
+  if (row?.outcome === 'added' || row?.outcome === 'rotated') return ok(undefined);
+  if (row?.outcome === 'forbidden' || row?.outcome === 'no_actor') return err('FORBIDDEN', 'Only the owner or an ops admin may store a provider key.');
+  return err('INTERNAL', 'Could not store the key.');
 }
 
 /**
@@ -143,8 +151,18 @@ export async function getProviderCredential(provider: VaultProvider): Promise<st
   // is new and optional), the vault is never reached over the network.
   if (!serverEnv().VAULT_ENCRYPTION_KEY) return null;
 
+  // The legacy single-key table is frozen: the key a provider uses first is now its best enabled key in ai.provider_keys.
   const supabase = createAdminClient();
-  const { data, error } = await supabase.schema('ai').from('provider_credentials').select('ciphertext, iv, auth_tag').eq('provider', provider).maybeSingle();
+  const { data: rows, error } = await supabase
+    .schema('ai')
+    .from('provider_keys')
+    .select('ciphertext, iv, auth_tag')
+    .eq('provider_id', provider)
+    .eq('enabled', true)
+    .order('priority')
+    .order('label')
+    .limit(1);
+  const data = rows?.[0];
   if (error || !data) return null;
   try {
     return decrypt(data.ciphertext, data.iv, data.auth_tag);

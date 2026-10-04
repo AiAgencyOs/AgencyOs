@@ -33,13 +33,13 @@ nodeMock.module('@/lib/db/admin', {
       adminClientCalls += 1;
       return {
         schema: () => ({
-          from: () => ({
-            select: () => ({
-              eq: () => ({
-                maybeSingle: async () => ({ data: storedRow, error: null }),
-              }),
-            }),
-          }),
+          // ai.provider_keys: .select().eq().eq().order().order().limit() -> the best enabled key (the legacy single-key table is frozen)
+          from: () => {
+            const chain: Record<string, unknown> = {};
+            for (const m of ['select', 'eq', 'order']) chain[m] = () => chain;
+            chain.limit = async () => ({ data: storedRow ? [storedRow] : [], error: null });
+            return chain;
+          },
         }),
       };
     },
@@ -48,22 +48,19 @@ nodeMock.module('@/lib/db/admin', {
 
 const { setProviderCredential, getProviderCredential, providerCredentialStatus, VAULT_PROVIDERS } = await import('../src/lib/ai/vault.ts');
 
-function fakeWriteClient(onUpsert: (row: Record<string, unknown>) => void) {
+/** The request client now talks to the key doors: provider_key_status (read), then add_provider_key or rotate_provider_key. */
+function fakeWriteClient(onWrite: (row: Record<string, unknown>) => void, existingPrimary = false) {
   return {
     schema: () => ({
-      from: () => ({
-        upsert: async (row: Record<string, unknown>) => {
-          onUpsert(row);
-          return { error: null };
-        },
-      }),
-      rpc: async () => ({
-        data: [
-          { provider: 'anthropic', configured: true, updated_at: '2026-09-20T00:00:00Z' },
-          { provider: 'openai', configured: false, updated_at: null },
-        ],
-        error: null,
-      }),
+      rpc: async (fn: string, args: Record<string, unknown>) => {
+        if (fn === 'provider_credential_status') return { data: [{ provider: 'anthropic', configured: true, updated_at: '2026-09-20T00:00:00Z' }, { provider: 'openai', configured: false, updated_at: null }], error: null };
+        if (fn === 'provider_key_status') return { data: existingPrimary ? [{ id: 'key-1', label: 'primary' }] : [], error: null };
+        if (fn === 'add_provider_key' || fn === 'rotate_provider_key') {
+          onWrite({ fn, ...args });
+          return { data: [{ outcome: fn === 'add_provider_key' ? 'added' : 'rotated' }], error: null };
+        }
+        return { data: [], error: null };
+      },
     }),
   } as unknown as Parameters<typeof setProviderCredential>[0];
 }
@@ -75,19 +72,21 @@ describe('A. a key round-trips through the vault, and nothing but ciphertext is 
     const result = await setProviderCredential(client, 'openrouter', 'sk-or-real-secret-value', 'user-1');
     assert.equal(result.ok, true);
     assert.ok(written);
-    const row = written as unknown as { ciphertext: string; iv: string; auth_tag: string; provider: string; updated_by: string };
-    assert.equal(row.provider, 'openrouter');
-    assert.equal(row.updated_by, 'user-1');
-    assert.doesNotMatch(row.ciphertext, /sk-or-real-secret-value/);
-    assert.ok(row.ciphertext.length > 0);
-    assert.ok(row.iv.length > 0);
-    assert.ok(row.auth_tag.length > 0);
+    const row = written as unknown as { fn: string; p_ciphertext: string; p_iv: string; p_auth_tag: string; p_provider_id: string; p_label: string; p_hint: string };
+    assert.equal(row.fn, 'add_provider_key');
+    assert.equal(row.p_provider_id, 'openrouter');
+    assert.equal(row.p_label, 'primary');
+    assert.doesNotMatch(row.p_ciphertext, /sk-or-real-secret-value/);
+    assert.equal(row.p_hint, 'alue', 'the last four characters are kept as the hint, so two keys can be told apart');
+    assert.ok(row.p_ciphertext.length > 0);
+    assert.ok(row.p_iv.length > 0);
+    assert.ok(row.p_auth_tag.length > 0);
   });
 
   test('and getProviderCredential recovers exactly the key that went in', async () => {
     let written: { ciphertext: string; iv: string; auth_tag: string } | null = null;
     const client = fakeWriteClient((row) => {
-      written = { ciphertext: row.ciphertext as string, iv: row.iv as string, auth_tag: row.auth_tag as string };
+      written = { ciphertext: row.p_ciphertext as string, iv: row.p_iv as string, auth_tag: row.p_auth_tag as string };
     });
     await setProviderCredential(client, 'openai', 'sk-a-second-real-secret', 'user-1');
     storedRow = written;
@@ -101,10 +100,20 @@ describe('A. a key round-trips through the vault, and nothing but ciphertext is 
   test('two writes of the same key produce different ciphertext (a fresh IV every time)', async () => {
     const seen: string[] = [];
     for (let i = 0; i < 2; i += 1) {
-      const client = fakeWriteClient((row) => seen.push(row.ciphertext as string));
+      const client = fakeWriteClient((row) => seen.push(row.p_ciphertext as string));
       await setProviderCredential(client, 'gemini', 'the-same-key', 'user-1');
     }
     assert.notEqual(seen[0], seen[1]);
+  });
+});
+
+describe('A2. a second store of the same provider rotates the primary key, it does not add another', () => {
+  test('with a primary key already there, the write is a rotation', async () => {
+    let fn = '';
+    const client = fakeWriteClient((row) => { fn = String(row.fn); }, true);
+    const result = await setProviderCredential(client, 'openai', 'sk-a-replacement-key-value', 'user-1');
+    assert.equal(result.ok, true);
+    assert.equal(fn, 'rotate_provider_key');
   });
 });
 

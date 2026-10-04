@@ -47,6 +47,13 @@ export const CAPABILITIES = [
   // AI
   'agent.run',
   'agent.configure',
+  // The AI Provider Manager. Reading what is configured and managing providers, models and keys are the owner's and the ops admin's
+  // (the database re-checks through core.is_admin); REMOVING a key or archiving a provider is the owner's alone (core.is_owner), and
+  // the routing mode and the per-agent assignments are a separate capability held by the owner only.
+  'ai.provider.read',
+  'ai.provider.manage',
+  'ai.credential.manage',
+  'ai.routing.manage',
 
   // Administration
   'member.invite',
@@ -91,6 +98,7 @@ const ROLE_CAPABILITIES: Record<Role, readonly (Capability | '*')[]> = {
     'project.read', 'project.write', 'milestone.write', 'task.write',
     'invoice.read', 'invoice.create', 'invoice.issue',
     'agent.run',
+    'ai.provider.read', 'ai.provider.manage', 'ai.credential.manage',
     'member.invite',
     'audit.read',
     'audit.export',
