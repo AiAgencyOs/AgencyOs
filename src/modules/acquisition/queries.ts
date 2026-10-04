@@ -89,3 +89,71 @@ export async function readLeadsBySource(): Promise<{ rows: SourceCount[]; total:
   }
   return { rows: [...by.values()].sort((a, b) => b.leads - a.leads), total: (data ?? []).length, truncated: (data ?? []).length >= LIMIT };
 }
+
+export type DuplicateReviewView = {
+  id: string;
+  reason: string;
+  createdAt: string;
+  signals: Record<string, unknown>;
+  a: { id: string; name: string; email: string | null; phone: string | null; company: string | null; reachableVia: string | null };
+  b: { id: string; name: string; email: string | null; phone: string | null; company: string | null; reachableVia: string | null };
+};
+
+/** Open suspected duplicates, oldest first, with both people named so a person can judge without opening anything. */
+export async function listOpenDuplicateReviews(limit = 50): Promise<{ rows: DuplicateReviewView[]; totalOpen: number }> {
+  const supabase = await createClient();
+  const { data, error, count } = await supabase.schema('crm').from('duplicate_reviews')
+    .select('id, reason, signals, created_at, contact_a, contact_b', { count: 'exact' })
+    .eq('status', 'open').order('created_at').limit(limit);
+  if (error) unreadable('listOpenDuplicateReviews', error);
+  const ids = [...new Set((data ?? []).flatMap((r) => [r.contact_a, r.contact_b]))];
+  const people = new Map<string, DuplicateReviewView['a']>();
+  if (ids.length > 0) {
+    const { data: contacts, error: contactsError } = await supabase.schema('crm').from('contacts').select('id, full_name, email, phone, company, reachable_via').in('id', ids);
+    if (contactsError) unreadable('listOpenDuplicateReviews.contacts', contactsError);
+    for (const c of contacts ?? []) people.set(c.id, { id: c.id, name: c.full_name, email: c.email, phone: c.phone, company: c.company, reachableVia: c.reachable_via });
+  }
+  const unknown = (id: string): DuplicateReviewView['a'] => ({ id, name: 'Unknown contact', email: null, phone: null, company: null, reachableVia: null });
+  return {
+    totalOpen: count ?? (data ?? []).length,
+    rows: (data ?? []).map((r) => ({
+      id: r.id, reason: r.reason, createdAt: r.created_at, signals: (r.signals ?? {}) as Record<string, unknown>,
+      a: people.get(r.contact_a) ?? unknown(r.contact_a), b: people.get(r.contact_b) ?? unknown(r.contact_b),
+    })),
+  };
+}
+
+export type IdentitySummary = {
+  keys: Record<string, number>;
+  touchpointsByChannel: Record<string, number>;
+  ownersByAgent: Record<string, number>;
+  truncated: boolean;
+};
+
+/** Counts the Identity screen shows. Bounded reads: a large book cannot make the page unbounded, and says so. */
+export async function readIdentitySummary(): Promise<IdentitySummary> {
+  const supabase = await createClient();
+  const LIMIT = 20000;
+  const [keys, touches, owners] = await Promise.all([
+    supabase.schema('crm').from('identity_keys').select('kind').limit(LIMIT),
+    supabase.schema('crm').from('lead_touchpoints').select('channel').limit(LIMIT),
+    supabase.schema('crm').from('lead_conversation_owner').select('owner').limit(LIMIT),
+  ]);
+  const { data: keyRows, error: keysError } = keys;
+  if (keysError) unreadable('readIdentitySummary.keys', keysError);
+  const { data: touchRows, error: touchError } = touches;
+  if (touchError) unreadable('readIdentitySummary.touchpoints', touchError);
+  const { data: ownerRows, error: ownerError } = owners;
+  if (ownerError) unreadable('readIdentitySummary.owners', ownerError);
+  const tally = (rows: { [k: string]: string }[] | null, field: string) => {
+    const out: Record<string, number> = {};
+    for (const r of rows ?? []) out[r[field] as string] = (out[r[field] as string] ?? 0) + 1;
+    return out;
+  };
+  return {
+    keys: tally(keyRows, 'kind'),
+    touchpointsByChannel: tally(touchRows, 'channel'),
+    ownersByAgent: tally(ownerRows, 'owner'),
+    truncated: (keyRows ?? []).length >= LIMIT || (touchRows ?? []).length >= LIMIT || (ownerRows ?? []).length >= LIMIT,
+  };
+}

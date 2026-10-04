@@ -3947,6 +3947,192 @@ export type Database = {
   }
   crm: {
     Tables: {
+      identity_keys: {
+        Row: {
+          id: string
+          organization_id: string
+          kind: string
+          value: string
+          contact_id: string
+          source: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          kind: string
+          value: string
+          contact_id: string
+          source?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          kind?: string
+          value?: string
+          contact_id?: string
+          source?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      duplicate_reviews: {
+        Row: {
+          id: string
+          organization_id: string
+          contact_a: string
+          contact_b: string
+          reason: string
+          signals: Json
+          status: string
+          decided_by: string | null
+          decided_at: string | null
+          decision_note: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          contact_a: string
+          contact_b: string
+          reason: string
+          signals?: Json
+          status?: string
+          decided_by?: string | null
+          decided_at?: string | null
+          decision_note?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          contact_a?: string
+          contact_b?: string
+          reason?: string
+          signals?: Json
+          status?: string
+          decided_by?: string | null
+          decided_at?: string | null
+          decision_note?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      lead_touchpoints: {
+        Row: {
+          id: string
+          organization_id: string
+          lead_id: string
+          channel: string
+          platform: string | null
+          touch_type: string
+          campaign: Json
+          utm: Json
+          external_ref: string | null
+          occurred_at: string
+          recorded_at: string
+          correlation_id: string | null
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          lead_id: string
+          channel: string
+          platform?: string | null
+          touch_type: string
+          campaign?: Json
+          utm?: Json
+          external_ref?: string | null
+          occurred_at?: string
+          recorded_at?: string
+          correlation_id?: string | null
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          lead_id?: string
+          channel?: string
+          platform?: string | null
+          touch_type?: string
+          campaign?: Json
+          utm?: Json
+          external_ref?: string | null
+          occurred_at?: string
+          recorded_at?: string
+          correlation_id?: string | null
+        }
+        Relationships: []
+      }
+      lead_conversation_owner: {
+        Row: {
+          lead_id: string
+          organization_id: string
+          owner: string
+          version: number
+          since: string
+          updated_at: string
+        }
+        Insert: {
+          lead_id: string
+          organization_id: string
+          owner: string
+          version?: number
+          since?: string
+          updated_at?: string
+        }
+        Update: {
+          lead_id?: string
+          organization_id?: string
+          owner?: string
+          version?: number
+          since?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      conversation_owner_transfers: {
+        Row: {
+          id: string
+          organization_id: string
+          lead_id: string
+          from_owner: string | null
+          to_owner: string
+          reason: string
+          workflow_state: string | null
+          context: Json
+          actor_id: string | null
+          correlation_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          lead_id: string
+          from_owner?: string | null
+          to_owner: string
+          reason: string
+          workflow_state?: string | null
+          context?: Json
+          actor_id?: string | null
+          correlation_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          lead_id?: string
+          from_owner?: string | null
+          to_owner?: string
+          reason?: string
+          workflow_state?: string | null
+          context?: Json
+          actor_id?: string | null
+          correlation_id?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       target_services: {
         Row: {
           id: string
@@ -4921,6 +5107,7 @@ export type Database = {
           notes: string | null
           organization_id: string
           phone: string | null
+          reachable_via: string | null
           preferred_language: string | null
           preferred_language_set_by: string | null
           updated_at: string
@@ -4936,6 +5123,7 @@ export type Database = {
           notes?: string | null
           organization_id: string
           phone?: string | null
+          reachable_via?: string | null
           preferred_language?: string | null
           preferred_language_set_by?: string | null
           updated_at?: string
@@ -4951,6 +5139,7 @@ export type Database = {
           notes?: string | null
           organization_id?: string
           phone?: string | null
+          reachable_via?: string | null
           preferred_language?: string | null
           preferred_language_set_by?: string | null
           updated_at?: string
@@ -6474,6 +6663,30 @@ export type Database = {
       }
     }
     Functions: {
+      resolve_identity: {
+        Args: { p_organization_id: string; p_signals: Json; p_source?: string }
+        Returns: { outcome: string | null; contact_id: string | null; review_id: string | null; created: boolean | null }[]
+      }
+      decide_duplicate_review: {
+        Args: { p_decision: string; p_note: string; p_review: string }
+        Returns: { outcome: string | null }[]
+      }
+      record_touchpoint: {
+        Args: { p_campaign?: Json; p_channel: string; p_correlation_id?: string; p_external_ref?: string; p_lead: string; p_occurred_at?: string; p_organization_id: string; p_platform: string; p_touch_type: string; p_utm?: Json }
+        Returns: { outcome: string | null; touchpoint_id: string | null }[]
+      }
+      lead_attribution: {
+        Args: { p_lead: string }
+        Returns: { first_channel: string | null; first_platform: string | null; first_at: string | null; first_campaign: Json | null; last_channel: string | null; last_platform: string | null; last_at: string | null; last_campaign: Json | null; touch_count: number | null; channels: string[] | null }[]
+      }
+      transfer_conversation_owner: {
+        Args: { p_context?: Json; p_correlation_id?: string; p_expected_from: string; p_lead: string; p_organization_id: string; p_reason: string; p_to: string; p_workflow_state?: string }
+        Returns: { outcome: string | null }[]
+      }
+      lead_outcome: {
+        Args: { p_lead: string }
+        Returns: string | null
+      }
       ensure_acquisition_defaults: {
         Args: Record<PropertyKey, never>
         Returns: { outcome: string | null }[]

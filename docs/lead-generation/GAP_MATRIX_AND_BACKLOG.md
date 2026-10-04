@@ -66,7 +66,7 @@ Design decisions this implies (recorded here so they are made once):
 | # | Slice | Depends on | Status |
 |---|---|---|---|
 | 1 | Admin config (target services, versioned ICP, per-channel settings), global + per-channel pause, Lead Generation shell + overview, capabilities | — | **BUILT, see §4** |
-| 2 | Unified identity: normalised identity keys (email/domain/phone/social/company), `DUPLICATE_REVIEW` queue, touchpoints (first/last/multi), lead-level LOST + canonical outcome vocabulary, primary conversation owner | 1 | not started |
+| 2 | Unified identity: normalised identity keys, `DUPLICATE_REVIEW` queue, touchpoints (first/last/multi), canonical outcome (derived), primary conversation owner | 1 | **BUILT, see §4** (contact consolidation after `confirmed_same` is NOT built) |
 | 3 | Tracked WhatsApp handoff: opaque token (hash stored), expiry, replay/tenant protection, context package, ownership transfer to Sales | 2 | not started |
 | 4 | Connector registry (tenant-scoped credentials, capability model, health, Test Connection), policy-decision function, approval subject types + content-hash binding | 1 | not started |
 | 5 | Scheduler + Quotation Master structured handoffs (agent-callable, return to channel owner) | 2, 3 | not started |
@@ -98,6 +98,24 @@ Design decisions this implies (recorded here so they are made once):
 * **Honest limits:** only email is partly built; the other four tabs say "not built yet" in words. Pause is enforced
   by the email chokepoint only, because no other engine exists. The global stop is owner-only; per-channel pause is
   owner or ops admin.
+
+### Slice 2 (identity layer) - built and verified
+
+* Migration `20261015200000_one_person_one_identity_across_channels.sql`: normalisers (`norm_email/phone/domain/social`),
+  `crm.identity_keys` (strong keys, one person each), `crm.duplicate_reviews`, append-only `crm.lead_touchpoints` with
+  derived first/last touch (`crm.lead_attribution`), `crm.lead_conversation_owner` + append-only transfer history with
+  compare-and-set `crm.transfer_conversation_owner`, derived `crm.lead_outcome`, `crm.resolve_identity` (engines' door),
+  AFTER triggers keying every contact and touching every lead, and `contacts.reachable_via` (extends the Phase 1
+  "reachable" rule so a LinkedIn- or marketplace-only prospect can be an identity).
+* `src/modules/acquisition/identity.ts` (engine wrappers), `/lead-generation/identity` (review queue + counts).
+* Verified: `scripts/verify-acquisition-identity.sql` drives the mandatory Email -> LinkedIn -> real WhatsApp ingest
+  scenario (one contact, three keys, no review), uncertain-match review, first-touch survival, owner races, tenant
+  isolation, audit. Red-proved six ways; it also caught one real bug and one design flaw (see the change log).
+* **Not built, stated plainly:** (a) consolidating two contacts judged the same (eleven tables point at `crm.contacts`);
+  (b) automatically assigning a conversation owner at lead creation - the email and social engines will do it when
+  they convert a prospect (slices 6-7); (c) `lead_outcome` has no lead-level LOST of its own: it reads the opportunity;
+  (d) Lead 360 / activity timeline UI (spec §126-127) - only counts and the review queue exist; (e) events
+  (`LeadMatched`, `LeadDuplicateReviewRequired`) - audit rows exist, outbox events arrive with their consumers.
 
 ## 5. Human dependencies (known now; asked for only when the engine reaches them)
 

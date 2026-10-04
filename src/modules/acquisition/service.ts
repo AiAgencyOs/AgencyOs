@@ -128,3 +128,25 @@ export async function saveIcp(input: { definition: IcpDefinition; note: string }
       return err('FORBIDDEN', FORBIDDEN);
   }
 }
+
+export async function decideDuplicateReview(input: { reviewId: string; decision: 'confirmed_same' | 'kept_separate' | 'dismissed'; note: string }): Promise<Result<true>> {
+  const gate = await manager();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('decide_duplicate_review', { p_review: input.reviewId, p_decision: input.decision, p_note: input.note as never });
+  if (error) return err('INTERNAL', 'Could not record the decision.');
+  switch (first<{ outcome?: string }>(data)?.outcome) {
+    case 'decided':
+      return ok(true);
+    case 'needs_note':
+      return err('VALIDATION', 'Say why - the reason is kept with the decision.');
+    case 'already_decided':
+      return err('CONFLICT', 'Someone has already decided this one.');
+    case 'not_found':
+      return err('NOT_FOUND', 'That review no longer exists.');
+    case 'invalid':
+      return err('VALIDATION', 'Choose one of the three decisions.');
+    default:
+      return err('FORBIDDEN', FORBIDDEN);
+  }
+}

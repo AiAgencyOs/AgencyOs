@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import {
+  decideDuplicateReviewAction,
   saveChannelSettingsAction,
   saveIcpAction,
   saveServiceAction,
@@ -130,6 +131,24 @@ export function IcpForm({ initial }: { initial: IcpDefinition }) {
         <button type="submit" disabled={pending} className={buttonClass('primary')}>Save as a new version</button>
         <FormMessage status={state.status} message={state.message} />
       </div>
+    </form>
+  );
+}
+
+export function DuplicateDecisionForm({ reviewId }: { reviewId: string }) {
+  const [state, action, pending] = useActionState(decideDuplicateReviewAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+      <input type="hidden" name="reviewId" value={reviewId} />
+      <div className="flex-1">
+        <Field label="Reason (needed unless you dismiss)">
+          <input name="note" maxLength={1000} className={inputClass} />
+        </Field>
+      </div>
+      <button type="submit" name="decision" value="kept_separate" disabled={pending} className={buttonClass('secondary')}>Different people</button>
+      <button type="submit" name="decision" value="confirmed_same" disabled={pending} className={buttonClass('primary')}>Same person</button>
+      <button type="submit" name="decision" value="dismissed" disabled={pending} className={buttonClass('ghost')}>Dismiss</button>
+      <FormMessage status={state.status} message={state.message} />
     </form>
   );
 }

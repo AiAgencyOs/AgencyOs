@@ -6,7 +6,7 @@ import { setKillSwitch } from '@/lib/observability/kill-switches';
 import type { FormState } from '@/modules/identity/types';
 
 import { ACQUISITION_CHANNELS, ICP_LIST_KEYS, buildIcpDefinition, type AcquisitionChannel } from './schema';
-import { saveChannelSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
+import { decideDuplicateReview, saveChannelSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
 
 const text = (f: FormData, n: string) => String(f.get(n) ?? '').trim();
 const BASE = '/lead-generation';
@@ -85,4 +85,15 @@ export async function setGlobalPauseAction(_p: FormState, f: FormData): Promise<
   refresh();
   revalidatePath('/operations');
   return { status: 'success', message: f.get('active') === '1' ? 'All lead generation is paused.' : 'Lead generation resumed.' };
+}
+
+const DECISIONS = ['confirmed_same', 'kept_separate', 'dismissed'] as const;
+
+export async function decideDuplicateReviewAction(_p: FormState, f: FormData): Promise<FormState> {
+  const decision = text(f, 'decision');
+  if (!(DECISIONS as readonly string[]).includes(decision)) return { status: 'error', message: 'Choose one of the three decisions.' };
+  const r = await decideDuplicateReview({ reviewId: text(f, 'reviewId'), decision: decision as (typeof DECISIONS)[number], note: text(f, 'note') });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: 'Recorded.' };
 }

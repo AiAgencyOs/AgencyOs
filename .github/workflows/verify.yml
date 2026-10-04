@@ -826,6 +826,8 @@ jobs:
           # Lead generation, slice 1: target services, the versioned ICP, per-channel settings and the two stops are
           # the Admin's alone and tenant-sealed, and a paused channel - or the global stop - makes the email send
           # chokepoint reserve nothing. Driven as the real request roles with real JWT claims; rolls back.
+          # Slice 2 adds the identity layer: one person across email, LinkedIn and the REAL WhatsApp ingest stays one contact;
+          # uncertain matches open a review and merge nothing; first touch survives later channels; exactly one conversation owner.
           # (psql, not PostgREST: the checks are about the doors, and the doors are SQL.)
           npm run db:verify:acquisition
 
