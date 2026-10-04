@@ -118,12 +118,12 @@ try {
 
   console.log('\n2. Consent is channel-specific');
   {
-    // The channel CHECK admits only whatsapp today, so the honest form of this
+    // The channel CHECK admits only channels something can send on (whatsapp, and email since the info@ outreach lane), so the honest form of this
     // is that a granted row must name the channel being sent on. Writing one
     // for a channel that does not exist is refused by the constraint itself,
     // which is the same guarantee arrived at one layer down.
     const bogus = await rest('POST', 'crm', 'communication_consent', {
-      organization_id: org, contact_id: contact.id, channel: 'email', status: 'granted',
+      organization_id: org, contact_id: contact.id, channel: 'sms', status: 'granted',
     });
     check(bogus.status >= 400, 'consent cannot be recorded for a channel with no sender', `status ${bogus.status}`);
   }

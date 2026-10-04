@@ -127,6 +127,7 @@ export const NAV_MODULES: readonly NavModule[] = [
       { href: '/settings/communication', label: 'Templates', capability: 'organization.settings', screens: ['SCR-059'] },
       // Owner decision 2026-09-30: broadcast reopened as a governed campaign.
       { href: '/communication/campaigns', label: 'Campaigns', capability: 'lead.write', screens: ['SCR-059'] },
+      { href: '/communication/email-outreach', label: 'Email outreach', capability: 'lead.write', screens: [] },
     ],
   },
   {

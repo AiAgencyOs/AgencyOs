@@ -814,6 +814,11 @@ jobs:
           # is audited, nothing else reads the table, a revoked value is gone.
           npm run db:verify:clientsecrets
 
+          # info@ email outreach: the database refuses what must be refused (suppression, the lawful basis, the
+          # warm-up cap, a second person's approval, the owner's stop switch), a bouncing run pauses itself,
+          # and the public unsubscribe cannot be triggered by a link scanner.
+          npm run db:verify:emailoutreach
+
           # Phase 3 end to end: the kickoff starts it, the PM announces it, the designer drafts screens and
           # three directions, internal review then Admin, the client chooses and confirms, the lock hands
           # Phase 4 an exact handoff. Found: a stopped phase had no way out (resolve_phase_three_stop).

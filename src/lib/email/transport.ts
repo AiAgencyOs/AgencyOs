@@ -35,6 +35,9 @@ export type EmailLane = 'client' | 'outreach';
 
 export type EmailMessage = {
   lane?: EmailLane;
+  /** Extra headers (List-Unsubscribe, ...). Single-line values only: a header carrying a line break is refused. */
+  headers?: Record<string, string>;
+  replyTo?: string;
   to: string;
   subject: string;
   text: string;
@@ -213,11 +216,17 @@ class SmtpSession {
 
 function mime(from: string, message: EmailMessage): string {
   const boundary = `----agencyos-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  for (const [k, v] of Object.entries(message.headers ?? {})) {
+    if (/[\r\n]/.test(k) || /[\r\n]/.test(v) || !/^[A-Za-z0-9-]+$/.test(k)) throw new Error(`refused a malformed email header "${k}"`);
+  }
+  if (message.replyTo && /[\r\n<>]/.test(message.replyTo)) throw new Error('refused a malformed reply-to');
   const headers = [
     `From: ${from}`,
     `To: ${message.to}`,
     `Subject: =?UTF-8?B?${Buffer.from(message.subject, 'utf8').toString('base64')}?=`,
     `Date: ${new Date().toUTCString()}`,
+    ...(message.replyTo ? [`Reply-To: ${message.replyTo}`] : []),
+    ...Object.entries(message.headers ?? {}).map(([k, v]) => `${k}: ${v}`),
     'MIME-Version: 1.0',
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
   ];
