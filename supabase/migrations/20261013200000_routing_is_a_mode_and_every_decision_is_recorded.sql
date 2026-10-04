@@ -109,6 +109,11 @@ create trigger freeze_org_routing_decisions before update of organization_id on 
 create or replace function ai.routing_decisions_are_history()
 returns trigger language plpgsql security invoker set search_path = '' as $$
 begin
+  -- A decision is never edited. It is removed only with the organization it belongs to (the ON DELETE CASCADE of a deleted
+  -- organization, which is how a test tenant is cleaned up); by then the organization row is already gone.
+  if tg_op = 'DELETE' and not exists (select 1 from core.organizations where id = old.organization_id) then
+    return old;
+  end if;
   raise exception 'a routing decision is history and cannot be edited or removed' using errcode = 'P0001';
 end;
 $$;

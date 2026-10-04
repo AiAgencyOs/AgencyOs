@@ -280,6 +280,13 @@ try {
   check(['ai_routing.mode_changed', 'ai_routing.assignment_set'].every((a) => hist.some((h) => h.action === a)), 'every mode and assignment change is audited with before and after');
 
   // ── 7. no secret anywhere ─────────────────────────────────────────────────────────
+  section('6b. A decision is history');
+  const someDecision = one(await rest('GET', 'ai', `routing_decisions?organization_id=eq.${ORG}&select=id,mode&limit=1`));
+  const del = await rest('DELETE', 'ai', `routing_decisions?id=eq.${someDecision?.id}`);
+  const upd = await rest('PATCH', 'ai', `routing_decisions?id=eq.${someDecision?.id}`, { mode: someDecision?.mode === 'auto' ? 'manual' : 'auto' });
+  const still = one(await rest('GET', 'ai', `routing_decisions?id=eq.${someDecision?.id}&select=id,mode`));
+  check(Boolean(someDecision?.id) && !del.ok && !upd.ok && still?.mode === someDecision?.mode, 'a recorded decision can be neither edited nor removed, even by the service role', `delete ${del.status}, update ${upd.status}`);
+
   section('7. No secret appears in what was recorded');
   const everything = JSON.stringify({
     decisions: (await rest('GET', 'ai', `routing_decisions?organization_id=eq.${ORG}&select=*&limit=200`)).json,
@@ -302,7 +309,7 @@ try {
   await rest('DELETE', 'ai', `agent_routing_overrides?organization_id=eq.${ORG}&agent_key=eq.sales&category=eq.client_facing`).catch(() => {});
   await rest('PATCH', 'ai', `routing_settings?organization_id=eq.${ORG}`, { mode: savedMode }).catch(() => {});
   await rest('DELETE', 'core', 'alerts?fingerprint=eq.router-manual:sales').catch(() => {});
-  await rest('PATCH', 'ai', `providers?provider_id=in.(${created.providers.join(',')})`, { enabled: false }).catch(() => {});
+  await rest('PATCH', 'ai', `providers?provider_id=in.(${created.providers.join(',')})`, { enabled: false, archived_at: new Date().toISOString() }).catch(() => {});
   await fx.cleanup().catch(() => {});
   console.log(`\n${failures === 0 ? '\x1b[32m✔' : '\x1b[31m✖'} ${checks - failures}/${checks} checks passed\x1b[0m`);
   process.exit(failures === 0 ? 0 : 1);
