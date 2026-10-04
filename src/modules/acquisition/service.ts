@@ -29,6 +29,9 @@ export async function seedAcquisitionDefaults(): Promise<Result<{ seeded: boolea
   const supabase = await createClient();
   const { data, error } = await supabase.schema('crm').rpc('ensure_acquisition_defaults');
   if (error) return err('INTERNAL', 'Could not set up lead generation.');
+  // The approval engine refuses a subject type that has no policy, so the engines' approvals need one before they can be asked.
+  const { error: policyError } = await supabase.schema('crm').rpc('ensure_acquisition_approval_policies');
+  if (policyError) return err('INTERNAL', 'Could not set up the approval policies.');
   const outcome = first<{ outcome?: string }>(data)?.outcome;
   if (outcome === 'seeded' || outcome === 'ready') return ok({ seeded: outcome === 'seeded' });
   return err('FORBIDDEN', FORBIDDEN);

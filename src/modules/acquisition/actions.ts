@@ -6,6 +6,7 @@ import { setKillSwitch } from '@/lib/observability/kill-switches';
 import type { FormState } from '@/modules/identity/types';
 
 import { ACQUISITION_CHANNELS, ICP_LIST_KEYS, buildIcpDefinition, type AcquisitionChannel } from './schema';
+import { registerIntegration, saveAcquisitionPolicy, setIntegrationState, storeConnectorSecret, testConnection } from './integrations';
 import { cancelHandoff, decideDuplicateReview, saveChannelSettings, saveHandoffSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
 
 const text = (f: FormData, n: string) => String(f.get(n) ?? '').trim();
@@ -112,4 +113,52 @@ export async function cancelHandoffAction(_p: FormState, f: FormData): Promise<F
   if (!r.ok) return { status: 'error', message: r.error.message };
   refresh();
   return { status: 'success', message: 'Cancelled. The link no longer works.' };
+}
+
+export async function registerIntegrationAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await registerIntegration({ provider: text(f, 'provider'), environment: text(f, 'environment') || 'production', label: text(f, 'label') });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: 'Added. Store its credential next, then test it.' };
+}
+
+export async function storeSecretAction(_p: FormState, f: FormData): Promise<FormState> {
+  // The value is read from the form once, handed to the encryptor and never echoed back or put in a message.
+  const r = await storeConnectorSecret({ integrationId: text(f, 'integrationId'), name: text(f, 'name'), value: String(f.get('value') ?? ''), expiresOn: text(f, 'expiresOn') });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: r.data.rotated ? 'Replaced. The old credential is kept as revoked history.' : 'Stored securely. It cannot be viewed again.' };
+}
+
+export async function setIntegrationStateAction(_p: FormState, f: FormData): Promise<FormState> {
+  const to = text(f, 'to');
+  if (to !== 'DISABLED' && to !== 'CONFIGURED' && to !== 'REVOKED') return { status: 'error', message: 'Unknown change.' };
+  const r = await setIntegrationState({ integrationId: text(f, 'integrationId'), to, reason: text(f, 'reason') });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: 'Done.' };
+}
+
+export async function testConnectionAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await testConnection(text(f, 'integrationId'));
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  const t = r.data;
+  if (t.kind === 'passed') return { status: 'success', message: `Connected to ${t.accountRef}.` };
+  return { status: 'error', message: t.message };
+}
+
+export async function savePolicyAction(_p: FormState, f: FormData): Promise<FormState> {
+  const num = (n: string) => {
+    const raw = text(f, n);
+    if (raw === '') return null;
+    return /^\d+$/.test(raw) ? Number(raw) * 100 : Number.NaN;
+  };
+  const approvalAbove = num('approvalAbove');
+  const escalateAbove = num('escalateAbove');
+  if (Number.isNaN(approvalAbove) || Number.isNaN(escalateAbove)) return { status: 'error', message: 'Thresholds are whole rupee amounts, or blank.' };
+  const r = await saveAcquisitionPolicy({ action: text(f, 'action'), mode: text(f, 'mode'), approvalAboveMinor: approvalAbove, escalateAboveMinor: escalateAbove });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: 'Saved.' };
 }

@@ -832,6 +832,9 @@ jobs:
           # Slice 3: a prospect who moves to WhatsApp through a tracked reference stays ONE lead (through the real ingest function);
           # a replayed, tampered, cross-tenant, expired, cancelled or closed-lead reference fails safely; a number that belongs to
           # someone else is a review, never a guess. Also asserts the platform's default table privileges were revoked.
+          # Slice 4: connections cannot look verified without a real adapter result; a provider credential is encrypted per tenant and
+          # unreadable by a session; one policy question (no policy is never permission); an approval covers exactly the content it was
+          # given, expires, and a governed side effect runs ONCE (replay, pause-at-execution, uncertain outcome -> reconcile).
           npm run db:verify:acquisition
 
           # The AI Provider Manager's contract: who may manage providers, models and keys; no path returns a secret;

@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import {
+  savePolicyAction,
   cancelHandoffAction,
   decideDuplicateReviewAction,
   saveHandoffSettingsAction,
@@ -13,9 +14,10 @@ import {
   setChannelPauseAction,
   setGlobalPauseAction,
 } from '@/modules/acquisition/actions';
+import { ACTION_LABEL, NEVER_AUTO_ACTIONS, type ACTION_TYPES } from '@/modules/acquisition/policy-vocabulary';
 import { ICP_LIST_KEYS, ICP_LIST_LABEL, type IcpDefinition } from '@/modules/acquisition/schema';
 import { IDLE_STATE } from '@/modules/identity/types';
-import { FormMessage, buttonClass, inputClass, labelClass, textareaClass } from '@/ui';
+import { FormMessage, buttonClass, inputClass, labelClass, selectClass, textareaClass } from '@/ui';
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -179,6 +181,29 @@ export function CancelHandoffForm({ handoffId }: { handoffId: string }) {
       <input name="reason" required maxLength={500} placeholder="Why cancel?" className={inputClass} />
       <button type="submit" disabled={pending} className={buttonClass('danger')}>Cancel link</button>
       <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+export function PolicyForm({ action: actionType, current, isOwner }: { action: (typeof ACTION_TYPES)[number]; current: { mode: string; approvalAbove: number | null; escalateAbove: number | null } | null; isOwner: boolean }) {
+  const [state, run, pending] = useActionState(savePolicyAction, IDLE_STATE);
+  const neverAuto = (NEVER_AUTO_ACTIONS as readonly string[]).includes(actionType);
+  return (
+    <form action={run} className="grid gap-2 border-b border-line py-3 last:border-0 sm:grid-cols-[2fr_1.2fr_1fr_1fr_auto] sm:items-end">
+      <input type="hidden" name="action" value={actionType} />
+      <div className="flex flex-col"><span className="text-[13px] font-medium">{ACTION_LABEL[actionType]}</span>{neverAuto ? <span className="text-xs text-muted">Always needs a person to approve.</span> : null}</div>
+      <Field label="Decision">
+        <select name="mode" aria-label={`Decision for ${ACTION_LABEL[actionType]}`} defaultValue={current?.mode ?? 'approval'} className={selectClass}>
+          <option value="approval">Ask me first</option>
+          {!neverAuto && isOwner ? <option value="auto">Automatic</option> : null}
+          {!neverAuto && !isOwner && current?.mode === 'auto' ? <option value="auto">Automatic</option> : null}
+          <option value="block">Never</option>
+        </select>
+      </Field>
+      <Field label="Ask above (₹)"><input name="approvalAbove" inputMode="numeric" defaultValue={current?.approvalAbove === null || current?.approvalAbove === undefined ? '' : Math.round(current.approvalAbove / 100)} className={inputClass} /></Field>
+      <Field label="Owner above (₹)"><input name="escalateAbove" inputMode="numeric" defaultValue={current?.escalateAbove === null || current?.escalateAbove === undefined ? '' : Math.round(current.escalateAbove / 100)} className={inputClass} /></Field>
+      <button type="submit" disabled={pending} className={buttonClass('secondary')}>Save</button>
+      <div className="sm:col-span-5"><FormMessage status={state.status} message={state.message} /></div>
     </form>
   );
 }

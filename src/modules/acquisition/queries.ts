@@ -203,3 +203,64 @@ export async function listHandoffs(limit = 30): Promise<{ rows: HandoffView[]; l
   }));
   return { rows, live: rows.filter((h) => ['CREATED', 'OPENED', 'RESOLVED'].includes(h.status)).length };
 }
+
+export type IntegrationView = {
+  id: string;
+  provider: string;
+  environment: string;
+  label: string;
+  status: string;
+  verification: string;
+  adapterImplemented: boolean;
+  accountRef: string | null;
+  capabilities: Record<string, string>;
+  health: string | null;
+  lastCheckedAt: string | null;
+  lastSuccessAt: string | null;
+  lastErrorClass: string | null;
+  lastError: string | null;
+  statusReason: string | null;
+  credentials: { id: string; name: string; hint: string | null; expiresOn: string | null; rotatedAt: string | null }[];
+};
+
+/** Connections with their credential METADATA only: the columns a session may read stop short of the secret material. */
+export async function listIntegrations(): Promise<IntegrationView[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('acquisition_integrations')
+    .select('id, provider, environment, label, status, verification, adapter_implemented, account_ref, capabilities, health, last_checked_at, last_success_at, last_error_class, last_error, status_reason')
+    .order('provider').order('environment');
+  if (error) unreadable('listIntegrations', error);
+  const { data: creds, error: credsError } = await supabase.schema('crm').from('connector_credentials')
+    .select('id, integration_id, name, hint, expires_on, rotated_at').eq('status', 'active');
+  if (credsError) unreadable('listIntegrations.credentials', credsError);
+  return (data ?? []).map((i) => ({
+    id: i.id, provider: i.provider, environment: i.environment, label: i.label, status: i.status, verification: i.verification,
+    adapterImplemented: i.adapter_implemented, accountRef: i.account_ref, capabilities: (i.capabilities ?? {}) as Record<string, string>,
+    health: i.health, lastCheckedAt: i.last_checked_at, lastSuccessAt: i.last_success_at, lastErrorClass: i.last_error_class,
+    lastError: i.last_error, statusReason: i.status_reason,
+    credentials: (creds ?? []).filter((c) => c.integration_id === i.id).map((c) => ({ id: c.id, name: c.name, hint: c.hint, expiresOn: c.expires_on, rotatedAt: c.rotated_at })),
+  }));
+}
+
+export type PolicyView = { actionType: string; mode: string; approvalAboveMinor: number | null; escalateAboveMinor: number | null; updatedAt: string };
+
+export async function listPolicies(): Promise<PolicyView[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('acquisition_policies').select('action_type, mode, approval_above_minor, escalate_above_minor, updated_at');
+  if (error) unreadable('listPolicies', error);
+  return (data ?? []).map((p) => ({
+    actionType: p.action_type, mode: p.mode,
+    approvalAboveMinor: p.approval_above_minor === null ? null : Number(p.approval_above_minor),
+    escalateAboveMinor: p.escalate_above_minor === null ? null : Number(p.escalate_above_minor),
+    updatedAt: p.updated_at,
+  }));
+}
+
+export type DecisionView = { actionType: string; channel: string | null; decision: string; reason: string; createdAt: string };
+
+export async function listRecentDecisions(limit = 15): Promise<DecisionView[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('acquisition_decisions').select('action_type, channel, decision, reason, created_at').order('created_at', { ascending: false }).limit(limit);
+  if (error) unreadable('listRecentDecisions', error);
+  return (data ?? []).map((d) => ({ actionType: d.action_type, channel: d.channel, decision: d.decision, reason: d.reason, createdAt: d.created_at }));
+}

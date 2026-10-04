@@ -27,6 +27,11 @@ export const APPROVAL_SUBJECT_TYPES = [
   'agent_action',
   'ticket_plan',
   'ui_version',
+  // Lead generation (20261016100000): each is bound to the exact content approved (crm.approval_bindings).
+  'social_content',
+  'b2b_proposal',
+  'ad_campaign',
+  'acquisition_action',
 ] as const;
 
 export type ApprovalSubjectType = (typeof APPROVAL_SUBJECT_TYPES)[number];

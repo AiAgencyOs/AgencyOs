@@ -68,7 +68,7 @@ Design decisions this implies (recorded here so they are made once):
 | 1 | Admin config (target services, versioned ICP, per-channel settings), global + per-channel pause, Lead Generation shell + overview, capabilities | — | **BUILT, see §4** |
 | 2 | Unified identity: normalised identity keys, `DUPLICATE_REVIEW` queue, touchpoints (first/last/multi), canonical outcome (derived), primary conversation owner | 1 | **BUILT, see §4** (contact consolidation after `confirmed_same` is NOT built) |
 | 3 | Tracked WhatsApp handoff: opaque token (hash stored), expiry, replay/tenant protection, context package, ownership transfer to Sales | 2 | **BUILT** (engines that create handoffs arrive with 6-10) |
-| 4 | Connector registry (tenant-scoped credentials, capability model, health, Test Connection), policy-decision function, approval subject types + content-hash binding | 1 | not started |
+| 4 | Connector registry (tenant-scoped credentials, capability model, health, Test Connection), policy-decision function, approval subject types + content-hash binding | 1 | **BUILT** (no provider adapter exists yet) |
 | 5 | Scheduler + Quotation Master structured handoffs (agent-callable, return to channel owner) | 2, 3 | not started |
 | 6 | Email engine: prospect discovery → research → qualification → drafting → nurture → meeting/quote → handoff; follow-up engine state checks | 2–5 | not started |
 | 7 | Social: audit, strategy (3/6/9 mo), content versioning + exact-version approval + publish idempotency, analytics, then prospecting/outreach | 4, 5 | not started |
@@ -130,6 +130,19 @@ Design decisions this implies (recorded here so they are made once):
   the Sales agent reading the review-path context; a rate limiter on the public link.
 * **Cross-cutting finding fixed in all three migrations:** platform default privileges granted anon/authenticated broad
   table rights; every acquisition table now revokes them first.
+
+### Slice 4 (connectors, policy, exact-version approvals) - built and verified
+
+* Migration `20261016100000_connectors_policy_and_exact_version_approval.sql`: `crm.acquisition_integrations` (lifecycle vs verification,
+  guarded by a trigger), `crm.connector_credentials` (per-tenant, AAD-bound ciphertext), `crm.acquisition_policies / _usage / _decisions`,
+  `crm.approval_bindings`, `crm.governed_executions`, and the doors `register / sync_adapter / store_secret / set_state /
+  record_integration_check / set_acquisition_policy / acquisition_decide / bind_approval / approval_check / begin|finish|verify_governed_execution`.
+* `src/lib/secrets/tenant-vault.ts`, `providers.ts` (catalogue, adapter contract, error classification, backoff), `adapters.ts`
+  (EMPTY on purpose), `governance.ts` (typed wrappers an engine uses), `integrations.ts`, Connections page, policy table.
+* `scripts/verify-acquisition-governance.sql`: 150 checks through the real approval engine; red-proved eleven ways.
+* **Not built:** any provider adapter; scheduled health/expiry checks; the engines that call these doors.
+* **Design decision recorded:** email outreach keeps its own four-eyes approval path (it predates this and is tested); moving it into
+  the Approval Center remains the owner's call.
 
 ## 5. Human dependencies (known now; asked for only when the engine reaches them)
 

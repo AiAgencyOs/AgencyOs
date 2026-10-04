@@ -102,8 +102,9 @@ const migration = readFileSync(
 );
 
 /**
- * `subject_type` is not fixed at `20260812120011` — `20260813120003_handover.sql`
- * and `20260923130000_admin_review_reuses_the_engine.sql` each `alter ...
+ * `subject_type` is not fixed at `20260812120011` — `20260813120003_handover.sql`,
+ * `20260923130000_admin_review_reuses_the_engine.sql` and
+ * `20261016100000_connectors_policy_and_exact_version_approval.sql` each `alter ...
  * drop constraint ... add constraint` to widen it, replacing the CHECK
  * entirely rather than adding to it. The base migration text alone is
  * therefore stale for this one constraint; the LATEST migration to touch it
@@ -112,7 +113,7 @@ const migration = readFileSync(
  * checking against the latest is equivalent to checking against all of them.
  */
 const latestSubjectTypeMigration = readFileSync(
-  fileURLToPath(new URL('../supabase/migrations/20260923130000_admin_review_reuses_the_engine.sql', import.meta.url)),
+  fileURLToPath(new URL('../supabase/migrations/20261016100000_connectors_policy_and_exact_version_approval.sql', import.meta.url)),
   'utf8',
 );
 
