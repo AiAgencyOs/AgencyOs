@@ -336,3 +336,50 @@ export async function readProviderUsage(providerId: string, now = new Date()): P
   usage.byModel = [...byModel.values()].sort((a, b) => b.runs - a.runs);
   return usage;
 }
+
+export type OverviewRow = {
+  providerId: string;
+  runs: number;
+  failed: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** From Admin-recorded prices only. */
+  costMinor: number;
+  unpricedRuns: number;
+  /** Embedding / image / transcription calls recorded against it (fixed capabilities, not routed runs). */
+  capabilityCalls: number;
+};
+
+/**
+ * This month across every provider, side by side. Runs with no recorded provider (from before the router recorded it) are shown
+ * under their own line so no spend or call disappears from the total.
+ */
+export async function readUsageOverview(now = new Date()): Promise<{ since: string; rows: OverviewRow[] }> {
+  const supabase = await createClient();
+  const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  const [runs, caps] = await Promise.all([
+    supabase.schema('ai').from('agent_runs').select('provider_id, status, input_tokens, output_tokens, cost_minor').gte('created_at', since).limit(10000),
+    supabase.schema('ai').from('routing_decisions').select('provider_id').eq('selection_source', 'fixed_capability').gte('created_at', since).limit(10000),
+  ]);
+  if (runs.error) unreadable('readUsageOverview.runs', runs.error);
+  if (caps.error) unreadable('readUsageOverview.capabilities', caps.error);
+
+  const rows = new Map<string, OverviewRow>();
+  const row = (id: string): OverviewRow => {
+    const r = rows.get(id) ?? { providerId: id, runs: 0, failed: 0, inputTokens: 0, outputTokens: 0, costMinor: 0, unpricedRuns: 0, capabilityCalls: 0 };
+    rows.set(id, r);
+    return r;
+  };
+  for (const r of runs.data ?? []) {
+    const o = row(r.provider_id ?? '(not recorded)');
+    const cost = Number(r.cost_minor ?? 0);
+    o.runs += 1;
+    o.failed += r.status === 'failed' || r.status === 'budget_exceeded' ? 1 : 0;
+    o.inputTokens += Number(r.input_tokens ?? 0);
+    o.outputTokens += Number(r.output_tokens ?? 0);
+    o.costMinor += cost;
+    o.unpricedRuns += cost > 0 ? 0 : 1;
+  }
+  for (const c of caps.data ?? []) row(c.provider_id ?? '(not recorded)').capabilityCalls += 1;
+  return { since, rows: [...rows.values()].sort((a, b) => b.runs + b.capabilityCalls - (a.runs + a.capabilityCalls)) };
+}

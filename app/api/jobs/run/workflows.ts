@@ -126,6 +126,7 @@ import {
   designReplySchema,
 } from '@/modules/projects/schema';
 
+import { recordCapabilityDecision } from '@/lib/ai/capability-decision';
 import { resolveImageGenerator, resolveTranscriber } from '@/lib/ai/router';
 import { TRANSCRIPTION_MODEL } from '@/lib/ai/openai';
 import { IMAGE_GENERATION_MODEL } from '@/lib/ai/openrouter-image';
@@ -2658,6 +2659,17 @@ const DESIGN_DIRECTIONS: AgentWorkflow = {
             `not a screen, not an interface mockup, not app UI.`;
 
           const image = await generator.data.generateImage({ model: IMAGE_GENERATION_MODEL, prompt: imagePrompt });
+          await recordCapabilityDecision(admin, {
+            organizationId: job.organization_id,
+            agentKey: ctx.agent.key,
+            capability: 'image',
+            providerId: generator.data.id,
+            modelId: IMAGE_GENERATION_MODEL,
+            outcome: image.ok ? 'succeeded' : 'failed',
+            jobId: job.id,
+            runId,
+            detail: image.ok ? undefined : image.message,
+          });
           if (image.ok) {
             const { data: assetRow, error: assetError } = await admin.schema('projects').rpc('record_design_asset', {
               p_project_id: baseline.project_id,
@@ -6252,6 +6264,19 @@ async function hear(
       ? { ok: true, data: { json: null, model: TRANSCRIPTION_MODEL, usage: heard.usage } }
       : { ok: false, error: { code: 'PROVIDER_ERROR', message: heard.message, correlationId: ctx.correlationId } },
     latencyMs: Date.now() - started,
+  });
+
+  await recordCapabilityDecision(admin, {
+    organizationId: job.organization_id,
+    agentKey: ctx.agent.key,
+    capability: 'transcription',
+    providerId: transcriber.data.id,
+    modelId: TRANSCRIPTION_MODEL,
+    outcome: heard.ok ? 'succeeded' : 'failed',
+    jobId: job.id,
+    runId,
+    detail: heard.ok ? undefined : heard.message,
+    usage: { audioBytes: audio.byteLength },
   });
 
   if (!heard.ok) {

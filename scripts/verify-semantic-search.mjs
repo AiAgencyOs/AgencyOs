@@ -65,7 +65,7 @@ const mint = (userId, role) => {
   const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
   const now = Math.floor(Date.now() / 1000);
   const header = b64({ alg: 'HS256', typ: 'JWT' });
-  const body = b64({ sub: userId, aud: 'authenticated', role: 'authenticated', app_metadata: { organization_id: ORG, role }, iat: now, exp: now + 900 });
+  const body = b64({ sub: userId, aud: 'authenticated', role: 'authenticated', app_metadata: { organization_id: ORG, role }, iat: now - (Number(process.env.VERIFY_JWT_SKEW_SECONDS ?? 0) || 0), exp: now + 900 });
   return `${header}.${body}.${createHmac('sha256', target.jwtSecret).update(`${header}.${body}`).digest('base64url')}`;
 };
 
@@ -176,6 +176,8 @@ try {
   const finished = await tickUntil(async () => (await state())?.status === 'done');
   const st = await state();
   check(finished, 'the backfill runs to done on the real job runner', `status ${st?.status}, ${st?.done} vectors`);
+  const capDecisions = (await rest('GET', 'ai', `routing_decisions?organization_id=eq.${ORG}&agent_key=eq.semantic_indexer&selection_source=eq.fixed_capability&select=work_class,provider_id,model_id,outcome,plan`)).json ?? [];
+  check(capDecisions.some((d) => d.work_class === 'embedding' && d.outcome === 'succeeded' && d.provider_id === 'openai' && d.model_id === MODEL && Number(d.plan?.usage?.embedded) > 0), 'the indexing is on the routing log: which vendor and model embedded, marked as a fixed capability and not a choice', `${capDecisions.length} decision(s)`);
   check(mine().length === 3, 'the three planted records with safe names were sent, once each', `${mine().length} inputs`);
   check(!received.some((t) => t.includes('sk-ant-api03')), 'a credential in a name was never sent to the vendor');
   check(received.includes('Client\nstatus: active'), 'the record whose name was a credential was embedded without it');
