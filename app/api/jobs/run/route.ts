@@ -58,6 +58,7 @@ import {
 } from '@/modules/projects/handlers';
 import { runOnboardingFollowUps } from '@/modules/projects/pm-followups';
 import { handleAskClarification, handleReadClarificationAnswer } from '@/modules/projects/pm-clarifications';
+import { handleAnnouncePhaseThree, handleAskFinalConfirmation } from '@/modules/projects/pm-design-comms';
 import { handleWelcomeClient, handleAskGstDetails, handlePaymentUpdate, handleReadBillingReply } from '@/modules/projects/pm-client-comms';
 import { handleHandoverAcceptedForFinance, handleBillingModeConfirmed, handleInvoiceIssuedForDelivery, handlePhaseFourCompletedForFinance, handlePhaseFiveCompletedForFinance, handlePhaseSixCompletedForFinance } from '@/modules/finance/handlers';
 import { learnFromDecision, learnFromRevision } from '@/modules/sales/handlers';
@@ -973,6 +974,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    * announcements. The billing answer is read here too; it only tells staff.
    */
   const pmWelcomes = await runEventJobs(admin, PM_WELCOME_JOB_KIND, handleWelcomeClient, 'runPmWelcomeJobs');
+  const pmPhaseThreeAnnouncements = await runEventJobs(admin, PM_PHASE3_ANNOUNCE_JOB_KIND, handleAnnouncePhaseThree, 'runPmPhaseThreeAnnounceJobs');
+  const pmFinalAsks = await runEventJobs(admin, PM_DESIGN_FINAL_ASK_JOB_KIND, handleAskFinalConfirmation, 'runPmDesignFinalAskJobs');
   const pmGstDetails = await runEventJobs(admin, PM_GST_DETAILS_JOB_KIND, handleAskGstDetails, 'runPmGstDetailsJobs');
   const pmPaymentUpdates = await runEventJobs(admin, PM_PAYMENT_UPDATE_JOB_KIND, handlePaymentUpdate, 'runPmPaymentUpdateJobs');
   const pmBillingReplies = await runEventJobs(admin, PM_BILLING_REPLY_JOB_KIND, handleReadBillingReply, 'runPmBillingReplyJobs');
@@ -1185,6 +1188,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     freeMaintenance: freeMaintenance.results,
     invoiceDeliveries: invoiceDeliveries.results,
     pmWelcomes: pmWelcomes.results,
+    pmPhaseThreeAnnouncements: pmPhaseThreeAnnouncements.results,
+    pmFinalAsks: pmFinalAsks.results,
     pmGstDetails: pmGstDetails.results,
     pmPaymentUpdates: pmPaymentUpdates.results,
     pmBillingReplies: pmBillingReplies.results,
@@ -1326,6 +1331,8 @@ const M1_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM1Invoice'];
 const INVOICE_DELIVERY_JOB_KIND = HANDLER_JOB_KIND['finance:deliverIssuedInvoice'];
 const FREE_MAINTENANCE_JOB_KIND = HANDLER_JOB_KIND['finance:raiseFreeMaintenance'];
 const PM_WELCOME_JOB_KIND = HANDLER_JOB_KIND['projects:welcomeClient'];
+const PM_PHASE3_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['projects:announcePhaseThree'];
+const PM_DESIGN_FINAL_ASK_JOB_KIND = HANDLER_JOB_KIND['projects:askFinalDesignConfirmation'];
 const PM_GST_DETAILS_JOB_KIND = HANDLER_JOB_KIND['projects:askGstDetails'];
 const PM_PAYMENT_UPDATE_JOB_KIND = HANDLER_JOB_KIND['projects:updateClientOnPayment'];
 const PM_BILLING_REPLY_JOB_KIND = HANDLER_JOB_KIND['projects:readBillingReply'];

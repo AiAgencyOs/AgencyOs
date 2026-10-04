@@ -19,6 +19,8 @@ export const HANDLERS = [
   'projects:unlockNextMilestone',
   'projects:startPhaseTwo',
   'projects:startPhaseThree',
+  'projects:announcePhaseThree',
+  'projects:askFinalDesignConfirmation',
   'projects:startPhaseFour',
   'orchestrator:routeTask2Design',
   'quality_assurance:reviewUIVersion',
@@ -129,6 +131,10 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * nobody can undo.
    */
   'project.phase_three_ready': ['projects:startPhaseThree'],
+  /** Phase 3 PM §7.1: the PM tells the client the UI finalization stage has begun (the workspace row is the authority, not the payload). */
+  'project.phase_three_started': ['projects:announcePhaseThree'],
+  /** Phase 3 PM §15: a theme and colour chosen -> the PM asks for the explicit final confirmation. */
+  'project.client_design_selected': ['projects:askFinalDesignConfirmation'],
   /**
    * Phase 2 Master Flow §5–§6 — GST/Non-GST confirmation → Finance Agent →
    * M1 invoice, as one automated step rather than a person opening the
@@ -605,6 +611,8 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:unlockNextMilestone': 'milestone.unlock',
   'projects:startPhaseTwo': 'phase_two.start',
   'projects:startPhaseThree': 'phase_three.start',
+  'projects:announcePhaseThree': 'pm.phase3_announce',
+  'projects:askFinalDesignConfirmation': 'pm.design_final_ask',
   'projects:startPhaseFour': 'phase_four.start',
   'orchestrator:routeTask2Design': 'phase_four.route_task2_design',
   'quality_assurance:reviewUIVersion': 'ui_version.qa_review',

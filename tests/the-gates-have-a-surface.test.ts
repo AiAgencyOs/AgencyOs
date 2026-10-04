@@ -42,6 +42,8 @@ const DOORS: Record<string, string> = {
   record_design_token_set: '20260920000000_the_tokens_phase_four_inherits.sql',
   finalize_design_token_set: '20260920000000_the_tokens_phase_four_inherits.sql',
   link_theme_figma: '20260920060000_figma_is_recorded_not_claimed.sql',
+  // Phase 3 e2e found a stop with no way out: the governed human decision that restarts it.
+  resolve_phase_three_stop: '20261012100000_a_stopped_phase_has_a_person_who_restarts_it.sql',
 };
 
 /** Every outcome a door can return, read from the door itself. */
@@ -142,8 +144,10 @@ describe('D. only these two gates, and deliberately so', () => {
     // G-289 completed the set. Phase 3 has seven doors and seven are fronted;
     // an eighth export would be a door with a surface nobody decided to give
     // it.
-    assert.equal(Object.keys(DOORS).length, 11);
-    assert.equal((SERVICE.match(/export async function /g) ?? []).length, 11);
+    // Twelve doors. Thirteen exports: `shareDesignWithClient` is not a door, it is the send + record
+    // composition over `record_design_share` (already counted), so it adds a function and no door.
+    assert.equal(Object.keys(DOORS).length, 12);
+    assert.equal((SERVICE.match(/export async function /g) ?? []).length, 13);
   });
 
   test('and the lock form carries no argument about what to lock', () => {
@@ -171,6 +175,7 @@ const lockForm = (() => {
       ['assignDesignReviewer', 'finalizeDesignTokenSet', 'linkThemeFigma',
        'lockPhaseThreeDirection', 'openDesignRevision', 'recordClientDesignDecision',
        'recordDesignShare', 'recordDesignTokenSet', 'recordRepresentativeScreen',
+       'resolvePhaseThreeStop', 'shareDesignWithClient',
        'submitAdminDesignDecision', 'submitInternalDesignReview'],
     );
   });
@@ -209,12 +214,12 @@ describe('F. the surface is wired and refreshes what it changed', () => {
     const start = ACTIONS.indexOf("Phase 3's gates");
     const designActions = ACTIONS.slice(start);
     assert.ok(start > 0 && !designActions.includes('recordKickoff'), 'a non-design action is in this slice');
-    assert.equal((designActions.match(/revalidatePath\(`\/projects\/\$\{projectId\}\/design`\)/g) ?? []).length, 11);
+    assert.equal((designActions.match(/revalidatePath\(`\/projects\/\$\{projectId\}\/design`\)/g) ?? []).length, 13);
   });
 
   test('the service is behind a capability check', () => {
     assert.match(SERVICE, /async function designActor\(\)[\s\S]{0,300}?if \(!can\(context, 'project\.write'\)\)/);
-    assert.equal((SERVICE.match(/const gate = await designActor\(\);/g) ?? []).length, 11);
+    assert.equal((SERVICE.match(/const gate = await designActor\(\);/g) ?? []).length, 13);
   });
 
   test('and the page does not offer a form to somebody who cannot submit it', () => {

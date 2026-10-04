@@ -13,6 +13,8 @@ import {
   recordDesignTokenSetAction,
   recordRepresentativeScreenAction,
   recordDesignShareAction,
+  resolvePhaseThreeStopAction,
+  sendDesignOptionsAction,
   submitAdminDesignDecisionAction,
   submitInternalDesignReviewAction,
 } from '@/modules/projects/actions';
@@ -208,6 +210,7 @@ export function RecordShareForm({
   options: { id: string; name: string; optionIndex: number }[];
 }) {
   const [state, action, pending] = useActionState(recordDesignShareAction, IDLE_STATE);
+  const [sendState, sendAction, sending] = useActionState(sendDesignOptionsAction, IDLE_STATE);
 
   if (options.length === 0) {
     return (
@@ -220,8 +223,9 @@ export function RecordShareForm({
   return (
     <form action={action} className="flex flex-col gap-2 rounded-md border border-line p-3">
       <p className="text-[13px] text-muted">
-        AgencyOS cannot send this — there is no channel configured. Send it yourself, then record
-        what you sent.
+        Tick the Admin-approved options, then <strong>send them to the client</strong> in the project
+        group - the project manager's message goes out and the share is recorded with it. If the client
+        has no thread here, send it yourself and record what you sent below.
       </p>
       <fieldset className="flex flex-col gap-1">
         <legend className="text-xs text-muted">Which options you sent</legend>
@@ -235,6 +239,13 @@ export function RecordShareForm({
         ))}
       </fieldset>
       <input type="hidden" name="projectId" value={projectId} />
+      <div className="flex flex-col gap-1">
+        <button type="submit" formAction={sendAction} disabled={sending || pending} className={buttonClass('primary')}>
+          {sending ? 'Sending…' : 'Send to the client and record'}
+        </button>
+        <Message state={sendState} />
+      </div>
+      <p className="border-t border-line pt-2 text-xs text-muted">Or, if you sent it yourself another way:</p>
       <label className="flex flex-col gap-1 text-[13px]">
         <span className="text-xs text-muted">How you sent it</span>
         <select name="channel" defaultValue="whatsapp" className="rounded-md border border-line bg-surface px-2 py-1">
@@ -249,7 +260,6 @@ export function RecordShareForm({
         </span>
         <input
           name="evidenceRef"
-          required
           placeholder="wamid.…"
           className="rounded-md border border-line bg-surface px-2 py-1"
         />
@@ -780,5 +790,62 @@ export function FigmaReferenceForm({
         <Message state={state} />
       </form>
     </details>
+  );
+}
+
+const STOP_CHOICES: Record<string, { value: string; label: string }[]> = {
+  scope_escalation: [
+    { value: 'declined_continue', label: 'Decline the extra scope - design continues on the approved scope' },
+    { value: 'accepted_change', label: 'The change is accepted - reopen the screen list' },
+  ],
+  revision_limit_escalation: [
+    { value: 'allow_more_rounds', label: 'Allow more client rounds' },
+    { value: 'proceed_with_current', label: 'No more rounds - the client chooses from what exists' },
+  ],
+  blocked_requirement: [{ value: 'requirement_supplied', label: 'The missing requirement is now supplied' }],
+};
+
+/**
+ * Master §16-§17: the phase stopped on purpose and only a person restarts it. The choice names which way
+ * the stop is being answered, the note is required, and the decision is history.
+ */
+export function ResolveStopForm({ projectId, phaseThreeId, state }: { projectId: string; phaseThreeId: string; state: string }) {
+  const [resolveState, action, pending] = useActionState(resolvePhaseThreeStopAction, IDLE_STATE);
+  const choices = STOP_CHOICES[state];
+  if (!choices) return null;
+  return (
+    <form action={action} className="flex flex-col gap-2 rounded-md border border-line p-3">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="phaseThreeId" value={phaseThreeId} />
+      <p className="text-[13px] font-medium">This phase is stopped. Nothing is designed until a person decides how to continue.</p>
+      <label className="flex flex-col gap-1 text-[13px]">
+        <span className="text-xs text-muted">Decision</span>
+        <select name="resolution" className="rounded-md border border-line bg-surface px-2 py-1">
+          {choices.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {state === 'revision_limit_escalation' ? (
+        <label className="flex flex-col gap-1 text-[13px]">
+          <span className="text-xs text-muted">Extra rounds (only if you allow more)</span>
+          <select name="extraRounds" defaultValue="1" className="rounded-md border border-line bg-surface px-2 py-1">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+          </select>
+        </label>
+      ) : null}
+      <label className="flex flex-col gap-1 text-[13px]">
+        <span className="text-xs text-muted">Why - this goes on the record</span>
+        <textarea name="note" required maxLength={2000} rows={2} className="rounded-md border border-line bg-surface px-2 py-1" />
+      </label>
+      <button type="submit" disabled={pending} className={buttonClass()}>
+        {pending ? 'Recording…' : 'Record the decision and continue'}
+      </button>
+      <Message state={resolveState} />
+    </form>
   );
 }

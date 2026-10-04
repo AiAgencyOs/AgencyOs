@@ -814,6 +814,11 @@ jobs:
           # is audited, nothing else reads the table, a revoked value is gone.
           npm run db:verify:clientsecrets
 
+          # Phase 3 end to end: the kickoff starts it, the PM announces it, the designer drafts screens and
+          # three directions, internal review then Admin, the client chooses and confirms, the lock hands
+          # Phase 4 an exact handoff. Found: a stopped phase had no way out (resolve_phase_three_stop).
+          npm run db:verify:phase3e2e
+
           # Phase 2 end to end: a won deal to the official kickoff and Phase 3, every human
           # gate a person acting, every automatic step the system alone, the negatives at
           # the moment they matter. (Found six defects the unit suites could not.)

@@ -6,6 +6,7 @@ import { IDLE_STATE, type FormState } from '@/modules/identity/types';
 import {
   addScreenAction,
   draftNextScreenBaselineAction,
+  finalizeScreenBaselineAction,
   mapScreenScopeItemAction,
   mergeScreensAction,
   setScreenDesignStateAction,
@@ -336,5 +337,49 @@ export function SubmitForQaForm({ projectId, screenId, submitted, hasDraftPlan }
         <Message state={state} />
       </div>
     </form>
+  );
+}
+
+/**
+ * Master §7.3 - the screen list is agreed once, by a person, before any theme is drawn. With no baseline
+ * yet it offers to open the first; with a draft open it offers to finalize it (the door refuses an
+ * empty list or an included requirement no screen covers, and says which).
+ */
+export function ScreenBaselinePanel({ projectId, latest }: { projectId: string; latest: { id: string; version: number; status: string } | null }) {
+  const [draftState, draft, drafting] = useActionState(draftNextScreenBaselineAction, IDLE_STATE);
+  const [finalState, finalize, finalizing] = useActionState(finalizeScreenBaselineAction, IDLE_STATE);
+  if (latest && latest.status === 'finalized') return null;
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4">
+      {latest ? (
+        <form action={finalize} className="flex flex-col gap-2">
+          <input type="hidden" name="projectId" value={projectId} />
+          <input type="hidden" name="baselineId" value={latest.id} />
+          <p className="text-sm font-medium">Screen list v{latest.version} is open</p>
+          <p className="text-[13px] text-muted">
+            When every screen the approved scope needs is listed, finalize it. The list freezes as the baseline Phase 4 inherits, and the UI Designer starts drafting the theme directions.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="submit" disabled={finalizing} className={buttonClass('primary')}>
+              {finalizing ? 'Finalizing…' : 'Finalize the screen list'}
+            </button>
+            <Message state={finalState} />
+          </div>
+        </form>
+      ) : (
+        <form action={draft} className="flex flex-col gap-2">
+          <input type="hidden" name="projectId" value={projectId} />
+          <p className="text-sm font-medium">No screen list yet</p>
+          <p className="text-[13px] text-muted">Open the first screen list against the approved scope, then add or review the screens and finalize it.</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="submit" disabled={drafting} className={buttonClass('primary')}>
+              {drafting ? 'Opening…' : 'Open the screen list'}
+            </button>
+            <Message state={draftState} />
+          </div>
+        </form>
+      )}
+    </div>
   );
 }

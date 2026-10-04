@@ -163,7 +163,7 @@ describe('D. it shows the trail and takes no decisions', () => {
       [...PAGE.matchAll(/<(\w+Form)\b/g)].map((m) => m[1] ?? '').filter((v, i, a) => a.indexOf(v) === i).sort(),
       ['AdminDecisionForm', 'AssignReviewerForm', 'FigmaReferenceForm', 'InternalReviewForm',
        'LinkAssetForm', 'LockDirectionForm',
-       'OpenRevisionForm', 'RecordClientReplyForm', 'RecordSampleForm', 'RecordShareForm',
+       'OpenRevisionForm', 'RecordClientReplyForm', 'RecordSampleForm', 'RecordShareForm', 'ResolveStopForm',
        'TokenSetForm', 'UnlinkAssetForm'],
     );
   });

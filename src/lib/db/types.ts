@@ -8696,6 +8696,51 @@ export type Database = {
           },
         ]
       }
+      phase_three_stop_resolutions: {
+        Row: {
+          created_at: string
+          extra_rounds: number | null
+          id: string
+          note: string
+          organization_id: string
+          phase_three_id: string
+          project_id: string
+          resolution: string
+          resolved_by: string
+          resumed_state: string
+          stop_reason: string | null
+          stopped_state: string
+        }
+        Insert: {
+          created_at?: string
+          extra_rounds?: number | null
+          id?: string
+          note: string
+          organization_id: string
+          phase_three_id: string
+          project_id: string
+          resolution: string
+          resolved_by: string
+          resumed_state: string
+          stop_reason?: string | null
+          stopped_state: string
+        }
+        Update: {
+          created_at?: string
+          extra_rounds?: number | null
+          id?: string
+          note?: string
+          organization_id?: string
+          phase_three_id?: string
+          project_id?: string
+          resolution?: string
+          resolved_by?: string
+          resumed_state?: string
+          stop_reason?: string | null
+          stopped_state?: string
+        }
+        Relationships: []
+      }
       project_default_assignees: {
         Row: {
           created_at: string
@@ -12994,6 +13039,13 @@ export type Database = {
       request_project_planning: {
         Args: { p_project_id: string }
         Returns: string
+      }
+      resolve_phase_three_stop: {
+        Args: { p_extra_rounds?: number; p_note: string; p_phase_three_id: string; p_resolution: string }
+        Returns: {
+          outcome: string
+          resumed_state: string | null
+        }[]
       }
       store_client_secret: {
         Args: { p_auth_tag: string; p_ciphertext: string; p_hint?: string; p_iv: string; p_kind: string; p_label: string; p_project_id: string }
