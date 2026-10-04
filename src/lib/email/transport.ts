@@ -24,7 +24,18 @@ import { resolveSecret, secretConfigured } from '@/lib/secrets/resolve';
 
 export type EmailAttachment = { filename: string; contentType: string; bytes: Uint8Array };
 
+/**
+ * Which mailbox a message leaves from. `client` (care@) carries everything a
+ * client is owed: quotation, invoice, confirmation, update, delivery, handover.
+ * `outreach` (info@) carries lead generation and email marketing ONLY. They are
+ * separate mailboxes on purpose, and outreach never falls back to the client
+ * mailbox (or the other way round): a spam complaint about a campaign must not
+ * land on the mailbox that sends invoices. Omitted means `client`.
+ */
+export type EmailLane = 'client' | 'outreach';
+
 export type EmailMessage = {
+  lane?: EmailLane;
   to: string;
   subject: string;
   text: string;
@@ -39,8 +50,20 @@ export type EmailSendResult = { ok: true; kind: 'resend' | 'smtp'; messageRef: s
 
 const RESEND_API = 'https://api.resend.com/emails';
 
-export async function emailTransportState(): Promise<EmailTransportState> {
+export async function emailTransportState(lane: EmailLane = 'client'): Promise<EmailTransportState> {
   const env = serverEnv();
+  if (lane === 'outreach') {
+    const missing = [
+      !env.SMTP_HOST && 'SMTP_HOST',
+      !env.EMAIL_OUTREACH_FROM && 'EMAIL_OUTREACH_FROM',
+      !env.SMTP_OUTREACH_USER && 'SMTP_OUTREACH_USER',
+      !(await secretConfigured('SMTP_OUTREACH_PASS')) && 'SMTP_OUTREACH_PASS',
+    ].filter(Boolean);
+    if (missing.length > 0) {
+      return { configured: false, reason: `The outreach mailbox is not configured (missing ${missing.join(', ')}). It never borrows the client mailbox.` };
+    }
+    return { configured: true, kind: 'smtp', from: env.EMAIL_OUTREACH_FROM!, label: `SMTP via ${env.SMTP_HOST}, outreach from ${env.EMAIL_OUTREACH_FROM}` };
+  }
   if (!env.EMAIL_FROM) {
     return { configured: false, reason: 'EMAIL_FROM is not set — the sender address every email needs.' };
   }
@@ -54,12 +77,13 @@ export async function emailTransportState(): Promise<EmailTransportState> {
 }
 
 export async function sendEmail(message: EmailMessage): Promise<EmailSendResult> {
-  const state = await emailTransportState();
+  const lane = message.lane ?? 'client';
+  const state = await emailTransportState(lane);
   if (!state.configured) return { ok: false, reason: state.reason };
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(message.to)) return { ok: false, reason: `"${message.to}" is not an email address.` };
 
   try {
-    return state.kind === 'resend' ? await sendViaResend(state.from, message) : await sendViaSmtp(state.from, message);
+    return state.kind === 'resend' ? await sendViaResend(state.from, message) : await sendViaSmtp(state.from, message, lane);
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause);
     console.error(JSON.stringify({ level: 'error', scope: 'sendEmail', kind: state.kind, detail }));
@@ -196,9 +220,10 @@ function wrap(base64: string): string {
   return base64.replace(/(.{76})/g, '$1\r\n');
 }
 
-async function sendViaSmtp(from: string, message: EmailMessage): Promise<EmailSendResult> {
+async function sendViaSmtp(from: string, message: EmailMessage, lane: EmailLane): Promise<EmailSendResult> {
   const env = serverEnv();
-  const smtpPass = (await resolveSecret('SMTP_PASS')) ?? '';
+  const smtpUser = lane === 'outreach' ? env.SMTP_OUTREACH_USER : env.SMTP_USER;
+  const smtpPass = (lane === 'outreach' ? await resolveSecret('SMTP_OUTREACH_PASS') : await resolveSecret('SMTP_PASS')) ?? '';
   const host = env.SMTP_HOST!;
   const secure = env.SMTP_SECURE === 'true';
   const port = env.SMTP_PORT ?? (secure ? 465 : 587);
@@ -225,15 +250,15 @@ async function sendViaSmtp(from: string, message: EmailMessage): Promise<EmailSe
       ehlo = await session.command('EHLO agencyos.local', [250]);
     }
 
-    if (env.SMTP_USER) {
+    if (smtpUser) {
       const offersLogin = ehlo.some((l) => /^AUTH\b.*\bLOGIN\b/i.test(l.text));
       const offersPlain = ehlo.some((l) => /^AUTH\b.*\bPLAIN\b/i.test(l.text));
       if (offersLogin || !offersPlain) {
         await session.command('AUTH LOGIN', [334]);
-        await session.command(Buffer.from(env.SMTP_USER, 'utf8').toString('base64'), [334]);
+        await session.command(Buffer.from(smtpUser, 'utf8').toString('base64'), [334]);
         await session.command(Buffer.from(smtpPass, 'utf8').toString('base64'), [235]);
       } else {
-        const token = Buffer.from(`\0${env.SMTP_USER}\0${smtpPass}`, 'utf8').toString('base64');
+        const token = Buffer.from(`\0${smtpUser}\0${smtpPass}`, 'utf8').toString('base64');
         await session.command(`AUTH PLAIN ${token}`, [235]);
       }
     }

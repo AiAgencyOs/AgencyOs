@@ -161,6 +161,15 @@ export const serverSchema = z.object({
   /** `true` forces implicit TLS (port 465 style); otherwise STARTTLS is attempted when the server offers it. */
   SMTP_SECURE: z.enum(['true', 'false']).optional(),
   EMAIL_FROM: z.string().email('EMAIL_FROM must be an address').optional(),
+  /**
+   * The second sender: outreach / lead-generation email, from its OWN mailbox
+   * (info@) so a marketing complaint can never damage the reputation of the
+   * mailbox clients get their invoices from. Same SMTP_HOST; own user, password
+   * (SMTP_OUTREACH_PASS) and From. Never falls back to the client mailbox.
+   */
+  SMTP_OUTREACH_USER: z.string().optional(),
+  SMTP_OUTREACH_PASS: z.string().optional(),
+  EMAIL_OUTREACH_FROM: z.string().email('EMAIL_OUTREACH_FROM must be an address').optional(),
 
   SUPABASE_FILES_BUCKET: z
     .string()
