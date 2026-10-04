@@ -1406,6 +1406,22 @@ export type Database = {
           outcome: string | null
         }[]
       }
+      record_discovered_models_system: {
+        Args: { p_models: Json; p_provider_id: string }
+        Returns: {
+          organizations: number | null
+          outcome: string | null
+        }[]
+      }
+      due_provider_maintenance: {
+        Args: { p_health_minutes?: number; p_limit?: number; p_sync_minutes?: number }
+        Returns: {
+          health_state: string | null
+          need_health: boolean | null
+          need_sync: boolean | null
+          provider_id: string | null
+        }[]
+      }
       record_model_sync: {
         Args: { p_detail: string; p_ok: boolean; p_provider_id: string }
         Returns: {

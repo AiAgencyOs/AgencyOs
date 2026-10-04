@@ -267,7 +267,7 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
         <FallbackChainsPanel chains={chains} available={availableModels} editable={isOwner} />
       </Card>
 
-      <Card>
+      <Card id="budgets">
         <CardHeader
           title="Provider budgets"
           description="The most each provider may cost this organisation in a calendar month, against what it has cost so far — from the steps the runtime wrote. Past the cap the runner refuses the call, records the refusal like a policy refusal, and raises a critical alert."

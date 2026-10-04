@@ -75,23 +75,14 @@ export async function hasConfiguredProvider(): Promise<boolean> {
  * the environment at import time made `next build` demand real credentials,
  * which CI calls a defect rather than a secret to supply.
  */
-let transcribers: readonly AiTranscriber[] | null = null;
-
-function allTranscribers(): readonly AiTranscriber[] {
-  transcribers ??= [createOpenAiTranscriber()].filter(
-    (t): t is AiTranscriber => t !== null,
-  );
-  return transcribers;
-}
-
-export function resolveTranscriber(): Result<AiTranscriber> {
-  const registered = allTranscribers();
-  const transcriber = registered[0];
+// Resolved per use, not cached: a key stored in the Provider Manager works at the next recording, without a redeploy.
+export async function resolveTranscriber(): Promise<Result<AiTranscriber>> {
+  const transcriber = await createOpenAiTranscriber();
 
   if (!transcriber) {
     return err(
       'PROVIDER_ERROR',
-      'No transcription service is configured, so a recording cannot be turned into words. Set OPENAI_API_KEY, or register another transcriber in src/lib/ai/router.ts.',
+      'No transcription service is configured, so a recording cannot be turned into words. Add an OpenAI key in AI providers (or set OPENAI_API_KEY), or register another transcriber in src/lib/ai/router.ts.',
     );
   }
 
@@ -99,8 +90,8 @@ export function resolveTranscriber(): Result<AiTranscriber> {
 }
 
 /** True when something can hear. Lets callers skip work rather than pretend. */
-export function hasConfiguredTranscriber(): boolean {
-  return allTranscribers().length > 0;
+export async function hasConfiguredTranscriber(): Promise<boolean> {
+  return (await createOpenAiTranscriber()) !== null;
 }
 
 /**

@@ -73,3 +73,28 @@ describe('the old key screens are consolidated, not duplicated', () => {
     assert.ok(/href: '\/agents\/providers'/.test(nav));
   });
 });
+
+describe('the background sweep and the usage view', () => {
+  const migration = read('supabase/migrations/20261013400000_providers_are_kept_honest_in_the_background.sql');
+  const sweep = strip(read('src/lib/ai/provider-maintenance.ts'));
+  const route = read('app/api/jobs/run/route.ts');
+
+  test('the sweep is on the tick, and only ever asks about enabled, un-archived providers', () => {
+    assert.ok(/await runProviderMaintenance\(admin\)/.test(route), 'built and reachable: the cron tick calls it');
+    assert.ok(/where p\.enabled and p\.archived_at is null/.test(migration), 'the due list leaves a disabled provider alone');
+    assert.ok(/to service_role/.test(migration) && !/grant execute on function ai\.due_provider_maintenance[^;]*authenticated/.test(migration), 'and the doors are the system\'s, not an end user\'s');
+  });
+
+  test('what the sweep finds is recorded through the same records as a person\'s Test, and models arrive disabled', () => {
+    assert.ok(/recordProbe\(/.test(sweep), 'one probe record');
+    assert.ok(/enabled, source[\s\S]{0,200}false, 'discovered'/.test(migration.replace(/\s+/g, ' ')) || /'available', false, 'discovered'/.test(migration), 'discovered models are inserted disabled');
+    assert.ok(!/set_model_enabled|enabled: true/.test(sweep), 'the sweep never enables a model');
+  });
+
+  test('the usage view never estimates a cost', () => {
+    const q = strip(read('src/lib/ai/manager-queries.ts'));
+    assert.ok(/unpricedRuns/.test(q) && /pricedRuns/.test(q), 'unpriced runs are counted apart');
+    const page = read('app/(internal)/agents/providers/[providerId]/page.tsx');
+    assert.ok(/cost unknown, not a zero one|no price/.test(page), 'and the screen says so');
+  });
+});

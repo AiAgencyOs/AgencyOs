@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { serverEnv } from '@/lib/env';
+import { resolveSecret } from '@/lib/secrets/resolve';
 
 import { REQUEST_TIMEOUT_MS } from './budget';
 import {
@@ -54,14 +55,14 @@ const DEFAULT_BASE = 'https://api.openai.com/v1';
  */
 export const TRANSCRIPTION_MODEL = 'whisper-1';
 
-function apiKey(): string | undefined {
-  const key = serverEnv().OPENAI_API_KEY?.trim();
-  return key ? key : undefined;
+/** The environment key first, then the best usable key the Provider Manager holds - the same rule every other AI call follows. */
+async function apiKey(): Promise<string | undefined> {
+  return (await resolveSecret('OPENAI_API_KEY')) ?? undefined;
 }
 
 /** Returns the transcriber, or null when no API key is configured. */
-export function createOpenAiTranscriber(): AiTranscriber | null {
-  const key = apiKey();
+export async function createOpenAiTranscriber(): Promise<AiTranscriber | null> {
+  const key = await apiKey();
   if (!key) return null;
 
   return {
@@ -129,7 +130,7 @@ export function createOpenAiTranscriber(): AiTranscriber | null {
             level: 'error',
             scope: 'openai.transcribe',
             status: response.status,
-            detail: redactSecrets(text.slice(0, 500)),
+            detail: redactSecrets(text.slice(0, 500), key),
           }),
         );
         // A 4xx that is not 429 is the service saying no to THIS request — a
@@ -216,8 +217,7 @@ export function toTag(language: unknown): string | null {
 
 const REDACTED = '[redacted]';
 
-function redactSecrets(text: string): string {
-  const key = apiKey();
+function redactSecrets(text: string, key?: string): string {
   const withoutConfigured = key ? text.split(key).join(REDACTED) : text;
   return withoutConfigured.replace(/sk-[A-Za-z0-9_-]{10,}/g, REDACTED);
 }

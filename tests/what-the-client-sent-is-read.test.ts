@@ -571,13 +571,13 @@ describe('H. hearing is a third capability, and its own decision', () => {
   });
 
   test('and it has its own registry, so a generation model can never resolve to it', () => {
-    assert.match(routerSource, /export function resolveTranscriber/);
+    assert.match(routerSource, /export async function resolveTranscriber/);
     const resolve = region(routerSource, 'export async function resolveProvider');
     assert.doesNotMatch(resolve.slice(0, resolve.indexOf('\n}')), /ranscrib/);
   });
 
   test('no key, no transcriber — a deployment without one behaves as it did before', () => {
-    assert.match(openaiSource, /const key = apiKey\(\);\n {2}if \(!key\) return null;/);
+    assert.match(openaiSource, /const key = await apiKey\(\);\n {2}if \(!key\) return null;/);
     assert.match(routerSource, /No transcription service is configured/);
   });
 

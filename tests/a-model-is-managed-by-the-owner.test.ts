@@ -273,7 +273,7 @@ describe('E. the doors and the send callers', () => {
     assert.match(routing, /<ProviderBudgetsPanel budgets=\{budgets\}/);
     const runs = read('app/(internal)/usage/runs/page.tsx');
     assert.match(runs, /projectId: filters\.project/);
-    assert.match(runs, /providerOfModel\(r\.model\) === filters\.provider/);
+    assert.match(runs, /\(r\.providerId \?\? providerOfModel\(r\.model\)\) === filters\.provider/);
     const run = read('app/(internal)/usage/runs/[runId]/page.tsx');
     assert.match(run, /mayAct && mayReplay\(run\.workClass\) \? <ReplayRunForm runId=\{run\.id\} \/> : null/);
     assert.match(run, /Arguments &amp; result/);

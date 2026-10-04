@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
-import { listAssignments, listDecisions, listManagerModels, listProviderAudit, listProviderKeys, listProviders } from '@/lib/ai/manager-queries';
+import { listAssignments, listDecisions, listManagerModels, listProviderAudit, listProviderKeys, listProviders, readProviderUsage } from '@/lib/ai/manager-queries';
 import { requireInternal } from '@/lib/auth/session';
 import { can, hasRole } from '@/lib/authz/permissions';
 import { Badge, Callout, Card, CardHeader, cx, PageHeader, PermissionDenied } from '@/ui';
@@ -18,6 +18,7 @@ const TABS = [
   { key: 'credentials', label: 'Credentials' },
   { key: 'models', label: 'Models' },
   { key: 'routing', label: 'Routing' },
+  { key: 'usage', label: 'Usage' },
   { key: 'health', label: 'Health' },
   { key: 'audit', label: 'Audit' },
 ] as const;
@@ -40,11 +41,12 @@ export default async function ProviderPage({ params, searchParams }: { params: P
   if (!provider) notFound();
 
   const base = `/agents/providers/${encodeURIComponent(providerId)}`;
-  const [keys, models, assignments, decisions, audit] = await Promise.all([
+  const [keys, models, assignments, decisions, usage, audit] = await Promise.all([
     tab === 'credentials' || tab === 'overview' || tab === 'health' ? listProviderKeys(providerId) : Promise.resolve([]),
     tab === 'models' || tab === 'overview' || tab === 'routing' ? listManagerModels(providerId) : Promise.resolve([]),
     tab === 'routing' ? listAssignments() : Promise.resolve([]),
     tab === 'routing' || tab === 'health' ? listDecisions({ providerId, limit: 20 }) : Promise.resolve([]),
+    tab === 'usage' ? readProviderUsage(providerId) : Promise.resolve(null),
     tab === 'audit' ? listManagerModels(providerId).then((ms) => listProviderAudit(providerId, ms.map((m) => m.modelId))) : Promise.resolve([]),
   ]);
 
@@ -215,6 +217,37 @@ export default async function ProviderPage({ params, searchParams }: { params: P
           </Card>
           <Decisions decisions={decisions} clock={clock} />
         </>
+      ) : null}
+
+      {tab === 'usage' && usage ? (
+        <Card>
+          <CardHeader title="Usage this month" description={`Runs this provider actually served since ${clock.dateTime(usage.since)}. Tokens are what the provider reported. Cost is shown only where you recorded a price for the model - a model with no price has an unknown cost, not a zero one.`} />
+          <dl className="grid gap-x-6 gap-y-2 px-4 pb-4 text-[13px] sm:grid-cols-2 sm:px-5">
+            <Row k="Runs" v={`${usage.runs} (${usage.failed} failed)`} />
+            <Row k="Served as a fallback" v={usage.fallbackServed} />
+            <Row k="Tokens in · out" v={`${usage.inputTokens.toLocaleString('en-IN')} · ${usage.outputTokens.toLocaleString('en-IN')}`} />
+            <Row k="Cost from recorded prices" v={`₹${(usage.costMinor / 100).toFixed(2)}`} />
+            <Row k="Runs with no price (cost unknown)" v={usage.unpricedRuns} />
+            <Row k="Monthly cap" v={usage.capMinor === null ? 'none set' : `₹${((usage.spentAgainstCapMinor ?? 0) / 100).toFixed(2)} of ₹${(usage.capMinor / 100).toFixed(2)}`} />
+          </dl>
+          {usage.byModel.length > 0 ? (
+            <ul className="divide-y divide-line border-t border-line">
+              {usage.byModel.map((m) => (
+                <li key={m.modelId} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[13px] sm:px-5">
+                  <code className="font-mono text-xs">{m.modelId}</code>
+                  <span className="text-xs text-muted">
+                    {m.runs} runs{m.failed ? ` · ${m.failed} failed` : ''} · {(m.inputTokens + m.outputTokens).toLocaleString('en-IN')} tokens · {m.pricedRuns > 0 ? `₹${(m.costMinor / 100).toFixed(2)}` : 'no price'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No run has used this provider this month.</p>
+          )}
+          <p className="px-4 pb-4 text-xs text-muted sm:px-5">
+            Set a monthly cap in <Link href="/agents/routing#budgets" className="text-brand underline-offset-2 hover:underline">Policies &amp; budgets</Link>; a run is refused once the cap is reached, and the refusal is recorded.
+          </p>
+        </Card>
       ) : null}
 
       {tab === 'health' ? (
