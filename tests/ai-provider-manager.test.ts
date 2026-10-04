@@ -430,3 +430,74 @@ describe('reading JSON out of what a model said', async () => {
     assert.equal(json('```json\n{"a":\n```'), 'FAIL');
   });
 });
+
+describe('a gateway that answers in prose gets ONE repair attempt', async () => {
+  const { createClaudeProvider } = await import('../src/lib/ai/claude.ts');
+  let server: Server;
+  let port = 0;
+  let replies: string[] = [];
+  let requests: Array<{ messages: Array<{ role: string; content: unknown }> }> = [];
+  await new Promise<void>((resolve) => {
+    server = createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => { body += c; });
+      req.on('end', () => {
+        requests.push(JSON.parse(body));
+        const text = replies.shift() ?? '';
+        // A reply starting with "tool:" is carried as a tool_use block with no text block, the way a Bedrock-style gateway does it.
+        const content = text.startsWith('tool:') ? [{ type: 'tool_use', id: 't1', name: 'out', input: JSON.parse(text.slice(5)) }] : text ? [{ type: 'text', text }] : [];
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ id: 'm', type: 'message', role: 'assistant', model: 'claude-x', stop_reason: 'end_turn', content, usage: { input_tokens: 10, output_tokens: 5 } }));
+      });
+    }).listen(0, '127.0.0.1', () => { port = (server.address() as { port: number }).port; resolve(); });
+  });
+  const ask = async (schemaInPrompt: boolean) => {
+    const p = await createClaudeProvider({ apiKey: 'sk-test-key-123456', schemaInPrompt, baseUrl: `http://127.0.0.1:${port}`, timeoutMs: 3000 });
+    return p!.generateStructured({ model: 'claude-x', system: 's', messages: [{ role: 'user', content: 'go' }], jsonSchema: { type: 'object' }, schemaName: 'x' });
+  };
+
+  test('prose first, JSON on the repair: it succeeds, the model was shown what it said, and the tokens of both calls are counted', async () => {
+    replies = ["I'll build that now.", '{"a":1}'];
+    requests = [];
+    const r = await ask(true);
+    assert.ok(r.ok);
+    assert.deepEqual(r.ok && r.data.json, { a: 1 });
+    assert.equal(requests.length, 2);
+    assert.equal(requests[1]!.messages.length, 3, 'the original message, what it said, and the correction');
+    assert.equal(r.ok && r.data.usage.inputTokens, 20);
+  });
+
+  test('an empty answer is re-asked once; two failures in a row are an error, not a loop', async () => {
+    replies = ['', '{"a":2}'];
+    requests = [];
+    assert.deepEqual((await ask(true) as { data: { json: unknown } }).data.json, { a: 2 });
+    replies = ['nope', 'still nope'];
+    requests = [];
+    const bad = await ask(true);
+    assert.ok(!bad.ok && /not valid JSON/.test(bad.error.message));
+    assert.equal(requests.length, 2);
+  });
+
+  test('a gateway that carries the answer as a tool call: the JSON is read from the one call, a string field or the object itself', async () => {
+    replies = ['tool:' + JSON.stringify({ content: JSON.stringify({ screens: [1, 2] }) })];
+    requests = [];
+    const a = await ask(true);
+    assert.deepEqual(a.ok && a.data.json, { screens: [1, 2] });
+    replies = ['tool:{"screens":[3],"note":"x"}'];
+    const b = await ask(true);
+    assert.deepEqual(b.ok && b.data.json, { screens: [3], note: 'x' });
+    replies = ['tool:{}', 'tool:{}'];
+    const c = await ask(true);
+    assert.ok(!c.ok && /no output/.test(c.error.message), 'an empty tool call is still "no output", not an invented answer');
+  });
+
+  test('its twin: the real API (schema enforced) is never asked twice', async () => {
+    replies = ['prose only'];
+    requests = [];
+    const r = await ask(false);
+    assert.ok(!r.ok);
+    assert.equal(requests.length, 1);
+  });
+
+  test('close', () => { server.closeAllConnections(); server.close(); });
+});
