@@ -39,6 +39,10 @@ export const CAPABILITIES = [
   'invoice.create',
   'invoice.issue',
   'refund.issue',
+  // Owner decision 2026-10-04: confirming that money arrived is the owner's alone. The ops admin issues
+  // invoices and records and checks claims, but the act that opens the finance gate - and so the project -
+  // is a second pair of hands (separation of duties). Not in any role's list below: only the owner's '*'.
+  'payment.verify',
 
   // AI
   'agent.run',

@@ -202,7 +202,11 @@ export default async function PaymentVerificationPage({
                     {crossCheckSentence(crossCheckClaim({ reference: c.reference, amountMinor: c.amount_minor }, bankLines.filter((l) => l.status !== 'ignored')))}
                   </p>
                 </div>
-                <ClaimDecision claimId={c.id} invoiceId={c.invoice_id} projectId={c.projectId} />
+                {can(context, 'payment.verify') ? (
+                  <ClaimDecision claimId={c.id} invoiceId={c.invoice_id} projectId={c.projectId} />
+                ) : (
+                  <span className="text-xs text-muted">The owner verifies this claim.</span>
+                )}
               </Card>
             </li>
           ))}

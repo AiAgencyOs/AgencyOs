@@ -2375,7 +2375,7 @@ try {
     const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
     const now = Math.floor(Date.now() / 1000);
     const header = b64({ alg: 'HS256', typ: 'JWT' });
-    const claims = b64({ sub: created.verifierId, aud: 'authenticated', role: 'authenticated', iat: now, exp: now + 600, app_metadata: { role: 'ops_admin', organization_id: created.organizationId } });
+    const claims = b64({ sub: created.verifierId, aud: 'authenticated', role: 'authenticated', iat: now, exp: now + 600, app_metadata: { role: 'owner', organization_id: created.organizationId } });
     const opsToken = `${header}.${claims}.${createHmac('sha256', target.jwtSecret).update(`${header}.${claims}`).digest('base64url')}`;
 
     const inv = (await insert('finance', 'invoices', {
@@ -2395,7 +2395,7 @@ try {
     });
     check(
       confirmed.json?.[0]?.outcome === 'verified' && confirmed.json?.[0]?.status_after === 'paid',
-      'an authenticated ops_admin (not the service role) confirms it and the invoice becomes paid — verify_payment is not RLS-blocked',
+      'an authenticated OWNER (not the service role) confirms it and the invoice becomes paid — verify_payment is not RLS-blocked',
       JSON.stringify(confirmed.json?.[0] ?? confirmed.text?.slice(0, 140)),
     );
     const prow = (await select('finance', `payments?id=eq.${payId}&select=verified_at,verified_by`)).json?.[0];

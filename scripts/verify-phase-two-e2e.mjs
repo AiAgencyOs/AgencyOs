@@ -265,6 +265,11 @@ try {
   check(((await rest('GET', 'projects', `project_plans?project_id=eq.${project.id}&select=id`)).json ?? []).length === 0, 'and planning has not started - the gate is still closed');
 
   const money = one(await asOwner('finance', 'record_manual_payment', { p_invoice_id: invoice.id, p_provider_payment_id: `${MARKER}-money`, p_amount_minor: 3_540_000, p_captured_at: new Date().toISOString(), p_method: 'upi' }));
+  // Separation of duties (owner decision 2026-10-04): an ops admin may issue, record and check - but not confirm the money.
+  const opsToken = fx.mint(stranger.id, 'ops_admin');
+  const opsTries = one(await fx.call(opsToken, 'POST', 'finance', 'rpc/verify_payment', { p_payment_id: money?.payment_id, p_verified_by: stranger.id }));
+  check(opsTries?.outcome === 'forbidden', 'an OPS ADMIN cannot confirm the money - only the owner can', String(opsTries?.outcome));
+  check(((await rest('GET', 'finance', `invoices?id=eq.${invoice.id}&select=status`)).json?.[0]?.status) === 'issued', 'and the invoice is still unpaid after that attempt');
   const verifiedMoney = one(await asOwner('finance', 'verify_payment', { p_payment_id: money?.payment_id, p_verified_by: owner.id }));
   check(verifiedMoney?.outcome === 'verified', 'the Admin records and CONFIRMS the money', String(verifiedMoney?.outcome));
   check(((await rest('GET', 'finance', `invoices?id=eq.${invoice.id}&select=status`)).json?.[0]?.status) === 'paid', 'M1 is PAID', 'the finance gate is open');
