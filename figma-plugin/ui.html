@@ -1,0 +1,63 @@
+<!doctype html>
+<meta charset="utf-8" />
+<style>
+  body { font: 12px/1.45 Inter, system-ui, sans-serif; margin: 0; padding: 16px; color: var(--figma-color-text, #222); background: var(--figma-color-bg, #fff); }
+  h1 { font-size: 14px; margin: 0 0 4px; }
+  p { margin: 0 0 12px; color: var(--figma-color-text-secondary, #666); }
+  label { display: block; font-weight: 600; margin: 10px 0 4px; }
+  input { width: 100%; box-sizing: border-box; padding: 7px 8px; border: 1px solid var(--figma-color-border, #ccc); border-radius: 6px; background: var(--figma-color-bg, #fff); color: inherit; font: inherit; }
+  button { margin-top: 14px; padding: 8px 14px; border: 0; border-radius: 6px; background: #2f5bea; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  button[disabled] { opacity: .5; cursor: default; }
+  #log { margin-top: 14px; white-space: pre-wrap; }
+  .err { color: #d64545; }
+  .ok { color: #1f9d55; }
+</style>
+<h1>AgencyOS Design Import</h1>
+<p>Builds the project's finalized screens and the selected design direction in this file. In AgencyOS: Project &rsaquo; Design &rsaquo; Figma plugin &rarr; "Create plugin code".</p>
+<label for="url">AgencyOS address</label>
+<input id="url" placeholder="https://your-agencyos.example.com" />
+<label for="project">Project id</label>
+<input id="project" placeholder="paste from AgencyOS" />
+<label for="token">Plugin code (valid 24 hours)</label>
+<input id="token" type="password" autocomplete="off" placeholder="paste from AgencyOS" />
+<button id="go">Import screens</button>
+<div id="log"></div>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const log = (text, cls) => { $('log').className = cls || ''; $('log').textContent = text; };
+  const base = () => $('url').value.trim().replace(/\/+$/, '');
+  const api = (path) => `${base()}/api/design/figma/${encodeURIComponent($('project').value.trim())}${path}`;
+  const headers = () => ({ Authorization: `Bearer ${$('token').value.trim()}` });
+
+  $('go').onclick = async () => {
+    $('go').disabled = true;
+    log('Reading the project from AgencyOS...');
+    try {
+      const res = await fetch(api(''), { headers: headers() });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `AgencyOS answered ${res.status}`);
+      if (!body.screens || body.screens.length === 0) throw new Error('This project has no finalized screens yet.');
+      log(`Building ${body.screens.length} screen(s)...`);
+      parent.postMessage({ pluginMessage: { type: 'import', payload: body } }, '*');
+    } catch (e) {
+      log(e.message, 'err');
+      $('go').disabled = false;
+    }
+  };
+
+  onmessage = async (event) => {
+    const msg = event.data.pluginMessage;
+    if (!msg) return;
+    if (msg.type === 'error') { log(msg.message, 'err'); $('go').disabled = false; return; }
+    if (msg.type === 'done') {
+      try {
+        const res = await fetch(api('/report'), { method: 'POST', headers: { ...headers(), 'content-type': 'application/json' }, body: JSON.stringify(msg.report) });
+        const ok = res.ok;
+        log(`Created ${msg.report.frames.length} frame(s) on page "${msg.report.pageName}".` + (ok ? ' AgencyOS has been told which frames they are.' : ' (AgencyOS could not record the report - the frames are still here.)'), ok ? 'ok' : 'err');
+      } catch (e) {
+        log(`Created ${msg.report.frames.length} frame(s). Could not reach AgencyOS to report: ${e.message}`, 'err');
+      }
+      $('go').disabled = false;
+    }
+  };
+</script>

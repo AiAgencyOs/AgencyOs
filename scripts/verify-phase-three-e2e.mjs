@@ -17,8 +17,10 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 
+import { signFigmaCode } from '../src/modules/projects/figma-export-token.ts';
 import { fixturesFor } from './verify-fixtures.mjs';
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
@@ -577,6 +579,38 @@ try {
   check(Boolean(phaseFour?.id), 'Phase 4 starts from the handoff - and only after the lock', String(phaseFour?.state));
 
   // ── 14. the whole run ─────────────────────────────────────────────────────
+  section('13b. The Figma plugin gets exactly this project\'s finalized screens - and can report what it built');
+  const signingKey = readFileSync('.env.verify.local', 'utf8').match(/^VAULT_ENCRYPTION_KEY=(.*)$/m)?.[1]?.trim().replace(/"/g, '') ?? '';
+  const pluginCode = signFigmaCode({ organizationId: ORG, projectId: project.id }, signingKey, Math.floor(Date.now() / 1000));
+  const figma = (path, init = {}, bearer = pluginCode) => fetch(`${APP}/api/design/figma/${init.project ?? project.id}${path}`, { ...init, headers: { ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}), 'content-type': 'application/json' }, cache: 'no-store' });
+  const noCode = await figma('', {}, null);
+  check(noCode.status === 401, 'no code, no read', `HTTP ${noCode.status}`);
+  const wrongProject = await figma('', { project: randomUUID() });
+  check(wrongProject.status === 403, 'a code for this project cannot read another one', `HTTP ${wrongProject.status}`);
+  const exportRes = await figma('');
+  const exportBody = await exportRes.json().catch(() => ({}));
+  const liveScreens = (await rest('GET', 'projects', `screens?project_id=eq.${project.id}&status=neq.superseded&baseline_version=not.is.null&select=id,screen_key`)).json ?? [];
+  check(exportRes.ok && exportBody.screens?.length === liveScreens.length && liveScreens.length > 0, 'the export is the finalized screen list - every one, and only those', `${exportBody.screens?.length}/${liveScreens.length}`);
+  check(Boolean(exportBody.direction?.palette?.primary) && /^#?[0-9a-fA-F]{6}$/.test(exportBody.direction.palette.primary), 'with the client\'s chosen direction and its palette', exportBody.direction?.name);
+  const blob = JSON.stringify(exportBody);
+  check(!/@|\+91|invoice|price|amount_minor|phone/i.test(blob.replace(/https?:\/\/\S+/g, '')), 'and no client contact detail, price or message is in it - design structure only');
+  const builtFrames = [{ key: liveScreens[0].screen_key, screenId: liveScreens[0].id, name: `${liveScreens[0].screen_key} - verifier`, nodeId: '12:34' }];
+  const reported = await figma('/report', { method: 'POST', body: JSON.stringify({ fileKey: 'VerifierFileKey1', pageId: '5:1', pageName: 'AgencyOS - verifier', frames: builtFrames }) });
+  check(reported.ok, 'the plugin reports what it built', `HTTP ${reported.status}`);
+  const badReport = await figma('/report', { method: 'POST', body: JSON.stringify({ frames: [{ ...builtFrames[0], nodeId: 'x; drop' }] }) });
+  check(badReport.status === 400, 'a malformed report is refused', `HTTP ${badReport.status}`);
+  const importRows = (await rest('GET', 'projects', `figma_plugin_imports?project_id=eq.${project.id}&select=id,frames,file_key`)).json ?? [];
+  check(importRows.length === 1 && importRows[0].file_key === 'VerifierFileKey1', 'exactly one record exists, for this project', `${importRows.length}`);
+  const screenLink = (await rest('GET', 'projects', `screens?id=eq.${liveScreens[0].id}&select=figma_url`)).json?.[0]?.figma_url ?? null;
+  const themeLinked = (await rest('GET', 'projects', `theme_options?project_id=eq.${project.id}&figma_node_id=eq.12:34&select=id`)).json ?? [];
+  check(screenLink === null && themeLinked.length === 0, 'and the report linked NOTHING - a person does that, verified against Figma');
+  const tamper = await rest('PATCH', 'projects', `figma_plugin_imports?id=eq.${importRows[0].id}`, { page_name: 'tampered' });
+  check(!tamper.ok, 'the record is history: it cannot be edited', `HTTP ${tamper.status}`);
+  const importAudit = (await rest('GET', 'audit', `audit_log?action=eq.figma_plugin.imported&subject_id=eq.${project.id}&select=id`)).json ?? [];
+  check(importAudit.length === 1, 'and the import is in the audit trail');
+  const asUserDirect = await fx.call(owner.token, 'POST', 'projects', 'rpc/record_figma_import', { p_organization_id: ORG, p_project_id: project.id, p_file_key: null, p_page_id: null, p_page_name: null, p_frames: builtFrames });
+  check(!asUserDirect.ok, 'a signed-in user cannot write a plugin report directly - only the signed code can', `HTTP ${asUserDirect.status}`);
+
   section('14. Across the whole run: nothing twice, nothing lost, everything on the record');
   const clientThread = (await rest('GET', 'crm', `conversation_messages?conversation_id=eq.${conv.id}&author_type=eq.user&select=external_ref`)).json ?? [];
   const groupThread = (await rest('GET', 'crm', `conversation_messages?conversation_id=eq.${groupConvId}&author_type=eq.user&select=external_ref`)).json ?? [];

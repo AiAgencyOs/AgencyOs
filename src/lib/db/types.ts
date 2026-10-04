@@ -10158,6 +10158,30 @@ export type Database = {
           },
         ]
       }
+      figma_plugin_imports: {
+        Row: {
+          created_at: string
+          file_key: string | null
+          frames: Json
+          id: string
+          organization_id: string
+          page_id: string | null
+          page_name: string | null
+          project_id: string
+        }
+        Insert: {
+          created_at?: string
+          file_key?: string | null
+          frames: Json
+          id?: string
+          organization_id: string
+          page_id?: string | null
+          page_name?: string | null
+          project_id: string
+        }
+        Update: Partial<{ page_name: string | null }>
+        Relationships: []
+      }
       design_asset_links: {
         Row: {
           asset_id: string

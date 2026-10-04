@@ -25,6 +25,7 @@ export function DesignSubNav({ projectId }: { projectId: string }) {
     { href: `${base}/final`, label: 'Final selection' },
     { href: `${base}/screens`, label: 'Screens' },
     { href: `${base}/brand`, label: 'Brand Kit' },
+    { href: `${base}/figma`, label: 'Figma' },
   ];
 
   return (
