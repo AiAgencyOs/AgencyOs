@@ -23,6 +23,7 @@ import {
   setOutreachLimitsAction,
   setFunnelSampleFloorAction,
   setMeetingOfferHorizonAction,
+  setOnboardingFollowUpAction,
   setOutreachWindowAction,
   setQuotationValidityAction,
   setPaymentTermsAction,
@@ -1395,6 +1396,23 @@ export function MeetingOfferHorizonForm({ current }: { current: string | null })
       </label>
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
         {pending ? 'Saving…' : 'Save horizon'}
+      </button>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** How long the PM waits before reminding a client of an onboarding ask — Phase 2 PM §4.2, ADM-109. */
+export function OnboardingFollowUpForm({ current }: { current: string | null }) {
+  const [state, action, pending] = useActionState(setOnboardingFollowUpAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <label className="flex flex-col gap-1">
+        <span className="text-xs font-medium">Wait (days, 1–30)</span>
+        <input type="text" inputMode="numeric" name="followup_days" defaultValue={current ?? ''} placeholder="off" className={`${inputClass} w-24 tabular`} />
+      </label>
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Saving…' : 'Save'}
       </button>
       <Message status={state.status} message={state.message} />
     </form>

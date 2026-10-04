@@ -56,6 +56,7 @@ import {
   type HandlerResult,
   type UnlockJob,
 } from '@/modules/projects/handlers';
+import { runOnboardingFollowUps } from '@/modules/projects/pm-followups';
 import { handleAskClarification, handleReadClarificationAnswer } from '@/modules/projects/pm-clarifications';
 import { handleWelcomeClient, handleAskGstDetails, handlePaymentUpdate, handleReadBillingReply } from '@/modules/projects/pm-client-comms';
 import { handleHandoverAcceptedForFinance, handleBillingModeConfirmed, handleInvoiceIssuedForDelivery, handlePhaseFourCompletedForFinance, handlePhaseFiveCompletedForFinance, handlePhaseSixCompletedForFinance } from '@/modules/finance/handlers';
@@ -288,6 +289,15 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    * ignored - a stale label must never stop the queue behind it.
    */
   const phaseTwoStates = await admin.schema('projects').rpc('refresh_phase_two_states', { p_limit: 200 });
+
+  /**
+   * ── a client who has not answered an onboarding ask is reminded (ADM-109) ──
+   *
+   * Off until the owner chooses a number of days under Settings; then at most two
+   * short reminders, inside the sending window, never to a client who has written
+   * since the ask. Sent through the same chokepoint as every client message.
+   */
+  const onboardingFollowUps = await runOnboardingFollowUps(admin);
   if (phaseTwoStates.error) {
     console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `phase two states: ${phaseTwoStates.error.message}` }));
   }
@@ -1171,6 +1181,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     escalations: escalations.results,
     clientWaiting: clientWaiting.results,
     phaseTwoStatesChanged: phaseTwoStates.data ?? 0,
+    onboardingFollowUps,
     freeMaintenance: freeMaintenance.results,
     invoiceDeliveries: invoiceDeliveries.results,
     pmWelcomes: pmWelcomes.results,

@@ -1003,6 +1003,31 @@ export async function setMeetingOfferHorizonAction(_prev: FormState, formData: F
 }
 
 /**
+ * How long the project manager waits before reminding a client of an onboarding
+ * ask — Phase 2 PM §4.2, ADM-109. Whole days, 1–30; empty clears, and cleared
+ * means the PM never chases on its own (the owner has not chosen a rhythm).
+ */
+export async function setOnboardingFollowUpAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const raw = String(formData.get('followup_days') ?? '').trim();
+  if (raw !== '') {
+    const parsed = Number(raw);
+    if (!/^[0-9]+$/.test(raw) || !Number.isInteger(parsed) || parsed < 1 || parsed > 30) {
+      return { status: 'error', message: 'The wait must be a whole number of days between 1 and 30.' };
+    }
+  }
+  const result = await setOrganizationSetting('onboarding_followup_days', raw);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message:
+      raw === ''
+        ? 'Cleared — the project manager will not chase a client on its own.'
+        : `Set. A client who has not answered an onboarding ask in ${raw} day${raw === '1' ? '' : 's'} gets one short reminder, then a second after another ${raw}, and then it is left to a person.`,
+  };
+}
+
+/**
  * How many leads the funnel needs before it names a leak — configurability
  * audit B-4.
  *

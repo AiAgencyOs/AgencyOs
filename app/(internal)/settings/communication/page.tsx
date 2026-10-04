@@ -19,6 +19,7 @@ import {
   InternalGroupForm,
   InternalRecipientForm,
   MeetingOfferHorizonForm,
+  OnboardingFollowUpForm,
   OutreachLimitsForm,
   OutreachWindowForm,
   PilotToggleForm,
@@ -275,6 +276,15 @@ export default async function SettingsCommunicationPage({ searchParams }: { sear
         </p>
         <MeetingOfferHorizonForm current={setting('meeting_offer_horizon_days')} />
         <SettingHistory label="Meeting offer horizon" entries={historyOf('meeting_offer_horizon_days')} />
+
+        <h2 id="onboarding-followup" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">Reminding a client who has not answered</h2>
+        <p className="text-xs text-muted">
+          {setting('onboarding_followup_days')
+            ? `Set — a client who has not answered an onboarding ask (GST or Non-GST, their GST details) in ${setting('onboarding_followup_days')} day(s) gets one short reminder, then a second after another ${setting('onboarding_followup_days')}, inside the sending window; after that it is left to a person.`
+            : 'Not set — the project manager asks once and never chases on its own. Whole days, 1 to 30. A client who writes back is never chased.'}
+        </p>
+        <OnboardingFollowUpForm current={setting('onboarding_followup_days')} />
+        <SettingHistory label="Onboarding reminders" entries={historyOf('onboarding_followup_days')} />
 
         <h2 id="trust-facts" className="scroll-mt-24 text-[13px] font-semibold tracking-tight">What the agent may say about the agency</h2>
         <p className="text-xs text-muted">
