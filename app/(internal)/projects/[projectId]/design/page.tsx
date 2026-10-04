@@ -336,7 +336,7 @@ export default async function ProjectDesignPage({ params, searchParams }: { para
           {!phase.reviewerUserId ? <Nothing>No internal design reviewer is assigned. The internal gate refuses until somebody holds it, and nothing reaches Admin until it passes.</Nothing> : null}
         </Section>
         <Section title="Client replies" hint="What the project manager read from the client’s answers to the options. A final confirmation, a possible scope change, or a reading it was unsure of waits here for a person.">
-          <ReplyInbox projectId={projectId} replies={clientReplies} mayAct={mayDecide} dateTime={(iso) => when(iso)} />
+          <ReplyInbox projectId={projectId} replies={clientReplies.map((r) => ({ ...r, createdLabel: when(r.createdAt) }))} mayAct={mayDecide} />
         </Section>
         <Section title="Screen baseline" hint="The screen list and its content baseline, as finalized. A later change is a new version.">
           {!trail.baseline ? (
