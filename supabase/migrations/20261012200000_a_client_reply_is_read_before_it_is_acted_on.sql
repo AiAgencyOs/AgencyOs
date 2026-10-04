@@ -112,6 +112,30 @@ drop trigger if exists org_match_design_reply_share on projects.design_reply_pro
 create trigger org_match_design_reply_share
   before insert or update of share_id, organization_id on projects.design_reply_proposals
   for each row execute function core.enforce_parent_org('share_id', 'projects.client_design_shares');
+drop trigger if exists org_match_design_reply_message on projects.design_reply_proposals;
+create trigger org_match_design_reply_message
+  before insert or update of message_id, organization_id on projects.design_reply_proposals
+  for each row execute function core.enforce_parent_org('message_id', 'crm.conversation_messages');
+drop trigger if exists org_match_design_reply_conversation on projects.design_reply_proposals;
+create trigger org_match_design_reply_conversation
+  before insert or update of conversation_id, organization_id on projects.design_reply_proposals
+  for each row execute function core.enforce_parent_org('conversation_id', 'crm.conversations');
+drop trigger if exists org_match_design_reply_theme on projects.design_reply_proposals;
+create trigger org_match_design_reply_theme
+  before insert or update of selected_theme_option_id, organization_id on projects.design_reply_proposals
+  for each row execute function core.enforce_parent_org('selected_theme_option_id', 'projects.theme_options');
+drop trigger if exists org_match_design_reply_colour on projects.design_reply_proposals;
+create trigger org_match_design_reply_colour
+  before insert or update of selected_color_option_id, organization_id on projects.design_reply_proposals
+  for each row execute function core.enforce_parent_org('selected_color_option_id', 'projects.color_options');
+drop trigger if exists org_match_design_reply_decision on projects.design_reply_proposals;
+create trigger org_match_design_reply_decision
+  before insert or update of decision_id, organization_id on projects.design_reply_proposals
+  for each row execute function core.enforce_parent_org('decision_id', 'projects.client_design_decisions');
+drop trigger if exists org_match_design_reply_revision on projects.design_reply_proposals;
+create trigger org_match_design_reply_revision
+  before insert or update of revision_id, organization_id on projects.design_reply_proposals
+  for each row execute function core.enforce_parent_org('revision_id', 'projects.design_revisions');
 drop trigger if exists freeze_org_design_reply on projects.design_reply_proposals;
 create trigger freeze_org_design_reply
   before update of organization_id on projects.design_reply_proposals
