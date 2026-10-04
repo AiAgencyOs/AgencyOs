@@ -182,14 +182,16 @@ try {
   await rest('PATCH', 'core', `kill_switches?organization_id=eq.${ORG}&switch=eq.outbound_paused`, { active: false });
 
   // suppression and a stopped prospect are refused at the moment of sending, not only at approval
-  const target1 = frozen[0].id;
-  const r1 = one(await rest('GET', 'crm', `email_campaign_recipients?id=eq.${target1}&select=email,prospect_id`));
+  // The chokepoint scans in (next_send_at, created_at) order and stops at the cap, so the three people we stop must be
+  // the FIRST three it will look at - otherwise a CI database with a different row order would never evaluate them.
+  const inScanOrder = (await rest('GET', 'crm', `email_campaign_recipients?campaign_id=eq.${camp.campaign_id}&select=id,email,prospect_id&order=next_send_at.asc,created_at.asc,id.asc&limit=3`)).json;
+  const r1 = inScanOrder[0];
   await ownerCall('suppress_email', { p_email: r1.email, p_reason: 'complaint', p_note: 'reported spam' });
-  const r2 = (await rest('GET', 'crm', `email_campaign_recipients?campaign_id=eq.${camp.campaign_id}&email=neq.${r1.email}&select=id,email,prospect_id&limit=2`)).json;
+  const r2 = [inScanOrder[1], (await rest('GET', 'crm', `email_campaign_recipients?campaign_id=eq.${camp.campaign_id}&email=not.in.(${inScanOrder.map((x) => x.email).join(',')})&select=id,email,prospect_id&limit=1`)).json[0]];
   await rest('PATCH', 'crm', `outreach_prospects?id=eq.${r2[0].prospect_id}`, { status: 'replied' });
   // A suppression that arrives by a path that did NOT tidy the pending rows (an import, a migration, a restored backup):
   // the chokepoint itself must still catch it. This is the gate under test, not the tidy-up.
-  const r3 = (await rest('GET', 'crm', `email_campaign_recipients?campaign_id=eq.${camp.campaign_id}&email=not.in.(${r1.email},${r2[0].email})&select=id,email,prospect_id&limit=1`)).json[0];
+  const r3 = inScanOrder[2];
   await rest('POST', 'crm', 'email_suppressions', { organization_id: ORG, email: r3.email, reason: 'manual', source: 'direct-insert fixture' });
 
   const first = await claim(50);

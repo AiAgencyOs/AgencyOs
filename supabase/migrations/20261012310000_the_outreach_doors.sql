@@ -549,7 +549,7 @@ begin
       join crm.email_campaigns c on c.id = rc.campaign_id and c.status = 'running'
       join crm.outreach_prospects p on p.id = rc.prospect_id
      where rc.organization_id = p_organization_id and rc.status = 'pending' and rc.next_send_at <= now()
-     order by rc.next_send_at, rc.created_at
+     order by rc.next_send_at, rc.created_at, rc.id
        for update of rc skip locked
      limit v_room * 3
   loop
