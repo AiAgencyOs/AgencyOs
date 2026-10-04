@@ -51,7 +51,10 @@ describe('two mailboxes, two lanes', () => {
   const secrets: Record<string, string> = {};
   mock.module('@/lib/env', { exports: { serverEnv: () => env } });
   mock.module('@/lib/secrets/resolve', {
-    exports: { secretConfigured: async (k: string) => Boolean(secrets[k]), resolveSecret: async (k: string) => secrets[k] ?? null },
+    exports: {
+      secretConfigured: async (k: string) => Boolean(secrets[k] ?? env[k]),
+      resolveSecret: async (k: string) => secrets[k] ?? (env[k] === undefined ? null : String(env[k])),
+    },
   });
 
   const configure = (port: number, both = true) => {

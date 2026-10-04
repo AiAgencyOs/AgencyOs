@@ -165,7 +165,8 @@ function KeyRowView({ row, isOwner, vaultReady, dateTime }: { row: KeyRow; isOwn
           {row.source === 'env' ? <Badge tone="success" dot>Environment</Badge> : null}
           {row.source === 'vault' ? <Badge tone="brand" dot>Vault</Badge> : null}
           {row.source === 'none' ? <Badge tone={envOnly ? 'danger' : 'warning'} dot>{envOnly ? 'Missing from the environment' : 'Not set'}</Badge> : null}
-          {row.hint ? <Badge tone="neutral" mono>…{row.hint}</Badge> : null}
+          {row.plainValue ? <Badge tone="neutral" mono>{row.plainValue}</Badge> : null}
+          {row.hint && !slot.plain ? <Badge tone="neutral" mono>…{row.hint}</Badge> : null}
           {row.expiry === 'expired' ? <Badge tone="danger" dot>Expired {row.expiresOn}</Badge> : null}
           {row.expiry === 'soon' ? <Badge tone="warning" dot>Expires {row.expiresOn}</Badge> : null}
           {row.expiry === 'ok' ? <Badge tone="neutral">Expires {row.expiresOn}</Badge> : null}
@@ -194,9 +195,9 @@ function KeyRowView({ row, isOwner, vaultReady, dateTime }: { row: KeyRow; isOwn
         <div className="flex flex-col gap-3">
           {isOwner && vaultReady ? (
             <details className="group rounded-lg border border-line bg-surface-sunken px-3 py-2">
-              <summary className="cursor-pointer text-[13px] font-medium text-foreground">{hasVaultCopy ? 'Replace the stored key' : 'Store a key'}</summary>
+              <summary className="cursor-pointer text-[13px] font-medium text-foreground">{slot.plain ? (hasVaultCopy ? 'Change this setting' : 'Set this') : hasVaultCopy ? 'Replace the stored key' : 'Store a key'}</summary>
               <div className="mt-3">
-                <StoreSecretForm slot={slot.key} label={slot.label} canExpire={slot.canExpire} replace={hasVaultCopy} providerVault={providerVault} whereToGetIt={slot.whereToGetIt} />
+                <StoreSecretForm slot={slot.key} label={slot.label} plain={slot.plain} canExpire={slot.canExpire} replace={hasVaultCopy} providerVault={providerVault} whereToGetIt={slot.whereToGetIt} />
               </div>
             </details>
           ) : null}

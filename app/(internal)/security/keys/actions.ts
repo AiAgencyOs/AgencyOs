@@ -41,6 +41,7 @@ export async function storeSecretAction(_prev: FormState, formData: FormData): P
   if (slot === 'GITHUB_TOKEN') forgetGithubTokenScopes();
   refresh();
   const label = slotFor(slot)?.label ?? slot;
+  if (slotFor(slot)?.plain) return { status: 'success', message: `${label} saved.` };
   return {
     status: 'success',
     message: `${label} ${result.data.replaced ? 'replaced' : 'stored'} — encrypted, never shown again${result.data.hint ? ` (ends …${result.data.hint})` : ''}. If the hosting environment also sets ${slot}, that value is still the one in use.`,
