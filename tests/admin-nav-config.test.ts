@@ -22,6 +22,9 @@ describe('the admin navigation is the screen architecture, sectioned', () => {
     'qa',
     'finance',
     'communication',
+    // Added by the lead-generation specification (§2), not by the screen baseline: one new module, placed
+    // beside Communications. Every other module keeps the owner's 2026-10-03 order.
+    'lead-generation',
     'ai',
     'approvals',
     'operations',

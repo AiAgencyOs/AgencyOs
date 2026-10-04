@@ -823,6 +823,12 @@ jobs:
           # their own thread, a stranger is raised and put nowhere, the same message twice changes nothing.
           npm run db:verify:inboundemail
 
+          # Lead generation, slice 1: target services, the versioned ICP, per-channel settings and the two stops are
+          # the Admin's alone and tenant-sealed, and a paused channel - or the global stop - makes the email send
+          # chokepoint reserve nothing. Driven as the real request roles with real JWT claims; rolls back.
+          # (psql, not PostgREST: the checks are about the doors, and the doors are SQL.)
+          npm run db:verify:acquisition
+
           # The AI Provider Manager's contract: who may manage providers, models and keys; no path returns a secret;
           # discovered models arrive disabled; a rejected key stays rejected; history is never orphaned.
           npm run db:verify:aiproviders

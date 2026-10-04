@@ -3947,6 +3947,117 @@ export type Database = {
   }
   crm: {
     Tables: {
+      target_services: {
+        Row: {
+          id: string
+          organization_id: string
+          name: string
+          description: string | null
+          priority: number
+          active: boolean
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          name: string
+          description?: string | null
+          priority?: number
+          active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          name?: string
+          description?: string | null
+          priority?: number
+          active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      icp_versions: {
+        Row: {
+          id: string
+          organization_id: string
+          version: number
+          definition: Json
+          note: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          version: number
+          definition: Json
+          note?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          version?: number
+          definition?: Json
+          note?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      acquisition_channels: {
+        Row: {
+          organization_id: string
+          channel: string
+          enabled: boolean
+          paused: boolean
+          pause_reason: string | null
+          paused_by: string | null
+          paused_at: string | null
+          monthly_qualified_target: number | null
+          monthly_budget_minor: number | null
+          daily_limit: number | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          organization_id: string
+          channel: string
+          enabled?: boolean
+          paused?: boolean
+          pause_reason?: string | null
+          paused_by?: string | null
+          paused_at?: string | null
+          monthly_qualified_target?: number | null
+          monthly_budget_minor?: number | null
+          daily_limit?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          organization_id?: string
+          channel?: string
+          enabled?: boolean
+          paused?: boolean
+          pause_reason?: string | null
+          paused_by?: string | null
+          paused_at?: string | null
+          monthly_qualified_target?: number | null
+          monthly_budget_minor?: number | null
+          daily_limit?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       outreach_settings: {
         Row: {
           organization_id: string
@@ -6363,6 +6474,30 @@ export type Database = {
       }
     }
     Functions: {
+      ensure_acquisition_defaults: {
+        Args: Record<PropertyKey, never>
+        Returns: { outcome: string | null }[]
+      }
+      set_target_service: {
+        Args: { p_active: boolean; p_description: string; p_id: string; p_name: string; p_priority: number }
+        Returns: { outcome: string | null; service_id: string | null }[]
+      }
+      set_channel_settings: {
+        Args: { p_channel: string; p_daily_limit: number; p_enabled: boolean; p_monthly_budget_minor: number; p_monthly_qualified_target: number }
+        Returns: { outcome: string | null }[]
+      }
+      set_channel_pause: {
+        Args: { p_channel: string; p_paused: boolean; p_reason: string }
+        Returns: { outcome: string | null }[]
+      }
+      save_icp: {
+        Args: { p_definition: Json; p_note: string }
+        Returns: { outcome: string | null; version: number | null }[]
+      }
+      acquisition_blocked: {
+        Args: { p_channel: string; p_organization_id: string }
+        Returns: string | null
+      }
       set_outreach_settings: {
         Args: { p_bounce_pause_percent: number; p_cold_basis_enabled?: boolean; p_daily_cap: number; p_postal_address: string; p_reply_to: string; p_sender_name: string }
         Returns: {

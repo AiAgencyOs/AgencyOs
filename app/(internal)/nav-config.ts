@@ -131,6 +131,14 @@ export const NAV_MODULES: readonly NavModule[] = [
     ],
   },
   {
+    key: 'lead-generation',
+    title: 'Lead Generation',
+    items: [
+      // Not in the 71-screen baseline: the acquisition specification adds it (lead gen/…Specification.pdf §2).
+      { href: '/lead-generation', label: 'Lead generation', capability: 'acquisition.read', screens: [] },
+    ],
+  },
+  {
     key: 'ai',
     title: 'AI Workforce',
     items: [
