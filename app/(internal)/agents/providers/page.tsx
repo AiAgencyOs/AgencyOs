@@ -3,7 +3,7 @@ import Link from 'next/link';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { aiStatus } from '@/lib/admin/agent-status';
-import { listAssignments, listDecisions, listManagerModels, listProviders, readRoutingMode } from '@/lib/ai/manager-queries';
+import { listAssignments, listDecisions, listManagerModels, listProviders, readRoutingMode, readUsageOverview } from '@/lib/ai/manager-queries';
 import { requireInternal } from '@/lib/auth/session';
 import { can, hasRole } from '@/lib/authz/permissions';
 import { Badge, Callout, Card, CardHeader, EmptyState, IconAgents, IconSettings, IconSparkle, IconUsage, PageHeader, PermissionDenied, Stat, StatGrid } from '@/ui';
@@ -30,13 +30,14 @@ export default async function ProvidersPage() {
   const isOwner = hasRole(context, 'owner');
   const canManage = can(context, 'ai.provider.manage');
 
-  const [providers, models, routing, assignments, decisions, ai] = await Promise.all([
+  const [providers, models, routing, assignments, decisions, ai, overview] = await Promise.all([
     listProviders(),
     listManagerModels(),
     readRoutingMode(),
     listAssignments(),
     listDecisions({ limit: 12 }),
     aiStatus(),
+    readUsageOverview(),
   ]);
 
   const live = providers.filter((p) => !p.archived);
@@ -170,6 +171,26 @@ export default async function ProvidersPage() {
                 </li>
               );
             })}
+          </ul>
+        )}
+      </Card>
+
+      <Card id="usage">
+        <CardHeader title="Usage this month, by provider" description={`Since ${clock.dateTime(overview.since)}. Tokens are what each provider reported; cost is only from prices you recorded - a run on a model with no price has an unknown cost, not a zero one.`} />
+        {overview.rows.length === 0 ? (
+          <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">Nothing has run this month.</p>
+        ) : (
+          <ul className="divide-y divide-line">
+            {overview.rows.map((u) => (
+              <li key={u.providerId} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[13px] sm:px-5">
+                <span className="font-medium">{u.providerId}</span>
+                <span className="text-xs text-muted">
+                  {u.runs} runs{u.failed ? ` (${u.failed} failed)` : ''}
+                  {u.capabilityCalls ? ` · ${u.capabilityCalls} embedding/image/voice calls` : ''} · {(u.inputTokens + u.outputTokens).toLocaleString('en-IN')} tokens · ₹{(u.costMinor / 100).toFixed(2)}
+                  {u.unpricedRuns ? ` · ${u.unpricedRuns} unpriced` : ''}
+                </span>
+              </li>
+            ))}
           </ul>
         )}
       </Card>

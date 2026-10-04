@@ -5,6 +5,7 @@ import type { createAdminClient } from '@/lib/db/admin';
 import type { SearchGroup } from '@/lib/admin/global-search-page';
 
 import { contentHash, embeddableText } from './embeddable-text';
+import { recordCapabilityDecision } from '@/lib/ai/capability-decision';
 import { EMBEDDING_BATCH, embeddingCostMinor, resolveEmbeddingProvider, type EmbedFn, type EmbeddingProvider } from './embedding-provider';
 import { agentFields, SEMANTIC_GROUPS, specFor, type AgentSource, type SourceSpec } from './semantic-sources';
 
@@ -295,6 +296,18 @@ export async function runSemanticIndexing(admin: Admin, agents: readonly AgentSo
         done: count ?? 0,
         note: result.blockedReason ? `Paused: ${result.blockedReason}` : null,
       });
+      if (result.embedded > 0 || result.blockedReason) {
+        await recordCapabilityDecision(admin, {
+          organizationId: org,
+          agentKey: 'semantic_indexer',
+          capability: 'embedding',
+          providerId: vendor.id,
+          modelId: vendor.model,
+          outcome: result.blockedReason ? 'blocked' : 'succeeded',
+          detail: result.blockedReason ?? undefined,
+          usage: { embedded: result.embedded },
+        });
+      }
       summary.embedded += result.embedded;
       summary.removed += result.removed;
       if (result.blockedReason) summary.blocked += 1;

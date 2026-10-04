@@ -98,3 +98,24 @@ describe('the background sweep and the usage view', () => {
     assert.ok(/cost unknown, not a zero one|no price/.test(page), 'and the screen says so');
   });
 });
+
+describe('fixed-capability calls and the cross-provider overview', () => {
+  test('embedding, image and transcription each leave a routing decision, marked as fixed - built AND called', () => {
+    const helper = strip(read('src/lib/ai/capability-decision.ts'));
+    assert.ok(/selection_source: 'fixed_capability'/.test(helper) || /p_selection_source: 'fixed_capability'/.test(helper), 'marked as a fixed capability, not a choice');
+    assert.ok(/recordCapabilityDecision\(admin, \{[\s\S]{0,200}capability: 'embedding'/.test(read('src/lib/search/semantic-indexer.ts')), 'the indexer calls it');
+    const workflows = read('app/api/jobs/run/workflows.ts');
+    assert.ok(/capability: 'image'/.test(workflows) && /capability: 'transcription'/.test(workflows), 'the image and transcription paths call it');
+  });
+
+  test('no content goes into a capability decision - counts only', () => {
+    const helper = strip(read('src/lib/ai/capability-decision.ts'));
+    assert.ok(!/prompt|bytes\b|audio\.bytes|imageBase64/.test(helper), 'the helper takes no prompt, audio or image');
+  });
+
+  test('the overview lists every provider side by side and keeps unattributed runs visible', () => {
+    const q = strip(read('src/lib/ai/manager-queries.ts'));
+    assert.ok(/\(not recorded\)/.test(q), 'a run with no recorded provider is a line, not a loss');
+    assert.ok(/readUsageOverview\(\)/.test(read('app/(internal)/agents/providers/page.tsx')), 'and the page reads it');
+  });
+});
