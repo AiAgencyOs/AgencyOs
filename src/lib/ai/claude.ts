@@ -67,6 +67,8 @@ export type ClaudeProviderOptions = {
   id?: string;
   /** A specific key (the provider manager hands one per key). Absent: the legacy env-then-vault lookup. */
   apiKey?: string;
+  /** How the key is presented. The real API takes `x-api-key`; a gateway that mirrors Claude Code's ANTHROPIC_AUTH_TOKEN takes `Authorization: Bearer`. */
+  authScheme?: 'x-api-key' | 'bearer';
   baseUrl?: string;
   timeoutMs?: number;
   supports?: (model: string) => boolean;
@@ -100,7 +102,7 @@ export async function createClaudeProvider(options: ClaudeProviderOptions = {}):
   // guards.
   const baseURL = options.baseUrl ?? serverEnv().ANTHROPIC_BASE_URL;
   const client = new Anthropic({
-    apiKey: key,
+    ...(options.authScheme === 'bearer' ? { apiKey: null, authToken: key } : { apiKey: key }),
     ...(baseURL ? { baseURL } : {}),
     timeout: options.timeoutMs ?? REQUEST_TIMEOUT_MS,
     maxRetries: MAX_RETRIES,

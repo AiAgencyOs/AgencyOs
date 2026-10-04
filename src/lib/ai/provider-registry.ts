@@ -116,6 +116,7 @@ async function buildAdapter(row: ProviderRow, apiKey: string): Promise<AiProvide
     return createClaudeProvider({
       id: row.provider_id,
       apiKey,
+      authScheme: row.auth_scheme === 'bearer' ? 'bearer' : 'x-api-key',
       // The SDK's own default host is right for the real API; only a custom or overridden URL is passed through.
       ...(defaultHost && !(builtin && env[builtin.base]?.trim()) ? {} : { baseUrl }),
       timeoutMs: row.timeout_ms,
