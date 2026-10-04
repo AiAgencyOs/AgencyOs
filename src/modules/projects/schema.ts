@@ -986,6 +986,43 @@ export function designDirectionsJsonSchema(): Record<string, unknown> {
   return decoderSafeSchema(z.toJSONSchema(designDirectionsSchema)) as Record<string, unknown>;
 }
 
+
+/**
+ * A client's reply to the design options, as READ by the project-manager agent - Phase 3 PM §4.5-§4.9.
+ *
+ * The model returns a reading, not a decision: an intent, an option NUMBER (never an id - it cannot
+ * invent one), the client's own words, and how sure it is. `design-reply.ts` decides what happens next
+ * and the database re-checks what it may apply.
+ */
+export const designReplySchema = z
+  .object({
+    intent: z.enum([
+      'client_selected',
+      'design_change_request',
+      'client_reference',
+      'possible_scope_change',
+      'clarification_required',
+      'final_confirmed',
+      'unclear',
+      'unrelated',
+    ]),
+    optionNumber: z.number().int().min(1).max(5).optional(),
+    paletteName: z.string().trim().max(120).optional(),
+    referenceUrl: z.string().trim().max(500).optional(),
+    referenceNote: z.string().trim().max(600).optional(),
+    evidence: z.string().trim().min(1).max(500),
+    confidence: z.number().min(0).max(1),
+    reasoning: z.string().trim().min(1).max(500),
+    clarifyingQuestion: z.string().trim().max(400).optional(),
+  })
+  .strict();
+
+export type DesignReply = z.infer<typeof designReplySchema>;
+
+export function designReplyJsonSchema(): Record<string, unknown> {
+  return decoderSafeSchema(z.toJSONSchema(designReplySchema)) as Record<string, unknown>;
+}
+
 /**
  * Document 17 §9's package kinds, mirroring the CHECK that
  * `projects.handover_items` has carried since the third day of this

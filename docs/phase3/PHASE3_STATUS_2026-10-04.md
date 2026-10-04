@@ -22,7 +22,7 @@ Almost all of Phase 3 was already built (workspace + state machine, screen basel
 
 - **Figma is read-only.** There is no create-file/create-node capability; a designer draws the frames and a person links the node (`link_theme_figma`). Nothing says "created in Figma" unless a person linked it. This is the PDFs' own CASE B/C ("expose the manual step, do not fake").
 - Every model run used a **stub**. A real-model pass of the designer is outstanding (same blocker as Phase 1/2: a funded account).
-- A client's reply is classified by a **person** (six classes, original words kept). The agent classifier exists for Phase 4 UI versions only; wiring it to Phase 3 replies is not done.
+- (Updated) A client's reply is now **read by the project manager** (`design.read_reply`, see below). Remaining: the confidence threshold is a code constant (0.85), not an Admin setting yet; only English clarifying questions are model-written (Hinglish/Hindi use fixed fallbacks).
 - No client portal path for design review - the client answers in the WhatsApp project group, a person records it.
 - Design message templates are English + Hinglish; a Hindi client reads English.
 - The browser-pane check of the three new controls (finalize list, send-and-record, resolve stop) has not been done; the local session expires within minutes (Docker clock skew).
@@ -31,3 +31,11 @@ Almost all of Phase 3 was already built (workspace + state machine, screen basel
 ## Still owner/human
 
 Figma file access and the file/page for the project; the internal reviewer assignment (default reviewer is settable in Settings); the default client revision limit (3 today); provider keys for a real-model run.
+
+## Client replies are read, not just recorded (added the same day)
+
+`message.received` -> `project_manager:readDesignReply` reads each client reply while Phase 3 waits on the client. Cost first: no model call for a thank-you, a reply already read (the message id is the key), a thread with no project/share, or a plain "yes" to the confirmation question (read by rule). Otherwise one short structured call, with the options NUMBERED so the model cannot name an id; a number the client was not shown is dropped.
+
+What the PM does on its own is the reversible set only - a selection, a visual change (which opens the revision round, counted, with the limit as a stop), a reference, a question the client asked - and only above 0.85 confidence on an option the client was shown. It records them as the PM agent (`recorded_by_agent`), never as a person. It asks the client ONE plain question when the reply is unclear or the option ambiguous (a model-written question must pass the same safety check as the planner's; otherwise a fixed one in the client's language).
+
+What it never does: a **final confirmation** (it locks the design) and a **possible scope change** (it stops the phase and decides what the client pays for) always wait for a person - in the policy, in the proposal door, and in a CHECK constraint (each red-proved independently). They appear in the Admin "Client replies" inbox with the client's words; a person records them in one click (their name on it) or dismisses with a reason.

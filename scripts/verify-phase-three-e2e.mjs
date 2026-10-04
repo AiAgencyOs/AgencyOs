@@ -112,7 +112,18 @@ const model = createServer((req, res) => {
     const first = JSON.stringify(parsed.messages?.[0]?.content ?? '');
     const n = (first.match(/\\n\d+\. /g) ?? []).length;
     let answer;
-    if (/inventory of screens/i.test(system)) {
+    if (/read ONE client message/i.test(system)) {
+      // The PM reads a client's reply. The stub reads the client's words the way a good model would.
+      const said = (first.split('The client').pop() ?? '').toLowerCase();
+      modelCalls.push('reply');
+      if (/accent/.test(said)) answer = { intent: 'design_change_request', optionNumber: 1, evidence: 'the accent is too orange', confidence: 0.93, reasoning: 'A visual change to option 1.' };
+      else if (/not sure/.test(said)) answer = { intent: 'unclear', evidence: 'not sure', confidence: 0.4, reasoning: 'The client has not said what they want.', clarifyingQuestion: 'Which of the options would you like us to continue with?' };
+      else if (/loyalty/.test(said)) answer = { intent: 'possible_scope_change', evidence: 'add a loyalty module', confidence: 0.9, reasoning: 'A new module, not a visual change.' };
+      else if (/option 3/.test(said)) answer = { intent: 'client_selected', optionNumber: 3, evidence: 'option 3', confidence: 0.95, reasoning: 'Picks option 3.' };
+      else if (/final/.test(said)) answer = { intent: 'final_confirmed', optionNumber: 1, paletteName: 'Calm Teal', evidence: 'final', confidence: 0.96, reasoning: 'Confirms option 1 with its palette as final.' };
+      else if (/go with|like/.test(said)) answer = { intent: 'client_selected', optionNumber: 1, paletteName: 'Calm Teal', evidence: 'we like Calm', confidence: 0.94, reasoning: 'Chooses option 1.' };
+      else answer = { intent: 'unrelated', evidence: said.slice(0, 40) || 'x', confidence: 0.9, reasoning: 'Not about the design.' };
+    } else if (/inventory of screens/i.test(system)) {
       const ids = [...new Set((first.match(/id: ([0-9a-f]{8}-[0-9a-f-]{27})/g) ?? []).map((m) => m.slice(4)))];
       modelCalls.push('inventory');
       answer = { screens: [
@@ -152,6 +163,7 @@ try {
   owner = await fx.bootstrapOwner(MARKER);
   await fx.installProposalPolicy(owner);
   const asOwner = (schema, fn, args) => fx.call(owner.token, 'POST', schema, `rpc/${fn}`, args);
+  const asServiceRpc = (fn, args) => rest('POST', 'projects', `rpc/${fn}`, args);
 
   // ── 0. Phase 1 hands a won deal over ──────────────────────────────────────
   section('0. Phase 1 WON → structured handoff → Phase 2 starts, once');
@@ -408,36 +420,88 @@ try {
   const shareRow = one(await rest('GET', 'projects', `client_design_shares?id=eq.${share.share_id}&select=share_number,option_count,shared_options`));
   check(shareRow?.option_count === 2 && JSON.stringify(shareRow?.shared_options).includes(t1.name) && !JSON.stringify(shareRow?.shared_options).includes(t3.name), 'the Admin Panel can say exactly which two went, and that the third did not', `${shareRow?.option_count}`);
 
-  // ── 12. the client chooses; the PM asks for the final confirmation ────────────
-  section('12. The client selects; the PM asks for explicit confirmation; only that locks');
+  // ── 12. the PM reads the client's replies ────────────────────────────────────
+  section('12. The PM reads what the client writes: it applies the safe set, asks when unsure, and leaves the rest to a person');
+  let seq = 100;
+  const say = async (body) => {
+    // The PM's own messages take sequence numbers in this thread too, so ask for the next free one.
+    const top = one(await rest('GET', 'crm', `conversation_messages?conversation_id=eq.${groupConvId}&select=seq&order=seq.desc&limit=1`));
+    seq = Math.max(seq, Number(top?.seq ?? 0)) + 1;
+    const ref = `${MARKER}:reply${seq}`;
+    const inserted = await rest('POST', 'crm', 'conversation_messages', { organization_id: ORG, conversation_id: groupConvId, seq, author_type: 'client', body, external_ref: ref, occurred_at: new Date().toISOString() });
+    if (!inserted.ok) throw new Error(`could not post the client's message: ${inserted.status} ${JSON.stringify(inserted.json).slice(0, 160)}`);
+    const msg = one(await rest('GET', 'crm', `conversation_messages?external_ref=eq.${ref}&select=id`));
+    return msg.id;
+  };
+  const proposalFor = async (messageId, wait = true) => {
+    const read = async () => one(await rest('GET', 'projects', `design_reply_proposals?message_id=eq.${messageId}&select=*`));
+    return wait ? until(async () => ((await read())?.status && (await read())?.status !== 'proposed' ? await read() : null), 30) : read();
+  };
   const colour1 = colours.find((c) => c.theme_option_id === t1.id);
-  const notShown = one(await asOwner('projects', 'record_client_design_decision', { p_share_id: share.share_id, p_decision: 'client_selected', p_client_words: 'the third one please', p_theme_option_id: t3.id }));
-  check(notShown?.outcome === 'not_shown', 'a client cannot select something they were never shown', String(notShown?.outcome));
-  const scopeQ = one(await asOwner('projects', 'record_client_design_decision', { p_share_id: share.share_id, p_decision: 'possible_scope_change', p_client_words: 'can you also add a delivery tracking map and a loyalty module?' }));
+  const colour1b = colour1;
+
+  const callsBefore = modelCalls.filter((c) => c === 'reply').length;
+  const thanksId = await say('Thanks!');
+  await ticks(6);
+  check((await proposalFor(thanksId, false)) === undefined && modelCalls.filter((c) => c === 'reply').length === callsBefore, 'a thank-you costs nothing - no model call, no proposal', `${modelCalls.filter((c) => c === 'reply').length - callsBefore} call(s)`);
+
+  const unrelatedId = await say('What time does the office open?');
+  const unrelated = await proposalFor(unrelatedId);
+  check(unrelated?.intent === 'unrelated' && unrelated?.status === 'ignored', 'an unrelated question is read and left alone', `${unrelated?.intent}/${unrelated?.status}`);
+
+  const notShownId = await say('Let us go with option 3 please');
+  const notShown = await proposalFor(notShownId);
+  check(notShown?.status === 'asked' && notShown?.selected_theme_option_id === null, 'a choice the client was never shown is NOT applied - the PM asks which option they mean', `${notShown?.status}`);
+  check(groupTexts().some((t) => /which option you mean|Which of the options/i.test(t)), 'and the question reaches the client');
+  const qCount = groupTexts().filter((t) => /which option you mean|Which of the options/i.test(t)).length;
+
+  const unclearId = await say('hmm not sure yet');
+  const unclear = await proposalFor(unclearId);
+  check(unclear?.intent === 'unclear' && unclear?.status === 'asked', 'an unclear reply gets one plain question back', `${unclear?.status}`);
+  await ticks(6);
+  check(groupTexts().filter((t) => /which option you mean|Which of the options/i.test(t)).length === qCount + 1, 'asked once each, never twice', `${groupTexts().filter((t) => /which option you mean|Which of the options/i.test(t)).length}`);
+  check((await p3())?.state === 'waiting_client', 'and neither moved the phase', String((await p3())?.state));
+
+  const accentId = await say('Can the accent colour be less orange on the first one?');
+  const accent = await proposalFor(accentId);
+  check(accent?.intent === 'design_change_request' && accent?.status === 'applied', 'a visual change is applied by the PM', `${accent?.intent}/${accent?.status}`);
+  const accentDecision = one(await rest('GET', 'projects', `client_design_decisions?id=eq.${accent?.decision_id}&select=decision,recorded_by,recorded_by_agent,client_words`));
+  check(accentDecision?.recorded_by === null && accentDecision?.recorded_by_agent === 'project_manager' && /accent/.test(accentDecision?.client_words ?? ''), 'recorded as the PM agent - never as a person - with the client\'s own words', JSON.stringify(accentDecision).slice(0, 90));
+  const afterChange = await p3();
+  const revision = one(await rest('GET', 'projects', `design_revisions?id=eq.${accent?.revision_id}&select=origin,round_number,from_theme_option_id`));
+  check(afterChange?.state === 'revision' && afterChange?.client_revision_count === 1 && revision?.round_number === 1 && revision?.from_theme_option_id === t1.id, 'it opens revision round 1 on the option they meant and the phase reads REVISION', `${afterChange?.state} count ${afterChange?.client_revision_count}`);
+  const sameAgain = one(await asServiceRpc('agent_apply_design_reply', { p_proposal_id: accent.id }));
+  check(sameAgain?.outcome === 'already_applied' && (await p3())?.client_revision_count === 1, 'applying the same reading twice spends no second round', String(sameAgain?.outcome));
+
+  const loyaltyId = await say('Please also add a loyalty module with points');
+  const loyalty = await proposalFor(loyaltyId);
+  check(loyalty?.intent === 'possible_scope_change' && loyalty?.status === 'awaiting_person', 'a request for NEW features is never applied by the PM - it waits for a person', `${loyalty?.intent}/${loyalty?.status}`);
+  check((await p3())?.state === 'revision', 'and the phase has not been stopped on a guess', String((await p3())?.state));
+  const accepted = one(await asOwner('projects', 'accept_design_reply_proposal', { p_proposal_id: loyalty.id }));
   const stopped = await p3();
-  check(scopeQ?.outcome === 'recorded' && stopped?.state === 'scope_escalation', 'a request for NEW features stops the phase as a possible scope change - it is not designed', String(stopped?.state));
+  check(accepted?.outcome === 'accepted' && stopped?.state === 'scope_escalation', 'a person records it, and only then the phase stops as a possible scope change', `${accepted?.outcome} / ${stopped?.state}`);
   const changeRequest = await until(async () => {
     const r = (await rest('GET', 'projects', `change_requests?project_id=eq.${project.id}&select=id`)).json ?? [];
     return r.length > 0 ? r : null;
   }, 20);
-  check(Boolean(changeRequest), 'and a change request is opened for a person to triage (the existing scope flow)');
-  const strangerTok = fx.mint(owner.id, 'member');
-  const memberTry = await fx.call(strangerTok, 'POST', 'projects', 'rpc/resolve_phase_three_stop', { p_phase_three_id: phaseThree.id, p_resolution: 'declined_continue', p_note: 'I say so' });
-  check(one(memberTry)?.outcome === 'forbidden', 'only an admin can let a stopped phase continue - a member cannot', String(one(memberTry)?.outcome));
+  check(Boolean(changeRequest), 'and a change request is opened for triage (the existing scope flow)');
+  const memberTry = one(await fx.call(fx.mint(owner.id, 'member'), 'POST', 'projects', 'rpc/resolve_phase_three_stop', { p_phase_three_id: phaseThree.id, p_resolution: 'declined_continue', p_note: 'I say so' }));
+  check(memberTry?.outcome === 'forbidden', 'only an admin can let a stopped phase continue - a member cannot', String(memberTry?.outcome));
   const noNote = one(await asOwner('projects', 'resolve_phase_three_stop', { p_phase_three_id: phaseThree.id, p_resolution: 'declined_continue', p_note: '  ' }));
   check(noNote?.outcome === 'needs_note', 'and a reason is required', String(noNote?.outcome));
   const wrongWay = one(await asOwner('projects', 'resolve_phase_three_stop', { p_phase_three_id: phaseThree.id, p_resolution: 'allow_more_rounds', p_note: 'wrong stop', p_extra_rounds: 2 }));
   check(wrongWay?.outcome === 'bad_resolution', 'a resolution that belongs to a different stop is refused', String(wrongWay?.outcome));
-  const resumed = one(await asOwner('projects', 'resolve_phase_three_stop', { p_phase_three_id: phaseThree.id, p_resolution: 'declined_continue', p_note: 'Delivery tracking is a separate paid module; design continues on the approved scope.' }));
+  const resumed = one(await asOwner('projects', 'resolve_phase_three_stop', { p_phase_three_id: phaseThree.id, p_resolution: 'declined_continue', p_note: 'Loyalty is a separate paid module; design continues on the approved scope.' }));
   check(resumed?.outcome === 'resolved' && resumed?.resumed_state === 'waiting_client', 'an admin declines the extra scope and design continues', `${resumed?.outcome} -> ${resumed?.resumed_state}`);
   const notStopped = one(await asOwner('projects', 'resolve_phase_three_stop', { p_phase_three_id: phaseThree.id, p_resolution: 'declined_continue', p_note: 'again' }));
   check(notStopped?.outcome === 'not_stopped', 'resolving a phase that is not stopped is refused', String(notStopped?.outcome));
-  const resolutions = (await rest('GET', 'projects', `phase_three_stop_resolutions?phase_three_id=eq.${phaseThree.id}&select=stopped_state,resolution,note`)).json ?? [];
+  const resolutions = (await rest('GET', 'projects', `phase_three_stop_resolutions?phase_three_id=eq.${phaseThree.id}&select=stopped_state,resolution`)).json ?? [];
   check(resolutions.length === 1 && resolutions[0].stopped_state === 'scope_escalation', 'and the resolution is on the record with the stop it answered', JSON.stringify(resolutions));
 
-  const colour1b = colour1;
-  const selected = one(await asOwner('projects', 'record_client_design_decision', { p_share_id: share.share_id, p_decision: 'client_selected', p_client_words: 'We like Calm, with its colours.', p_theme_option_id: t1.id, p_color_option_id: colour1b.id }));
-  check(selected?.outcome === 'recorded', 'the client selects Calm Clinical and its palette - their words kept', String(selected?.outcome));
+  const pickId = await say('We like Calm Clinical, we will go with it');
+  const pick = await proposalFor(pickId);
+  check(pick?.intent === 'client_selected' && pick?.status === 'applied' && pick?.selected_theme_option_id === t1.id, 'a clear choice is applied: Calm Clinical and its palette', `${pick?.intent}/${pick?.status}`);
+  check((await p3())?.state === 'final_confirmation', 'the phase reads FINAL CONFIRMATION', String((await p3())?.state));
   const ask = await until(async () => groupTexts().find((t) => /confirm the selected UI theme and color/i.test(t)), 25);
   check(Boolean(ask), 'the PM asks the client to explicitly confirm the selected theme and colour', ask ? ask.slice(0, 40) : 'nothing sent');
   await ticks(6);
@@ -445,10 +509,18 @@ try {
   const lockTooSoon = one(await asOwner('projects', 'lock_phase_three_direction', { p_phase_three_id: phaseThree.id }));
   check(lockTooSoon?.outcome !== 'locked' && lockTooSoon?.outcome !== 'locked_not_ready', 'a selection alone does not lock - only the final confirmation does', String(lockTooSoon?.outcome));
 
+  const yesCalls = modelCalls.filter((c) => c === 'reply').length;
+  const yesId = await say('Yes, confirmed');
+  const yes = await proposalFor(yesId);
+  check(yes?.source === 'rule' && yes?.intent === 'final_confirmed' && yes?.status === 'awaiting_person' && modelCalls.filter((c) => c === 'reply').length === yesCalls, 'a plain yes is read by rule (no model call) - and still only PROPOSED: a person confirms the lock', `${yes?.source}/${yes?.status}`);
+  check((await p3())?.state === 'final_confirmation', 'nothing is locked yet', String((await p3())?.state));
+
   // ── 13. the lock and the Phase 4 handoff ─────────────────────────────────
   section('13. Final confirmation locks the theme, the colour and the Figma node - and Phase 4 starts from them');
-  const finalConfirmed = one(await asOwner('projects', 'record_client_design_decision', { p_share_id: share.share_id, p_decision: 'final_confirmed', p_client_words: 'Yes, confirmed: Calm Clinical with that palette.', p_theme_option_id: t1.id, p_color_option_id: colour1b.id }));
-  check(finalConfirmed?.outcome === 'recorded', 'the client confirms the exact theme and colour', String(finalConfirmed?.outcome));
+  const finalAccepted = one(await asOwner('projects', 'accept_design_reply_proposal', { p_proposal_id: yes.id, p_theme_option_id: t1.id, p_color_option_id: colour1b.id }));
+  check(finalAccepted?.outcome === 'accepted', 'a person accepts the proposal with the exact theme and colour - one click, their name on it', String(finalAccepted?.outcome));
+  const finalDecision = one(await rest('GET', 'projects', `client_design_decisions?id=eq.${finalAccepted?.decision_id}&select=decision,recorded_by,recorded_by_agent`));
+  check(finalDecision?.decision === 'final_confirmed' && finalDecision?.recorded_by === owner.id && finalDecision?.recorded_by_agent === null, 'recorded as a PERSON\'s act, not the PM agent\'s', JSON.stringify(finalDecision));
   const tokens = one(await asOwner('projects', 'record_design_token_set', { p_theme_option_id: t1.id, p_font_family_heading: 'Inter', p_font_family_body: 'Inter', p_type_scale_ratio: 1.25, p_base_spacing_px: 8, p_radius_style: 'rounded', p_elevation_style: 'subtle', p_border_style: 'hairline', p_icon_treatment: 'outline', p_navigation_style: 'side_nav', p_button_treatment: 'solid', p_card_treatment: 'flat' }));
   const tokenFinal = one(await asOwner('projects', 'finalize_design_token_set', { p_theme_option_id: t1.id }));
   check(['recorded', 'drafted'].includes(tokens?.outcome) && ['finalized', 'already_finalized'].includes(tokenFinal?.outcome), 'the design primitives (type, spacing, shape) are recorded and finalized', `${JSON.stringify(tokens).slice(0, 120)} / ${tokenFinal?.outcome}`);

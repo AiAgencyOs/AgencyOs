@@ -54,6 +54,7 @@ export const HANDLERS = [
   'ui_designer:draftUIVersion',
   'ui_designer:reviseUIVersion',
   'project_manager:classifyClientFeedback',
+  'project_manager:readDesignReply',
   'sales:readIntent',
   'sales:readMeetingRequest',
   'sales:readLeadOutcome',
@@ -349,7 +350,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * the call for a message from staff, a thread with no lead, and a lead that
    * already has a meeting open — which is the lead most likely to write again.
    */
-  'message.received': ['sales:readIntent', 'sales:readQualification', 'sales:summariseThread', 'sales:readMeetingRequest', 'sales:readLeadOutcome', 'projects:readBillingReply', 'projects:readClarificationAnswer'],
+  'message.received': ['sales:readIntent', 'sales:readQualification', 'sales:summariseThread', 'sales:readMeetingRequest', 'sales:readLeadOutcome', 'projects:readBillingReply', 'projects:readClarificationAnswer', 'project_manager:readDesignReply'],
   /**
    * Doc 09 §19, and the reason it is a separate event rather than a third
    * subscriber on `message.received`: four of Doc 08 §12's twenty-two intents
@@ -646,6 +647,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'ui_designer:draftUIVersion': 'ui.version_draft',
   'ui_designer:reviseUIVersion': 'ui.version_revise',
   'project_manager:classifyClientFeedback': 'ui_version.classify_client_feedback',
+  'project_manager:readDesignReply': 'design.read_reply',
   'sales:readIntent': 'message.intent',
   'sales:readMeetingRequest': 'meeting.request_read',
   'sales:readLeadOutcome': 'lead.outcome_read',
