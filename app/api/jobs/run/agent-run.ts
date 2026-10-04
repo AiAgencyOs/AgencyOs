@@ -15,6 +15,7 @@
  * accounting would be an agent that could skip them.
  */
 
+import { parseModelJson } from '@/lib/ai/model-json';
 import { AgentPolicyRefusal, loadAgentPolicy, recordAgentPolicyRefusal } from '@/lib/ai/agent-policy';
 import { routedCandidatesFor } from '@/lib/ai/agent-routing';
 import { costMinorFor, loadRouting, requiredCapabilitiesFor, type LoadedRouting } from '@/lib/ai/routing-config';
@@ -876,13 +877,11 @@ export async function callModelWithTools(
     usage = addUsage(usage, response.data.usage);
 
     if (response.data.kind === 'final') {
-      let json: unknown;
-      try {
-        json = JSON.parse(response.data.text);
-      } catch {
+      const parsed = parseModelJson(response.data.text);
+      if (!parsed.ok) {
         return { ok: false, kind: 'provider_error', detail: 'The model returned output that was not valid JSON.', stepCount: seq };
       }
-      return { ok: true, json, usage, stepCount: seq };
+      return { ok: true, json: parsed.json, usage, stepCount: seq };
     }
 
     // `tool_calls`. Echo the model's own request back as an assistant turn —
@@ -941,7 +940,9 @@ export async function callModelWithTools(
  */
 function safeJsonParse(text: string): unknown {
   try {
-    return JSON.parse(text);
+    const parsed = parseModelJson(text);
+    if (parsed.ok) return parsed.json;
+    throw new Error('not json');
   } catch {
     return { error: 'not valid JSON', raw: text.slice(0, 500) };
   }

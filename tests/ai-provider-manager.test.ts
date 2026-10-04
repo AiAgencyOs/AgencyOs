@@ -366,10 +366,12 @@ describe('how an Anthropic-compatible provider is authenticated', async () => {
   let server: Server;
   let port = 0;
   let headers: Record<string, string | string[] | undefined> = {};
+  let sentBody = '';
   await new Promise<void>((resolve) => {
     server = createServer((req, res) => {
       headers = req.headers;
-      req.resume();
+      sentBody = '';
+      req.on('data', (c) => { sentBody += c; });
       res.writeHead(401, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'no' } }));
     }).listen(0, '127.0.0.1', () => { port = (server.address() as { port: number }).port; resolve(); });
@@ -392,5 +394,39 @@ describe('how an Anthropic-compatible provider is authenticated', async () => {
     assert.equal(headers.authorization, undefined);
   });
 
+  test('a gateway that may ignore the output schema is told the schema in the prompt; the real API default is not', async () => {
+    const ask = async (schemaInPrompt: boolean) => {
+      const p = await createClaudeProvider({ apiKey: 'sk-test-key-123456', schemaInPrompt, baseUrl: `http://127.0.0.1:${port}`, timeoutMs: 3000 });
+      await p!.generateStructured({ model: 'claude-x', system: 'Be brief.', messages: [{ role: 'user', content: 'hi' }], jsonSchema: { type: 'object', properties: { zebra: { type: 'string' } } }, schemaName: 'x' });
+      // The request is read after the (401) response, so give the body a moment to arrive.
+      await new Promise((r) => setTimeout(r, 50));
+      return JSON.parse(sentBody).system as string;
+    };
+    const withIt = await ask(true);
+    assert.ok(withIt.startsWith('Be brief.') && /zebra/.test(withIt) && /nothing else/.test(withIt));
+    assert.equal(await ask(false), 'Be brief.');
+  });
+
   test('close', () => { server.closeAllConnections(); server.close(); });
+});
+
+describe('reading JSON out of what a model said', async () => {
+  const { parseModelJson } = await import('../src/lib/ai/model-json.ts');
+  const json = (t: string) => { const r = parseModelJson(t); return r.ok ? r.json : 'FAIL'; };
+
+  test('plain JSON, a fenced block and prose around ONE object are all read', () => {
+    assert.deepEqual(json('{"a":1}'), { a: 1 });
+    assert.deepEqual(json('```json\n{"a":[1,2]}\n```'), { a: [1, 2] });
+    assert.deepEqual(json('```\n{"a":1}\n```'), { a: 1 });
+    assert.deepEqual(json('Here you go:\n{"a":"x } y","b":{"c":1}}\nHope that helps.'), { a: 'x } y', b: { c: 1 } });
+    assert.deepEqual(json('[1,2,3]'), [1, 2, 3]);
+  });
+
+  test('and its twins: two values, an unterminated value, or no JSON are refused, never guessed', () => {
+    assert.equal(json('{"a":1} and also {"b":2}'), 'FAIL');
+    assert.equal(json('{"a":1'), 'FAIL');
+    assert.equal(json('I could not do that.'), 'FAIL');
+    assert.equal(json(''), 'FAIL');
+    assert.equal(json('```json\n{"a":\n```'), 'FAIL');
+  });
 });

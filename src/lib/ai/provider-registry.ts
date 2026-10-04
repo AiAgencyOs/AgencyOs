@@ -117,6 +117,8 @@ async function buildAdapter(row: ProviderRow, apiKey: string): Promise<AiProvide
       id: row.provider_id,
       apiKey,
       authScheme: row.auth_scheme === 'bearer' ? 'bearer' : 'x-api-key',
+      // A custom Anthropic-compatible gateway is not known to enforce the output schema; the real API (built in) does.
+      schemaInPrompt: row.kind === 'anthropic_compat',
       // The SDK's own default host is right for the real API; only a custom or overridden URL is passed through.
       ...(defaultHost && !(builtin && env[builtin.base]?.trim()) ? {} : { baseUrl }),
       timeoutMs: row.timeout_ms,
