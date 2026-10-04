@@ -26,3 +26,11 @@ import type { AdProvider } from './ads';
  * waiting, and a person is told it cannot be applied automatically - it is never faked as live.
  */
 export const AD_PROVIDERS: Partial<Record<AdPlatform, AdProvider>> = {};
+
+import type { LandingDeployer } from './landing';
+
+/**
+ * The landing page deployer (Hostinger). ABSENT, deliberately: an approved page with no deployer alerts a person to upload it by hand
+ * and is never reported as live. When it exists it lands here with its own contract tests.
+ */
+export const LANDING_DEPLOYER: LandingDeployer | undefined = undefined;

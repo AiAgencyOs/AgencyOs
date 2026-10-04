@@ -484,3 +484,91 @@ export async function requestAdChange(input: { campaignId: string; action: 'paus
       return err('FORBIDDEN', FORBIDDEN);
   }
 }
+
+export type LandingInput = { pageId: string | null; name: string; slug: string; service: string; content: Record<string, unknown>; publicUrl: string };
+
+/** Save content as the NEXT version of a landing page, creating the page first when it is new. Nothing is sent to a host. */
+export async function saveLandingVersion(input: LandingInput): Promise<Result<{ versionId: string }>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const org = gate.data.organizationId;
+  let pageId = input.pageId;
+  if (!pageId) {
+    const { data, error } = await supabase.schema('crm').rpc('create_landing_page', { p_organization_id: org, p_name: input.name, p_slug: input.slug, p_target_service: (input.service || undefined) as never });
+    if (error) return err('INTERNAL', 'Could not start the page.');
+    const made = first<{ outcome?: string; page_id?: string }>(data);
+    if (made?.outcome === 'slug_taken') return err('CONFLICT', 'That address name is already used by another page.');
+    if (made?.outcome === 'forbidden') return err('FORBIDDEN', FORBIDDEN);
+    if (made?.outcome !== 'created' || !made.page_id) return err('VALIDATION', 'Give the page a name of a few words and an address name of lowercase words joined by hyphens.');
+    pageId = made.page_id;
+  }
+  const { data, error } = await supabase.schema('crm').rpc('add_landing_version', { p_organization_id: org, p_page: pageId, p_content: input.content as never, p_public_url: input.publicUrl });
+  if (error) return err('INTERNAL', 'Could not save the page.');
+  const v = first<{ outcome?: string; version_id?: string }>(data);
+  switch (v?.outcome) {
+    case 'added':
+      return ok({ versionId: v.version_id as string });
+    case 'no_whatsapp_number':
+      return err('CONFLICT', 'Set the WhatsApp business number first (Settings): a page is approved with the number it links to.');
+    case 'deploy_in_progress':
+      return err('CONFLICT', 'A deploy is in progress. Wait until it is confirmed or reconciled.');
+    case 'page_retired':
+      return err('CONFLICT', 'That page was retired. Start a new one.');
+    case 'forbidden':
+      return err('FORBIDDEN', FORBIDDEN);
+    default:
+      return err('VALIDATION', 'The public address must be https, e.g. https://lp.youragency.com/website.');
+  }
+}
+
+export async function checkLandingVersion(versionId: string): Promise<Result<{ passed: boolean; problems: string[] }>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('check_landing_version', { p_organization_id: gate.data.organizationId, p_version: versionId });
+  if (error) return err('INTERNAL', 'Could not run the checks.');
+  const r = first<{ outcome?: string; problems?: unknown }>(data);
+  if (r?.outcome === 'wrong_state') return err('CONFLICT', 'That version has already been checked.');
+  if (r?.outcome !== 'checked' && r?.outcome !== 'check_failed') return err(r?.outcome === 'forbidden' ? 'FORBIDDEN' : 'NOT_FOUND', r?.outcome === 'forbidden' ? FORBIDDEN : 'That version no longer exists.');
+  return ok({ passed: r.outcome === 'checked', problems: Array.isArray(r.problems) ? (r.problems as string[]) : [] });
+}
+
+export async function submitLandingVersion(versionId: string): Promise<Result<true>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('submit_landing_version', { p_organization_id: gate.data.organizationId, p_version: versionId });
+  if (error) return err('INTERNAL', 'Could not submit it.');
+  switch (first<{ outcome?: string }>(data)?.outcome) {
+    case 'submitted':
+    case 'already_pending':
+      return ok(true);
+    case 'not_checked':
+      return err('CONFLICT', 'Only a version that passed the checks can go to an admin.');
+    case 'forbidden':
+      return err('FORBIDDEN', FORBIDDEN);
+    default:
+      return err('CONFLICT', 'Set up lead generation first - it creates the approval rule for this.');
+  }
+}
+
+export async function retireLandingPage(input: { pageId: string; reason: string }): Promise<Result<true>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('retire_landing_page', { p_organization_id: gate.data.organizationId, p_page: input.pageId, p_reason: input.reason });
+  if (error) return err('INTERNAL', 'Could not retire it.');
+  switch (first<{ outcome?: string }>(data)?.outcome) {
+    case 'retired':
+      return ok(true);
+    case 'needs_reason':
+      return err('VALIDATION', 'Say why - the reason is kept.');
+    case 'already_retired':
+      return err('CONFLICT', 'It is already retired.');
+    case 'not_found':
+      return err('NOT_FOUND', 'That page no longer exists.');
+    default:
+      return err('FORBIDDEN', FORBIDDEN);
+  }
+}

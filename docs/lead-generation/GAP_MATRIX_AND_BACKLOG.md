@@ -178,6 +178,14 @@ Design decisions this implies (recorded here so they are made once):
 * **Not built:** the Meta and Google connectors (nothing is pushed to or read from a platform), pulling the platform's metrics (a worker would call `record_ad_metrics`), landing pages and Hostinger deployment (slice 9; a Google plan references a landing page version id that cannot be produced yet and is not verified to exist), creative generation, A/B testing, and the AI that plans and optimises.
 * **Human dependencies surfaced:** Meta Business/ad account and OAuth, Google Ads developer token - neither requested.
 
+### Slice 9 (Landing pages and the Google gate) - built and verified
+
+* Migration `20261021100000_a_landing_page_is_deployed_as_exactly_what_was_approved.sql`: landing pages, immutable versions (derived hash over slug, content, WhatsApp number, public address, tracking), deployments, verifications; content rules that fail a page and never approve one (no testimonials, proof only from the agency's own active portfolio items, no urgency, claims or unsourced statistics); governed deploy; verification as a separate record of what was fetched; `record_landing_arrival`; `check_ad_version` and `begin_ad_apply` carried forward so a Google ad launches only to a VERIFIED page, read at execution time.
+* `src/modules/acquisition/landing-render.ts` (deterministic, escaped, one outbound destination), `landing.ts` (`deployLandingVersion`, `verifyLandingVersion`, `runLandingOperations` in the cron tick), `landing-arrival.ts` (called by WhatsApp ingest), Google tab section and forms. `LANDING_DEPLOYER` is undefined by design: an approved page alerts a person to upload it by hand and is never shown as live.
+* `scripts/verify-acquisition-landing.sql`: red-proved thirteen ways; the TypeScript is red-proved seven ways, one of which found the in-browser tag script untested (now run against a stub browser).
+* **Not built:** the Hostinger deployer, DNS/SSL steps, a visual page builder, A/B testing, one-click rollback (redeploying an older version is a new governed execution), and server-side click tracking (the tag is a claim about where a visit came from, never authority).
+* **Human dependencies surfaced:** a Hostinger deployment token or SSH scope and the domain/DNS for the public address - neither requested.
+
 ## 5. Human dependencies (known now; asked for only when the engine reaches them)
 
 | Provider | Needed for | When |

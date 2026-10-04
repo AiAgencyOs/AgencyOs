@@ -6,6 +6,7 @@ import type { createAdminClient } from '@/lib/db/admin';
 import { err, ok, type Result } from '@/lib/result';
 
 import { bindHandoffBeforeIngest, consumeHandoffAfterIngest } from '../acquisition/handoff-bind';
+import { recordLandingArrivalAfterIngest } from '../acquisition/landing-arrival';
 import { extractHandoffCode } from '../acquisition/handoff-code';
 import { wakeDeferredSends } from './outbound-window';
 
@@ -325,6 +326,11 @@ export async function ingestInboundMessage(
   // Finish the handoff once the message is safely recorded. A replay finished it the first time.
   if (bound && row.status === 'ingested') {
     await consumeHandoffAfterIngest(admin, { bound, contactId: row.contact_id, leadId: row.lead_id });
+  }
+
+  // A visit from a landing page arrives as a message carrying its tag (20261021100000): add the visit as a touchpoint. Never fatal.
+  if (row.status === 'ingested') {
+    await recordLandingArrivalAfterIngest(admin, { organizationId: row.organization_id, leadId: row.lead_id, body: parsed.data.body ?? null, occurredAt: parsed.data.occurredAt ?? new Date().toISOString() });
   }
 
   /**

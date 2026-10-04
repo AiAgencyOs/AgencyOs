@@ -52,7 +52,7 @@ export const ENGINE_STATUS: Record<AcquisitionChannel, { build: EngineBuild; sum
   },
   google_ads: {
     build: 'partial',
-    summary: 'The campaign pipeline is the same as Meta\'s, with Google\'s rules (keywords, negatives, headline lengths, a landing page). NOT built: the Google Ads connector, the landing-page engine and Hostinger deployment - so a Google plan needs a landing page version that cannot be produced here yet, and an approved launch is applied by hand.',
+    summary: 'The campaign pipeline is the same as Meta\'s, with Google\'s rules (keywords, negatives, headline lengths). Landing pages are built too: versions approved as exactly their content, address and WhatsApp number, a governed deploy, and a verification of the public address - a Google ad can only launch to a VERIFIED page, and a visit that becomes a WhatsApp message is credited to its campaign. NOT built: the Google Ads connector and the Hostinger deployer, so an approved launch or page is applied by hand and nothing here is shown live until it has been checked.',
   },
   b2b: { build: 'not_built', summary: 'The B2B opportunity agent and platform connectors are not built yet.' },
 };

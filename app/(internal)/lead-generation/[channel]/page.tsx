@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can, hasRole } from '@/lib/authz/permissions';
-import { listAdCampaigns, listCampaignHealth, readAdOutcomes, readAdRecommendations, listActiveBlocks, listContentQueue, listRecentQualifications, listSocialStrategies, listTargetServices, readSocialPerformance, readChannelSettings, readEmailFunnel, readQualificationModel } from '@/modules/acquisition/queries';
+import { listLandingPages, listPortfolioChoices, listAdCampaigns, listCampaignHealth, readAdOutcomes, readAdRecommendations, listActiveBlocks, listContentQueue, listRecentQualifications, listSocialStrategies, listTargetServices, readSocialPerformance, readChannelSettings, readEmailFunnel, readQualificationModel } from '@/modules/acquisition/queries';
 import { AD_PLATFORM_LABEL, CHANGE_LABEL, HEALTH_WORDS, RECOMMENDATION_WORDS, VERSION_STATE_WORDS, planProblemWords, type AdPlatform } from '@/modules/acquisition/ad-vocabulary';
 import { OBJECTIVE_LABEL, FORMAT_LABEL, PLATFORM_LABEL, STATUS_WORDS, reviewWords, type SocialPlatform } from '@/modules/acquisition/social-vocabulary';
 import { disqualifierWords, FACTOR_LABEL, FUNNEL_LABEL, FUNNEL_STAGES, QUALIFICATION_FACTORS } from '@/modules/acquisition/qualification-vocabulary';
@@ -12,6 +12,8 @@ import { CHANNEL_LABEL, ENGINE_STATUS, channelFromSlug } from '@/modules/acquisi
 import { Badge, Callout, Card, CardBody, CardHeader, EmptyState, PageHeader, PermissionDenied, Stat, StatGrid } from '@/ui';
 
 import { BlockForm, LiftBlockForm, QualificationModelForm } from '../email-forms';
+import { LANDING_STATE_WORDS, VERIFICATION_CHECK_LABEL, landingProblemWords } from '@/modules/acquisition/landing-vocabulary';
+import { CheckLandingButton, LandingForm, RetireLandingForm, SubmitLandingButton } from '../landing-forms';
 import { AdChangeForm, AdPlanForm, CheckAdButton, SubmitAdButton } from '../ads-forms';
 import { ActivateStrategyButton, CancelVersionForm, NewDraftForm, ReviewButton, ScheduleForm, SubmitButton } from '../social-forms';
 import { ChannelPauseForm, ChannelSettingsForm } from '../forms';
@@ -35,6 +37,7 @@ export default async function ChannelPage({ params }: { params: Promise<{ channe
   const social = channel === 'social' ? await Promise.all([listContentQueue(), listSocialStrategies(), readSocialPerformance(), listTargetServices()]) : null;
   const isAds = channel === 'meta_ads' || channel === 'google_ads';
   const ads = isAds ? await Promise.all([listAdCampaigns(channel), readAdOutcomes(), listCampaignHealth(), readAdRecommendations(), listTargetServices()]) : null;
+  const landing = channel === 'google_ads' ? await Promise.all([listLandingPages(), listPortfolioChoices()]) : null;
   const email = channel === 'email' ? await Promise.all([readEmailFunnel(), readQualificationModel(), listActiveBlocks(), listRecentQualifications()]) : null;
 
   return (
@@ -327,6 +330,80 @@ export default async function ChannelPage({ params }: { params: Promise<{ channe
               ) : null}
             </CardBody>
           </Card>
+        </>
+      ) : null}
+
+
+      {landing && ads ? (
+        <>
+          <Callout tone="info" title="Landing pages">
+            A Google ad points only at a landing page that is deployed AND verified. A page is approved as exactly its content, public address and WhatsApp number; deploying is a separate, governed step; verifying fetches the public address and checks it carries the approved version. No Hostinger deployer is built yet, so an approved page is flagged for a person to upload by hand and is never shown as live.
+          </Callout>
+          <Card>
+            <CardHeader title="Pages" description="The label is the latest verification, not the last deploy: a page that stopped matching reads as failed." />
+            <CardBody>
+              {landing[0].length === 0 ? (
+                <EmptyState title="No landing pages yet" description="Write one below." />
+              ) : (
+                <ul className="flex flex-col gap-5">
+                  {landing[0].map((pg) => (
+                    <li key={pg.id} className="flex flex-col gap-3 border-b border-line pb-5 last:border-0">
+                      <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                        <Badge tone={pg.status === 'active' ? 'success' : 'neutral'}>{pg.status}</Badge>
+                        <strong>{pg.name}</strong>
+                        <span className="text-muted">/{pg.slug}{pg.targetService ? ` · ${pg.targetService}` : ''}</span>
+                      </div>
+                      <ul className="flex flex-col gap-3">
+                        {pg.versions.map((v) => {
+                          const words = LANDING_STATE_WORDS[v.state] ?? { label: v.state, tone: 'neutral' as const, meaning: '' };
+                          return (
+                            <li key={v.id} className="flex flex-col gap-1.5 rounded border border-line p-3 text-[13px]">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge tone={words.tone}>{words.label}</Badge>
+                                <span>Version {v.version} · {v.headline}</span>
+                                <span className="text-xs text-muted">{v.publicUrl}</span>
+                              </div>
+                              <p className="text-xs text-muted">{words.meaning}</p>
+                              {v.problems.length > 0 ? <p className="text-xs text-danger">{v.problems.map(landingProblemWords).join(' · ')}</p> : null}
+                              {v.checks ? (
+                                <ul className="text-xs">
+                                  {Object.entries(VERIFICATION_CHECK_LABEL).map(([k, label]) => <li key={k}>{v.checks?.[k] ? '✓' : '✗'} {label}</li>)}
+                                </ul>
+                              ) : null}
+                              {mayManage ? (
+                                <div className="flex flex-wrap items-start gap-4">
+                                  {v.state === 'DRAFT' || v.state === 'CHECK_FAILED' ? <CheckLandingButton versionId={v.id} /> : null}
+                                  {v.state === 'CHECKED' ? <SubmitLandingButton versionId={v.id} /> : null}
+                                  {v.state === 'ADMIN_REVIEW' ? <Link href="/approvals" className="text-[13px] text-brand hover:underline">Open the Approval Center</Link> : null}
+                                </div>
+                              ) : null}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      {mayManage && pg.status !== 'retired' ? (
+                        <div className="flex flex-wrap items-start gap-4">
+                          <RetireLandingForm pageId={pg.id} />
+                          <details className="text-[13px]"><summary className="cursor-pointer text-brand">Write the next version</summary><div className="pt-3"><LandingForm pageId={pg.id} services={[]} /></div></details>
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardBody>
+          </Card>
+          {mayManage ? (
+            <Card>
+              <CardHeader title="New landing page" description="Proof may only cite the agency's own portfolio items, listed here by id." />
+              <CardBody>
+                <div className="flex flex-col gap-4">
+                  {landing[1].length > 0 ? <ul className="text-xs text-muted">{landing[1].map((i) => <li key={i.id}><code>{i.id}</code> · {i.title} ({i.kind.replaceAll('_', ' ')})</li>)}</ul> : <p className="text-xs text-muted">No portfolio items yet, so a page cannot cite proof.</p>}
+                  <LandingForm services={ads[4].filter((x) => x.active).map((x) => x.name)} />
+                </div>
+              </CardBody>
+            </Card>
+          ) : null}
         </>
       ) : null}
 

@@ -8,7 +8,7 @@ import type { FormState } from '@/modules/identity/types';
 import { QUALIFICATION_FACTORS } from './qualification-vocabulary';
 import { ACQUISITION_CHANNELS, ICP_LIST_KEYS, buildIcpDefinition, type AcquisitionChannel } from './schema';
 import { registerIntegration, saveAcquisitionPolicy, setIntegrationState, storeConnectorSecret, testConnection } from './integrations';
-import { checkAdVersion, requestAdChange, saveAdPlan, submitAdVersion, activateSocialStrategy, cancelContentVersion, createContentDraft, reviewContentVersion, scheduleContentVersion, submitContentForApproval, blockProspect, liftProspectBlock, saveQualificationModel, cancelSubtask, cancelHandoff, decideDuplicateReview, saveChannelSettings, saveHandoffSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
+import { checkLandingVersion, retireLandingPage, saveLandingVersion, submitLandingVersion, checkAdVersion, requestAdChange, saveAdPlan, submitAdVersion, activateSocialStrategy, cancelContentVersion, createContentDraft, reviewContentVersion, scheduleContentVersion, submitContentForApproval, blockProspect, liftProspectBlock, saveQualificationModel, cancelSubtask, cancelHandoff, decideDuplicateReview, saveChannelSettings, saveHandoffSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
 
 const text = (f: FormData, n: string) => String(f.get(n) ?? '').trim();
 const BASE = '/lead-generation';
@@ -310,4 +310,42 @@ export async function requestAdChangeAction(_p: FormState, f: FormData): Promise
   if (!r.ok) return { status: 'error', message: r.error.message };
   refresh();
   return { status: 'success', message: 'Requested. It shows as pending until the platform confirms it.' };
+}
+
+const pairs = (raw: string) => lines(raw).map((l) => { const i = l.indexOf('|'); return i < 0 ? [l.trim(), ''] as const : [l.slice(0, i).trim(), l.slice(i + 1).trim()] as const; });
+
+export async function saveLandingAction(_p: FormState, f: FormData): Promise<FormState> {
+  const content: Record<string, unknown> = {
+    headline: text(f, 'headline'), subheadline: text(f, 'subheadline'),
+    benefits: pairs(String(f.get('benefits') ?? '')).map(([title, t]) => ({ title, text: t })),
+    proof: pairs(String(f.get('proof') ?? '')).map(([id, caption]) => ({ portfolio_item_id: id, caption })),
+    faq: pairs(String(f.get('faq') ?? '')).map(([q, ans]) => ({ q, a: ans })),
+    cta_text: text(f, 'ctaText'), privacy_url: text(f, 'privacyUrl'), contact_email: text(f, 'contactEmail'),
+  };
+  const r = await saveLandingVersion({ pageId: text(f, 'pageId') || null, name: text(f, 'name'), slug: text(f, 'slug'), service: text(f, 'service'), content, publicUrl: text(f, 'publicUrl') });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: 'Saved as a draft version. Run the checks next. Nothing has been sent to a host.' };
+}
+
+export async function checkLandingAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await checkLandingVersion(text(f, 'versionId'));
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return r.data.passed ? { status: 'success', message: 'Passed the checks. This is not approval - submit it for an admin.' } : { status: 'error', message: 'Failed the checks. See the list on the version, then write the next one.' };
+}
+
+export async function submitLandingAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await submitLandingVersion(text(f, 'versionId'));
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  revalidatePath('/approvals');
+  return { status: 'success', message: 'Sent to the Approval Center. It is approved only as exactly this page, address and number.' };
+}
+
+export async function retireLandingAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await retireLandingPage({ pageId: text(f, 'pageId'), reason: text(f, 'reason') });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: 'Retired.' };
 }

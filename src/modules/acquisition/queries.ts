@@ -465,3 +465,52 @@ export async function listCampaignHealth(): Promise<CampaignHealthView[]> {
   if (error) unreadable('listCampaignHealth', error);
   return (data ?? []).map((h) => ({ id: h.id, campaignId: h.campaign_id, kind: h.kind, severity: h.severity, recommendedAction: h.recommended_action, assessedOn: h.assessed_on }));
 }
+
+export type LandingVersionView = { id: string; version: number; state: string; publicUrl: string; headline: string; problems: string[]; checks: Record<string, boolean> | null; verifiedAt: string | null; createdAt: string };
+export type LandingPageView = { id: string; name: string; slug: string; status: string; targetService: string | null; liveVersionId: string | null; versions: LandingVersionView[] };
+
+/** Pages with their newest versions; the verification shown is the LATEST check, so a page that stopped matching reads as failed. */
+export async function listLandingPages(): Promise<LandingPageView[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('landing_pages').select('id, name, slug, status, target_service, live_version_id').order('created_at', { ascending: false }).limit(30);
+  if (error) unreadable('listLandingPages', error);
+  const ids = (data ?? []).map((p) => p.id);
+  const byPage = new Map<string, LandingVersionView[]>();
+  if (ids.length > 0) {
+    const { data: versions, error: versionsError } = await supabase.schema('crm').from('landing_page_versions').select('id, page_id, version, state, public_url, content, review, created_at').in('page_id', ids).order('version', { ascending: false }).limit(200);
+    if (versionsError) unreadable('listLandingPages.versions', versionsError);
+    const versionIds = (versions ?? []).map((v) => v.id);
+    const latest = new Map<string, { checks: Record<string, boolean>; at: string }>();
+    if (versionIds.length > 0) {
+      const { data: deployments, error: deploymentsError } = await supabase.schema('crm').from('landing_deployments').select('id, version_id').in('version_id', versionIds);
+      if (deploymentsError) unreadable('listLandingPages.deployments', deploymentsError);
+      const depIds = (deployments ?? []).map((d) => d.id);
+      if (depIds.length > 0) {
+        const { data: checks, error: checksError } = await supabase.schema('crm').from('landing_verifications').select('deployment_id, checks, verified_at').in('deployment_id', depIds).order('verified_at', { ascending: false }).limit(300);
+        if (checksError) unreadable('listLandingPages.verifications', checksError);
+        const versionOf = new Map((deployments ?? []).map((d) => [d.id, d.version_id]));
+        for (const c of checks ?? []) {
+          const vid = versionOf.get(c.deployment_id);
+          if (vid && !latest.has(vid)) latest.set(vid, { checks: c.checks as Record<string, boolean>, at: c.verified_at });
+        }
+      }
+    }
+    for (const v of versions ?? []) {
+      const problems = (v.review as { problems?: unknown } | null)?.problems;
+      const list = byPage.get(v.page_id) ?? [];
+      if (list.length < 4) list.push({ id: v.id, version: v.version, state: v.state, publicUrl: v.public_url, headline: String((v.content as { headline?: string } | null)?.headline ?? ''), problems: Array.isArray(problems) ? (problems as string[]) : [], checks: latest.get(v.id)?.checks ?? null, verifiedAt: latest.get(v.id)?.at ?? null, createdAt: v.created_at });
+      byPage.set(v.page_id, list);
+    }
+  }
+  return (data ?? []).map((p) => ({ id: p.id, name: p.name, slug: p.slug, status: p.status, targetService: p.target_service, liveVersionId: p.live_version_id, versions: byPage.get(p.id) ?? [] }));
+}
+
+export type PortfolioChoice = { id: string; title: string; kind: string };
+
+/** The only things a page may cite as proof. */
+export async function listPortfolioChoices(): Promise<PortfolioChoice[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('portfolio_items').select('id, title, kind').eq('is_active', true).order('position').limit(50);
+  if (error) unreadable('listPortfolioChoices', error);
+  return (data ?? []).map((i) => ({ id: i.id, title: i.title, kind: i.kind }));
+}

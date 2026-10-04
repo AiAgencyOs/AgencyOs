@@ -19,7 +19,8 @@ import { runCampaigns } from '@/modules/crm/campaign-worker';
 import { runOutreach } from '@/modules/crm/outreach/worker';
 import { runInboundEmail } from '@/modules/crm/inbound-email';
 import { expireHandoffs } from '@/modules/acquisition/handoff';
-import { AD_PROVIDERS, SOCIAL_PUBLISHERS } from '@/modules/acquisition/adapters';
+import { AD_PROVIDERS, LANDING_DEPLOYER, SOCIAL_PUBLISHERS } from '@/modules/acquisition/adapters';
+import { runLandingOperations } from '@/modules/acquisition/landing';
 import { runAdOperations } from '@/modules/acquisition/ads';
 import { runSocialPublishing } from '@/modules/acquisition/social';
 import { runProviderMaintenance } from '@/lib/ai/provider-maintenance';
@@ -332,6 +333,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   await runSocialPublishing(admin, SOCIAL_PUBLISHERS);
   // Approved ad changes, pending pauses, emergency stops and campaign health (lead generation, 20261020100000).
   await runAdOperations(admin, AD_PROVIDERS);
+  // Approved landing pages: deployed through the governed door, then checked at the public address (20261021100000).
+  await runLandingOperations(admin, LANDING_DEPLOYER);
   // AI providers: probe the ones that are due and refresh their model lists (best effort, bounded per tick).
   await runProviderMaintenance(admin);
 

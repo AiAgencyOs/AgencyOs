@@ -4535,6 +4535,162 @@ export type Database = {
         }
         Relationships: []
       }
+      landing_pages: {
+        Row: {
+          id: string
+          organization_id: string
+          name: string
+          slug: string
+          target_service: string | null
+          status: string
+          current_version_id: string | null
+          live_version_id: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          name: string
+          slug: string
+          target_service?: string | null
+          status?: string
+          current_version_id?: string | null
+          live_version_id?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          name?: string
+          slug?: string
+          target_service?: string | null
+          status?: string
+          current_version_id?: string | null
+          live_version_id?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      landing_page_versions: {
+        Row: {
+          id: string
+          organization_id: string
+          page_id: string
+          version: number
+          content: Json
+          whatsapp_number: string
+          public_url: string
+          tracking: Json
+          content_hash: string
+          state: string
+          review: Json | null
+          approval_request_id: string | null
+          supersedes_version_id: string | null
+          created_by_type: string
+          created_by: string | null
+          created_at: string
+          state_changed_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          page_id: string
+          version: number
+          content: Json
+          whatsapp_number: string
+          public_url: string
+          tracking?: Json
+          content_hash: string
+          state?: string
+          review?: Json | null
+          approval_request_id?: string | null
+          supersedes_version_id?: string | null
+          created_by_type: string
+          created_by?: string | null
+          created_at?: string
+          state_changed_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          page_id?: string
+          version?: number
+          content?: Json
+          whatsapp_number?: string
+          public_url?: string
+          tracking?: Json
+          content_hash?: string
+          state?: string
+          review?: Json | null
+          approval_request_id?: string | null
+          supersedes_version_id?: string | null
+          created_by_type?: string
+          created_by?: string | null
+          created_at?: string
+          state_changed_at?: string
+        }
+        Relationships: []
+      }
+      landing_deployments: {
+        Row: {
+          id: string
+          organization_id: string
+          version_id: string
+          execution_id: string
+          deployed_url: string
+          deployed_html_hash: string
+          deployed_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          version_id: string
+          execution_id: string
+          deployed_url: string
+          deployed_html_hash: string
+          deployed_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          version_id?: string
+          execution_id?: string
+          deployed_url?: string
+          deployed_html_hash?: string
+          deployed_at?: string
+        }
+        Relationships: []
+      }
+      landing_verifications: {
+        Row: {
+          id: string
+          organization_id: string
+          deployment_id: string
+          checks: Json
+          passed: boolean
+          verified_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          deployment_id: string
+          checks: Json
+          passed: boolean
+          verified_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          deployment_id?: string
+          checks?: Json
+          passed?: boolean
+          verified_at?: string
+        }
+        Relationships: []
+      }
       social_metrics: {
         Row: {
           id: string
@@ -8123,6 +8279,50 @@ export type Database = {
       assess_campaign_health: {
         Args: { p_campaign: string; p_organization_id: string }
         Returns: { outcome: string | null; recorded: number | null }[]
+      }
+      landing_content_problems: {
+        Args: { p_content: Json }
+        Returns: Json
+      }
+      create_landing_page: {
+        Args: { p_name: string; p_organization_id: string; p_slug: string; p_target_service?: string }
+        Returns: { outcome: string | null; page_id: string | null }[]
+      }
+      add_landing_version: {
+        Args: { p_by_type?: string; p_content: Json; p_organization_id: string; p_page: string; p_public_url: string }
+        Returns: { outcome: string | null; version_id: string | null }[]
+      }
+      check_landing_version: {
+        Args: { p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; problems: Json | null }[]
+      }
+      submit_landing_version: {
+        Args: { p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; approval_request_id: string | null }[]
+      }
+      begin_landing_deploy: {
+        Args: { p_correlation_id?: string; p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; reason: string | null; execution_id: string | null }[]
+      }
+      record_landing_deploy: {
+        Args: { p_deployed_url: string; p_evidence?: Json; p_execution: string; p_html_hash: string; p_organization_id: string; p_status: string; p_version: string }
+        Returns: { outcome: string | null }[]
+      }
+      record_landing_verification: {
+        Args: { p_checks: Json; p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null }[]
+      }
+      retire_landing_page: {
+        Args: { p_organization_id: string; p_page: string; p_reason: string }
+        Returns: { outcome: string | null }[]
+      }
+      sync_landing_approvals: {
+        Args: { p_limit?: number }
+        Returns: number
+      }
+      record_landing_arrival: {
+        Args: { p_lead: string; p_message: string; p_message_at?: string; p_organization_id: string }
+        Returns: { outcome: string | null }[]
       }
       save_qualification_model: {
         Args: { p_note: string; p_weights: Json }
