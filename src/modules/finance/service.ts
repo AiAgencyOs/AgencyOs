@@ -325,6 +325,33 @@ export async function generateInvoiceFromMilestone(
   return err('CONFLICT', 'Could not allocate an invoice number. Please try again.');
 }
 
+
+/**
+ * The Nth PRICED milestone of a project's payment plan (1 = M1), by order.
+ *
+ * The generators below used `position = 1|2|3|4`, and the installer
+ * (`projects.replace_payment_plan`) numbers a plan from 0 - so the "M1" invoice
+ * was raised for the SECOND milestone (20%), "M2" for the third, "M4" for none.
+ * Found by driving the whole Phase 2 flow end to end. M1 means the first priced
+ * milestone, whatever number the writer gave it.
+ */
+async function nthPricedMilestone(
+  admin: ReturnType<typeof createAdminClient>,
+  scope: { organizationId: string; projectId: string },
+  ordinal: number,
+) {
+  const { data, error } = await admin
+    .schema('projects')
+    .from('milestones')
+    .select('id, name, position, status, payment_percent, amount_minor, currency, due_on')
+    .eq('project_id', scope.projectId)
+    .eq('organization_id', scope.organizationId)
+    .not('amount_minor', 'is', null)
+    .order('position', { ascending: true })
+    .order('created_at', { ascending: true });
+  return { data: error ? null : (data ?? [])[ordinal - 1] ?? null, error };
+}
+
 /**
  * `project.billing_mode_confirmed` → auto-raise the M1 invoice.
  *
@@ -352,14 +379,7 @@ export async function generateFirstMilestoneInvoice(
   admin: ReturnType<typeof createAdminClient>,
   scope: { organizationId: string; projectId: string },
 ): Promise<Result<(InvoiceRef & { outcome: 'created' | 'already_invoiced' }) | { outcome: 'skipped'; reason: string }>> {
-  const { data: milestone, error: milestoneError } = await admin
-    .schema('projects')
-    .from('milestones')
-    .select('id, name, position, status, payment_percent, amount_minor, currency, due_on')
-    .eq('project_id', scope.projectId)
-    .eq('organization_id', scope.organizationId)
-    .eq('position', 1)
-    .maybeSingle();
+  const { data: milestone, error: milestoneError } = await nthPricedMilestone(admin, scope, 1);
 
   if (milestoneError) {
     console.error(
@@ -367,9 +387,8 @@ export async function generateFirstMilestoneInvoice(
     );
     return err('INTERNAL', 'Could not read the project’s payment plan.');
   }
-  // No milestone at position 1 — a hand-configured plan without the locked
-  // structure, or none installed yet. Not this handler's job to invent one.
-  if (!milestone) return ok({ outcome: 'skipped', reason: 'no milestone at position 1' });
+  // No first priced milestone — a project with no payment plan, or none installed yet. Not this handler's job to invent one.
+  if (!milestone) return ok({ outcome: 'skipped', reason: 'the payment plan has no first milestone' });
 
   const billable = milestoneInvoiceability({
     status: milestone.status,
@@ -437,15 +456,18 @@ export async function generateFirstMilestoneInvoice(
     gstin: profile?.gstin,
   });
 
-  // The event that triggers this handler only fires once
-  // `finance.confirm_billing_mode` has already validated completeness — an
-  // incomplete profile here means that guarantee broke, which is worth a
-  // person's attention rather than a silent skip.
+  // A GST project confirms its MODE first and its details after: the event this
+  // handler answers fires at the confirmation, and the profile is legitimately
+  // incomplete until the client's details are recorded. That is waiting, not
+  // failure - `finance.record_billing_details` publishes the same event again
+  // the moment the profile is complete, and this runs then (idempotently). A
+  // dead job here used to say "the guarantee broke" about a flow working as
+  // designed.
   if (!readiness.complete) {
-    return err(
-      'CONFLICT',
-      `Billing confirmation fired but the profile is still incomplete (missing: ${readiness.missing.join(', ') || 'unknown'}). The M1 invoice was not raised automatically.`,
-    );
+    return ok({
+      outcome: 'skipped' as const,
+      reason: `waiting for billing details (missing: ${readiness.missing.join(', ') || 'unknown'}); the M1 invoice is raised when they are recorded`,
+    });
   }
 
   const taxRateBp = taxRateBpForMode((profile?.mode as 'gst' | 'non_gst' | null) ?? null);
@@ -574,22 +596,15 @@ export async function generateM2Invoice(
   admin: ReturnType<typeof createAdminClient>,
   scope: { organizationId: string; projectId: string },
 ): Promise<Result<(InvoiceRef & { outcome: 'created' | 'already_invoiced' }) | { outcome: 'skipped'; reason: string }>> {
-  const { data: milestone, error: milestoneError } = await admin
-    .schema('projects')
-    .from('milestones')
-    .select('id, name, position, status, payment_percent, amount_minor, currency, due_on')
-    .eq('project_id', scope.projectId)
-    .eq('organization_id', scope.organizationId)
-    .eq('position', 2)
-    .maybeSingle();
+  const { data: milestone, error: milestoneError } = await nthPricedMilestone(admin, scope, 2);
 
   if (milestoneError) {
     console.error(JSON.stringify({ level: 'error', scope: 'generateM2Invoice', detail: milestoneError.message }));
     return err('INTERNAL', 'Could not read the project’s payment plan.');
   }
-  // No milestone at position 2 — a hand-configured plan without the locked
+  // No second priced milestone — a hand-configured plan without the locked
   // structure. Not this handler's job to invent one.
-  if (!milestone) return ok({ outcome: 'skipped', reason: 'no milestone at position 2' });
+  if (!milestone) return ok({ outcome: 'skipped', reason: 'the payment plan has no second milestone' });
 
   const billable = milestoneInvoiceability({
     status: milestone.status,
@@ -764,19 +779,13 @@ async function generateLaterMilestoneInvoice(
   step: { position: 3 | 4; label: 'M3' | 'M4'; phase: 5 | 6 },
 ): Promise<Result<(InvoiceRef & { outcome: 'created' | 'already_invoiced' }) | { outcome: 'skipped'; reason: string }>> {
   const fn = `generate${step.label}Invoice`;
-  const { data: milestone, error: milestoneError } = await admin
-    .schema('projects')
-    .from('milestones')
-    .select('id, name, position, status, payment_percent, amount_minor, currency, due_on')
-    .eq('project_id', scope.projectId)
-    .eq('organization_id', scope.organizationId)
-    .eq('position', step.position)
-    .maybeSingle();
+  // `step.position` is the milestone's ORDINAL in the plan (3 = M3, 4 = M4), not a stored position number.
+  const { data: milestone, error: milestoneError } = await nthPricedMilestone(admin, scope, step.position);
   if (milestoneError) {
     console.error(JSON.stringify({ level: 'error', scope: fn, detail: milestoneError.message }));
     return err('INTERNAL', 'Could not read the project’s payment plan.');
   }
-  if (!milestone) return ok({ outcome: 'skipped', reason: `no milestone at position ${step.position}` });
+  if (!milestone) return ok({ outcome: 'skipped', reason: `the payment plan has no milestone number ${step.position}` });
 
   const billable = milestoneInvoiceability({
     status: milestone.status,
@@ -2299,6 +2308,69 @@ export async function readPaymentProgress(
   // The gate and the unmeasurable rule live there, once, so the two doors
   // onto this row cannot drift apart.
   return ok(toLadderProgress(row));
+}
+
+/**
+ * Finance §9, automated: when Phase 7 completes (the client accepts the
+ * handover) and the project's maintenance was included free, the ₹0 document
+ * is raised - with no person pressing a button - and then delivered like any
+ * other invoice (`maintenance.free_invoice_issued` → `invoice.deliver`).
+ *
+ * Every rule is the database door's: it takes NO amount, it is idempotent per
+ * plan, and it refuses unless the project's payment is 100% VERIFIED (the
+ * Phase 7 gate, Finance §8). This only finds the plan, takes the next number
+ * from the one sequence every invoice uses, and translates the answer. A free
+ * plan whose payment is incomplete is NOT an error to retry forever: it is
+ * reported, and a person sees why.
+ */
+export async function generateFreeMaintenanceInvoices(
+  admin: ReturnType<typeof createAdminClient>,
+  scope: { organizationId: string; projectId: string },
+): Promise<Result<{ issued: number; alreadyIssued: number; refused: string[] }>> {
+  const { data: plans, error } = await admin
+    .schema('projects')
+    .from('maintenance_plans')
+    .select('id')
+    .eq('project_id', scope.projectId)
+    .eq('organization_id', scope.organizationId)
+    .eq('entitlement', 'free_included');
+  if (error) return err('INTERNAL', 'Could not read the maintenance plans.');
+
+  const out = { issued: 0, alreadyIssued: 0, refused: [] as string[] };
+  const year = new Date().getUTCFullYear();
+  const numbering = await readInvoiceNumbering(admin);
+
+  for (const plan of plans ?? []) {
+    let settled = false;
+    const highest = await highestInvoiceSequenceFor(admin, year, numbering.prefix);
+    for (let attempt = 0; attempt < NUMBER_ATTEMPTS && !settled; attempt += 1) {
+      const number = nextInvoiceNumber(year, highest, attempt, numbering.prefix);
+      const { data, error: rpcError } = await admin
+        .schema('finance')
+        .rpc('issue_free_maintenance_invoice', { p_plan_id: plan.id, p_number: number });
+      if (rpcError) {
+        console.error(JSON.stringify({ level: 'error', scope: 'generateFreeMaintenanceInvoices', detail: rpcError.message }));
+        return err('INTERNAL', 'Could not raise the free-maintenance invoice.');
+      }
+      const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+      switch (row?.outcome) {
+        case 'issued':
+          out.issued += 1;
+          settled = true;
+          break;
+        case 'already_issued':
+          out.alreadyIssued += 1;
+          settled = true;
+          break;
+        case 'number_taken':
+          continue;
+        default:
+          out.refused.push(`${plan.id}: ${row?.outcome ?? 'no answer'}`);
+          settled = true;
+      }
+    }
+  }
+  return ok(out);
 }
 
 /**

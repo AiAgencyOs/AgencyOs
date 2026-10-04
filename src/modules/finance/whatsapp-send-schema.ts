@@ -56,3 +56,21 @@ export function invoiceMessage(input: {
   lines.push('The PDF follows. Reply here with the payment reference once paid. Thank you.');
   return lines.join('\n');
 }
+
+/**
+ * The free-maintenance document (Finance §9), said in words. There is nothing to
+ * pay and nothing to verify, and the message says so - without a figure, and
+ * without a date it was not given: the end of the period is the plan's own.
+ */
+export function freeMaintenanceMessage(input: {
+  agencyName: string;
+  invoiceNumber: string;
+  endsOn: string | null;
+  projectName: string | null;
+}): string {
+  const until = input.endsOn ? ` until ${input.endsOn}` : '';
+  return [
+    `${input.agencyName}: the free maintenance included with ${input.projectName ? `"${input.projectName}"` : 'your project'} is active${until}.`,
+    `The attached document ${input.invoiceNumber} records it. No payment is needed.`,
+  ].join('\n');
+}

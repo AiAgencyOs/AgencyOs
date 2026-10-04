@@ -1,7 +1,7 @@
 import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
-import { generateFirstMilestoneInvoice, generateM2Invoice, generateM3Invoice, generateM4Invoice } from './service';
+import { generateFreeMaintenanceInvoices, generateFirstMilestoneInvoice, generateM2Invoice, generateM3Invoice, generateM4Invoice } from './service';
 
 /**
  * Job handlers for the finance module.
@@ -191,4 +191,51 @@ export async function handleInvoiceIssuedForDelivery(admin: Admin, job: BillingM
   const summary = result.outcomes.map((o) => `${o.channel}: ${o.result}${o.result === 'sent' ? '' : ` (${o.detail})`}`).join('; ');
   if (result.retry) return { status: 'failed', permanent: false, detail: summary.slice(0, 500) };
   return { status: 'succeeded', outcome: 'delivered', detail: summary.slice(0, 500) };
+}
+
+/**
+ * `handover.accepted` → raise the free-maintenance ₹0 document — Finance §9.
+ *
+ * The client accepting the handover is Phase 7 completing. The subject is the
+ * handover; the project is read from the ROW, org-scoped, never from the
+ * event's payload. A project with no free-included plan has nothing to raise
+ * and says so; a plan whose payment is not yet 100% verified is reported as a
+ * named refusal (the door's own answer), because retrying cannot make money
+ * arrive.
+ */
+export async function handleHandoverAcceptedForFinance(admin: Admin, job: BillingModeJob): Promise<HandlerResult> {
+  const handoverId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+  if (!handoverId) return { status: 'failed', permanent: true, detail: 'the event named no handover' };
+
+  const { data: handover, error } = await admin
+    .schema('projects')
+    .from('handovers')
+    .select('id, project_id')
+    .eq('id', handoverId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+  if (error) return { status: 'failed', permanent: false, detail: `could not read the handover: ${error.message}` };
+  if (!handover) return { status: 'succeeded', outcome: 'gone', detail: 'the handover no longer exists' };
+
+  const result = await generateFreeMaintenanceInvoices(admin, { organizationId: job.organization_id, projectId: handover.project_id });
+  if (!result.ok) return { status: 'failed', permanent: result.error.code !== 'INTERNAL', detail: result.error.message };
+
+  const { issued, alreadyIssued, refused } = result.data;
+  if (issued + alreadyIssued + refused.length === 0) {
+    return { status: 'succeeded', outcome: 'no_free_plan', detail: 'this project has no free-included maintenance' };
+  }
+  if (refused.length > 0) {
+    await admin.schema('core').rpc('raise_alert', {
+      p_organization_id: job.organization_id,
+      p_source: 'finance',
+      p_severity: 'warning',
+      p_summary: `A project's handover was accepted but its free-maintenance document was not raised (${refused.join('; ')}). Free maintenance waits on 100% verified payment.`,
+      p_fingerprint: `free-maintenance-refused:${handover.project_id}`,
+    });
+  }
+  return {
+    status: 'succeeded',
+    outcome: issued > 0 ? 'issued' : refused.length > 0 ? 'refused' : 'already_issued',
+    detail: `free-maintenance documents: ${issued} raised, ${alreadyIssued} already there${refused.length ? `, refused: ${refused.join('; ')}` : ''}`,
+  };
 }

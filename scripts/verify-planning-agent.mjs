@@ -130,6 +130,14 @@ const model = createServer((req, res) => {
 
     const mode = modes.get(key) ?? 'good';
     let out;
+    // Accepting a requirement asks the PM for a delivery plan - not the planner's question.
+    if (/delivery plan/i.test(JSON.stringify(parsed.system ?? ''))) {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({
+        id: 'msg_stub', type: 'message', role: 'assistant', model: 'claude-sonnet-5', stop_reason: 'end_turn',
+        content: [{ type: 'text', text: JSON.stringify({ modules: [{ name: 'Core', features: [{ name: 'Main', tasks: [{ title: 'Build it' }] }] }] }) }], usage: { input_tokens: 40, output_tokens: 30 },
+      }));
+    }
     if (mode === 'always_bad' || (mode === 'bad_then_good' && count === 1)) {
       out = goodFor(n);
       out.deliverables = out.deliverables.slice(0, 1); // misses the rest
@@ -386,7 +394,26 @@ try {
   check(Boolean(draftH), 'a plan with a question that mentions money is drafted');
   const held = await tickUntil(async () => (await rest('GET', 'core', `alerts?summary=ilike.*held back*&select=id,summary`)).json?.some((a) => a.summary.includes(h.name)));
   check(Boolean(held), 'but the question is HELD for a person, not sent');
-  check(textsTo(h.phone).length === 0, 'and the client received nothing');
+  check(!textsTo(h.phone).some((t) => /50,000|rupees/i.test(t)), 'and the client never saw it (the only message they got is the PM\'s "advance verified")');
+
+  // ── 7. the phase says what it is waiting for ──────────────────────────────
+  section('7. Phase 2\'s state follows the facts (Master §9)');
+  const i1 = await plant('i', { thread: true });
+  // Phase 1's accepted requirement: the kickoff gate reads it (a project without one waits on staff).
+  const req = one(await rest('POST', 'crm', 'requirement_versions', { organization_id: ORG, conversation_id: i1.conv.id, version: 1, source: 'agent', status: 'proposed', payload: { summary: 'A product.', scopeItems: [{ title: 'Item', detail: 'x' }], constraints: [], openQuestions: [] } }));
+  await rest('PATCH', 'crm', `requirement_versions?id=eq.${req.id}`, { status: 'accepted' });
+  modes.set(i1.name, 'good');
+  const stateOf = async () => (await rest('GET', 'projects', `phase_two?project_id=eq.${i1.project.id}&select=state`)).json?.[0]?.state;
+  const sawClient = await tickUntil(async () => (await stateOf()) === 'waiting_client', 10);
+  check(Boolean(sawClient), 'no billing mode yet: it reads WAITING CLIENT', String(await stateOf()));
+  await rest('POST', 'finance', 'billing_profiles', { organization_id: ORG, project_id: i1.project.id, client_account_id: i1.client.id, version: 1, status: 'active', mode: 'non_gst', source: 'internal' });
+  const sawFinance = await tickUntil(async () => (await stateOf()) === 'waiting_finance', 10);
+  check(Boolean(sawFinance), 'billing confirmed, advance unverified: WAITING FINANCE', String(await stateOf()));
+  await advanceVerified(i1, 1);
+  const sawPlanning = await tickUntil(async () => (await stateOf()) === 'waiting_planning', 15);
+  check(Boolean(sawPlanning), 'advance verified, plan not yet active: WAITING PLANNING', String(await stateOf()));
+  const audits = (await rest('GET', 'audit', `audit_log?subject_id=eq.${i1.project.id}&action=eq.project.phase_two_state_changed&select=before,after`)).json ?? [];
+  check(audits.length >= 3 && audits.some((a) => a.after?.state === 'waiting_planning'), 'each change is audited with before and after', `${audits.length}`);
 } catch (e) {
   console.error(e);
   failures += 1;

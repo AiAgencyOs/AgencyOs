@@ -107,7 +107,7 @@ describe('the subscription catalog', () => {
   test('invoice.paid is consumed by the milestone unlock handler, and the PM4-M08 announcer', () => {
     // PM4-M08 (M2 Verified / Task 3 Start) is a second, independent listener
     // on the same pre-existing fact — not a new gate, only a new reaction.
-    assert.deepEqual(subscribersFor('invoice.paid'), ['projects:unlockNextMilestone', 'crm:announceM2PaymentVerified', 'project_planning:draftBlueprint']);
+    assert.deepEqual(subscribersFor('invoice.paid'), ['projects:unlockNextMilestone', 'crm:announceM2PaymentVerified', 'project_planning:draftBlueprint', 'projects:updateClientOnPayment']);
   });
 
   test('an issued invoice is delivered by exactly one handler (Phase 2 Finance §4.5)', () => {
@@ -158,15 +158,16 @@ describe('dedupe keys', () => {
 });
 
 describe('planJobsForEvent', () => {
-  test('an invoice.paid event plans an unlock job, a PM4-M08 announcement job and the planner\'s start', () => {
+  test('an invoice.paid event plans an unlock job, a PM4-M08 announcement job, the planner\'s start and the client\'s payment message', () => {
     const jobs = planJobsForEvent(invoicePaid);
 
-    assert.equal(jobs.length, 3);
+    assert.equal(jobs.length, 4);
     assert.equal(jobs[0]?.kind, 'milestone.unlock');
     assert.equal(jobs[0]?.dedupe_key, 'evt:4242:projects:unlockNextMilestone');
     assert.equal(jobs[1]?.kind, 'm2_payment_verified.announce');
     assert.equal(jobs[1]?.dedupe_key, 'evt:4242:crm:announceM2PaymentVerified');
     assert.equal(jobs[2]?.kind, 'planning.blueprint');
+    assert.equal(jobs[3]?.kind, 'pm.payment_update');
   });
 
   test('the organization comes from the event row, not its payload', () => {

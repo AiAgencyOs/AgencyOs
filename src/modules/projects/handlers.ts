@@ -512,7 +512,16 @@ export async function handleHandoffBound(admin: Admin, job: UnlockJob): Promise<
     }
     case 'no_handoff':
       // Master §5.1: block rather than invent. Permanent, because retrying
-      // cannot make a packet appear — a person must repair the handoff.
+      // cannot make a packet appear — a person must repair the handoff. And
+      // §13: "block Phase 2; remediation task" - so staff are TOLD, where they
+      // look, rather than finding a dead job on the Operations page.
+      await admin.schema('core').rpc('raise_alert', {
+        p_organization_id: job.organization_id,
+        p_source: 'phase_two',
+        p_severity: 'warning',
+        p_summary: 'A won deal reached Phase 2 with no handoff packet, so Phase 2 did not start and nothing was invented. Repair the handoff on the deal, then start the project again.',
+        p_fingerprint: `phase-two-no-handoff:${projectId}`,
+      });
       return {
         status: 'failed',
         permanent: true,

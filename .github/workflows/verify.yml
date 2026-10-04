@@ -806,6 +806,15 @@ jobs:
           # corrected once, refused twice writes nothing, a person's plan stands.
           npm run db:verify:planner
 
+          # Phase 2 Finance §9: Phase 7 complete raises the free-maintenance ₹0 document
+          # and delivers it; refused while payment is below 100% verified.
+          npm run db:verify:freemaint
+
+          # Phase 2 end to end: a won deal to the official kickoff and Phase 3, every human
+          # gate a person acting, every automatic step the system alone, the negatives at
+          # the moment they matter. (Found six defects the unit suites could not.)
+          npm run db:verify:phase2
+
           # PH1-CLS-002 and G-250. Doc 09 §33: a handoff is a real workflow
           # event, not a note. Wins a deal through the governed path, reads the
           # ai.handoffs row, the outbox row and the packet projection — and
