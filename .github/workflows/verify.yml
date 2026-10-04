@@ -835,6 +835,9 @@ jobs:
           # Slice 4: connections cannot look verified without a real adapter result; a provider credential is encrypted per tenant and
           # unreadable by a session; one policy question (no policy is never permission); an approval covers exactly the content it was
           # given, expires, and a governed side effect runs ONCE (replay, pause-at-execution, uncertain outcome -> reconcile).
+          # Slice 5: a meeting or quotation request is a SUBTASK. Only the conversation owner may ask; it may not carry a price; a quote
+          # names the confirmed requirements; the link follows the REAL meeting lifecycle (incl. a reschedule's new row) and the real
+          # proposal versions; control returns to the owner at the time it ends.
           npm run db:verify:acquisition
 
           # The AI Provider Manager's contract: who may manage providers, models and keys; no path returns a secret;

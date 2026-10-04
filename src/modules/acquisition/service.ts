@@ -189,3 +189,25 @@ export async function cancelHandoff(input: { handoffId: string; reason: string }
       return err('FORBIDDEN', FORBIDDEN);
   }
 }
+
+export async function cancelSubtask(input: { subtaskId: string; reason: string }): Promise<Result<true>> {
+  const gate = await manager();
+  if (!gate.ok) return gate;
+  const context = await requireInternal();
+  if (!context.organizationId) return err('FORBIDDEN', 'Your account is not attached to an organisation.');
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('cancel_subtask', { p_organization_id: context.organizationId, p_subtask: input.subtaskId, p_reason: input.reason });
+  if (error) return err('INTERNAL', 'Could not cancel the request.');
+  switch (first<{ outcome?: string }>(data)?.outcome) {
+    case 'cancelled':
+      return ok(true);
+    case 'needs_reason':
+      return err('VALIDATION', 'Say why - the reason is kept.');
+    case 'not_live':
+      return err('CONFLICT', 'That request has already ended.');
+    case 'not_found':
+      return err('NOT_FOUND', 'That request no longer exists.');
+    default:
+      return err('FORBIDDEN', FORBIDDEN);
+  }
+}

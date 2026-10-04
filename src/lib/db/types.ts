@@ -3947,6 +3947,90 @@ export type Database = {
   }
   crm: {
     Tables: {
+      subtask_requests: {
+        Row: {
+          id: string
+          organization_id: string
+          lead_id: string
+          kind: string
+          requested_by_owner: string
+          assignee: string | null
+          status: string
+          priority: number
+          objective: string
+          input: Json
+          context_refs: Json
+          requirement_version_id: string | null
+          meeting_id: string | null
+          proposal_id: string | null
+          progress: Json
+          result: Json | null
+          failure_reason: string | null
+          returned_to_owner: string | null
+          idempotency_key: string
+          correlation_id: string | null
+          created_by: string | null
+          created_at: string
+          accepted_at: string | null
+          completed_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          lead_id: string
+          kind: string
+          requested_by_owner: string
+          assignee?: string | null
+          status?: string
+          priority?: number
+          objective: string
+          input: Json
+          context_refs?: Json
+          requirement_version_id?: string | null
+          meeting_id?: string | null
+          proposal_id?: string | null
+          progress?: Json
+          result?: Json | null
+          failure_reason?: string | null
+          returned_to_owner?: string | null
+          idempotency_key: string
+          correlation_id?: string | null
+          created_by?: string | null
+          created_at?: string
+          accepted_at?: string | null
+          completed_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          lead_id?: string
+          kind?: string
+          requested_by_owner?: string
+          assignee?: string | null
+          status?: string
+          priority?: number
+          objective?: string
+          input?: Json
+          context_refs?: Json
+          requirement_version_id?: string | null
+          meeting_id?: string | null
+          proposal_id?: string | null
+          progress?: Json
+          result?: Json | null
+          failure_reason?: string | null
+          returned_to_owner?: string | null
+          idempotency_key?: string
+          correlation_id?: string | null
+          created_by?: string | null
+          created_at?: string
+          accepted_at?: string | null
+          completed_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       acquisition_integrations: {
         Row: {
           id: string
@@ -7107,6 +7191,26 @@ export type Database = {
       }
     }
     Functions: {
+      request_subtask: {
+        Args: { p_correlation_id?: string; p_idempotency_key: string; p_input: Json; p_kind: string; p_lead: string; p_objective: string; p_organization_id: string; p_priority?: number; p_requesting_agent: string }
+        Returns: { outcome: string | null; subtask_id: string | null; meeting_id: string | null }[]
+      }
+      accept_subtask: {
+        Args: { p_assignee: string; p_organization_id: string; p_subtask: string }
+        Returns: { outcome: string | null }[]
+      }
+      link_subtask_proposal: {
+        Args: { p_organization_id: string; p_proposal: string; p_subtask: string }
+        Returns: { outcome: string | null }[]
+      }
+      cancel_subtask: {
+        Args: { p_organization_id: string; p_reason: string; p_subtask: string }
+        Returns: { outcome: string | null }[]
+      }
+      fail_subtask: {
+        Args: { p_organization_id: string; p_reason: string; p_subtask: string }
+        Returns: { outcome: string | null }[]
+      }
       register_integration: {
         Args: { p_adapter_implemented: boolean; p_environment: string; p_label: string; p_provider: string }
         Returns: { outcome: string | null; integration_id: string | null }[]

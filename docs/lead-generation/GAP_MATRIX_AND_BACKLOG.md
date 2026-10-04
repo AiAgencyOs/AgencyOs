@@ -69,7 +69,7 @@ Design decisions this implies (recorded here so they are made once):
 | 2 | Unified identity: normalised identity keys, `DUPLICATE_REVIEW` queue, touchpoints (first/last/multi), canonical outcome (derived), primary conversation owner | 1 | **BUILT, see §4** (contact consolidation after `confirmed_same` is NOT built) |
 | 3 | Tracked WhatsApp handoff: opaque token (hash stored), expiry, replay/tenant protection, context package, ownership transfer to Sales | 2 | **BUILT** (engines that create handoffs arrive with 6-10) |
 | 4 | Connector registry (tenant-scoped credentials, capability model, health, Test Connection), policy-decision function, approval subject types + content-hash binding | 1 | **BUILT** (no provider adapter exists yet) |
-| 5 | Scheduler + Quotation Master structured handoffs (agent-callable, return to channel owner) | 2, 3 | not started |
+| 5 | Scheduler + Quotation Master structured handoffs (agent-callable, return to channel owner) | 2, 3 | **BUILT** (the Scheduler/Quotation Master LLM agents themselves are not) |
 | 6 | Email engine: prospect discovery → research → qualification → drafting → nurture → meeting/quote → handoff; follow-up engine state checks | 2–5 | not started |
 | 7 | Social: audit, strategy (3/6/9 mo), content versioning + exact-version approval + publish idempotency, analytics, then prospecting/outreach | 4, 5 | not started |
 | 8 | Meta Ads: audit, campaign (policy/approval/budget limits), monitoring, WhatsApp attribution | 3, 4 | not started |
@@ -143,6 +143,15 @@ Design decisions this implies (recorded here so they are made once):
 * **Not built:** any provider adapter; scheduled health/expiry checks; the engines that call these doors.
 * **Design decision recorded:** email outreach keeps its own four-eyes approval path (it predates this and is tested); moving it into
   the Approval Center remains the owner's call.
+
+### Slice 5 (Scheduler and Quotation subtasks) - built and verified
+
+* Migration `20261017100000_a_subtask_returns_to_the_conversation_owner.sql`: `crm.subtask_requests` (frozen request, state machine,
+  idempotency, one open per kind per lead), doors `request / accept / link_proposal / cancel / fail`, AFTER triggers that carry the
+  real meeting and proposal lifecycles back (reschedule follows the new row), and `_json_has_key` (no price at any depth).
+* `src/modules/acquisition/subtasks.ts` (typed doors; no price field exists), a requests card on the Identity screen.
+* `scripts/verify-acquisition-subtasks.sql`: driven through the real meeting doors; red-proved eleven ways.
+* **Not built:** an LLM Scheduler / Quotation Master agent; calendar availability; a no-show outcome (the existing door lacks one).
 
 ## 5. Human dependencies (known now; asked for only when the engine reaches them)
 

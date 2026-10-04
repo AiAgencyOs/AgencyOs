@@ -7,7 +7,7 @@ import type { FormState } from '@/modules/identity/types';
 
 import { ACQUISITION_CHANNELS, ICP_LIST_KEYS, buildIcpDefinition, type AcquisitionChannel } from './schema';
 import { registerIntegration, saveAcquisitionPolicy, setIntegrationState, storeConnectorSecret, testConnection } from './integrations';
-import { cancelHandoff, decideDuplicateReview, saveChannelSettings, saveHandoffSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
+import { cancelSubtask, cancelHandoff, decideDuplicateReview, saveChannelSettings, saveHandoffSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
 
 const text = (f: FormData, n: string) => String(f.get(n) ?? '').trim();
 const BASE = '/lead-generation';
@@ -161,4 +161,11 @@ export async function savePolicyAction(_p: FormState, f: FormData): Promise<Form
   if (!r.ok) return { status: 'error', message: r.error.message };
   refresh();
   return { status: 'success', message: 'Saved.' };
+}
+
+export async function cancelSubtaskAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await cancelSubtask({ subtaskId: text(f, 'subtaskId'), reason: text(f, 'reason') });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: 'Cancelled. Control is back with the conversation owner.' };
 }

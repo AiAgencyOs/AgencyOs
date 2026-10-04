@@ -264,3 +264,43 @@ export async function listRecentDecisions(limit = 15): Promise<DecisionView[]> {
   if (error) unreadable('listRecentDecisions', error);
   return (data ?? []).map((d) => ({ actionType: d.action_type, channel: d.channel, decision: d.decision, reason: d.reason, createdAt: d.created_at }));
 }
+
+export type SubtaskView = {
+  id: string;
+  kind: string;
+  status: string;
+  assignee: string | null;
+  requestedByOwner: string;
+  returnedToOwner: string | null;
+  objective: string;
+  leadId: string;
+  leadTitle: string;
+  meetingId: string | null;
+  proposalId: string | null;
+  failureReason: string | null;
+  progress: Record<string, unknown>;
+  createdAt: string;
+};
+
+/** Recent subtasks, open ones first. */
+export async function listSubtasks(limit = 30): Promise<{ rows: SubtaskView[]; open: number }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('subtask_requests')
+    .select('id, kind, status, assignee, requested_by_owner, returned_to_owner, objective, lead_id, meeting_id, proposal_id, failure_reason, progress, created_at')
+    .order('created_at', { ascending: false }).limit(limit);
+  if (error) unreadable('listSubtasks', error);
+  const ids = [...new Set((data ?? []).map((s) => s.lead_id))];
+  const titles = new Map<string, string>();
+  if (ids.length > 0) {
+    const { data: leads, error: leadsError } = await supabase.schema('crm').from('leads').select('id, title').in('id', ids);
+    if (leadsError) unreadable('listSubtasks.leads', leadsError);
+    for (const l of leads ?? []) titles.set(l.id, l.title);
+  }
+  const rows = (data ?? []).map((s) => ({
+    id: s.id, kind: s.kind, status: s.status, assignee: s.assignee, requestedByOwner: s.requested_by_owner, returnedToOwner: s.returned_to_owner,
+    objective: s.objective, leadId: s.lead_id, leadTitle: titles.get(s.lead_id) ?? 'Lead', meetingId: s.meeting_id, proposalId: s.proposal_id,
+    failureReason: s.failure_reason, progress: (s.progress ?? {}) as Record<string, unknown>, createdAt: s.created_at,
+  }));
+  rows.sort((a, b) => Number(['REQUESTED', 'IN_PROGRESS'].includes(b.status)) - Number(['REQUESTED', 'IN_PROGRESS'].includes(a.status)));
+  return { rows, open: rows.filter((r) => ['REQUESTED', 'IN_PROGRESS'].includes(r.status)).length };
+}

@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import {
+  cancelSubtaskAction,
   savePolicyAction,
   cancelHandoffAction,
   decideDuplicateReviewAction,
@@ -204,6 +205,18 @@ export function PolicyForm({ action: actionType, current, isOwner }: { action: (
       <Field label="Owner above (₹)"><input name="escalateAbove" inputMode="numeric" defaultValue={current?.escalateAbove === null || current?.escalateAbove === undefined ? '' : Math.round(current.escalateAbove / 100)} className={inputClass} /></Field>
       <button type="submit" disabled={pending} className={buttonClass('secondary')}>Save</button>
       <div className="sm:col-span-5"><FormMessage status={state.status} message={state.message} /></div>
+    </form>
+  );
+}
+
+export function CancelSubtaskForm({ subtaskId }: { subtaskId: string }) {
+  const [state, action, pending] = useActionState(cancelSubtaskAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex items-end gap-2">
+      <input type="hidden" name="subtaskId" value={subtaskId} />
+      <input name="reason" required maxLength={500} placeholder="Why cancel?" aria-label="Reason for cancelling" className={inputClass} />
+      <button type="submit" disabled={pending} className={buttonClass('danger')}>Cancel request</button>
+      <FormMessage status={state.status} message={state.message} />
     </form>
   );
 }
