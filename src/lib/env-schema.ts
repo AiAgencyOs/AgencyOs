@@ -156,6 +156,8 @@ export const serverSchema = z.object({
   RESEND_API_KEY: z.string().min(8, 'RESEND_API_KEY looks too short').optional(),
   SMTP_HOST: z.string().trim().min(1).optional(),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional(),
+  IMAP_HOST: z.string().min(1).optional(),
+  IMAP_PORT: z.coerce.number().int().min(1).max(65535).optional(),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   /** `true` forces implicit TLS (port 465 style); otherwise STARTTLS is attempted when the server offers it. */
