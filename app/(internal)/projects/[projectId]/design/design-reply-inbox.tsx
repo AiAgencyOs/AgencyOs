@@ -69,7 +69,10 @@ function WaitingActions({ projectId, reply }: { projectId: string; reply: Design
   );
 }
 
-export function ReplyInbox({ projectId, replies, mayAct, dateTime }: { projectId: string; replies: DesignReplyRow[]; mayAct: boolean; dateTime: (iso: string) => string }) {
+/** A reply with its time already written out: a Server Component cannot hand a Client Component a function, only data. */
+export type DesignReplyView = DesignReplyRow & { createdLabel: string };
+
+export function ReplyInbox({ projectId, replies, mayAct }: { projectId: string; replies: DesignReplyView[]; mayAct: boolean }) {
   if (replies.length === 0) {
     return <p className="text-[13px] text-muted">No client reply to the design options has been read yet.</p>;
   }
@@ -80,7 +83,7 @@ export function ReplyInbox({ projectId, replies, mayAct, dateTime }: { projectId
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{INTENT_LABEL[r.intent] ?? r.intent}</span>
             <span className="text-xs text-muted">
-              {r.source === 'rule' ? 'read by rule' : `${Math.round(r.confidence * 100)}% sure`} · {STATUS_LABEL[r.status] ?? r.status} · {dateTime(r.createdAt)}
+              {r.source === 'rule' ? 'read by rule' : `${Math.round(r.confidence * 100)}% sure`} · {STATUS_LABEL[r.status] ?? r.status} · {r.createdLabel}
             </span>
           </div>
           <blockquote className="border-l-2 border-line pl-2 text-muted">“{r.clientWords}”</blockquote>
