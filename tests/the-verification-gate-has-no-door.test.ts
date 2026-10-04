@@ -104,9 +104,9 @@ describe('B. recorded and confirmed are shown as two different facts', () => {
 });
 
 describe('C. the control this restores is not weakened by restoring it', () => {
-  test('confirming is behind invoice.issue — owner and ops_admin, who ADM-04 names', () => {
-    assert.match(SERVICE, /if \(!can\(context, 'invoice\.issue'\)\) \{\n\s*return err\('FORBIDDEN', 'You do not have permission to confirm payments\.'\)/);
-    assert.match(PAGE, /mayIssue && p\.status === 'captured'/);
+  test('confirming is behind payment.verify - the owner alone (decision 2026-10-04; ADM-04 named owner and ops_admin)', () => {
+    assert.match(SERVICE, /if \(!can\(context, 'payment\.verify'\)\) \{\n\s*return err\('FORBIDDEN', 'Only the owner confirms that money arrived\.'\)/);
+    assert.match(PAGE, /mayVerifyPayment && p\.status === 'captured'/);
   });
 
   test('only CAPTURED money is offered for confirmation', () => {

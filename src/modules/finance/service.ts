@@ -1793,7 +1793,7 @@ export async function recordRefund(input: RecordRefundInput): Promise<Result<{ n
 
 /** The row `finance.verify_payment` returns. */
 type VerifyPaymentRow = {
-  outcome: 'verified' | 'not_found' | 'already_verified' | 'not_captured';
+  outcome: 'verified' | 'not_found' | 'already_verified' | 'not_captured' | 'forbidden';
   invoice_id: string | null;
   verified_after_minor: number | null;
   status_after: string | null;
@@ -1846,8 +1846,8 @@ export async function verifyPayment(input: VerifyPaymentInput): Promise<Result<V
   }
 
   const context = await requireInternal();
-  if (!can(context, 'invoice.issue')) {
-    return err('FORBIDDEN', 'You do not have permission to confirm payments.');
+  if (!can(context, 'payment.verify')) {
+    return err('FORBIDDEN', 'Only the owner confirms that money arrived.');
   }
 
   const supabase = await createClient();
@@ -1895,6 +1895,9 @@ export async function verifyPayment(input: VerifyPaymentInput): Promise<Result<V
 
     case 'not_found':
       return err('NOT_FOUND', 'That payment is not in this organization.');
+
+    case 'forbidden':
+      return err('FORBIDDEN', 'Only the owner confirms that money arrived.');
 
     // Money that failed, or was never captured, is not money to confirm.
     case 'not_captured':
@@ -2032,7 +2035,8 @@ type VerifySubmissionRow = {
     | 'no_verifier'
     | 'no_reason'
     | 'no_note'
-    | 'unknown_decision';
+    | 'unknown_decision'
+    | 'forbidden';
   status: string | null;
 };
 
@@ -2055,8 +2059,8 @@ export async function verifyPaymentSubmission(
   }
 
   const context = await requireInternal();
-  if (!can(context, 'invoice.issue')) {
-    return err('FORBIDDEN', 'You do not have permission to verify a payment claim.');
+  if (!can(context, 'payment.verify')) {
+    return err('FORBIDDEN', 'Only the owner verifies a payment claim.');
   }
 
   const supabase = await createClient();
@@ -2107,6 +2111,8 @@ export async function verifyPaymentSubmission(
       return err('VALIDATION', 'Say what does not match.');
     case 'no_verifier':
       return err('FORBIDDEN', 'A verification names the person who did it.');
+    case 'forbidden':
+      return err('FORBIDDEN', 'Only the owner verifies a payment claim.');
 
     default:
       return err('INTERNAL', 'Could not record the verification.');

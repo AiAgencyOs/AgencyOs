@@ -365,12 +365,12 @@ describe('E. the capability', () => {
     assert.deepEqual(seen.rpcs, []);
   });
 
-  test('it reuses invoice.issue rather than inventing a capability', () => {
-    // The set is identical to the one that already records payments, and
-    // finance's own rule is that a new capability mapping to an identical role
-    // set adds vocabulary without adding control.
+  test('it is behind payment.verify - the owner\'s alone (decision 2026-10-04, separation of duties)', () => {
+    // It once reused invoice.issue (owner + ops_admin) on finance's rule that a capability mapping to an
+    // identical role set adds vocabulary without adding control. The owner then chose a DIFFERENT set: the
+    // person who issues an invoice and records what the client paid must not also open the finance gate.
     const service = read('../src/modules/finance/service.ts');
     const body = region(service, 'export async function verifyPayment');
-    assert.match(body.slice(0, 800), /can\(context, 'invoice\.issue'\)/);
+    assert.match(body.slice(0, 800), /can\(context, 'payment\.verify'\)/);
   });
 });

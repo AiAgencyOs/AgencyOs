@@ -36,7 +36,7 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
   const payment = await getPaymentDetail(paymentId);
   if (!payment) notFound();
 
-  const mayVerify = can(context, 'invoice.issue');
+  const mayVerify = can(context, 'payment.verify');
   const verified = payment.verifiedAt !== null && payment.status === 'captured';
   const owed = Math.max(0, payment.invoiceTotalMinor - payment.invoiceVerifiedMinor);
 

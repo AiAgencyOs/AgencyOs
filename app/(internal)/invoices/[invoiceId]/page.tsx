@@ -146,6 +146,7 @@ export default async function InvoicePage({
   });
 
   const mayIssue = can(context, 'invoice.issue');
+  const mayVerifyPayment = can(context, 'payment.verify');
   // Owner-only, and has been since the capability matrix was written. This is
   // its first caller.
   const mayRefund = can(context, 'refund.issue');
@@ -446,7 +447,7 @@ export default async function InvoicePage({
                 cell: (p) =>
                   p.verified_at ? (
                     <span className="text-success">confirmed {when(clock, p.verified_at)}</span>
-                  ) : mayIssue && p.status === 'captured' ? (
+                  ) : mayVerifyPayment && p.status === 'captured' ? (
                     <VerifyPaymentButton
                       paymentId={p.id}
                       invoiceId={invoiceId}

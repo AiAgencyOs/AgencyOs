@@ -1212,7 +1212,12 @@ export default async function ProjectPage({
                     </p>
                   ) : null}
 
-                  <VerifyClaimForm projectId={projectId} claim={c} />
+                  {/* Confirming that money arrived is the owner's alone (separation of duties). */}
+                  {can(context, 'payment.verify') ? (
+                    <VerifyClaimForm projectId={projectId} claim={c} />
+                  ) : (
+                    <p className="mt-1 text-xs text-muted">The owner verifies this claim.</p>
+                  )}
                 </li>
               ))}
             </ul>
