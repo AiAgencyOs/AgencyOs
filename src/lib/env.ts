@@ -97,6 +97,9 @@ export function serverEnv(): ServerEnv {
     SMTP_PASS: process.env.SMTP_PASS,
     SMTP_SECURE: process.env.SMTP_SECURE,
     EMAIL_FROM: process.env.EMAIL_FROM,
+    SMTP_OUTREACH_USER: process.env.SMTP_OUTREACH_USER,
+    SMTP_OUTREACH_PASS: process.env.SMTP_OUTREACH_PASS,
+    EMAIL_OUTREACH_FROM: process.env.EMAIL_OUTREACH_FROM,
   });
 
   if (!parsed.success) {

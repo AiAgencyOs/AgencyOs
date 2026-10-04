@@ -96,6 +96,9 @@ const ITEMS: readonly Omit<ConfigItem, 'present'>[] = [
   { key: 'SMTP_PASS', area: 'Email', secret: true, requiredInProduction: false, note: 'SMTP password, sent only after STARTTLS or over implicit TLS.' },
   { key: 'SMTP_SECURE', area: 'Email', secret: false, requiredInProduction: false, note: '"true" for implicit TLS (port 465 style); otherwise STARTTLS when the server offers it.' },
   { key: 'EMAIL_FROM', area: 'Email', secret: false, requiredInProduction: false, note: 'The sender address on every email. Unset ⇒ email is not configured, whichever transport is set.' },
+  { key: 'EMAIL_OUTREACH_FROM', area: 'Email', secret: false, requiredInProduction: false, note: 'The outreach mailbox (info@), for lead generation and marketing only. Unset ⇒ outreach email is refused; it never uses the client mailbox.' },
+  { key: 'SMTP_OUTREACH_USER', area: 'Email', secret: false, requiredInProduction: false, note: 'SMTP login of the outreach mailbox (same SMTP_HOST).' },
+  { key: 'SMTP_OUTREACH_PASS', area: 'Email', secret: true, requiredInProduction: false, note: 'Password of the outreach mailbox.' },
   { key: 'SUPABASE_FILES_BUCKET', area: 'Files', secret: false, requiredInProduction: false, note: 'The Storage bucket project files are uploaded to. Unset ⇒ "project-files". The Files tab says when the bucket does not answer.' },
   { key: 'VAULT_ENCRYPTION_KEY', area: 'AI provider', secret: true, requiredInProduction: true, note: 'Encrypts a provider key an admin enters through Settings before it is stored (ADM-84 §9 overturned). Unset ⇒ the vault refuses every write rather than storing an unrecoverable row.' },
 ];
