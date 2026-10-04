@@ -150,6 +150,12 @@ create trigger suppression_is_permanent
   before update or delete on crm.email_suppressions
   for each row execute function crm.suppression_is_permanent();
 
+-- (updates are refused outright above; the tenancy scanner still wants the freeze on every org-scoped table)
+drop trigger if exists freeze_org_email_suppressions on crm.email_suppressions;
+create trigger freeze_org_email_suppressions
+  before update of organization_id on crm.email_suppressions
+  for each row execute function core.freeze_organization_id();
+
 alter table crm.email_suppressions enable row level security;
 alter table crm.email_suppressions force row level security;
 drop policy if exists email_suppressions_select on crm.email_suppressions;
