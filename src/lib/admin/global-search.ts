@@ -1,5 +1,6 @@
 'use server';
 
+import { ilikeAny } from '@/lib/db/search';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
@@ -54,8 +55,9 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
       supabase
         .schema('core')
         .from('client_accounts')
-        .select('id, name')
-        .ilike('name', like)
+        .select('id, name, client_code')
+        // A client is found by its name or by its identifier for life (CL-000042).
+        .or(ilikeAny(['name', 'client_code'], trimmed))
         .limit(RESULTS_PER_ENTITY)
         .then(({ data }) => (data ?? []).map((c) => ({ id: c.id, label: c.name, group: 'Client', href: `/clients/${c.id}` }))),
     );
@@ -64,8 +66,9 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
       supabase
         .schema('projects')
         .from('projects')
-        .select('id, name')
-        .ilike('name', like)
+        .select('id, name, project_code')
+        // ...and a project by its name or its own identifier (CL-000042-P03).
+        .or(ilikeAny(['name', 'project_code'], trimmed))
         .is('deleted_at', null)
         .limit(RESULTS_PER_ENTITY)
         .then(({ data }) => (data ?? []).map((p) => ({ id: p.id, label: p.name, group: 'Project', href: `/projects/${p.id}` }))),

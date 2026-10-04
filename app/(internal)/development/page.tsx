@@ -56,7 +56,7 @@ const COLUMNS: Column<Row>[] = [
     cell: (p) => (
       <>
         <span className="block font-medium text-foreground">{p.name}</span>
-        <span className="block text-xs text-muted">{p.code}</span>
+        <span className="block font-mono text-[11px] text-muted">{p.project_code}</span>
       </>
     ),
   },

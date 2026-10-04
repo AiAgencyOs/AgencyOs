@@ -39,7 +39,8 @@ export function WorkspaceHeader({
         subtitle={project.description ?? undefined}
         facts={[
           { label: 'Client', value: clientName ?? 'Internal project', icon: <IconUser size={14} /> },
-          { label: 'Project code', value: <span className="font-mono">{project.code}</span>, icon: <IconList size={14} /> },
+          { label: 'Project ID', value: <span className="font-mono">{project.project_code}</span>, icon: <IconList size={14} /> },
+          ...(project.code ? [{ label: 'Reference', value: <span className="font-mono">{project.code}</span>, icon: <IconList size={14} /> }] : []),
           { label: 'Start date', value: project.starts_on ? clock.date(project.starts_on) : 'Not set', icon: <IconCalendar size={14} /> },
           {
             label: daysLeft === null ? 'Due date' : daysLeft >= 0 ? `${daysLeft} days remaining` : `${-daysLeft} days overdue`,

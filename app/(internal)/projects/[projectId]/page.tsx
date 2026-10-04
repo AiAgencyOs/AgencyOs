@@ -414,7 +414,8 @@ export default async function ProjectPage({
         }
         facts={[
           { label: 'Client', value: clientName ?? 'Internal project', icon: <IconUser size={14} /> },
-          { label: 'Project code', value: <span className="font-mono">{project.code}</span>, icon: <IconList size={14} /> },
+          { label: 'Project ID', value: <span className="font-mono">{project.project_code}</span>, icon: <IconList size={14} /> },
+          ...(project.code ? [{ label: 'Reference', value: <span className="font-mono">{project.code}</span>, icon: <IconList size={14} /> }] : []),
           { label: 'Start date', value: project.starts_on ? clock.date(project.starts_on) : 'Not set', icon: <IconCalendar size={14} /> },
           { label: 'Due date', value: project.ends_on ? clock.date(project.ends_on) : 'Not set', icon: <IconCalendar size={14} /> },
           // SCR-019 header: the lifecycle phase beside the status, and the milestone payment status
@@ -1418,7 +1419,8 @@ export default async function ProjectPage({
           rows={[
             { label: 'Project name', value: project.name },
             { label: 'Client', value: project.client_account_id ? <Link href={`/clients/${project.client_account_id}`} className="text-brand hover:underline">{clientName ?? 'Client'}</Link> : 'Internal project' },
-            { label: 'Code', value: <span className="font-mono">{project.code}</span> },
+            { label: 'Project ID', value: <span className="font-mono">{project.project_code}</span> },
+            { label: 'Reference', value: project.code ? <span className="font-mono">{project.code}</span> : 'Not set' },
             { label: 'Start date', value: project.starts_on ? clock.date(project.starts_on) : 'Not set' },
             { label: 'Due date', value: project.ends_on ? clock.date(project.ends_on) : 'Not set' },
             { label: 'Status', value: <StatusBadge status={project.status} /> },
