@@ -9,6 +9,132 @@ export type Json =
 export type Database = {
   ai: {
     Tables: {
+      routing_settings: {
+        Row: {
+          organization_id: string
+          mode: string
+          version: number
+          reason: string | null
+          changed_by: string | null
+          changed_at: string
+        }
+        Insert: {
+          organization_id: string
+          mode?: string
+          version?: number
+          reason?: string | null
+          changed_by?: string | null
+          changed_at?: string
+        }
+        Update: {
+          organization_id?: string
+          mode?: string
+          version?: number
+          reason?: string | null
+          changed_by?: string | null
+          changed_at?: string
+        }
+        Relationships: []
+      }
+      agent_model_assignments: {
+        Row: {
+          id: string
+          organization_id: string
+          agent_key: string
+          provider_id: string
+          model_id: string
+          fallbacks: Json
+          note: string | null
+          set_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          agent_key: string
+          provider_id: string
+          model_id: string
+          fallbacks?: Json
+          note?: string | null
+          set_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          agent_key?: string
+          provider_id?: string
+          model_id?: string
+          fallbacks?: Json
+          note?: string | null
+          set_by?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      routing_decisions: {
+        Row: {
+          id: string
+          organization_id: string
+          job_id: string | null
+          run_id: string | null
+          agent_key: string
+          work_class: string | null
+          category: string | null
+          mode: string
+          config_version: number
+          plan: Json
+          attempts: Json
+          provider_id: string | null
+          model_id: string | null
+          selection_source: string | null
+          fallback_used: boolean
+          outcome: string
+          blocked_reason: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          job_id?: string | null
+          run_id?: string | null
+          agent_key: string
+          work_class?: string | null
+          category?: string | null
+          mode: string
+          config_version: number
+          plan?: Json
+          attempts?: Json
+          provider_id?: string | null
+          model_id?: string | null
+          selection_source?: string | null
+          fallback_used?: boolean
+          outcome: string
+          blocked_reason?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          job_id?: string | null
+          run_id?: string | null
+          agent_key?: string
+          work_class?: string | null
+          category?: string | null
+          mode?: string
+          config_version?: number
+          plan?: Json
+          attempts?: Json
+          provider_id?: string | null
+          model_id?: string | null
+          selection_source?: string | null
+          fallback_used?: boolean
+          outcome?: string
+          blocked_reason?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       providers: {
         Row: {
           provider_id: string
@@ -357,107 +483,108 @@ export type Database = {
       }
       agent_runs: {
         Row: {
-          agent_key: string
-          cache_read_tokens: number
-          cache_write_tokens: number
-          correlation_id: string | null
-          cost_minor: number
-          created_at: string
-          error: string | null
-          finished_at: string | null
           id: string
-          input: Json | null
-          input_tokens: number
-          latency_ms: number | null
-          model: string | null
           organization_id: string
+          agent_key: string
+          trigger: string
+          subject_type: string | null
+          subject_id: string | null
+          status: string
+          input: Json | null
           output: Json | null
-          output_tokens: number
-          phase: number | null
-          project_id: string | null
-          prompt_hash: string | null
           prompt_key: string | null
           prompt_version: string | null
-          started_at: string | null
-          status: string
+          prompt_hash: string | null
+          model: string | null
+          input_tokens: number
+          output_tokens: number
+          cache_read_tokens: number
+          cache_write_tokens: number
+          cost_minor: number
           step_count: number
-          subject_id: string | null
-          subject_type: string | null
-          trigger: string
+          error: string | null
+          correlation_id: string | null
+          started_at: string | null
+          finished_at: string | null
+          created_at: string
           updated_at: string
           work_class: string | null
+          project_id: string | null
+          phase: number | null
+          latency_ms: number | null
+          provider_id: string | null
+          routing_mode: string | null
+          routing_decision_id: string | null
         }
         Insert: {
-          agent_key: string
-          cache_read_tokens?: number
-          cache_write_tokens?: number
-          correlation_id?: string | null
-          cost_minor?: number
-          created_at?: string
-          error?: string | null
-          finished_at?: string | null
           id?: string
-          input?: Json | null
-          input_tokens?: number
-          latency_ms?: number | null
-          model?: string | null
           organization_id: string
+          agent_key: string
+          trigger: string
+          subject_type?: string | null
+          subject_id?: string | null
+          status?: string
+          input?: Json | null
           output?: Json | null
-          output_tokens?: number
-          phase?: number | null
-          project_id?: string | null
-          prompt_hash?: string | null
           prompt_key?: string | null
           prompt_version?: string | null
-          started_at?: string | null
-          status?: string
+          prompt_hash?: string | null
+          model?: string | null
+          input_tokens?: number
+          output_tokens?: number
+          cache_read_tokens?: number
+          cache_write_tokens?: number
+          cost_minor?: number
           step_count?: number
-          subject_id?: string | null
-          subject_type?: string | null
-          trigger: string
+          error?: string | null
+          correlation_id?: string | null
+          started_at?: string | null
+          finished_at?: string | null
+          created_at?: string
           updated_at?: string
           work_class?: string | null
+          project_id?: string | null
+          phase?: number | null
+          latency_ms?: number | null
+          provider_id?: string | null
+          routing_mode?: string | null
+          routing_decision_id?: string | null
         }
         Update: {
-          agent_key?: string
-          cache_read_tokens?: number
-          cache_write_tokens?: number
-          correlation_id?: string | null
-          cost_minor?: number
-          created_at?: string
-          error?: string | null
-          finished_at?: string | null
           id?: string
-          input?: Json | null
-          input_tokens?: number
-          latency_ms?: number | null
-          model?: string | null
           organization_id?: string
+          agent_key?: string
+          trigger?: string
+          subject_type?: string | null
+          subject_id?: string | null
+          status?: string
+          input?: Json | null
           output?: Json | null
-          output_tokens?: number
-          phase?: number | null
-          project_id?: string | null
-          prompt_hash?: string | null
           prompt_key?: string | null
           prompt_version?: string | null
-          started_at?: string | null
-          status?: string
+          prompt_hash?: string | null
+          model?: string | null
+          input_tokens?: number
+          output_tokens?: number
+          cache_read_tokens?: number
+          cache_write_tokens?: number
+          cost_minor?: number
           step_count?: number
-          subject_id?: string | null
-          subject_type?: string | null
-          trigger?: string
+          error?: string | null
+          correlation_id?: string | null
+          started_at?: string | null
+          finished_at?: string | null
+          created_at?: string
           updated_at?: string
           work_class?: string | null
+          project_id?: string | null
+          phase?: number | null
+          latency_ms?: number | null
+          provider_id?: string | null
+          routing_mode?: string | null
+          routing_decision_id?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "agent_runs_agent_key_fkey"
-            columns: ["agent_key"]
-            isOneToOne: false
-            referencedRelation: "agents"
-            referencedColumns: ["key"]
-          },
-        ]
+        Relationships: []
       }
       agent_steps: {
         Row: {
@@ -1168,6 +1295,32 @@ export type Database = {
       }
     }
     Functions: {
+      set_routing_mode: {
+        Args: { p_mode: string; p_reason: string }
+        Returns: {
+          outcome: string | null
+          version: number | null
+        }[]
+      }
+      set_agent_assignment: {
+        Args: { p_agent_key: string; p_fallbacks: Json; p_model_id: string; p_note?: string; p_provider_id: string }
+        Returns: {
+          outcome: string | null
+          detail: string | null
+        }[]
+      }
+      clear_agent_assignment: {
+        Args: { p_agent_key: string }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      record_routing_decision: {
+        Args: { p_agent_key: string; p_attempts: Json; p_blocked_reason?: string; p_category?: string; p_config_version: number; p_fallback_used: boolean; p_job_id?: string; p_mode: string; p_model_id?: string; p_organization_id: string; p_outcome: string; p_plan: Json; p_provider_id?: string; p_run_id?: string; p_selection_source?: string; p_work_class?: string }
+        Returns: {
+          decision_id: string | null
+        }[]
+      }
       upsert_provider: {
         Args: { p_api_version: string; p_auth_scheme: string; p_base_url: string; p_display_name: string; p_extra_headers: Json; p_kind: string; p_match_contains: string[]; p_match_prefixes: string[]; p_models_path: string; p_priority: number; p_provider_id: string; p_retry_max: number; p_timeout_ms: number }
         Returns: {

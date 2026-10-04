@@ -823,6 +823,11 @@ jobs:
           # discovered models arrive disabled; a rejected key stays rejected; history is never orphaned.
           npm run db:verify:aiproviders
 
+          # AI routing end to end: a real agent job through the runner against a stub custom provider - MANUAL runs exactly
+          # the assignment and substitutes nothing, a rejected key is never asked again, AUTO only chooses what the Admin
+          # enabled, every decision is recorded, no secret appears anywhere.
+          npm run db:verify:airouting
+
           # Phase 3 end to end: the kickoff starts it, the PM announces it, the designer drafts screens and
           # three directions, internal review then Admin, the client chooses and confirms, the lock hands
           # Phase 4 an exact handoff. Found: a stopped phase had no way out (resolve_phase_three_stop).

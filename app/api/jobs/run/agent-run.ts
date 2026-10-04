@@ -17,6 +17,8 @@
 
 import { AgentPolicyRefusal, loadAgentPolicy, recordAgentPolicyRefusal } from '@/lib/ai/agent-policy';
 import { routedCandidatesFor } from '@/lib/ai/agent-routing';
+import { costMinorFor, loadRouting, requiredCapabilitiesFor, type LoadedRouting } from '@/lib/ai/routing-config';
+import { planRoute, type RoutePlan } from '@/lib/ai/route-plan';
 import { categoryForAgent } from '@/lib/ai/model-choice';
 import { runWithFallback, type Candidate } from '@/lib/ai/fallback';
 import { decideProjectAction, projectIdOf } from '@/lib/ai/policy-decision';
@@ -427,6 +429,7 @@ export async function callModel(
   // is tried — see fallback.ts for exactly when, and when never.
   const plan = await modelPlanFor(ctx, { needsTools: false });
   if (!plan.ok) {
+    await recordDecision(ctx, plan.routing, runId, { outcome: 'blocked', attempts: [], final: null, blockedReason: plan.detail });
     return { ok: false, kind: 'no_provider', detail: plan.detail, stepCount: 0 };
   }
 
@@ -442,7 +445,7 @@ export async function callModel(
     sameVendorOnly: sameVendorOnly(ctx),
     attempt: async (candidate, info) => {
       await refuseIfOverBudget(ctx.admin, { organizationId: ctx.job.organization_id, agentKey: ctx.agent.key, provider: candidate.providerId, runId, model: candidate.model });
-      const provider = await resolveProvider(candidate.model);
+      const provider = await resolveProvider(candidate.model, { providerId: candidate.providerId });
       if (!provider.ok) return { ok: false, error: provider.error };
 
       const request = {
@@ -455,8 +458,12 @@ export async function callModel(
       };
 
       const started = Date.now();
-      const response = await provider.data.generateStructured(request);
+      const raw = await provider.data.generateStructured(request);
       const latencyMs = Date.now() - started;
+      // Cost only from a price the Admin recorded for this model; an adapter reports 0 and nothing is ever estimated.
+      const response: Result<StructuredResponse> = raw.ok
+        ? { ok: true, data: { ...raw.data, usage: { ...raw.data.usage, costMinor: costMinorFor(plan.routing?.loaded.prices.get(candidate.model), raw.data.usage) || raw.data.usage.costMinor } } }
+        : raw;
 
       seq = await recordModelCall(ctx.admin, {
         organizationId: ctx.job.organization_id,
@@ -473,6 +480,12 @@ export async function callModel(
   });
 
   if (outcome.exhausted) await alertChainExhausted(ctx, outcome.attempts);
+
+  await recordDecision(ctx, plan.routing, runId, {
+    outcome: outcome.result.ok ? 'succeeded' : outcome.exhausted ? 'exhausted' : 'failed',
+    attempts: outcome.attempts,
+    final: outcome.final,
+  });
 
   if (!outcome.result.ok) {
     return { ok: false, kind: 'provider_error', detail: outcome.result.error.message, stepCount: seq };
@@ -491,7 +504,49 @@ export async function callModel(
 async function modelPlanFor(
   ctx: AgentContext,
   options: { needsTools: boolean },
-): Promise<{ ok: true; candidates: Candidate[] } | { ok: false; detail: string }> {
+): Promise<{ ok: true; candidates: Candidate[]; routing: RoutingContext | null } | { ok: false; detail: string; routing: RoutingContext | null }> {
+  // The routing configuration (mode, assignment, provider and model registry, the Admin's preferences). If it cannot be read the
+  // routing this runner always had is used, rather than failing a job over a table that was unreadable for a moment.
+  const loaded = await loadRouting(ctx.admin, {
+    organizationId: ctx.job.organization_id,
+    agentKey: ctx.agent.key,
+    agentDefault: ctx.agent.default_model,
+    workClass: ctx.workClass,
+  });
+  if (!loaded) return legacyModelPlan(ctx, options);
+
+  const plan = planRoute({ ...loaded.input, needsTools: options.needsTools, requiredCapabilities: requiredCapabilitiesFor(loaded.category) });
+  const routing: RoutingContext = { plan, loaded };
+  if (plan.blocked) return { ok: false, detail: plan.blocked.reason, routing };
+
+  const candidates: Candidate[] = [];
+  let firstReason: string | null = null;
+  for (const c of plan.candidates) {
+    // The plan already chose the provider; the call goes to exactly that one (a MANUAL assignment must never drift to another).
+    const provider = await resolveProvider(c.model, { providerId: c.providerId });
+    if (!provider.ok) {
+      firstReason ??= provider.error.message;
+      continue;
+    }
+    if (options.needsTools && !provider.data.generateWithTools) {
+      firstReason ??= `${provider.data.id} does not support tool calling.`;
+      continue;
+    }
+    candidates.push({ model: c.model, providerId: c.providerId });
+  }
+
+  if (candidates.length === 0) return { ok: false, detail: firstReason ?? 'No AI provider is configured.', routing };
+  return { ok: true, candidates, routing };
+}
+
+/** What a run knows about how it was routed, kept for the decision record and for pricing. */
+type RoutingContext = { plan: RoutePlan; loaded: LoadedRouting };
+
+/** The routing this runner had before the Provider Manager: owner preferences, then the agent's default, each served by a registered provider. */
+async function legacyModelPlan(
+  ctx: AgentContext,
+  options: { needsTools: boolean },
+): Promise<{ ok: true; candidates: Candidate[]; routing: null } | { ok: false; detail: string; routing: null }> {
   const routed = await routedCandidatesFor(ctx.admin, ctx.job.organization_id, ctx.agent.key, ctx.workClass);
   const models = routed.includes(ctx.agent.default_model) ? routed : [...routed, ctx.agent.default_model];
 
@@ -510,8 +565,67 @@ async function modelPlanFor(
     candidates.push({ model, providerId: provider.data.id });
   }
 
-  if (candidates.length === 0) return { ok: false, detail: firstReason ?? 'No AI provider is configured.' };
-  return { ok: true, candidates };
+  if (candidates.length === 0) return { ok: false, detail: firstReason ?? 'No AI provider is configured.', routing: null };
+  return { ok: true, candidates, routing: null };
+}
+
+/**
+ * Writes the routing decision - why this provider and model, in which mode and configuration version, what was excluded, each attempt,
+ * whether a fallback served it, the outcome - and stamps the run with what ACTUALLY ran. Best effort: a decision that cannot be written
+ * is logged and never fails the run.
+ */
+// The function has no argument defaults, and PostgREST resolves it by the keys present: an omitted key (undefined) is "no such function".
+const nullable = (value: string | null | undefined): string => (value ?? null) as unknown as string;
+
+async function recordDecision(
+  ctx: AgentContext,
+  routing: RoutingContext | null,
+  runId: string | null,
+  args: {
+    outcome: 'succeeded' | 'failed' | 'blocked' | 'exhausted';
+    attempts: readonly { model: string; providerId: string; ok: boolean; error: string | null; fallbackOf: string | null }[];
+    final: Candidate | null;
+    blockedReason?: string;
+  },
+): Promise<void> {
+  if (!routing) return;
+  const { plan, loaded } = routing;
+  const source = args.final ? plan.candidates.find((c) => c.model === args.final?.model && c.providerId === args.final?.providerId)?.source ?? null : null;
+  const first = plan.candidates[0];
+  const fallbackUsed = args.attempts.length > 1 || Boolean(args.final && first && (args.final.model !== first.model || args.final.providerId !== first.providerId));
+  try {
+    const { error } = await ctx.admin.schema('ai').rpc('record_routing_decision', {
+      p_organization_id: ctx.job.organization_id,
+      p_job_id: ctx.job.id,
+      p_run_id: nullable(runId),
+      p_agent_key: ctx.agent.key,
+      p_work_class: ctx.workClass,
+      p_category: nullable(loaded.category),
+      p_mode: plan.mode,
+      p_config_version: plan.configVersion,
+      p_plan: { candidates: plan.candidates, considered: plan.considered, warnings: plan.warnings, blocked: plan.blocked } as unknown as Json,
+      p_attempts: args.attempts as unknown as Json,
+      p_outcome: args.outcome,
+      p_provider_id: nullable(args.final?.providerId),
+      p_model_id: nullable(args.final?.model),
+      p_selection_source: nullable(source),
+      p_fallback_used: fallbackUsed,
+      p_blocked_reason: nullable(args.blockedReason),
+    });
+    if (error) console.error(JSON.stringify({ level: 'error', scope: 'recordDecision', detail: error.message }));
+  } catch (cause) {
+    console.error(JSON.stringify({ level: 'error', scope: 'recordDecision', detail: cause instanceof Error ? cause.message : String(cause) }));
+  }
+  // MANUAL mode never substitutes silently, so a failure there is surfaced to the Admin rather than left in a job's last_error.
+  if (plan.mode === 'manual' && (args.outcome === 'blocked' || args.outcome === 'failed' || args.outcome === 'exhausted')) {
+    await raiseAlert(ctx.admin, {
+      organizationId: ctx.job.organization_id,
+      source: 'router',
+      severity: 'warning',
+      summary: `${ctx.agent.key} (${ctx.job.kind}) could not run on its manual assignment: ${(args.blockedReason ?? args.attempts.at(-1)?.error ?? 'the provider was unavailable').slice(0, 300)} Nothing else was substituted.`,
+      fingerprint: `router-manual:${ctx.agent.key}`,
+    });
+  }
 }
 
 /**
@@ -665,6 +779,7 @@ export async function callModelWithTools(
   // when none can, rather than silently dropping to a structured call).
   const plan = await modelPlanFor(ctx, { needsTools: true });
   if (!plan.ok) {
+    await recordDecision(ctx, plan.routing, runId, { outcome: 'blocked', attempts: [], final: null, blockedReason: plan.detail });
     return { ok: false, kind: 'no_provider', detail: plan.detail, stepCount: 0 };
   }
   let active: readonly Candidate[] = plan.candidates;
@@ -687,7 +802,7 @@ export async function callModelWithTools(
       canSwitch: round === 0,
       attempt: async (candidate, info) => {
         await refuseIfOverBudget(ctx.admin, { organizationId: ctx.job.organization_id, agentKey: ctx.agent.key, provider: candidate.providerId, runId, model: candidate.model });
-        const provider = await resolveProvider(candidate.model);
+        const provider = await resolveProvider(candidate.model, { providerId: candidate.providerId });
         if (!provider.ok) return { ok: false, error: provider.error };
         if (!provider.data.generateWithTools) return err('PROVIDER_ERROR', `${provider.data.id} does not support tool calling.`);
 
@@ -701,8 +816,12 @@ export async function callModelWithTools(
         };
 
         const started = Date.now();
-        const attempted = await provider.data.generateWithTools(request);
+        const rawAttempt = await provider.data.generateWithTools(request);
         const latencyMs = Date.now() - started;
+        // Cost only from a price the Admin recorded for this model; an adapter reports 0 and nothing is ever estimated.
+        const attempted = rawAttempt.ok
+          ? { ...rawAttempt, data: { ...rawAttempt.data, usage: { ...rawAttempt.data.usage, costMinor: costMinorFor(plan.routing?.loaded.prices.get(candidate.model), rawAttempt.data.usage) || rawAttempt.data.usage.costMinor } } }
+          : rawAttempt;
 
         seq = await recordModelCall(ctx.admin, {
           organizationId: ctx.job.organization_id,
@@ -738,6 +857,15 @@ export async function callModelWithTools(
     });
 
     if (outcome.exhausted) await alertChainExhausted(ctx, outcome.attempts);
+
+    // The selection is made on the first turn (later turns are pinned to the model that answered it), so that is the decision recorded.
+    if (round === 0) {
+      await recordDecision(ctx, plan.routing, runId, {
+        outcome: outcome.result.ok ? 'succeeded' : outcome.exhausted ? 'exhausted' : 'failed',
+        attempts: outcome.attempts,
+        final: outcome.final,
+      });
+    }
 
     if (!outcome.result.ok) {
       return { ok: false, kind: 'provider_error', detail: outcome.result.error.message, stepCount: seq };
