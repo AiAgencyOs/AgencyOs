@@ -17,6 +17,8 @@ alter table core.client_code_counters enable row level security;
 alter table core.client_code_counters force row level security;
 revoke all on core.client_code_counters from public, anon, authenticated;
 grant select, insert, update on core.client_code_counters to service_role;
+drop trigger if exists freeze_org_client_code_counters on core.client_code_counters;
+create trigger freeze_org_client_code_counters before update of organization_id on core.client_code_counters for each row execute function core.freeze_organization_id();
 
 alter table core.client_accounts add column if not exists client_code text;
 alter table core.client_accounts add column if not exists project_seq int not null default 0 check (project_seq >= 0);
