@@ -85,7 +85,8 @@ export function consequenceOf(kind: FailureKindName | null, message = ''): KeyCo
     case 'server':
     case 'timeout':
     case 'network':
-      return { keyKind: 'unavailable', tryNextKey: false, cooldownSeconds: 30, providerState: 'unavailable' };
+      // A vendor outage is not about the key: resting the key would turn one failed call into "no usable key" for every call after it.
+      return { keyKind: 'unavailable', tryNextKey: false, cooldownSeconds: 0, providerState: 'unavailable' };
     default:
       return { keyKind: 'other', tryNextKey: false, cooldownSeconds: 0, providerState: 'degraded' };
   }

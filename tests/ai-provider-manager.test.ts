@@ -51,6 +51,8 @@ describe('which key may be tried, and in what order', () => {
     assert.equal(consequenceOf(null).tryNextKey, false);
     assert.equal(consequenceOf('rate_limit', 'You exceeded your current quota, please check your billing').providerState, 'quota_exhausted');
     assert.equal(consequenceOf('auth').providerState, 'auth_error');
+    // A vendor outage is not about the key: it must never leave the only key resting (found when the fixture verifiers injected 5xx).
+    for (const kind of ['server', 'timeout', 'network'] as const) assert.equal(consequenceOf(kind).cooldownSeconds, 0, kind);
   });
 
   test('a key is only ever shown as its last four characters', () => {
