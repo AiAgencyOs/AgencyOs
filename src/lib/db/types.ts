@@ -3456,6 +3456,342 @@ export type Database = {
   }
   crm: {
     Tables: {
+      outreach_settings: {
+        Row: {
+          organization_id: string
+          sender_name: string | null
+          postal_address: string | null
+          reply_to: string | null
+          cold_basis_enabled: boolean
+          daily_cap: number
+          bounce_pause_percent: number
+          first_send_on: string | null
+          updated_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          organization_id: string
+          sender_name?: string | null
+          postal_address?: string | null
+          reply_to?: string | null
+          cold_basis_enabled?: boolean
+          daily_cap?: number
+          bounce_pause_percent?: number
+          first_send_on?: string | null
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          organization_id?: string
+          sender_name?: string | null
+          postal_address?: string | null
+          reply_to?: string | null
+          cold_basis_enabled?: boolean
+          daily_cap?: number
+          bounce_pause_percent?: number
+          first_send_on?: string | null
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      email_suppressions: {
+        Row: {
+          id: string
+          organization_id: string
+          email: string
+          reason: string
+          source: string
+          note: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          email: string
+          reason: string
+          source: string
+          note?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          email?: string
+          reason?: string
+          source?: string
+          note?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      outreach_prospects: {
+        Row: {
+          id: string
+          organization_id: string
+          email: string
+          full_name: string | null
+          company: string | null
+          job_title: string | null
+          website: string | null
+          language: string
+          tags: string[]
+          provenance: string
+          lawful_basis: string
+          contact_id: string | null
+          lead_id: string | null
+          status: string
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          email: string
+          full_name?: string | null
+          company?: string | null
+          job_title?: string | null
+          website?: string | null
+          language?: string
+          tags?: string[]
+          provenance: string
+          lawful_basis: string
+          contact_id?: string | null
+          lead_id?: string | null
+          status?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          email?: string
+          full_name?: string | null
+          company?: string | null
+          job_title?: string | null
+          website?: string | null
+          language?: string
+          tags?: string[]
+          provenance?: string
+          lawful_basis?: string
+          contact_id?: string | null
+          lead_id?: string | null
+          status?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      email_templates: {
+        Row: {
+          id: string
+          organization_id: string
+          name: string
+          language: string
+          subject: string
+          body: string
+          status: string
+          created_by: string | null
+          approved_by: string | null
+          approved_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          name: string
+          language?: string
+          subject: string
+          body: string
+          status?: string
+          created_by?: string | null
+          approved_by?: string | null
+          approved_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          name?: string
+          language?: string
+          subject?: string
+          body?: string
+          status?: string
+          created_by?: string | null
+          approved_by?: string | null
+          approved_at?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      email_campaigns: {
+        Row: {
+          id: string
+          organization_id: string
+          name: string
+          audience: Json
+          status: string
+          recipient_count: number | null
+          paused_reason: string | null
+          created_by: string
+          approved_by: string | null
+          approved_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          name: string
+          audience?: Json
+          status?: string
+          recipient_count?: number | null
+          paused_reason?: string | null
+          created_by: string
+          approved_by?: string | null
+          approved_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          name?: string
+          audience?: Json
+          status?: string
+          recipient_count?: number | null
+          paused_reason?: string | null
+          created_by?: string
+          approved_by?: string | null
+          approved_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      email_campaign_steps: {
+        Row: {
+          id: string
+          organization_id: string
+          campaign_id: string
+          step_number: number
+          template_id: string
+          delay_days: number
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          campaign_id: string
+          step_number: number
+          template_id: string
+          delay_days: number
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          campaign_id?: string
+          step_number?: number
+          template_id?: string
+          delay_days?: number
+        }
+        Relationships: []
+      }
+      email_campaign_recipients: {
+        Row: {
+          id: string
+          organization_id: string
+          campaign_id: string
+          prospect_id: string
+          email: string
+          step_number: number
+          status: string
+          refusal_reason: string | null
+          next_send_at: string
+          last_error: string | null
+          attempts: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          campaign_id: string
+          prospect_id: string
+          email: string
+          step_number?: number
+          status?: string
+          refusal_reason?: string | null
+          next_send_at?: string
+          last_error?: string | null
+          attempts?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          campaign_id?: string
+          prospect_id?: string
+          email?: string
+          step_number?: number
+          status?: string
+          refusal_reason?: string | null
+          next_send_at?: string
+          last_error?: string | null
+          attempts?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      email_outreach_sends: {
+        Row: {
+          id: string
+          organization_id: string
+          campaign_id: string
+          recipient_id: string
+          step_number: number
+          email: string
+          status: string
+          message_ref: string | null
+          error: string | null
+          reserved_at: string
+          sent_at: string | null
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          campaign_id: string
+          recipient_id: string
+          step_number: number
+          email: string
+          status?: string
+          message_ref?: string | null
+          error?: string | null
+          reserved_at?: string
+          sent_at?: string | null
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          campaign_id?: string
+          recipient_id?: string
+          step_number?: number
+          email?: string
+          status?: string
+          message_ref?: string | null
+          error?: string | null
+          reserved_at?: string
+          sent_at?: string | null
+        }
+        Relationships: []
+      }
       announcement_templates: {
         Row: {
           active: boolean
@@ -5484,6 +5820,138 @@ export type Database = {
       }
     }
     Functions: {
+      set_outreach_settings: {
+        Args: { p_bounce_pause_percent: number; p_cold_basis_enabled?: boolean; p_daily_cap: number; p_postal_address: string; p_reply_to: string; p_sender_name: string }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      suppress_email: {
+        Args: { p_email: string; p_note?: string; p_reason: string }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      record_unsubscribe: {
+        Args: { p_email: string; p_organization_id: string; p_source: string }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      add_outreach_prospects: {
+        Args: { p_rows: Json }
+        Returns: {
+          inserted: number | null
+          duplicates: number | null
+          suppressed: number | null
+          invalid: number | null
+          problems: Json | null
+        }[]
+      }
+      create_email_template: {
+        Args: { p_body: string; p_language: string; p_name: string; p_subject: string }
+        Returns: {
+          outcome: string | null
+          template_id: string | null
+        }[]
+      }
+      approve_email_template: {
+        Args: { p_template_id: string }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      retire_email_template: {
+        Args: { p_template_id: string }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      create_email_campaign: {
+        Args: { p_audience: Json; p_name: string; p_steps: Json }
+        Returns: {
+          outcome: string | null
+          campaign_id: string | null
+        }[]
+      }
+      outreach_audience: {
+        Args: { p_audience: Json; p_organization_id: string }
+        Returns: {
+          prospect_id: string | null
+          email: string | null
+          reachable: boolean | null
+          reason: string | null
+        }[]
+      }
+      preview_email_campaign: {
+        Args: { p_campaign_id: string }
+        Returns: {
+          reachable: number | null
+          suppressed: number | null
+          no_consent: number | null
+          cold_not_enabled: number | null
+        }[]
+      }
+      approve_email_campaign: {
+        Args: { p_campaign_id: string }
+        Returns: {
+          outcome: string | null
+          recipient_count: number | null
+        }[]
+      }
+      set_email_campaign_state: {
+        Args: { p_campaign_id: string; p_note?: string; p_to: string }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      mark_prospect_replied: {
+        Args: { p_prospect_id: string }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      convert_prospect: {
+        Args: { p_prospect_id: string }
+        Returns: {
+          outcome: string | null
+          lead_id: string | null
+        }[]
+      }
+      orgs_with_running_email_campaigns: {
+        Args: never
+        Returns: {
+          organization_id: string | null
+        }[]
+      }
+      outreach_cap_today: {
+        Args: { p_organization_id: string }
+        Returns: number
+      }
+      claim_outreach_sends: {
+        Args: { p_limit: number; p_organization_id: string }
+        Returns: {
+          send_id: string | null
+          recipient_id: string | null
+          campaign_id: string | null
+          step_number: number | null
+          email: string | null
+          first_name: string | null
+          company: string | null
+          language: string | null
+          subject: string | null
+          body: string | null
+          sender_name: string | null
+          postal_address: string | null
+          reply_to: string | null
+        }[]
+      }
+      record_outreach_result: {
+        Args: { p_error: string; p_message_ref: string; p_outcome: string; p_send_id: string }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
       publish_due_announcements: {
         Args: { p_limit?: number }
         Returns: {
@@ -7608,6 +8076,90 @@ export type Database = {
   }
   projects: {
     Tables: {
+      design_reply_proposals: {
+        Row: {
+          id: string
+          organization_id: string
+          project_id: string
+          phase_three_id: string
+          share_id: string
+          message_id: string
+          conversation_id: string | null
+          source: string
+          intent: string
+          client_words: string
+          selected_theme_option_id: string | null
+          selected_color_option_id: string | null
+          reference_url: string | null
+          reference_note: string | null
+          confidence: number
+          reasoning: string | null
+          clarifying_question: string | null
+          action: string
+          status: string
+          decision_id: string | null
+          revision_id: string | null
+          resolved_by: string | null
+          resolved_at: string | null
+          resolution_note: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          project_id: string
+          phase_three_id: string
+          share_id: string
+          message_id: string
+          conversation_id?: string | null
+          source: string
+          intent: string
+          client_words: string
+          selected_theme_option_id?: string | null
+          selected_color_option_id?: string | null
+          reference_url?: string | null
+          reference_note?: string | null
+          confidence: number
+          reasoning?: string | null
+          clarifying_question?: string | null
+          action: string
+          status?: string
+          decision_id?: string | null
+          revision_id?: string | null
+          resolved_by?: string | null
+          resolved_at?: string | null
+          resolution_note?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          project_id?: string
+          phase_three_id?: string
+          share_id?: string
+          message_id?: string
+          conversation_id?: string | null
+          source?: string
+          intent?: string
+          client_words?: string
+          selected_theme_option_id?: string | null
+          selected_color_option_id?: string | null
+          reference_url?: string | null
+          reference_note?: string | null
+          confidence?: number
+          reasoning?: string | null
+          clarifying_question?: string | null
+          action?: string
+          status?: string
+          decision_id?: string | null
+          revision_id?: string | null
+          resolved_by?: string | null
+          resolved_at?: string | null
+          resolution_note?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       admin_design_decisions: {
         Row: {
           created_at: string
@@ -12015,6 +12567,43 @@ export type Database = {
       }
     }
     Functions: {
+      agent_propose_design_reply: {
+        Args: { p_action: string; p_clarifying_question: string; p_color_option_id: string; p_confidence: number; p_intent: string; p_message_id: string; p_reasoning: string; p_reference_note: string; p_reference_url: string; p_share_id: string; p_source: string; p_theme_option_id: string }
+        Returns: {
+          outcome: string | null
+          proposal_id: string | null
+          action: string | null
+          status: string | null
+        }[]
+      }
+      agent_apply_design_reply: {
+        Args: { p_proposal_id: string }
+        Returns: {
+          outcome: string | null
+          decision_id: string | null
+          revision_id: string | null
+        }[]
+      }
+      agent_mark_design_reply_asked: {
+        Args: { p_proposal_id: string }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
+      accept_design_reply_proposal: {
+        Args: { p_color_option_id?: string; p_proposal_id: string; p_theme_option_id?: string }
+        Returns: {
+          outcome: string | null
+          decision_id: string | null
+          revision_id: string | null
+        }[]
+      }
+      dismiss_design_reply_proposal: {
+        Args: { p_note: string; p_proposal_id: string }
+        Returns: {
+          outcome: string | null
+        }[]
+      }
       attach_file: {
         Args: {
           p_content_type?: string

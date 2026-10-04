@@ -16,6 +16,7 @@ import { lapseOverdueProposals } from '@/lib/sales/lapse';
 import { runFollowUps } from '@/modules/crm/follow-up-worker';
 import { runInvoiceReminders } from '@/modules/finance/reminder-worker';
 import { runCampaigns } from '@/modules/crm/campaign-worker';
+import { runOutreach } from '@/modules/crm/outreach/worker';
 import { publishDueAnnouncements } from '@/modules/crm/announcement-worker';
 import { runSuiteSchedules } from '@/modules/qa/schedule-worker';
 import { detectUpsellSignals } from '@/lib/sales/upsell';
@@ -315,6 +316,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    * holds the rest for a later tick rather than refusing them.
    */
   const campaigns = await runCampaigns(admin);
+  // Email outreach (info@): every send passes crm.claim_outreach_sends, inside the sending window only.
+  const emailOutreach = await runOutreach(admin);
 
   /**
    * ── scheduled announcements (SCR-059, bucket F) ────────────────────────
@@ -401,6 +404,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       followUps,
       invoiceReminders,
       campaigns,
+      emailOutreach,
       overdue,
       stamps,
       unlocks: unlocks.results,
@@ -442,6 +446,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       followUps,
       invoiceReminders,
       campaigns,
+      emailOutreach,
       overdue,
       stamps,
       phaseTwo: phaseTwo.results,
@@ -480,6 +485,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       followUps,
       invoiceReminders,
       campaigns,
+      emailOutreach,
       overdue,
       stamps,
       phaseThree: phaseThree.results,
@@ -513,6 +519,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       followUps,
       invoiceReminders,
       campaigns,
+      emailOutreach,
       overdue,
       stamps,
       phaseFour: phaseFour.results,
@@ -546,6 +553,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       followUps,
       invoiceReminders,
       campaigns,
+      emailOutreach,
       overdue,
       stamps,
       task2Route: task2Route.results,
@@ -579,6 +587,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       followUps,
       invoiceReminders,
       campaigns,
+      emailOutreach,
       overdue,
       stamps,
       uiVersionQa: uiVersionQa.results,
@@ -611,6 +620,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       followUps,
       invoiceReminders,
       campaigns,
+      emailOutreach,
       overdue,
       stamps,
       uiVersionAdminReview: uiVersionAdminReview.results,
@@ -644,6 +654,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       followUps,
       invoiceReminders,
       campaigns,
+      emailOutreach,
       overdue,
       stamps,
       prototypeQa: prototypeQa.results,
@@ -679,6 +690,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       followUps,
       invoiceReminders,
       campaigns,
+      emailOutreach,
       overdue,
       stamps,
       m1Invoices: m1Invoices.results,
@@ -710,6 +722,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       followUps,
       invoiceReminders,
       campaigns,
+      emailOutreach,
       overdue,
       stamps,
       phaseFourCompletions: phaseFourCompletions.results,
@@ -742,6 +755,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       followUps,
       invoiceReminders,
       campaigns,
+      emailOutreach,
       overdue,
       stamps,
       m2Invoices: m2Invoices.results,
@@ -808,6 +822,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       followUps,
       invoiceReminders,
       campaigns,
+      emailOutreach,
       overdue,
       stamps,
       scopeChangeRequests: scopeChangeRequests.results,
