@@ -84,10 +84,13 @@ export async function runB2bOperations(admin: Admin, connectors: Partial<Record<
   const sweep: B2bSweep = { approvalsClosed: 0, waitingForAPerson: 0, sent: 0 };
   try {
     const closed = await admin.schema('crm').rpc('sync_b2b_approvals', { p_limit: 200 });
+    if (closed.error) throw new Error(`could not close lapsed approvals: ${closed.error.message}`);
     sweep.approvalsClosed = typeof closed.data === 'number' ? closed.data : 0;
-    const { data: waiting } = await admin.schema('crm').from('b2b_proposal_versions').select('id, organization_id, opportunity_id, approval_request_id').in('state', ['ADMIN_REVIEW', 'SUBMITTING']).not('approval_request_id', 'is', null).order('state_changed_at').limit(25);
+    const { data: waiting, error: waitingError } = await admin.schema('crm').from('b2b_proposal_versions').select('id, organization_id, opportunity_id, approval_request_id').in('state', ['ADMIN_REVIEW', 'SUBMITTING']).not('approval_request_id', 'is', null).order('state_changed_at').limit(25);
+    if (waitingError) throw new Error(`could not read waiting: ${waitingError.message}`);
     for (const w of waiting ?? []) {
-      const { data: req } = await admin.schema('approvals').from('approval_requests').select('state').eq('id', w.approval_request_id ?? '').maybeSingle();
+      const { data: req, error: reqError } = await admin.schema('approvals').from('approval_requests').select('state').eq('id', w.approval_request_id ?? '').maybeSingle();
+      if (reqError) throw new Error(`could not read req: ${reqError.message}`);
       if (req?.state !== 'approved') continue;
       const { data: o } = await admin.schema('crm').from('b2b_opportunities').select('platform, title').eq('id', w.opportunity_id).maybeSingle();
       const connector = o ? connectors[o.platform as B2bPlatform] : undefined;

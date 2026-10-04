@@ -72,11 +72,11 @@ Design decisions this implies (recorded here so they are made once):
 | 5 | Scheduler + Quotation Master structured handoffs (agent-callable, return to channel owner) | 2, 3 | **BUILT** (the Scheduler/Quotation Master LLM agents themselves are not) |
 | 6 | Email engine: prospect discovery → research → qualification → drafting → nurture → meeting/quote → handoff; follow-up engine state checks | 2–5 | **PARTLY BUILT**: qualification, grounded-draft validation, reply adoption, follow-up recheck, funnel. NOT built: discovery, AI research, AI drafting (need a source and a funded model) |
 | 7 | Social: audit, strategy (3/6/9 mo), content versioning + exact-version approval + publish idempotency, analytics, then prospecting/outreach | 4, 5 | **CONTENT PIPELINE BUILT** (no provider publisher exists; social prospecting/outreach NOT built) |
-| 8 | Meta Ads: audit, campaign (policy/approval/budget limits), monitoring, WhatsApp attribution | 3, 4 | not started |
-| 9 | Google Ads + landing-page engine + Hostinger deployment + verification | 3, 4 | not started |
-| 10 | B2B: platform registry, opportunity discovery/scoring, proposals (versioned/approved), submission or `ASSISTED_ACTION_REQUIRED`, reconciliation, Clutch/GoodFirms/Fiverr workflows | 4, 5 | not started |
-| 11 | Analytics + attribution read models, optimisation loops, failure dashboard | 2, 6–10 | not started |
-| 12 | Independent QA, E2E per engine, security review, docs, human-dependency report | all | not started |
+| 8 | Ad campaigns (Meta and Google): versions, exact-version approval, caps, spend, pause, results from the CRM | 4 | **BUILT (no connector)** - section 4 |
+| 9 | Landing pages: versions, approval, hand-upload + fetched verification, Google launch gate, visit attribution | 8 | **BUILT (no Hostinger deployer)** - section 4 |
+| 10 | B2B marketplaces: rules, opportunities, proposals, profiles, assisted submission, handoff gate | 4 | **BUILT (no connector)** - section 4 |
+| 11 | Analytics, goals, failures, advice | 6-10 | **BUILT** - section 4 |
+| 12 | Independent review, hardening, the by-hand path, end-to-end verification, human-dependency report | all | **DONE** - section 4 and `HUMAN_DEPENDENCIES.md` |
 
 ## 4. What has been built and verified (slice 1)
 
@@ -139,7 +139,7 @@ Design decisions this implies (recorded here so they are made once):
   record_integration_check / set_acquisition_policy / acquisition_decide / bind_approval / approval_check / begin|finish|verify_governed_execution`.
 * `src/lib/secrets/tenant-vault.ts`, `providers.ts` (catalogue, adapter contract, error classification, backoff), `adapters.ts`
   (EMPTY on purpose), `governance.ts` (typed wrappers an engine uses), `integrations.ts`, Connections page, policy table.
-* `scripts/verify-acquisition-governance.sql`: 150 checks through the real approval engine; red-proved eleven ways.
+* `scripts/verify-acquisition-governance.sql`: 153 checks through the real approval engine; red-proved when written (the case lists for slices 1-7 were run during the work and are not kept; slices 8 onward are in `scripts/redproof`).
 * **Not built:** any provider adapter; scheduled health/expiry checks; the engines that call these doors.
 * **Design decision recorded:** email outreach keeps its own four-eyes approval path (it predates this and is tested); moving it into
   the Approval Center remains the owner's call.
@@ -150,7 +150,7 @@ Design decisions this implies (recorded here so they are made once):
   idempotency, one open per kind per lead), doors `request / accept / link_proposal / cancel / fail`, AFTER triggers that carry the
   real meeting and proposal lifecycles back (reschedule follows the new row), and `_json_has_key` (no price at any depth).
 * `src/modules/acquisition/subtasks.ts` (typed doors; no price field exists), a requests card on the Identity screen.
-* `scripts/verify-acquisition-subtasks.sql`: driven through the real meeting doors; red-proved eleven ways.
+* `scripts/verify-acquisition-subtasks.sql`: driven through the real meeting doors; red-proved when written (case list not kept).
 * **Not built:** an LLM Scheduler / Quotation Master agent; calendar availability; a no-show outcome (the existing door lacks one).
 
 ### Slice 6 (the Email engine's decisions) - built and verified
@@ -158,7 +158,7 @@ Design decisions this implies (recorded here so they are made once):
 * Migrations `20261018100000_the_email_engine_qualifies_adopts_and_stays_in_its_lane.sql` (weights, block list, facts, qualifications, draft validator,
   reply adoption, follow-up blockers, funnel) and `20261018110000_a_follow_up_is_rechecked_when_it_is_sent.sql` (the send chokepoint, one marked edit).
 * `src/modules/acquisition/email-engine.ts` (typed doors; a missing answer is a failure), `qualification-vocabulary.ts`, funnel / weights / blocks on the Email tab.
-* `scripts/verify-acquisition-email-engine.sql`: through the real chokepoint and the real inbound function; red-proved eleven ways.
+* `scripts/verify-acquisition-email-engine.sql`: through the real chokepoint and the real inbound function; red-proved when written (case list not kept).
 * **Not built:** prospect discovery, an AI research agent, an AI drafting agent, nurture beyond lead nurture, an automatic meeting/quote request on a positive reply.
 * **Human dependencies surfaced:** a funded model key (drafting, research, scoring agents) and a prospect discovery source - neither requested yet.
 
@@ -167,14 +167,14 @@ Design decisions this implies (recorded here so they are made once):
 * Migration `20261019100000_social_content_is_approved_as_exactly_what_is_published.sql`: audits, versioned strategies, references, assets, items, immutable
   versions (derived hash), publications (one per version), metrics; doors for review / submit / schedule / cancel / publish / record; derived status; due-content sweep.
 * `src/modules/acquisition/social.ts` (publisher worker, `runSocialPublishing` in the cron tick), `social-vocabulary.ts`, the Social tab queue and forms.
-* `scripts/verify-acquisition-social.sql`: the four mandatory cases through the real approval engine; red-proved thirteen ways.
+* `scripts/verify-acquisition-social.sql`: the four mandatory cases through the real approval engine; red-proved when written (case list not kept).
 * **Not built:** a LinkedIn / Instagram / Facebook publisher (a due post alerts a person), account analytics, AI planning and writing, media generation, social prospecting and outreach.
 
 ### Slice 8 (Ad campaign engine: Meta and Google) - built and verified
 
 * Migration `20261020100000_an_ad_campaign_launches_as_exactly_what_was_approved.sql`: campaigns, immutable versions (derived hash and derived kind of change: launch, budget increase or decrease, targeting change, creative change), provider objects, applications, metrics, provider statuses, health records; the pure plan rules (`ad_plan_problems`); doors for create / add version / check / submit / apply / pause-resume-end / confirm; the emergency stop made to reach live campaigns; spend counted once; results read from the CRM by first touch; health findings; advisory recommendations. `ad_budget_increase` and `ad_targeting_change` join the never-automatic actions (constraint, door and TypeScript).
 * `src/modules/acquisition/ads.ts` (`applyAdVersion`, `runAdOperations` in the cron tick), `ad-vocabulary.ts`, the Meta and Google tab sections and forms. `AD_PROVIDERS` is empty by design: an approved launch with no connector alerts a person to apply it by hand.
-* `scripts/verify-acquisition-ads.sql`: the spec's mandatory ad tests through the real approval engine and governed door; red-proved seventeen ways (two initial proofs were found GREEN - a mangle that hit the wrong occurrence, and an untested pause path - and fixed before being counted).
+* `scripts/verify-acquisition-ads.sql`: the spec's mandatory ad tests through the real approval engine and governed door; red-proved: 12 cases in `scripts/redproof` (two initial proofs were found GREEN - a mangle that hit the wrong occurrence, and an untested pause path - and fixed before being counted).
 * **Not built:** the Meta and Google connectors (nothing is pushed to or read from a platform), pulling the platform's metrics (a worker would call `record_ad_metrics`), landing pages and Hostinger deployment (slice 9; a Google plan references a landing page version id that cannot be produced yet and is not verified to exist), creative generation, A/B testing, and the AI that plans and optimises.
 * **Human dependencies surfaced:** Meta Business/ad account and OAuth, Google Ads developer token - neither requested.
 
@@ -182,7 +182,7 @@ Design decisions this implies (recorded here so they are made once):
 
 * Migration `20261021100000_a_landing_page_is_deployed_as_exactly_what_was_approved.sql`: landing pages, immutable versions (derived hash over slug, content, WhatsApp number, public address, tracking), deployments, verifications; content rules that fail a page and never approve one (no testimonials, proof only from the agency's own active portfolio items, no urgency, claims or unsourced statistics); governed deploy; verification as a separate record of what was fetched; `record_landing_arrival`; `check_ad_version` and `begin_ad_apply` carried forward so a Google ad launches only to a VERIFIED page, read at execution time.
 * `src/modules/acquisition/landing-render.ts` (deterministic, escaped, one outbound destination), `landing.ts` (`deployLandingVersion`, `verifyLandingVersion`, `runLandingOperations` in the cron tick), `landing-arrival.ts` (called by WhatsApp ingest), Google tab section and forms. `LANDING_DEPLOYER` is undefined by design: an approved page alerts a person to upload it by hand and is never shown as live.
-* `scripts/verify-acquisition-landing.sql`: red-proved thirteen ways; the TypeScript is red-proved seven ways, one of which found the in-browser tag script untested (now run against a stub browser).
+* `scripts/verify-acquisition-landing.sql`: red-proved: 13 SQL and 7 TypeScript cases in `scripts/redproof`, one of which found the in-browser tag script untested (now run against a stub browser).
 * **Not built:** the Hostinger deployer, DNS/SSL steps, a visual page builder, A/B testing, one-click rollback (redeploying an older version is a new governed execution), and server-side click tracking (the tag is a claim about where a visit came from, never authority).
 * **Human dependencies surfaced:** a Hostinger deployment token or SSH scope and the domain/DNS for the public address - neither requested.
 
@@ -190,7 +190,7 @@ Design decisions this implies (recorded here so they are made once):
 
 * Migration `20261022100000_a_marketplace_rule_decides_whether_a_conversation_may_leave_it.sql`: per-marketplace rules (contact off the platform: forbidden / after award / allowed; automation: manual / assisted / automated - restrictive by default, loosened only by the owner), the Admin's thresholds, opportunities as frozen facts with an explainable fit score, immutable proposal versions (derived hash; a price only on a version a person wrote), profile versions, governed submission once, connects budget, results by marketplace; `create_channel_handoff` carried forward so a B2B handoff needs the marketplace's permission.
 * `src/modules/acquisition/b2b.ts` (`sendB2bProposal`, `runB2bOperations` in the cron tick), `b2b-vocabulary.ts`, the B2B tab. `B2B_CONNECTORS` is empty by design: an approved proposal waits for a person to send it on the platform and record it.
-* `scripts/verify-acquisition-b2b.sql` red-proved twenty-six ways (one proof first ran against a table the re-applied migration could not change, and was redone by dropping the constraint); TypeScript red-proved six ways. The slice-3 handoff verifier gained the rule it now needs.
+* `scripts/verify-acquisition-b2b.sql` red-proved: 25 SQL and 6 TypeScript cases in `scripts/redproof` (one proof first ran against a table the re-applied migration could not change and is now a hand-proved DDL case). The slice-3 handoff verifier gained the rule it now needs.
 * **Not built:** any marketplace connector (nothing is read from or sent to a platform), automated discovery, the AI that finds and writes proposals, creating a lead from a won client (a person links one), Clutch/GoodFirms review management.
 * **Human dependencies surfaced:** marketplace accounts and, where terms permit, API access - none requested. The owner must confirm each marketplace's terms before loosening a rule.
 
@@ -198,9 +198,51 @@ Design decisions this implies (recorded here so they are made once):
 
 * Migration `20261023100000_results_are_read_from_the_crm_and_failures_are_loud.sql`: four STABLE read functions - `acquisition_funnel` (by first-touch channel, with last-touch and touched-by counts alongside, revenue per currency, spend from the usage ledger, costs null when there is nothing to divide by), `acquisition_goal_progress`, `acquisition_failures` (one list, critical first), `acquisition_recommendations` (advice with its numbers, silent when the sample is too thin).
 * `src/modules/acquisition/analytics-vocabulary.ts`, queries, and the Performance tab (`/lead-generation/performance`).
-* `scripts/verify-acquisition-analytics.sql` red-proved sixteen ways. **It found a real defect in its own slice before it shipped:** `acquisition_recommendations` summed the usage ledger across ALL organisations, so a second tenant could be told its channel was "acting without producing a lead" because of the first tenant's actions (and see the count). Scoped to the caller and re-proved.
+* `scripts/verify-acquisition-analytics.sql` red-proved: 16 cases in `scripts/redproof`. **It found a real defect in its own slice before it shipped:** `acquisition_recommendations` summed the usage ledger across ALL organisations, so a second tenant could be told its channel was "acting without producing a lead" because of the first tenant's actions (and see the count). Scoped to the caller and re-proved.
 * **Not built:** multi-touch / weighted attribution models beyond first, last and touched-by; cohort and trend charts; scheduled digests; an optimisation loop that ACTS (by design: recommendations are advice, and every change an agent might make is a governed action a person approves).
 * **Optimisation loops - decision for the owner:** the master prompt asks for "optimisation loops". They exist here as advice with evidence, not as self-acting loops, because every channel action is governed (never automatic for launches, budget and targeting changes, publishing, proposals, deploys). Enabling an agent to propose its own version changes from these recommendations would be a small, safe next step.
+
+### Slice 12 (Independent review and hardening) - done
+
+Three reviewers who had not written the code were asked to break it and to prove every claim: one for tenancy and privilege, one for the
+governed-execution guarantees, one for honesty and secrets. **Every finding below was reproduced in a scratch database before it was fixed**,
+is closed by `20261024100000_independent_review_findings_closed.sql`, and has a regression in `scripts/verify-acquisition-hardening.sql`
+that fails if the fix is removed.
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | `current_qualification_weights` returned another organisation's weights | scoped to the caller |
+| 2 | Eight read functions and the policy question skipped `is_internal()`: a portal **client** could read spend/budget and write the decision ledger | internal sessions only |
+| 3 | `bind_approval` had no role check: a member could forge an approval card/amount or poison a version for ever | admin sessions only |
+| 4 | `acquisition_goal_progress` joined an all-organisation aggregate to each tenant's row (no session) | strictly one internal session's organisation |
+| 5 | A handoff token hash was unique per organisation, not globally | unique index |
+| 6 | Usage is written when work finishes: a daily limit let in everything that had begun; two campaigns each under the cap went far over together | in-flight work and committed budget count |
+| 7 | One active social connector satisfied publishing for every platform | the version's own platform's connector |
+| 8 | `finish_governed_execution` accepted another artifact's execution | four doors refuse it (`wrong_execution`) |
+| 9 | A person's recorded B2B submission/profile update skipped the policy block (and the profile daily limit) | `_manual_gate` |
+| 10 | "An agent cannot set a price" rested on a caller-supplied word | a signed-in person, in the door and the table |
+| 11 | An admin could lift an owner's BLOCK | loosening is the owner's |
+| 12 | A channel outside the plan still executed | `channel_not_enabled` (email excepted, as before) |
+| 13 | A budget change was classed by the 30-day estimate: tenfold daily rate under a total cap was a "creative change" | a higher daily rate is an increase |
+| 14 | `register_integration` trusted a caller's claim that an adapter exists | ignored; the engine records it |
+| 15 | Alerts told a person to "record it" with nowhere to record it; a hand-uploaded landing page could never be VERIFIED, so a Google ad could never launch even by hand | `record_manual_*` doors and screens; a download of the exact approved page; a fetched verification |
+| 16 | The public landing address could name an IP literal or an internal host; the verifier followed redirects and read unbounded bodies | table constraint, `isPublicHttpsAddress`, no redirect, bounded body |
+| 17 | Workers treated a failed read as "nothing to do" | they throw and are logged |
+| 18 | The handoff key borrowed the cron secret; a malformed `%` escape on the public link was a 500 | domain-separated vault key only; same redirect |
+| 19 | Screens printed "0" for what was never measured; a stale "still to come" list; copy claiming a pause "reaches the money" and drafts "checked" with no way to check one | `-`, list removed, copy corrected, **screens added** for scoring a prospect, recording a fact, checking a draft and creating a tracked link |
+
+**Verification.** `scripts/verify-acquisition-hardening.sql` (78 checks) and `scripts/verify-acquisition-e2e.sql` (25 checks: one visitor from a
+Google landing page to WhatsApp through the real ingest, one prospect from an email through the tracked handoff, the funnel and the campaign
+agreeing about the same lead, and the emergency stop reaching every governed action). **Red-proofs are now an artifact**:
+`scripts/redproof/cases.json` (12 ads, 13 landing, 25 B2B, 16 analytics, 25 hardening, 7 landing TypeScript, 6 B2B TypeScript) run by
+`scripts/redproof/run.py` against the LIVE definitions (a case that a later migration shadows reports GREEN and is re-pointed, never counted).
+
+**Judged and left, with the reason.** (a) Engine-facing wrappers with no screen - `resolveIdentity`, `recordTouchpoint`, `decideAction`,
+`bindApproval`, `requestMeeting`/`requestQuotation` - are called by agents and workers, not people; a meeting or quotation is requested the
+usual way from the lead, and the subtask doors require an agent that owns the conversation. (b) A manual by-hand record cannot prove the
+platform did the thing - it records a person's statement, against the exact approved version, once. (c) A handoff link already sent depends
+on the vault key it was derived with: do not rotate `VAULT_ENCRYPTION_KEY` while links are live. (d) Provider adapter error messages are
+stored as given: when an adapter exists its messages must be scrubbed of anything sensitive.
 
 ## 5. Human dependencies (known now; asked for only when the engine reaches them)
 

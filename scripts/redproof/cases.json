@@ -1,0 +1,716 @@
+{
+ "ads": {
+  "migration": "supabase/migrations/20261020100000_an_ad_campaign_launches_as_exactly_what_was_approved.sql",
+  "verifier": "scripts/verify-acquisition-ads.sql",
+  "cases": [
+   {
+    "name": "hash stamp trigger removed",
+    "find": "create trigger ad_version_stamp before insert on crm.ad_campaign_versions for each row execute function crm.ad_version_stamp();",
+    "replace": "-- removed",
+    "nth": 1
+   },
+   {
+    "name": "state door check removed",
+    "find": "if coalesce(current_setting('crm.ad_write', true), '') <> '1' then",
+    "replace": "if false then",
+    "nth": 1
+   },
+   {
+    "name": "DB hard gate drops budget increase",
+    "find": "'profile_update', 'ad_budget_increase', 'ad_targeting_change'));\ncomment on constraint",
+    "replace": "'profile_update'));\ncomment on constraint",
+    "nth": 1
+   },
+   {
+    "name": "DB hard gate drops targeting change",
+    "find": "'profile_update', 'ad_budget_increase', 'ad_targeting_change'));\ncomment on constraint",
+    "replace": "'profile_update', 'ad_budget_increase'));\ncomment on constraint",
+    "nth": 1
+   },
+   {
+    "name": "restated spend counted in full",
+    "find": "v_delta := greatest(p_spend_minor - coalesce(v_prev, 0), 0);",
+    "replace": "v_delta := p_spend_minor;",
+    "nth": 1
+   },
+   {
+    "name": "attribution by LAST touch",
+    "find": "select distinct on (t.lead_id) t.lead_id, t.organization_id, t.channel, t.campaign, t.utm\n      from crm.lead_touchpoints t order by t.lead_id, t.occurred_at, t.recorded_at, t.id",
+    "replace": "select distinct on (t.lead_id) t.lead_id, t.organization_id, t.channel, t.campaign, t.utm\n      from crm.lead_touchpoints t order by t.lead_id, t.occurred_at desc, t.recorded_at desc, t.id",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "emergency stop does nothing",
+    "find": "where c.status = 'live' and c.provider_sync_pending is null and crm.acquisition_blocked(c.organization_id, c.platform) is not null",
+    "replace": "where false",
+    "nth": 1
+   },
+   {
+    "name": "pause confirmed before the platform does it",
+    "find": "update crm.ad_campaigns set provider_sync_pending = p_action where id = c.id;",
+    "replace": "update crm.ad_campaigns set provider_sync_pending = p_action, status = case p_action when 'pause' then 'paused' else status end where id = c.id;",
+    "nth": 1
+   },
+   {
+    "name": "a check approves",
+    "find": "state = case when jsonb_array_length(p) = 0 then 'CHECKED' else 'CHECK_FAILED' end,\n         review = jsonb_build_object('problems', p, 'checked_at', now()) where id = v.id;\n  perform set_config('crm.ad_write', '', true);",
+    "replace": "state = 'CHECKED',\n         review = jsonb_build_object('problems', p, 'checked_at', now()) where id = v.id;\n  perform set_config('crm.ad_write', '', true);",
+    "nth": 1,
+    "migration": "supabase/migrations/20261021100000_a_landing_page_is_deployed_as_exactly_what_was_approved.sql"
+   },
+   {
+    "name": "a newer draft does not supersede",
+    "find": "and v.state in ('DRAFT', 'CHECKED', 'CHECK_FAILED', 'ADMIN_REVIEW') loop",
+    "replace": "and false loop",
+    "nth": 1
+   },
+   {
+    "name": "outcomes not scoped to the caller",
+    "find": "where (p_campaign is null or c.id = p_campaign) and (k.uid is null or (k.internal and c.organization_id = k.org))",
+    "replace": "where (p_campaign is null or c.id = p_campaign)",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "a member may pause",
+    "find": "if not crm._social_caller_ok(p_organization_id, true) then return query select 'forbidden'::text; return; end if;\n  if p_action not in",
+    "replace": "if p_action not in",
+    "nth": 1
+   }
+  ]
+ },
+ "landing": {
+  "migration": "supabase/migrations/20261021100000_a_landing_page_is_deployed_as_exactly_what_was_approved.sql",
+  "verifier": "scripts/verify-acquisition-landing.sql",
+  "cases": [
+   {
+    "name": "hash stamp trigger removed",
+    "find": "create trigger landing_version_stamp before insert on crm.landing_page_versions for each row execute function crm.landing_version_stamp();",
+    "replace": "-- removed",
+    "nth": 1
+   },
+   {
+    "name": "state door check removed",
+    "find": "if coalesce(current_setting('crm.landing_write', true), '') <> '1' then",
+    "replace": "if false then",
+    "nth": 1
+   },
+   {
+    "name": "begin_ad_apply ignores the landing page",
+    "find": "    return query select 'blocked'::text, 'landing_page_not_verified'::text, null::uuid; return;",
+    "replace": "    null;",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "check_ad_version ignores the landing page",
+    "find": "    p := p || to_jsonb('landing_page_not_verified'::text);",
+    "replace": "    null;",
+    "nth": 1
+   },
+   {
+    "name": "proof existence not checked",
+    "find": "and not exists (\n           select 1 from crm.portfolio_items i",
+    "replace": "and false and not exists (\n           select 1 from crm.portfolio_items i",
+    "nth": 1
+   },
+   {
+    "name": "deploy to a different address allowed",
+    "find": "if p_status = 'executed' and p_deployed_url <> v.public_url then",
+    "replace": "if false then",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "a failed check still verifies",
+    "find": "if (p_checks ->> k)::boolean is not true then v_pass := false; end if;",
+    "replace": "null;",
+    "nth": 1
+   },
+   {
+    "name": "arrival is never the first touch",
+    "find": "v_at := case when v_other is not true and v_first is not null then v_first - interval '1 second' else coalesce(p_message_at, now()) end;",
+    "replace": "v_at := coalesce(p_message_at, now());",
+    "nth": 1
+   },
+   {
+    "name": "deploy skips the connector/cap decision",
+    "find": "if d.decision = 'BLOCK' then return query select 'blocked'::text, d.reason, null::uuid; return; end if;\n  select * into g from crm.begin_governed_execution(p_organization_id, v.approval_request_id, 'acquisition_action'",
+    "replace": "select * into g from crm.begin_governed_execution(p_organization_id, v.approval_request_id, 'acquisition_action'",
+    "nth": 1
+   },
+   {
+    "name": "deploy without evidence accepted",
+    "find": "if p_status = 'executed' and (coalesce(p_deployed_url, '') !~ '^https://' or coalesce(p_html_hash, '') !~ '^[0-9a-f]{64}$') then return query select 'needs_evidence'::text; return; end if;",
+    "replace": "",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "privacy link not required",
+    "find": "if coalesce(p_content ->> 'privacy_url', '') !~ '^https://' then v := v || to_jsonb('needs_a_privacy_link'::text); end if;",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "proof source not required",
+    "find": "if coalesce(pr ->> 'portfolio_item_id', '') !~* '^[0-9a-f-]{36}$' then v := v || to_jsonb('proof_without_a_source'::text); end if;",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "arrival ignores the organisation on the landing lookup",
+    "find": "where v.organization_id = p_organization_id and left(v.id::text, 8) = m[1] and v.state in ('DEPLOYED', 'VERIFIED', 'VERIFY_FAILED', 'SUPERSEDED', 'RETIRED');\n  if v_n",
+    "replace": "where left(v.id::text, 8) = m[1] and v.state in ('DEPLOYED', 'VERIFIED', 'VERIFY_FAILED', 'SUPERSEDED', 'RETIRED');\n  if v_n",
+    "nth": 1
+   }
+  ]
+ },
+ "b2b": {
+  "migration": "supabase/migrations/20261022100000_a_marketplace_rule_decides_whether_a_conversation_may_leave_it.sql",
+  "verifier": "scripts/verify-acquisition-b2b.sql",
+  "cases": [
+   {
+    "name": "proposal hash stamp removed",
+    "find": "create trigger b2b_proposal_stamp before insert on crm.b2b_proposal_versions for each row execute function crm.b2b_proposal_stamp();",
+    "replace": "-- removed",
+    "nth": 1
+   },
+   {
+    "name": "proposal state door removed",
+    "find": "if coalesce(current_setting('crm.b2b_write', true), '') <> '1' then\n      raise exception 'a proposal''s state moves only",
+    "replace": "if false then\n      raise exception 'a proposal''s state moves only",
+    "nth": 1
+   },
+   {
+    "name": "email in a proposal not detected",
+    "find": "if t ~* '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}' then v := v || to_jsonb('contains_an_email_address'::text); end if;",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "phone in a proposal not detected",
+    "find": "if t ~ '\\+?[0-9][0-9 ().-]{7,}[0-9]' then v := v || to_jsonb('contains_a_phone_number'::text); end if;",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "messaging app not detected",
+    "find": "if t ~* '(whatsapp|wa\\.me|telegram|t\\.me|skype|signal app|discord|viber)' then v := v || to_jsonb('names_a_messaging_app'::text); end if;",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "DB constraint: agents may price",
+    "find": "check (price_minor is null or (created_by_type = 'human' and created_by is not null));",
+    "replace": "check (true);",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "door: agents may price",
+    "find": "if p_by_type not in ('human', 'agent', 'rule') or (p_by_type <> 'human' and p_price_minor is not null) then return query select 'invalid'::text, null::uuid; return; end if;\n  select * into o",
+    "replace": "if p_by_type not in ('human', 'agent', 'rule') then return query select 'invalid'::text, null::uuid; return; end if;\n  select * into o",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql",
+    "edits": [
+     {
+      "find": "(p_price_minor is not null and (p_by_type <> 'human' or (select auth.uid()) is null))",
+      "replace": "(p_price_minor is not null and (p_by_type <> 'human'))"
+     },
+     {
+      "find": "check (price_minor is null or (created_by_type = 'human' and created_by is not null));",
+      "replace": "check (true);"
+     }
+    ]
+   },
+   {
+    "name": "check does not need a price",
+    "find": "if v.price_minor is null then p := p || to_jsonb('needs_a_price_from_a_person'::text); end if;",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "excluded term is not a refusal",
+    "find": "      return query select 0, 'excluded'::text, jsonb_build_array('excluded_term:' || lower(btrim(v_term))); return;",
+    "replace": "      null;",
+    "nth": 1
+   },
+   {
+    "name": "connects not re-read at send time",
+    "find": "    if v_used + v.connects_cost > s.monthly_connects_cap then return query select 'blocked'::text, 'monthly_connects_exceeded'::text, null::uuid; return; end if;",
+    "replace": "",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "connects not checked at check time",
+    "find": "    if v_used + v.connects_cost > s.monthly_connects_cap then p := p || to_jsonb('over_the_monthly_connects_budget'::text); end if;",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "a person's submission ignores the daily limit",
+    "find": "  if ch.daily_limit is not null then\n    select coalesce(sum(u.amount), 0) into v_today from crm.acquisition_usage u\n     where u.organization_id = p_organization_id and u.channel = p_channel and u.metric = 'action'",
+    "replace": "  if false and ch.daily_limit is not null then\n    select coalesce(sum(u.amount), 0) into v_today from crm.acquisition_usage u\n     where u.organization_id = p_organization_id and u.channel = p_channel and u.metric = 'action'",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "engine may send to a manual platform",
+    "find": "    if coalesce(rule.automation_mode, 'manual') <> 'automated' then return query select 'blocked'::text, 'platform_not_automated'::text, null::uuid; return; end if;",
+    "replace": "",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "an admin may loosen a rule",
+    "find": "  if v_loosens and not coalesce((select core.is_owner()), false) then return query select 'not_owner'::text; return; end if;",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "handoff ignores the marketplace rule",
+    "find": "    if not exists (\n         select 1 from crm.b2b_platform_rules r",
+    "replace": "    if false and not exists (\n         select 1 from crm.b2b_platform_rules r",
+    "nth": 1
+   },
+   {
+    "name": "after_award means always",
+    "find": "or (r.offplatform_contact = 'after_award' and exists (select 1 from crm.b2b_opportunities o where o.organization_id = p_organization_id and o.lead_id = p_lead and o.status = 'won'))",
+    "replace": "or r.offplatform_contact = 'after_award'",
+    "nth": 1
+   },
+   {
+    "name": "an outcome without a submission",
+    "find": "  if o.status <> 'submitted' then return query select 'not_submitted'::text; return; end if;",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "opportunity facts editable",
+    "find": "  if (new.organization_id, new.platform, new.external_ref, new.url, new.title,",
+    "replace": "  if false and (new.organization_id, new.platform, new.external_ref, new.url, new.title,",
+    "nth": 1
+   },
+   {
+    "name": "profile claims not checked",
+    "find": "  if p_content ? 'testimonials' or p_content ? 'reviews' or p_content ? 'rating' or p_content ? 'badges' then v := v || to_jsonb('claims_a_platform_could_not_confirm'::text); end if;",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "connects not counted",
+    "find": "    if v.connects_cost > 0 then perform crm.record_acquisition_usage(p_organization_id, 'b2b', 'connect', v.connects_cost, 'b2b-connects:' || v.id::text); end if;",
+    "replace": "",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "a proposal may be sent twice",
+    "find": "  if v.state = 'SUBMITTED' then return query select 'already_submitted'::text, null::text, null::uuid; return; end if;",
+    "replace": "",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "profile update without evidence",
+    "find": "  if coalesce(p_evidence_url, '') !~ '^https://' then return query select 'needs_evidence'::text, null::text; return; end if;",
+    "replace": "",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "results not scoped to the caller",
+    "find": "   where k.uid is null or o.organization_id = k.org\n   group by o.platform",
+    "replace": "   where true\n   group by o.platform",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "proposal without a shortlist",
+    "find": "  if o.status <> 'shortlisted' then return query select 'not_shortlisted'::text, null::uuid; return; end if;",
+    "replace": "",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "proposal portfolio not checked",
+    "find": "    if not exists (select 1 from crm.portfolio_items i where i.organization_id = p_organization_id and i.is_active and i.id = pid) then p := p || to_jsonb('past_work_is_not_a_portfolio_item'::text); end if;",
+    "replace": "    null;",
+    "nth": 1
+   }
+  ]
+ },
+ "analytics": {
+  "migration": "supabase/migrations/20261023100000_results_are_read_from_the_crm_and_failures_are_loud.sql",
+  "verifier": "scripts/verify-acquisition-analytics.sql",
+  "cases": [
+   {
+    "name": "attribution by LAST touch",
+    "find": "from crm.lead_touchpoints t join leads_w lw on lw.id = t.lead_id order by t.lead_id, t.occurred_at, t.recorded_at, t.id\n  ),\n  lt as",
+    "replace": "from crm.lead_touchpoints t join leads_w lw on lw.id = t.lead_id order by t.lead_id, t.occurred_at desc, t.recorded_at desc, t.id desc\n  ),\n  lt as",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "currencies summed together",
+    "find": "select ch, cur, sum(val)::bigint as s from per_lead where w and cur is not null and val is not null group by ch, cur",
+    "replace": "select ch, 'ALL' as cur, sum(val)::bigint as s from per_lead where w and cur is not null and val is not null group by ch",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "spend ignores the window",
+    "find": "where u.metric = 'spend_minor' and u.occurred_at >= w.since and (k.uid is not null and k.internal and u.organization_id = k.org) group by 1",
+    "replace": "where u.metric = 'spend_minor' and (k.uid is not null and k.internal and u.organization_id = k.org) group by 1",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "a cost with no spend is zero",
+    "find": "case when count(p.id) > 0 and coalesce((select s.s from spend s where s.ch = c.ch), 0) > 0 then ((select s.s from spend s where s.ch = c.ch) / count(p.id))::bigint end",
+    "replace": "case when count(p.id) > 0 then (coalesce((select s.s from spend s where s.ch = c.ch), 0) / count(p.id))::bigint end",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "window ignored",
+    "find": "where l.created_at >= w.since and l.merged_into_lead_id is null",
+    "replace": "where l.merged_into_lead_id is null",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "funnel not scoped to the caller",
+    "find": "where l.created_at >= w.since and l.merged_into_lead_id is null and (k.uid is not null and k.internal and l.organization_id = k.org)",
+    "replace": "where l.created_at >= w.since and l.merged_into_lead_id is null",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "pace guessed when no goal",
+    "find": "              then (coalesce(q.n, 0)::numeric * m.total / m.elapsed) >= c.monthly_qualified_target * 0.8 end,",
+    "replace": "              then true end,",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "budget percentage wrong",
+    "find": "round(100.0 * coalesce(sp.s, 0) / c.monthly_budget_minor)::integer",
+    "replace": "round(10.0 * coalesce(sp.s, 0) / c.monthly_budget_minor)::integer",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "an unknown outcome is only a warning",
+    "find": "case when e.status = 'unknown' or (e.status = 'failed' and e.attempt >= 3) then 'critical' else 'warning' end as severity",
+    "replace": "'warning' as severity",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "a success is listed as a failure",
+    "find": "where e.status in ('failed', 'unknown') and (k.uid is null or (k.internal and e.organization_id = k.org))",
+    "replace": "where e.status in ('failed', 'unknown', 'executed') and (k.uid is null or (k.internal and e.organization_id = k.org))",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "any alert is listed",
+    "find": "where a.source in ('social_publishing', 'ad_operations', 'landing_pages', 'b2b_operations') and a.acknowledged_at is null",
+    "replace": "where a.acknowledged_at is null",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "failures not scoped to the caller",
+    "find": "where e.status in ('failed', 'unknown') and (k.uid is null or (k.internal and e.organization_id = k.org))",
+    "replace": "where e.status in ('failed', 'unknown')",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "a stalled execution never noticed",
+    "find": "e.started_at < now() - interval '10 minutes'",
+    "replace": "e.started_at < now() - interval '10 days'",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "advice leaks another tenant's usage",
+    "find": "where u.metric = 'action' and u.occurred_at >= now() - interval '30 days' and (k.uid is not null and k.internal and u.organization_id = k.org) group by 1",
+    "replace": "where u.metric = 'action' and u.occurred_at >= now() - interval '30 days' group by 1",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "funnel can write",
+    "find": "LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO ''\nAS $function$\n  with caller as (select (select auth.uid()) as uid, (select core.current_organization_id()) as org, coalesce((select core.is_internal()), false) as internal),\n  win as",
+    "replace": "LANGUAGE sql\n VOLATILE SECURITY DEFINER\n SET search_path TO ''\nAS $function$\n  with caller as (select (select auth.uid()) as uid, (select core.current_organization_id()) as org, coalesce((select core.is_internal()), false) as internal),\n  win as",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   },
+   {
+    "name": "goal progress not scoped",
+    "find": "where k.uid is not null and k.internal and c.organization_id = k.org\n   order by array_position",
+    "replace": "where true\n   order by array_position",
+    "nth": 1,
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql"
+   }
+  ]
+ },
+ "hardening": {
+  "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql",
+  "verifier": "scripts/verify-acquisition-hardening.sql",
+  "cases": [
+   {
+    "name": "qualification weights not scoped",
+    "find": "where m.organization_id = p_organization_id\n        and ((select auth.uid()) is null or (p_organization_id = (select core.current_organization_id()) and (select core.is_internal()))) order by",
+    "replace": "where m.organization_id = p_organization_id order by",
+    "nth": 1
+   },
+   {
+    "name": "decide: portal clients allowed",
+    "find": "  if (select auth.uid()) is not null and not coalesce((select core.is_internal()), false) then\n    return query select 'BLOCK'::text, 'not_internal'::text, null::text, null::text; return;\n  end if;\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "decide: channel outside the plan may act",
+    "find": "    if d is null and v_channel not in ('none', 'email') then",
+    "replace": "    if false and d is null and v_channel not in ('none', 'email') then",
+    "nth": 1
+   },
+   {
+    "name": "decide: in-flight work not counted",
+    "find": "        v_used_today := v_used_today + (select count(*) from crm.governed_executions e",
+    "replace": "        v_used_today := v_used_today + 0 * (select count(*) from crm.governed_executions e",
+    "nth": 1
+   },
+   {
+    "name": "bind_approval open to any internal member",
+    "find": "  if (select auth.uid()) is not null and not coalesce((select core.is_admin()), false) then\n    return query select 'forbidden'::text, null::uuid; return;\n  end if;\n  if p_artifact_type not in",
+    "replace": "  if p_artifact_type not in",
+    "nth": 1
+   },
+   {
+    "name": "goal progress joined across tenants (no session)",
+    "find": "where k.uid is not null and k.internal and c.organization_id = k.org\n   order by array_position",
+    "replace": "where (k.uid is null or c.organization_id = k.org)\n   order by array_position",
+    "nth": 1
+   },
+   {
+    "name": "funnel open to clients",
+    "find": "(k.uid is not null and k.internal and u.organization_id = k.org) group by 1",
+    "replace": "(k.uid is not null and u.organization_id = k.org) group by 1",
+    "nth": 1
+   },
+   {
+    "name": "recommendations open to clients",
+    "find": "act as (select crm._acq_channel(u.channel) as ch, coalesce(sum(u.amount), 0)::bigint as n from crm.acquisition_usage u, caller k\n                where u.metric = 'action' and u.occurred_at >= now() - interval '30 days' and (k.uid is not null and k.internal and u.organization_id = k.org) group by 1)",
+    "replace": "act as (select crm._acq_channel(u.channel) as ch, coalesce(sum(u.amount), 0)::bigint as n from crm.acquisition_usage u, caller k\n                where u.metric = 'action' and u.occurred_at >= now() - interval '30 days' group by 1)",
+    "nth": 1
+   },
+   {
+    "name": "lead outcome open to clients",
+    "find": "and ((select auth.uid()) is null or (l.organization_id = (select core.current_organization_id()) and (select core.is_internal())));",
+    "replace": "and ((select auth.uid()) is null or l.organization_id = (select core.current_organization_id()));",
+    "nth": 1
+   },
+   {
+    "name": "content status open to clients",
+    "find": "  if (select auth.uid()) is not null and not coalesce((select core.is_internal()), false) then return null; end if;\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "social publishing satisfied by any connector",
+    "find": "  if not exists (select 1 from crm.acquisition_integrations i join crm.content_items ci on ci.id = v.item_id",
+    "replace": "  if false and not exists (select 1 from crm.acquisition_integrations i join crm.content_items ci on ci.id = v.item_id",
+    "nth": 1
+   },
+   {
+    "name": "another artifact's execution accepted (social)",
+    "find": "  if not exists (select 1 from crm.governed_executions e where e.id = p_execution and e.organization_id = p_organization_id and e.artifact_id = v.id) then\n    return query select 'wrong_execution'::text; return;\n  end if;\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "committed budget not counted",
+    "find": "    left join crm.acquisition_channels ch on ch.organization_id = v.organization_id and ch.channel = c.platform\n   where v.id = p_version",
+    "replace": "    left join crm.acquisition_channels ch on ch.organization_id = v.organization_id and ch.channel = c.platform\n   where false and v.id = p_version",
+    "nth": 1
+   },
+   {
+    "name": "manual gate ignores the policy block",
+    "find": "  if exists (select 1 from crm.acquisition_policies p where p.organization_id = p_organization_id and p.action_type = p_action and p.mode = 'block') then return 'blocked_by_policy'; end if;\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "a signed-in person not needed for a price",
+    "edits": [
+     {
+      "find": "(p_price_minor is not null and (p_by_type <> 'human' or (select auth.uid()) is null))",
+      "replace": "(p_price_minor is not null and (p_by_type <> 'human'))"
+     },
+     {
+      "find": "check (price_minor is null or (created_by_type = 'human' and created_by is not null));",
+      "replace": "check (price_minor is null or created_by_type = 'human');"
+     }
+    ],
+    "note": "two layers (the door and the table constraint): both are removed so neither can cover for the other"
+   },
+   {
+    "name": "an admin may lift an owner's block",
+    "find": "               or (v_before is not null and v_before ->> 'mode' = 'block' and p_mode <> 'block')\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "budget change classed by the estimate only",
+    "find": "if v_new > v_old or new.budget_daily_minor > p.budget_daily_minor then",
+    "replace": "if v_new > v_old then",
+    "nth": 1
+   },
+   {
+    "name": "manual ad launch skips the cap check",
+    "find": "  if v.change_kind in ('launch', 'budget_increase') and crm._ad_committed_over_cap(p_organization_id, v.id) then\n    return query select 'blocked'::text, 'committed_budget_exceeds_cap'::text; return;\n  end if;\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "manual launch skips the landing gate",
+    "find": "  if c.platform = 'google_ads' and not exists (\n       select 1 from crm.landing_page_versions lv\n        where lv.organization_id = p_organization_id and lv.id::text = (v.plan #>> '{destination,landing_page_version_id}') and lv.state = 'VERIFIED') then\n    return query select 'blocked'::text, 'landing_page_not_verified'::text; return;\n  end if;\n  v_gate",
+    "replace": "  v_gate",
+    "nth": 1
+   },
+   {
+    "name": "manual metrics accept the future",
+    "find": "  if p_date is null or p_date > (now() at time zone 'utc')::date then return query select 'invalid'::text, 0::bigint; return; end if;\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "a hand post needs no reference",
+    "find": "  if coalesce(btrim(p_external_ref), '') = '' then return query select 'needs_reference'::text, null::text; return; end if;\n  select * into v from crm.content_versions",
+    "replace": "  select * into v from crm.content_versions",
+    "nth": 1
+   },
+   {
+    "name": "a hand upload needs no evidence",
+    "find": "  if coalesce(p_html_hash, '') !~ '^[0-9a-f]{64}$' then return query select 'needs_evidence'::text, null::text; return; end if;\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "a member may record a hand launch",
+    "find": "create or replace function crm.record_manual_ad_apply(p_organization_id uuid, p_version uuid, p_provider_campaign_id text, p_objects jsonb default '[]')\nreturns table (outcome text, reason text)\nlanguage plpgsql\nvolatile\nsecurity definer\nset search_path = ''\nas $$\ndeclare v crm.ad_campaign_versions; c crm.ad_campaigns; g record; f record; v_gate text;\nbegin\n  if not crm._social_caller_ok(p_organization_id, true) then return query select 'forbidden'::text, null::text; return; end if;",
+    "replace": "create or replace function crm.record_manual_ad_apply(p_organization_id uuid, p_version uuid, p_provider_campaign_id text, p_objects jsonb default '[]')\nreturns table (outcome text, reason text)\nlanguage plpgsql\nvolatile\nsecurity definer\nset search_path = ''\nas $$\ndeclare v crm.ad_campaign_versions; c crm.ad_campaigns; g record; f record; v_gate text;\nbegin",
+    "nth": 1
+   },
+   {
+    "name": "a handoff token hash may be reused by another organisation",
+    "ddl": true,
+    "note": "create unique index ... if not exists cannot be undone by re-applying: drop crm.channel_handoffs_token_hash_global_key, run the verifier (it fails at 'organisation B created a handoff with A's token hash'), recreate it."
+   },
+   {
+    "name": "a landing address may be an IP literal or an internal host",
+    "ddl": true,
+    "note": "alter table ... drop constraint landing_versions_public_url_host, run the verifier (it fails at 'an IP-literal address is refused'), re-apply the migration."
+   }
+  ]
+ },
+ "landing_ts": {
+  "kind": "ts",
+  "test": "tests/lead-generation-landing.test.ts",
+  "cases": [
+   {
+    "name": "no escaping of &",
+    "file": "src/modules/acquisition/landing-render.ts",
+    "find": "const esc = (s: string): string => s.replace(/&/g, '&amp;')",
+    "replace": "const esc = (s: string): string => s.replace(/&/g, '&')"
+   },
+   {
+    "name": "any matching number passes",
+    "file": "src/modules/acquisition/landing-render.ts",
+    "find": "numbers.every((n) => n === digits(input.whatsappNumber))",
+    "replace": "numbers.some((n) => n === digits(input.whatsappNumber))"
+   },
+   {
+    "name": "any marker passes",
+    "file": "src/modules/acquisition/landing-render.ts",
+    "find": "marker === input.contentHash",
+    "replace": "marker !== undefined"
+   },
+   {
+    "name": "deploy ignores the door",
+    "file": "src/modules/acquisition/landing.ts",
+    "find": "if (b?.outcome !== 'proceed' || !b.execution_id) return",
+    "replace": "if (false) return"
+   },
+   {
+    "name": "deploy claims verified",
+    "file": "src/modules/acquisition/landing.ts",
+    "find": "return { outcome: 'deployed', verified: verdict === 'verified' };",
+    "replace": "return { outcome: 'deployed', verified: true };"
+   },
+   {
+    "name": "asks the database for every message",
+    "file": "src/modules/acquisition/landing-arrival.ts",
+    "find": "if (!input.body || !LANDING_TAG.test(input.body)) return null;",
+    "replace": "if (!input.body) return null;"
+   },
+   {
+    "name": "the in-browser tag script is broken",
+    "file": "src/modules/acquisition/landing-render.ts",
+    "find": "a.href=a.href.replace(",
+    "replace": "a.href=a.href.concat("
+   }
+  ]
+ },
+ "b2b_ts": {
+  "kind": "ts",
+  "test": "tests/lead-generation-b2b.test.ts",
+  "cases": [
+   {
+    "name": "send ignores the door",
+    "file": "src/modules/acquisition/b2b.ts",
+    "find": "if (b?.outcome !== 'proceed' || !b.execution_id) return",
+    "replace": "if (false) return"
+   },
+   {
+    "name": "unpriced version may be sent",
+    "file": "src/modules/acquisition/b2b.ts",
+    "find": "if (!v || !o || v.price_minor === null) {",
+    "replace": "if (!v || !o) {"
+   },
+   {
+    "name": "unapproved version handled",
+    "file": "src/modules/acquisition/b2b.ts",
+    "find": "if (req?.state !== 'approved') continue;",
+    "replace": ""
+   },
+   {
+    "name": "no-connector path skipped",
+    "file": "src/modules/acquisition/b2b.ts",
+    "find": "if (!connector || !o) {",
+    "replace": "if (false) {"
+   },
+   {
+    "name": "a thrown connector counted as a clean failure",
+    "file": "src/modules/acquisition/b2b.ts",
+    "find": "result = { status: 'unknown', reason: 'the connector did not return a result' };",
+    "replace": "result = { status: 'rejected', reason: 'x' };"
+   },
+   {
+    "name": "a problem code loses its words",
+    "file": "src/modules/acquisition/b2b-vocabulary.ts",
+    "find": "contains_an_external_link: 'Contains a link",
+    "replace": "contains_an_external_linkX: 'Contains a link"
+   }
+  ]
+ }
+}

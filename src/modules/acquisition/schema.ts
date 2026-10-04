@@ -39,20 +39,20 @@ export type EngineBuild = 'not_built' | 'partial' | 'built';
 export const ENGINE_STATUS: Record<AcquisitionChannel, { build: EngineBuild; summary: string; link?: { href: string; label: string } }> = {
   meta_ads: {
     build: 'partial',
-    summary: 'The campaign pipeline is built: plans with versions, checks that can fail but never approve, exact-version admin approval (a budget increase or a targeting change is its own approval), a cap the Admin sets, pause that reaches the money, spend counted once, health findings, and results read from the CRM by first touch. NOT built: the Meta connector (so an approved launch is flagged for a person to apply by hand), pulling the platform\'s figures, and the AI that plans and optimises.',
+    summary: 'The campaign pipeline is built: plans with versions, checks that can fail but never approve, exact-version admin approval (a budget increase or a targeting change is its own approval), a cap the Admin sets that counts budget already committed and not only money spent, spend counted once from the figures a person copies in, health findings, and results read from the CRM by first touch. A person applies an approved launch on the platform and records it here; a pause or end is an intent that a person confirms once the platform has really done it. NOT built: the Meta connector - nothing is pushed to or read from Meta, so a pause cannot reach the money by itself - and the AI that plans and optimises.',
   },
   email: {
     build: 'partial',
-    summary: 'Governed sending from info@, opt-out, bounce handling and reply reading are live. A reply is adopted into the shared identity with the email agent as owner; prospects are qualified against the Admin\'s weights and rules; drafts are checked against recorded research; a follow-up is re-checked when it is sent. Finding prospects on the open web and an AI writing the message are NOT built yet - they need a discovery source and a funded model.',
+    summary: 'Governed sending from info@, opt-out, bounce handling and reply reading are live. A reply is adopted into the shared identity with the email agent as owner; prospects are qualified against the Admin\'s weights and rules; a draft can be checked against the facts recorded about the person (nothing writes drafts yet); a follow-up is re-checked when it is sent. Finding prospects on the open web and an AI writing the message are NOT built yet - they need a discovery source and a funded model.',
     link: { href: '/communication/email-outreach', label: 'Open email outreach' },
   },
   social: {
     build: 'partial',
-    summary: 'The content pipeline is built: drafts, an automated review that can fail but never approve, exact-version admin approval, scheduling, and publish-once. Strategies and audits are recorded. NOT built: connecting LinkedIn, Instagram or Facebook (so a due post is flagged for a person to post by hand), reading account analytics, and the AI that plans and writes.',
+    summary: 'The content pipeline is built: drafts, an automated review that can fail but never approve, exact-version admin approval, scheduling, and publish-once. Strategies and audits are recorded. A due post is flagged for a person, who posts it on the platform and records it here. NOT built: connecting LinkedIn, Instagram or Facebook, reading account analytics, and the AI that plans and writes.',
   },
   google_ads: {
     build: 'partial',
-    summary: 'The campaign pipeline is the same as Meta\'s, with Google\'s rules (keywords, negatives, headline lengths). Landing pages are built too: versions approved as exactly their content, address and WhatsApp number, a governed deploy, and a verification of the public address - a Google ad can only launch to a VERIFIED page, and a visit that becomes a WhatsApp message is credited to its campaign. NOT built: the Google Ads connector and the Hostinger deployer, so an approved launch or page is applied by hand and nothing here is shown live until it has been checked.',
+    summary: 'The campaign pipeline is the same as Meta\'s, with Google\'s rules (keywords, negatives, headline lengths). Landing pages are built too: versions approved as exactly their content, address and WhatsApp number; a person uploads the approved page (the app renders it for download) and records it; the app then FETCHES the public address and records what it found - only a page that carries exactly the approved version is VERIFIED, and a Google ad can only launch to a VERIFIED page. A visit that becomes a WhatsApp message is credited to its campaign. NOT built: the Google Ads connector and the Hostinger deployer, so launches and uploads are done by hand and recorded here.',
   },
   b2b: {
     build: 'partial',

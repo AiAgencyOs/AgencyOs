@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react';
 
-import { checkLandingAction, retireLandingAction, saveLandingAction, submitLandingAction } from '@/modules/acquisition/actions';
+import { recheckLandingAction, recordLandingUploadedAction, checkLandingAction, retireLandingAction, saveLandingAction, submitLandingAction } from '@/modules/acquisition/actions';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { FormMessage, buttonClass, inputClass, labelClass, selectClass, textareaClass } from '@/ui';
 
@@ -69,6 +69,29 @@ export function RetireLandingForm({ pageId }: { pageId: string }) {
         <Field label="Retire - why?"><input name="reason" required minLength={3} maxLength={300} className={inputClass} /></Field>
         <button type="submit" disabled={pending} className={buttonClass('secondary')}>Retire</button>
       </div>
+      <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** The app renders exactly the approved page for download; the person uploads it, records it, and the app FETCHES the public address to verify. */
+export function RecordUploadedForm({ versionId }: { versionId: string }) {
+  const [state, run, pending] = useActionState(recordLandingUploadedAction, IDLE_STATE);
+  return (
+    <form action={run} className="flex flex-col gap-2 rounded border border-line p-3">
+      <input type="hidden" name="versionId" value={versionId} />
+      <p className="text-xs text-muted">Once an admin has approved it: <a className="text-brand hover:underline" href={`/api/landing/${versionId}/page`}>download the approved page</a>, upload it unchanged to the address above, then record it. AgencyOS then fetches the public address itself - saying it is verified is not something a person can do.</p>
+      <div className="flex items-center gap-3"><button type="submit" disabled={pending} className={buttonClass('primary')}>I uploaded it - record and check</button><FormMessage status={state.status} message={state.message} /></div>
+    </form>
+  );
+}
+
+export function RecheckLandingButton({ versionId }: { versionId: string }) {
+  const [state, run, pending] = useActionState(recheckLandingAction, IDLE_STATE);
+  return (
+    <form action={run} className="flex flex-col gap-1">
+      <input type="hidden" name="versionId" value={versionId} />
+      <button type="submit" disabled={pending} className={buttonClass('secondary')}>Re-check the public address</button>
       <FormMessage status={state.status} message={state.message} />
     </form>
   );

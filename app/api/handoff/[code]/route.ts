@@ -19,7 +19,10 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request, { params }: { params: Promise<{ code: string }> }) {
   const home = NextResponse.redirect(new URL('/', clientEnv.NEXT_PUBLIC_APP_URL ?? request.url), 302);
   const { code: raw } = await params;
-  const code = normalizeHandoffCode(decodeURIComponent(raw));
+  // A malformed percent-escape is just another thing that is not a reference: the same redirect, never an error that tells it apart.
+  let decoded: string;
+  try { decoded = decodeURIComponent(raw); } catch { return home; }
+  const code = normalizeHandoffCode(decoded);
   if (!code) return home;
   const { data, error } = await createAdminClient().schema('crm').rpc('open_channel_handoff', { p_token_hash: hashHandoffCode(code) });
   if (error) return home;

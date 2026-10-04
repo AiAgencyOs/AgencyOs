@@ -844,6 +844,16 @@ jobs:
           # Slice 7: social content is approved as EXACTLY what is published (the specification's four cases): no approval, no publish; approve V1 then
           # change it and V1's approval cannot publish V2; approve V2 exactly and it publishes; a replay posts nothing twice. The hash cannot be forged,
           # a version cannot be edited, the review can fail a draft but never approve one, and an uncertain outcome is reconciled, never re-posted.
+          # Slice 8: an ad campaign launches as EXACTLY what was approved (a budget increase or a targeting change is its own approval and is never
+          # automatic); the Admin's cap holds; spend is counted once; a pause is an intent until the platform confirms it; results come from the CRM.
+          # Slice 9: a landing page is deployed as exactly what was approved, DEPLOYED is not VERIFIED, a Google ad can only launch to a VERIFIED page,
+          # and a visit that becomes a WhatsApp message is credited to its campaign.
+          # Slice 10: a marketplace's own rule decides whether a conversation may leave it; a proposal goes out as exactly what was approved and only a
+          # person prices it; a person's recorded send is held to the stops, the policy, the limits and the connects budget.
+          # Slice 11: results, goals, failures and advice are reads that cannot write and cannot cross a tenant.
+          # Slice 12 (hardening + end to end): every finding of three independent reviews is reproduced and must stay refused; the by-hand
+          # record_manual_* doors work only for the exact approved version, once; one visitor and one prospect are followed end to end through the
+          # real ingest and the tracked handoff; and the emergency stop reaches every governed action.
           npm run db:verify:acquisition
 
           # The AI Provider Manager's contract: who may manage providers, models and keys; no path returns a secret;

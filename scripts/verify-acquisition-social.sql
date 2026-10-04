@@ -52,6 +52,7 @@ set local role authenticated;
 select pg_temp.as_user(:'ADMIN', :'ORG', 'ops_admin');
 select crm.ensure_acquisition_defaults();
 select crm.ensure_acquisition_approval_policies();
+select crm.set_channel_settings('social', true, 20, null, 50);
 insert into fx select 'li', integration_id from crm.register_integration('linkedin', 'production', null, true);
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
 select crm.store_connector_secret((select v from fx where k = 'li'), 'access_token', 'Y3Q=', 'aXYtdmFsdWU=', 'dGFnLXZhbHVl', 'link', null);
@@ -59,6 +60,7 @@ reset role;
 set local role service_role;
 select pg_temp.as_service();
 select pg_temp.check((select outcome from crm.record_social_audit(:'ORG', 'linkedin', 'adapter', (select v from fx where k = 'li'), '{}', '{}', 'agent')) = 'integration_not_verified', 'an audit claiming an adapter read the account needs a VERIFIED connection');
+select crm.sync_integration_adapter(:'ORG', (select v from fx where k = 'li'), true);
 select crm.record_integration_check(:'ORG', (select v from fx where k = 'li'), true, 'urn:li:org:1', '{"PUBLISH_CONTENT":"AUTOMATED","READ_PROFILE":"AUTOMATED"}', null, null);
 
 -- ═══ A. audits and strategies ═════════════════════════════════════════════
@@ -344,7 +346,7 @@ select pg_temp.check((select outcome from crm.begin_content_publish(:'ORG', (sel
 reset role;
 select pg_temp.as_user(:'ADMIN', :'ORG', 'ops_admin');
 set local role authenticated;
-insert into fx select 'item4', item_id from crm.create_content_item(:'ORG', 'facebook', 'reach', 'text', null, null, 'Uncertain');
+insert into fx select 'item4', item_id from crm.create_content_item(:'ORG', 'linkedin', 'reach', 'text', null, null, 'Uncertain');
 reset role;
 set local role service_role;
 select pg_temp.as_service();

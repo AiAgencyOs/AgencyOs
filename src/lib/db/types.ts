@@ -8677,6 +8677,26 @@ export type Database = {
         Args: { p_days?: number }
         Returns: { channel: string | null; recommendation: string | null; basis: Json | null }[]
       }
+      record_manual_ad_apply: {
+        Args: { p_objects?: Json; p_organization_id: string; p_provider_campaign_id: string; p_version: string }
+        Returns: { outcome: string | null; reason: string | null }[]
+      }
+      record_manual_ad_change: {
+        Args: { p_campaign: string; p_confirmed: boolean; p_detail?: string; p_organization_id: string }
+        Returns: { outcome: string | null }[]
+      }
+      record_manual_ad_metrics: {
+        Args: { p_campaign: string; p_clicks: number; p_date: string; p_impressions: number; p_organization_id: string; p_platform_leads: number; p_spend_minor: number }
+        Returns: { outcome: string | null; counted_minor: number | null }[]
+      }
+      record_manual_publish: {
+        Args: { p_external_ref: string; p_organization_id: string; p_url?: string; p_version: string }
+        Returns: { outcome: string | null; reason: string | null }[]
+      }
+      record_manual_landing_deploy: {
+        Args: { p_html_hash: string; p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; reason: string | null }[]
+      }
       save_qualification_model: {
         Args: { p_note: string; p_weights: Json }
         Returns: { outcome: string | null; version: number | null }[]

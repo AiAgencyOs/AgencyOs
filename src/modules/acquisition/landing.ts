@@ -23,6 +23,28 @@ export type LandingDeployer = { deploy(input: DeployInput): Promise<DeployResult
 
 export type Fetcher = (url: string, init: { signal: AbortSignal }) => Promise<{ status: number; text(): Promise<string> }>;
 
+const MAX_BODY_CHARS = 2_000_000;
+
+/**
+ * The address is fetched FROM THE SERVER, so it must be a public name: never an IP literal, a port, credentials, or an internal
+ * suffix. The database refuses such an address when the version is written; this is the second line, at the moment of the fetch.
+ */
+export function isPublicHttpsAddress(raw: string): boolean {
+  let u: URL;
+  try { u = new URL(raw); } catch { return false; }
+  if (u.protocol !== 'https:' || u.username || u.password || u.port) return false;
+  const host = u.hostname.toLowerCase();
+  if (/^[0-9.]+$/.test(host) || host.includes(':') || host === 'localhost') return false;
+  if (/\.(local|internal|localhost|lan|intranet|corp|home)$/.test(host)) return false;
+  return host.includes('.');
+}
+
+/** A redirect is NOT followed: the page must be served at exactly the address that was approved, and the body is bounded. */
+const defaultFetcher: Fetcher = async (url, init) => {
+  const res = await fetch(url, { signal: init.signal, redirect: 'manual' });
+  return { status: res.status, text: async () => (await res.text()).slice(0, MAX_BODY_CHARS) };
+};
+
 const row = <T>(data: unknown): T | undefined => (Array.isArray(data) ? data[0] : data) as T | undefined;
 
 type VersionRow = { id: string; content: unknown; whatsapp_number: string; public_url: string; content_hash: string; page_id: string };
@@ -42,6 +64,14 @@ async function proofLinks(admin: Admin, organizationId: string, content: Landing
   return Object.fromEntries((data ?? []).map((i) => [i.id, { title: i.title, url: i.url }]));
 }
 
+/** The approved page, rendered exactly as the engine would send it - what a person downloads to upload by hand. */
+export async function renderApprovedPage(admin: Admin, organizationId: string, versionId: string): Promise<{ html: string; htmlHash: string; slug: string } | null> {
+  const found = await readVersion(admin, organizationId, versionId);
+  if (!found) return null;
+  const links = await proofLinks(admin, organizationId, found.v.content as LandingContent);
+  return { ...renderVersion(found.v, links), slug: found.slug };
+}
+
 export function renderVersion(version: VersionRow, links: Record<string, { title: string; url: string }>): { html: string; htmlHash: string } {
   const html = renderLandingHtml({ versionId: version.id, contentHash: version.content_hash, whatsappNumber: version.whatsapp_number, content: version.content as LandingContent, proofLinks: links });
   return { html, htmlHash: sha256Hex(html) };
@@ -57,15 +87,17 @@ export type DeployOutcome =
 export async function verifyLandingVersion(admin: Admin, input: { organizationId: string; versionId: string; fetcher?: Fetcher; timeoutMs?: number }): Promise<'verified' | 'failed' | 'not_recorded'> {
   const found = await readVersion(admin, input.organizationId, input.versionId);
   if (!found) return 'not_recorded';
-  const fetcher: Fetcher = input.fetcher ?? ((url, init) => fetch(url, { signal: init.signal, redirect: 'follow' }));
+  const fetcher: Fetcher = input.fetcher ?? defaultFetcher;
   let status = 0;
   let body = '';
   try {
-    const res = await fetcher(found.v.public_url, { signal: AbortSignal.timeout(input.timeoutMs ?? 20_000) });
-    status = res.status;
-    body = await res.text();
+    if (isPublicHttpsAddress(found.v.public_url)) {
+      const res = await fetcher(found.v.public_url, { signal: AbortSignal.timeout(input.timeoutMs ?? 20_000) });
+      status = res.status;
+      body = (await res.text()).slice(0, MAX_BODY_CHARS);
+    }
   } catch {
-    // Unreachable: status stays 0 and the body empty, so every check below fails honestly.
+    // Unreachable (or not a public address): status stays 0 and the body empty, so every check below fails honestly.
   }
   const checks = judgeFetchedPage({ status, body, contentHash: found.v.content_hash, whatsappNumber: found.v.whatsapp_number, versionId: found.v.id });
   const { data, error } = await admin.schema('crm').rpc('record_landing_verification', { p_organization_id: input.organizationId, p_version: input.versionId, p_checks: checks as unknown as Json });
@@ -136,18 +168,21 @@ export async function runLandingOperations(admin: Admin, deployer: LandingDeploy
   const sweep: LandingSweep = { approvalsClosed: 0, deployed: 0, failed: 0, unknown: 0, assisted: 0, reverified: 0 };
   try {
     const closed = await admin.schema('crm').rpc('sync_landing_approvals', { p_limit: 200 });
+    if (closed.error) throw new Error(`could not close lapsed approvals: ${closed.error.message}`);
     sweep.approvalsClosed = typeof closed.data === 'number' ? closed.data : 0;
 
-    const { data: waiting } = await admin.schema('crm').from('landing_page_versions')
+    const { data: waiting, error: waitingError } = await admin.schema('crm').from('landing_page_versions')
       .select('id, organization_id, page_id, approval_request_id').in('state', ['ADMIN_REVIEW', 'DEPLOYING']).not('approval_request_id', 'is', null).order('state_changed_at').limit(25);
+    if (waitingError) throw new Error(`could not read waiting: ${waitingError.message}`);
     for (const w of waiting ?? []) {
-      const { data: req } = await admin.schema('approvals').from('approval_requests').select('state').eq('id', w.approval_request_id ?? '').maybeSingle();
+      const { data: req, error: reqError } = await admin.schema('approvals').from('approval_requests').select('state').eq('id', w.approval_request_id ?? '').maybeSingle();
+      if (reqError) throw new Error(`could not read req: ${reqError.message}`);
       if (req?.state !== 'approved') continue;
       if (!deployer) {
         sweep.assisted += 1;
         await admin.schema('core').rpc('raise_alert', {
           p_organization_id: w.organization_id, p_source: 'landing_pages', p_severity: 'warning',
-          p_summary: 'An approved landing page cannot be deployed automatically yet (no Hostinger deployer is built): upload exactly the approved page by hand, then re-check it here.',
+          p_summary: 'An approved landing page cannot be deployed automatically yet (no Hostinger deployer is built): download the approved page from the Google tab, upload it unchanged, then record it there (the public address is then checked).',
           p_fingerprint: `landing-assisted:${w.id}`,
         });
         continue;
@@ -165,7 +200,8 @@ export async function runLandingOperations(admin: Admin, deployer: LandingDeploy
       }
     }
 
-    const { data: unverified } = await admin.schema('crm').from('landing_page_versions').select('id, organization_id').in('state', ['DEPLOYED', 'VERIFY_FAILED']).order('state_changed_at').limit(25);
+    const { data: unverified, error: unverifiedError } = await admin.schema('crm').from('landing_page_versions').select('id, organization_id').in('state', ['DEPLOYED', 'VERIFY_FAILED']).order('state_changed_at').limit(25);
+    if (unverifiedError) throw new Error(`could not read unverified: ${unverifiedError.message}`);
     for (const u of unverified ?? []) {
       await verifyLandingVersion(admin, { organizationId: u.organization_id, versionId: u.id, fetcher });
       sweep.reverified += 1;

@@ -4,25 +4,23 @@ import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can, hasRole } from '@/lib/authz/permissions';
-import { listB2bOpportunities, listB2bProfiles, readB2bOutcomes, readB2bSetup, listLandingPages, listPortfolioChoices, listAdCampaigns, listCampaignHealth, readAdOutcomes, readAdRecommendations, listActiveBlocks, listContentQueue, listRecentQualifications, listSocialStrategies, listTargetServices, readSocialPerformance, readChannelSettings, readEmailFunnel, readQualificationModel } from '@/modules/acquisition/queries';
+import { listOutreachProspects, listB2bOpportunities, listB2bProfiles, readB2bOutcomes, readB2bSetup, listLandingPages, listPortfolioChoices, listAdCampaigns, listCampaignHealth, readAdOutcomes, readAdRecommendations, listActiveBlocks, listContentQueue, listRecentQualifications, listSocialStrategies, listTargetServices, readSocialPerformance, readChannelSettings, readEmailFunnel, readQualificationModel } from '@/modules/acquisition/queries';
 import { AD_PLATFORM_LABEL, CHANGE_LABEL, HEALTH_WORDS, RECOMMENDATION_WORDS, VERSION_STATE_WORDS, planProblemWords, type AdPlatform } from '@/modules/acquisition/ad-vocabulary';
 import { OBJECTIVE_LABEL, FORMAT_LABEL, PLATFORM_LABEL, STATUS_WORDS, reviewWords, type SocialPlatform } from '@/modules/acquisition/social-vocabulary';
 import { disqualifierWords, FACTOR_LABEL, FUNNEL_LABEL, FUNNEL_STAGES, QUALIFICATION_FACTORS } from '@/modules/acquisition/qualification-vocabulary';
 import { CHANNEL_LABEL, ENGINE_STATUS, channelFromSlug } from '@/modules/acquisition/schema';
 import { Badge, Callout, Card, CardBody, CardHeader, EmptyState, PageHeader, PermissionDenied, Stat, StatGrid } from '@/ui';
 
-import { BlockForm, LiftBlockForm, QualificationModelForm } from '../email-forms';
+import { BlockForm, CheckDraftForm, LiftBlockForm, QualificationModelForm, RecordFactForm, ScoreProspectForm } from '../email-forms';
 import { AUTOMATION_LABEL, B2B_PLATFORM_LABEL, OFFPLATFORM_LABEL, OPPORTUNITY_WORDS, PROPOSAL_STATE_WORDS, b2bProblemWords, fitReasonWords } from '@/modules/acquisition/b2b-vocabulary';
 import { CheckProfileButton, CheckProposalButton, B2bSettingsForm, ImportOpportunityForm, OutcomeForm, ProfileForm, ProposalForm, RecordProfileAppliedForm, LinkLeadForm, RecordSentForm, RuleForm, SetupB2bButton, ShortlistButton, SkipForm, SubmitProfileButton, SubmitProposalButton } from '../b2b-forms';
 import { LANDING_STATE_WORDS, VERIFICATION_CHECK_LABEL, landingProblemWords } from '@/modules/acquisition/landing-vocabulary';
-import { CheckLandingButton, LandingForm, RetireLandingForm, SubmitLandingButton } from '../landing-forms';
-import { AdChangeForm, AdPlanForm, CheckAdButton, SubmitAdButton } from '../ads-forms';
-import { ActivateStrategyButton, CancelVersionForm, NewDraftForm, ReviewButton, ScheduleForm, SubmitButton } from '../social-forms';
+import { CheckLandingButton, LandingForm, RecheckLandingButton, RecordUploadedForm, RetireLandingForm, SubmitLandingButton } from '../landing-forms';
+import { AdChangeDoneForm, AdChangeForm, AdFiguresForm, AdPlanForm, CheckAdButton, RecordLaunchForm, SubmitAdButton } from '../ads-forms';
+import { ActivateStrategyButton, CancelVersionForm, NewDraftForm, RecordPostedForm, ReviewButton, ScheduleForm, SubmitButton } from '../social-forms';
 import { ChannelPauseForm, ChannelSettingsForm } from '../forms';
 
 export const metadata: Metadata = { title: 'Lead generation channel' };
-
-const SOON = ['Connected accounts', 'Strategy', 'Plans', 'Active runs', 'Prospects', 'Conversations', 'Approvals', 'Analytics', 'Failures', 'Audit history'];
 
 export default async function ChannelPage({ params }: { params: Promise<{ channel: string }> }) {
   const { channel: slug } = await params;
@@ -41,7 +39,7 @@ export default async function ChannelPage({ params }: { params: Promise<{ channe
   const ads = isAds ? await Promise.all([listAdCampaigns(channel), readAdOutcomes(), listCampaignHealth(), readAdRecommendations(), listTargetServices()]) : null;
   const landing = channel === 'google_ads' ? await Promise.all([listLandingPages(), listPortfolioChoices()]) : null;
   const b2b = channel === 'b2b' ? await Promise.all([readB2bSetup(), listB2bOpportunities(), listB2bProfiles(), readB2bOutcomes(), listPortfolioChoices()]) : null;
-  const email = channel === 'email' ? await Promise.all([readEmailFunnel(), readQualificationModel(), listActiveBlocks(), listRecentQualifications()]) : null;
+  const email = channel === 'email' ? await Promise.all([readEmailFunnel(), readQualificationModel(), listActiveBlocks(), listRecentQualifications(), listOutreachProspects()]) : null;
 
   return (
     <div className="flex flex-col gap-5">
@@ -121,11 +119,28 @@ export default async function ChannelPage({ params }: { params: Promise<{ channe
             </CardBody>
           </Card>
 
+          {mayManage ? (
+            <>
+              <Card>
+                <CardHeader title="Score a prospect" description="From what you know, against the weights above. A score you leave empty counts as not known. The rules still outrank any score: the exclusion list, the block list, the target countries, industries and services, and anyone who asked not to be emailed." />
+                <CardBody>{email[4].length === 0 ? <p className="text-[13px] text-muted">There is nobody on the email list yet.</p> : <ScoreProspectForm prospects={email[4]} />}</CardBody>
+              </Card>
+              <Card>
+                <CardHeader title="Check a draft against the research" description="Record what you actually know about a person, with its source. A message may then say it - and nothing else about them. No discovery source and no AI writer is connected: the draft is yours or an agent's, and this is what it is held to." />
+                <CardBody>
+                  {email[4].length === 0 ? <p className="text-[13px] text-muted">There is nobody on the email list yet.</p> : (
+                    <div className="flex flex-col gap-6"><RecordFactForm prospects={email[4]} /><CheckDraftForm prospects={email[4]} /></div>
+                  )}
+                </CardBody>
+              </Card>
+            </>
+          ) : null}
+
           <Card>
             <CardHeader title="Recent qualification decisions" description="With the rule that decided, and what was missing." />
             <CardBody>
               {email[3].length === 0 ? (
-                <EmptyState title="Nothing qualified yet" description="Decisions appear here when a person or an agent scores a prospect." />
+                <EmptyState title="Nothing qualified yet" description="Decisions appear here when a person scores a prospect (above). No agent scores prospects yet." />
               ) : (
                 <ul className="flex flex-col gap-2 text-[13px]">
                   {email[3].map((q) => (
@@ -173,6 +188,7 @@ export default async function ChannelPage({ params }: { params: Promise<{ channe
                             {q.state === 'DRAFT' ? <ReviewButton versionId={q.versionId} /> : null}
                             {q.state === 'AI_REVIEWED' ? <SubmitButton versionId={q.versionId} /> : null}
                             {q.status === 'APPROVED' ? <ScheduleForm versionId={q.versionId} /> : null}
+                            {q.state === 'SCHEDULED' ? <RecordPostedForm versionId={q.versionId} /> : null}
                             {q.state === 'ADMIN_REVIEW' && q.status !== 'APPROVED' ? <Link href="/approvals" className="text-[13px] text-brand hover:underline">Open the Approval Center</Link> : null}
                             {['DRAFT', 'AI_REVIEWED', 'AI_REVIEW_FAILED', 'ADMIN_REVIEW', 'SCHEDULED'].includes(q.state) ? <CancelVersionForm versionId={q.versionId} /> : null}
                           </div>
@@ -214,7 +230,7 @@ export default async function ChannelPage({ params }: { params: Promise<{ channe
               {social[2].length === 0 ? <p className="text-[13px] text-muted">Nothing published yet.</p> : (
                 <table className="w-full text-[13px]">
                   <thead><tr className="text-left text-xs text-muted"><th className="py-1">Platform</th><th>Objective</th><th>Format</th><th>Posts</th><th>Impressions</th><th>Engagements</th><th>Clicks</th></tr></thead>
-                  <tbody>{social[2].map((p, n) => <tr key={n} className="border-t border-line"><td className="py-1.5">{PLATFORM_LABEL[p.platform as SocialPlatform] ?? p.platform}</td><td>{OBJECTIVE_LABEL[p.objective as keyof typeof OBJECTIVE_LABEL] ?? p.objective}</td><td>{FORMAT_LABEL[p.format as keyof typeof FORMAT_LABEL] ?? p.format}</td><td>{p.published}</td><td>{p.impressions}</td><td>{p.engagements}</td><td>{p.clicks}</td></tr>)}</tbody>
+                  <tbody>{social[2].map((p, n) => <tr key={n} className="border-t border-line"><td className="py-1.5">{PLATFORM_LABEL[p.platform as SocialPlatform] ?? p.platform}</td><td>{OBJECTIVE_LABEL[p.objective as keyof typeof OBJECTIVE_LABEL] ?? p.objective}</td><td>{FORMAT_LABEL[p.format as keyof typeof FORMAT_LABEL] ?? p.format}</td><td>{p.published}</td><td>{p.impressions || '-'}</td><td>{p.engagements || '-'}</td><td>{p.clicks || '-'}</td></tr>)}</tbody>
                 </table>
               )}
             </CardBody>
@@ -275,10 +291,13 @@ export default async function ChannelPage({ params }: { params: Promise<{ channe
                                   {v.state === 'ADMIN_REVIEW' ? <Link href="/approvals" className="text-[13px] text-brand hover:underline">Open the Approval Center</Link> : null}
                                 </div>
                               ) : null}
+                              {mayManage && v.state === 'ADMIN_REVIEW' ? <RecordLaunchForm versionId={v.id} platform={channel as AdPlatform} /> : null}
                             </li>
                           );
                         })}
                       </ul>
+                      {mayManage && camp.pending ? <AdChangeDoneForm campaignId={camp.id} pending={camp.pending} /> : null}
+                      {mayManage && (camp.status === 'live' || camp.status === 'paused') ? <details className="text-[13px]"><summary className="cursor-pointer text-brand">Enter the platform's figures for a day</summary><div className="pt-3"><AdFiguresForm campaignId={camp.id} /></div></details> : null}
                       {mayManage && camp.liveVersionId && camp.status !== 'ended' ? (
                         <div className="flex flex-wrap items-start gap-4">
                           {camp.status === 'live' ? <AdChangeForm campaignId={camp.id} action="pause" /> : null}
@@ -318,7 +337,7 @@ export default async function ChannelPage({ params }: { params: Promise<{ channe
                       return (
                         <tr key={o.campaignId} className="border-t border-line align-top">
                           <td className="py-1.5">{o.name}{o.insufficientData ? <div className="text-xs text-muted">Too thin to judge</div> : null}</td>
-                          <td>{inr(o.spendMinor)}</td><td>{o.leads}</td><td>{o.qualified}</td><td>{o.meetings}</td><td>{o.quotes}</td><td>{o.won}</td><td>{inr(o.revenueMinor)}</td>
+                          <td>{o.spendMinor > 0 ? inr(o.spendMinor) : '-'}</td><td>{o.leads}</td><td>{o.qualified}</td><td>{o.meetings}</td><td>{o.quotes}</td><td>{o.won}</td><td>{inr(o.revenueMinor)}</td>
                           <td>{inr(o.costPerLeadMinor)}</td><td>{inr(o.costPerQualifiedMinor)}</td><td>{inr(o.costPerWonMinor)}</td>
                         </tr>
                       );
@@ -378,8 +397,10 @@ export default async function ChannelPage({ params }: { params: Promise<{ channe
                                   {v.state === 'DRAFT' || v.state === 'CHECK_FAILED' ? <CheckLandingButton versionId={v.id} /> : null}
                                   {v.state === 'CHECKED' ? <SubmitLandingButton versionId={v.id} /> : null}
                                   {v.state === 'ADMIN_REVIEW' ? <Link href="/approvals" className="text-[13px] text-brand hover:underline">Open the Approval Center</Link> : null}
+                                  {['DEPLOYED', 'VERIFY_FAILED', 'VERIFIED'].includes(v.state) ? <RecheckLandingButton versionId={v.id} /> : null}
                                 </div>
                               ) : null}
+                              {mayManage && v.state === 'ADMIN_REVIEW' ? <RecordUploadedForm versionId={v.id} /> : null}
                             </li>
                           );
                         })}
@@ -534,12 +555,6 @@ export default async function ChannelPage({ params }: { params: Promise<{ channe
         </>
       ) : null}
 
-      <Card>
-        <CardHeader title="Still to come on this tab" description="Shown so nothing here is mistaken for working automation." />
-        <CardBody>
-          <div className="flex flex-wrap gap-2">{SOON.map((s) => <Badge key={s} tone="neutral">{s}</Badge>)}</div>
-        </CardBody>
-      </Card>
     </div>
   );
 }

@@ -2,9 +2,14 @@ import 'server-only';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { createAdminClient } from '@/lib/db/admin';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
+import { addProspectFact, qualifyProspect, validateOutreachDraft, type FactSource } from './email-engine';
+import { createHandoff, HANDOFF_SOURCE_CHANNELS } from './handoff';
+import { renderApprovedPage, verifyLandingVersion } from './landing';
+import { QUALIFICATION_FACTORS, type QualificationFactor } from './qualification-vocabulary';
 import { ACQUISITION_CHANNELS, PAUSE_REASON_MAX, type AcquisitionChannel, type IcpDefinition } from './schema';
 
 /**
@@ -594,7 +599,12 @@ const B2B_FAILURES: Record<string, { code: 'VALIDATION' | 'CONFLICT' | 'NOT_FOUN
   already_linked: { code: 'CONFLICT', message: 'A lead is already linked.' },
   needs_reference: { code: 'VALIDATION', message: 'Enter the platform\'s own reference for the proposal.' },
   needs_evidence: { code: 'VALIDATION', message: 'Enter the https link to the profile on the platform as evidence.' },
-  already_applied: { code: 'CONFLICT', message: 'That profile version was already recorded as applied.' },
+  already_applied: { code: 'CONFLICT', message: 'That was already recorded as applied.' },
+  already_published: { code: 'CONFLICT', message: 'That was already recorded as posted.' },
+  already_deployed: { code: 'CONFLICT', message: 'That page was already recorded as uploaded.' },
+  not_scheduled: { code: 'CONFLICT', message: 'Only an approved post that has been scheduled can be recorded as posted.' },
+  not_approved_state: { code: 'CONFLICT', message: 'It is not waiting to be applied: it may not have been submitted for approval, or it has already been applied.' },
+  not_deployed: { code: 'CONFLICT', message: 'The page has not been recorded as uploaded yet.' },
 };
 const b2bFail = (outcome: string | undefined, reason?: string | null): Result<never> => {
   if (outcome === 'blocked' || outcome === 'not_covered') {
@@ -766,4 +776,139 @@ export async function linkB2bLead(input: { opportunityId: string; leadId: string
   if (error) return err('INTERNAL', 'Could not link it.');
   const o = first<{ outcome?: string }>(data)?.outcome;
   return o === 'linked' ? ok(true) : b2bFail(o);
+}
+
+// ── the by-hand path (20261024100000) ──────────────────────────────────────
+// Until a connector exists, "apply it on the platform, then record it here" is the process. Each record is accepted only for the exact
+// approved version, once, with the stops, the policy, the plan, the limits and the cap re-read at that moment.
+
+export async function recordAdLaunched(input: { versionId: string; providerCampaignId: string; objects: { objectType: string; providerId: string }[] }): Promise<Result<true>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('record_manual_ad_apply', {
+    p_organization_id: gate.data.organizationId, p_version: input.versionId, p_provider_campaign_id: input.providerCampaignId,
+    p_objects: input.objects.map((o) => ({ object_type: o.objectType, provider_id: o.providerId })) as never,
+  });
+  if (error) return err('INTERNAL', 'Could not record it.');
+  const r = first<{ outcome?: string; reason?: string | null }>(data);
+  return r?.outcome === 'recorded' ? ok(true) : b2bFail(r?.outcome, r?.reason);
+}
+
+export async function recordAdChangeDone(input: { campaignId: string; confirmed: boolean; detail: string }): Promise<Result<true>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('record_manual_ad_change', { p_organization_id: gate.data.organizationId, p_campaign: input.campaignId, p_confirmed: input.confirmed, p_detail: input.detail as never });
+  if (error) return err('INTERNAL', 'Could not record it.');
+  const o = first<{ outcome?: string }>(data)?.outcome;
+  if (o === 'confirmed' || o === 'left_pending') return ok(true);
+  if (o === 'nothing_pending') return err('CONFLICT', 'Nothing is waiting for the platform on that campaign.');
+  return b2bFail(o);
+}
+
+export async function recordAdFigures(input: { campaignId: string; date: string; spendMinor: number; impressions: number; clicks: number; platformLeads: number }): Promise<Result<{ countedMinor: number }>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('record_manual_ad_metrics', {
+    p_organization_id: gate.data.organizationId, p_campaign: input.campaignId, p_date: input.date, p_spend_minor: input.spendMinor, p_impressions: input.impressions, p_clicks: input.clicks, p_platform_leads: input.platformLeads,
+  });
+  if (error) return err('INTERNAL', 'Could not record the figures.');
+  const r = first<{ outcome?: string; counted_minor?: number }>(data);
+  if (r?.outcome === 'recorded') return ok({ countedMinor: Number(r.counted_minor ?? 0) });
+  if (r?.outcome === 'never_launched') return err('CONFLICT', 'That campaign has not been recorded as launched, so there is nothing to report on.');
+  return b2bFail(r?.outcome);
+}
+
+export async function recordPosted(input: { versionId: string; externalRef: string; url: string }): Promise<Result<true>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('record_manual_publish', { p_organization_id: gate.data.organizationId, p_version: input.versionId, p_external_ref: input.externalRef, p_url: (input.url || undefined) as never });
+  if (error) return err('INTERNAL', 'Could not record it.');
+  const r = first<{ outcome?: string; reason?: string | null }>(data);
+  return r?.outcome === 'recorded' ? ok(true) : b2bFail(r?.outcome, r?.reason);
+}
+
+export type LandingUploadResult = { verification: 'verified' | 'failed' | 'not_recorded' };
+
+/**
+ * A person uploaded exactly the approved page (the app rendered it for them). The record is accepted only for the exact approved
+ * version; whether the PUBLIC ADDRESS really carries it is then FETCHED and recorded - a person saying so never makes a page verified.
+ */
+export async function recordLandingUploaded(versionId: string): Promise<Result<LandingUploadResult>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const admin = createAdminClient();
+  const page = await renderApprovedPage(admin, gate.data.organizationId, versionId);
+  if (!page) return err('NOT_FOUND', 'That page version no longer exists.');
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('record_manual_landing_deploy', { p_organization_id: gate.data.organizationId, p_version: versionId, p_html_hash: page.htmlHash });
+  if (error) return err('INTERNAL', 'Could not record it.');
+  const r = first<{ outcome?: string; reason?: string | null }>(data);
+  if (r?.outcome !== 'recorded') return b2bFail(r?.outcome, r?.reason);
+  return ok({ verification: await verifyLandingVersion(admin, { organizationId: gate.data.organizationId, versionId }) });
+}
+
+/** Fetch the public address again and record what was found. Anyone allowed to manage may ask; nobody may say the answer. */
+export async function recheckLanding(versionId: string): Promise<Result<LandingUploadResult>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data: v, error } = await supabase.schema('crm').from('landing_page_versions').select('id, state').eq('id', versionId).maybeSingle();
+  if (error) return err('INTERNAL', 'Could not read the page.');
+  if (!v) return err('NOT_FOUND', 'That page version no longer exists.');
+  if (!['DEPLOYED', 'VERIFY_FAILED', 'VERIFIED'].includes(v.state)) return b2bFail('not_deployed');
+  return ok({ verification: await verifyLandingVersion(createAdminClient(), { organizationId: gate.data.organizationId, versionId }) });
+}
+
+// ── the Email engine's decisions, run by a person (20261018100000) ─────────
+// The same doors an agent calls. A person scores from what they know; nothing is inferred, and a factor left empty is MISSING and lowers the score.
+
+export async function scoreProspect(input: { prospectId: string; factors: Partial<Record<QualificationFactor, number>>; reasoning: string }): Promise<Result<{ decision: string; score: number; disqualifiers: string[]; missing: string[] }>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  for (const [k, v] of Object.entries(input.factors)) {
+    if (!(QUALIFICATION_FACTORS as readonly string[]).includes(k) || !Number.isInteger(v) || (v as number) < 0 || (v as number) > 100) return err('VALIDATION', 'Each factor is a whole number from 0 to 100.');
+  }
+  const r = await qualifyProspect(createAdminClient(), { organizationId: gate.data.organizationId, prospectId: input.prospectId, factors: input.factors, reasoning: input.reasoning || undefined, evaluatedBy: 'human' });
+  if (!r.ok) return err(r.refusal === 'unknown_prospect' ? 'NOT_FOUND' : 'VALIDATION', r.refusal === 'unknown_prospect' ? 'That prospect no longer exists.' : 'Check the scores.');
+  return ok({ decision: r.decision, score: r.score, disqualifiers: r.disqualifiers, missing: r.missing });
+}
+
+export async function recordProspectFact(input: { prospectId: string; fact: string; sourceKind: FactSource; sourceUrl: string }): Promise<Result<{ factId: string }>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const r = await addProspectFact(createAdminClient(), { organizationId: gate.data.organizationId, prospectId: input.prospectId, fact: input.fact, sourceKind: input.sourceKind, sourceUrl: input.sourceUrl || undefined, recordedBy: 'human' });
+  return r.ok ? ok({ factId: r.factId }) : err('VALIDATION', 'A fact needs its words, a source kind and, for a web source, the link it came from.');
+}
+
+export async function checkDraft(input: { prospectId: string; subject: string; body: string; claims: { text: string; factId: string }[] }): Promise<Result<{ valid: boolean; problems: string[] }>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  return ok(await validateOutreachDraft(createAdminClient(), { organizationId: gate.data.organizationId, ...input }));
+}
+
+/** An admin makes a tracked WhatsApp link for a lead who is somewhere else (email, a profile, a marketplace). The reference is shown once and never stored. */
+export async function createTrackedLink(input: { leadId: string; sourceChannel: string; sourcePlatform: string; nextAction: string }): Promise<Result<{ link: string; expiresAt: string; reused: boolean }>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  if (!(HANDOFF_SOURCE_CHANNELS as readonly string[]).includes(input.sourceChannel)) return err('VALIDATION', 'Choose where the person is now.');
+  let r;
+  try {
+    r = await createHandoff(createAdminClient(), {
+      organizationId: gate.data.organizationId, leadId: input.leadId, sourceChannel: input.sourceChannel as (typeof HANDOFF_SOURCE_CHANNELS)[number],
+      sourcePlatform: input.sourcePlatform || undefined, sourceAgent: 'human', nextAction: input.nextAction || undefined,
+    });
+  } catch {
+    return err('INTERNAL', 'A tracked link needs the vault key and the app address to be configured.');
+  }
+  if (r.ok) return ok({ link: r.handoff.link, expiresAt: r.handoff.expiresAt, reused: r.handoff.outcome === 'exists' });
+  const messages: Record<string, string> = {
+    unknown_lead: 'That lead does not exist.', lead_merged: 'That lead was merged into another; use the one it was merged into.', closed: 'That lead is already won, lost or disqualified.',
+    platform_required: 'Say which marketplace the person is on.', offplatform_forbidden: 'That marketplace\'s rule does not allow moving a conversation to WhatsApp (see the B2B tab).',
+    forbidden: FORBIDDEN, invalid: 'Check the lead id and where the person is now.',
+  };
+  return err(r.refusal === 'unknown_lead' ? 'NOT_FOUND' : 'CONFLICT', messages[r.refusal] ?? 'That was refused.');
 }

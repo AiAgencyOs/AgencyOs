@@ -142,6 +142,7 @@ select crm.store_connector_secret((select v from fx where k = 'host'), 'api_toke
 reset role;
 set local role service_role;
 select pg_temp.as_service();
+select crm.sync_integration_adapter(:'ORG', (select v from fx where k = 'host'), true);
 select crm.record_integration_check(:'ORG', (select v from fx where k = 'host'), true, 'host-1', '{"DEPLOY_PAGE":"AUTOMATED"}', null, null);
 select pg_temp.check((select outcome || ':' || reason from crm.begin_landing_deploy(:'ORG', (select v from fx where k = 'v2'))) = 'not_covered:state_pending', 'a connected host still needs the approval');
 reset role;
@@ -201,6 +202,7 @@ select crm.store_connector_secret((select v from fx where k = 'ggl'), 'refresh_t
 reset role;
 set local role service_role;
 select pg_temp.as_service();
+select crm.sync_integration_adapter(:'ORG', (select v from fx where k = 'ggl'), true);
 select crm.record_integration_check(:'ORG', (select v from fx where k = 'ggl'), true, 'cust-1', '{"CREATE_CAMPAIGN":"AUTOMATED"}', null, null);
 insert into fx select 'gx', execution_id from crm.begin_ad_apply(:'ORG', (select v from fx where k = 'gv'));
 select pg_temp.check((select outcome from crm.record_ad_apply(:'ORG', (select v from fx where k = 'gv'), (select v from fx where k = 'gx'), 'executed', '777001', '[]')) = 'recorded', 'with a verified page and a connection the Google launch goes ahead');

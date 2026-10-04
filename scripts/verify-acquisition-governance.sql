@@ -104,10 +104,12 @@ reset role;
 select pg_temp.as_user(:'ADMIN', :'ORG', 'ops_admin');
 set local role authenticated;
 insert into fx select 'meta', integration_id from crm.register_integration('meta_ads', 'production', null, true);
-select pg_temp.check((select verification from crm.acquisition_integrations where id = (select v from fx where k = 'meta')) = 'IMPLEMENTED_NOT_CONFIGURED', 'a provider with an adapter starts IMPLEMENTED_NOT_CONFIGURED');
+select pg_temp.check((select (verification, adapter_implemented) = ('NOT_IMPLEMENTED', false) from crm.acquisition_integrations where id = (select v from fx where k = 'meta')), 'a caller''s CLAIM that an adapter exists is ignored: the connection starts NOT_IMPLEMENTED');
 reset role;
 set local role service_role;
 select set_config('request.jwt.claims', '', true);
+select crm.sync_integration_adapter(:'ORG', (select v from fx where k = 'meta'), true);
+select pg_temp.check((select verification from crm.acquisition_integrations where id = (select v from fx where k = 'meta')) = 'IMPLEMENTED_NOT_CONFIGURED', 'the ENGINE''s own sync is what says an adapter exists: only then does it start IMPLEMENTED_NOT_CONFIGURED');
 select pg_temp.check((select outcome from crm.record_integration_check(:'ORG', (select v from fx where k = 'meta'), true, 'act_1', '{}', null, null)) = 'no_credential', 'a check with no credential stored is refused');
 reset role;
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
@@ -142,6 +144,7 @@ select crm.store_connector_secret((select v from fx where k = 'meta_stg'), 'acce
 reset role;
 set local role service_role;
 select set_config('request.jwt.claims', '', true);
+select crm.sync_integration_adapter(:'ORG', (select v from fx where k = 'meta_stg'), true);
 select crm.record_integration_check(:'ORG', (select v from fx where k = 'meta_stg'), true, 'act_sandbox', null, null, null);
 select pg_temp.check((select verification from crm.acquisition_integrations where id = (select v from fx where k = 'meta_stg')) = 'SANDBOX_VERIFIED', 'a passing STAGING check is SANDBOX_VERIFIED, never LIVE_VERIFIED');
 
@@ -219,6 +222,8 @@ select crm.set_channel_pause('email', false, null);
 
 -- a connector the action needs
 select crm.set_acquisition_policy('social_publish', 'approval', null, null);
+select pg_temp.check((select reason from crm.acquisition_decide(:'ORG', 'social_publish')) = 'channel_not_enabled', 'a channel that is not part of the plan does not act, even before its connector is asked');
+select crm.set_channel_settings('social', true, null, null, 100);
 select pg_temp.check((select reason from crm.acquisition_decide(:'ORG', 'social_publish')) = 'integration_not_active', 'publishing with NO active social connector is BLOCKED');
 insert into fx select 'li', integration_id from crm.register_integration('linkedin', 'production', null, true);
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
@@ -227,8 +232,17 @@ select pg_temp.check((select reason from crm.acquisition_decide(:'ORG', 'social_
 reset role;
 set local role service_role;
 select set_config('request.jwt.claims', '', true);
+select crm.sync_integration_adapter(:'ORG', (select v from fx where k = 'li'), true);
 select crm.record_integration_check(:'ORG', (select v from fx where k = 'li'), true, 'urn:li:org:1', '{"PUBLISH_CONTENT":"AUTOMATED"}', null, null);
 select pg_temp.check((select decision from crm.acquisition_decide(:'ORG', 'social_publish')) = 'ADMIN_APPROVAL_REQUIRED', 'once a connector passes a real check, publishing is ADMIN_APPROVAL_REQUIRED (never auto)');
+select pg_temp.check((select reason from crm.acquisition_decide(:'ORG', 'landing_page_deploy')) = 'channel_not_enabled', 'a page deployment under a channel that is not in the plan is refused');
+reset role;
+select pg_temp.as_user(:'ADMIN', :'ORG', 'ops_admin');
+set local role authenticated;
+select crm.set_channel_settings('google_ads', true, null, null, 100);
+reset role;
+set local role service_role;
+select set_config('request.jwt.claims', '', true);
 select pg_temp.check((select reason from crm.acquisition_decide(:'ORG', 'landing_page_deploy')) = 'integration_not_active', 'a page deployment needs the Hostinger connector specifically');
 
 -- limits

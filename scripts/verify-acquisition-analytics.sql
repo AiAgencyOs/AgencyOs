@@ -47,6 +47,8 @@ create temp table fx (k text primary key, v uuid);
 grant all on fx to public;
 
 -- The scratch database already holds seed leads, so counts are asserted as the CHANGE the fixtures cause.
+-- The funnel answers only an INTERNAL session about its own organisation, so the baseline is taken as the admin.
+select pg_temp.as_user(:'ADMIN', :'ORG', 'ops_admin');
 create temp table base90 as select * from crm.acquisition_funnel(90);
 create temp table base365 as select * from crm.acquisition_funnel(365);
 grant all on base90, base365 to public;
@@ -181,6 +183,7 @@ select crm.store_connector_secret((select v from fx where k = 'reg'), 'access_to
 reset role;
 set local role service_role;
 select pg_temp.as_service();
+select crm.sync_integration_adapter(:'ORG', (select v from fx where k = 'reg'), true);
 select crm.record_integration_check(:'ORG', (select v from fx where k = 'reg'), true, 'act_1', '{"CREATE_CAMPAIGN":"AUTOMATED"}', null, null);
 select crm.record_integration_check(:'ORG', (select v from fx where k = 'reg'), false, null, null, 'transient', 'rate limited');
 reset role;

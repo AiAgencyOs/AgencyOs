@@ -58,6 +58,7 @@ select crm.store_connector_secret((select v from fx where k = 'meta'), 'access_t
 reset role;
 set local role service_role;
 select pg_temp.as_service();
+select crm.sync_integration_adapter(:'ORG', (select v from fx where k = 'meta'), true);
 select crm.record_integration_check(:'ORG', (select v from fx where k = 'meta'), true, 'act_1', '{"CREATE_CAMPAIGN":"AUTOMATED"}', null, null);
 reset role;
 select pg_temp.as_user(:'ADMIN', :'ORG', 'ops_admin');

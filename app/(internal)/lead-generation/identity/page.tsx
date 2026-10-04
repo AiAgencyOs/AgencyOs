@@ -6,7 +6,7 @@ import { can } from '@/lib/authz/permissions';
 import { listHandoffs, listOpenDuplicateReviews, listSubtasks, readIdentitySummary } from '@/modules/acquisition/queries';
 import { Badge, Callout, Card, CardBody, CardHeader, EmptyState, PageHeader, PermissionDenied, Stat, StatGrid } from '@/ui';
 
-import { CancelHandoffForm, CancelSubtaskForm, DuplicateDecisionForm } from '../forms';
+import { CancelHandoffForm, CancelSubtaskForm, DuplicateDecisionForm, TrackedLinkForm } from '../forms';
 
 export const metadata: Metadata = { title: 'Lead generation identity' };
 
@@ -80,7 +80,7 @@ export default async function IdentityPage() {
         <CardHeader title="Moves to WhatsApp" description={`${handoffs.live} link${handoffs.live === 1 ? '' : 's'} waiting to be used. A used link continues the same lead; if the number belongs to someone else it waits for a decision above.`} />
         <CardBody>
           {handoffs.rows.length === 0 ? (
-            <EmptyState title="No handoffs yet" description="They are created when an engine asks a prospect to continue on WhatsApp." action={<Link href="/lead-generation/settings" className="text-[13px] text-brand hover:underline">Set the WhatsApp number</Link>} />
+            <EmptyState title="No handoffs yet" description="An admin creates one below for a lead who is somewhere else; no engine creates them on its own yet." action={<Link href="/lead-generation/settings" className="text-[13px] text-brand hover:underline">Set the WhatsApp number</Link>} />
           ) : (
             <ul className="flex flex-col gap-3">
               {handoffs.rows.map((h) => (
@@ -97,11 +97,18 @@ export default async function IdentityPage() {
         </CardBody>
       </Card>
 
+      {mayManage ? (
+        <Card>
+          <CardHeader title="Create a tracked WhatsApp link" description="For a lead who is on email, a profile or a marketplace. The link opens WhatsApp with a reference pre-filled, so their first message continues THIS lead instead of opening a second one. It works once and is shown once. A marketplace's own rule decides whether this is allowed for people found there." />
+          <CardBody><TrackedLinkForm /></CardBody>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader title="Meeting and quotation requests" description={`${subtasks.open} open. An agent asks for a meeting or a quotation; the Scheduler or Quotation Master does only that, and the result goes back to whoever owns the conversation.`} />
         <CardBody>
           {subtasks.rows.length === 0 ? (
-            <EmptyState title="No requests yet" description="They appear when an engine asks for a meeting or a quotation on a lead." />
+            <EmptyState title="No requests yet" description="Only an agent that owns a conversation can ask for these, and no agent is running them yet. A meeting or a quotation is requested the usual way, from the lead." />
           ) : (
             <ul className="flex flex-col gap-3">
               {subtasks.rows.map((t) => (

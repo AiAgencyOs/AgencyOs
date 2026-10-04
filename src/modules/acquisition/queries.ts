@@ -635,3 +635,13 @@ export async function readAcquisitionRecommendations(days: number): Promise<Reco
   if (error) unreadable('readAcquisitionRecommendations', error);
   return (data ?? []).filter((r) => r.channel && r.recommendation).map((r) => ({ channel: r.channel as string, recommendation: r.recommendation as string, basis: (r.basis ?? {}) as Record<string, unknown> }));
 }
+
+export type ProspectChoice = { id: string; email: string; name: string | null; company: string | null };
+
+/** The people on the email list a person may score or check a draft for. */
+export async function listOutreachProspects(limit = 40): Promise<ProspectChoice[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('outreach_prospects').select('id, email, full_name, company').order('created_at', { ascending: false }).limit(limit);
+  if (error) unreadable('listOutreachProspects', error);
+  return (data ?? []).map((p) => ({ id: p.id, email: p.email, name: p.full_name, company: p.company }));
+}

@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react';
 
-import { checkAdVersionAction, requestAdChangeAction, saveAdPlanAction, submitAdVersionAction } from '@/modules/acquisition/actions';
+import { adChangeDoneAction, adFiguresAction, checkAdVersionAction, recordLaunchAction, requestAdChangeAction, saveAdPlanAction, submitAdVersionAction } from '@/modules/acquisition/actions';
 import type { AdPlatform } from '@/modules/acquisition/ad-vocabulary';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { FormMessage, buttonClass, inputClass, labelClass, selectClass, textareaClass } from '@/ui';
@@ -85,6 +85,60 @@ export function AdChangeForm({ campaignId, action: what }: { campaignId: string;
       <div className="flex items-end gap-2">
         <Field label={`${label} - why?`}><input name="reason" required minLength={3} maxLength={300} className={inputClass} /></Field>
         <button type="submit" disabled={pending} className={buttonClass('secondary')}>{label}</button>
+      </div>
+      <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** After approval and until a connector exists: the person applies it on the platform exactly as approved, then records it here. */
+export function RecordLaunchForm({ versionId, platform }: { versionId: string; platform: AdPlatform }) {
+  const [state, run, pending] = useActionState(recordLaunchAction, IDLE_STATE);
+  return (
+    <form action={run} className="flex flex-col gap-2 rounded border border-line p-3">
+      <input type="hidden" name="versionId" value={versionId} />
+      <p className="text-xs text-muted">Once an admin has approved it: apply it on the platform exactly as approved, then record it here. This is accepted only for this exact version, and once.</p>
+      <div className="grid gap-2 sm:grid-cols-4">
+        <Field label="The platform's campaign id"><input name="providerCampaignId" required maxLength={200} className={inputClass} /></Field>
+        <Field label={platform === 'meta_ads' ? 'Ad set ids' : 'Ad group ids'} hint="Commas. They let leads be traced back."><input name={platform === 'meta_ads' ? 'adSetIds' : 'adGroupIds'} className={inputClass} /></Field>
+        <Field label="Ad ids" hint="Commas."><input name="adIds" className={inputClass} /></Field>
+        <div className="flex items-end"><button type="submit" disabled={pending} className={buttonClass('primary')}>I applied it - record it</button></div>
+      </div>
+      <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** A pause, resume or end was requested here; the person did it on the platform (or the platform refused) and says so. */
+export function AdChangeDoneForm({ campaignId, pending: waiting }: { campaignId: string; pending: string }) {
+  const [state, run, busy] = useActionState(adChangeDoneAction, IDLE_STATE);
+  return (
+    <form action={run} className="flex flex-col gap-1">
+      <input type="hidden" name="campaignId" value={campaignId} />
+      <div className="flex flex-wrap items-end gap-2">
+        <span className="text-[13px]">Waiting for the platform to {waiting}.</span>
+        <Field label="Did the platform do it?"><select name="confirmed" aria-label="Did the platform do it" className={selectClass}><option value="yes">Yes - it is done</option><option value="no">No - it refused or I could not</option></select></Field>
+        <Field label="Note"><input name="detail" maxLength={300} className={inputClass} /></Field>
+        <button type="submit" disabled={busy} className={buttonClass('secondary')}>Record</button>
+      </div>
+      <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** A day's figures copied off the platform. Only the increase over what was already reported is added to the spend. */
+export function AdFiguresForm({ campaignId }: { campaignId: string }) {
+  const [state, run, busy] = useActionState(adFiguresAction, IDLE_STATE);
+  return (
+    <form action={run} className="flex flex-col gap-1">
+      <input type="hidden" name="campaignId" value={campaignId} />
+      <div className="grid gap-2 sm:grid-cols-6">
+        <Field label="Day"><input name="date" type="date" required className={inputClass} /></Field>
+        <Field label="Spend (₹)"><input name="spend" required inputMode="decimal" className={inputClass} /></Field>
+        <Field label="Impressions"><input name="impressions" inputMode="numeric" className={inputClass} /></Field>
+        <Field label="Clicks"><input name="clicks" inputMode="numeric" className={inputClass} /></Field>
+        <Field label="Leads (platform)"><input name="platformLeads" inputMode="numeric" className={inputClass} /></Field>
+        <div className="flex items-end"><button type="submit" disabled={busy} className={buttonClass('secondary')}>Record figures</button></div>
       </div>
       <FormMessage status={state.status} message={state.message} />
     </form>

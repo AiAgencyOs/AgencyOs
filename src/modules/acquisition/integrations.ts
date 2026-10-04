@@ -33,13 +33,18 @@ export async function registerIntegration(input: { provider: string; environment
   if (!(PROVIDER_ENVIRONMENTS as readonly string[]).includes(input.environment)) return err('VALIDATION', 'Choose development, staging or production.');
   const supabase = await createClient();
   const { data, error } = await supabase.schema('crm').rpc('register_integration', {
-    p_provider: input.provider, p_environment: input.environment, p_label: input.label as never, p_adapter_implemented: hasAdapter(input.provider),
+    p_provider: input.provider, p_environment: input.environment, p_label: input.label as never, p_adapter_implemented: false,
   });
   if (error) return err('INTERNAL', 'Could not register the connection.');
   const row = first<{ outcome?: string; integration_id?: string }>(data);
   switch (row?.outcome) {
-    case 'registered':
+    case 'registered': {
+      // Whether an adapter exists is a fact about this CODE, so the engine records it (the door ignores what a caller claims).
+      if (row.integration_id && hasAdapter(input.provider)) {
+        await createAdminClient().schema('crm').rpc('sync_integration_adapter', { p_organization_id: gate.organizationId, p_integration: row.integration_id, p_implemented: true });
+      }
       return ok({ id: row.integration_id ?? '' });
+    }
     case 'duplicate':
       return err('CONFLICT', 'That connection already exists - use a different label for a second account.');
     case 'invalid':

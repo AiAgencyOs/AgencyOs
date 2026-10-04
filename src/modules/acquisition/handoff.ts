@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import type { createAdminClient } from '@/lib/db/admin';
 import { clientEnv, serverEnv } from '@/lib/env';
@@ -18,9 +18,14 @@ type Admin = ReturnType<typeof createAdminClient>;
 export const HANDOFF_SOURCE_CHANNELS = ['meta_ads', 'email', 'social', 'google_ads', 'b2b', 'other'] as const;
 export const HANDOFF_SOURCE_AGENTS = ['email_outreach', 'social_media', 'b2b_opportunity', 'ad_manager', 'sales', 'human'] as const;
 
+/**
+ * The key the references are derived with: the vault key, DOMAIN-SEPARATED so a handoff reference can never be a value the tenant vault
+ * would also produce. There is no fallback to another secret: borrowing the cron secret would tie two unrelated keys together. It must
+ * not be rotated while links are live - a link already sent is derived from the key it was made with.
+ */
 export function handoffSecret(): string {
-  const env = serverEnv();
-  return env.VAULT_ENCRYPTION_KEY || env.CRON_SECRET || '';
+  const key = serverEnv().VAULT_ENCRYPTION_KEY;
+  return key ? createHash('sha256').update(`handoff-reference:v1:${key}`).digest('hex') : '';
 }
 
 export type CreatedHandoff = {
@@ -33,7 +38,7 @@ export type CreatedHandoff = {
   link: string;
 };
 
-export type CreateHandoffRefusal = 'forbidden' | 'invalid' | 'unknown_lead' | 'lead_merged' | 'closed';
+export type CreateHandoffRefusal = 'forbidden' | 'invalid' | 'unknown_lead' | 'lead_merged' | 'closed' | 'platform_required' | 'offplatform_forbidden';
 
 /**
  * Create (or re-find) the handoff for a lead. Idempotent: a retried job gets the SAME handoff and the SAME reference

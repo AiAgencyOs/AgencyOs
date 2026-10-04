@@ -5,10 +5,11 @@ import { revalidatePath } from 'next/cache';
 import { setKillSwitch } from '@/lib/observability/kill-switches';
 import type { FormState } from '@/modules/identity/types';
 
-import { QUALIFICATION_FACTORS } from './qualification-vocabulary';
+import { QUALIFICATION_FACTORS, type QualificationFactor } from './qualification-vocabulary';
+import type { FactSource } from './email-engine';
 import { ACQUISITION_CHANNELS, ICP_LIST_KEYS, buildIcpDefinition, type AcquisitionChannel } from './schema';
 import { registerIntegration, saveAcquisitionPolicy, setIntegrationState, storeConnectorSecret, testConnection } from './integrations';
-import { linkB2bLead, checkB2bProfile, checkB2bProposal, decideB2bOpportunity, importB2bOpportunity, readyB2b, recordB2bOutcome, recordB2bProfileApplied, recordB2bSent, saveB2bProfile, saveB2bProposal, saveB2bRule, saveB2bSettings, submitB2bProfile, submitB2bProposal, checkLandingVersion, retireLandingPage, saveLandingVersion, submitLandingVersion, checkAdVersion, requestAdChange, saveAdPlan, submitAdVersion, activateSocialStrategy, cancelContentVersion, createContentDraft, reviewContentVersion, scheduleContentVersion, submitContentForApproval, blockProspect, liftProspectBlock, saveQualificationModel, cancelSubtask, cancelHandoff, decideDuplicateReview, saveChannelSettings, saveHandoffSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
+import { checkDraft, createTrackedLink, recordProspectFact, scoreProspect, recheckLanding, recordAdChangeDone, recordAdFigures, recordAdLaunched, recordLandingUploaded, recordPosted, linkB2bLead, checkB2bProfile, checkB2bProposal, decideB2bOpportunity, importB2bOpportunity, readyB2b, recordB2bOutcome, recordB2bProfileApplied, recordB2bSent, saveB2bProfile, saveB2bProposal, saveB2bRule, saveB2bSettings, submitB2bProfile, submitB2bProposal, checkLandingVersion, retireLandingPage, saveLandingVersion, submitLandingVersion, checkAdVersion, requestAdChange, saveAdPlan, submitAdVersion, activateSocialStrategy, cancelContentVersion, createContentDraft, reviewContentVersion, scheduleContentVersion, submitContentForApproval, blockProspect, liftProspectBlock, saveQualificationModel, cancelSubtask, cancelHandoff, decideDuplicateReview, saveChannelSettings, saveHandoffSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
 
 const text = (f: FormData, n: string) => String(f.get(n) ?? '').trim();
 const BASE = '/lead-generation';
@@ -458,4 +459,89 @@ export async function recordProfileAppliedAction(_p: FormState, f: FormData): Pr
 export async function linkLeadAction(_p: FormState, f: FormData): Promise<FormState> {
   const r = await linkB2bLead({ opportunityId: text(f, 'opportunityId'), leadId: text(f, 'leadId') });
   return r.ok ? b2bDone('Linked. The marketplace is now a touchpoint on that lead.') : { status: 'error', message: r.error.message };
+}
+
+// ── the by-hand path ───────────────────────────────────────────────────────
+
+export async function recordLaunchAction(_p: FormState, f: FormData): Promise<FormState> {
+  const objects: { objectType: string; providerId: string }[] = [];
+  for (const [field, objectType] of [['adSetIds', 'ad_set'], ['adGroupIds', 'ad_group'], ['adIds', 'ad']] as const) {
+    for (const id of commas(text(f, field))) objects.push({ objectType, providerId: id });
+  }
+  const r = await recordAdLaunched({ versionId: text(f, 'versionId'), providerCampaignId: text(f, 'providerCampaignId'), objects });
+  return r.ok ? b2bDone('Recorded as launched, once. Leads that arrive with those ids are now credited to this campaign.') : { status: 'error', message: r.error.message };
+}
+
+export async function adChangeDoneAction(_p: FormState, f: FormData): Promise<FormState> {
+  const confirmed = text(f, 'confirmed') === 'yes';
+  const r = await recordAdChangeDone({ campaignId: text(f, 'campaignId'), confirmed, detail: text(f, 'detail') });
+  return r.ok ? b2bDone(confirmed ? 'Confirmed. The campaign now shows what the platform shows.' : 'Recorded: the platform did not do it. It stays pending.') : { status: 'error', message: r.error.message };
+}
+
+export async function adFiguresAction(_p: FormState, f: FormData): Promise<FormState> {
+  const spend = majorToMinor(text(f, 'spend'));
+  const n = (name: string) => { const v = intOrNull(text(f, name)); return v === 'bad' ? null : v ?? 0; };
+  const impressions = n('impressions'); const clicks = n('clicks'); const leads = n('platformLeads');
+  if (spend === 'bad' || spend === null) return { status: 'error', message: 'Enter the day\'s spend as an amount.' };
+  if (impressions === null || clicks === null || leads === null) return { status: 'error', message: 'Impressions, clicks and leads are whole numbers.' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text(f, 'date'))) return { status: 'error', message: 'Choose the day these figures are for.' };
+  const r = await recordAdFigures({ campaignId: text(f, 'campaignId'), date: text(f, 'date'), spendMinor: spend, impressions, clicks, platformLeads: leads });
+  return r.ok ? b2bDone(r.data.countedMinor > 0 ? `Recorded. ₹${(r.data.countedMinor / 100).toLocaleString('en-IN')} was added to this month's spend.` : 'Recorded. Nothing new was added to the spend (the same or a lower figure than already reported).') : { status: 'error', message: r.error.message };
+}
+
+export async function recordPostedAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await recordPosted({ versionId: text(f, 'versionId'), externalRef: text(f, 'externalRef'), url: text(f, 'url') });
+  return r.ok ? b2bDone('Recorded as posted, once.') : { status: 'error', message: r.error.message };
+}
+
+export async function recordLandingUploadedAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await recordLandingUploaded(text(f, 'versionId'));
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return r.data.verification === 'verified'
+    ? { status: 'success', message: 'Recorded as uploaded, and the public address carries exactly the approved page: verified.' }
+    : { status: 'success', message: 'Recorded as uploaded. The public address does not carry the approved page yet (or cannot be reached), so it is NOT verified. Check the upload, then press Re-check.' };
+}
+
+export async function recheckLandingAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await recheckLanding(text(f, 'versionId'));
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return r.data.verification === 'verified' ? { status: 'success', message: 'Checked: the public address carries exactly the approved page.' } : { status: 'error', message: 'Checked: the public address does not carry the approved page. Ads cannot launch to it.' };
+}
+
+// ── the Email engine's decisions, run by a person ──────────────────────────
+
+export async function scoreProspectAction(_p: FormState, f: FormData): Promise<FormState> {
+  const factors: Partial<Record<QualificationFactor, number>> = {};
+  for (const factor of QUALIFICATION_FACTORS) {
+    const raw = text(f, `f_${factor}`);
+    if (raw === '') continue;
+    if (!/^\d{1,3}$/.test(raw) || Number(raw) > 100) return { status: 'error', message: 'Each score is a whole number from 0 to 100, or empty for "not known".' };
+    factors[factor] = Number(raw);
+  }
+  const r = await scoreProspect({ prospectId: text(f, 'prospectId'), factors, reasoning: String(f.get('reasoning') ?? '').trim() });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  const why = [...r.data.disqualifiers.map((d) => d.replaceAll('_', ' ')), ...(r.data.missing.length > 0 ? [`still needed: ${r.data.missing.join(', ').replaceAll('_', ' ')}`] : [])].join(' · ');
+  return { status: 'success', message: `Recorded: ${r.data.decision.replaceAll('_', ' ')}, score ${r.data.score}.${why ? ` ${why}.` : ''}` };
+}
+
+export async function recordFactAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await recordProspectFact({ prospectId: text(f, 'prospectId'), fact: String(f.get('fact') ?? '').trim(), sourceKind: text(f, 'sourceKind') as FactSource, sourceUrl: text(f, 'sourceUrl') });
+  return r.ok ? { status: 'success', message: `Recorded. Its id is ${r.data.factId} - a message may cite it as a claim.` } : { status: 'error', message: r.error.message };
+}
+
+export async function checkDraftAction(_p: FormState, f: FormData): Promise<FormState> {
+  const claims = lines(String(f.get('claims') ?? '')).map((l) => { const i = l.lastIndexOf('|'); return i < 0 ? { text: l.trim(), factId: '' } : { text: l.slice(0, i).trim(), factId: l.slice(i + 1).trim() }; });
+  const r = await checkDraft({ prospectId: text(f, 'prospectId'), subject: text(f, 'subject'), body: String(f.get('body') ?? '').trim(), claims });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  return r.data.valid ? { status: 'success', message: 'Passed: every claim cites a recorded fact about this person, and nothing in it is pressure. A passed draft is still yours to approve.' } : { status: 'error', message: `Failed: ${r.data.problems.map((x) => x.replaceAll('_', ' ')).join(' · ')}. It will not be used until it is corrected.` };
+}
+
+export async function createTrackedLinkAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await createTrackedLink({ leadId: text(f, 'leadId'), sourceChannel: text(f, 'sourceChannel'), sourcePlatform: text(f, 'sourcePlatform'), nextAction: text(f, 'nextAction') });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: `${r.data.reused ? 'That lead already has a live link: ' : 'Created. Send this to them - it works once and is not shown again: '}${r.data.link} (expires ${new Date(r.data.expiresAt).toLocaleDateString('en-IN')})` };
 }

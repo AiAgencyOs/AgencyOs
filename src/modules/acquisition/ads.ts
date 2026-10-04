@@ -125,15 +125,19 @@ export async function runAdOperations(admin: Admin, providers: Partial<Record<Ad
   const sweep: AdSweep = { approvalsClosed: 0, stopsRequested: 0, applied: 0, failed: 0, unknown: 0, assisted: 0, pushed: 0, pushFailed: 0 };
   try {
     const closed = await admin.schema('crm').rpc('sync_ad_approvals', { p_limit: 200 });
+    if (closed.error) throw new Error(`could not close lapsed approvals: ${closed.error.message}`);
     sweep.approvalsClosed = typeof closed.data === 'number' ? closed.data : 0;
     const stops = await admin.schema('crm').rpc('enforce_ad_stops', { p_limit: 100 });
+    if (stops.error) throw new Error(`could not turn the stop into pending pauses: ${stops.error.message}`);
     sweep.stopsRequested = typeof stops.data === 'number' ? stops.data : 0;
 
     // Approved and waiting: an admin decided, nothing has applied it yet.
-    const { data: waiting } = await admin.schema('crm').from('ad_campaign_versions')
+    const { data: waiting, error: waitingError } = await admin.schema('crm').from('ad_campaign_versions')
       .select('id, organization_id, campaign_id, approval_request_id').in('state', ['ADMIN_REVIEW', 'LAUNCHING']).not('approval_request_id', 'is', null).order('state_changed_at').limit(25);
+    if (waitingError) throw new Error(`could not read waiting: ${waitingError.message}`);
     for (const w of waiting ?? []) {
-      const { data: req } = await admin.schema('approvals').from('approval_requests').select('state').eq('id', w.approval_request_id ?? '').maybeSingle();
+      const { data: req, error: reqError } = await admin.schema('approvals').from('approval_requests').select('state').eq('id', w.approval_request_id ?? '').maybeSingle();
+      if (reqError) throw new Error(`could not read req: ${reqError.message}`);
       if (req?.state !== 'approved') continue;
       const { data: camp } = await admin.schema('crm').from('ad_campaigns').select('platform, name').eq('id', w.campaign_id).maybeSingle();
       const provider = camp ? providers[camp.platform as AdPlatform] : undefined;
@@ -141,7 +145,7 @@ export async function runAdOperations(admin: Admin, providers: Partial<Record<Ad
         sweep.assisted += 1;
         await admin.schema('core').rpc('raise_alert', {
           p_organization_id: w.organization_id, p_source: 'ad_operations', p_severity: 'warning',
-          p_summary: `The approved ${camp?.platform ?? 'ad'} change for "${camp?.name ?? 'a campaign'}" cannot be applied automatically yet (no connector is built): apply it by hand on the platform exactly as approved, then record it.`,
+          p_summary: `The approved ${camp?.platform ?? 'ad'} change for "${camp?.name ?? 'a campaign'}" cannot be applied automatically yet (no connector is built): apply it on the platform exactly as approved, then record it on the Meta or Google tab ("I applied it - record it").`,
           p_fingerprint: `ads-assisted:${w.id}`,
         });
         continue;
@@ -160,14 +164,15 @@ export async function runAdOperations(admin: Admin, providers: Partial<Record<Ad
     }
 
     // Pending pause / resume / end: an intent until the platform confirms it.
-    const { data: pending } = await admin.schema('crm').rpc('pending_ad_changes', { p_limit: 50 });
+    const { data: pending, error: pendingError } = await admin.schema('crm').rpc('pending_ad_changes', { p_limit: 50 });
+    if (pendingError) throw new Error(`could not read pending: ${pendingError.message}`);
     for (const p of pending ?? []) {
       if (!p.organization_id || !p.campaign_id || !p.platform || !p.action) continue;
       const provider = providers[p.platform as AdPlatform];
       if (!provider?.change) {
         await admin.schema('core').rpc('raise_alert', {
           p_organization_id: p.organization_id, p_source: 'ad_operations', p_severity: 'critical',
-          p_summary: `A ${p.action} was requested for a ${p.platform} campaign and AgencyOS cannot push it: do it by hand on the platform now, then confirm it here.`,
+          p_summary: `A ${p.action} was requested for a ${p.platform} campaign and AgencyOS cannot push it: do it on the platform now, then say so on the campaign ("Did the platform do it?").`,
           p_fingerprint: `ads-push:${p.campaign_id}:${p.action}`,
         });
         continue;
@@ -184,7 +189,8 @@ export async function runAdOperations(admin: Admin, providers: Partial<Record<Ad
     }
 
     // Health is read for every running campaign; it only ever records, never acts.
-    const { data: running } = await admin.schema('crm').from('ad_campaigns').select('id, organization_id').in('status', ['live', 'paused']).limit(100);
+    const { data: running, error: runningError } = await admin.schema('crm').from('ad_campaigns').select('id, organization_id').in('status', ['live', 'paused']).limit(100);
+    if (runningError) throw new Error(`could not read running: ${runningError.message}`);
     for (const c of running ?? []) await admin.schema('crm').rpc('assess_campaign_health', { p_organization_id: c.organization_id, p_campaign: c.id });
   } catch (e) {
     console.error(JSON.stringify({ level: 'error', scope: 'runAdOperations', detail: e instanceof Error ? e.message : 'unknown' }));

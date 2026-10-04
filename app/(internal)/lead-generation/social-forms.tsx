@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react';
 
-import { activateStrategyAction, cancelVersionAction, createDraftAction, reviewVersionAction, scheduleVersionAction, submitVersionAction } from '@/modules/acquisition/actions';
+import { recordPostedAction, activateStrategyAction, cancelVersionAction, createDraftAction, reviewVersionAction, scheduleVersionAction, submitVersionAction } from '@/modules/acquisition/actions';
 import { CONTENT_FORMATS, CONTENT_OBJECTIVES, FORMAT_LABEL, OBJECTIVE_LABEL, PLATFORM_LABEL, SOCIAL_PLATFORMS } from '@/modules/acquisition/social-vocabulary';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { FormMessage, buttonClass, inputClass, labelClass, selectClass, textareaClass } from '@/ui';
@@ -85,6 +85,22 @@ export function ActivateStrategyButton({ strategyId }: { strategyId: string }) {
     <form action={action} className="flex items-center gap-2">
       <input type="hidden" name="strategyId" value={strategyId} />
       <button type="submit" disabled={pending} className={buttonClass('primary')}>Activate</button>
+      <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** No publisher exists yet: the person posts it on the platform exactly as approved and records the post here. */
+export function RecordPostedForm({ versionId }: { versionId: string }) {
+  const [state, run, pending] = useActionState(recordPostedAction, IDLE_STATE);
+  return (
+    <form action={run} className="flex flex-col gap-1">
+      <input type="hidden" name="versionId" value={versionId} />
+      <div className="flex flex-wrap items-end gap-2">
+        <Field label="The post's reference on the platform"><input name="externalRef" required maxLength={200} className={inputClass} /></Field>
+        <Field label="Link to the post"><input name="url" type="url" className={inputClass} /></Field>
+        <button type="submit" disabled={pending} className={buttonClass('primary')}>I posted it - record it</button>
+      </div>
       <FormMessage status={state.status} message={state.message} />
     </form>
   );

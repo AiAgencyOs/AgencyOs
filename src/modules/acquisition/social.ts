@@ -138,7 +138,8 @@ export type PublishSweep = { due: number; published: number; failed: number; unk
 export async function runSocialPublishing(admin: Admin, publishers: Partial<Record<SocialPlatform, SocialPublisher>>): Promise<PublishSweep> {
   const sweep: PublishSweep = { due: 0, published: 0, failed: 0, unknown: 0, assisted: 0, skipped: 0 };
   try {
-    await admin.schema('crm').rpc('sync_content_approvals', { p_limit: 200 });
+    const closed = await admin.schema('crm').rpc('sync_content_approvals', { p_limit: 200 });
+    if (closed.error) throw new Error(`could not close lapsed approvals: ${closed.error.message}`);
     const { data, error } = await admin.schema('crm').rpc('due_content', { p_limit: 25 });
     if (error) throw new Error(error.message);
     for (const d of (data ?? []) as { organization_id: string | null; version_id: string | null; platform: string | null }[]) {
@@ -149,7 +150,7 @@ export async function runSocialPublishing(admin: Admin, publishers: Partial<Reco
         sweep.assisted += 1;
         await admin.schema('core').rpc('raise_alert', {
           p_organization_id: d.organization_id, p_source: 'social_publishing', p_severity: 'warning',
-          p_summary: `A scheduled ${d.platform} post is due and AgencyOS cannot publish to ${d.platform} yet: it needs to be posted by hand, then recorded.`,
+          p_summary: `A scheduled ${d.platform} post is due and AgencyOS cannot publish to ${d.platform} yet: it needs to be posted by hand, then recorded on the Social tab ("I posted it - record it").`,
           p_fingerprint: `social-assisted:${d.version_id}`,
         });
         continue;

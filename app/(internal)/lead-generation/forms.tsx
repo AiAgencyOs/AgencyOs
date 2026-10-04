@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import {
+  createTrackedLinkAction,
   cancelSubtaskAction,
   savePolicyAction,
   cancelHandoffAction,
@@ -217,6 +218,20 @@ export function CancelSubtaskForm({ subtaskId }: { subtaskId: string }) {
       <input name="reason" required maxLength={500} placeholder="Why cancel?" aria-label="Reason for cancelling" className={inputClass} />
       <button type="submit" disabled={pending} className={buttonClass('danger')}>Cancel request</button>
       <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** A tracked link for a lead who is somewhere else. It opens WhatsApp with a reference pre-filled, so their first message continues THIS lead. */
+export function TrackedLinkForm() {
+  const [state, run, pending] = useActionState(createTrackedLinkAction, IDLE_STATE);
+  return (
+    <form action={run} className="grid gap-3 sm:grid-cols-4">
+      <div className="sm:col-span-2"><label className="flex flex-col gap-1"><span className={labelClass}>Lead id</span><input name="leadId" required className={inputClass} /></label></div>
+      <label className="flex flex-col gap-1"><span className={labelClass}>They are on</span><select name="sourceChannel" aria-label="Where they are now" className={selectClass}>{['email', 'social', 'b2b', 'meta_ads', 'google_ads', 'other'].map((c) => <option key={c} value={c}>{c.replaceAll('_', ' ')}</option>)}</select></label>
+      <label className="flex flex-col gap-1"><span className={labelClass}>Which platform</span><input name="sourcePlatform" maxLength={40} className={inputClass} placeholder="e.g. upwork (needed for B2B)" /></label>
+      <div className="sm:col-span-4"><label className="flex flex-col gap-1"><span className={labelClass}>What happens next</span><input name="nextAction" maxLength={300} className={inputClass} /></label></div>
+      <div className="flex items-center gap-3 sm:col-span-4"><button type="submit" disabled={pending} className={buttonClass('primary')}>Create the link</button><FormMessage status={state.status} message={state.message} /></div>
     </form>
   );
 }
