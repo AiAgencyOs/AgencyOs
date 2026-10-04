@@ -17,6 +17,7 @@ import type {
 } from './types';
 import { getProviderCredential } from './vault';
 import { providerUnavailable, type FailureKind } from './failure';
+import { parseModelJson } from './model-json';
 import { fromWireToolName, toWireToolName } from './tool-names';
 
 /**
@@ -69,6 +70,11 @@ export type ClaudeProviderOptions = {
   apiKey?: string;
   /** How the key is presented. The real API takes `x-api-key`; a gateway that mirrors Claude Code's ANTHROPIC_AUTH_TOKEN takes `Authorization: Bearer`. */
   authScheme?: 'x-api-key' | 'bearer';
+  /**
+   * A gateway in front of Claude may ignore `output_config` (the schema is then only a hint nobody enforces): with this on, the schema
+   * is ALSO written into the system prompt and the model is told to answer with that object alone. The real API does not need it.
+   */
+  schemaInPrompt?: boolean;
   baseUrl?: string;
   timeoutMs?: number;
   supports?: (model: string) => boolean;
@@ -108,6 +114,11 @@ export async function createClaudeProvider(options: ClaudeProviderOptions = {}):
     maxRetries: MAX_RETRIES,
   });
 
+  const withSchema = (system: string, schema: Record<string, unknown> | undefined): string =>
+    options.schemaInPrompt && schema
+      ? `${system}\n\nYour final answer must be ONE JSON object that conforms to this JSON Schema, and nothing else - no prose before or after, no markdown fence:\n${JSON.stringify(schema)}`
+      : system;
+
   return {
     id: options.id ?? PROVIDER_ID,
 
@@ -135,7 +146,7 @@ export async function createClaudeProvider(options: ClaudeProviderOptions = {}):
         const response = await client.messages.create({
           model: request.model,
           max_tokens: request.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
-          system: request.system,
+          system: withSchema(request.system, request.jsonSchema),
           messages: request.messages.map((m) => ({ role: m.role, content: toContent(m.content) })),
           tools: request.tools.map((t) => ({
             name: toWireToolName(t.name),
@@ -204,7 +215,7 @@ export async function createClaudeProvider(options: ClaudeProviderOptions = {}):
         const response = await client.messages.create({
           model: request.model,
           max_tokens: request.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
-          system: request.system,
+          system: withSchema(request.system, request.jsonSchema),
           messages: request.messages.map((m) => ({ role: m.role, content: toContent(m.content) })),
           output_config: {
             ...(request.effort ? { effort: request.effort } : {}),
@@ -241,14 +252,15 @@ export async function createClaudeProvider(options: ClaudeProviderOptions = {}):
           return err('PROVIDER_ERROR', 'The model returned no output.');
         }
 
-        let json: unknown;
-        try {
-          json = JSON.parse(text);
-        } catch {
-          // Constrained decoding should make this unreachable, but a provider
-          // asserting conformance is not proof of it.
-          return err('PROVIDER_ERROR', 'The model returned output that was not valid JSON.');
+        // Constrained decoding should make prose unreachable, but a provider asserting conformance is not proof of it (and a gateway
+        // may ignore the schema altogether): a fenced or lightly wrapped object is read, anything else is refused.
+        const parsed = parseModelJson(text);
+        if (!parsed.ok) {
+          // How it ended says whether it was cut off, wrapped in prose or something else - the first thing anyone asks.
+          const tail = text.trim().slice(-60).replace(/\s+/g, ' ');
+          return err('PROVIDER_ERROR', `The model returned output that was not valid JSON (${text.length} characters, ending "${tail}").`);
         }
+        const json = parsed.json;
 
         return ok({
           json,

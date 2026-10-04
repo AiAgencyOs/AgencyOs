@@ -4,6 +4,7 @@ import { providerUnavailable, type FailureKind } from './failure';
 import { err, ok, type Result } from '@/lib/result';
 
 import { MAX_RETRIES, REQUEST_TIMEOUT_MS, retryBackoffWorstCaseMs } from './budget';
+import { parseModelJson } from './model-json';
 import { fromWireToolName, toWireToolName } from './tool-names';
 import type {
   AiContentBlock,
@@ -344,12 +345,9 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Ai
     const text = contentText(choice.message?.content);
     if (!text.trim()) return { kind: 'fail', retry: false, message: 'The model returned no output.' };
 
-    let json: unknown;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      return { kind: 'fail', retry: false, message: 'The model returned output that was not valid JSON.' };
-    }
+    const modelJson = parseModelJson(text);
+    if (!modelJson.ok) return { kind: 'fail', retry: false, message: 'The model returned output that was not valid JSON.' };
+    const json = modelJson.json;
 
     return {
       kind: 'ok',
