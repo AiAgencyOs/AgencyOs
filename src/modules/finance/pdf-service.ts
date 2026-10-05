@@ -93,7 +93,7 @@ export async function renderInvoiceDocument(
       readInvoiceBillingProfile(invoice.project_id, supabase),
       listPaymentAccounts(supabase),
       invoice.project_id
-        ? supabase.schema('projects').from('projects').select('name').eq('id', invoice.project_id).maybeSingle()
+        ? supabase.schema('projects').from('projects').select('name, project_code').eq('id', invoice.project_id).maybeSingle()
         : Promise.resolve({ data: null }),
       invoice.milestone_id
         ? supabase.schema('projects').from('milestones').select('name, position').eq('id', invoice.milestone_id).maybeSingle()
@@ -120,6 +120,7 @@ export async function renderInvoiceDocument(
         version: billing?.version ?? null,
       },
       projectName: project.data?.name ?? null,
+      projectCode: project.data?.project_code ?? null,
       milestoneLabel: milestone.data ? `Milestone ${milestone.data.position + 1}: ${milestone.data.name}` : null,
       items: (items ?? []).map((i) => ({
         description: i.description,

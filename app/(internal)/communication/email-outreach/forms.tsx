@@ -11,6 +11,7 @@ import {
   importProspectsAction,
   markRepliedAction,
   saveOutreachSettingsAction,
+  sendMailboxTestAction,
   setCampaignStateAction,
   suppressAction,
 } from '@/modules/crm/outreach/actions';
@@ -301,5 +302,26 @@ export function ProspectActions({ prospectId, status, leadId }: { prospectId: st
       </form>
       <FormMessage status={repliedState.status === 'idle' ? convertState.status : repliedState.status} message={repliedState.message ?? convertState.message} className="text-xs" />
     </div>
+  );
+}
+
+export function MailboxTestForm() {
+  const [state, action, pending] = useActionState(sendMailboxTestAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <Field label="Send from">
+        <select aria-label="Mailbox to send the test from" name="lane" defaultValue="client" className={selectClass}>
+          <option value="client">care@ (clients)</option>
+          <option value="outreach">info@ (outreach)</option>
+        </select>
+      </Field>
+      <Field label="Send to">
+        <input name="to" type="email" required className={inputClass} />
+      </Field>
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Sending…' : 'Send test email'}
+      </button>
+      <FormMessage status={state.status} message={state.message} className="text-xs" />
+    </form>
   );
 }
