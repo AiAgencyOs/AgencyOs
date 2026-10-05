@@ -284,6 +284,12 @@ try {
   const f = await plant('f');
   await rest('PATCH', 'projects', `phase_two?project_id=eq.${f.project.id}`, { state: 'waiting_client' });
   const three = new Date(Date.now() - 3 * 86_400_000).toISOString();
+  // The client's only message comes BEFORE the question it was asked three days ago. plant() writes it at "now", which made the client
+  // the later speaker - "has written since the ask" - so the reminder was rightly never sent. That branch only runs inside the sending
+  // window (weekdays 10-19 in the agency's zone), so no CI run outside those hours ever noticed.
+  await rest('PATCH', 'crm', `conversation_messages?conversation_id=eq.${f.conv.id}&seq=eq.0`, {
+    created_at: new Date(Date.now() - 4 * 86_400_000).toISOString(),
+  });
   const asked3 = await rest('POST', 'crm', 'conversation_messages', {
     organization_id: ORG, conversation_id: f.conv.id, seq: 3, author_type: 'user', body: 'For billing, please confirm whether you need a GST invoice or a Non-GST invoice.',
     external_ref: `pm:billing-question:${f.project.id}`, occurred_at: three, created_at: three,

@@ -172,3 +172,33 @@ describe('B. the stripper itself', () => {
     assert.ok('priceRupees' in item, 'the price field itself must survive the strip');
   });
 });
+
+describe('a refused model answer names the fields at fault, never the values', () => {
+  test('path and rule for the first three, a count for the rest, and nothing the model wrote', async () => {
+    const { schemaRefusal } = await import('../src/lib/ai/model-json.ts');
+    const issues = [
+      { path: ['scopeItems', 0, 'title'], message: 'Too small: expected string to have >=1 characters' },
+      { path: ['summary'], message: 'Invalid input: expected string, received number' },
+      { path: [], message: 'Unrecognized key' },
+      { path: ['constraints'], message: 'Invalid input: expected array' },
+    ];
+    const said = schemaRefusal({ issues });
+    assert.match(said, /^model output failed schema validation - scopeItems\.0\.title: Too small/);
+    assert.match(said, /summary: Invalid input/);
+    assert.match(said, /\(root\): Unrecognized key/);
+    assert.match(said, /\(\+1 more\)$/);
+    assert.doesNotMatch(said, /constraints/);
+    assert.ok(said.length <= 400);
+  });
+});
+
+describe('every workflow records which fields the model got wrong', () => {
+  test('no site still records the bare sentence, and each uses the validation error it just got', () => {
+    const workflows = readFileSync(fileURLToPath(new URL('../app/api/jobs/run/workflows.ts', import.meta.url)), 'utf8');
+    assert.doesNotMatch(workflows, /const detail = 'model output failed schema validation'/);
+    const sites = workflows.match(/const detail = schemaRefusal\(validated\.error\);/g) ?? [];
+    assert.ok(sites.length >= 27, `${sites.length} sites`);
+    const safeParses = workflows.match(/const validated = \w+\.safeParse\(/g) ?? [];
+    assert.ok(safeParses.length >= sites.length, 'each is paired with the parse it reports on');
+  });
+});
