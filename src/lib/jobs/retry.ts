@@ -115,6 +115,21 @@ export function retryDelaySeconds(attemptsMade: number): number {
   return Math.min(RETRY_BASE_SECONDS * 2 ** doublings, RETRY_MAX_SECONDS);
 }
 
+/**
+ * A model that returned output the schema refused has been paid for, and the
+ * same prompt will usually be refused the same way: the OpenAI-compatible path
+ * already spends one in-call repair, so five whole-job attempts are four more
+ * paid calls for a result that rarely changes. Two attempts - the original and
+ * one retry - is the budget for that one kind of failure; every other failure
+ * keeps `max_attempts`.
+ */
+export const SCHEMA_REFUSAL_MAX_ATTEMPTS = 2;
+export const SCHEMA_REFUSAL_PREFIX = 'model output failed schema validation';
+
+export function attemptBudgetFor(reason: string, maxAttempts: number): number {
+  return reason.startsWith(SCHEMA_REFUSAL_PREFIX) ? Math.min(maxAttempts, SCHEMA_REFUSAL_MAX_ATTEMPTS) : maxAttempts;
+}
+
 /** What becomes of a job that has just failed. */
 export type Settlement =
   | { status: 'dead' }

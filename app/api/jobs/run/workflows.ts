@@ -286,6 +286,47 @@ const REQUIREMENT_PROMPT = [
   'objectives are the outcomes the client said they want from the project, each in full. userRoles are the kinds of people who will use it. platforms are where it must run. integrations are the systems it must talk to. businessRules are rules the client stated the product must follow. nonFunctionalRequirements are performance, security, availability or compliance needs the client stated. Leave any of these empty when the transcript does not say.',
 ].join(' ');
 
+/** Fewer words than this, with a version already on file, is an acknowledgement and not a requirement. */
+const ACKNOWLEDGEMENT_MAX_WORDS = 3;
+
+/**
+ * Why a requirement re-extraction would add nothing, or null when it should run.
+ * Pure of the model: it reads the newest message and the conversation's own state.
+ */
+async function extractionNotNeeded(
+  admin: AgentContext['admin'],
+  organizationId: string,
+  conversationId: string,
+  rows: ReadonlyArray<{ author_type: string; body: string | null }>,
+): Promise<string | null> {
+  const { data: versions } = await admin
+    .schema('crm')
+    .from('requirement_versions')
+    .select('status')
+    .eq('organization_id', organizationId)
+    .eq('conversation_id', conversationId)
+    .neq('status', 'failed');
+  if (!versions || versions.length === 0) return null;
+
+  const latest = rows[rows.length - 1];
+  const words = (latest?.body ?? '').trim().split(/\s+/).filter(Boolean).length;
+  if (latest?.author_type === 'client' && words > 0 && words <= ACKNOWLEDGEMENT_MAX_WORDS) {
+    return 'client only acknowledged; nothing new to extract';
+  }
+
+  if (versions.some((v) => v.status === 'accepted')) {
+    const { data: conversation } = await admin
+      .schema('crm')
+      .from('conversations')
+      .select('agent_paused_at')
+      .eq('id', conversationId)
+      .eq('organization_id', organizationId)
+      .maybeSingle();
+    if (conversation?.agent_paused_at) return 'a person has the thread and has accepted a version';
+  }
+  return null;
+}
+
 const REQUIREMENT_EXTRACT: AgentWorkflow = {
   jobKind: 'requirement.extract',
   agentKey: 'requirement_collector',
@@ -392,6 +433,18 @@ const REQUIREMENT_EXTRACT: AgentWorkflow = {
       };
     }
 
+    // A re-extraction reads the whole transcript again, so it is the one
+    // call whose price grows with every message. Two cases make it paid-for
+    // nothing, and both are decided from rows rather than asked of a model:
+    // the client only acknowledged ("ok", "haan"), or a person has the thread
+    // and has already accepted a version - then a fresh proposal is a version
+    // nobody asked for. The first extraction of a conversation always runs.
+    const skipped = await extractionNotNeeded(admin, job.organization_id, conversation.id, rows);
+    if (skipped) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: skipped, messageCount };
+    }
+
     const transcript: AiMessage[] = [{ role: 'user', content: document }];
 
     const runId = await openRun(ctx, {
@@ -419,7 +472,7 @@ const REQUIREMENT_EXTRACT: AgentWorkflow = {
     const validated = requirementPayloadSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failExtraction(ctx, conversation.id, runId, detail, messageCount);
       return { status: 'failed', reason: detail, runId };
     }
@@ -631,7 +684,7 @@ const MAINTENANCE_TRIAGE: AgentWorkflow = {
     const validated = maintenanceTriageSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -804,7 +857,7 @@ const PLAN_BREAKDOWN: AgentWorkflow = {
     const validated = breakdownPayloadSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -995,7 +1048,7 @@ const SCREEN_INVENTORY: AgentWorkflow = {
     const validated = screenInventorySchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -1245,7 +1298,7 @@ const UI_VERSION_DRAFT: AgentWorkflow = {
     const validated = uiVersionDraftSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -1495,7 +1548,7 @@ const UI_VERSION_REVISE: AgentWorkflow = {
     const validated = uiVersionDraftSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -1663,7 +1716,7 @@ const CLASSIFY_CLIENT_FEEDBACK: AgentWorkflow = {
     const validated = clientFeedbackClassificationSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -1917,7 +1970,7 @@ const READ_DESIGN_REPLY: AgentWorkflow = {
     const validated = designReplySchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -2118,7 +2171,7 @@ const PROTOTYPE_BUILD: AgentWorkflow = {
     const validated = prototypeBuildSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -2340,7 +2393,7 @@ const PROTOTYPE_BUILD_REVISE: AgentWorkflow = {
     const validated = prototypeBuildSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -2573,7 +2626,7 @@ const DESIGN_DIRECTIONS: AgentWorkflow = {
     const validated = designDirectionsSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -2826,7 +2879,7 @@ const MESSAGE_INTENT: AgentWorkflow = {
     const validated = messageIntentSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -3102,7 +3155,7 @@ const MEETING_REQUEST_READ: AgentWorkflow = {
     const validated = schedulingRequestSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -3361,7 +3414,7 @@ const LEAD_OUTCOME_READ: AgentWorkflow = {
     const validated = leadOutcomeReadingSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -3617,7 +3670,7 @@ const QA_TEST_PLAN: AgentWorkflow = {
     const validated = testPlanSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -3814,7 +3867,7 @@ const CHECK_IN_BRIEF: AgentWorkflow = {
     const validated = checkInBriefSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -4024,7 +4077,7 @@ const HANDOVER_PACKAGE: AgentWorkflow = {
     const validated = handoverPackageSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -4251,7 +4304,7 @@ const QUALIFICATION_READ: AgentWorkflow = {
     const validated = qualificationCoverageSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -4510,7 +4563,7 @@ const THREAD_SUMMARY: AgentWorkflow = {
     const validated = conversationSummarySchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -4667,7 +4720,7 @@ const OBJECTION_READ: AgentWorkflow = {
     const validated = objectionReadingSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -4972,7 +5025,7 @@ const FOLLOW_UP_DRAFT: AgentWorkflow = {
       // fails here, fails again at the constraint, and the placeholder goes —
       // three layers, and the client never sees the number.
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -5911,7 +5964,7 @@ const CLIENT_REPLY: AgentWorkflow = {
     const validated = clientReplySchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -6535,7 +6588,7 @@ const MEDIA_READ: AgentWorkflow = {
     const validated = imageReadingSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       if (lastAttempt) {
         await markRead(null);
         await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
@@ -7048,7 +7101,7 @@ const QUOTATION_SCOPE: AgentWorkflow = {
     const validated = quotationScopeSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -8276,7 +8329,7 @@ const QUOTATION_REVISE: AgentWorkflow = {
     const validated = quotationScopeSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -8999,7 +9052,7 @@ const QUOTATION_REWORK: AgentWorkflow = {
     const validated = quotationScopeSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -9507,7 +9560,7 @@ const MEETING_ANALYSIS: AgentWorkflow = {
     const validated = meetingAnalysisSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
