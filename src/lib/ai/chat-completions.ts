@@ -104,7 +104,7 @@ type Completion = {
   model?: unknown;
   choices?: Choice[];
   usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
-  error?: { message?: unknown };
+  error?: { message?: unknown; metadata?: { raw?: unknown; provider_name?: unknown } };
 };
 
 export function createChatCompletionsProvider(config: ChatCompletionsConfig): AiProvider {
@@ -118,6 +118,9 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Ai
     try {
       const body = JSON.parse(raw) as Completion;
       message = body?.error?.message;
+      // OpenRouter answers "Provider returned error" and puts the upstream vendor's own words in metadata.raw; without them a 400 cannot be diagnosed.
+      const upstream = body?.error?.metadata?.raw;
+      if (typeof message === 'string' && typeof upstream === 'string' && upstream.trim() !== '') message = `${message} - ${upstream.trim()}`;
     } catch {
       message = raw;
     }
