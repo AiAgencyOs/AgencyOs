@@ -122,7 +122,7 @@ select pg_temp.check((select spend_minor from crm.acquisition_funnel(90) where c
 select pg_temp.check((select (cost_per_lead_minor, cost_per_qualified_minor, cost_per_won_minor) = (60000, 60000, 60000) from crm.acquisition_funnel(90) where channel = 'meta_ads'), 'each cost is spend divided by what it bought');
 select pg_temp.check((select cost_per_lead_minor is null and cost_per_won_minor is null from crm.acquisition_funnel(90) where channel = 'email'), 'a channel with no spend has no cost - not zero');
 select pg_temp.check((select cost_per_won_minor is null from crm.acquisition_funnel(90) where channel = 'google_ads'), 'a cost with nothing to divide by is null');
-select pg_temp.check((select bool_and(insufficient_data) from crm.acquisition_funnel(90)), 'every channel is marked too thin to judge');
+select pg_temp.check((select bool_and(insufficient_data) from crm.acquisition_funnel(90) where channel <> 'other'), 'every engine channel is marked too thin to judge (the ''other'' row, everything that arrived on its own, can be large)');
 select pg_temp.check(pg_temp.d(365, 'other', 'leads') = 2, 'a wider window takes in the older lead');
 select pg_temp.check((select sum(leads) from crm.acquisition_funnel(90)) - (select sum(leads) from base90) = 5, 'five of the six new leads are in the 90-day window, none counted twice');
 select pg_temp.as_user(:'OTHER', :'ORGB', 'owner');
