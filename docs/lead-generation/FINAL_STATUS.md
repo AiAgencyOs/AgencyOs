@@ -45,7 +45,7 @@ Status words: **BUILT** (works with no provider), **ASSISTED** (a person does th
 | Area | Status | Evidence / what is missing |
 |---|---|---|
 | Admin-configured services, ICP (versioned), channel goals/limits/pause, four kill switches | BUILT | slice 1; `verify-acquisition-foundation/email-pause` |
-| One identity across channels, strong-key matching, duplicate review, touch history, conversation owner | BUILT | slice 2; `verify-acquisition-identity`. Merging two judged-same contacts is **not built** (eleven tables point at `crm.contacts`) |
+| One identity across channels, strong-key matching, duplicate review, touch history, conversation owner | BUILT | slice 2; `verify-acquisition-identity`. Merging two judged-same contacts is built (`crm.merge_contacts`, `verify-acquisition-merge`); a merge is not undoable from the screen |
 | Tracked WhatsApp handoff (no duplicate lead), from a screen | BUILT | slice 3; `verify-acquisition-handoff`, `-e2e`. Engines do not yet create handoffs on their own |
 | One policy question, exact-version approval, governed once-only execution, tenant credential vault | BUILT | slice 4; `verify-acquisition-governance`, `-hardening` |
 | Scheduler / Quotation subtasks, control returns to the conversation owner | BUILT (agent-facing) | slice 5; no agent calls it yet, a person requests a meeting/quote the usual way |

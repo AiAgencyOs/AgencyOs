@@ -3,10 +3,10 @@ import Link from 'next/link';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { listHandoffs, listOpenDuplicateReviews, listSubtasks, readIdentitySummary } from '@/modules/acquisition/queries';
+import { listConfirmedUnmerged, listHandoffs, listOpenDuplicateReviews, listSubtasks, readIdentitySummary } from '@/modules/acquisition/queries';
 import { Badge, Callout, Card, CardBody, CardHeader, EmptyState, PageHeader, PermissionDenied, Stat, StatGrid } from '@/ui';
 
-import { CancelHandoffForm, CancelSubtaskForm, DuplicateDecisionForm, TrackedLinkForm } from '../forms';
+import { CancelHandoffForm, CancelSubtaskForm, DuplicateDecisionForm, MergeContactsForm, TrackedLinkForm } from '../forms';
 
 export const metadata: Metadata = { title: 'Lead generation identity' };
 
@@ -30,13 +30,13 @@ function PersonCard({ p }: { p: Person }) {
 
 /**
  * One person across every channel. The system matches on exact keys by itself; this screen is where a person
- * settles the cases it will not decide alone. Nothing here merges anything: deciding records a judgement.
+ * settles the cases it will not decide alone. Deciding records a judgement; joining two records is a separate, explicit step.
  */
 export default async function IdentityPage() {
   const context = await requireInternal('/lead-generation/identity');
   if (!can(context, 'acquisition.read')) return <PermissionDenied />;
   const mayManage = can(context, 'acquisition.manage');
-  const [{ rows, totalOpen }, summary, handoffs, subtasks] = await Promise.all([listOpenDuplicateReviews(), readIdentitySummary(), listHandoffs(), listSubtasks()]);
+  const [{ rows, totalOpen }, confirmed, summary, handoffs, subtasks] = await Promise.all([listOpenDuplicateReviews(), listConfirmedUnmerged(), readIdentitySummary(), listHandoffs(), listSubtasks()]);
   const touches = Object.entries(summary.touchpointsByChannel).sort((a, b) => b[1] - a[1]);
   const keyTotal = Object.values(summary.keys).reduce((a, b) => a + b, 0);
   const touchTotal = touches.reduce((n, [, c]) => n + c, 0);
@@ -53,8 +53,9 @@ export default async function IdentityPage() {
       </StatGrid>
 
       <Callout tone="info" title="What deciding does and does not do">
-        Choosing “Same person” or “Different people” records your judgement and keeps the history. It does not merge the two contacts - joining two records that
-        already have conversations and quotations is a separate step that is not automated yet.
+        Choosing “Same person” or “Different people” records your judgement and keeps the history. Joining two records is a separate step below, and only
+        for a pair you confirmed: the conversations, leads, meetings and keys move to the one you keep, and the other record stays as history.
+        If the two disagree about consent, the safer answer (withdrawn) wins.
       </Callout>
 
       <Card>
@@ -75,6 +76,22 @@ export default async function IdentityPage() {
           )}
         </CardBody>
       </Card>
+
+      {confirmed.length > 0 ? (
+        <Card>
+          <CardHeader title="Confirmed the same person - not joined yet" description="Choose which record survives. This cannot be undone from here." />
+          <CardBody>
+            <ul className="flex flex-col gap-5">
+              {confirmed.map((r) => (
+                <li key={r.id} className="flex flex-col gap-3 border-b border-line pb-5 last:border-0">
+                  <div className="grid gap-3 sm:grid-cols-2"><PersonCard p={r.a} /><PersonCard p={r.b} /></div>
+                  {mayManage ? <MergeContactsForm a={{ id: r.a.id, name: r.a.name }} b={{ id: r.b.id, name: r.b.name }} /> : null}
+                </li>
+              ))}
+            </ul>
+          </CardBody>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader title="Moves to WhatsApp" description={`${handoffs.live} link${handoffs.live === 1 ? '' : 's'} waiting to be used. A used link continues the same lead; if the number belongs to someone else it waits for a decision above.`} />

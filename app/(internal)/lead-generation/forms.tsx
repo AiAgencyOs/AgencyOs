@@ -8,6 +8,7 @@ import {
   savePolicyAction,
   cancelHandoffAction,
   decideDuplicateReviewAction,
+  mergeContactsAction,
   saveHandoffSettingsAction,
   saveChannelSettingsAction,
   saveIcpAction,
@@ -154,6 +155,22 @@ export function DuplicateDecisionForm({ reviewId }: { reviewId: string }) {
       <button type="submit" name="decision" value="kept_separate" disabled={pending} className={buttonClass('secondary')}>Different people</button>
       <button type="submit" name="decision" value="confirmed_same" disabled={pending} className={buttonClass('primary')}>Same person</button>
       <button type="submit" name="decision" value="dismissed" disabled={pending} className={buttonClass('ghost')}>Dismiss</button>
+      <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+export function MergeContactsForm({ a, b }: { a: { id: string; name: string }; b: { id: string; name: string } }) {
+  const [state, action, pending] = useActionState(mergeContactsAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+      <div className="flex-1">
+        <Field label="Why these are one person (kept with the merge)">
+          <input name="reason" required maxLength={500} className={inputClass} />
+        </Field>
+      </div>
+      <button type="submit" name="keep" value={`${a.id}:${b.id}`} disabled={pending} className={buttonClass('primary')}>Keep {a.name}</button>
+      <button type="submit" name="keep" value={`${b.id}:${a.id}`} disabled={pending} className={buttonClass('secondary')}>Keep {b.name}</button>
       <FormMessage status={state.status} message={state.message} />
     </form>
   );

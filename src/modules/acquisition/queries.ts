@@ -123,6 +123,27 @@ export async function listOpenDuplicateReviews(limit = 50): Promise<{ rows: Dupl
   };
 }
 
+/** Pairs an administrator judged the same person whose records have not been joined yet (neither side is already merged). */
+export async function listConfirmedUnmerged(limit = 50): Promise<DuplicateReviewView[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('duplicate_reviews')
+    .select('id, reason, signals, created_at, contact_a, contact_b').eq('status', 'confirmed_same').order('decided_at', { ascending: false }).limit(limit);
+  if (error) unreadable('listConfirmedUnmerged', error);
+  const ids = [...new Set((data ?? []).flatMap((r) => [r.contact_a, r.contact_b]))];
+  const { data: contacts, error: contactsError } = ids.length === 0
+    ? { data: [], error: null }
+    : await supabase.schema('crm').from('contacts').select('id, full_name, email, phone, company, reachable_via, merged_into_contact_id').in('id', ids);
+  if (contactsError) unreadable('listConfirmedUnmerged.contacts', contactsError);
+  const people = new Map((contacts ?? []).map((c) => [c.id, c]));
+  const view = (id: string): DuplicateReviewView['a'] => {
+    const c = people.get(id);
+    return c ? { id: c.id, name: c.full_name, email: c.email, phone: c.phone, company: c.company, reachableVia: c.reachable_via } : { id, name: 'Unknown contact', email: null, phone: null, company: null, reachableVia: null };
+  };
+  return (data ?? [])
+    .filter((r) => !people.get(r.contact_a)?.merged_into_contact_id && !people.get(r.contact_b)?.merged_into_contact_id)
+    .map((r) => ({ id: r.id, reason: r.reason, createdAt: r.created_at, signals: (r.signals ?? {}) as Record<string, unknown>, a: view(r.contact_a), b: view(r.contact_b) }));
+}
+
 export type IdentitySummary = {
   keys: Record<string, number>;
   touchpointsByChannel: Record<string, number>;

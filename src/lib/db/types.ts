@@ -6847,6 +6847,8 @@ export type Database = {
           organization_id: string
           phone: string | null
           reachable_via: string | null
+          merged_at: string | null
+          merged_into_contact_id: string | null
           preferred_language: string | null
           preferred_language_set_by: string | null
           updated_at: string
@@ -6863,6 +6865,8 @@ export type Database = {
           organization_id: string
           phone?: string | null
           reachable_via?: string | null
+          merged_at?: string | null
+          merged_into_contact_id?: string | null
           preferred_language?: string | null
           preferred_language_set_by?: string | null
           updated_at?: string
@@ -6879,6 +6883,8 @@ export type Database = {
           organization_id?: string
           phone?: string | null
           reachable_via?: string | null
+          merged_at?: string | null
+          merged_into_contact_id?: string | null
           preferred_language?: string | null
           preferred_language_set_by?: string | null
           updated_at?: string
@@ -8853,6 +8859,10 @@ export type Database = {
       resolve_identity: {
         Args: { p_organization_id: string; p_signals: Json; p_source?: string }
         Returns: { outcome: string | null; contact_id: string | null; review_id: string | null; created: boolean | null }[]
+      }
+      merge_contacts: {
+        Args: { p_loser: string; p_organization_id: string; p_reason: string; p_winner: string }
+        Returns: { outcome: string | null }[]
       }
       decide_duplicate_review: {
         Args: { p_decision: string; p_note: string; p_review: string }

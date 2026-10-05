@@ -137,6 +137,30 @@ export async function saveIcp(input: { definition: IcpDefinition; note: string }
   }
 }
 
+export async function mergeContacts(input: { winner: string; loser: string; reason: string }): Promise<Result<true>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('merge_contacts', { p_organization_id: gate.data.organizationId, p_winner: input.winner, p_loser: input.loser, p_reason: input.reason });
+  if (error) return err('INTERNAL', 'Could not merge the contacts.');
+  switch (first<{ outcome?: string }>(data)?.outcome) {
+    case 'merged':
+      return ok(true);
+    case 'needs_reason':
+      return err('VALIDATION', 'Say why - the reason is kept with the merge.');
+    case 'same_contact':
+      return err('VALIDATION', 'Choose two different contacts.');
+    case 'no_confirmed_review':
+      return err('CONFLICT', 'These two have not been confirmed as the same person.');
+    case 'already_merged':
+      return err('CONFLICT', 'One of these contacts has already been merged.');
+    case 'not_found':
+      return err('NOT_FOUND', 'One of those contacts no longer exists.');
+    default:
+      return err('FORBIDDEN', FORBIDDEN);
+  }
+}
+
 export async function decideDuplicateReview(input: { reviewId: string; decision: 'confirmed_same' | 'kept_separate' | 'dismissed'; note: string }): Promise<Result<true>> {
   const gate = await manager();
   if (!gate.ok) return gate;

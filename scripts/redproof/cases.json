@@ -784,5 +784,59 @@
     "nth": 1
    }
   ]
+ },
+ "merge": {
+  "migration": "supabase/migrations/20261027100000_two_contacts_judged_the_same_become_one.sql",
+  "verifier": "scripts/verify-acquisition-merge.sql",
+  "cases": [
+   {
+    "name": "merge without a confirmed review",
+    "find": "  if not exists (select 1 from crm.duplicate_reviews r\n",
+    "replace": "  if false and not exists (select 1 from crm.duplicate_reviews r\n",
+    "nth": 1
+   },
+   {
+    "name": "a member may merge",
+    "find": "  if not crm._social_caller_ok(p_organization_id, true) then return query select 'forbidden'::text; return; end if;\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "consent: loser's answer overwrites safer one",
+    "find": "   where excluded.status = 'withdrawn' and crm.communication_consent.status <> 'withdrawn';",
+    "replace": "   where false;",
+    "nth": 1
+   },
+   {
+    "name": "identity keys stay on the loser",
+    "find": "  update crm.identity_keys set contact_id = p_winner where organization_id = p_organization_id and contact_id = p_loser;\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "leads stay on the loser",
+    "find": "  update crm.leads set contact_id = p_winner where organization_id = p_organization_id and contact_id = p_loser;\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "winner does not learn the loser's phone",
+    "find": "         phone   = coalesce(w.phone, l.phone),",
+    "replace": "         phone   = w.phone,",
+    "nth": 1
+   },
+   {
+    "name": "a merged contact can merge again",
+    "find": "  if w.merged_into_contact_id is not null or l.merged_into_contact_id is not null then\n    return query select 'already_merged'::text; return;\n  end if;\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "other open reviews about the loser stay open",
+    "find": "   where organization_id = p_organization_id and status = 'open' and (contact_a = p_loser or contact_b = p_loser);",
+    "replace": "   where false;",
+    "nth": 1
+   }
+  ]
  }
 }
