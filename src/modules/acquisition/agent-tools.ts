@@ -74,18 +74,18 @@ export const ACQUISITION_TOOL_SCHEMAS: Record<string, Record<string, unknown>> =
 
   'ads.draftCampaign': OBJ({
     platform: { type: 'string', enum: [...AD_PLATFORMS] }, campaignId: ID, name: { type: 'string' }, service: { type: 'string' },
-    plan: { type: 'object' }, dailyMinor: { type: 'integer', minimum: 1 }, totalMinor: { type: 'integer', minimum: 1 }, startDate: { type: 'string' }, endDate: { type: 'string' },
+    plan: { type: 'object', description: 'A campaign plan. Shape: {"destination":{"type":"whatsapp"},"adsets":[{"name":"Retail owners","audience":{"locations":["IN"],"age_min":25},"placements":["feed"]}],"creatives":[{"headline":"...","primary_text":"...","cta":"WHATSAPP_MESSAGE"}]}. A destination of whatsapp uses the agency\'s saved WhatsApp number; do not put a number in the plan. The check tells you what is missing; fix it and draft again.' }, dailyMinor: { type: 'integer', minimum: 1 }, totalMinor: { type: 'integer', minimum: 1 }, startDate: { type: 'string' }, endDate: { type: 'string' },
   }, ['platform', 'name', 'plan', 'dailyMinor']),
   'ads.checkCampaign': OBJ({ versionId: ID }, ['versionId']),
   'ads.submitCampaign': OBJ({ versionId: ID }, ['versionId']),
 
-  'landing.draftPage': OBJ({ pageId: ID, name: { type: 'string' }, slug: { type: 'string' }, service: { type: 'string' }, content: { type: 'object' }, publicUrl: { type: 'string' } }, ['name', 'slug', 'content', 'publicUrl']),
+  'landing.draftPage': OBJ({ pageId: ID, name: { type: 'string' }, slug: { type: 'string' }, service: { type: 'string' }, content: { type: 'object', description: 'Page content. Shape: {"headline":"...","benefits":[{"title":"...","text":"..."} x3],"cta_text":"short button text","privacy_url":"https://...","contact_email":"..."}. The WhatsApp number is the agency\'s saved one and is added for you. The check names any length or missing field; fix it and draft again.' }, publicUrl: { type: 'string' } }, ['name', 'slug', 'content', 'publicUrl']),
   'landing.checkPage': OBJ({ versionId: ID }, ['versionId']),
   'landing.submitPage': OBJ({ versionId: ID }, ['versionId']),
 
   'marketplace.scoreOpportunity': OBJ({
-    platform: { type: 'string', enum: [...B2B_PLATFORMS] }, externalRef: { type: 'string' }, url: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' },
-    budgetMinMinor: { type: 'integer', minimum: 0 }, budgetMaxMinor: { type: 'integer', minimum: 0 }, currency: { type: 'string' }, country: { type: 'string' },
+    platform: { type: 'string', enum: [...B2B_PLATFORMS] }, externalRef: { type: 'string', description: 'The marketplace\'s own id for the job.' }, url: { type: 'string', description: 'The full https:// address of the job. OMIT it if you were not given one; never put an id here.' }, title: { type: 'string' }, description: { type: 'string' },
+    budgetMinMinor: { type: 'integer', minimum: 0 }, budgetMaxMinor: { type: 'integer', minimum: 0 }, currency: { type: 'string' }, country: { type: 'string', description: 'The client\'s country. OMIT it if unknown.' },
   }, ['platform', 'externalRef', 'title', 'description']),
   'marketplace.draftProposal': OBJ({ opportunityId: ID, body: { type: 'string' }, timelineDays: { type: 'integer', minimum: 1, maximum: 730 }, portfolioIds: { type: 'array', items: ID } }, ['opportunityId', 'body']),
   'marketplace.checkProposal': OBJ({ versionId: ID }, ['versionId']),
@@ -257,8 +257,17 @@ export async function runAcquisitionTool(admin: Admin, organizationId: string, n
       const made = await door('create_landing_page', { p_organization_id: organizationId, p_name: nameIn, p_slug: slug, p_target_service: service });
       if (made.error) return err('INTERNAL', 'Could not start the page.');
       const p = first<{ outcome?: string; page_id?: string }>(made.data);
-      if (p?.outcome !== 'created' || !p.page_id) return refused(name, p?.outcome);
-      pageId = p.page_id;
+      if (p?.outcome === 'slug_taken') {
+        // The agent has no tool that lists pages, and a retried or corrected draft names the same page. Drafting under an address this
+        // organisation already uses is a NEXT VERSION of that page, not a conflict: find it (this organisation's, never another's).
+        const { data: existing, error: lookupError } = await admin.schema('crm').from('landing_pages').select('id').eq('organization_id', organizationId).eq('slug', slug).maybeSingle();
+        if (lookupError || !existing) return refused(name, 'slug_taken');
+        pageId = existing.id;
+      } else if (p?.outcome !== 'created' || !p.page_id) {
+        return refused(name, p?.outcome);
+      } else {
+        pageId = p.page_id;
+      }
     }
     const v = await door('add_landing_version', { p_organization_id: organizationId, p_page: pageId, p_content: content, p_public_url: publicUrl, p_by_type: 'agent' });
     if (v.error) return err('INTERNAL', 'Could not save the page.');
@@ -285,6 +294,7 @@ export async function runAcquisitionTool(admin: Admin, organizationId: string, n
     const title = str(i.title, 300);
     const description = str(i.description, 8000);
     const url = optStr(i.url, 500);
+    if (url && !/^https:\/\/\S+$/.test(url)) return bad('url must be a full https:// address, or omitted if you were not given one. An id belongs in externalRef.');
     const country = optStr(i.country, 80);
     const currency = i.currency === undefined ? 'USD' : str(i.currency, 3);
     const min = i.budgetMinMinor === undefined ? null : int(i.budgetMinMinor, 0, 1_000_000_000_000);

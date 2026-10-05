@@ -598,7 +598,14 @@ begin
     -- approval does not block setting the number on the draft — the draft is
     -- not yet client-facing, and submit_proposal's own approval gate still
     -- stands between it and a client either way.
-    if v_decision.outcome in ('forbidden', 'no_requester', 'invalid_discount', 'already_expired', 'no_policy') then
+    --
+    -- 'no_policy' is deliberately NOT a refusal. No discount_decision policy is
+    -- seeded, so refusing on it would stop every agent-originated discount
+    -- (price objections, the owner's advance offers) until an owner had set a
+    -- policy no screen yet offers. The decision is still kept, as cancelled
+    -- ("a discount somebody proposed and nobody could route is still a fact"),
+    -- and the draft is priced exactly as it was before this audit step existed.
+    if v_decision.outcome in ('forbidden', 'no_requester', 'invalid_discount', 'already_expired') then
       return query select v_decision.outcome::text, v_row.subtotal_minor, v_row.discount_minor, v_row.tax_minor, v_row.total_minor;
       return;
     end if;

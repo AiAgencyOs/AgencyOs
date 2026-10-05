@@ -41,6 +41,7 @@ const AREAS: readonly ConfigArea[] = [
   'Calendar',
   'Alerts',
   'Files',
+  'Facebook Leads',
   'Email',
 ];
 

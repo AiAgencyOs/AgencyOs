@@ -143,3 +143,20 @@ describe('the approval a decision raised is a guarded parent too', () => {
     assert.match(sql, /create trigger org_match_discount_decisions_approval\s+before insert or update of approval_request_id, organization_id on sales\.discount_decisions\s+for each row execute function core\.enforce_parent_org\('approval_request_id', 'approvals\.approval_requests'\)/);
   });
 });
+
+describe('pricing a draft is not blocked by a missing discount policy', () => {
+  const sql = readFileSync('supabase/migrations/20261030100000_a_discount_is_a_decision_not_a_mutation.sql', 'utf8');
+  const from = sql.indexOf('create or replace function sales.set_proposal_pricing(');
+  const to = sql.indexOf('comment on function sales.set_proposal_pricing(');
+
+  test('no_policy is not among the outcomes that refuse the price change', () => {
+    assert.ok(from > 0 && to > from, 'both ends of the function exist');
+    const body = sql.slice(from, to);
+    assert.match(body, /if v_decision\.outcome in \('forbidden', 'no_requester', 'invalid_discount', 'already_expired'\) then/);
+    assert.doesNotMatch(body, /if v_decision\.outcome in \([^)]*'no_policy'/);
+  });
+
+  test('and the decision is still kept: record_discount_decision cancels it rather than dropping it', () => {
+    assert.match(sql, /update sales\.discount_decisions set status = 'cancelled', updated_at = now\(\) where id = v_id;/);
+  });
+});

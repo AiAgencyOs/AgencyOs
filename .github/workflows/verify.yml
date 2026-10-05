@@ -244,6 +244,23 @@ jobs:
       - name: Inbound WhatsApp ingest
         run: npm run db:verify:ingest
 
+      # Audit step 1.1. crm.leads.source allowed web_form/email since the
+      # first migration and nothing ever produced either value — the queue
+      # only ever showed WhatsApp. Same atomicity/idempotency proof as the
+      # WhatsApp ingest above, for the two channels that carry a narrative
+      # message and continue one thread per identity.
+      - name: Inbound web-form ingest — audit step 1.1
+        run: npm run db:verify:webform
+
+      - name: Inbound email ingest — audit step 1.1
+        run: npm run db:verify:emailingest
+
+      # A Lead Ad submission has no narrative — no conversation, no job — but
+      # the same tenancy resolution, contact dedupe and idempotent-on-leadgen_id
+      # replay guard as the other two.
+      - name: Inbound Facebook/Instagram Lead Ads ingest — audit step 1.1
+        run: npm run db:verify:fbleads
+
       # G-040. Runs against the schema alone — no application build needed,
       # because every rule it checks is held in Postgres rather than in a
       # service. That is the point of the engine living there.
@@ -776,6 +793,9 @@ jobs:
           # to diagnose because the log was only printed when health failed.
           trap 'echo "── app log ──"; cat /tmp/app.log' ERR
 
+          # The steps before this chain plant leads that nothing dispatched; each left a `lead.created` event, and the chain's first scripts
+          # dispatch one batch of the OLDEST events. Clear that backlog once (isolated database only) so a batch holds their own events.
+          npm run db:drain:events
           npm run db:verify:unlock
           npm run db:verify:reaper
           npm run db:verify:webhook

@@ -3952,6 +3952,113 @@ export type Database = {
   }
   crm: {
     Tables: {
+      lead_assignment_rules: {
+        Row: {
+          active: boolean
+          assigned_to: string
+          created_at: string
+          created_by: string | null
+          id: string
+          label: string
+          match_language: string[] | null
+          match_min_score: number | null
+          match_region: string[] | null
+          match_repeat_client: boolean | null
+          match_service_type: string[] | null
+          match_source: string[] | null
+          organization_id: string
+          priority: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          assigned_to: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label: string
+          match_language?: string[] | null
+          match_min_score?: number | null
+          match_region?: string[] | null
+          match_repeat_client?: boolean | null
+          match_service_type?: string[] | null
+          match_source?: string[] | null
+          organization_id: string
+          priority?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          assigned_to?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label?: string
+          match_language?: string[] | null
+          match_min_score?: number | null
+          match_region?: string[] | null
+          match_repeat_client?: boolean | null
+          match_service_type?: string[] | null
+          match_source?: string[] | null
+          organization_id?: string
+          priority?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      identity_resolutions: {
+        Row: {
+          created_at: string
+          id: string
+          lead_id: string
+          matched_client_account_id: string | null
+          matched_contact_id: string | null
+          matched_lead_id: string | null
+          notes: Json
+          organization_id: string
+          outcome: string
+          review_outcome: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lead_id: string
+          matched_client_account_id?: string | null
+          matched_contact_id?: string | null
+          matched_lead_id?: string | null
+          notes?: Json
+          organization_id: string
+          outcome: string
+          review_outcome?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lead_id?: string
+          matched_client_account_id?: string | null
+          matched_contact_id?: string | null
+          matched_lead_id?: string | null
+          notes?: Json
+          organization_id?: string
+          outcome?: string
+          review_outcome?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "identity_resolutions_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: true
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       social_audits: {
         Row: {
           id: string
@@ -8408,6 +8515,30 @@ export type Database = {
       }
     }
     Functions: {
+      route_lead: {
+        Args: { p_lead_id: string }
+        Returns: {
+          assigned_to: string | null
+          outcome: string
+          reason: string | null
+          rule_id: string | null
+        }[]
+      }
+      classify_lead_identity: {
+        Args: { p_lead_id: string }
+        Returns: {
+          matched_contact_id: string | null
+          matched_lead_id: string | null
+          outcome: string
+          resolution_id: string | null
+        }[]
+      }
+      review_identity_resolution: {
+        Args: { p_resolution_id: string; p_review_outcome: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       record_social_audit: {
         Args: { p_by_type?: string; p_findings: Json; p_integration: string; p_organization_id: string; p_platform: string; p_source: string; p_summary: Json }
         Returns: { outcome: string | null; audit_id: string | null }[]
@@ -9293,6 +9424,49 @@ export type Database = {
           relationship: string
         }[]
       }
+      ingest_email_lead: {
+        Args: {
+          p_body?: string
+          p_external_ref?: string
+          p_from_email: string
+          p_from_name?: string
+          p_mailbox: string
+          p_occurred_at?: string
+          p_subject?: string
+        }
+        Returns: {
+          contact_id: string
+          conversation_id: string
+          job_id: string
+          lead_id: string
+          message_id: string
+          message_seq: number
+          organization_id: string
+          status: string
+        }[]
+      }
+      ingest_facebook_lead: {
+        Args: {
+          p_ad_id?: string
+          p_ad_name?: string
+          p_email?: string
+          p_field_data?: Json
+          p_form_id?: string
+          p_form_name?: string
+          p_full_name?: string
+          p_leadgen_id: string
+          p_occurred_at?: string
+          p_page_id: string
+          p_phone?: string
+        }
+        Returns: {
+          activity_id: string
+          contact_id: string
+          lead_id: string
+          organization_id: string
+          status: string
+        }[]
+      }
       ingest_group_message: {
         Args: {
           p_body: string
@@ -9307,6 +9481,30 @@ export type Database = {
         }
         Returns: {
           conversation_id: string
+          message_id: string
+          message_seq: number
+          organization_id: string
+          status: string
+        }[]
+      }
+      ingest_web_form_lead: {
+        Args: {
+          p_email?: string
+          p_external_ref?: string
+          p_form_key: string
+          p_full_name: string
+          p_message?: string
+          p_occurred_at?: string
+          p_page_url?: string
+          p_phone?: string
+          p_utm_campaign?: string
+          p_utm_source?: string
+        }
+        Returns: {
+          contact_id: string
+          conversation_id: string
+          job_id: string
+          lead_id: string
           message_id: string
           message_seq: number
           organization_id: string

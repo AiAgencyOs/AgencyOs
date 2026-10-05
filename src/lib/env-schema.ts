@@ -83,6 +83,41 @@ export const serverSchema = z.object({
    */
   WHATSAPP_GRAPH_BASE_URL: z.string().url().optional(),
   /**
+   * The token Meta echoes during the Lead Ads webhook subscription handshake
+   * — audit step 1.1. Same role WHATSAPP_VERIFY_TOKEN plays for its product;
+   * kept separate rather than shared because the two webhooks are configured
+   * from two different (or the same, at the owner's choice) Meta apps, and
+   * conflating them would mean rotating one always rotates the other.
+   */
+  FACEBOOK_VERIFY_TOKEN: z
+    .string()
+    .min(16, 'FACEBOOK_VERIFY_TOKEN must be at least 16 characters')
+    .optional(),
+
+  /** The Meta app secret for Lead Ads, verifying X-Hub-Signature-256 on inbound — the same scheme WHATSAPP_APP_SECRET verifies. */
+  FACEBOOK_APP_SECRET: z.string().min(16, 'FACEBOOK_APP_SECRET looks too short').optional(),
+
+  /** The page access token used to fetch a leadgen_id's field_data from the Graph API once its webhook arrives. */
+  FACEBOOK_ACCESS_TOKEN: z.string().min(16, 'FACEBOOK_ACCESS_TOKEN looks too short').optional(),
+
+  /**
+   * Where the Graph API lives, for the Lead Ads fetch. Set only by tests,
+   * which point it at a stub — same contract as WHATSAPP_GRAPH_BASE_URL.
+   * Production must NOT set it.
+   */
+  FACEBOOK_GRAPH_BASE_URL: z.string().url().optional(),
+
+  /**
+   * Inbound email ingestion (audit step 1.1) — assumed against Mailgun's
+   * documented "Inbound Route" webhook signature scheme (timestamp + token,
+   * HMAC-SHA256, keyed by the account's webhook signing key), because no
+   * email provider is otherwise configured anywhere in this codebase. This is
+   * a stated assumption, not a verified integration: swap the verification in
+   * src/lib/email-inbound/verify.ts if the agency's real provider differs.
+   */
+  EMAIL_INBOUND_SIGNING_KEY: z.string().min(16, 'EMAIL_INBOUND_SIGNING_KEY looks too short').optional(),
+
+  /**
    * Speech-to-text, and the one credential AgencyOS has that is not
    * Anthropic's — see ADM-94.
    *
@@ -203,7 +238,7 @@ const LOOPBACK = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\])([:/]|
 /** Every base-URL override a credential could be redirected through. One list, read by the check and by its test. */
 export const OVERRIDABLE_BASE_URLS = [
   'WHATSAPP_GRAPH_BASE_URL', 'ANTHROPIC_BASE_URL', 'OPENAI_BASE_URL', 'GEMINI_BASE_URL', 'XAI_BASE_URL', 'OPENROUTER_BASE_URL',
-  'GOOGLE_OAUTH_BASE_URL', 'GOOGLE_CALENDAR_BASE_URL',
+  'GOOGLE_OAUTH_BASE_URL', 'GOOGLE_CALENDAR_BASE_URL', 'FACEBOOK_GRAPH_BASE_URL',
 ] as const;
 
 export function productionConfigProblems(server: ServerEnv, appUrl: string): ConfigProblem[] {
@@ -232,6 +267,16 @@ export function productionConfigProblems(server: ServerEnv, appUrl: string): Con
     problems.push({
       variable: hasVerify ? 'WHATSAPP_APP_SECRET' : 'WHATSAPP_VERIFY_TOKEN',
       problem: 'WHATSAPP_VERIFY_TOKEN and WHATSAPP_APP_SECRET must be set together or not at all — one without the other is a webhook that only half-authenticates',
+    });
+  }
+
+  // Same pairing rule, for the Lead Ads webhook — audit step 1.1.
+  const hasFbVerify = Boolean(server.FACEBOOK_VERIFY_TOKEN);
+  const hasFbSecret = Boolean(server.FACEBOOK_APP_SECRET);
+  if (hasFbVerify !== hasFbSecret) {
+    problems.push({
+      variable: hasFbVerify ? 'FACEBOOK_APP_SECRET' : 'FACEBOOK_VERIFY_TOKEN',
+      problem: 'FACEBOOK_VERIFY_TOKEN and FACEBOOK_APP_SECRET must be set together or not at all — one without the other is a webhook that only half-authenticates',
     });
   }
 
