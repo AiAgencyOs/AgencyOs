@@ -383,6 +383,10 @@ async function main() {
     // loop runs in the same invocation. The first draft forced a second due
     // date and then failed its own "exactly one attempt" check — the worker
     // had been right both times.
+    // Every lead an earlier verifier inserted now leaves a `lead.created` event (the router and the classifier listen to it), so by here the
+    // unpublished backlog is far larger than one dispatch batch and the oldest fifty are not this test's event. The backlog is not what
+    // this section measures: it is cleared so the batch below reads only the events this section raises.
+    await admin.schema('core').from('outbox_events').update({ published_at: new Date().toISOString() }).is('published_at', null);
     await runFollowUps(admin, OPEN());
     const seq = await sequenceFor(proposalId, 'no_response_after_quotation');
     check(Boolean(seq), 'the observer discovered the sent quotation');

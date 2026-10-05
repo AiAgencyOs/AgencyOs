@@ -793,6 +793,9 @@ jobs:
           # to diagnose because the log was only printed when health failed.
           trap 'echo "── app log ──"; cat /tmp/app.log' ERR
 
+          # The steps before this chain plant leads that nothing dispatched; each left a `lead.created` event, and the chain's first scripts
+          # dispatch one batch of the OLDEST events. Clear that backlog once (isolated database only) so a batch holds their own events.
+          npm run db:drain:events
           npm run db:verify:unlock
           npm run db:verify:reaper
           npm run db:verify:webhook

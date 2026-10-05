@@ -42,12 +42,12 @@ These are weighted estimates (COMPLETE=1.0, PARTIAL=0.5, MISSING/BROKEN/UNKNOWN=
 2. **M1 and M2 invoice generators read the wrong milestone row on `main`** (2.7, 4.25). Financial-correctness bug — if any invoices have already been generated in production under this code, they may have billed the wrong amount. **This needs a human to check actual issued invoices; I have not done so and don't have production DB access.**
 3. **Phase 3's design revision loop is structurally dead** (3.13). `project.design_revision_opened` has zero event subscribers anywhere. A client-requested design change can be recorded but nothing in the codebase produces the next design direction through any path — automated or manual.
 4. **No PM assignment mechanism exists** (2.13) and **no specialist-agent assignment mechanism exists** (2.14) — there is no column, table, or agent recording who owns a project operationally. Combined with `project_manager`/`ui_designer`/etc. mostly being human-operated roles rather than live agents, "PM becomes the client's one owner" is not something the system can currently enforce or even record.
-5. **No lead-routing algorithm exists** (1.3) and **no closing-signal detection exists** (1.39, by deliberate design — human judgment only).
+5. ~~**No lead-routing algorithm exists** (1.3)~~ **(this change)** — built: `crm.route_lead`, an admin-configurable rule set (`crm.lead_assignment_rules`) matching service type/source/language/region/priority/repeat-client, with round-robin fallback among active staff. Never overrides a manual assignment. See §14 below. **No closing-signal detection exists** (1.39, by deliberate design — human judgment only) is unchanged.
 
 ## 3. Major missing flows
 
 - ~~Web-form/email/Facebook-lead-form inbound ingestion (1.1) — only WhatsApp is wired.~~ **Closed.** `crm.ingest_web_form_lead` / `crm.ingest_email_lead` / `crm.ingest_facebook_lead` (migration `20260929130000`) give each channel the same atomic, idempotent SQL function WhatsApp has, with thin TS routes (`app/api/leads/web-form`, `app/api/webhooks/email`, `app/api/webhooks/facebook-leads`) calling them via RPC — not a shared JS helper. The email provider shape is a stated ASSUMPTION (Mailgun's documented Inbound Route signature scheme); no real provider is configured anywhere in this codebase to verify against.
-- Automatic identity-resolution/dedup classification (1.2) — only manual same-contact merge exists.
+- ~~Automatic identity-resolution/dedup classification (1.2) — only manual same-contact merge exists.~~ **(this change)** — built: `crm.classify_lead_identity` writes one `crm.identity_resolutions` row per lead (NEW_IDENTITY/EXISTING_LEAD/EXISTING_CLIENT/REACTIVATED_LEAD/POSSIBLE_DUPLICATE_REVIEW). Never auto-merges; POSSIBLE_DUPLICATE_REVIEW is a human-reviewable state (`crm.review_identity_resolution`). See §14 below.
 - Discount audit trail (1.27) and payment-structure catalog (1.28) — neither exists at all.
 - Invoice-to-client communication (2.8) — invoices are generated but nothing pushes them to the client; portal is pull-only.
 - Kickoff package as a structured artifact (2.22) — only a free-text evidence reference is captured.
@@ -83,7 +83,7 @@ Nearly everything marked `PARTIAL` or `COMPLETE` with `verification_status: NOT_
 ## 8. Data risks
 
 - **2.7/4.25/4.26** — the financial-correctness bug above is the primary data-integrity risk in this entire audit. Recommend checking real production invoice records before/alongside merging the fix.
-- **1.2** — no automated identity resolution means duplicate/fragmented lead records are possible; mitigated by the system never auto-merging (a safe default, but not a solution).
+- ~~**1.2** — no automated identity resolution means duplicate/fragmented lead records are possible; mitigated by the system never auto-merging (a safe default, but not a solution).~~ **(this change)** — automated classification now exists (`crm.classify_lead_identity`); the never-auto-merge mitigation is unchanged and still the only path to actually folding two records together.
 
 ## 9. Agent gaps
 
@@ -117,6 +117,17 @@ The most important cross-cutting finding from the Phase 1 audit: **there is a re
 - No requirement/feature-to-screen traceability beyond screen×state coverage (4.8).
 - No named `UI_VERSION_X_APPROVED` / `PROTOTYPE_VERSION_X_APPROVED` events exist — approval is real but represented by status fields, not first-class named records (4.14, 4.24).
 - No APK/native prototype pipeline exists (4.16) — partly a genuine external blocker (signing credentials), partly unbuilt infrastructure.
+
+## 14. Changes since this audit was written **(this change)**
+
+Implementation Plan Phase 1 items 1 and 3 (1.3 lead routing, 1.2 identity resolution) are now built, live-verified, and recorded `COMPLETE`/`VERIFIED`/`PASSED`/`PRODUCTION_READY` in the companion JSON. Both fire off a new `lead.created` event, emitted by an `AFTER INSERT` trigger on `crm.leads` (so every insert path is covered, not only WhatsApp ingest):
+
+- **1.3 — lead routing.** `crm.route_lead` assigns `crm.leads.assigned_to` from an admin-configurable rule set (`crm.lead_assignment_rules`, owner/ops_admin only), matching service type, source, language, region, a score-based priority proxy, and repeat-client status, with round-robin fallback among active internal staff when no rule matches. Never overrides a manual assignment (refuses `already_assigned` rather than overwriting). "Sales-rep availability" is approximated by active `core.memberships` status — this schema has no dedicated on/off switch for a rep, which the JSON's `blocker` field still names as optional future work.
+- **1.2 — identity resolution.** `crm.classify_lead_identity` writes exactly one `crm.identity_resolutions` row per lead: `EXISTING_CLIENT` (contact tied to a client account), `EXISTING_LEAD` (another open lead on the same contact), `REACTIVATED_LEAD` (a disqualified lead on the same contact), `POSSIBLE_DUPLICATE_REVIEW` (a different contact, same normalized name), or `NEW_IDENTITY`. The system still never auto-merges — POSSIBLE_DUPLICATE_REVIEW is recorded for a person to review (`crm.review_identity_resolution`), and even a confirmed duplicate still requires the existing `crm.merge_leads` door to actually act.
+
+Both were live-verified against a scratch Postgres (`scripts/apply-migrations-locally.sh`) rather than by regex: every outcome was produced from real rows, and two guards were red-proofed by removing them, confirming the break, and restoring them — the never-override-a-manual-assignment check in `crm.route_lead`, and the cross-tenant tenancy guard on `crm.identity_resolutions`'s three `matched_*` columns (caught by `core.unguarded_org_fks()`, the same structural check `db:verify:tenancyguards` runs).
+
+No other row in this audit changed.
 
 ---
 
