@@ -21,6 +21,42 @@ This is reflected as `BROKEN` in the JSON for steps 2.7, 2.10, 4.25, 4.26 — no
 
 ---
 
+## ✅ Addendum, 2026-09-29 — steps 1.27, 1.28 closed; 1.32's finding was stale
+
+**1.27 (Discount audit trail) and 1.28 (Payment structure catalog) are now `IMPLEMENTED`.** New migrations
+`supabase/migrations/20261030100000_a_discount_is_a_decision_not_a_mutation.sql` and
+`supabase/migrations/20261030110000_a_payment_structure_is_chosen_by_name.sql`:
+
+- **1.27** — `sales.discount_decisions` records original amount, discount amount/percentage, reason, requester
+  (agent xor human), approver (human only, and only when one decided), an optional expiry, and the final amount —
+  exactly the five fields this audit found missing. A human-requested discount at or below the organization's
+  configured `negotiation_max_discount_pct` settles autonomously (the same authority a human calling
+  `sales.set_proposal_pricing` already had, now audited and capped); everything else — an agent-requested discount
+  at any size, a discount above the cap, or any discount while no cap is configured — raises a real request through
+  the **existing** approvals engine (`subject_type = 'discount_decision'`, joining the same two CHECK constraints
+  `ui_version` and `handover` were added to). A CHECK constraint
+  (`discount_decisions_no_autonomous_agent`) refuses an agent-requested row from ever being recorded as autonomous,
+  at the DDL level, matching the standing rule in `src/modules/agents/tools.ts` and Business Rules §2.7 that there
+  is no pricing tool for an agent at any autonomy level.
+- **1.28** — extended the pre-existing `sales.payment_structures` catalog (G-196, an owner-authored per-organization
+  named schedule set, added before this audit and already following the "owner pre-authors, agent applies, never
+  invents" discipline) with a closed `kind` column (`standard`/`lower_advance`/`prototype_first`/`split`/`deferral`
+  — Doc 07's own vocabulary) rather than building a second, parallel catalog table, and one
+  active-structure-per-kind constraint. `sales.apply_payment_structure_kind` is the first function that ever writes
+  `document.paymentStructure` onto a quotation — `quotation-standards.ts` has only ever read that field.
+- Both were verified live against a real Postgres (`scripts/apply-migrations-locally.sh`, then
+  `scripts/verify-discount-and-payment-structure-local.sql` driven by `psql`), including red-proofs of the
+  DDL-level guards, and have static regression coverage
+  (`tests/a-discount-is-a-decision-not-a-mutation.test.ts`, `tests/a-payment-structure-is-chosen-by-name.test.ts`).
+
+**1.32's `blocker` was already stale at the moment this audit was written**, at the exact commit (`aa9d59a`) it
+names as its own ref: `app/api/jobs/run/workflows.ts`'s `sales:reworkQuotation` workflow already reads
+`negotiation_max_rounds` and hard-stops before `objection.round` exceeds it, handing the conversation to a person
+rather than redrafting again — this is covered by `tests/the-limits-the-owner-can-set.test.ts`. No code change was
+needed for 1.32; only this audit's record of it was corrected.
+
+---
+
 ## 1. Completion, test, and production-readiness percentages
 
 These are weighted estimates (COMPLETE=1.0, PARTIAL=0.5, MISSING/BROKEN/UNKNOWN=0), synthesized from the four sub-audits — not a re-verification of every individual step by this compiling pass. Treat as directional, not exact.
@@ -48,7 +84,7 @@ These are weighted estimates (COMPLETE=1.0, PARTIAL=0.5, MISSING/BROKEN/UNKNOWN=
 
 - ~~Web-form/email/Facebook-lead-form inbound ingestion (1.1) — only WhatsApp is wired.~~ **Closed.** `crm.ingest_web_form_lead` / `crm.ingest_email_lead` / `crm.ingest_facebook_lead` (migration `20260929130000`) give each channel the same atomic, idempotent SQL function WhatsApp has, with thin TS routes (`app/api/leads/web-form`, `app/api/webhooks/email`, `app/api/webhooks/facebook-leads`) calling them via RPC — not a shared JS helper. The email provider shape is a stated ASSUMPTION (Mailgun's documented Inbound Route signature scheme); no real provider is configured anywhere in this codebase to verify against.
 - ~~Automatic identity-resolution/dedup classification (1.2) — only manual same-contact merge exists.~~ **(this change)** — built: `crm.classify_lead_identity` writes one `crm.identity_resolutions` row per lead (NEW_IDENTITY/EXISTING_LEAD/EXISTING_CLIENT/REACTIVATED_LEAD/POSSIBLE_DUPLICATE_REVIEW). Never auto-merges; POSSIBLE_DUPLICATE_REVIEW is a human-reviewable state (`crm.review_identity_resolution`). See §14 below.
-- Discount audit trail (1.27) and payment-structure catalog (1.28) — neither exists at all.
+- ~~Discount audit trail (1.27) and payment-structure catalog (1.28) — neither exists at all.~~ **Closed 2026-09-29** — see the addendum below.
 - Invoice-to-client communication (2.8) — invoices are generated but nothing pushes them to the client; portal is pull-only.
 - Kickoff package as a structured artifact (2.22) — only a free-text evidence reference is captured.
 - User flow mapping (3.4) and UI/UX direction analysis as a distinct step (3.5) — both entirely absent.
@@ -108,7 +144,7 @@ The most important cross-cutting finding from the Phase 1 audit: **there is a re
 
 - See Critical Blockers #1 and #2 above — these are the dominant finance findings.
 - Payment-verification outcome vocabulary is incomplete: only `VERIFIED`/`REJECTED`/`MISMATCH` exist; `NEEDS_MORE_INFO` and `PARTIAL` do not exist at all; `DUPLICATE` exists only as an insert-time constraint error, not a verification-time decision (2.10).
-- Discount audit trail and payment-structure catalog are both entirely missing (1.27, 1.28).
+- ~~Discount audit trail (1.27) and payment-structure catalog (1.28) — neither exists at all.~~ **Closed 2026-09-29** — see the addendum below.
 
 ## 13. UI/prototype gaps
 

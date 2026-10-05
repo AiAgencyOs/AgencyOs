@@ -110,6 +110,25 @@ export function isLiveProposal(status: ProposalStatus): boolean {
 }
 
 /**
+ * Business Phase 1-4 audit step 1.28. Matches the `kind` CHECK on
+ * `sales.payment_structures` (20260929110000) and the vocabulary
+ * `sales.apply_payment_structure_kind` accepts — Doc 07's own names for the
+ * shapes a negotiation asks for, not invented here. A negotiation may select
+ * a structure only by one of these names, resolving to whichever ONE the
+ * owner has authored active under it (never more than one, per
+ * payment_structures_active_kind_key) — never a free-form schedule.
+ */
+export const PAYMENT_STRUCTURE_KINDS = [
+  'standard',
+  'lower_advance',
+  'prototype_first',
+  'split',
+  'deferral',
+] as const;
+
+export type PaymentStructureKind = (typeof PAYMENT_STRUCTURE_KINDS)[number];
+
+/**
  * Whether a quote may still be accepted today.
  *
  * §15's validity period. Mirrors the check in `record_proposal_response`,
@@ -143,6 +162,39 @@ export const setProposalPricingSchema = z.object({
   proposalId: z.uuid(),
   discountMinor: z.number().int().nonnegative().max(1_000_000_000_000).optional(),
   taxMinor: z.number().int().nonnegative().max(1_000_000_000_000).optional(),
+  /**
+   * Business Phase 1-4 audit step 1.27: a discount INCREASE is a decision now
+   * (sales.record_discount_decision), and a decision needs a reason. Optional
+   * here because a caller lowering the discount, or leaving it unchanged
+   * while only setting tax, is not making a concession.
+   */
+  reason: z.string().trim().min(3).max(500).optional(),
+});
+
+/**
+ * Records a discount decision directly — the door step 1.27 asks for, used
+ * by a human today (there is no agent tool bound to it; see
+ * `src/modules/agents/tools.ts`'s own "no pricing tool" note). Requesting as
+ * an agent goes through the job workflow's own admin-client call, not this
+ * web-facing schema — the same split `draftProposal` and its agent caller
+ * already have.
+ */
+export const recordDiscountDecisionSchema = z.object({
+  proposalId: z.uuid(),
+  discountMinor: z.number().int().positive().max(1_000_000_000_000),
+  reason: z.string().trim().min(3).max(500),
+  expiry: z.iso.date().optional(),
+});
+
+/**
+ * Applies one of the owner's named payment structures to a draft quotation
+ * (Business Phase 1-4 audit step 1.28). `kind` is the only choice this schema
+ * exposes — never a milestone list — so a caller cannot propose a schedule
+ * the owner did not author.
+ */
+export const applyPaymentStructureKindSchema = z.object({
+  proposalId: z.uuid(),
+  kind: z.enum(PAYMENT_STRUCTURE_KINDS),
 });
 
 export const submitProposalSchema = z.object({
@@ -410,6 +462,8 @@ export type SetOpportunityTermsInput = z.infer<typeof setOpportunityTermsSchema>
 export type DraftProposalInput = z.infer<typeof draftProposalSchema>;
 export type AddProposalItemInput = z.infer<typeof addProposalItemSchema>;
 export type SetProposalPricingInput = z.infer<typeof setProposalPricingSchema>;
+export type RecordDiscountDecisionInput = z.infer<typeof recordDiscountDecisionSchema>;
+export type ApplyPaymentStructureKindInput = z.infer<typeof applyPaymentStructureKindSchema>;
 export type SubmitProposalInput = z.infer<typeof submitProposalSchema>;
 export type SendProposalInput = z.infer<typeof sendProposalSchema>;
 export type RecordProposalResponseInput = z.infer<typeof recordProposalResponseSchema>;
