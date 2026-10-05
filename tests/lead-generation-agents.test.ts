@@ -91,8 +91,13 @@ describe('lead generation - the acquisition agents (ADM-112)', () => {
     for (const t of Object.keys(MAPS_TO)) assert.ok(bound.has(t), `${t} is mapped but bound to no agent`);
   });
 
-  test('nothing here dispatches: the ADM-99 boundary still admits the four read-only tools and no acquisition tool', () => {
-    for (const t of Object.keys(MAPS_TO)) assert.ok(!dispatch.includes(`'${t}'`), `${t} is dispatchable`);
-    for (const t of ['crm.readLead', 'crm.readConversation', 'memory.recall', 'projects.readScope']) assert.ok(dispatch.includes(t), t);
+  test('ADM-113: the acquisition tools dispatch, the original four still do, and nothing else was added', () => {
+    assert.match(dispatch, /\.\.\.ACQUISITION_TOOL_NAMES/);
+    for (const t of ['crm.readLead', 'crm.readConversation', 'memory.recall', 'projects.readScope']) assert.ok(dispatch.includes(`'${t}'`), t);
+    // the ten that write and were never turned on stay refused
+    for (const t of ['memory.remember', 'crm.addLeadNote', 'crm.sendClientMessage', 'finance.generateInvoice', 'approvals.requestApproval', 'sales.draftProposal']) {
+      const list = dispatch.slice(dispatch.indexOf('const DISPATCHABLE'), dispatch.indexOf('];', dispatch.indexOf('const DISPATCHABLE')));
+      assert.ok(!list.includes(`'${t}'`), `${t} became dispatchable`);
+    }
   });
 });

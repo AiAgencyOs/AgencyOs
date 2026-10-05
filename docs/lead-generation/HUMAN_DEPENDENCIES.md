@@ -56,6 +56,17 @@ an approved launch, deploy, post or proposal waits and a person is told to do it
 10. **Review the governance defaults** (Lead generation › Settings › Rules). Launches, budget increases, targeting changes,
     publishing, proposals, page deploys and profile updates are **never automatic** and cannot be made so.
 
+## The agents: what the owner switches on (ADM-112, ADM-113)
+
+The four acquisition agents (Ad Manager, Email Outreach, Social Media, B2B Opportunity) are installed **disabled** and work as drafters. To use one:
+
+1. **A funded model key** (Settings > AI providers). Without it a request fails with "no usable key" and says so on the channel page; nothing is faked.
+2. **Enable the agent** (AI Workforce > Agents). A disabled agent is refused work at request time.
+3. **Allow its tools** (the agent's permissions on the same page). The default is *deny*: an agent whose tool is not allowed reports "the owner has not allowed it" and the refusal is audited. The tools are listed in `registry.ts`; allow only what you want that agent to do.
+4. An admin then asks it for work from the channel tab (**Ask the agent**). It drafts, scores and checks, and **submits for approval**; a person approves in the usual place. It cannot send, publish, launch, deploy, price, approve or pause.
+
+Nothing here has been run against a real model. It was run end to end with a scripted stand-in model on a local stack, which proves the wiring and the refusals, not the quality of anything a model writes.
+
 ## What is safe to do now
 
 Everything in the left-hand column of the table above can be used today with no provider: it records, checks, approves,

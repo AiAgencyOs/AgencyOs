@@ -24,6 +24,8 @@ import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = join(here, '..', 'src');
+/** The route handlers are our own source too; a test that runs one needs its extensionless relative imports resolved. */
+const appDir = join(here, '..', 'app');
 
 /**
  * Next's server entry points, which do not resolve outside a Next build.
@@ -81,7 +83,7 @@ registerHooks({
       context.parentURL?.startsWith('file:')
     ) {
       const parent = dirname(fileURLToPath(context.parentURL));
-      if (parent.startsWith(src)) {
+      if (parent.startsWith(src) || parent.startsWith(appDir)) {
         const found = probe(join(parent, specifier));
         if (found) return nextResolve(pathToFileURL(found).href, context);
       }

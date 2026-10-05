@@ -137,6 +137,31 @@ export async function saveIcp(input: { definition: IcpDefinition; note: string }
   }
 }
 
+/** A person asks one of the four acquisition agents for a piece of work. This queues it; the agent drafts, and a person approves. */
+export async function requestAgentTask(input: { agent: string; task: string }): Promise<Result<{ queued: true }>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('request_agent_task', { p_organization_id: gate.data.organizationId, p_agent: input.agent, p_task: input.task });
+  if (error) return err('INTERNAL', 'Could not queue the task.');
+  switch (first<{ outcome?: string }>(data)?.outcome) {
+    case 'queued':
+      return ok({ queued: true });
+    case 'already_queued':
+      return err('CONFLICT', 'That exact task was already asked today. Change it, or wait for the first to finish.');
+    case 'agent_disabled':
+      return err('CONFLICT', 'This agent is switched off. The owner turns it on under AI Workforce > Agents; until then it does no work.');
+    case 'stopped':
+      return err('CONFLICT', 'The channel is paused or all lead generation is stopped, so the agent is not given work.');
+    case 'invalid':
+      return err('VALIDATION', 'Describe the task in a sentence or two (5 to 3,000 characters).');
+    case 'unknown_agent':
+      return err('VALIDATION', 'That is not one of the lead-generation agents.');
+    default:
+      return err('FORBIDDEN', FORBIDDEN);
+  }
+}
+
 export async function mergeContacts(input: { winner: string; loser: string; reason: string }): Promise<Result<true>> {
   const gate = await managerWithOrg();
   if (!gate.ok) return gate;

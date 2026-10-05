@@ -33,11 +33,11 @@
     ],
     "tables": 287,
     "tablesWithRls": 281,
-    "migrations": 438,
-    "testFiles": 442,
-    "testSuites": 1868,
-    "tests": 8819,
-    "testsPassing": 8819,
+    "migrations": 439,
+    "testFiles": 444,
+    "testSuites": 1870,
+    "tests": 8835,
+    "testsPassing": 8835,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 2,
@@ -7391,6 +7391,15 @@
       "phase": 29,
       "question": "ADM-82 granted thirteen agents and closed the roster. The Lead Generation & Acquisition Implementation Specification names four more (Ad Manager, Email Marketing Outreach, Social Media Marketing, B2B Opportunity) and two shared ones (Scheduler, Quotation Master). Which should exist?",
       "why": "Raised 2026-10-05 when the lead-generation build reached the agents. OWNER DECISION 2026-10-05 - GRANTED: 'do it according to pdf'. WHAT WAS BUILT: the four named agents (keys ad_manager, email_outreach, social_media, marketplace_opportunity) defined in the registry and installed DISABLED by 20261028100000; Scheduler and Quotation Master are not agents (they are the shared meeting and quotation subtasks) and the landing page belongs to the Ad Manager, as the specification says. 21 tools bound, each naming an existing acquisition action; none sends, publishes, launches, deploys, prices, approves or pauses. WHAT DID NOT CHANGE: ADM-99 (only the four read-only tools dispatch), so the agents cannot yet perform operational work; that needs a funded model key and an ADM-99 decision to dispatch the draft-creating tools. Answered in the same session: email approval stays on the email module's own four-eyes path; `enabled` does not gate email; every marketplace stays at the default (never contact off-platform)."
+    },
+    {
+      "id": "ADM-113",
+      "status": "granted",
+      "decisionStatus": "GRANTED",
+      "blocks": [],
+      "phase": 29,
+      "question": "ADM-99 turned on dispatch for four read-only agent tools and refused every other bound tool. The four acquisition agents (ADM-112) hold twenty-one tools that only read, draft, score, check or ask a person to approve. Which may now dispatch?",
+      "why": "Raised 2026-10-05. OWNER DECISION 2026-10-05 - GRANTED: the reads plus the draft / check / submit-for-approval tools (the owner's recommended option; 'reads only' and 'not now' were the alternatives). WHAT WAS BUILT: handlers for exactly those twenty-one tools in src/modules/acquisition/agent-tools.ts, each an organisation-scoped call to an existing door, stamped agent; one workflow per agent (ads.assist, email.assist, social.assist, marketplace.assist) started by a person from the channel page through crm.request_agent_task; crm.agent_results, a service-role-only read of one organisation's results. WHAT DID NOT CHANGE: ADM-99's original four; every other bound tool (memory.remember, crm.addLeadNote, crm.sendClientMessage, approvals.requestApproval, sales.draftProposal, finance.generateInvoice...) is still refused; no acquisition tool sends, publishes, launches, deploys, prices, approves or pauses, and a price from an agent is refused by the door (ADM-22). The agents are still installed disabled: they need the owner to enable them and a funded model key. Nothing has been run against a real model."
     }
   ],
   "phases": [

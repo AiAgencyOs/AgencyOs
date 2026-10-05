@@ -9,6 +9,7 @@ import {
   cancelHandoffAction,
   decideDuplicateReviewAction,
   mergeContactsAction,
+  askAgentAction,
   saveHandoffSettingsAction,
   saveChannelSettingsAction,
   saveIcpAction,
@@ -172,6 +173,22 @@ export function MergeContactsForm({ a, b }: { a: { id: string; name: string }; b
       <button type="submit" name="keep" value={`${a.id}:${b.id}`} disabled={pending} className={buttonClass('primary')}>Keep {a.name}</button>
       <button type="submit" name="keep" value={`${b.id}:${a.id}`} disabled={pending} className={buttonClass('secondary')}>Keep {b.name}</button>
       <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+export function AskAgentForm({ agent, label }: { agent: string; label: string }) {
+  const [state, action, pending] = useActionState(askAgentAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <input type="hidden" name="agent" value={agent} />
+      <Field label={`What should the ${label} agent do?`} hint="In your own words. It drafts and checks; it cannot send, publish, launch, deploy or price anything.">
+        <textarea name="task" required minLength={5} maxLength={3000} rows={3} className={inputClass} />
+      </Field>
+      <div className="flex items-center gap-3">
+        <button type="submit" disabled={pending} className={buttonClass('primary')}>Ask the agent</button>
+        <FormMessage status={state.status} message={state.message} />
+      </div>
     </form>
   );
 }

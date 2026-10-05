@@ -848,5 +848,54 @@
     "nth": 1
    }
   ]
+ },
+ "agents": {
+  "migration": "supabase/migrations/20261029100000_an_agent_reads_the_results_of_its_own_organisation.sql",
+  "verifier": "scripts/verify-acquisition-agents.sql",
+  "cases": [
+   {
+    "name": "the agent results door opens to a signed-in session",
+    "find": "grant execute on function crm.agent_results(uuid, integer) to service_role;",
+    "replace": "grant execute on function crm.agent_results(uuid, integer) to service_role, authenticated;",
+    "nth": 1
+   },
+   {
+    "name": "an agent may set a price on a proposal",
+    "migration": "supabase/migrations/20261024100000_independent_review_findings_closed.sql",
+    "find": "(p_price_minor is not null and (p_by_type <> 'human' or (select auth.uid()) is null))",
+    "replace": "false",
+    "nth": 1
+   },
+   {
+    "name": "anyone signed in can ask an agent for work",
+    "find": "  if not crm._social_caller_ok(p_organization_id, true) then return query select 'forbidden'::text, null::uuid; return; end if;\n  if (select auth.uid()) is not null and not coalesce((select core.is_internal()), false) then return query select 'forbidden'::text, null::uuid; return; end if;\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "a disabled agent is queued work",
+    "find": "  if v_enabled is distinct from true then return query select 'agent_disabled'::text, null::uuid; return; end if;\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "a stopped channel is given work",
+    "find": "  if v_open = 0 then return query select 'stopped'::text, null::uuid; return; end if;\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "any agent can be asked",
+    "find": "  if v_kind is null then return query select 'unknown_agent'::text, null::uuid; return; end if;\n",
+    "replace": "  if v_kind is null then v_kind := 'x.assist'; v_channels := array['email']; end if;\n",
+    "nth": 1
+   },
+   {
+    "name": "the same task is queued twice",
+    "find": "v_kind || ':' || current_date::text || ':' ||",
+    "replace": "v_kind || ':' || gen_random_uuid()::text || ':' ||",
+    "nth": 1
+   }
+  ]
  }
 }

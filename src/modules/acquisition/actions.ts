@@ -9,7 +9,7 @@ import { QUALIFICATION_FACTORS, type QualificationFactor } from './qualification
 import type { FactSource } from './email-engine';
 import { ACQUISITION_CHANNELS, ICP_LIST_KEYS, buildIcpDefinition, type AcquisitionChannel } from './schema';
 import { registerIntegration, saveAcquisitionPolicy, setIntegrationState, storeConnectorSecret, testConnection } from './integrations';
-import { mergeContacts, checkDraft, createTrackedLink, recordProspectFact, scoreProspect, recheckLanding, recordAdChangeDone, recordAdFigures, recordAdLaunched, recordLandingUploaded, recordPosted, linkB2bLead, checkB2bProfile, checkB2bProposal, decideB2bOpportunity, importB2bOpportunity, readyB2b, recordB2bOutcome, recordB2bProfileApplied, recordB2bSent, saveB2bProfile, saveB2bProposal, saveB2bRule, saveB2bSettings, submitB2bProfile, submitB2bProposal, checkLandingVersion, retireLandingPage, saveLandingVersion, submitLandingVersion, checkAdVersion, requestAdChange, saveAdPlan, submitAdVersion, activateSocialStrategy, cancelContentVersion, createContentDraft, reviewContentVersion, scheduleContentVersion, submitContentForApproval, blockProspect, liftProspectBlock, saveQualificationModel, cancelSubtask, cancelHandoff, decideDuplicateReview, saveChannelSettings, saveHandoffSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
+import { mergeContacts, requestAgentTask, checkDraft, createTrackedLink, recordProspectFact, scoreProspect, recheckLanding, recordAdChangeDone, recordAdFigures, recordAdLaunched, recordLandingUploaded, recordPosted, linkB2bLead, checkB2bProfile, checkB2bProposal, decideB2bOpportunity, importB2bOpportunity, readyB2b, recordB2bOutcome, recordB2bProfileApplied, recordB2bSent, saveB2bProfile, saveB2bProposal, saveB2bRule, saveB2bSettings, submitB2bProfile, submitB2bProposal, checkLandingVersion, retireLandingPage, saveLandingVersion, submitLandingVersion, checkAdVersion, requestAdChange, saveAdPlan, submitAdVersion, activateSocialStrategy, cancelContentVersion, createContentDraft, reviewContentVersion, scheduleContentVersion, submitContentForApproval, blockProspect, liftProspectBlock, saveQualificationModel, cancelSubtask, cancelHandoff, decideDuplicateReview, saveChannelSettings, saveHandoffSettings, saveIcp, saveTargetService, seedAcquisitionDefaults, setChannelPause } from './service';
 
 const text = (f: FormData, n: string) => String(f.get(n) ?? '').trim();
 const BASE = '/lead-generation';
@@ -99,6 +99,13 @@ export async function decideDuplicateReviewAction(_p: FormState, f: FormData): P
   if (!r.ok) return { status: 'error', message: r.error.message };
   refresh();
   return { status: 'success', message: 'Recorded.' };
+}
+
+export async function askAgentAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await requestAgentTask({ agent: text(f, 'agent'), task: text(f, 'task') });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  refresh();
+  return { status: 'success', message: 'Queued. The agent drafts; nothing is sent or published, and you approve what it prepares.' };
 }
 
 export async function mergeContactsAction(_p: FormState, f: FormData): Promise<FormState> {

@@ -8860,6 +8860,14 @@ export type Database = {
         Args: { p_organization_id: string; p_signals: Json; p_source?: string }
         Returns: { outcome: string | null; contact_id: string | null; review_id: string | null; created: boolean | null }[]
       }
+      request_agent_task: {
+        Args: { p_agent: string; p_organization_id: string; p_task: string }
+        Returns: { outcome: string | null; job_id: string | null }[]
+      }
+      agent_results: {
+        Args: { p_days?: number; p_organization_id: string }
+        Returns: { channel: string | null; leads: number | null; qualified: number | null; won: number | null; spend_minor: number | null; cost_per_qualified_minor: number | null; insufficient_data: boolean | null }[]
+      }
       merge_contacts: {
         Args: { p_loser: string; p_organization_id: string; p_reason: string; p_winner: string }
         Returns: { outcome: string | null }[]

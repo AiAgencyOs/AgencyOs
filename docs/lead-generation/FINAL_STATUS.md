@@ -55,13 +55,13 @@ Status words: **BUILT** (works with no provider), **ASSISTED** (a person does th
 | B2B: marketplace rules (default never off-platform), scored opportunities, proposals (a person prices), profiles, handoff gate | BUILT; sending is **ASSISTED** | slice 10. Marketplace connectors, automated discovery, AI proposal writer **NOT BUILT** |
 | Results from the CRM by first touch with last-touch/touched-by alongside, goals, failures, advice | BUILT | slice 11 + `/lead-generation/performance`. Scheduled digests **NOT BUILT** (multi-touch models and weekly trends are built) |
 | Roles/RLS/audit/tenancy | BUILT | forced RLS on every new table; 19 review findings closed; `verify-acquisition-hardening` |
-| The four acquisition agents (Ad Manager, Email Outreach, Social Media, B2B Opportunity) | **DEFINED, DISABLED, CANNOT YET WORK** | ADM-112 (owner, 2026-10-05): defined in `registry.ts`, installed disabled by `20261028100000`, 21 tools bound that each name an existing acquisition action, none able to send/publish/launch/deploy/price/approve. They need a funded model key and an ADM-99 decision to dispatch the draft-creating tools; today only four read-only tools dispatch |
+| The four acquisition agents (Ad Manager, Email Outreach, Social Media, B2B Opportunity) | **BUILT AS DRAFTERS, DISABLED, NEVER RUN ON A REAL MODEL** | ADM-112 / ADM-113 (owner, 2026-10-05). An admin asks an agent for work from the channel page (`crm.request_agent_task`); it reads results and drafts, scores, checks and submits for approval through 21 tools that call existing doors, stamped `agent`. None can send, publish, launch, deploy, price, approve or pause, so it cannot do the platform act itself: that stays the engine's governed execution or a person by hand. Needs the owner to enable each agent and a funded model key; `verify-acquisition-agents`, 7 red-proofs, and tests against a stand-in model prove the order and the refusals, **not the quality of anything a real model writes** |
 
 ## Decisions
 
 **Made by the owner on 2026-10-05**
 
-1. **Agents (ADM-112).** Grant the agents the specification names (four; Scheduler and Quotation Master stay shared). Installed disabled.
+1. **Agents (ADM-112, ADM-113).** Grant the agents the specification names (four; Scheduler and Quotation Master stay shared), installed disabled; and let their reads and their draft / check / submit-for-approval tools dispatch (ADM-99 widened for exactly those 21).
 2. **Email approval path.** Stays on the email module's own four-eyes path; not moved to the Approval Center.
 3. **Whether `enabled` gates email.** It does not (a running campaign is never stopped by a switch that defaults to off; the four kill switches stop it).
 4. **Marketplace terms.** Every marketplace stays at the default: never contact off the platform, a person does everything.
@@ -69,7 +69,8 @@ Status words: **BUILT** (works with no provider), **ASSISTED** (a person does th
 **Still open, and the owner's**
 
 - A funded model key (Settings > AI providers).
-- An ADM-99 decision to dispatch the acquisition agents' draft-creating tools. Until then they cannot do operational work; the specification's "agents perform actual operational work" is **not met**.
+- Enabling each agent (AI Workforce > Agents). They are installed disabled and `crm.request_agent_task` refuses work for a disabled agent.
+- The specification's "agents perform actual operational work" is met only as far as drafting: the act on the platform (launch, publish, deploy, send, submit to a marketplace) needs a connector or a person, by design.
 - Provider credentials, entered in the app (`HUMAN_DEPENDENCIES.md`).
 
 ## Known limits, stated plainly

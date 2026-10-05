@@ -4,11 +4,11 @@ import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can, hasRole } from '@/lib/authz/permissions';
-import { listOutreachProspects, listB2bOpportunities, listB2bProfiles, readB2bOutcomes, readB2bSetup, listLandingPages, listPortfolioChoices, listAdCampaigns, listCampaignHealth, readAdOutcomes, readAdRecommendations, listActiveBlocks, listContentQueue, listRecentQualifications, listSocialStrategies, listTargetServices, readSocialPerformance, readChannelSettings, readEmailFunnel, readQualificationModel } from '@/modules/acquisition/queries';
+import { listOutreachProspects, listB2bOpportunities, listB2bProfiles, readB2bOutcomes, readB2bSetup, listLandingPages, listPortfolioChoices, listAdCampaigns, listCampaignHealth, readAdOutcomes, readAdRecommendations, listActiveBlocks, listContentQueue, listRecentQualifications, listSocialStrategies, listTargetServices, readSocialPerformance, readChannelSettings, listAgentRuns, readEmailFunnel, readQualificationModel } from '@/modules/acquisition/queries';
 import { AD_PLATFORM_LABEL, CHANGE_LABEL, HEALTH_WORDS, RECOMMENDATION_WORDS, VERSION_STATE_WORDS, planProblemWords, type AdPlatform } from '@/modules/acquisition/ad-vocabulary';
 import { OBJECTIVE_LABEL, FORMAT_LABEL, PLATFORM_LABEL, STATUS_WORDS, reviewWords, type SocialPlatform } from '@/modules/acquisition/social-vocabulary';
 import { disqualifierWords, FACTOR_LABEL, FUNNEL_LABEL, FUNNEL_STAGES, QUALIFICATION_FACTORS } from '@/modules/acquisition/qualification-vocabulary';
-import { CHANNEL_LABEL, ENGINE_STATUS, channelFromSlug } from '@/modules/acquisition/schema';
+import { CHANNEL_AGENT, CHANNEL_LABEL, ENGINE_STATUS, channelFromSlug } from '@/modules/acquisition/schema';
 import { Badge, Callout, Card, CardBody, CardHeader, EmptyState, PageHeader, PermissionDenied, Stat, StatGrid } from '@/ui';
 
 import { BlockForm, CheckDraftForm, LiftBlockForm, QualificationModelForm, RecordFactForm, ScoreProspectForm } from '../email-forms';
@@ -18,7 +18,7 @@ import { LANDING_STATE_WORDS, VERIFICATION_CHECK_LABEL, landingProblemWords } fr
 import { CheckLandingButton, LandingForm, RecheckLandingButton, RecordUploadedForm, RetireLandingForm, SubmitLandingButton } from '../landing-forms';
 import { AdChangeDoneForm, AdChangeForm, AdFiguresForm, AdPlanForm, CheckAdButton, RecordLaunchForm, SubmitAdButton } from '../ads-forms';
 import { ActivateStrategyButton, CancelVersionForm, NewDraftForm, RecordPostedForm, ReviewButton, ScheduleForm, SubmitButton } from '../social-forms';
-import { ChannelPauseForm, ChannelSettingsForm } from '../forms';
+import { AskAgentForm, ChannelPauseForm, ChannelSettingsForm } from '../forms';
 
 export const metadata: Metadata = { title: 'Lead generation channel' };
 
@@ -33,6 +33,8 @@ export default async function ChannelPage({ params }: { params: Promise<{ channe
   const { seeded, channels } = await readChannelSettings();
   const c = channels.find((x) => x.channel === channel)!;
   const engine = ENGINE_STATUS[channel];
+  const agentFor = CHANNEL_AGENT[channel];
+  const agentRuns = mayManage ? await listAgentRuns(agentFor.key) : [];
   const isOwner = hasRole(context, 'owner');
   const social = channel === 'social' ? await Promise.all([listContentQueue(), listSocialStrategies(), readSocialPerformance(), listTargetServices()]) : null;
   const isAds = channel === 'meta_ads' || channel === 'google_ads';
@@ -77,6 +79,27 @@ export default async function ChannelPage({ params }: { params: Promise<{ channe
         <Card>
           <CardHeader title="Pause" description="The emergency brake for this channel. It is checked when work runs, not when it is queued." />
           <CardBody><ChannelPauseForm key={`${channel}-${c.paused}`} channel={channel} paused={c.paused} reason={c.pauseReason} /></CardBody>
+        </Card>
+      ) : null}
+
+      {mayManage && seeded ? (
+        <Card>
+          <CardHeader title={`${agentFor.label} agent`} description="Asks the agent for a piece of work. It works only through tools that draft, check and ask a person to approve; what it prepares appears in this tab as a draft, and nothing reaches anyone until the usual approval. The owner switches the agent on and allows each of its tools under AI Workforce > Agents; until then it reports what it was not allowed to do." />
+          <CardBody>
+            <AskAgentForm agent={agentFor.key} label={agentFor.label} />
+            {agentRuns.length > 0 ? (
+              <ul className="mt-4 flex flex-col gap-3 border-t border-line pt-4 text-[13px]">
+                {agentRuns.map((r) => (
+                  <li key={r.id} className="flex flex-col gap-1">
+                    <span className="text-muted">{r.status}{r.startedAt ? ` · ${new Date(r.startedAt).toLocaleString('en-IN')}` : ''}</span>
+                    {r.summary ? <span>{r.summary}</span> : null}
+                    {r.actions.length > 0 ? <ul className="ml-4 list-disc text-muted">{r.actions.map((a, n) => <li key={n}>{a}</li>)}</ul> : null}
+                    {r.error ? <span className="text-danger">{r.error}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </CardBody>
         </Card>
       ) : null}
 

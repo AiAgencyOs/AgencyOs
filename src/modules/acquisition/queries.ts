@@ -144,6 +144,19 @@ export async function listConfirmedUnmerged(limit = 50): Promise<DuplicateReview
     .map((r) => ({ id: r.id, reason: r.reason, createdAt: r.created_at, signals: (r.signals ?? {}) as Record<string, unknown>, a: view(r.contact_a), b: view(r.contact_b) }));
 }
 
+export type AgentRunView = { id: string; status: string; startedAt: string | null; finishedAt: string | null; summary: string | null; actions: string[]; error: string | null };
+
+/** The latest runs of one acquisition agent: what it reported doing, or why it did not. A person reads this before approving what it drafted. */
+export async function listAgentRuns(agentKey: string, limit = 5): Promise<AgentRunView[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('ai').from('agent_runs').select('id, status, started_at, finished_at, output, error').eq('agent_key', agentKey).order('created_at', { ascending: false }).limit(limit);
+  if (error) unreadable('listAgentRuns', error);
+  return (data ?? []).map((r) => {
+    const out = (r.output ?? {}) as { summary?: unknown; actions?: unknown };
+    return { id: r.id, status: r.status, startedAt: r.started_at, finishedAt: r.finished_at, summary: typeof out.summary === 'string' ? out.summary : null, actions: Array.isArray(out.actions) ? out.actions.filter((a): a is string => typeof a === 'string') : [], error: r.error };
+  });
+}
+
 export type IdentitySummary = {
   keys: Record<string, number>;
   touchpointsByChannel: Record<string, number>;
