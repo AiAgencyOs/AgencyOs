@@ -156,6 +156,13 @@ describe('pricing a draft is not blocked by a missing discount policy', () => {
     assert.doesNotMatch(body, /if v_decision\.outcome in \([^)]*'no_policy'/);
   });
 
+  test('an identity-less caller (a job) is named as the sales agent, because the door refuses an agent request that names none', () => {
+    const body = sql.slice(from, to);
+    assert.match(body, /case when \(select auth\.uid\(\)\) is null then 'sales' end,/);
+    // and the door really does refuse an unnamed agent (the other half of why the name is needed)
+    assert.match(sql, /if p_requested_by_agent is null or v_actor is not null then\s+return query select 'no_requester'/);
+  });
+
   test('and the decision is still kept: record_discount_decision cancels it rather than dropping it', () => {
     assert.match(sql, /update sales\.discount_decisions set status = 'cancelled', updated_at = now\(\) where id = v_id;/);
   });

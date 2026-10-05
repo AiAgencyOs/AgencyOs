@@ -590,7 +590,10 @@ begin
       v_discount - coalesce(v_row.discount_minor, 0),
       coalesce(nullif(btrim(p_reason), ''), 'Quotation pricing updated'),
       case when (select auth.uid()) is null then 'agent' else 'human' end,
-      null,
+      -- An identity-less caller (service_role: a job or a workflow) is an agent's request, and the door refuses an agent request that names
+      -- no agent ('no_requester'). Quotation pricing is the sales agent's work, so that is the name it carries; without it EVERY
+      -- discount set by a job was refused, which the quotation verifier found (a 50,000 discount on a draft came back unchanged).
+      case when (select auth.uid()) is null then 'sales' end,
       null
     );
     -- A decision that could not even be recorded (bad input, forbidden
