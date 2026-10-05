@@ -136,3 +136,10 @@ describe('F. the TypeScript surface for recording a discount directly', () => {
     assert.match(SERVICE, /export async function recordDiscountDecision\(/);
   });
 });
+
+describe('the approval a decision raised is a guarded parent too', () => {
+  test('enforce_parent_org covers approval_request_id, as db:verify:tenancyguards requires of every org-scoped foreign key', () => {
+    const sql = readFileSync('supabase/migrations/20261030100000_a_discount_is_a_decision_not_a_mutation.sql', 'utf8');
+    assert.match(sql, /create trigger org_match_discount_decisions_approval\s+before insert or update of approval_request_id, organization_id on sales\.discount_decisions\s+for each row execute function core\.enforce_parent_org\('approval_request_id', 'approvals\.approval_requests'\)/);
+  });
+});

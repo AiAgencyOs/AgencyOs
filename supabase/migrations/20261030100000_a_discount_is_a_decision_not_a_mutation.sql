@@ -175,6 +175,13 @@ create trigger org_match_discount_decisions_proposal
   before insert or update of proposal_id, organization_id on sales.discount_decisions
   for each row execute function core.enforce_parent_org('proposal_id', 'sales.proposals');
 
+-- The approval request this decision raised is a parent row too: without this guard a decision in one organization could point at another
+-- organization's approval (found by db:verify:tenancyguards, which fails any org-scoped foreign key that has no guard).
+drop trigger if exists org_match_discount_decisions_approval on sales.discount_decisions;
+create trigger org_match_discount_decisions_approval
+  before insert or update of approval_request_id, organization_id on sales.discount_decisions
+  for each row execute function core.enforce_parent_org('approval_request_id', 'approvals.approval_requests');
+
 -- No org_match on requested_by_user / approved_by, the same reason
 -- sales.approved_offers.created_by carries none: core.users is global and has
 -- no organization_id to match against. Membership, not the user row, binds a
