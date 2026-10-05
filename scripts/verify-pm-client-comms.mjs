@@ -309,8 +309,11 @@ try {
     let why = '';
     if (!reminded) {
       const t = await tick();
-      const rows = await rest('GET', 'crm', `conversation_messages?external_ref=like.pm:followup:${f.project.id}:*&select=external_ref,delivery,created_at`);
-      why = `sweep ${JSON.stringify(t.json?.onboardingFollowUps)}; reminder rows ${JSON.stringify(rows.json)}; graph sends to this phone ${texts(f.phone).length}`;
+      const msgs = await rest('GET', 'crm', `conversation_messages?conversation_id=eq.${f.conv.id}&select=seq,author_type,created_at,external_ref&order=seq`);
+      const prof = await rest('GET', 'finance', `billing_profiles?project_id=eq.${f.project.id}&select=status,mode`);
+      const ph = await rest('GET', 'projects', `phase_two?project_id=eq.${f.project.id}&select=state`);
+      const org = await rest('GET', 'core', `organizations?id=eq.${ORG}&select=settings,timezone`);
+      why = `sweep ${JSON.stringify(t.json?.onboardingFollowUps)}; now ${new Date().toISOString()}; messages ${JSON.stringify(msgs.json)}; billing profiles ${JSON.stringify(prof.json)}; phase ${JSON.stringify(ph.json)}; org ${JSON.stringify(org.json)}; graph sends to this phone ${texts(f.phone).length}`;
     }
     check(Boolean(reminded), 'a wait of two days is chosen: the reminder goes (we are inside the sending window)', why);
     await ticks(6);
