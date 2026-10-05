@@ -836,6 +836,12 @@
     "find": "   where organization_id = p_organization_id and status = 'open' and (contact_a = p_loser or contact_b = p_loser);",
     "replace": "   where false;",
     "nth": 1
+   },
+   {
+    "name": "merged_into may point at another organisation",
+    "find": "create trigger org_match_contacts_merged_into before insert or update of merged_into_contact_id, organization_id on crm.contacts\n  for each row execute function core.enforce_parent_org('merged_into_contact_id', 'crm.contacts');\n",
+    "replace": "",
+    "nth": 1
    }
   ]
  }

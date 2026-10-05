@@ -90,5 +90,14 @@ set local role authenticated;
 select pg_temp.as_user(:'MADMIN', :'MORG', 'owner');
 select pg_temp.check((select outcome from crm.merge_contacts(:'MORG', :'W', :'L', 'again')) = 'already_merged', 'merging again is refused');
 reset role;
+do $$
+declare refused boolean := false;
+begin
+  begin
+    update crm.contacts set merged_into_contact_id = '00000000-0000-4000-8000-00000000d204', merged_at = now() where id = '00000000-0000-4000-8000-00000000d203';
+  exception when others then refused := true;
+  end;
+  perform pg_temp.check(refused, 'a contact cannot be marked merged into a contact of another organisation');
+end $$;
 select 'ALL CHECKS PASSED' as result;
 rollback;

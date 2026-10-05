@@ -18,6 +18,9 @@ alter table crm.contacts add constraint contacts_reachable_via_check
 alter table crm.contacts drop constraint if exists contacts_merged_is_consistent;
 alter table crm.contacts add constraint contacts_merged_is_consistent
   check ((merged_into_contact_id is null) = (merged_at is null) and merged_into_contact_id is distinct from id);
+drop trigger if exists org_match_contacts_merged_into on crm.contacts;
+create trigger org_match_contacts_merged_into before insert or update of merged_into_contact_id, organization_id on crm.contacts
+  for each row execute function core.enforce_parent_org('merged_into_contact_id', 'crm.contacts');
 create index if not exists contacts_merged_into_idx on crm.contacts (merged_into_contact_id) where merged_into_contact_id is not null;
 
 create or replace function crm.merge_contacts(p_organization_id uuid, p_winner uuid, p_loser uuid, p_reason text)
