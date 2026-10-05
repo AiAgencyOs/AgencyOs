@@ -162,6 +162,17 @@ export async function requestAgentTask(input: { agent: string; task: string }): 
   }
 }
 
+/** An admin turns the weekly autopilot on or off. On: each enabled agent is given a standing weekly task that only drafts for approval. */
+export async function setAcquisitionAutopilot(input: { enabled: boolean }): Promise<Result<{ enabled: boolean }>> {
+  const gate = await managerWithOrg();
+  if (!gate.ok) return gate;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('set_acquisition_autopilot', { p_organization_id: gate.data.organizationId, p_enabled: input.enabled });
+  if (error) return err('INTERNAL', 'Could not save the setting.');
+  const outcome = first<{ outcome?: string }>(data)?.outcome;
+  return outcome === 'saved' ? ok({ enabled: input.enabled }) : err('FORBIDDEN', FORBIDDEN);
+}
+
 export async function mergeContacts(input: { winner: string; loser: string; reason: string }): Promise<Result<true>> {
   const gate = await managerWithOrg();
   if (!gate.ok) return gate;

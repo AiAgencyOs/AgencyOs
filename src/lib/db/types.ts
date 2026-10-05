@@ -6045,6 +6045,33 @@ export type Database = {
         }
         Relationships: []
       }
+      acquisition_autopilot: {
+        Row: {
+          organization_id: string
+          enabled: boolean
+          changed_by: string | null
+          changed_at: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          organization_id: string
+          enabled?: boolean
+          changed_by?: string | null
+          changed_at?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          organization_id?: string
+          enabled?: boolean
+          changed_by?: string | null
+          changed_at?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       acquisition_channels: {
         Row: {
           organization_id: string
@@ -8990,6 +9017,18 @@ export type Database = {
       resolve_identity: {
         Args: { p_organization_id: string; p_signals: Json; p_source?: string }
         Returns: { outcome: string | null; contact_id: string | null; review_id: string | null; created: boolean | null }[]
+      }
+      set_acquisition_autopilot: {
+        Args: { p_enabled: boolean; p_organization_id: string }
+        Returns: { outcome: string | null }[]
+      }
+      run_acquisition_autopilot: {
+        Args: { p_now?: string }
+        Returns: { organizations: number | null; queued: number | null }[]
+      }
+      run_acquisition_digest: {
+        Args: { p_now?: string }
+        Returns: { organizations: number | null; told: number | null }[]
       }
       request_agent_task: {
         Args: { p_agent: string; p_organization_id: string; p_task: string }
