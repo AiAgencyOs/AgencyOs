@@ -14,6 +14,7 @@ let blocked: string | null = null;
 let modelAnswer: unknown = { summary: 'Drafted one post and submitted it for approval.', actions: ['draft v-1'] };
 let offered: string[] = [];
 let toolResults: { name: string; ok: boolean }[] = [];
+let roundsAsked: number | undefined;
 
 mock.module('../app/api/jobs/run/agent-run.ts', {
   namedExports: {
@@ -22,8 +23,9 @@ mock.module('../app/api/jobs/run/agent-run.ts', {
     finishRun: async (_a: unknown, _r: unknown, status: string) => { events.push(`finishRun:${status}`); },
     succeedRun: async () => { events.push('succeedRun'); },
     failJob: async (_a: unknown, _j: unknown, reason: string) => { events.push(`failJob:${reason}`); },
-    callModelWithTools: async (_ctx: unknown, _spec: unknown, _msgs: unknown, tools: { name: string }[], _run: unknown, dispatch: (c: { name: string; input: unknown }) => Promise<{ ok: boolean }>) => {
+    callModelWithTools: async (_ctx: unknown, spec: { maxToolRounds?: number }, _msgs: unknown, tools: { name: string }[], _run: unknown, dispatch: (c: { name: string; input: unknown }) => Promise<{ ok: boolean }>) => {
       events.push('model');
+      roundsAsked = spec.maxToolRounds;
       offered = tools.map((t) => t.name);
       for (const t of [...tools.map((x) => x.name), 'crm.sendClientMessage', 'approvals.requestApproval']) {
         const r = await dispatch({ name: t, input: {} });
@@ -94,6 +96,7 @@ describe('lead generation - an acquisition agent runs (ADM-113)', () => {
     await wf('ads.assist').run(ctxFor('ad_manager', 'Audit the last month and draft a Meta campaign.'));
     assert.ok(offered.includes('ads.draftCampaign') && offered.includes('acquisition.readResults'));
     assert.ok(!offered.includes('crm.sendClientMessage') && !offered.includes('memory.remember'));
+    assert.equal(roundsAsked, 10, 'read, draft, check, submit and answer need more than the default four rounds');
     for (const t of offered) assert.ok(events.includes(`policy:${t}`), `${t} skipped the policy`);
     assert.deepEqual(toolResults.filter((t) => t.name === 'crm.sendClientMessage' || t.name === 'approvals.requestApproval').map((t) => t.ok), [false, false]);
     assert.ok(toolResults.filter((t) => offered.includes(t.name)).every((t) => t.ok));

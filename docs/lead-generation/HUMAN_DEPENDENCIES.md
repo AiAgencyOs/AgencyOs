@@ -65,7 +65,7 @@ The four acquisition agents (Ad Manager, Email Outreach, Social Media, B2B Oppor
 3. **Allow its tools** (the agent's permissions on the same page). The default is *deny*: an agent whose tool is not allowed reports "the owner has not allowed it" and the refusal is audited. The tools are listed in `registry.ts`; allow only what you want that agent to do.
 4. An admin then asks it for work from the channel tab (**Ask the agent**). It drafts, scores and checks, and **submits for approval**; a person approves in the usual place. It cannot send, publish, launch, deploy, price, approve or pause.
 
-Nothing here has been run against a real model. It was run end to end with a scripted stand-in model on a local stack, which proves the wiring and the refusals, not the quality of anything a model writes.
+It has been run once on a real model (OpenRouter, `openai/gpt-5-mini`) on a local stack: the Social Media agent read the queue, drafted a LinkedIn post, ran the review, redrafted to clear a warning, and submitted the result for approval, with an honest report. That is one run of one agent; the other three have been run only against a scripted stand-in model. Two things the owner does in the Provider Manager first: add the OpenRouter key, and **enable the model** (discovered OpenRouter models are listed disabled, and a run on a disabled model fails with "model ... is disabled").
 
 ## What is safe to do now
 

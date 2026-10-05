@@ -44,6 +44,7 @@ const RULES = [
   'Submitting asks a person to approve that exact version; it is not approval. Submit only a version whose check passed, and say what is waiting for them.',
   'Never state a price, a discount or a guarantee. Never invent a portfolio item, a result, a number or a fact: use only what the tools returned or what the person wrote in the task.',
   'If the task cannot be done with what the tools show, return a summary that says what is missing. An honest "nothing to do" is a real answer.',
+  'Read the existing queue or list first. If it already holds your own draft for this same task, report that one instead of drafting another: a retried job must not leave duplicates.',
   'Finish with the report: a short summary, and one line per change you made, each with the id the tool returned.',
 ].join(' ');
 
@@ -131,7 +132,8 @@ function workflow(jobKind: string, agentKey: AgentKey): AgentWorkflow {
 
       const call = await callModelWithTools(
         ctx,
-        wf,
+        // read, draft, review, submit and then answer is five turns at the least; ten leaves room for one fix-and-recheck
+        { ...wf, maxToolRounds: 10 },
         [{
           role: 'user',
           content: [
