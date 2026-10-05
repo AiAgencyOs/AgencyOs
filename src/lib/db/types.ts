@@ -8860,6 +8860,10 @@ export type Database = {
         Args: { p_organization_id: string; p_signals: Json; p_source?: string }
         Returns: { outcome: string | null; contact_id: string | null; review_id: string | null; created: boolean | null }[]
       }
+      run_acquisition_digest: {
+        Args: { p_now?: string }
+        Returns: { organizations: number | null; told: number | null }[]
+      }
       request_agent_task: {
         Args: { p_agent: string; p_organization_id: string; p_task: string }
         Returns: { outcome: string | null; job_id: string | null }[]

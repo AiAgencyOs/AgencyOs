@@ -308,6 +308,15 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    * since the ask. Sent through the same chokepoint as every client message.
    */
   const onboardingFollowUps = await runOnboardingFollowUps(admin);
+
+  /**
+   * The week in lead generation, told once per organisation per ISO week as an info alert. Idempotent (the alert fingerprint carries the
+   * week, in any state), so running it each tick costs one cheap pass and cannot repeat itself. A failure is logged and ignored.
+   */
+  const digest = await admin.schema('crm').rpc('run_acquisition_digest');
+  if (digest.error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `acquisition digest: ${digest.error.message}` }));
+  }
   if (phaseTwoStates.error) {
     console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `phase two states: ${phaseTwoStates.error.message}` }));
   }

@@ -897,5 +897,35 @@
     "nth": 1
    }
   ]
+ },
+ "digest": {
+  "migration": "supabase/migrations/20261031100000_the_week_in_lead_generation_is_told_once.sql",
+  "verifier": "scripts/verify-acquisition-digest.sql",
+  "cases": [
+   {
+    "name": "the week is told again after it was acknowledged",
+    "find": "    if exists (select 1 from core.alerts a where a.organization_id = o.id and a.fingerprint = v_fp) then continue; end if;\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "a quiet organisation is told anyway",
+    "find": "    if v_text = '' and v_wait = 0 then continue; end if;   -- nothing happened and nothing waits: no digest is a real answer\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "a signed-in session may run the digest",
+    "find": "grant execute on function crm.run_acquisition_digest(timestamptz) to service_role;",
+    "replace": "grant execute on function crm.run_acquisition_digest(timestamptz) to service_role, authenticated;",
+    "nth": 1
+   },
+   {
+    "name": "the digest ignores what waits for a person",
+    "find": "    select (select count(*) from crm.content_versions v where v.organization_id = o.id and v.state = 'ADMIN_REVIEW')\n",
+    "replace": "    select (select 0)\n",
+    "nth": 1
+   }
+  ]
  }
 }
