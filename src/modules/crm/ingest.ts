@@ -5,6 +5,9 @@ import { z } from 'zod';
 import type { createAdminClient } from '@/lib/db/admin';
 import { err, ok, type Result } from '@/lib/result';
 
+import { bindHandoffBeforeIngest, consumeHandoffAfterIngest } from '../acquisition/handoff-bind';
+import { recordLandingArrivalAfterIngest } from '../acquisition/landing-arrival';
+import { extractHandoffCode } from '../acquisition/handoff-code';
 import { wakeDeferredSends } from './outbound-window';
 
 /**
@@ -235,6 +238,16 @@ export async function ingestInboundMessage(
     });
   }
 
+  /**
+   * A message that carries a tracked-handoff reference (20261015300000): before the ingest runs, give the lead the
+   * prospect already is the WhatsApp thread, so the UNCHANGED ingest continues it instead of opening a second lead.
+   * Best effort and never fatal: a handoff failure must not lose the message it rides on.
+   */
+  const handoffCode = parsed.data.body ? extractHandoffCode(parsed.data.body) : null;
+  const bound = handoffCode
+    ? await bindHandoffBeforeIngest(admin, { phoneNumberId: parsed.data.phoneNumberId, from: parsed.data.from, code: handoffCode })
+    : null;
+
   const { data, error } = await admin.schema('crm').rpc('ingest_whatsapp_message', {
     p_phone_number_id: parsed.data.phoneNumberId,
     p_from: parsed.data.from,
@@ -308,6 +321,16 @@ export async function ingestInboundMessage(
       }),
     );
     return err('INTERNAL', 'Could not record the inbound message.');
+  }
+
+  // Finish the handoff once the message is safely recorded. A replay finished it the first time.
+  if (bound && row.status === 'ingested') {
+    await consumeHandoffAfterIngest(admin, { bound, contactId: row.contact_id, leadId: row.lead_id });
+  }
+
+  // A visit from a landing page arrives as a message carrying its tag (20261021100000): add the visit as a touchpoint. Never fatal.
+  if (row.status === 'ingested') {
+    await recordLandingArrivalAfterIngest(admin, { organizationId: row.organization_id, leadId: row.lead_id, body: parsed.data.body ?? null, occurredAt: parsed.data.occurredAt ?? new Date().toISOString() });
   }
 
   /**

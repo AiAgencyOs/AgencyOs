@@ -83,6 +83,17 @@ export const CAPABILITIES = [
   // lead declaring their own work production ready is the review signing its
   // own homework.
   'project.sign_off',
+
+  // Lead generation & acquisition (the five engines)
+  //
+  // Both resolve to owner + ops_admin today, and the database says it again
+  // through core.is_admin() in every crm.* acquisition door. They are not
+  // `lead.write` because that belongs to a day-to-day sales role: steering what
+  // the agency targets, how much it may spend and when it pauses is an
+  // administrative act. `acquisition.read` stays separate so a read-only
+  // viewer can be granted the screens without the controls.
+  'acquisition.read',
+  'acquisition.manage',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -104,6 +115,7 @@ const ROLE_CAPABILITIES: Record<Role, readonly (Capability | '*')[]> = {
     'audit.export',
     'job.requeue',
     'project.sign_off',
+    'acquisition.read', 'acquisition.manage',
   ],
 
   delivery_lead: [

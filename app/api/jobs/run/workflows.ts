@@ -131,6 +131,7 @@ import { resolveImageGenerator, resolveTranscriber } from '@/lib/ai/router';
 import { TRANSCRIPTION_MODEL } from '@/lib/ai/openai';
 import { IMAGE_GENERATION_MODEL } from '@/lib/ai/openrouter-image';
 
+import { ACQUISITION_WORKFLOWS } from './acquisition-workflows';
 import { dispatchToolUnderPolicy } from '@/modules/agents/policy-enforcement';
 import { dispatchableToolsFor } from '@/modules/agents/tool-dispatch';
 import { toolsFor } from '@/modules/agents/tools';
@@ -9885,8 +9886,14 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
  * list would be a queue nothing drains — work accepted and never done, which
  * is a worse failure than work refused.
  */
-export const AGENT_JOB_KINDS: readonly string[] = AGENT_WORKFLOWS.map((w) => w.jobKind);
+/**
+ * Everything the runner claims: the workflows above plus the acquisition agents' (ADM-112 / ADM-113), kept in their own file and list so the
+ * original roster's own pinned shape is not disturbed. Their tools only draft, check and ask a person to approve.
+ */
+const RUNNABLE_WORKFLOWS: readonly AgentWorkflow[] = [...AGENT_WORKFLOWS, ...ACQUISITION_WORKFLOWS];
+
+export const AGENT_JOB_KINDS: readonly string[] = RUNNABLE_WORKFLOWS.map((w) => w.jobKind);
 
 export function workflowFor(jobKind: string): AgentWorkflow | null {
-  return AGENT_WORKFLOWS.find((w) => w.jobKind === jobKind) ?? null;
+  return RUNNABLE_WORKFLOWS.find((w) => w.jobKind === jobKind) ?? null;
 }

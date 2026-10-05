@@ -262,13 +262,14 @@ const sql = readdirSync('supabase/migrations')
   .join('\n')
   .toLowerCase();
 
-const tables = new Set([...sql.matchAll(/create table (?:if not exists )?([a-z_]+\.[a-z_]+)/g)].map((m) => m[1]));
+// A table name may hold digits (crm.b2b_opportunities): `[a-z_]+` stopped at the first one and counted five tables as a single `crm.b`.
+const tables = new Set([...sql.matchAll(/create table (?:if not exists )?([a-z_]+\.[a-z_][a-z0-9_]*)/g)].map((m) => m[1]));
 same('tables', roadmap.baseline.tables, tables.size, ROADMAP, 'the migrations');
 
 // The alignment in the migrations is columnar, so the whitespace before
 // `enable` varies — matching a single space silently found nine of twenty-seven.
 const rls = new Set(
-  [...sql.matchAll(/alter table\s+([a-z_]+\.[a-z_]+)\s+enable row level security/g)].map((m) => m[1]),
+  [...sql.matchAll(/alter table\s+([a-z_]+\.[a-z_][a-z0-9_]*)\s+enable row level security/g)].map((m) => m[1]),
 );
 same('tables with RLS', roadmap.baseline.tablesWithRls, rls.size, ROADMAP, 'the migrations');
 

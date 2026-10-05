@@ -45,14 +45,14 @@ describe('A0. the file says what is true about itself — G-187', () => {
   const bound = Object.values(AGENT_DEFINITIONS).flatMap((d) => d.tools);
 
   test('the prose names the number of tools that exist', () => {
-    assert.equal(TOOLS.length, 14);
-    assert.match(SOURCE, /the list\n \* holds fourteen tools/);
+    assert.equal(TOOLS.length, 35);
+    assert.match(SOURCE, /the list\n \* holds thirty-five tools/);
   });
 
   test('and the number of bindings the registry actually holds', () => {
-    assert.equal(bound.length, 40);
-    assert.equal(Object.keys(AGENT_DEFINITIONS).length, 14);
-    assert.match(SOURCE, /binds forty of them across\n \* fourteen agents/);
+    assert.equal(bound.length, 73);
+    assert.equal(Object.keys(AGENT_DEFINITIONS).length, 18);
+    assert.match(SOURCE, /binds seventy-three of them across\n \* eighteen agents/);
   });
 
   test('and it no longer claims the list is empty', () => {

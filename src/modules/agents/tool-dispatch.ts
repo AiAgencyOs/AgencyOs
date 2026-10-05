@@ -3,6 +3,7 @@ import 'server-only';
 import type { AiToolSpec } from '@/lib/ai/types';
 import type { createAdminClient } from '@/lib/db/admin';
 import { err, ok, type Result } from '@/lib/result';
+import { ACQUISITION_TOOL_NAMES, ACQUISITION_TOOL_SCHEMAS, runAcquisitionTool } from '@/modules/acquisition/agent-tools';
 
 import { resolveTool, toolDefinition, type ToolDefinition } from './tools';
 
@@ -43,6 +44,10 @@ const DISPATCHABLE: readonly string[] = [
   'crm.readConversation',
   'memory.recall',
   'projects.readScope',
+  // ADM-113 (2026-10-05): the owner widened ADM-99 for the acquisition agents, and ONLY for what they hold: five reads and sixteen
+  // draft / score / check / submit-for-approval tools. None of them sends, publishes, launches, deploys, prices, approves or pauses
+  // (`tests/lead-generation-agent-tools.test.ts`). The four above are unchanged; a tool added to this list still needs its own decision.
+  ...ACQUISITION_TOOL_NAMES,
 ];
 
 /**
@@ -55,6 +60,7 @@ const DISPATCHABLE: readonly string[] = [
  * coupling `ARCHITECTURE.md` §3.2 exists to prevent.
  */
 const INPUT_SCHEMAS: Record<string, Record<string, unknown>> = {
+  ...ACQUISITION_TOOL_SCHEMAS,
   'crm.readLead': {
     type: 'object',
     properties: { leadId: { type: 'string', format: 'uuid' } },
@@ -251,6 +257,9 @@ export async function dispatchTool(args: DispatchArgs): Promise<Result<string>> 
     }
 
     default:
+      if (ACQUISITION_TOOL_NAMES.includes(args.toolName)) {
+        return runAcquisitionTool(args.admin, args.organizationId, args.toolName, args.input);
+      }
       // Unreachable given the DISPATCHABLE check above; named rather than
       // left as a TypeScript exhaustiveness gap, because DISPATCHABLE is a
       // plain string array and cannot narrow the switch for the compiler.

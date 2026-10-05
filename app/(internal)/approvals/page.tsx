@@ -29,7 +29,10 @@ const SUBJECT_LABEL: Record<string, string> = {
   scope_change: 'Scope change',
   prototype: 'Prototype',
   agent_action: 'Agent action',
-  ticket_plan: 'Ticket plan',
+  ticket_plan: 'Ticket plan',  social_content: 'Social content',
+  b2b_proposal: 'B2B proposal',
+  ad_campaign: 'Ad campaign',
+  acquisition_action: 'Lead generation action',
 };
 
 /**

@@ -55,6 +55,13 @@ export const AGENT_CATEGORY: Readonly<Record<string, RoutingCategory>> = {
   support: 'client_facing',
   customer_success: 'client_facing',
   upsell: 'money',
+  // ADM-112. A new category would be a new ADM-84 decision, so these use the
+  // existing ones: the Ad Manager proposes budgets (money, the tightest), and
+  // the other three draft what a person outside will eventually read.
+  ad_manager: 'money',
+  email_outreach: 'client_facing',
+  social_media: 'client_facing',
+  marketplace_opportunity: 'client_facing',
 };
 
 export function categoryForAgent(agentKey: string): RoutingCategory | null {
