@@ -13,7 +13,8 @@
     "name": "state door check removed",
     "find": "if coalesce(current_setting('crm.ad_write', true), '') <> '1' then",
     "replace": "if false then",
-    "nth": 1
+    "nth": 1,
+    "migration": "supabase/migrations/20261026100000_deleting_an_organisation_removes_its_history.sql"
    },
    {
     "name": "DB hard gate drops budget increase",
@@ -94,7 +95,8 @@
     "name": "state door check removed",
     "find": "if coalesce(current_setting('crm.landing_write', true), '') <> '1' then",
     "replace": "if false then",
-    "nth": 1
+    "nth": 1,
+    "migration": "supabase/migrations/20261026100000_deleting_an_organisation_removes_its_history.sql"
    },
    {
     "name": "begin_ad_apply ignores the landing page",
@@ -181,7 +183,8 @@
     "name": "proposal state door removed",
     "find": "if coalesce(current_setting('crm.b2b_write', true), '') <> '1' then\n      raise exception 'a proposal''s state moves only",
     "replace": "if false then\n      raise exception 'a proposal''s state moves only",
-    "nth": 1
+    "nth": 1,
+    "migration": "supabase/migrations/20261026100000_deleting_an_organisation_removes_its_history.sql"
    },
    {
     "name": "email in a proposal not detected",
@@ -292,7 +295,8 @@
     "name": "opportunity facts editable",
     "find": "  if (new.organization_id, new.platform, new.external_ref, new.url, new.title,",
     "replace": "  if false and (new.organization_id, new.platform, new.external_ref, new.url, new.title,",
-    "nth": 1
+    "nth": 1,
+    "migration": "supabase/migrations/20261026100000_deleting_an_organisation_removes_its_history.sql"
    },
    {
     "name": "profile claims not checked",
