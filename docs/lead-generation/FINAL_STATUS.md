@@ -1,11 +1,11 @@
 # Lead generation & acquisition — final status and gap re-audit
 
-Branch `feat/lead-gen-foundation` (twelve local commits on `origin/main` @ `72c23803`; nothing pushed, no pull request).
+Branch `feat/lead-gen-foundation` (PR #571, merged with `origin/main` as of 2026-10-05).
 Re-audit date: 2026-10-05. Method: every claim below points at a file, a verifier, or a command that can be run again.
 
 ## Verdict
 
-**`NOT_PRODUCTION_READY` for the five-engine, agent-driven system the specification describes. Ready for assisted use, pending two checks that have not been run.**
+**`NOT_PRODUCTION_READY` for the five-engine, agent-driven system the specification describes. Ready for assisted use, pending one check (a person looking at the pages).**
 
 *Why not production-ready:* no provider adapter exists for any platform (Meta, Google Ads, Hostinger, LinkedIn, Instagram, Facebook,
 any marketplace), no discovery source, and none of the acquisition agents - so nothing reaches out to a platform on its own.
@@ -16,12 +16,15 @@ needs a credential or a decision only the owner can give (`HUMAN_DEPENDENCIES.md
 records it against the exact approved version, once, with the stops, policy, plan, limits and cap re-read at that moment - and every
 number on the screens is read from the CRM or the ledger. Used that way it is complete, audited and refuses what it should.
 
-*Two checks that have not been run (so do not read "verified" as covering them):*
-1. **The first CI run.** Everything below ran locally against a scratch Postgres 16 and a local test/lint/type run (`npm run check`, exit 0).
-   CI runs the same chain against the Supabase image; the first run there may find a first-run defect (it has, on earlier work).
-2. **The pages were never rendered in a browser**, and `next build` is not runnable in this worktree (the symlinked `node_modules` breaks
-   Turbopack). Type-checking, linting and the component tests pass; layout, focus order and the real round trip through a server action
-   have not been looked at by anyone.
+*CI has now run (PR #571) and is green: typecheck, lint, 8,800+ tests, secret scan, `next build`, all 16 acquisition verifiers on the Supabase image,
+and the two-sessions realtime spec.* It found five real defects that a plain scratch Postgres could not: history triggers that refused the owning
+organisation's own cascade and a lead's own delete (so fixtures leaked leads and the realtime spec failed), and four verifiers that assumed an empty
+shared database (audit counts, daily send cap and warm-up, a campaign with several recipients, a large "other" funnel row). One pre-existing
+verifier (`verify-quotation-dispatch`, "a duplicate dispatch job sends NOTHING") failed once and passed on re-run; main's own migrations job
+passes, so it is recorded here as a flake rather than fixed.
+
+*One check has still not been run:* **the pages were never looked at in a browser.** Type-checking, linting, the build and the component tests
+pass; layout, focus order and the real round trip through a server action have not been seen by a person.
 
 ## What was verified, and how
 
@@ -29,7 +32,8 @@ number on the screens is read from the CRM or the ledger. Used that way it is co
 |---|---|---|
 | 15 SQL verifiers driven as the real request roles (about 1,200 checks) | `scripts/verify-acquisition-*.sql`, `npm run db:verify:acquisition` | all pass from a from-zero apply of every migration |
 | Red-proofs as an artifact (111 cases against the LIVE definitions; a shadowed case reports GREEN and is re-pointed) | `scripts/redproof/` | every case red, baseline restored and green |
-| Type, lint, 8,755 unit/contract tests, secret scan, record check | `npm run check` | exit 0 |
+| Type, lint, 8,800+ unit/contract tests, secret scan, record check | `npm run check` | exit 0 |
+| CI on the Supabase image, `next build`, realtime two-sessions spec | PR #571 | green |
 | End to end across slices (one visitor, one prospect, funnel = campaign, stop reaches every action) | `scripts/verify-acquisition-e2e.sql` | pass |
 | Three independent reviews (tenancy, governed execution, honesty/secrets) | `docs/.../GAP_MATRIX_AND_BACKLOG.md` §4 slice 12 | 19 findings reproduced and closed |
 
