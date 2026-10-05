@@ -166,10 +166,36 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Ai
       };
 
       let last: Result<StructuredResponse> = err('PROVIDER_ERROR', `Unexpected failure calling ${config.name}.`);
+      // A routed upstream sometimes answers with prose, a fence it did not close, or nothing, whatever the schema says (found live through
+      // OpenRouter): ONE repair attempt re-asks, showing the model what it said. It is not a transport retry and is never repeated.
+      let repaired = false;
+      let sent: Record<string, unknown> = body;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
         if (attempt > 0) await sleep(retryBackoffWorstCaseMs(attempt) - retryBackoffWorstCaseMs(attempt - 1));
-        const outcome = await once(body);
+        const outcome = await once(sent);
         if (outcome.kind === 'ok') return ok(outcome.response);
+        if (outcome.kind === 'fail' && outcome.repair && !repaired) {
+          repaired = true;
+          const said = outcome.repair.said.slice(0, 20_000);
+          sent = {
+            ...body,
+            messages: [
+              ...(body.messages as unknown[]),
+              ...(said.trim()
+                ? [
+                    { role: 'assistant', content: said },
+                    { role: 'user', content: 'That was not a single valid JSON object. Reply again with ONLY the JSON object that conforms to the schema - no prose, no markdown fence.' },
+                  ]
+                : [{ role: 'user', content: 'You returned nothing. Reply with ONLY the JSON object that conforms to the schema.' }]),
+            ],
+          };
+          const again = await once(sent);
+          if (again.kind === 'ok') return ok(again.response);
+          last = again.unavailable ? providerUnavailable(again.message, again.failure) : err('PROVIDER_ERROR', again.message);
+          if (!again.retry) return last;
+          sent = body;
+          continue;
+        }
         last = outcome.unavailable ? providerUnavailable(outcome.message, outcome.failure) : err('PROVIDER_ERROR', outcome.message);
         if (!outcome.retry) return last;
       }
@@ -221,7 +247,7 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Ai
 
   type Once =
     | { kind: 'ok'; response: StructuredResponse }
-    | { kind: 'fail'; message: string; retry: boolean; unavailable?: boolean; failure?: FailureKind };
+    | { kind: 'fail'; message: string; retry: boolean; unavailable?: boolean; failure?: FailureKind; repair?: { said: string } };
 
   /** One tool-using turn, read: the calls the model asked for, or its final text. */
   function readToolTurn(
@@ -346,10 +372,10 @@ export function createChatCompletionsProvider(config: ChatCompletionsConfig): Ai
     }
 
     const text = contentText(choice.message?.content);
-    if (!text.trim()) return { kind: 'fail', retry: false, message: 'The model returned no output.' };
+    if (!text.trim()) return { kind: 'fail', retry: false, message: 'The model returned no output.', repair: { said: '' } };
 
     const modelJson = parseModelJson(text);
-    if (!modelJson.ok) return { kind: 'fail', retry: false, message: 'The model returned output that was not valid JSON.' };
+    if (!modelJson.ok) return { kind: 'fail', retry: false, message: 'The model returned output that was not valid JSON.', repair: { said: text } };
     const json = modelJson.json;
 
     return {

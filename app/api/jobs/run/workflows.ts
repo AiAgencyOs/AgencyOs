@@ -18,6 +18,7 @@
  */
 
 import { isAdvanceMilestone } from '@/modules/projects/advance-milestone';
+import { schemaRefusal } from '@/lib/ai/model-json';
 import { sendSystemText } from '@/modules/crm/system-message';
 import {
   DESIGN_REPLY_PROMPT,
@@ -416,7 +417,7 @@ const REQUIREMENT_EXTRACT: AgentWorkflow = {
     // Never trust the provider's claim of schema conformance (§6.6).
     const validated = requirementPayloadSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failExtraction(ctx, conversation.id, runId, detail, messageCount);
       return { status: 'failed', reason: detail, runId };
@@ -628,7 +629,7 @@ const MAINTENANCE_TRIAGE: AgentWorkflow = {
 
     const validated = maintenanceTriageSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -801,7 +802,7 @@ const PLAN_BREAKDOWN: AgentWorkflow = {
 
     const validated = breakdownPayloadSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -992,7 +993,7 @@ const SCREEN_INVENTORY: AgentWorkflow = {
 
     const validated = screenInventorySchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -1242,7 +1243,7 @@ const UI_VERSION_DRAFT: AgentWorkflow = {
 
     const validated = uiVersionDraftSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -1492,7 +1493,7 @@ const UI_VERSION_REVISE: AgentWorkflow = {
 
     const validated = uiVersionDraftSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -1660,7 +1661,7 @@ const CLASSIFY_CLIENT_FEEDBACK: AgentWorkflow = {
 
     const validated = clientFeedbackClassificationSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -1914,7 +1915,7 @@ const READ_DESIGN_REPLY: AgentWorkflow = {
     }
     const validated = designReplySchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -2115,7 +2116,7 @@ const PROTOTYPE_BUILD: AgentWorkflow = {
 
     const validated = prototypeBuildSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -2337,7 +2338,7 @@ const PROTOTYPE_BUILD_REVISE: AgentWorkflow = {
 
     const validated = prototypeBuildSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -2570,7 +2571,7 @@ const DESIGN_DIRECTIONS: AgentWorkflow = {
 
     const validated = designDirectionsSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -2823,7 +2824,7 @@ const MESSAGE_INTENT: AgentWorkflow = {
 
     const validated = messageIntentSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -3099,7 +3100,7 @@ const MEETING_REQUEST_READ: AgentWorkflow = {
 
     const validated = schedulingRequestSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -3358,7 +3359,7 @@ const LEAD_OUTCOME_READ: AgentWorkflow = {
 
     const validated = leadOutcomeReadingSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -3614,7 +3615,7 @@ const QA_TEST_PLAN: AgentWorkflow = {
 
     const validated = testPlanSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -3811,7 +3812,7 @@ const CHECK_IN_BRIEF: AgentWorkflow = {
 
     const validated = checkInBriefSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -4021,7 +4022,7 @@ const HANDOVER_PACKAGE: AgentWorkflow = {
 
     const validated = handoverPackageSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -4248,7 +4249,7 @@ const QUALIFICATION_READ: AgentWorkflow = {
 
     const validated = qualificationCoverageSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -4507,7 +4508,7 @@ const THREAD_SUMMARY: AgentWorkflow = {
 
     const validated = conversationSummarySchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -4664,7 +4665,7 @@ const OBJECTION_READ: AgentWorkflow = {
 
     const validated = objectionReadingSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -4969,7 +4970,7 @@ const FOLLOW_UP_DRAFT: AgentWorkflow = {
       // Includes the digit rule. A model that writes a price into a follow-up
       // fails here, fails again at the constraint, and the placeholder goes —
       // three layers, and the client never sees the number.
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -5908,7 +5909,7 @@ const CLIENT_REPLY: AgentWorkflow = {
     // nothing.
     const validated = clientReplySchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -6532,7 +6533,7 @@ const MEDIA_READ: AgentWorkflow = {
 
     const validated = imageReadingSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       if (lastAttempt) {
         await markRead(null);
@@ -7045,7 +7046,7 @@ const QUOTATION_SCOPE: AgentWorkflow = {
 
     const validated = quotationScopeSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -8273,7 +8274,7 @@ const QUOTATION_REVISE: AgentWorkflow = {
 
     const validated = quotationScopeSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -8996,7 +8997,7 @@ const QUOTATION_REWORK: AgentWorkflow = {
 
     const validated = quotationScopeSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -9504,7 +9505,7 @@ const MEETING_ANALYSIS: AgentWorkflow = {
     // Never trust the provider's claim of schema conformance (§6.6).
     const validated = meetingAnalysisSchema.safeParse(call.json);
     if (!validated.success) {
-      const detail = 'model output failed schema validation';
+      const detail = schemaRefusal(validated.error);
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
