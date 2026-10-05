@@ -595,29 +595,15 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    * for the same reason Design QA and the test plan below are: one failing
    * must not lose the other's work.
    */
+  // NOT an early return, unlike the lanes above. Every new lead raises these two jobs, so a lane that ends the tick when it has work would
+  // hold the agent batch back by a tick for each of them - two minutes before a new lead's reply or extraction is even claimed. They are a
+  // few milliseconds each (no model call), so they drain here and the tick carries on to the agents; their results ride the final answer.
   const leadRouting = await runEventJobs(
     admin,
     LEAD_ROUTE_JOB_KIND,
     handleRouteLead,
     'runLeadRoutingJobs',
   );
-  if (leadRouting.claimed > 0) {
-    return NextResponse.json({
-      claimed: leadRouting.claimed,
-      kind: LEAD_ROUTE_JOB_KIND,
-      dispatched,
-      reaped,
-      alerted,
-      expired,
-      lapsed,
-      upsell,
-      followUps,
-      overdue,
-      stamps,
-      leadRouting: leadRouting.results,
-      correlationId,
-    });
-  }
 
   const leadIdentity = await runEventJobs(
     admin,
@@ -625,23 +611,6 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     handleClassifyLeadIdentity,
     'runLeadIdentityJobs',
   );
-  if (leadIdentity.claimed > 0) {
-    return NextResponse.json({
-      claimed: leadIdentity.claimed,
-      kind: LEAD_IDENTITY_JOB_KIND,
-      dispatched,
-      reaped,
-      alerted,
-      expired,
-      lapsed,
-      upsell,
-      followUps,
-      overdue,
-      stamps,
-      leadIdentity: leadIdentity.results,
-      correlationId,
-    });
-  }
 
   /**
    * ── Design QA's coverage verdict (QAP §7, ADM-82) ───────────────────────
@@ -1276,6 +1245,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     dueAnnouncements,
     suiteSchedules,
     semantic,
+    leadRouting: leadRouting.results,
+    leadIdentity: leadIdentity.results,
     unlocks: unlocks.results,
     announcements: announcements.results,
     escalations: escalations.results,

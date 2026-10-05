@@ -203,3 +203,18 @@ describe('E. the handlers are thin and re-read the row, never trust the payload'
     }
   });
 });
+
+describe('the lead lanes never end a tick', () => {
+  const route = readFileSync('app/api/jobs/run/route.ts', 'utf8');
+  const from = route.indexOf('const leadRouting = await runEventJobs(');
+  const to = route.indexOf("Design QA's coverage verdict");
+
+  test('draining a new lead\'s two jobs does not hold the agent batch back by a tick each', () => {
+    assert.ok(from > 0 && to > from, 'both ends of the region exist');
+    assert.doesNotMatch(route.slice(from, to), /return NextResponse\.json/);
+  });
+
+  test('and their results ride the final answer instead', () => {
+    assert.match(route, /leadRouting: leadRouting\.results,\s+leadIdentity: leadIdentity\.results,/);
+  });
+});
