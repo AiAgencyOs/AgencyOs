@@ -15,7 +15,7 @@ import type { PaymentPlanMilestone, ProjectDetail, ProjectListItem, DeliverableR
  * crm/queries.ts.
  */
 
-const LIST_SELECT = 'id, name, code, status, currency, budget_minor, created_at';
+const LIST_SELECT = 'id, name, code, project_code, status, currency, budget_minor, created_at';
 // `proposal_id` is on the detail because ADM-72 requires the accepted
 // quotation's presence — or absence — to be *visible*, not merely auditable.
 // It was written by conversion since G-017 and read by nothing until G-114.
@@ -2826,7 +2826,8 @@ export async function listProjectsForTable(limit = 200, q?: string): Promise<Pro
     .order('created_at', { ascending: false })
     .limit(limit);
   // Search within domain (bucket G-3): server-side, over the human-named columns.
-  if (q) query = query.or(ilikeAny(['name', 'code'], q));
+  // The project's own code (CL-000042-P03) is searchable beside the hand-typed one.
+  if (q) query = query.or(ilikeAny(['name', 'code', 'project_code'], q));
 
   const { data, error } = await query;
 
@@ -2857,6 +2858,7 @@ export async function listProjectsForTable(limit = 200, q?: string): Promise<Pro
     id: r.id,
     name: r.name,
     code: r.code,
+    project_code: r.project_code,
     status: r.status,
     currency: r.currency,
     budget_minor: r.budget_minor,
