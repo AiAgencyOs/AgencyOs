@@ -54,6 +54,8 @@ import {
   announceTask3Complete,
   announceTask4Complete,
   announceM2PaymentVerified,
+  handleRouteLead,
+  handleClassifyLeadIdentity,
 } from '@/modules/crm/handlers';
 import {
   handleHandoffBound,
@@ -579,6 +581,64 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       overdue,
       stamps,
       task2Route: task2Route.results,
+      correlationId,
+    });
+  }
+
+  /**
+   * ── lead routing + identity classification (Audit 1.2/1.3) ─────────────
+   *
+   * Same tier as the routing hop above: pure database work — `crm.route_lead`
+   * and `crm.classify_lead_identity` are one row read, one rule evaluation or
+   * one set of existence checks, and at most one write, no model call. Two
+   * independent kinds off the same `lead.created` event, drained separately
+   * for the same reason Design QA and the test plan below are: one failing
+   * must not lose the other's work.
+   */
+  const leadRouting = await runEventJobs(
+    admin,
+    LEAD_ROUTE_JOB_KIND,
+    handleRouteLead,
+    'runLeadRoutingJobs',
+  );
+  if (leadRouting.claimed > 0) {
+    return NextResponse.json({
+      claimed: leadRouting.claimed,
+      kind: LEAD_ROUTE_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      overdue,
+      stamps,
+      leadRouting: leadRouting.results,
+      correlationId,
+    });
+  }
+
+  const leadIdentity = await runEventJobs(
+    admin,
+    LEAD_IDENTITY_JOB_KIND,
+    handleClassifyLeadIdentity,
+    'runLeadIdentityJobs',
+  );
+  if (leadIdentity.claimed > 0) {
+    return NextResponse.json({
+      claimed: leadIdentity.claimed,
+      kind: LEAD_IDENTITY_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      overdue,
+      stamps,
+      leadIdentity: leadIdentity.results,
       correlationId,
     });
   }
@@ -1361,6 +1421,8 @@ const PHASE_TWO_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseTwo'];
 const PHASE_THREE_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseThree'];
 const PHASE_FOUR_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseFour'];
 const TASK2_ROUTE_JOB_KIND = HANDLER_JOB_KIND['orchestrator:routeTask2Design'];
+const LEAD_ROUTE_JOB_KIND = HANDLER_JOB_KIND['crm:routeLead'];
+const LEAD_IDENTITY_JOB_KIND = HANDLER_JOB_KIND['crm:classifyLeadIdentity'];
 const UI_VERSION_QA_JOB_KIND = HANDLER_JOB_KIND['quality_assurance:reviewUIVersion'];
 const UI_VERSION_ADMIN_REVIEW_JOB_KIND = HANDLER_JOB_KIND['orchestrator:requestUIVersionAdminReview'];
 const PROTOTYPE_QA_JOB_KIND = HANDLER_JOB_KIND['quality_assurance:reviewPrototypeBuild'];
