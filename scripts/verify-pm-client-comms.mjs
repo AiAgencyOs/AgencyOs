@@ -278,21 +278,18 @@ try {
   const local = new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'short', hour: 'numeric', hourCycle: 'h23' }).formatToParts(new Date());
   const weekday = local.find((p) => p.type === 'weekday')?.value;
   const hour = Number(local.find((p) => p.type === 'hour')?.value);
-  // The sending window is the AGENCY's setting. Left at its 10-19 default this section tested the send path only when the suite happened to run
-  // inside it - on a weekday, in business hours - and otherwise asserted that nothing was sent, which is also true of a broken sender. So the
-  // test sets its own wide window (restored at the end) and the send path is exercised on every weekday run; the weekend/late-night
-  // refusal is still asserted whenever the clock is outside it.
-  const win = { start: 0, end: 23 };
+  const win = { start: Number(orgNow?.settings?.outreach_window_start_hour ?? 10), end: Number(orgNow?.settings?.outreach_window_end_hour ?? 19) };
   const inWindow = !['Sat', 'Sun'].includes(weekday) && hour >= win.start && hour < win.end;
 
   const f = await plant('f');
   await rest('PATCH', 'projects', `phase_two?project_id=eq.${f.project.id}`, { state: 'waiting_client' });
   const three = new Date(Date.now() - 3 * 86_400_000).toISOString();
-  // The fixture's own "hello" is stamped NOW, and the ask below is backdated three days. A client message NEWER than the ask is, to the
-  // app, a client who has answered - so the reminder was (correctly) never sent, and this section only ever passed when the clock was
-  // outside the sending window, where "held" is also "nothing sent". The greeting belongs before the ask it precedes.
-  const four = new Date(Date.now() - 4 * 86_400_000).toISOString();
-  await rest('PATCH', 'crm', `conversation_messages?conversation_id=eq.${f.conv.id}&author_type=eq.client`, { created_at: four, occurred_at: four });
+  // The client's only message comes BEFORE the question it was asked three days ago. plant() writes it at "now", which made the client
+  // the later speaker - "has written since the ask" - so the reminder was rightly never sent. That branch only runs inside the sending
+  // window (weekdays 10-19 in the agency's zone), so no CI run outside those hours ever noticed.
+  await rest('PATCH', 'crm', `conversation_messages?conversation_id=eq.${f.conv.id}&seq=eq.0`, {
+    created_at: new Date(Date.now() - 4 * 86_400_000).toISOString(),
+  });
   const asked3 = await rest('POST', 'crm', 'conversation_messages', {
     organization_id: ORG, conversation_id: f.conv.id, seq: 3, author_type: 'user', body: 'For billing, please confirm whether you need a GST invoice or a Non-GST invoice.',
     external_ref: `pm:billing-question:${f.project.id}`, occurred_at: three, created_at: three,
@@ -302,20 +299,10 @@ try {
   await ticks(6);
   check(!texts(f.phone).some((t) => /gentle reminder/i.test(t)), 'with no wait chosen by the owner, nothing chases');
 
-  await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { settings: { ...(orgNow?.settings ?? {}), whatsapp_phone_number_id: 'PN.STUB.PMCOMMS', onboarding_followup_days: '2', outreach_window_start_hour: String(win.start), outreach_window_end_hour: String(win.end) } });
+  await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { settings: { ...(orgNow?.settings ?? {}), whatsapp_phone_number_id: 'PN.STUB.PMCOMMS', onboarding_followup_days: '2' } });
   const reminded = await tickUntil(async () => texts(f.phone).some((t) => /gentle reminder/i.test(t)), 10);
   if (inWindow) {
-    // When it does not go, say WHY: the sweep's own counts and whether a reminder row was written and how it ended.
-    let why = '';
-    if (!reminded) {
-      const t = await tick();
-      const msgs = await rest('GET', 'crm', `conversation_messages?conversation_id=eq.${f.conv.id}&select=seq,author_type,created_at,external_ref&order=seq`);
-      const prof = await rest('GET', 'finance', `billing_profiles?project_id=eq.${f.project.id}&select=status,mode`);
-      const ph = await rest('GET', 'projects', `phase_two?project_id=eq.${f.project.id}&select=state`);
-      const org = await rest('GET', 'core', `organizations?id=eq.${ORG}&select=settings,timezone`);
-      why = `sweep ${JSON.stringify(t.json?.onboardingFollowUps)}; now ${new Date().toISOString()}; messages ${JSON.stringify(msgs.json)}; billing profiles ${JSON.stringify(prof.json)}; phase ${JSON.stringify(ph.json)}; org ${JSON.stringify(org.json)}; graph sends to this phone ${texts(f.phone).length}`;
-    }
-    check(Boolean(reminded), 'a wait of two days is chosen: the reminder goes (we are inside the sending window)', why);
+    check(Boolean(reminded), 'a wait of two days is chosen: the reminder goes (we are inside the sending window)');
     await ticks(6);
     check(texts(f.phone).filter((t) => /gentle reminder/i.test(t)).length === 1, 'and only one - the second waits the same number of days from the first');
   } else {

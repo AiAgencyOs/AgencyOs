@@ -77,3 +77,17 @@ export function parseModelJson(text: string): ModelJson {
   const only = onlyBalancedValue(text);
   return only === null ? { ok: false } : tryParse(only);
 }
+
+/**
+ * The sentence recorded when a model's JSON parses but is not the shape wanted (§6.6: the provider's claim of conformance is never trusted).
+ * It names the first fields at fault - path and rule, never the model's value, which may be a client's words - because "failed schema
+ * validation" alone cannot say whether a prompt, a schema or a model is at fault, and the run's own record is where that gets read.
+ */
+export function schemaRefusal(error: { issues: ReadonlyArray<{ path: ReadonlyArray<PropertyKey>; message: string }> }): string {
+  const named = error.issues
+    .slice(0, 3)
+    .map((i) => `${i.path.length > 0 ? i.path.map(String).join('.') : '(root)'}: ${i.message}`)
+    .join('; ');
+  const more = error.issues.length > 3 ? ` (+${error.issues.length - 3} more)` : '';
+  return `model output failed schema validation - ${named}${more}`.slice(0, 400);
+}

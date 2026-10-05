@@ -202,7 +202,9 @@ describe('C. answers that are not usable output', () => {
     if (result.ok) assert.deepEqual(result.data.json, { a: 1 });
   });
   for (const [name, over, expected] of cases) {
-    test(`${name} is an error, not an extraction — and not retried`, async () => {
+    // Prose and silence get exactly ONE repair attempt (the same answer twice is still an error); the rest are final at once.
+    const repairable = name === 'empty text' || name === 'prose instead of JSON';
+    test(`${name} is an error, not an extraction — ${repairable ? 're-asked once, then refused' : 'and not retried'}`, async () => {
       const { resolveProvider } = await router();
       willReply({ status: 200, body: completion('', over) });
       const provider = await resolveProvider('gpt-4o');
@@ -210,9 +212,34 @@ describe('C. answers that are not usable output', () => {
       const result = await provider.data.generateStructured(request('gpt-4o'));
       assert.equal(result.ok, false);
       if (!result.ok) assert.match(result.error.message, expected);
-      assert.equal(requests, 1);
+      assert.equal(requests, repairable ? 2 : 1);
     });
   }
+
+  test('prose is re-asked ONCE, showing the model what it said, and a valid answer then stands', async () => {
+    const { resolveProvider } = await router();
+    willReply({ status: 200, body: completion('Sure! Here is what I found.') }, { status: 200, body: completion('{"ok":true}') });
+    const provider = await resolveProvider('gpt-4o');
+    assert.ok(provider.ok);
+    const result = await provider.data.generateStructured(request('gpt-4o'));
+    assert.equal(result.ok, true);
+    if (result.ok) assert.deepEqual(result.data.json, { ok: true });
+    assert.equal(requests, 2);
+    const messages = lastRequest.body.messages as Array<{ role: string; content: string }>;
+    assert.deepEqual(messages.slice(-2).map((m) => m.role), ['assistant', 'user']);
+    assert.match(messages.at(-2)!.content, /Sure! Here is what I found/);
+    assert.match(messages.at(-1)!.content, /ONLY the JSON object/);
+  });
+
+  test('a clean answer is never asked twice', async () => {
+    const { resolveProvider } = await router();
+    willReply({ status: 200, body: completion('{"ok":true}') });
+    const provider = await resolveProvider('gpt-4o');
+    assert.ok(provider.ok);
+    const result = await provider.data.generateStructured(request('gpt-4o'));
+    assert.equal(result.ok, true);
+    assert.equal(requests, 1);
+  });
 });
 
 describe('D. provider failures, said by name, retried only when a moment would help', () => {
