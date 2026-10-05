@@ -9,7 +9,7 @@ import { readInboundEmail } from '@/modules/crm/inbound-email-queries';
 import { listEmailCampaigns, listEmailTemplates, listProspects, listSuppressions, readOutreachSettings } from '@/modules/crm/outreach/queries';
 import { Badge, Callout, Card, CardBody, CardHeader, EmptyState, PageHeader, PermissionDenied, Stat, StatGrid, StatusBadge } from '@/ui';
 
-import { ApproveTemplateForm, CampaignForm, ImportForm, ProspectActions, SettingsForm, SuppressForm, TemplateForm } from './forms';
+import { ApproveTemplateForm, CampaignForm, ImportForm, MailboxTestForm, ProspectActions, SettingsForm, SuppressForm, TemplateForm } from './forms';
 
 export const metadata: Metadata = { title: 'Email outreach' };
 
@@ -64,6 +64,15 @@ export default async function EmailOutreachPage() {
         <Stat label="Never email again" value={String(suppressions.length)} caption="unsubscribed, bounced, complained" tone={suppressions.length > 0 ? 'warning' : 'neutral'} />
         <Stat label="Cold outreach" value={settings?.coldBasisEnabled ? 'ON' : 'OFF'} caption={settings?.coldBasisEnabled ? 'owner has allowed business addresses' : 'only people with email consent'} tone={settings?.coldBasisEnabled ? 'warning' : 'success'} />
       </StatGrid>
+
+      {isOwner ? (
+        <Card>
+          <CardHeader title="Test a mailbox" description="Sends one plain message so you can see it arrive. Nothing is recorded and no campaign is touched." />
+          <CardBody>
+            <MailboxTestForm />
+          </CardBody>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader title="Sender and limits" description="Printed in every email and enforced on every send." />
