@@ -767,8 +767,8 @@
   "cases": [
    {
     "name": "touchpoints refuse the organisation's own delete",
-    "find": "  if tg_op = 'DELETE' and not exists (select 1 from core.organizations o where o.id = old.organization_id) then return old; end if;\n  raise exception 'a touchpoint is history",
-    "replace": "  raise exception 'a touchpoint is history",
+    "find": "  if tg_op = 'DELETE' and (not exists (select 1 from core.organizations o where o.id = old.organization_id)\n                           or not exists (select 1 from crm.leads l where l.id = old.lead_id)) then return old; end if;\n",
+    "replace": "",
     "nth": 1
    },
    {
