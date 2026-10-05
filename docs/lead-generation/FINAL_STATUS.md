@@ -55,17 +55,22 @@ Status words: **BUILT** (works with no provider), **ASSISTED** (a person does th
 | B2B: marketplace rules (default never off-platform), scored opportunities, proposals (a person prices), profiles, handoff gate | BUILT; sending is **ASSISTED** | slice 10. Marketplace connectors, automated discovery, AI proposal writer **NOT BUILT** |
 | Results from the CRM by first touch with last-touch/touched-by alongside, goals, failures, advice | BUILT | slice 11 + `/lead-generation/performance`. Scheduled digests **NOT BUILT** (multi-touch models and weekly trends are built) |
 | Roles/RLS/audit/tenancy | BUILT | forced RLS on every new table; 19 review findings closed; `verify-acquisition-hardening` |
-| The five acquisition agents (Email Outreach, Social Media, B2B Opportunity, Ad Manager, Landing Page) | **NOT BUILT - needs an owner decision** | `src/modules/agents/registry.ts` defines only the agents ADM-82 approved, "defined when their tools exist"; adding new agent keys is a governance decision, and every one needs a funded model key |
+| The four acquisition agents (Ad Manager, Email Outreach, Social Media, B2B Opportunity) | **DEFINED, DISABLED, CANNOT YET WORK** | ADM-112 (owner, 2026-10-05): defined in `registry.ts`, installed disabled by `20261028100000`, 21 tools bound that each name an existing acquisition action, none able to send/publish/launch/deploy/price/approve. They need a funded model key and an ADM-99 decision to dispatch the draft-creating tools; today only four read-only tools dispatch |
 
-## Decisions only the owner can make
+## Decisions
 
-1. **Agents.** Approve (or not) new agent keys for the acquisition work, and what each may do. Everything they would call already exists as a governed
-   door; what is missing is the decision and a funded model key. Recommendation: start with *advice* agents (draft, score, research) that can only
-   create versions a person approves - the doors already refuse anything else.
-2. **Email approval path.** Campaign approval still uses the email module's own four-eyes path rather than the Approval Center (the engines added here
-   use the Approval Center). Moving it is a deliberate change to a live feature.
-3. **Whether `enabled` should gate email.** It deliberately does not today (a running campaign must not be stopped by a switch that defaults to off).
-4. **Marketplace terms.** Read each marketplace's terms before loosening a rule (default: never contact off the platform, a person does everything).
+**Made by the owner on 2026-10-05**
+
+1. **Agents (ADM-112).** Grant the agents the specification names (four; Scheduler and Quotation Master stay shared). Installed disabled.
+2. **Email approval path.** Stays on the email module's own four-eyes path; not moved to the Approval Center.
+3. **Whether `enabled` gates email.** It does not (a running campaign is never stopped by a switch that defaults to off; the four kill switches stop it).
+4. **Marketplace terms.** Every marketplace stays at the default: never contact off the platform, a person does everything.
+
+**Still open, and the owner's**
+
+- A funded model key (Settings > AI providers).
+- An ADM-99 decision to dispatch the acquisition agents' draft-creating tools. Until then they cannot do operational work; the specification's "agents perform actual operational work" is **not met**.
+- Provider credentials, entered in the app (`HUMAN_DEPENDENCIES.md`).
 
 ## Known limits, stated plainly
 

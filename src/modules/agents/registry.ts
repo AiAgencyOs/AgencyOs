@@ -56,7 +56,7 @@ import { createHash } from 'node:crypto';
  */
 
 /** Where an agent sits in ADM-82's activation order. */
-export type AgentLayer = 'foundation' | 'core' | 'operations';
+export type AgentLayer = 'foundation' | 'core' | 'operations' | 'acquisition';
 
 /**
  * What an agent may attempt, declared rather than inferred.
@@ -239,6 +239,167 @@ const QA: AgentDefinition = {
     verifiedBy: null,
   },
   retry: { maxAttempts: 1, onExhausted: 'escalate' },
+};
+
+/**
+ * The acquisition agents: the owner's decision of 2026-10-05, from the Lead
+ * Generation & Acquisition Implementation Specification (section 12 of the PDF).
+ *
+ * ADM-82's roster of thirteen was closed, so these are a NEW grant, recorded as
+ * ADM-112. The specification names four: Ad Manager (one agent for Meta and
+ * Google, platform strategy kept separate), Email Marketing Outreach, Social
+ * Media Marketing and B2B Opportunity. Scheduler and Quotation Master are
+ * shared and already exist as the meeting and quotation subtasks, so they are
+ * not agents here. The landing page belongs to the Ad Manager, as the
+ * specification says, and is not a fifth agent.
+ *
+ * **Defined and installed DISABLED**, like ADM-82's own grant: a definition is
+ * not an activation. Two things stand between these agents and real work, and
+ * both are the owner's: a funded model key, and a decision under ADM-99 to
+ * dispatch the draft-creating tools (today only the four read-only tools
+ * dispatch, and these agents' write tools are bound and authorizable but have
+ * no dispatch handler). Until then they are honest about what they are.
+ *
+ * What they can never do is expressed by what they cannot reach: no tool sends,
+ * publishes, launches, deploys, prices, approves or pauses anything. Every one
+ * of those is a governed door a person (or a policy) opens.
+ */
+
+/** `ad_manager` - one agent for Meta and Google Ads, platform-specific strategy kept apart. */
+const AD_MANAGER: AgentDefinition = {
+  key: 'ad_manager',
+  displayName: 'Ad Manager',
+  layer: 'acquisition',
+  purpose:
+    'Audits past ad results, drafts Meta and Google campaign versions and the Google landing page, and watches results against qualified leads. Launches nothing and changes no budget.',
+  capabilities: ['reasoning', 'long_context', 'structured_output'],
+  tools: [
+    'acquisition.readResults',
+    'ads.readCampaigns',
+    'ads.draftCampaign',
+    'ads.checkCampaign',
+    'ads.submitCampaign',
+    'landing.draftPage',
+    'landing.checkPage',
+    'landing.submitPage',
+    'memory.recall',
+    'memory.remember',
+  ],
+  // Nothing it holds sends, publishes, launches or deploys. The engines do
+  // that, as governed once-only executions behind exact-version approval, so
+  // what reaches a person outside is a property of the engine and not of
+  // anything this agent can call.
+  clientFacing: false,
+  moneyAuthority: 'none',
+  handoffTargets: ['sales', 'quality_assurance'],
+  mayVerify: false,
+  verification: {
+    selfAssertionAllowed: false,
+    requiredEvidence: [],
+    verifiedBy: 'quality_assurance',
+  },
+  retry: { maxAttempts: 3, onExhausted: 'escalate' },
+};
+
+/** `email_outreach` - Prospect, Qualify, Outreach, Reply, Nurture. Meeting and quotation requests go through the shared subtasks; a move to WhatsApp goes through a tracked handoff to `sales`. */
+const EMAIL_OUTREACH: AgentDefinition = {
+  key: 'email_outreach',
+  displayName: 'Email Outreach',
+  layer: 'acquisition',
+  purpose:
+    'Researches and scores prospects against the ICP, drafts personalised outreach from recorded facts and checks it. Sends nothing: a campaign sends through the governed path.',
+  capabilities: ['reasoning', 'long_context', 'structured_output'],
+  tools: [
+    'acquisition.readResults',
+    'email.readProspects',
+    'email.scoreProspect',
+    'email.recordProspectFact',
+    'email.checkDraft',
+    'memory.recall',
+    'memory.remember',
+    'crm.addLeadNote',
+  ],
+  // Nothing it holds sends, publishes, launches or deploys. The engines do
+  // that, as governed once-only executions behind exact-version approval, so
+  // what reaches a person outside is a property of the engine and not of
+  // anything this agent can call.
+  clientFacing: false,
+  moneyAuthority: 'none',
+  handoffTargets: ['sales', 'quality_assurance'],
+  mayVerify: false,
+  verification: {
+    selfAssertionAllowed: false,
+    requiredEvidence: [],
+    verifiedBy: 'quality_assurance',
+  },
+  retry: { maxAttempts: 3, onExhausted: 'escalate' },
+};
+
+/** `social_media` - organic content and social prospecting for LinkedIn, Instagram and Facebook; each platform audited and planned separately. */
+const SOCIAL_MEDIA: AgentDefinition = {
+  key: 'social_media',
+  displayName: 'Social Media',
+  layer: 'acquisition',
+  purpose:
+    'Plans content from the strategy, drafts versions with an objective and runs the review. Publishes nothing: a version publishes only when approved exactly as written.',
+  capabilities: ['reasoning', 'long_context', 'structured_output', 'multimodal'],
+  tools: [
+    'acquisition.readResults',
+    'social.readContentQueue',
+    'social.draftContent',
+    'social.reviewContent',
+    'social.submitContent',
+    'memory.recall',
+    'memory.remember',
+  ],
+  // Nothing it holds sends, publishes, launches or deploys. The engines do
+  // that, as governed once-only executions behind exact-version approval, so
+  // what reaches a person outside is a property of the engine and not of
+  // anything this agent can call.
+  clientFacing: false,
+  moneyAuthority: 'none',
+  handoffTargets: ['sales', 'quality_assurance'],
+  mayVerify: false,
+  verification: {
+    selfAssertionAllowed: false,
+    requiredEvidence: [],
+    verifiedBy: 'quality_assurance',
+  },
+  retry: { maxAttempts: 3, onExhausted: 'escalate' },
+};
+
+/** `marketplace_opportunity` - Upwork, Freelancer, PeoplePerHour, Guru, Contra, Fiverr; Clutch and GoodFirms profile work. A person prices every proposal (ADM-22). */
+const MARKETPLACE_OPPORTUNITY: AgentDefinition = {
+  key: 'marketplace_opportunity',
+  displayName: 'B2B Opportunity',
+  layer: 'acquisition',
+  purpose:
+    'Scores marketplace opportunities, rejects low fit and drafts tailored proposals from the real opportunity and approved agency evidence. Prices nothing and submits nothing.',
+  capabilities: ['reasoning', 'long_context', 'structured_output'],
+  tools: [
+    'acquisition.readResults',
+    'marketplace.readOpportunities',
+    'marketplace.scoreOpportunity',
+    'marketplace.draftProposal',
+    'marketplace.checkProposal',
+    'marketplace.submitProposal',
+    'memory.recall',
+    'memory.remember',
+  ],
+  // Nothing it holds sends, publishes, launches or deploys. The engines do
+  // that, as governed once-only executions behind exact-version approval, so
+  // what reaches a person outside is a property of the engine and not of
+  // anything this agent can call.
+  clientFacing: false,
+  moneyAuthority: 'none',
+  handoffTargets: ['sales', 'quality_assurance'],
+  mayVerify: false,
+  verification: {
+    selfAssertionAllowed: false,
+    requiredEvidence: [],
+    verifiedBy: 'quality_assurance',
+  },
+  retry: { maxAttempts: 3, onExhausted: 'escalate' },
 };
 
 /**
@@ -641,6 +802,11 @@ export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
   SUPPORT,
   CUSTOMER_SUCCESS,
   UPSELL,
+  // Acquisition - ADM-112
+  AD_MANAGER,
+  EMAIL_OUTREACH,
+  SOCIAL_MEDIA,
+  MARKETPLACE_OPPORTUNITY,
 ];
 
 export const AGENT_KEYS: readonly string[] = AGENT_DEFINITIONS.map((a) => a.key);

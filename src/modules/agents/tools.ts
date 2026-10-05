@@ -38,8 +38,9 @@ import { definitionFor } from './registry';
  * **What is true today, stated because the sentence above used to say `TOOLS`
  * is empty and it stopped being true without anybody noticing** (G-187, the
  * same defect class the audit found in the webhook route's docblock): the list
- * holds fourteen tools and the registry binds forty of them across
- * fourteen agents.
+ * holds thirty-five tools and the registry binds seventy-three of them across
+ * eighteen agents (ADM-112 added four agents and twenty-one tools, none of which
+ * dispatches: they are bound and authorizable only).
  *
  * **ADM-99 (2026-09-20) answered which of them run: the four read-only
  * tools.** `callModelWithTools` in `app/api/jobs/run/agent-run.ts` is the tool
@@ -203,6 +204,180 @@ export const TOOLS: readonly ToolDefinition[] = [
   {
     name: 'approvals.requestApproval',
     purpose: 'Ask a human to decide something. Requesting is not deciding.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+
+  // ── Lead generation: what the acquisition agents may hold ───────────────
+  // Every entry maps to an existing service action in src/modules/acquisition.
+  // None sends, publishes, launches, deploys or prices: those stay governed
+  // executions behind exact-version approval, which no tool here can reach.
+  {
+    name: 'acquisition.readResults',
+    purpose:
+      'Read the lead-generation funnel, goal progress and advice, as counted from the CRM. Reads only.',
+    actionClass: 'L0',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'email.readProspects',
+    purpose:
+      'Read outreach prospects with their qualification and facts.',
+    actionClass: 'L0',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'social.readContentQueue',
+    purpose:
+      'Read the content queue with the review and approval state of each item.',
+    actionClass: 'L0',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'ads.readCampaigns',
+    purpose:
+      'Read ad campaigns, their versions, committed budget, health and results.',
+    actionClass: 'L0',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'marketplace.readOpportunities',
+    purpose:
+      'Read marketplace opportunities with their scores and proposal state.',
+    actionClass: 'L0',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+
+  {
+    name: 'email.scoreProspect',
+    purpose:
+      'Score a prospect against the Admin qualification model, with the reasoning. A rule that outranks a score still wins.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'email.recordProspectFact',
+    purpose:
+      'Record a sourced fact about a prospect. An outreach claim must trace to one.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'email.checkDraft',
+    purpose:
+      'Check an outreach draft against the recorded facts. It can fail a draft; it cannot approve or send one.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'social.draftContent',
+    purpose:
+      'Draft a social post as a new version with its objective. Drafting is not approving.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'social.reviewContent',
+    purpose:
+      'Run the automated review on a content version. It can fail a version and can never approve it.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'social.submitContent',
+    purpose:
+      'Ask a person to approve this exact content version. Requesting is not deciding.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'ads.draftCampaign',
+    purpose:
+      'Draft an ad campaign as a new version. Launch, a budget increase and targeting changes are never automatic.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'ads.checkCampaign',
+    purpose:
+      'Check an ad version against the rules. It can fail a version and cannot approve it.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'ads.submitCampaign',
+    purpose:
+      'Ask a person to approve this exact ad version. Requesting is not deciding.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'landing.draftPage',
+    purpose:
+      'Draft a landing page as a new version, with the WhatsApp number it will link to.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'landing.checkPage',
+    purpose:
+      'Check a landing page version against the rules. It cannot approve or deploy it.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'landing.submitPage',
+    purpose:
+      'Ask a person to approve this exact page version. Requesting is not deciding.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'marketplace.scoreOpportunity',
+    purpose:
+      'Record a marketplace opportunity and score it against the Admin settings.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'marketplace.draftProposal',
+    purpose:
+      'Draft a proposal from the real opportunity and approved agency evidence. It carries no price: a person prices it (ADM-22).',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'marketplace.checkProposal',
+    purpose:
+      'Check a proposal draft for invented claims and guarantees. It cannot approve or send it.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'marketplace.submitProposal',
+    purpose:
+      'Ask a person to approve this exact proposal version. Requesting is not deciding.',
     actionClass: 'L1',
     clientFacing: false,
     touchesMoney: false,
