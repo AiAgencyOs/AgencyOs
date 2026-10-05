@@ -323,3 +323,25 @@ describe('the sweep, end to end against a fake mailbox', () => {
     assert.match(noKey.skipped.join(), /unsubscribe link is never sent/);
   });
 });
+
+describe('the mailbox test', () => {
+  const service = read('src/modules/crm/outreach/service.ts');
+  const start = service.indexOf('export async function sendMailboxTest');
+  const body = service.slice(start, service.indexOf('\n}\n', start) + 3);
+  assert.ok(start > 0 && body.length > 200, 'the region is the whole function');
+
+  test('only the owner can send one, and it goes through the one chokepoint on the chosen lane', () => {
+    assert.match(body, /!hasRole\(context, 'owner'\)\) return err\('FORBIDDEN'/);
+    assert.match(body, /await sendEmail\(\{\s*lane,/);
+    assert.match(body, /lane: EmailLane = input\.lane === 'outreach' \? 'outreach' : 'client'/);
+  });
+
+  test('it records nothing: no database call, so no campaign, prospect or suppression is read or written', () => {
+    assert.doesNotMatch(body, /createClient|\.rpc\(|\.from\(/);
+  });
+
+  test('the page offers it to the owner only', () => {
+    const page = read('app/(internal)/communication/email-outreach/page.tsx');
+    assert.match(page, /\{isOwner \? \(\s*<Card>\s*<CardHeader title="Test a mailbox"/);
+  });
+});

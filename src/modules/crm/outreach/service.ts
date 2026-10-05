@@ -1,8 +1,9 @@
 import 'server-only';
 
 import { requireInternal } from '@/lib/auth/session';
-import { can } from '@/lib/authz/permissions';
+import { can, hasRole } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
+import { sendEmail, type EmailLane } from '@/lib/email/transport';
 import { err, ok, type Result } from '@/lib/result';
 
 import { parseProspectCsv, type ProspectRow } from './csv';
@@ -195,4 +196,23 @@ export async function convertProspect(prospectId: string): Promise<Result<{ lead
   const row = first<{ outcome?: string; lead_id?: string | null }>(data);
   if (row?.outcome === 'converted' || row?.outcome === 'already_converted') return ok({ leadId: row.lead_id ?? null });
   return err('NOT_FOUND', 'That person was not found.');
+}
+
+/**
+ * One plain test message from a mailbox, to an address the owner types. It proves the mail server, the login and
+ * the sender address work and shows where the message lands (inbox, spam). It is not outreach: nothing is
+ * recorded, no campaign, prospect or suppression is read or written, and only the owner may send it.
+ */
+export async function sendMailboxTest(input: { lane: EmailLane; to: string }): Promise<Result<{ from: string }>> {
+  const context = await requireInternal();
+  if (!hasRole(context, 'owner')) return err('FORBIDDEN', 'Only the owner can send a test email.');
+  const lane: EmailLane = input.lane === 'outreach' ? 'outreach' : 'client';
+  const sent = await sendEmail({
+    lane,
+    to: input.to,
+    subject: `AgencyOS test email (${lane === 'outreach' ? 'info@' : 'care@'} mailbox)`,
+    text: 'This is a test message from AgencyOS. If you can read it, this mailbox can send. Nothing is needed from you.',
+  });
+  if (!sent.ok) return err('VALIDATION', sent.reason);
+  return ok({ from: lane === 'outreach' ? 'info@' : 'care@' });
 }

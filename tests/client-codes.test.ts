@@ -41,3 +41,24 @@ describe('every client and project has an identifier for life', () => {
     assert.match(read('src/lib/admin/global-search.ts'), /ilikeAny\(\['name', 'project_code'\]/);
   });
 });
+
+describe('an invoice for a project carries the project and client identifiers', () => {
+  const pdf = read('src/lib/pdf/invoice.ts');
+  const service = read('src/modules/finance/pdf-service.ts');
+
+  test('the client identifier is read off the project one, and nothing else passes for either', async () => {
+    const { clientCodeOfProject } = await import('../src/lib/pdf/invoice.ts');
+    assert.equal(clientCodeOfProject('CL-000042-P03'), 'CL-000042');
+    assert.equal(clientCodeOfProject('CL-1234567-P12'), 'CL-1234567');
+    assert.equal(clientCodeOfProject('CL-000042'), null);
+    assert.equal(clientCodeOfProject('PRJ-1'), null);
+    assert.equal(clientCodeOfProject(null), null);
+  });
+
+  test('both lines are drawn from the project code, and the service reads it from the project row', () => {
+    assert.match(pdf, /left\.push\(`Client ID \$\{clientCode\}`\)/);
+    assert.match(pdf, /right\.push\(`Project ID \$\{input\.projectCode\}`\)/);
+    assert.match(service, /select\('name, project_code'\)/);
+    assert.match(service, /projectCode: project\.data\?\.project_code \?\? null/);
+  });
+});

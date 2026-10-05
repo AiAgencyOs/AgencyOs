@@ -12,6 +12,7 @@ import {
   createTemplate,
   importProspects,
   markReplied,
+  sendMailboxTest,
   saveOutreachSettings,
   setCampaignState,
   suppress,
@@ -112,4 +113,10 @@ export async function convertProspectAction(_p: FormState, f: FormData): Promise
   if (!r.ok) return { status: 'error', message: r.error.message };
   refresh();
   return { status: 'success', message: 'Converted to a lead. No marketing consent was granted by doing so.' };
+}
+
+export async function sendMailboxTestAction(_p: FormState, f: FormData): Promise<FormState> {
+  const r = await sendMailboxTest({ lane: text(f, 'lane') === 'outreach' ? 'outreach' : 'client', to: text(f, 'to') });
+  if (!r.ok) return { status: 'error', message: r.error.message };
+  return { status: 'success', message: `Sent from ${r.data.from}. Check the inbox and the spam folder; in Gmail, "Show original" lists SPF, DKIM and DMARC.` };
 }

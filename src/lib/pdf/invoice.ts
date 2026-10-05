@@ -49,6 +49,8 @@ export interface InvoicePdfInput {
     version: number | null;
   };
   projectName: string | null;
+  /** The project's identifier for life (CL-000042-P03). Its client's identifier is the part before `-P`. Drawn only when the invoice is for a project. */
+  projectCode?: string | null;
   milestoneLabel: string | null;
   items: ReadonlyArray<{
     description: string;
@@ -173,6 +175,12 @@ export function invoiceArithmeticFault(input: {
 }
 
 /** A filename every filesystem will take without mangling. */
+/** A project code is its client's code plus `-P<nn>` (assigned by the database), so the client's identifier is read off it. */
+export function clientCodeOfProject(projectCode: string | null | undefined): string | null {
+  const m = /^(CL-\d{6,})-P\d{2,}$/.exec(projectCode ?? '');
+  return m ? m[1]! : null;
+}
+
 export function invoicePdfFilename(number: string, status: string): string {
   const slug = number
     .normalize('NFKD')
@@ -381,6 +389,8 @@ export async function renderInvoicePdf(input: InvoicePdfInput): Promise<InvoiceP
     const b = input.billedTo;
     if (b.legalName) left.push(b.legalName);
     if (b.clientName && b.clientName !== b.legalName) left.push(b.clientName);
+    const clientCode = clientCodeOfProject(input.projectCode);
+    if (clientCode) left.push(`Client ID ${clientCode}`);
     if (b.billingAddress) left.push(...b.billingAddress.split('\n').map((l) => l.trim()).filter(Boolean));
     if (b.billingState) left.push(b.billingState);
     if (b.gstin) left.push(`GSTIN ${b.gstin}`);
@@ -389,6 +399,7 @@ export async function renderInvoicePdf(input: InvoicePdfInput): Promise<InvoiceP
 
     const right: string[] = [];
     if (input.projectName) right.push(input.projectName);
+    if (input.projectCode) right.push(`Project ID ${input.projectCode}`);
     if (input.milestoneLabel) right.push(input.milestoneLabel);
 
     draw(c.page, 'BILLED TO', { x: MARGIN, y: y - 8, size: 7.5, font: bold, color: MUTED });
