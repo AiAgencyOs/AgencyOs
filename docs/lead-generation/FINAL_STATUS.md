@@ -1,6 +1,6 @@
 # Lead generation & acquisition — final status and gap re-audit
 
-Branch `feat/lead-generation-foundation` (twelve local commits on `origin/main` @ `72c23803`; nothing pushed, no pull request).
+Branch `feat/lead-gen-foundation` (twelve local commits on `origin/main` @ `72c23803`; nothing pushed, no pull request).
 Re-audit date: 2026-10-05. Method: every claim below points at a file, a verifier, or a command that can be run again.
 
 ## Verdict
