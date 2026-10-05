@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 289,
-    "tablesWithRls": 283,
-    "migrations": 444,
-    "testFiles": 450,
-    "testSuites": 1887,
-    "tests": 8914,
-    "testsPassing": 8914,
+    "tables": 290,
+    "tablesWithRls": 284,
+    "migrations": 445,
+    "testFiles": 451,
+    "testSuites": 1888,
+    "tests": 8920,
+    "testsPassing": 8920,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 2,
@@ -7400,6 +7400,15 @@
       "phase": 29,
       "question": "ADM-99 turned on dispatch for four read-only agent tools and refused every other bound tool. The four acquisition agents (ADM-112) hold twenty-one tools that only read, draft, score, check or ask a person to approve. Which may now dispatch?",
       "why": "Raised 2026-10-05. OWNER DECISION 2026-10-05 - GRANTED: the reads plus the draft / check / submit-for-approval tools (the owner's recommended option; 'reads only' and 'not now' were the alternatives). WHAT WAS BUILT: handlers for exactly those twenty-one tools in src/modules/acquisition/agent-tools.ts, each an organisation-scoped call to an existing door, stamped agent; one workflow per agent (ads.assist, email.assist, social.assist, marketplace.assist) started by a person from the channel page through crm.request_agent_task; crm.agent_results, a service-role-only read of one organisation's results. WHAT DID NOT CHANGE: ADM-99's original four; every other bound tool (memory.remember, crm.addLeadNote, crm.sendClientMessage, approvals.requestApproval, sales.draftProposal, finance.generateInvoice...) is still refused; no acquisition tool sends, publishes, launches, deploys, prices, approves or pauses, and a price from an agent is refused by the door (ADM-22). The agents are still installed disabled: they need the owner to enable them and a funded model key. Nothing has been run against a real model."
+    },
+    {
+      "id": "ADM-114",
+      "status": "granted",
+      "decisionStatus": "GRANTED",
+      "blocks": [],
+      "phase": 29,
+      "question": "The owner wants the acquisition agents to do the analysing themselves. May they start their own week without a person asking each time?",
+      "why": "Raised 2026-10-06. OWNER DECISION 2026-10-06 - GRANTED ('yeh sab hamara agent krega after everything analysing' / 'haa'): a weekly autopilot. WHAT WAS BUILT: crm.acquisition_autopilot (per organisation, OFF until an admin turns it on from the Overview) and crm.run_acquisition_autopilot (service role only, called by the job runner each tick): from Monday 09:00 in the organisation's timezone, each ENABLED agent whose channel is in the plan and not stopped is queued ONE standing task (the same ads.assist / email.assist / social.assist / marketplace.assist job a person queues), once per ISO week. The tasks only read results and draft for approval. WHAT DID NOT CHANGE: no tool sends, publishes, launches, deploys, prices or approves; a launch, budget increase, targeting change, publication, proposal and deploy stay never-automatic; the emergency stop, channel pause, tool permissions and cost ceilings all still apply. Defaults chosen by the builder because the owner did not answer: all four agents, Monday 09:00."
     }
   ],
   "phases": [

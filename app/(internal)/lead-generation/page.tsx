@@ -4,11 +4,11 @@ import Link from 'next/link';
 import { requireInternal } from '@/lib/auth/session';
 import { can, hasRole } from '@/lib/authz/permissions';
 import { listKillSwitches } from '@/lib/observability/kill-switches';
-import { listTargetServices, readChannelSettings, readCurrentIcp, readLeadsBySource } from '@/modules/acquisition/queries';
+import { listTargetServices, readAutopilot, readChannelSettings, readCurrentIcp, readLeadsBySource } from '@/modules/acquisition/queries';
 import { CHANNEL_LABEL, CHANNEL_SLUG, ENGINE_STATUS } from '@/modules/acquisition/schema';
 import { Badge, Callout, Card, CardBody, CardHeader, EmptyState, PageHeader, PermissionDenied, Stat, StatGrid } from '@/ui';
 
-import { GlobalPauseForm, SeedButton } from './forms';
+import { AutopilotForm, GlobalPauseForm, SeedButton } from './forms';
 
 export const metadata: Metadata = { title: 'Lead generation' };
 
@@ -25,12 +25,13 @@ export default async function LeadGenerationPage() {
   const isOwner = hasRole(context, 'owner');
   const mayManage = can(context, 'acquisition.manage');
 
-  const [{ seeded, channels }, services, { current }, bySource, switches] = await Promise.all([
+  const [{ seeded, channels }, services, { current }, bySource, switches, autopilot] = await Promise.all([
     readChannelSettings(),
     listTargetServices(),
     readCurrentIcp(),
     readLeadsBySource(),
     listKillSwitches(),
+    readAutopilot(),
   ]);
   const global = switches.find((s) => s.switch === 'acquisition_paused');
   const active = services.filter((s) => s.active);
@@ -111,6 +112,13 @@ export default async function LeadGenerationPage() {
           )}
         </CardBody>
       </Card>
+
+      {seeded ? (
+        <Card>
+          <CardHeader title="Weekly autopilot" description={autopilot.enabled ? 'On. From Monday 09:00 (the agency timezone) each enabled agent whose channel is in the plan and not stopped is given one standing task: read the results, then draft for approval. Nothing is launched, published, sent or priced; every exact version still waits for a person.' : 'Off. When on, each enabled agent starts its week on its own with a standing task that only drafts for approval. The emergency stop, a channel pause, the tool permissions and the cost ceilings all still apply.'} />
+          <CardBody>{mayManage ? <AutopilotForm key={String(autopilot.enabled)} enabled={autopilot.enabled} /> : <p className="text-[13px] text-muted">Only an admin changes this.</p>}</CardBody>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader title="Emergency stop" description="Stops every engine from taking a new external action. Records and replies already received are kept." />

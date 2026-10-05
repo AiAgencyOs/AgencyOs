@@ -315,6 +315,10 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    * The week in lead generation, told once per organisation per ISO week as an info alert. Idempotent (the alert fingerprint carries the
    * week, in any state), so running it each tick costs one cheap pass and cannot repeat itself. A failure is logged and ignored.
    */
+  const autopilot = await admin.schema('crm').rpc('run_acquisition_autopilot');
+  if (autopilot.error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `acquisition autopilot: ${autopilot.error.message}` }));
+  }
   const digest = await admin.schema('crm').rpc('run_acquisition_digest');
   if (digest.error) {
     console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `acquisition digest: ${digest.error.message}` }));
