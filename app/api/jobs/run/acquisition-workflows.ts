@@ -21,16 +21,18 @@ import type { AgentWorkflow } from './workflows';
  * working through an emergency pause is not one anybody would call paused.
  */
 
+// A long report is a verbose model, not a failed run: the work is already done by the time the report is read, and failing the job here would
+// retry it and do the work twice. So the text is bounded by truncation, not refused.
 const REPORT = z.object({
-  summary: z.string().min(1).max(2000),
-  actions: z.array(z.string().max(400)).max(30),
+  summary: z.string().min(1).transform((s) => s.slice(0, 4000)),
+  actions: z.array(z.string().transform((a) => a.slice(0, 600))).max(60),
 });
 
 function reportJsonSchema(): Record<string, unknown> {
   return {
     type: 'object',
     properties: {
-      summary: { type: 'string', description: 'What you did and what a person must decide next, in plain words.' },
+      summary: { type: 'string', description: 'What you did and what a person must decide next, in plain words. Under 1,500 characters.' },
       actions: { type: 'array', items: { type: 'string' }, description: 'One line per tool call that CHANGED something, naming the id it returned. Leave empty if you changed nothing.' },
     },
     required: ['summary', 'actions'],
@@ -54,6 +56,7 @@ const PROMPTS = {
     'Read the results first and judge channels by qualified leads and won deals, not clicks. Draft campaign versions from the active target service and the ICP (copy, audience, placements or keywords, exclusions, budget).',
     'For Google, the destination is a landing page: draft the page too, with the agency WhatsApp number it will link to. Run the checks, fix what they report, and submit only what passes.',
     'A launch, a budget increase and a targeting change always need a person; you only prepare the exact version they will approve.',
+    'If an existing draft of yours FAILED its check, do not stop and ask: draft a corrected new version of that same campaign or page (pass its id) using what the check named, and check it again.',
     RULES,
   ].join(' '),
   email_outreach: [
