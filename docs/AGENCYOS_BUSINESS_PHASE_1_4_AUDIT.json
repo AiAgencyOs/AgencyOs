@@ -2,9 +2,27 @@
   "audit_date": "2026-09-28",
   "repo_ref_audited": "origin/main @ aa9d59a (unless a step notes an unmerged PR)",
   "note_on_unmerged_prs": "PRs #524-#530 (roadmap-Phase-4 orchestrator/admin/test work, none merged) are NOT reflected in implementation_status below unless a step explicitly says so. #530 in particular contains an unmerged fix for two BROKEN finance steps (2.7, 2.10, 4.25, 4.26).",
-  "status_legend": ["COMPLETE","PARTIAL","MISSING","BROKEN","MOCKED","OUTDATED","UNKNOWN","NEEDS_REVIEW"],
-  "verification_legend": ["VERIFIED","NOT_VERIFIED"],
-  "test_status_legend": ["PASSED","FAILED","NOT_RUN","BLOCKED","PARTIAL"],
+  "status_legend": [
+    "COMPLETE",
+    "PARTIAL",
+    "MISSING",
+    "BROKEN",
+    "MOCKED",
+    "OUTDATED",
+    "UNKNOWN",
+    "NEEDS_REVIEW"
+  ],
+  "verification_legend": [
+    "VERIFIED",
+    "NOT_VERIFIED"
+  ],
+  "test_status_legend": [
+    "PASSED",
+    "FAILED",
+    "NOT_RUN",
+    "BLOCKED",
+    "PARTIAL"
+  ],
   "steps": [
     {"phase":1,"step_id":"1.1","step_name":"Lead arrives (inbound capture)","business_trigger":"external contact","primary_agent":"none (deterministic ingest)","supporting_agents":[],"expected_frontend":"Leads queue","expected_backend":"ingestInboundMessage()","expected_database":"crm.leads","expected_api":"app/api/webhooks/whatsapp/route.ts","expected_events_jobs":"crm.ingest events","expected_admin_control":"Leads list","expected_state_transition":"none->new lead","existing_files":"src/modules/crm/ingest.ts:227","existing_routes":"app/api/webhooks/whatsapp/route.ts","existing_tables":"crm.leads (source CHECK)","existing_tests":"tests/crm-ingest.test.ts (real behavioral)","runtime_evidence":"WhatsApp path wired end-to-end","implementation_status":"PARTIAL","verification_status":"VERIFIED","test_status":"PASSED","production_readiness":"NOT_PRODUCTION_READY","security_status":"NEEDS_REVIEW","data_integrity_status":"OK","known_bug":"web_form/email are DB enum values with zero ingestion route","blocker":"no FB/IG lead-form or web-form/email ingestion","dependency":"none","risk":"lost leads from non-WhatsApp channels","required_fix":"build web_form/email/FB-lead-form ingestion routes","validation_method":"integration test per channel","notes":"Manual admin lead creation works."},
     {"phase":1,"step_id":"1.2","step_name":"Normalize + deduplicate","primary_agent":"none","existing_files":"src/modules/crm/actions.ts:203 mergeLeadsAction; supabase/migrations/20260921130000_two_leads_that_were_always_one.sql; supabase/migrations/20261030300000_the_event_a_lead_creates.sql; supabase/migrations/20261030320000_which_lead_this_already_is.sql; src/modules/crm/handlers.ts handleClassifyLeadIdentity","existing_tables":"crm.merge_leads(), leads.merged_into_lead_id, crm.identity_resolutions","existing_tests":"tests/two-leads-that-were-always-one.test.ts; tests/who-a-lead-is-assigned-to-and-who-it-already-is.test.ts; live-verified against a scratch Postgres (scripts/apply-migrations-locally.sh) — all five outcomes produced from real rows, idempotency and tenancy guards red-proofed","implementation_status":"COMPLETE","verification_status":"VERIFIED","test_status":"PASSED","production_readiness":"PRODUCTION_READY","known_bug":"none","blocker":"none — classification is now automatic and event-driven; still never auto-merges by design, POSSIBLE_DUPLICATE_REVIEW is human-reviewable via crm.review_identity_resolution and a confirmed duplicate still requires a separate crm.merge_leads call","dependency":"1.1","risk":"low — reduced from duplicate/contaminated lead records now that every new lead is automatically classified; POSSIBLE_DUPLICATE_REVIEW rows still require a human to act","required_fix":"none","validation_method":"live-Postgres behavioral test per outcome (red-proofed) + repository test","notes":"Still never auto-merges (the safe default the audit praised is unchanged); classification now runs automatically on lead creation via the same lead.created event routing (1.3) uses, writing exactly one crm.identity_resolutions row per lead."},
