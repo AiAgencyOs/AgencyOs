@@ -86,6 +86,15 @@ begin
   exception when insufficient_privilege then raise notice 'ok  a campaign is still refused while its organisation exists'; end;
   begin delete from crm.channel_handoffs where organization_id = '00000000-0000-4000-8000-0000000000c7'; raise exception 'FAILED: a handoff was deleted while its organisation exists';
   exception when insufficient_privilege then raise notice 'ok  a handoff is still refused while its organisation exists'; end;
+  -- a lead (and the touch its own creation recorded) can be deleted on its own, as the app's fixtures do
+  begin
+    insert into core.organizations (id, name, slug) values ('00000000-0000-4000-8000-0000000000c6', 'Lead Delete Agency', 'lead-delete-agency') on conflict do nothing;
+    insert into crm.leads (id, organization_id, title, source, source_ref, status) values ('00000000-0000-4000-8000-0000000000c5', '00000000-0000-4000-8000-0000000000c6', 'Lonely lead', 'manual', 'o:lonely', 'new');
+    if (select count(*) from crm.lead_touchpoints where lead_id = '00000000-0000-4000-8000-0000000000c5') = 0 then raise exception 'FAILED: the lead recorded no touch (fixture)'; end if;
+    delete from crm.leads where id = '00000000-0000-4000-8000-0000000000c5';
+    if exists (select 1 from crm.lead_touchpoints where lead_id = '00000000-0000-4000-8000-0000000000c5') then raise exception 'FAILED: a deleted lead left its touchpoints'; end if;
+    raise notice 'ok  deleting a lead removes its touchpoints (a live organisation can still clean up its own fixtures)';
+  end;
   -- and the organisation's own delete removes it all
   delete from core.organizations where id = '00000000-0000-4000-8000-0000000000c7';
   for t in select c.table_name from information_schema.columns c join information_schema.tables x on x.table_schema = c.table_schema and x.table_name = c.table_name and x.table_type = 'BASE TABLE'

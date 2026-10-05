@@ -11,7 +11,9 @@
 -- gone). The `restrict` foreign keys between the new tables become `no action`
 -- (checked at the end of the statement) so an organisation delete may remove a
 -- parent and its children in either order.
--- Every function is carried forward from its live definition with that one edit.
+-- The same applies to the lead: a touchpoint or owner transfer goes when ITS LEAD is deleted (the realtime e2e's cleanup deleted a lead and
+-- could not, which left 33 leads behind and pushed the new one to page 2 of the leads list). Every function is carried forward from its
+-- live definition with that one edit.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 create or replace function crm.touchpoints_are_history()
@@ -20,7 +22,9 @@ create or replace function crm.touchpoints_are_history()
  SET search_path TO ''
 AS $function$
 begin
-  if tg_op = 'DELETE' and not exists (select 1 from core.organizations o where o.id = old.organization_id) then return old; end if;
+  -- A touch (or an owner transfer) is removed with the LEAD it belongs to, or with its organisation; never on its own.
+  if tg_op = 'DELETE' and (not exists (select 1 from core.organizations o where o.id = old.organization_id)
+                           or not exists (select 1 from crm.leads l where l.id = old.lead_id)) then return old; end if;
   raise exception 'a touchpoint is history; record a new one instead' using errcode = '42501';
 end;
 $function$;

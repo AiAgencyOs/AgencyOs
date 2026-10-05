@@ -776,6 +776,12 @@
     "find": "    if not exists (select 1 from core.organizations o where o.id = old.organization_id) then return old; end if; raise exception 'a campaign is history'",
     "replace": "    raise exception 'a campaign is history'",
     "nth": 1
+   },
+   {
+    "name": "a lead cannot be deleted because its touchpoint is history",
+    "find": "\n                           or not exists (select 1 from crm.leads l where l.id = old.lead_id)) then return old; end if;",
+    "replace": ") then return old; end if;",
+    "nth": 1
    }
   ]
  }
