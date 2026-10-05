@@ -92,8 +92,8 @@ begin
   exception when insufficient_privilege then raise notice 'ok  nor the auth tag'; end;
 end $$;
 reset role;
-select pg_temp.check((select count(*) from audit.audit_log where action in ('integration.secret_stored', 'integration.secret_rotated')) = 2, 'storing and rotating are audited');
-select pg_temp.check((select count(*) from audit.audit_log where action like 'integration.%' and (after::text like '%Y2lwaGVydGV4dC%' or after::text like '%aXYtdmFsdWU%')) = 0, '…and no ciphertext or iv ever reached the audit log');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action in ('integration.secret_stored', 'integration.secret_rotated')) = 2, 'storing and rotating are audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action like 'integration.%' and (after::text like '%Y2lwaGVydGV4dC%' or after::text like '%aXYtdmFsdWU%')) = 0, '…and no ciphertext or iv ever reached the audit log');
 
 set local role service_role;
 select set_config('request.jwt.claims', '', true);
@@ -460,12 +460,12 @@ select pg_temp.check(not exists (
           or has_table_privilege('authenticated', c.oid, 'update') or has_table_privilege('authenticated', c.oid, 'delete'))
 ), 'no new table is readable by anon or writable by authenticated');
 
-select pg_temp.check((select count(*) from audit.audit_log where action = 'integration.registered') >= 4, 'registration is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action in ('integration.check_passed', 'integration.check_failed')) >= 6, 'every adapter check is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action in ('integration.disabled', 'integration.revoked')) = 2, 'disable and revoke are audited');
-select pg_temp.check((select count(*) from audit.audit_log where action = 'acquisition.policy_changed') >= 5, 'a policy change is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action like 'governed.execution_%') >= 8, 'every execution step is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action in ('identity.key_sync_failed', 'identity.touch_failed')) = 0, 'no bookkeeping trigger failed silently');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'integration.registered') >= 4, 'registration is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action in ('integration.check_passed', 'integration.check_failed')) >= 6, 'every adapter check is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action in ('integration.disabled', 'integration.revoked')) = 2, 'disable and revoke are audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'acquisition.policy_changed') >= 5, 'a policy change is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action like 'governed.execution_%') >= 8, 'every execution step is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action in ('identity.key_sync_failed', 'identity.touch_failed')) = 0, 'no bookkeeping trigger failed silently');
 
 do $$ begin raise notice 'ALL CHECKS PASSED'; end $$;
 rollback;

@@ -484,11 +484,11 @@ select pg_temp.check(not exists (
           or has_table_privilege('authenticated', c.oid, 'update') or has_table_privilege('authenticated', c.oid, 'delete'))
 ), 'no social table is readable by anon or writable by authenticated');
 
-select pg_temp.check((select count(*) from audit.audit_log where action = 'content.version_created') >= 10, 'every version is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action in ('content.submitted_for_approval', 'content.scheduled', 'content.cancelled')) >= 6, 'submission, scheduling and cancellation are audited');
-select pg_temp.check((select count(*) from audit.audit_log where action in ('content.publish_executed', 'content.publish_failed', 'content.publish_unknown')) >= 6, 'every publish outcome is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action in ('social.strategy_created', 'social.strategy_activated', 'social.audit_recorded')) >= 5, 'strategies and audits are audited');
-select pg_temp.check((select count(*) from audit.audit_log where action in ('email.adopt_failed', 'identity.key_sync_failed', 'identity.touch_failed', 'subtask.carry_failed')) = 0, 'no bookkeeping trigger failed silently');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'content.version_created') >= 10, 'every version is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action in ('content.submitted_for_approval', 'content.scheduled', 'content.cancelled')) >= 6, 'submission, scheduling and cancellation are audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action in ('content.publish_executed', 'content.publish_failed', 'content.publish_unknown')) >= 6, 'every publish outcome is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action in ('social.strategy_created', 'social.strategy_activated', 'social.audit_recorded')) >= 5, 'strategies and audits are audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action in ('email.adopt_failed', 'identity.key_sync_failed', 'identity.touch_failed', 'subtask.carry_failed')) = 0, 'no bookkeeping trigger failed silently');
 
 do $$ begin raise notice 'ALL CHECKS PASSED'; end $$;
 rollback;

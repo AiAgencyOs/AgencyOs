@@ -204,12 +204,12 @@ select pg_temp.check((select outcome from crm.transfer_conversation_owner('00000
 
 -- ── 8. audit ───────────────────────────────────────────────────────────────
 reset role;
-select pg_temp.check((select count(*) from audit.audit_log where action = 'identity.created') >= 3, 'creating an identity is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action = 'identity.matched') >= 3, 'a match is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action = 'identity.duplicate_review_opened') >= 2, 'opening a review is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action = 'identity.duplicate_review_kept_separate') = 1, 'a decision is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action = 'identity.conversation_owner_transferred') = 2, 'each owner transfer is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action in ('identity.key_sync_failed', 'identity.touch_failed')) = 0, 'no bookkeeping trigger failed silently during all of this');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'identity.created') >= 3, 'creating an identity is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'identity.matched') >= 3, 'a match is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'identity.duplicate_review_opened') >= 2, 'opening a review is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'identity.duplicate_review_kept_separate') = 1, 'a decision is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'identity.conversation_owner_transferred') = 2, 'each owner transfer is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action in ('identity.key_sync_failed', 'identity.touch_failed')) = 0, 'no bookkeeping trigger failed silently during all of this');
 
 do $$ begin raise notice 'ALL CHECKS PASSED'; end $$;
 rollback;

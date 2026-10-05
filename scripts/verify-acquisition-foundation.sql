@@ -162,11 +162,11 @@ begin
 end $$;
 
 -- ── 7. everything was audited ──────────────────────────────────────────────
-select pg_temp.check((select count(*) from audit.audit_log where action = 'acquisition.defaults_seeded') = 1, 'seeding is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action in ('acquisition.channel_paused', 'acquisition.channel_resumed')) = 2, 'pause and resume are audited');
-select pg_temp.check((select count(*) from audit.audit_log where action in ('kill_switch.engaged', 'kill_switch.released') and after::text like '%acquisition_paused%') = 2, 'the global stop is audited both ways');
-select pg_temp.check((select count(*) from audit.audit_log where action = 'acquisition.icp_saved') = 2, 'each ICP version is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action = 'acquisition.channel_settings_changed') = 1, 'channel settings are audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'acquisition.defaults_seeded') = 1, 'seeding is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action in ('acquisition.channel_paused', 'acquisition.channel_resumed')) = 2, 'pause and resume are audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action in ('kill_switch.engaged', 'kill_switch.released') and after::text like '%acquisition_paused%') = 2, 'the global stop is audited both ways');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'acquisition.icp_saved') = 2, 'each ICP version is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'acquisition.channel_settings_changed') = 1, 'channel settings are audited');
 
 do $$ begin raise notice 'ALL CHECKS PASSED'; end $$;
 rollback;

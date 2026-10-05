@@ -263,9 +263,9 @@ select pg_temp.check(not exists (
      and (has_table_privilege('anon', c.oid, 'select') or has_table_privilege('authenticated', c.oid, 'insert')
           or has_table_privilege('authenticated', c.oid, 'update') or has_table_privilege('authenticated', c.oid, 'delete'))
 ), 'the table is not readable by anon or writable by authenticated');
-select pg_temp.check((select count(*) from audit.audit_log where action = 'subtask.requested') >= 5, 'requests are audited');
-select pg_temp.check((select count(*) from audit.audit_log where action in ('subtask.completed', 'subtask.failed', 'subtask.cancelled')) >= 5, 'every ending is audited, with who it returned to');
-select pg_temp.check((select count(*) from audit.audit_log where action = 'subtask.carry_failed') = 0, 'no bookkeeping trigger failed silently');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'subtask.requested') >= 5, 'requests are audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action in ('subtask.completed', 'subtask.failed', 'subtask.cancelled')) >= 5, 'every ending is audited, with who it returned to');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'subtask.carry_failed') = 0, 'no bookkeeping trigger failed silently');
 
 do $$ begin raise notice 'ALL CHECKS PASSED'; end $$;
 rollback;

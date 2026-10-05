@@ -256,7 +256,7 @@ select pg_temp.check((select touch_type from crm.lead_touchpoints where lead_id 
 select pg_temp.check((select count(*) from crm.lead_touchpoints where lead_id = (select v from fx where k = 'rhea_lead') and touch_type = 'outreach_sent') = 1, 'the send is recorded as a touchpoint once');
 select pg_temp.check((select count(*) from crm.lead_touchpoints where lead_id = (select v from fx where k = 'rhea_lead') and touch_type = 'reply_received') = 1, 'and so is the reply');
 select pg_temp.check((select count(*) from crm.communication_consent where contact_id = (select contact_id from crm.outreach_prospects where email = 'reply@replyco.example')) = 0, 'adopting her granted NO consent: becoming a lead is not agreeing to be marketed to');
-select pg_temp.check((select count(*) from audit.audit_log where action = 'email.prospect_adopted') = 1, 'the adoption is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'email.prospect_adopted') = 1, 'the adoption is audited');
 
 -- a second reply changes nothing
 set local role service_role;
@@ -311,9 +311,9 @@ select pg_temp.check(not exists (
      and (has_table_privilege('anon', c.oid, 'select') or has_table_privilege('authenticated', c.oid, 'insert')
           or has_table_privilege('authenticated', c.oid, 'update') or has_table_privilege('authenticated', c.oid, 'delete'))
 ), 'no new table is readable by anon or writable by authenticated');
-select pg_temp.check((select count(*) from audit.audit_log where action = 'prospect.qualified') >= 12, 'every qualification is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action in ('qualification.model_saved', 'prospect.blocked', 'prospect.block_lifted')) >= 5, 'models and blocks are audited');
-select pg_temp.check((select count(*) from audit.audit_log where action in ('email.adopt_failed', 'identity.key_sync_failed', 'identity.touch_failed', 'subtask.carry_failed')) = 0, 'no bookkeeping trigger failed silently');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'prospect.qualified') >= 12, 'every qualification is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action in ('qualification.model_saved', 'prospect.blocked', 'prospect.block_lifted')) >= 5, 'models and blocks are audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action in ('email.adopt_failed', 'identity.key_sync_failed', 'identity.touch_failed', 'subtask.carry_failed')) = 0, 'no bookkeeping trigger failed silently');
 
 do $$ begin raise notice 'ALL CHECKS PASSED'; end $$;
 rollback;

@@ -291,15 +291,15 @@ select pg_temp.check(not exists (
 
 -- ── 8. audit ───────────────────────────────────────────────────────────────
 reset role;
-select pg_temp.check((select count(*) from audit.audit_log where action = 'handoff.created') >= 3, 'creation is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action = 'handoff.bound') = 1, 'the bind is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action = 'handoff.consumed') = 2, 'each consumption is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action = 'handoff.cancelled') = 1, 'a cancellation is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action = 'handoff.expired') >= 1, 'an expiry is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action = 'handoff.invalidated') = 1, 'an invalidation is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action = 'handoff.settings_changed') = 1, 'the number change is audited');
-select pg_temp.check((select count(*) from audit.audit_log where action in ('identity.key_sync_failed', 'identity.touch_failed')) = 0, 'no bookkeeping trigger failed silently');
-select pg_temp.check((select count(*) from audit.audit_log where (after::text like '%AOS-%' or before::text like '%AOS-%')) = 0, 'no plaintext reference appears in the audit log');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'handoff.created') >= 3, 'creation is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'handoff.bound') = 1, 'the bind is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'handoff.consumed') = 2, 'each consumption is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'handoff.cancelled') = 1, 'a cancellation is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'handoff.expired') >= 1, 'an expiry is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'handoff.invalidated') = 1, 'an invalidation is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action = 'handoff.settings_changed') = 1, 'the number change is audited');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and action in ('identity.key_sync_failed', 'identity.touch_failed')) = 0, 'no bookkeeping trigger failed silently');
+select pg_temp.check((select count(*) from audit.audit_log where created_at >= now() and (after::text like '%AOS-%' or before::text like '%AOS-%')) = 0, 'no plaintext reference appears in the audit log');
 
 do $$ begin raise notice 'ALL CHECKS PASSED'; end $$;
 rollback;
