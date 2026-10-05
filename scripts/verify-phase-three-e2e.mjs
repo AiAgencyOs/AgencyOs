@@ -380,7 +380,8 @@ try {
     const rows = (await rest('GET', 'projects', `screens?project_id=eq.${project.id}&status=neq.superseded&select=id,screen_key,name`)).json ?? [];
     return rows.length > 0 ? rows : null;
   }, 25);
-  check(Boolean(screens) && modelCalls.includes('inventory'), 'the screen inventory is drafted from the scope - every screen covers an approved item', `${screens?.length ?? 0} screens`);
+  // A real run bypasses the stub, so `modelCalls` (what the stub saw) only proves anything when the stub is the model.
+  check(Boolean(screens) && (REAL_MODEL || modelCalls.includes('inventory')), 'the screen inventory is drafted from the scope - every screen covers an approved item', `${screens?.length ?? 0} screens`);
   const noDirectionsYet = ((await rest('GET', 'projects', `theme_options?phase_three_id=eq.${phaseThree.id}&select=id`)).json ?? []).length;
   check(noDirectionsYet === 0 && !modelCalls.includes('directions'), 'no theme is drawn before the screen list is finalized', `${noDirectionsYet} themes`);
 
@@ -404,7 +405,7 @@ try {
   check((themes ?? []).every((t) => t.admin_status !== 'approved' && t.client_status !== 'shared'), 'and nothing is approved or shown to anyone yet');
   const directionCalls = modelCalls.filter((c) => c === 'directions').length;
   await ticks(6);
-  check(modelCalls.filter((c) => c === 'directions').length === directionCalls && directionCalls === 1, 'the model is asked for directions exactly once - a replay reuses them', `${directionCalls} call(s)`);
+  check(modelCalls.filter((c) => c === 'directions').length === directionCalls && (REAL_MODEL || directionCalls === 1), 'the model is asked for directions exactly once - a replay reuses them', `${directionCalls} call(s)`);
   const wf = await p3();
   check(['internal_review', 'waiting_review', 'theme_generation', 'admin_review', 'waiting_designer'].includes(wf?.state), 'the Phase 3 state reads as design work in progress', String(wf?.state));
 
@@ -485,7 +486,8 @@ try {
   const notShownId = await say('Let us go with option 3 please');
   const notShown = await proposalFor(notShownId);
   check(notShown?.status === 'asked' && notShown?.selected_theme_option_id === null, 'a choice the client was never shown is NOT applied - the PM asks which option they mean', `${notShown?.status}`);
-  check(groupTexts().some((t) => /which option you mean|Which of the options/i.test(t)), 'and the question reaches the client');
+  // A real model words the PM's question itself, so a real run recognises it by being a question about the options.
+  check(groupTexts().some((t) => /which option you mean|Which of the options/i.test(t) || (REAL_MODEL && /\?/.test(t) && /option/i.test(t))), 'and the question reaches the client');
   const qCount = groupTexts().filter((t) => /which option you mean|Which of the options/i.test(t)).length;
 
   const unclearId = await say('hmm not sure yet');
@@ -531,7 +533,9 @@ try {
   const resolutions = (await rest('GET', 'projects', `phase_three_stop_resolutions?phase_three_id=eq.${phaseThree.id}&select=stopped_state,resolution`)).json ?? [];
   check(resolutions.length === 1 && resolutions[0].stopped_state === 'scope_escalation', 'and the resolution is on the record with the stop it answered', JSON.stringify(resolutions));
 
-  const pickId = await say('We like Calm Clinical, we will go with it');
+  // The stub's options are named Calm Clinical...; a real model invents its own, so a real run names the one it actually drew.
+  const t1Name = REAL_MODEL ? t1.name : 'Calm Clinical';
+  const pickId = await say(`We like ${t1Name} the best of the three`);
   const pick = await proposalFor(pickId);
   check(pick?.intent === 'client_selected' && pick?.status === 'applied' && pick?.selected_theme_option_id === t1.id, 'a clear choice is applied: Calm Clinical and its palette', `${pick?.intent}/${pick?.status}`);
   check((await p3())?.state === 'final_confirmation', 'the phase reads FINAL CONFIRMATION', String((await p3())?.state));
@@ -574,7 +578,7 @@ try {
   check(lockedTheme?.client_status === 'locked' && otherThemes.every((t) => t.client_status !== 'locked'), 'exactly the chosen direction is locked', `${lockedTheme?.client_status}`);
   const handoff = one(await rest('GET', 'projects', `phase_three_handoffs?phase_three_id=eq.${phaseThree.id}&select=phase_four_ready,readiness_note,payload`));
   check(handoff?.phase_four_ready === true, 'the handoff says Phase 4 is READY', String(handoff?.readiness_note));
-  check(handoff?.payload?.theme?.figmaNodeId === '1:1' && JSON.stringify(handoff?.payload).includes('Calm'), 'and carries the exact Figma node, theme, colours and screen baseline Phase 4 would otherwise ask for', JSON.stringify(handoff?.payload?.theme ?? {}).slice(0, 80));
+  check(handoff?.payload?.theme?.figmaNodeId === '1:1' && JSON.stringify(handoff?.payload).includes(REAL_MODEL ? t1.name.split(' ')[0] : 'Calm'), 'and carries the exact Figma node, theme, colours and screen baseline Phase 4 would otherwise ask for', JSON.stringify(handoff?.payload?.theme ?? {}).slice(0, 80));
   const phaseFour = await until(async () => one(await rest('GET', 'projects', `phase_four?project_id=eq.${project.id}&select=id,state`)), 25);
   check(Boolean(phaseFour?.id), 'Phase 4 starts from the handoff - and only after the lock', String(phaseFour?.state));
 

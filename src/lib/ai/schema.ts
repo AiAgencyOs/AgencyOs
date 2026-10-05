@@ -49,6 +49,8 @@ const UNSUPPORTED_BY_DECODER = [
   'exclusiveMinimum',
   'exclusiveMaximum',
   'multipleOf',
+  // A `z.record(...)` emits it. Found 2026-10-05 on a real model: "For 'object' type, property 'propertyNames' is not supported" killed the design-directions call.
+  'propertyNames',
 ] as const;
 
 /**
