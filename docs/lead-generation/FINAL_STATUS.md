@@ -5,7 +5,7 @@ Re-audit date: 2026-10-05. Method: every claim below points at a file, a verifie
 
 ## Verdict
 
-**`NOT_PRODUCTION_READY` for the five-engine, agent-driven system the specification describes. Ready for assisted use, pending one check (a person looking at the pages).**
+**`NOT_PRODUCTION_READY` for the five-engine, agent-driven system the specification describes. Ready for assisted use.**
 
 *Why not production-ready:* no provider adapter exists for any platform (Meta, Google Ads, Hostinger, LinkedIn, Instagram, Facebook,
 any marketplace), no discovery source, and none of the acquisition agents - so nothing reaches out to a platform on its own.
@@ -23,8 +23,7 @@ shared database (audit counts, daily send cap and warm-up, a campaign with sever
 verifier (`verify-quotation-dispatch`, "a duplicate dispatch job sends NOTHING") failed once and passed on re-run; main's own migrations job
 passes, so it is recorded here as a flake rather than fixed.
 
-*One check has still not been run:* **the pages were never looked at in a browser.** Type-checking, linting, the build and the component tests
-pass; layout, focus order and the real round trip through a server action have not been seen by a person.
+*Looked at in a browser (2026-10-05, local Supabase stack, signed in as a local owner):* every lead-generation page loads without a server error or console error; the Identity page's duplicate decision and the new contact merge were driven through the real server actions (an empty reason is refused by the form; the merge moved the lead, the phone and the identity keys and left the other record as history). Not checked: keyboard/focus order, narrow screens, and the pages that need data a fresh install lacks (an engine with live campaigns, ads, proposals).
 
 ## What was verified, and how
 
