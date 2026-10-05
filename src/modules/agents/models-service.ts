@@ -88,6 +88,7 @@ export async function retireModel(input: RetireModelInput): Promise<Result<{ mod
   const { data, error } = await supabase.schema('ai').rpc('retire_model', {
     p_model_id: parsed.data.modelId,
     p_reason: parsed.data.reason,
+    ...(parsed.data.provider ? { p_provider: parsed.data.provider } : {}),
   });
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'retireModel', detail: error.message }));
@@ -99,6 +100,8 @@ export async function retireModel(input: RetireModelInput): Promise<Result<{ mod
       return ok({ modelId: parsed.data.modelId });
     case 'not_found':
       return err('NOT_FOUND', 'That model is not in the registry.');
+    case 'ambiguous':
+      return err('CONFLICT', 'Two providers offer that model id - retire it from the Provider Manager, per provider.');
     case 'already_retired':
       return err('CONFLICT', 'That model is already retired.');
     case 'in_a_chain':

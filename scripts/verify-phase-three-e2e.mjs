@@ -17,8 +17,10 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 
+import { signFigmaCode } from '../src/modules/projects/figma-export-token.ts';
 import { fixturesFor } from './verify-fixtures.mjs';
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
@@ -31,6 +33,16 @@ const target = await resolveTarget(fail, { cron: true, anon: false, jwt: true })
 await announceTarget(target, 'a won deal to an official kickoff');
 
 const ORG = '00000000-0000-4000-8000-000000000001';
+const REAL_MODEL = process.env.REAL_MODEL === '1';
+// A real model reads the scope as a person would: a line saying "What item 1 does" is rightly answered with a question. The stub never
+// reads it, so only a real run needs words that mean something.
+const REAL_SCOPE = REAL_MODEL
+  ? [
+      { title: 'Customer app: browse and order medicines', detail: 'Search a catalogue by name, add to a basket, choose home delivery or store pickup, pay by UPI or card, and see the order status.' },
+      { title: 'Prescription upload and pharmacist review', detail: 'The customer photographs a prescription; a pharmacist reviews it in a web panel, approves or rejects with a reason, and the customer is notified.' },
+      { title: 'Store admin panel', detail: 'Store staff manage stock levels and prices, see incoming orders, mark them packed and out for delivery, and view a daily sales summary.' },
+    ]
+  : [];
 const MARKER = `zztest-p3e2e-${randomUUID().slice(0, 8)}`;
 const APP = target.appUrl ?? 'http://localhost:3000';
 const GRAPH_PORT = 54398;
@@ -185,7 +197,7 @@ try {
   // The approved scope the planner will read (items go in while the version is a draft; freezing approves it).
   const scope = one(await rest('POST', 'projects', 'scope_versions', { organization_id: ORG, project_id: project.id, version: 1, status: 'draft' }));
   for (let i = 1; i <= 3; i += 1) {
-    await rest('POST', 'projects', 'scope_items', { organization_id: ORG, scope_version_id: scope.id, title: `Scope item ${i}`, detail: `What item ${i} does`, inclusion: 'included', position: i });
+    await rest('POST', 'projects', 'scope_items', { organization_id: ORG, scope_version_id: scope.id, title: REAL_SCOPE[i - 1]?.title ?? `Scope item ${i}`, detail: REAL_SCOPE[i - 1]?.detail ?? `What item ${i} does`, inclusion: 'included', position: i });
   }
   await rest('PATCH', 'projects', `scope_versions?id=eq.${scope.id}`, { status: 'active', frozen_at: new Date().toISOString() });
 
@@ -306,7 +318,28 @@ try {
   check(plan?.status === 'draft' && plan?.created_by === null, 'a DRAFT blueprint appears, drafted by the planner and no person', String(plan?.status));
   const deliverables = (await rest('GET', 'projects', `plan_deliverables?plan_id=eq.${plan.id}&select=scope_item_id`)).json ?? [];
   const gates = (await rest('GET', 'projects', `plan_milestones?plan_id=eq.${plan.id}&kind=eq.finance_gate&select=payment_milestone_id`)).json ?? [];
-  check(deliverables.length === 3 && gates.length === 4, 'it covers every approved scope item and maps every payment milestone', `${deliverables.length} deliverables, ${gates.length} gates`);
+  // With a real model (REAL_MODEL=1) the planner may write several deliverables per scope item; the stub writes exactly one each.
+  const coversAll = REAL_MODEL ? new Set(deliverables.map((d) => d.scope_item_id)).size >= 3 && gates.length === 4 : deliverables.length === 3 && gates.length === 4;
+  check(coversAll, 'it covers every approved scope item and maps every payment milestone', `${deliverables.length} deliverables, ${gates.length} gates`);
+  if (REAL_MODEL) {
+    // A real planner asks what it does not know, and it asks the way the product says: the PM puts ONE question at a time to the client,
+    // the client answers in the group, and a person resolves it (a clarification cannot be closed without the client's answer).
+    const all = async () => (await rest('GET', 'projects', `plan_clarifications?plan_id=eq.${plan.id}&select=id,question,status&order=created_at`)).json ?? [];
+    const total = (await all()).length;
+    let settled = 0;
+    for (let i = 0; i < total; i += 1) {
+      const asked = await until(async () => (await all()).find((c) => c.status === 'asked'), 40);
+      if (!asked) break;
+      console.log(`    ↳ the PM asked the client: ${String(asked.question).slice(0, 110)}`);
+      const seqNow = ((await rest('GET', 'crm', `conversation_messages?conversation_id=eq.${groupConvId}&select=seq&order=seq.desc&limit=1`)).json?.[0]?.seq ?? 0) + 1;
+      await rest('POST', 'crm', 'conversation_messages', { organization_id: ORG, conversation_id: groupConvId, seq: seqNow, author_type: 'client', body: 'It is a standard flow - login, a list, a detail screen and a form. Nothing unusual; please proceed with the usual approach.', external_ref: `${MARKER}:answer${i}`, occurred_at: new Date().toISOString() });
+      const answered = await until(async () => (await all()).find((c) => c.id === asked.id && c.status === 'answered'), 40);
+      if (!answered) break;
+      const done = await asOwner('projects', 'resolve_clarification', { p_clarification_id: asked.id });
+      if (one(done)?.outcome === 'resolved') settled += 1;
+    }
+    check(total > 0 ? settled === total : true, `the real planner raised ${total} clarification(s): each put to the client, answered, resolved by a person`, `${settled}/${total}`);
+  }
   check(Boolean(await until(async () => (await stateOf()) === 'waiting_planning', 12)), 'the phase reads WAITING PLANNING', String(await stateOf()));
   const earlyAgain = one(await asOwner('projects', 'record_kickoff', { p_project_id: project.id, p_evidence_ref: 'still-too-early' }));
   check(earlyAgain?.outcome === 'not_ready' && (earlyAgain?.unmet ?? []).join() === 'no_active_plan', 'a kickoff before the plan is active is refused, naming exactly that', (earlyAgain?.unmet ?? []).join());
@@ -546,6 +579,38 @@ try {
   check(Boolean(phaseFour?.id), 'Phase 4 starts from the handoff - and only after the lock', String(phaseFour?.state));
 
   // ── 14. the whole run ─────────────────────────────────────────────────────
+  section('13b. The Figma plugin gets exactly this project\'s finalized screens - and can report what it built');
+  const signingKey = readFileSync('.env.verify.local', 'utf8').match(/^VAULT_ENCRYPTION_KEY=(.*)$/m)?.[1]?.trim().replace(/"/g, '') ?? '';
+  const pluginCode = signFigmaCode({ organizationId: ORG, projectId: project.id }, signingKey, Math.floor(Date.now() / 1000));
+  const figma = (path, init = {}, bearer = pluginCode) => fetch(`${APP}/api/design/figma/${init.project ?? project.id}${path}`, { ...init, headers: { ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}), 'content-type': 'application/json' }, cache: 'no-store' });
+  const noCode = await figma('', {}, null);
+  check(noCode.status === 401, 'no code, no read', `HTTP ${noCode.status}`);
+  const wrongProject = await figma('', { project: randomUUID() });
+  check(wrongProject.status === 403, 'a code for this project cannot read another one', `HTTP ${wrongProject.status}`);
+  const exportRes = await figma('');
+  const exportBody = await exportRes.json().catch(() => ({}));
+  const liveScreens = (await rest('GET', 'projects', `screens?project_id=eq.${project.id}&status=neq.superseded&baseline_version=not.is.null&select=id,screen_key`)).json ?? [];
+  check(exportRes.ok && exportBody.screens?.length === liveScreens.length && liveScreens.length > 0, 'the export is the finalized screen list - every one, and only those', `${exportBody.screens?.length}/${liveScreens.length}`);
+  check(Boolean(exportBody.direction?.palette?.primary) && /^#?[0-9a-fA-F]{6}$/.test(exportBody.direction.palette.primary), 'with the client\'s chosen direction and its palette', exportBody.direction?.name);
+  const blob = JSON.stringify(exportBody);
+  check(!/@|\+91|invoice|price|amount_minor|phone/i.test(blob.replace(/https?:\/\/\S+/g, '')), 'and no client contact detail, price or message is in it - design structure only');
+  const builtFrames = [{ key: liveScreens[0].screen_key, screenId: liveScreens[0].id, name: `${liveScreens[0].screen_key} - verifier`, nodeId: '12:34' }];
+  const reported = await figma('/report', { method: 'POST', body: JSON.stringify({ fileKey: 'VerifierFileKey1', pageId: '5:1', pageName: 'AgencyOS - verifier', frames: builtFrames }) });
+  check(reported.ok, 'the plugin reports what it built', `HTTP ${reported.status}`);
+  const badReport = await figma('/report', { method: 'POST', body: JSON.stringify({ frames: [{ ...builtFrames[0], nodeId: 'x; drop' }] }) });
+  check(badReport.status === 400, 'a malformed report is refused', `HTTP ${badReport.status}`);
+  const importRows = (await rest('GET', 'projects', `figma_plugin_imports?project_id=eq.${project.id}&select=id,frames,file_key`)).json ?? [];
+  check(importRows.length === 1 && importRows[0].file_key === 'VerifierFileKey1', 'exactly one record exists, for this project', `${importRows.length}`);
+  const screenLink = (await rest('GET', 'projects', `screens?id=eq.${liveScreens[0].id}&select=figma_url`)).json?.[0]?.figma_url ?? null;
+  const themeLinked = (await rest('GET', 'projects', `theme_options?project_id=eq.${project.id}&figma_node_id=eq.12:34&select=id`)).json ?? [];
+  check(screenLink === null && themeLinked.length === 0, 'and the report linked NOTHING - a person does that, verified against Figma');
+  const tamper = await rest('PATCH', 'projects', `figma_plugin_imports?id=eq.${importRows[0].id}`, { page_name: 'tampered' });
+  check(!tamper.ok, 'the record is history: it cannot be edited', `HTTP ${tamper.status}`);
+  const importAudit = (await rest('GET', 'audit', `audit_log?action=eq.figma_plugin.imported&subject_id=eq.${project.id}&select=id`)).json ?? [];
+  check(importAudit.length === 1, 'and the import is in the audit trail');
+  const asUserDirect = await fx.call(owner.token, 'POST', 'projects', 'rpc/record_figma_import', { p_organization_id: ORG, p_project_id: project.id, p_file_key: null, p_page_id: null, p_page_name: null, p_frames: builtFrames });
+  check(!asUserDirect.ok, 'a signed-in user cannot write a plugin report directly - only the signed code can', `HTTP ${asUserDirect.status}`);
+
   section('14. Across the whole run: nothing twice, nothing lost, everything on the record');
   const clientThread = (await rest('GET', 'crm', `conversation_messages?conversation_id=eq.${conv.id}&author_type=eq.user&select=external_ref`)).json ?? [];
   const groupThread = (await rest('GET', 'crm', `conversation_messages?conversation_id=eq.${groupConvId}&author_type=eq.user&select=external_ref`)).json ?? [];

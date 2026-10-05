@@ -270,7 +270,7 @@ export async function runSemanticIndexing(admin: Admin, agents: readonly AgentSo
         summary.blocked += 1;
         continue;
       }
-      const price = await db.schema('ai').from('models').select('input_cost_minor_per_mtok').eq('organization_id', org).eq('model_id', vendor.model).maybeSingle();
+      const price = await db.schema('ai').from('models').select('input_cost_minor_per_mtok').eq('organization_id', org).eq('provider', vendor.id).eq('model_id', vendor.model).maybeSingle();
       const deps: IndexDeps = {
         store: adminStore(admin, org, agents, vendor.model),
         embed: vendor.embed,

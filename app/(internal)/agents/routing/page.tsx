@@ -115,7 +115,7 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
         `${m.inputCostMinorPerMtok !== null ? (m.inputCostMinorPerMtok / 100).toFixed(2) : '—'} · ${m.outputCostMinorPerMtok !== null ? (m.outputCostMinorPerMtok / 100).toFixed(2) : '—'}`,
     },
     // SCR-064 (ADM-84 reversed 2026-09-30): the owner retires a model with a reason.
-    ...(isOwner ? [{ key: 'retire', header: 'Retire', cell: (m: (typeof models)[number]) => (m.status === 'retired' ? <span className="text-xs text-muted">retired</span> : <RetireModelForm modelId={m.modelId} />) }] : []),
+    ...(isOwner ? [{ key: 'retire', header: 'Retire', cell: (m: (typeof models)[number]) => (m.status === 'retired' ? <span className="text-xs text-muted">retired</span> : <RetireModelForm modelId={m.modelId} provider={m.provider} />) }] : []),
   ];
 
   const policyColumns: Column<(typeof policies)[number]>[] = [

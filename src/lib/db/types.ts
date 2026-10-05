@@ -1429,7 +1429,7 @@ export type Database = {
         }[]
       }
       set_model_enabled: {
-        Args: { p_enabled: boolean; p_model_id: string }
+        Args: { p_enabled: boolean; p_model_id: string; p_provider?: string }
         Returns: {
           outcome: string | null
         }[]
@@ -1617,6 +1617,7 @@ export type Database = {
       retire_model: {
         Args: {
           p_model_id: string
+          p_provider?: string
           p_reason: string
         }
         Returns: {
@@ -12679,6 +12680,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      figma_plugin_imports: {
+        Row: {
+          created_at: string
+          file_key: string | null
+          frames: Json
+          id: string
+          organization_id: string
+          page_id: string | null
+          page_name: string | null
+          project_id: string
+        }
+        Insert: {
+          created_at?: string
+          file_key?: string | null
+          frames: Json
+          id?: string
+          organization_id: string
+          page_id?: string | null
+          page_name?: string | null
+          project_id: string
+        }
+        Update: Partial<{ page_name: string | null }>
+        Relationships: []
       }
       design_asset_links: {
         Row: {
