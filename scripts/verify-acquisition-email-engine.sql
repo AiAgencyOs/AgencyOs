@@ -184,7 +184,7 @@ select pg_temp.check((select problems ->> 0 from crm.validate_outreach_draft(:'O
 reset role;
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
 set local role authenticated;
-select crm.set_outreach_settings('Asha Team', '1 Test Road, Pune 411001', null, 50, 5, true);
+select crm.set_outreach_settings('Asha Team', '1 Test Road, Pune 411001', null, 500, 5, true);
 select pg_temp.as_user(:'ADMIN', :'ORG', 'ops_admin');
 insert into fx select 'tpl', template_id from crm.create_email_template('Intro', 'en', 'A thought for {{company}}', 'Hello {{first_name}}, we build websites for retailers. - {{sender_name}}');
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
@@ -221,7 +221,7 @@ reset role;
 -- THE CHOKEPOINT: Walt (owned by Sales on WhatsApp) and Wanda (a WON client) must NOT be emailed; the others are.
 set local role service_role;
 select pg_temp.as_service();
-select pg_temp.check((select count(*) from crm.claim_outreach_sends(:'ORG', 20)) >= 1, 'the real chokepoint reserves sends for the people it may email');
+select pg_temp.check((select count(*) from crm.claim_outreach_sends(:'ORG', 1000)) >= 1, 'the real chokepoint reserves sends for the people it may email');
 reset role;
 select pg_temp.check((select r.status from crm.email_campaign_recipients r join crm.outreach_prospects p on p.id = r.prospect_id where p.email = 'wa@whatsco.example') = 'refused', 'WALT, a lead Sales owns on WhatsApp, is NOT cold-emailed: the recipient is refused');
 select pg_temp.check((select r.refusal_reason from crm.email_campaign_recipients r join crm.outreach_prospects p on p.id = r.prospect_id where p.email = 'wa@whatsco.example') = 'prospect_stopped', '…as prospect_stopped');
