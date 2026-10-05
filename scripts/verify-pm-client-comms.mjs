@@ -305,7 +305,14 @@ try {
   await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { settings: { ...(orgNow?.settings ?? {}), whatsapp_phone_number_id: 'PN.STUB.PMCOMMS', onboarding_followup_days: '2', outreach_window_start_hour: String(win.start), outreach_window_end_hour: String(win.end) } });
   const reminded = await tickUntil(async () => texts(f.phone).some((t) => /gentle reminder/i.test(t)), 10);
   if (inWindow) {
-    check(Boolean(reminded), 'a wait of two days is chosen: the reminder goes (we are inside the sending window)');
+    // When it does not go, say WHY: the sweep's own counts and whether a reminder row was written and how it ended.
+    let why = '';
+    if (!reminded) {
+      const t = await tick();
+      const rows = await rest('GET', 'crm', `conversation_messages?external_ref=like.pm:followup:${f.project.id}:*&select=external_ref,delivery,created_at`);
+      why = `sweep ${JSON.stringify(t.json?.onboardingFollowUps)}; reminder rows ${JSON.stringify(rows.json)}; graph sends to this phone ${texts(f.phone).length}`;
+    }
+    check(Boolean(reminded), 'a wait of two days is chosen: the reminder goes (we are inside the sending window)', why);
     await ticks(6);
     check(texts(f.phone).filter((t) => /gentle reminder/i.test(t)).length === 1, 'and only one - the second waits the same number of days from the first');
   } else {
