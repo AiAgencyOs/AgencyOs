@@ -26,6 +26,8 @@ import { isLiveInvoice, verifiedOn } from '@/lib/finance/verified-basis';
 
 export type ClientListItem = {
   id: string;
+  /** The client's identifier for life (CL-000042): assigned by the database, never edited, never reused. */
+  clientCode: string;
   name: string;
   billingEmail: string | null;
   currency: string;
@@ -109,7 +111,7 @@ export type ClientDetail = ClientListItem & {
   meetings: ClientMeeting[];
   /** People at the client (`crm.contacts.client_account_id`). */
   contacts: ClientContact[];
-  projects: { id: string; name: string; status: string; budgetMinor: number | null; currency: string; proposalId: string | null }[];
+  projects: { id: string; projectCode: string; name: string; status: string; budgetMinor: number | null; currency: string; proposalId: string | null }[];
   /** SCR-016 — what each project was sold for and where its money and upkeep stand. */
   commercials: ClientProjectCommercials[];
   invoices: { id: string; number: string; status: string; totalMinor: number; paidMinor: number; currency: string }[];
@@ -149,7 +151,7 @@ export async function listClients(limit = 200): Promise<ClientListItem[]> {
   const { data: accounts, error: accountsError } = await supabase
     .schema('core')
     .from('client_accounts')
-    .select('id, name, billing_email, currency, status, created_at, tags, owner_id, legal_name, gstin, pan, billing_address')
+    .select('id, client_code, name, billing_email, currency, status, created_at, tags, owner_id, legal_name, gstin, pan, billing_address')
     .order('created_at', { ascending: false })
     .limit(limit);
   if (accountsError) unreadable('listClients.accounts', accountsError);
@@ -182,6 +184,7 @@ export async function listClients(limit = 200): Promise<ClientListItem[]> {
     const paidMinor = clientInvoices.reduce((sum, i) => sum + verifiedOn(i), 0);
     return {
       id: a.id,
+      clientCode: a.client_code,
       name: a.name,
       billingEmail: a.billing_email,
       currency: a.currency,
@@ -209,7 +212,7 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
   const { data: account, error: accountError } = await supabase
     .schema('core')
     .from('client_accounts')
-    .select('id, name, billing_email, currency, status, created_at, tags, owner_id, legal_name, gstin, pan, billing_address')
+    .select('id, client_code, name, billing_email, currency, status, created_at, tags, owner_id, legal_name, gstin, pan, billing_address')
     .eq('id', clientAccountId)
     .maybeSingle();
   if (accountError) unreadable('getClient.account', accountError);
@@ -219,7 +222,7 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
   const { data: projects, error: projectsError } = await supabase
     .schema('projects')
     .from('projects')
-    .select('id, name, status, budget_minor, currency, proposal_id')
+    .select('id, project_code, name, status, budget_minor, currency, proposal_id')
     .eq('client_account_id', clientAccountId)
     .is('deleted_at', null)
     .order('created_at', { ascending: false });
@@ -472,6 +475,7 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
     meetings: clientMeetings,
     contacts: clientContacts,
     id: account.id,
+    clientCode: account.client_code,
     name: account.name,
     billingEmail: account.billing_email,
     currency: account.currency,
@@ -491,6 +495,7 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
     outstandingMinor: invoicedMinor - paidMinor,
     projects: projectRows.map((p) => ({
       id: p.id,
+      projectCode: p.project_code,
       name: p.name,
       status: p.status,
       budgetMinor: p.budget_minor,

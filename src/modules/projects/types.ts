@@ -5,7 +5,7 @@ type MilestoneRow = Database['projects']['Tables']['milestones']['Row'];
 
 export type ProjectListItem = Pick<
   ProjectRow,
-  'id' | 'name' | 'code' | 'status' | 'currency' | 'budget_minor' | 'created_at'
+  'id' | 'name' | 'code' | 'project_code' | 'status' | 'currency' | 'budget_minor' | 'created_at'
 >;
 
 export type ProjectDetail = ProjectListItem &

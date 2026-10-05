@@ -2191,6 +2191,7 @@ export type Database = {
         Row: {
           billing_address: string | null
           billing_email: string | null
+          client_code: string
           created_at: string
           currency: string
           gstin: string | null
@@ -2200,6 +2201,7 @@ export type Database = {
           organization_id: string
           owner_id: string | null
           pan: string | null
+          project_seq: number
           status: string
           tags: string[]
           updated_at: string
@@ -2207,6 +2209,7 @@ export type Database = {
         Insert: {
           billing_address?: string | null
           billing_email?: string | null
+          client_code?: string
           created_at?: string
           currency?: string
           gstin?: string | null
@@ -2223,6 +2226,7 @@ export type Database = {
         Update: {
           billing_address?: string | null
           billing_email?: string | null
+          client_code?: string
           created_at?: string
           currency?: string
           gstin?: string | null
@@ -14255,6 +14259,7 @@ export type Database = {
           name: string
           opportunity_id: string | null
           organization_id: string
+          project_code: string
           production_ready_at: string | null
           proposal_id: string | null
           release_held_at: string | null
@@ -14292,6 +14297,7 @@ export type Database = {
           name: string
           opportunity_id?: string | null
           organization_id: string
+          project_code?: string
           production_ready_at?: string | null
           proposal_id?: string | null
           release_held_at?: string | null
@@ -14329,6 +14335,7 @@ export type Database = {
           name?: string
           opportunity_id?: string | null
           organization_id?: string
+          project_code?: string
           production_ready_at?: string | null
           proposal_id?: string | null
           release_held_at?: string | null

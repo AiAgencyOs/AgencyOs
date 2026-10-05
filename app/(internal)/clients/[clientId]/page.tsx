@@ -246,7 +246,10 @@ export default async function ClientDetailPage({
       cell: (p) => (
         <span className="flex items-center gap-2.5">
           <Avatar name={p.name} size="sm" square tone="sidebar" />
-          <span className="truncate">{p.name}</span>
+          <span className="min-w-0">
+            <span className="block truncate">{p.name}</span>
+            <span className="block truncate font-mono text-[11px] font-normal text-muted">{p.projectCode}</span>
+          </span>
         </span>
       ),
     },
@@ -348,6 +351,7 @@ export default async function ClientDetailPage({
         status={<Badge tone={client.status === 'active' ? 'success' : 'neutral'} dot>{humanize(client.status)} client</Badge>}
         subtitle={`Client since ${clock.date(client.createdAt)}`}
         facts={[
+          { label: 'Client ID', value: <span className="font-mono">{client.clientCode}</span>, icon: <IconUser size={14} /> },
           ...(client.billingEmail ? [{ label: 'Billing email', value: client.billingEmail, icon: <IconInbox size={14} /> }] : []),
           { label: 'Currency', value: client.currency, icon: <IconInvoices size={14} /> },
           { label: 'Projects', value: `${client.projectsActive} active · ${client.projectsTotal} total`, icon: <IconProjects size={14} /> },

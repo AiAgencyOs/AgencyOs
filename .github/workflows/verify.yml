@@ -855,6 +855,8 @@ jobs:
           # record_manual_* doors work only for the exact approved version, once; one visitor and one prospect are followed end to end through the
           # real ingest and the tracked handoff; and the emergency stop reaches every governed action.
           npm run db:verify:acquisition
+          # Client and project identifiers for life: assigned by the database, unique under concurrency, never edited, never reused.
+          npm run db:verify:clientcodes
 
           # The AI Provider Manager's contract: who may manage providers, models and keys; no path returns a secret;
           # discovered models arrive disabled; a rejected key stays rejected; history is never orphaned.

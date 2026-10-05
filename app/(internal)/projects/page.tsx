@@ -84,7 +84,7 @@ const columnsFor = (clock: AgencyClock, mayArchive: boolean, mayPay: boolean): C
         <Avatar name={p.name} size="md" square tone="sidebar" />
         <span className="min-w-0">
           <span className="block truncate">{p.name}</span>
-          <span className="block truncate font-mono text-[11px] font-normal text-muted">{p.code}</span>
+          <span className="block truncate font-mono text-[11px] font-normal text-muted">{p.project_code}{p.code ? ` · ${p.code}` : ''}</span>
         </span>
       </span>
     ),
@@ -451,7 +451,7 @@ export default async function ProjectsPage({
                       <Avatar name={p.name} size="md" square tone="sidebar" />
                       <span className="min-w-0">
                         <span className="block truncate">{p.name}</span>
-                        <span className="block truncate font-mono text-[11px] font-normal text-muted">{p.code}</span>
+                        <span className="block truncate font-mono text-[11px] font-normal text-muted">{p.project_code}{p.code ? ` · ${p.code}` : ''}</span>
                       </span>
                     </Link>
                     <span title={p.healthReasons.join(' · ') || undefined} className="inline-flex shrink-0"><Badge tone={HEALTH_TONE[p.health]} dot>{HEALTH_LABEL[p.health]}</Badge></span>

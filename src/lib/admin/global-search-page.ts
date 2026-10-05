@@ -1,3 +1,4 @@
+import { ilikeAny } from '@/lib/db/search';
 import 'server-only';
 
 import { requireInternal } from '@/lib/auth/session';
@@ -145,7 +146,7 @@ export async function searchRecords(filter: SearchPageFilter): Promise<SearchPag
           .schema('core')
           .from('client_accounts')
           .select('id, name, status, created_at')
-          .ilike('name', like)
+          .or(ilikeAny(['name', 'client_code'], trimmed))
           .order('created_at', { ascending: false })
           .limit(RESULTS_PER_ENTITY);
         if (since) query = query.gte('created_at', since);
@@ -173,7 +174,7 @@ export async function searchRecords(filter: SearchPageFilter): Promise<SearchPag
           .schema('projects')
           .from('projects')
           .select('id, name, code, status, created_at')
-          .ilike('name', like)
+          .or(ilikeAny(['name', 'project_code'], trimmed))
           .is('deleted_at', null)
           .order('created_at', { ascending: false })
           .limit(RESULTS_PER_ENTITY);

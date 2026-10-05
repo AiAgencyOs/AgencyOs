@@ -76,6 +76,7 @@ const columnsFor = (clock: AgencyClock, indexOf: (id: string) => number, phoneOf
         <Avatar name={c.name} size="md" />
         <span className="min-w-0">
           <span className="block max-w-[9rem] truncate">{c.name}</span>
+          <span className="block truncate font-mono text-[11px] font-normal text-muted">{c.clientCode}</span>
           {dupOf(c.id) > 0 ? <Badge tone="warning" dot={false}>Possible duplicate ×{dupOf(c.id) + 1}</Badge> : null}
         </span>
       </span>
@@ -166,7 +167,7 @@ export default async function ClientsPage({
 
   const byStatus =
     status === 'active' ? active : status === 'archived' ? archived : status === 'owing' ? owing : status === 'working' ? active : status === 'completed' ? completed : status === 'pending' ? pendingClients : status === 'on_hold' ? onHoldClients : allClients;
-  const bySearch = needle ? byStatus.filter((c) => c.name.toLowerCase().includes(needle) || (c.billingEmail ?? '').toLowerCase().includes(needle)) : byStatus;
+  const bySearch = needle ? byStatus.filter((c) => c.name.toLowerCase().includes(needle) || c.clientCode.toLowerCase().includes(needle) || (c.billingEmail ?? '').toLowerCase().includes(needle)) : byStatus;
   // SCR-014 — `?tag=` and `?owner=` (owner is a user id; `none` means unowned).
   const filtered = bySearch.filter((c) => (!tag || c.tags.includes(tag)) && (!owner || (owner === 'none' ? c.ownerId === null : c.ownerId === owner)));
   const clients = sortRows(filtered, sortKey, direction, COMPARATORS);
