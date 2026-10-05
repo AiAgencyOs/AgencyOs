@@ -898,14 +898,19 @@ export async function callModelWithTools(
       content: response.data.calls.map((c) => ({ type: 'tool_use' as const, id: c.id, name: c.name, input: c.input })),
     });
 
+    // A model may ask for several tools in ONE turn, and they run concurrently. Each must record under its OWN step number, decided here
+    // before any of them starts: when each read and then advanced a shared counter, three parallel calls all wrote the same `seq`, the
+    // unique (run, seq) index refused two of them, and a run that did a dozen things left one row in its trace (found on the first real-model
+    // run of the Ad Manager).
+    const base = seq;
     const results = await Promise.all(
-      response.data.calls.map(async (call) => {
+      response.data.calls.map(async (call, index) => {
         const started2 = Date.now();
         const result = await dispatch({ name: call.name, input: call.input });
-        seq = await recordToolCall(ctx.admin, {
+        await recordToolCall(ctx.admin, {
           organizationId: ctx.job.organization_id,
           runId,
-          seq,
+          seq: base + index,
           toolName: call.name,
           input: call.input,
           result,
@@ -914,6 +919,7 @@ export async function callModelWithTools(
         return { call, result };
       }),
     );
+    seq = base + response.data.calls.length;
 
     messages.push({
       role: 'user',
