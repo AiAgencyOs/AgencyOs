@@ -18242,6 +18242,69 @@ export type Database = {
         }
         Relationships: []
       }
+      discount_decisions: {
+        Row: {
+          approval_request_id: string | null
+          approved_by: string | null
+          created_at: string
+          decided_at: string | null
+          discount_minor: number
+          discount_pct: number
+          expiry: string | null
+          final_amount_minor: number | null
+          id: string
+          organization_id: string
+          original_amount_minor: number
+          proposal_id: string
+          reason: string
+          requested_by_agent: string | null
+          requested_by_type: string
+          requested_by_user: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          approval_request_id?: string | null
+          approved_by?: string | null
+          created_at?: string
+          decided_at?: string | null
+          discount_minor: number
+          discount_pct: number
+          expiry?: string | null
+          final_amount_minor?: number | null
+          id?: string
+          organization_id: string
+          original_amount_minor: number
+          proposal_id: string
+          reason: string
+          requested_by_agent?: string | null
+          requested_by_type: string
+          requested_by_user?: string | null
+          status: string
+          updated_at?: string
+        }
+        Update: {
+          approval_request_id?: string | null
+          approved_by?: string | null
+          created_at?: string
+          decided_at?: string | null
+          discount_minor?: number
+          discount_pct?: number
+          expiry?: string | null
+          final_amount_minor?: number | null
+          id?: string
+          organization_id?: string
+          original_amount_minor?: number
+          proposal_id?: string
+          reason?: string
+          requested_by_agent?: string | null
+          requested_by_type?: string
+          requested_by_user?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       objections: {
         Row: {
           answered_by: string | null
@@ -18409,6 +18472,7 @@ export type Database = {
           created_by: string | null
           id: string
           is_default: boolean
+          kind: string | null
           max_amount_minor: number | null
           min_amount_minor: number | null
           name: string
@@ -18421,6 +18485,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           is_default?: boolean
+          kind?: string | null
           max_amount_minor?: number | null
           min_amount_minor?: number | null
           name: string
@@ -18433,6 +18498,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           is_default?: boolean
+          kind?: string | null
           max_amount_minor?: number | null
           min_amount_minor?: number | null
           name?: string
@@ -18999,6 +19065,7 @@ export type Database = {
       }
       set_payment_structure: {
         Args: {
+          p_kind?: string
           p_max_amount_minor?: number
           p_milestones: Json
           p_min_amount_minor?: number
@@ -19014,6 +19081,7 @@ export type Database = {
         Args: {
           p_discount_minor?: number
           p_proposal_id: string
+          p_reason?: string
           p_tax_minor?: number
         }
         Returns: {
@@ -19022,6 +19090,38 @@ export type Database = {
           subtotal_minor: number
           tax_minor: number
           total_minor: number
+        }[]
+      }
+      apply_payment_structure_kind: {
+        Args: { p_kind: string; p_proposal_id: string }
+        Returns: {
+          name: string
+          outcome: string
+          structure_id: string
+        }[]
+      }
+      record_discount_decision: {
+        Args: {
+          p_discount_minor: number
+          p_expiry?: string
+          p_proposal_id: string
+          p_reason: string
+          p_requested_by_agent?: string
+          p_requested_by_type: string
+        }
+        Returns: {
+          approval_request_id: string
+          decision_id: string
+          final_amount_minor: number
+          outcome: string
+          status: string
+        }[]
+      }
+      sync_discount_decision: {
+        Args: { p_decision_id: string }
+        Returns: {
+          outcome: string
+          status: string
         }[]
       }
       submit_plan_set: {

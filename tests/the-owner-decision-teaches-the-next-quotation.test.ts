@@ -343,6 +343,10 @@ describe('D. the wiring, end to end', () => {
       // see. Listed here rather than asserted loosely, so a listener arriving
       // or leaving this event is a decision somebody makes on purpose.
       'sales:learnFromRevision',
+      // Business Phase 1-4 audit step 1.27: carries an owner's decision onto
+      // a discount_decisions row, filtered to subject_type = 'discount_decision'
+      // the same way the two 'proposal' listeners above filter to their own.
+      'sales:syncDiscountDecision',
     ]);
     assert.equal(HANDLER_JOB_KIND['sales:learnFromDecision'], 'quotation.learn');
   });

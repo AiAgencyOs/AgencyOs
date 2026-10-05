@@ -551,3 +551,53 @@ export async function learnFromRevision(admin: Admin, job: LearnJob): Promise<Ha
     detail: `recorded what the owner changed between v${previous.version} and v${approved.version}`,
   };
 }
+
+/**
+ * `approval.decided` → carry the owner's decision onto a discount decision
+ * row (Business Phase 1-4 audit step 1.27).
+ *
+ * Same shape as `learnFromDecision`: the ROW is the authority, an outbox
+ * event is only ever a pointer to it, and every refusal below is a success
+ * because this handler owes nobody a state — a discount decision left
+ * `pending_approval` because it was cancelled upstream is not this job's
+ * failure to report.
+ */
+export async function syncDiscountDecision(admin: Admin, job: LearnJob): Promise<HandlerResult> {
+  const requestId = job.payload?.subjectId ?? null;
+  if (!requestId) {
+    return { status: 'failed', permanent: true, detail: 'approval.decided names no request' };
+  }
+
+  const { data: request, error: requestError } = await admin
+    .schema('approvals')
+    .from('approval_requests')
+    .select('subject_type, subject_id')
+    .eq('id', requestId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+
+  if (requestError) {
+    return { status: 'failed', permanent: false, detail: `could not read the approval request: ${requestError.message}` };
+  }
+  if (!request) {
+    return { status: 'succeeded', outcome: 'gone', detail: 'the approval request no longer exists' };
+  }
+  if (request.subject_type !== 'discount_decision' || !request.subject_id) {
+    return { status: 'succeeded', outcome: 'not_mine', detail: `a ${request.subject_type} decision is not a discount to sync` };
+  }
+
+  const { data, error } = await admin
+    .schema('sales')
+    .rpc('sync_discount_decision', { p_decision_id: request.subject_id });
+
+  if (error) {
+    return { status: 'failed', permanent: false, detail: `could not sync the discount decision: ${error.message}` };
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; status?: string } | null;
+  return {
+    status: 'succeeded',
+    outcome: row?.outcome ?? 'synced',
+    detail: `discount decision ${row?.status ?? row?.outcome ?? 'processed'}`,
+  };
+}
