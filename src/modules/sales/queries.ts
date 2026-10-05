@@ -212,6 +212,58 @@ export async function getProposal(proposalId: string): Promise<ProposalDetail | 
   return data ? { ...data, items: await listProposalItems(proposalId) } : null;
 }
 
+/** One quotation's discount audit trail (Business Phase 1-4 audit step 1.27), newest first. */
+export interface DiscountDecisionRow {
+  id: string;
+  originalAmountMinor: number;
+  discountMinor: number;
+  discountPct: number;
+  reason: string;
+  requestedByType: 'agent' | 'human';
+  requestedByAgent: string | null;
+  requestedByUser: string | null;
+  status: string;
+  approvalRequestId: string | null;
+  approvedBy: string | null;
+  expiry: string | null;
+  finalAmountMinor: number | null;
+  createdAt: string;
+  decidedAt: string | null;
+}
+
+export async function listDiscountDecisions(proposalId: string): Promise<DiscountDecisionRow[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('sales')
+    .from('discount_decisions')
+    .select(
+      'id, original_amount_minor, discount_minor, discount_pct, reason, requested_by_type, requested_by_agent, requested_by_user, status, approval_request_id, approved_by, expiry, final_amount_minor, created_at, decided_at',
+    )
+    .eq('proposal_id', proposalId)
+    .order('created_at', { ascending: false });
+
+  if (error) unreadable('listDiscountDecisions', error);
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    originalAmountMinor: row.original_amount_minor,
+    discountMinor: row.discount_minor,
+    discountPct: row.discount_pct,
+    reason: row.reason,
+    requestedByType: row.requested_by_type as 'agent' | 'human',
+    requestedByAgent: row.requested_by_agent,
+    requestedByUser: row.requested_by_user,
+    status: row.status,
+    approvalRequestId: row.approval_request_id,
+    approvedBy: row.approved_by,
+    expiry: row.expiry,
+    finalAmountMinor: row.final_amount_minor,
+    createdAt: row.created_at,
+    decidedAt: row.decided_at,
+  }));
+}
+
 export async function listOpportunities(limit = 100): Promise<OpportunityListItem[]> {
   const supabase = await createClient();
 

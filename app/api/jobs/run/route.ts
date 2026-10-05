@@ -70,7 +70,7 @@ import { handleAskClarification, handleReadClarificationAnswer } from '@/modules
 import { handleAnnouncePhaseThree, handleAskFinalConfirmation } from '@/modules/projects/pm-design-comms';
 import { handleWelcomeClient, handleAskGstDetails, handlePaymentUpdate, handleReadBillingReply } from '@/modules/projects/pm-client-comms';
 import { handleHandoverAcceptedForFinance, handleBillingModeConfirmed, handleInvoiceIssuedForDelivery, handlePhaseFourCompletedForFinance, handlePhaseFiveCompletedForFinance, handlePhaseSixCompletedForFinance } from '@/modules/finance/handlers';
-import { learnFromDecision, learnFromRevision } from '@/modules/sales/handlers';
+import { learnFromDecision, learnFromRevision, syncDiscountDecision } from '@/modules/sales/handlers';
 import { handleRouteTask2Design, handleRequestUIVersionAdminReview } from '@/modules/orchestrator/handlers';
 import { handleReviewUIVersion, handleReviewPrototypeBuild } from '@/modules/qa/handlers';
 
@@ -1093,6 +1093,22 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   );
 
   /**
+   * ── a discount decision hears what the owner decided (Business Phase 1-4
+   *    audit step 1.27) ───────────────────────────────────────────────────
+   *
+   * Pure database work, the same weight as the pricing lesson beside it: read
+   * the settled request, carry `approved`/anything-else onto the
+   * discount_decisions row. Placed with the other approval.decided consumers
+   * that write a note to the agency rather than a message to a client.
+   */
+  const discountDecisionSyncs = await runEventJobs(
+    admin,
+    DISCOUNT_SYNC_JOB_KIND,
+    syncDiscountDecision,
+    'runDiscountDecisionSyncJobs',
+  );
+
+  /**
    * ── follow-up delivery (G-012, ADM-69) ────────────────────────────────
    *
    * The follow-up worker claims an attempt and writes the message; this hands
@@ -1248,6 +1264,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     offerNotices: offerNotices.results,
     lessons: lessons.results,
     revisionLessons: revisionLessons.results,
+    discountDecisionSyncs: discountDecisionSyncs.results,
     followUpDeliveries: followUpDeliveries.results,
     correlationId,
   });
@@ -1387,6 +1404,7 @@ const FOLLOWUP_JOB_KIND = HANDLER_JOB_KIND['crm:deliverFollowUp'];
 const DISPATCH_JOB_KIND = HANDLER_JOB_KIND['crm:dispatchApprovedQuotation'];
 const LEARN_JOB_KIND = HANDLER_JOB_KIND['sales:learnFromDecision'];
 const REVISION_JOB_KIND = HANDLER_JOB_KIND['sales:learnFromRevision'];
+const DISCOUNT_SYNC_JOB_KIND = HANDLER_JOB_KIND['sales:syncDiscountDecision'];
 const OFFER_JOB_KIND = HANDLER_JOB_KIND['crm:announceOfferApplied'];
 const REVISION_LIMIT_JOB_KIND = HANDLER_JOB_KIND['crm:announceRevisionLimitEscalated'];
 const PHASE_THREE_COMPLETED_JOB_KIND = HANDLER_JOB_KIND['crm:announcePhaseThreeCompleted'];
