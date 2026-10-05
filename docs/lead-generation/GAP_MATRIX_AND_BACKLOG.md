@@ -234,7 +234,7 @@ that fails if the fix is removed.
 **Verification.** `scripts/verify-acquisition-hardening.sql` (78 checks) and `scripts/verify-acquisition-e2e.sql` (25 checks: one visitor from a
 Google landing page to WhatsApp through the real ingest, one prospect from an email through the tracked handoff, the funnel and the campaign
 agreeing about the same lead, and the emergency stop reaching every governed action). **Red-proofs are now an artifact**:
-`scripts/redproof/cases.json` (12 ads, 13 landing, 25 B2B, 16 analytics, 25 hardening, 7 landing TypeScript, 6 B2B TypeScript) run by
+`scripts/redproof/cases.json` (12 ads, 13 landing, 25 B2B, 16 analytics, 25 hardening, 7 landing TypeScript, 6 B2B TypeScript, 7 attribution) run by
 `scripts/redproof/run.py` against the LIVE definitions (a case that a later migration shadows reports GREEN and is re-pointed, never counted).
 
 **Judged and left, with the reason.** (a) Engine-facing wrappers with no screen - `resolveIdentity`, `recordTouchpoint`, `decideAction`,
@@ -243,6 +243,10 @@ usual way from the lead, and the subtask doors require an agent that owns the co
 platform did the thing - it records a person's statement, against the exact approved version, once. (c) A handoff link already sent depends
 on the vault key it was derived with: do not rotate `VAULT_ENCRYPTION_KEY` while links are live. (d) Provider adapter error messages are
 stored as given: when an adapter exists its messages must be scrubbed of anything sensitive.
+
+### Follow-up (attribution four ways, over time) - built and verified
+
+* `20261025100000_attribution_is_shown_four_ways_and_over_time.sql`: `acquisition_attribution_models` (first, last, linear, position-based 40/20/40; each column sums to the leads) and `acquisition_trend` (weekly), internal sessions only, nothing without a session. Shown on the Performance tab. `scripts/verify-acquisition-attribution.sql`, red-proved by 7 cases in `scripts/redproof`.
 
 ## 5. Human dependencies (known now; asked for only when the engine reaches them)
 

@@ -712,5 +712,71 @@
     "replace": "contains_an_external_linkX: 'Contains a link"
    }
   ]
+ },
+ "attribution": {
+  "migration": "supabase/migrations/20261025100000_attribution_is_shown_four_ways_and_over_time.sql",
+  "verifier": "scripts/verify-acquisition-attribution.sql",
+  "cases": [
+   {
+    "name": "first and last middle share wrong",
+    "find": "else 0.2 / (n.k - 2)",
+    "replace": "else 0.3 / (n.k - 2)",
+    "nth": 1
+   },
+   {
+    "name": "first = last takes too little",
+    "find": "when f.ch = l.ch then case when c.ch = f.ch then 0.8 else",
+    "replace": "when f.ch = l.ch then case when c.ch = f.ch then 0.6 else",
+    "nth": 1
+   },
+   {
+    "name": "linear divisor wrong",
+    "find": "sum(1.0 / n.k)",
+    "replace": "sum(1.0 / (n.k + 1))",
+    "nth": 1
+   },
+   {
+    "name": "last touch is really first",
+    "find": "lasts as (select distinct on (lead_id) lead_id, ch from seq order by lead_id, rn desc)",
+    "replace": "lasts as (select distinct on (lead_id) lead_id, ch from seq order by lead_id, rn)",
+    "nth": 1
+   },
+   {
+    "name": "attribution open to clients",
+    "find": "and l.merged_into_lead_id is null and k.uid is not null and k.internal and l.organization_id = k.org\n  ),\n  seq as",
+    "replace": "and l.merged_into_lead_id is null and k.uid is not null and l.organization_id = k.org\n  ),\n  seq as",
+    "nth": 1
+   },
+   {
+    "name": "attribution not scoped to the organisation",
+    "find": "and l.merged_into_lead_id is null and k.uid is not null and k.internal and l.organization_id = k.org\n  ),\n  seq as",
+    "replace": "and l.merged_into_lead_id is null and k.uid is not null and k.internal\n  ),\n  seq as",
+    "nth": 1
+   },
+   {
+    "name": "trend window unbounded (the ancient lead appears)",
+    "find": "greatest(1, least(coalesce(p_weeks, 12), 52))",
+    "replace": "greatest(1, coalesce(p_weeks, 12))",
+    "nth": 1
+   }
+  ]
+ },
+ "orgdelete": {
+  "migration": "supabase/migrations/20261026100000_deleting_an_organisation_removes_its_history.sql",
+  "verifier": "scripts/verify-acquisition-orgdelete.sql",
+  "cases": [
+   {
+    "name": "touchpoints refuse the organisation's own delete",
+    "find": "  if tg_op = 'DELETE' and not exists (select 1 from core.organizations o where o.id = old.organization_id) then return old; end if;\n  raise exception 'a touchpoint is history",
+    "replace": "  raise exception 'a touchpoint is history",
+    "nth": 1
+   },
+   {
+    "name": "campaigns refuse the organisation's own delete",
+    "find": "    if not exists (select 1 from core.organizations o where o.id = old.organization_id) then return old; end if; raise exception 'a campaign is history'",
+    "replace": "    raise exception 'a campaign is history'",
+    "nth": 1
+   }
+  ]
  }
 }

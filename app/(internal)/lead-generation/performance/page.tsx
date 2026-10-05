@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { FUNNEL_CHANNEL_LABEL, RECOMMENDATION_TITLE, WINDOWS, failureTitle, recommendationLine, revenueLine, windowFrom } from '@/modules/acquisition/analytics-vocabulary';
-import { listAcquisitionFailures, readAcquisitionFunnel, readAcquisitionRecommendations, readGoalProgress } from '@/modules/acquisition/queries';
+import { readAcquisitionTrend, readAttributionModels, listAcquisitionFailures, readAcquisitionFunnel, readAcquisitionRecommendations, readGoalProgress } from '@/modules/acquisition/queries';
 import { Badge, Callout, Card, CardBody, CardHeader, EmptyState, PageHeader, PermissionDenied } from '@/ui';
 
 export const metadata: Metadata = { title: 'Lead generation performance' };
@@ -20,7 +20,8 @@ export default async function PerformancePage({ searchParams }: { searchParams: 
   const context = await requireInternal('/lead-generation/performance');
   if (!can(context, 'acquisition.read')) return <PermissionDenied />;
   const days = windowFrom((await searchParams).days);
-  const [funnel, goals, failures, advice] = await Promise.all([readAcquisitionFunnel(days), readGoalProgress(), listAcquisitionFailures(), readAcquisitionRecommendations(days)]);
+  const [funnel, goals, failures, advice, models, trend] = await Promise.all([readAcquisitionFunnel(days), readGoalProgress(), listAcquisitionFailures(), readAcquisitionRecommendations(days), readAttributionModels(days), readAcquisitionTrend(12)]);
+  const weeks = [...new Set(trend.map((t) => t.weekStart))].sort();
   const critical = failures.filter((f) => f.severity === 'critical');
 
   return (
@@ -91,6 +92,30 @@ export default async function PerformancePage({ searchParams }: { searchParams: 
               </tbody>
             </table>
           </div>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader title="Credit, four ways" description="The same leads under four rules. First touch credits the channel that found a lead; last touch the one that closed it; linear splits one credit equally among every channel that touched it; position-based gives 40% to the first, 40% to the last and 20% to the middle. Each column adds up to the number of leads, so no view can invent credit. 'Everything else' includes the lead's own WhatsApp arrival." />
+        <CardBody>
+          <table className="w-full text-[13px]">
+            <thead><tr className="text-left text-xs text-muted"><th className="py-1">Channel</th><th>First touch</th><th>Last touch</th><th>Linear</th><th>Position-based</th></tr></thead>
+            <tbody>{models.map((m) => <tr key={m.channel} className="border-t border-line"><td className="py-1.5">{FUNNEL_CHANNEL_LABEL[m.channel] ?? m.channel}</td><td>{m.firstTouch}</td><td>{m.lastTouch}</td><td>{m.linear.toFixed(1)}</td><td>{m.positionBased.toFixed(1)}</td></tr>)}</tbody>
+          </table>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader title="Leads by week" description="New leads by the channel that found them, the last twelve weeks." />
+        <CardBody>
+          {weeks.length === 0 ? <p className="text-[13px] text-muted">No leads in this period.</p> : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px]">
+                <thead><tr className="text-left text-xs text-muted"><th className="py-1">Week of</th>{Object.keys(FUNNEL_CHANNEL_LABEL).map((c) => <th key={c}>{FUNNEL_CHANNEL_LABEL[c]?.split(' ')[0]}</th>)}</tr></thead>
+                <tbody>{weeks.map((w) => <tr key={w} className="border-t border-line"><td className="py-1.5">{w}</td>{Object.keys(FUNNEL_CHANNEL_LABEL).map((c) => { const t = trend.find((x) => x.weekStart === w && x.channel === c); return <td key={c}>{t ? `${t.leads}${t.qualified ? ` (${t.qualified} qualified)` : ''}` : '-'}</td>; })}</tr>)}</tbody>
+              </table>
+            </div>
+          )}
         </CardBody>
       </Card>
 

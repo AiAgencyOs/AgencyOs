@@ -645,3 +645,22 @@ export async function listOutreachProspects(limit = 40): Promise<ProspectChoice[
   if (error) unreadable('listOutreachProspects', error);
   return (data ?? []).map((p) => ({ id: p.id, email: p.email, name: p.full_name, company: p.company }));
 }
+
+export type AttributionRow = { channel: string; firstTouch: number; lastTouch: number; linear: number; positionBased: number };
+
+/** The same leads credited four ways. Each column sums to the number of leads, so no model can invent credit. */
+export async function readAttributionModels(days: number): Promise<AttributionRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('acquisition_attribution_models', { p_days: days });
+  if (error) unreadable('readAttributionModels', error);
+  return (data ?? []).filter((r) => r.channel).map((r) => ({ channel: r.channel as string, firstTouch: Number(r.first_touch ?? 0), lastTouch: Number(r.last_touch ?? 0), linear: Number(r.linear ?? 0), positionBased: Number(r.position_based ?? 0) }));
+}
+
+export type TrendRow = { weekStart: string; channel: string; leads: number; qualified: number };
+
+export async function readAcquisitionTrend(weeks: number): Promise<TrendRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('acquisition_trend', { p_weeks: weeks });
+  if (error) unreadable('readAcquisitionTrend', error);
+  return (data ?? []).filter((r) => r.week_start && r.channel).map((r) => ({ weekStart: r.week_start as string, channel: r.channel as string, leads: Number(r.leads ?? 0), qualified: Number(r.qualified ?? 0) }));
+}

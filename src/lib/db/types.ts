@@ -8698,6 +8698,14 @@ export type Database = {
         Args: { p_html_hash: string; p_organization_id: string; p_version: string }
         Returns: { outcome: string | null; reason: string | null }[]
       }
+      acquisition_attribution_models: {
+        Args: { p_days?: number }
+        Returns: { channel: string | null; first_touch: number | null; last_touch: number | null; linear: number | null; position_based: number | null }[]
+      }
+      acquisition_trend: {
+        Args: { p_weeks?: number }
+        Returns: { week_start: string | null; channel: string | null; leads: number | null; qualified: number | null }[]
+      }
       save_qualification_model: {
         Args: { p_note: string; p_weights: Json }
         Returns: { outcome: string | null; version: number | null }[]

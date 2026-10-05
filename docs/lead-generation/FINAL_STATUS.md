@@ -27,8 +27,8 @@ number on the screens is read from the CRM or the ledger. Used that way it is co
 
 | Evidence | Where | Result |
 |---|---|---|
-| 14 SQL verifiers driven as the real request roles (about 1,200 checks) | `scripts/verify-acquisition-*.sql`, `npm run db:verify:acquisition` | all pass from a from-zero apply of every migration |
-| Red-proofs as an artifact (104 cases against the LIVE definitions; a shadowed case reports GREEN and is re-pointed) | `scripts/redproof/` | every case red, baseline restored and green |
+| 15 SQL verifiers driven as the real request roles (about 1,200 checks) | `scripts/verify-acquisition-*.sql`, `npm run db:verify:acquisition` | all pass from a from-zero apply of every migration |
+| Red-proofs as an artifact (111 cases against the LIVE definitions; a shadowed case reports GREEN and is re-pointed) | `scripts/redproof/` | every case red, baseline restored and green |
 | Type, lint, 8,755 unit/contract tests, secret scan, record check | `npm run check` | exit 0 |
 | End to end across slices (one visitor, one prospect, funnel = campaign, stop reaches every action) | `scripts/verify-acquisition-e2e.sql` | pass |
 | Three independent reviews (tenancy, governed execution, honesty/secrets) | `docs/.../GAP_MATRIX_AND_BACKLOG.md` §4 slice 12 | 19 findings reproduced and closed |
@@ -50,7 +50,7 @@ Status words: **BUILT** (works with no provider), **ASSISTED** (a person does th
 | Meta + Google ad campaigns: versions, never-automatic launch/budget/targeting changes, committed-budget cap, spend once, pending pause, health, results | BUILT; applying is **ASSISTED** | slice 8 + `record_manual_ad_*`. Meta/Google connectors, pulling platform figures, optimisation that *acts* **NOT BUILT** (advice only, by design) |
 | Landing pages: approved as exactly their content/address/number, fetched verification, Google launch gate, visit attribution | BUILT; upload is **ASSISTED** | slice 9 + `record_manual_landing_deploy`. Hostinger deployer, DNS/SSL, visual builder, A/B, one-click rollback **NOT BUILT** |
 | B2B: marketplace rules (default never off-platform), scored opportunities, proposals (a person prices), profiles, handoff gate | BUILT; sending is **ASSISTED** | slice 10. Marketplace connectors, automated discovery, AI proposal writer **NOT BUILT** |
-| Results from the CRM by first touch with last-touch/touched-by alongside, goals, failures, advice | BUILT | slice 11 + `/lead-generation/performance`. Multi-touch weighting, trends, digests **NOT BUILT** |
+| Results from the CRM by first touch with last-touch/touched-by alongside, goals, failures, advice | BUILT | slice 11 + `/lead-generation/performance`. Scheduled digests **NOT BUILT** (multi-touch models and weekly trends are built) |
 | Roles/RLS/audit/tenancy | BUILT | forced RLS on every new table; 19 review findings closed; `verify-acquisition-hardening` |
 | The five acquisition agents (Email Outreach, Social Media, B2B Opportunity, Ad Manager, Landing Page) | **NOT BUILT - needs an owner decision** | `src/modules/agents/registry.ts` defines only the agents ADM-82 approved, "defined when their tools exist"; adding new agent keys is a governance decision, and every one needs a funded model key |
 
