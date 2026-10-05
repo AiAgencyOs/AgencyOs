@@ -62,6 +62,7 @@ const FORBIDDEN = [
   'exclusiveMinimum',
   'exclusiveMaximum',
   'multipleOf',
+  'propertyNames', // a z.record(...): Anthropic refused the design-directions schema for it on a real run (2026-10-05)
 ];
 
 /** Walks schema positions only — a property NAMED `minimum` is legal. */

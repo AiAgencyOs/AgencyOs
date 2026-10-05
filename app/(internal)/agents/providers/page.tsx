@@ -119,7 +119,13 @@ export default async function ProvidersPage() {
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <Badge tone={p.enabled ? 'success' : 'neutral'} dot>{p.enabled ? 'Active' : 'Disabled'}</Badge>
                   <Badge tone={HEALTH_TONE[p.healthState] ?? 'neutral'}>{HEALTH_LABEL[p.healthState] ?? p.healthState}</Badge>
-                  <span className="text-muted">{p.usableKeyCount}/{p.keyCount} keys usable</span>
+                  <Link
+                    href={`/agents/providers/${encodeURIComponent(p.providerId)}?tab=credentials`}
+                    className="text-brand underline-offset-2 hover:underline"
+                    aria-label={`Manage keys for ${p.displayName}`}
+                  >
+                    {p.usableKeyCount}/{p.keyCount} keys usable · {p.keyCount === 0 ? 'add a key' : 'manage keys'}
+                  </Link>
                   <span className="text-muted">{p.enabledModelCount}/{p.modelCount} models enabled</span>
                   {p.healthCheckedAt ? <span className="text-faint">checked {clock.dateTime(p.healthCheckedAt)}</span> : null}
                 </div>

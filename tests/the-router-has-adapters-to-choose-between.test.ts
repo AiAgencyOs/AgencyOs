@@ -284,4 +284,20 @@ describe('D. provider failures, said by name, retried only when a moment would h
     }
     assert.equal(requests, 1, 'a malformed request is never retried');
   });
+
+  test('OpenRouter\u2019s "Provider returned error" carries the upstream vendor\u2019s own words, redacted', async () => {
+    const { resolveProvider } = await router();
+    const provider = await resolveProvider('openai/gpt-4o');
+    assert.ok(provider.ok);
+    willReply({
+      status: 400,
+      body: { error: { message: 'Provider returned error', metadata: { raw: `{"error":{"message":"output_config.format.schema: property 'propertyNames' is not supported"}} key sk-abcdefghijklmnop` } } },
+    });
+    const result = await provider.data.generateStructured(request('openai/gpt-4o'));
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error.message, /OpenRouter returned 400: Provider returned error - .*propertyNames. is not supported/);
+      assert.doesNotMatch(result.error.message, /abcdefghijklmnop/);
+    }
+  });
 });
