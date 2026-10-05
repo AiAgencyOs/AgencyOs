@@ -51,7 +51,22 @@ deployment's address (for example `https://agency-os.vercel.app`).
 | `app/(internal)/projects/[projectId]/design/figma/` | the Admin tab: instructions, create a code, what the plugin has built |
 | `tests/figma-plugin.test.ts`, `scripts/verify-phase-three-e2e.mjs` § 13b | the proof |
 
-## Not proved
+## Proved inside Figma (2026-10-05)
 
-Nothing here has been run **inside Figma** itself: that needs the Figma desktop app and a person. The layout, the routes, the code and the
-record are proved; the last step - pressing Import in Figma and looking at the page - is the first thing to do after installing.
+Run in the Figma desktop app against a local AgencyOS (`http://localhost:3000`, which the manifest allows through `devAllowedDomains`) on a
+project with two finalized screens and the "Calm Clinical" direction: the plugin reported **11 frames** and created a page with the
+Direction frame (palette swatches and type) and, for each screen, its wireframe plus an Empty / Loading / Error / Success frame
+(`orders - Orders (Error)` and so on). AgencyOS recorded the report (`projects.figma_plugin_imports`: 11 frames, linked to nothing).
+
+Against the **live** deployment the same plugin authenticated, reached the API and was correctly told "This project has no finalized
+screens yet" - the only project there is a cancelled test project whose design phase is locked.
+
+## Trying it without a real project
+
+Create a plugin code with the deployment's signing key for any local project that has finalized screens, run the dev server, and give the
+plugin `http://localhost:3000`. A project from `verify-phase-three-e2e` works. Nothing in a deployed environment is touched.
+
+## Still not done
+
+- Importing a real client's project from the live deployment (none has reached a finalized screen list yet).
+- Linking a created frame to its screen is still a person's act on the Screens tab.

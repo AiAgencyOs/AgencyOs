@@ -2,12 +2,19 @@
   "name": "AgencyOS Design Import",
   "id": "agencyos-design-import-dev",
   "api": "1.0.0",
-  "editorType": ["figma"],
+  "editorType": [
+    "figma"
+  ],
   "main": "code.js",
   "ui": "ui.html",
   "documentAccess": "dynamic-page",
   "networkAccess": {
-    "allowedDomains": ["*"],
-    "reasoning": "Reads one project's finalized screens and palette from YOUR AgencyOS deployment, and reports back which frames it created. Replace * with your deployment's origin (for example https://agency-os.vercel.app) before you share this plugin with anyone else."
+    "allowedDomains": [
+      "*"
+    ],
+    "reasoning": "Reads one project's finalized screens and palette from YOUR AgencyOS deployment, and reports back which frames it created. Replace * with your deployment's origin (for example https://agency-os.vercel.app) before you share this plugin with anyone else.",
+    "devAllowedDomains": [
+      "http://localhost:3000"
+    ]
   }
 }
