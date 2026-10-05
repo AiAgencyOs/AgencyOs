@@ -710,7 +710,9 @@ async function recordToolCall(
 }
 
 /** A tool loop cannot run forever on a model that keeps asking for more. */
-const MAX_TOOL_ROUNDS = 4;
+const DEFAULT_MAX_TOOL_ROUNDS = 4;
+/** No workflow may ask for more than this, whatever it says: the bound exists so a stuck model cannot run up a bill. */
+const HARD_MAX_TOOL_ROUNDS = 12;
 
 /** The recorded copy of a tool's arguments — at most 4 KB of JSON, never a throw. */
 function boundedJson(value: unknown): Json {
@@ -760,7 +762,7 @@ function addUsage(a: AiUsage, b: AiUsage): AiUsage {
  */
 export async function callModelWithTools(
   ctx: AgentContext,
-  spec: { systemPrompt: string; schemaName: string; jsonSchema?: () => Record<string, unknown> },
+  spec: { systemPrompt: string; schemaName: string; jsonSchema?: () => Record<string, unknown>; maxToolRounds?: number },
   initialMessages: readonly AiMessage[],
   tools: readonly AiToolSpec[],
   runId: string | null,
@@ -778,6 +780,9 @@ export async function callModelWithTools(
 > {
   // Providers that cannot call tools are not candidates (stated in the reason
   // when none can, rather than silently dropping to a structured call).
+  // Four rounds is right for a read-and-answer workflow. A workflow that legitimately reads, drafts, checks and submits (the acquisition
+  // agents) names its own bound, and no bound can exceed the hard one.
+  const MAX_TOOL_ROUNDS = Math.min(Math.max(spec.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS, 1), HARD_MAX_TOOL_ROUNDS);
   const plan = await modelPlanFor(ctx, { needsTools: true });
   if (!plan.ok) {
     await recordDecision(ctx, plan.routing, runId, { outcome: 'blocked', attempts: [], final: null, blockedReason: plan.detail });

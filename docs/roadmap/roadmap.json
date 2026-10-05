@@ -31,18 +31,18 @@
       "approvals",
       "qa"
     ],
-    "tables": 241,
-    "tablesWithRls": 235,
-    "migrations": 420,
-    "testFiles": 426,
-    "testSuites": 1777,
-    "tests": 8496,
-    "testsPassing": 8496,
+    "tables": 287,
+    "tablesWithRls": 281,
+    "migrations": 439,
+    "testFiles": 444,
+    "testSuites": 1872,
+    "tests": 8840,
+    "testsPassing": 8840,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 2,
-    "liveVerificationScripts": 123,
-    "aiAgentsDefined": 14,
+    "liveVerificationScripts": 124,
+    "aiAgentsDefined": 18,
     "aiAgentsEnabled": 10,
     "eventSubscriptions": 61,
     "outboundChannels": 1,
@@ -7382,6 +7382,24 @@
       "phase": 29,
       "question": "Designer \u00a79's Image Generation Policy does not say WHO decides to generate a reference image \u2014 the ui_designer agent deciding on its own inside its existing workflow, or a person (PM/Designer) requesting one explicitly. Which matches the owner's intent?",
       "why": "Raised 2026-09-20 while scoping image generation as the next implementation-plan item, alongside the vault (ADM-110) that makes an OpenRouter key storable. Neither Designer \u00a79 nor Master \u00a75/6 says who triggers a generation, and inventing an answer would be exactly what this repository's discipline forbids \u2014 'the boundary is the feature', check before building. OWNER DECISION 2026-09-20 \u2014 GRANTED, in the owner's own words: 'Agent decides autonomously.' The ui_designer agent generates a reference image on its own when its existing design.directions workflow judges one would help, at the same autonomy the rest of that workflow runs at (ADM-61 \u00a72, draft/L2) \u2014 never a person clicking a control. WHAT WAS BUILT: at most one reference image per run, attempted only after directions succeed, best-effort (a missing OpenRouter key or a failed call never fails the run). The reuse key is projects.design_context_version() \u2014 the SAME function theme_options already keys off \u2014 so a changed scope, baseline or client answer earns a new image and nothing else does."
+    },
+    {
+      "id": "ADM-112",
+      "status": "granted",
+      "decisionStatus": "GRANTED",
+      "blocks": [],
+      "phase": 29,
+      "question": "ADM-82 granted thirteen agents and closed the roster. The Lead Generation & Acquisition Implementation Specification names four more (Ad Manager, Email Marketing Outreach, Social Media Marketing, B2B Opportunity) and two shared ones (Scheduler, Quotation Master). Which should exist?",
+      "why": "Raised 2026-10-05 when the lead-generation build reached the agents. OWNER DECISION 2026-10-05 - GRANTED: 'do it according to pdf'. WHAT WAS BUILT: the four named agents (keys ad_manager, email_outreach, social_media, marketplace_opportunity) defined in the registry and installed DISABLED by 20261028100000; Scheduler and Quotation Master are not agents (they are the shared meeting and quotation subtasks) and the landing page belongs to the Ad Manager, as the specification says. 21 tools bound, each naming an existing acquisition action; none sends, publishes, launches, deploys, prices, approves or pauses. WHAT DID NOT CHANGE: ADM-99 (only the four read-only tools dispatch), so the agents cannot yet perform operational work; that needs a funded model key and an ADM-99 decision to dispatch the draft-creating tools. Answered in the same session: email approval stays on the email module's own four-eyes path; `enabled` does not gate email; every marketplace stays at the default (never contact off-platform)."
+    },
+    {
+      "id": "ADM-113",
+      "status": "granted",
+      "decisionStatus": "GRANTED",
+      "blocks": [],
+      "phase": 29,
+      "question": "ADM-99 turned on dispatch for four read-only agent tools and refused every other bound tool. The four acquisition agents (ADM-112) hold twenty-one tools that only read, draft, score, check or ask a person to approve. Which may now dispatch?",
+      "why": "Raised 2026-10-05. OWNER DECISION 2026-10-05 - GRANTED: the reads plus the draft / check / submit-for-approval tools (the owner's recommended option; 'reads only' and 'not now' were the alternatives). WHAT WAS BUILT: handlers for exactly those twenty-one tools in src/modules/acquisition/agent-tools.ts, each an organisation-scoped call to an existing door, stamped agent; one workflow per agent (ads.assist, email.assist, social.assist, marketplace.assist) started by a person from the channel page through crm.request_agent_task; crm.agent_results, a service-role-only read of one organisation's results. WHAT DID NOT CHANGE: ADM-99's original four; every other bound tool (memory.remember, crm.addLeadNote, crm.sendClientMessage, approvals.requestApproval, sales.draftProposal, finance.generateInvoice...) is still refused; no acquisition tool sends, publishes, launches, deploys, prices, approves or pauses, and a price from an agent is refused by the door (ADM-22). The agents are still installed disabled: they need the owner to enable them and a funded model key. Nothing has been run against a real model."
     }
   ],
   "phases": [

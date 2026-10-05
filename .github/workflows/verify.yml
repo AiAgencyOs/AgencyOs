@@ -823,6 +823,38 @@ jobs:
           # their own thread, a stranger is raised and put nowhere, the same message twice changes nothing.
           npm run db:verify:inboundemail
 
+          # Lead generation, slice 1: target services, the versioned ICP, per-channel settings and the two stops are
+          # the Admin's alone and tenant-sealed, and a paused channel - or the global stop - makes the email send
+          # chokepoint reserve nothing. Driven as the real request roles with real JWT claims; rolls back.
+          # Slice 2 adds the identity layer: one person across email, LinkedIn and the REAL WhatsApp ingest stays one contact;
+          # uncertain matches open a review and merge nothing; first touch survives later channels; exactly one conversation owner.
+          # (psql, not PostgREST: the checks are about the doors, and the doors are SQL.)
+          # Slice 3: a prospect who moves to WhatsApp through a tracked reference stays ONE lead (through the real ingest function);
+          # a replayed, tampered, cross-tenant, expired, cancelled or closed-lead reference fails safely; a number that belongs to
+          # someone else is a review, never a guess. Also asserts the platform's default table privileges were revoked.
+          # Slice 4: connections cannot look verified without a real adapter result; a provider credential is encrypted per tenant and
+          # unreadable by a session; one policy question (no policy is never permission); an approval covers exactly the content it was
+          # given, expires, and a governed side effect runs ONCE (replay, pause-at-execution, uncertain outcome -> reconcile).
+          # Slice 5: a meeting or quotation request is a SUBTASK. Only the conversation owner may ask; it may not carry a price; a quote
+          # names the confirmed requirements; the link follows the REAL meeting lifecycle (incl. a reschedule's new row) and the real
+          # proposal versions; control returns to the owner at the time it ends.
+          # Slice 6: qualification is arithmetic then rules that outrank it (a 100 never beats an exclusion, a block or an opt-out); a message may
+          # only cite recorded research about THAT prospect; a reply (through the real inbound function) is adopted into ONE identity with the
+          # email agent as owner and never takes a lead Sales owns; the real send chokepoint will not cold-email a client or a Sales-owned lead.
+          # Slice 7: social content is approved as EXACTLY what is published (the specification's four cases): no approval, no publish; approve V1 then
+          # change it and V1's approval cannot publish V2; approve V2 exactly and it publishes; a replay posts nothing twice. The hash cannot be forged,
+          # a version cannot be edited, the review can fail a draft but never approve one, and an uncertain outcome is reconciled, never re-posted.
+          # Slice 8: an ad campaign launches as EXACTLY what was approved (a budget increase or a targeting change is its own approval and is never
+          # automatic); the Admin's cap holds; spend is counted once; a pause is an intent until the platform confirms it; results come from the CRM.
+          # Slice 9: a landing page is deployed as exactly what was approved, DEPLOYED is not VERIFIED, a Google ad can only launch to a VERIFIED page,
+          # and a visit that becomes a WhatsApp message is credited to its campaign.
+          # Slice 10: a marketplace's own rule decides whether a conversation may leave it; a proposal goes out as exactly what was approved and only a
+          # person prices it; a person's recorded send is held to the stops, the policy, the limits and the connects budget.
+          # Slice 11: results, goals, failures and advice are reads that cannot write and cannot cross a tenant.
+          # Slice 12 (hardening + end to end): every finding of three independent reviews is reproduced and must stay refused; the by-hand
+          # record_manual_* doors work only for the exact approved version, once; one visitor and one prospect are followed end to end through the
+          # real ingest and the tracked handoff; and the emergency stop reaches every governed action.
+          npm run db:verify:acquisition
           # Client and project identifiers for life: assigned by the database, unique under concurrency, never edited, never reused.
           npm run db:verify:clientcodes
 

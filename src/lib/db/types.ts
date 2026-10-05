@@ -3952,6 +3952,2037 @@ export type Database = {
   }
   crm: {
     Tables: {
+      social_audits: {
+        Row: {
+          id: string
+          organization_id: string
+          platform: string
+          source: string
+          integration_id: string | null
+          summary: Json
+          findings: Json
+          taken_at: string
+          created_by_type: string
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          platform: string
+          source: string
+          integration_id?: string | null
+          summary?: Json
+          findings?: Json
+          taken_at?: string
+          created_by_type: string
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          platform?: string
+          source?: string
+          integration_id?: string | null
+          summary?: Json
+          findings?: Json
+          taken_at?: string
+          created_by_type?: string
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      social_strategies: {
+        Row: {
+          id: string
+          organization_id: string
+          platform: string
+          horizon_months: number
+          version: number
+          content: Json
+          rationale: string | null
+          evidence_audit_id: string | null
+          status: string
+          created_by_type: string
+          created_by: string | null
+          created_at: string
+          activated_at: string | null
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          platform: string
+          horizon_months: number
+          version: number
+          content: Json
+          rationale?: string | null
+          evidence_audit_id?: string | null
+          status?: string
+          created_by_type: string
+          created_by?: string | null
+          created_at?: string
+          activated_at?: string | null
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          platform?: string
+          horizon_months?: number
+          version?: number
+          content?: Json
+          rationale?: string | null
+          evidence_audit_id?: string | null
+          status?: string
+          created_by_type?: string
+          created_by?: string | null
+          created_at?: string
+          activated_at?: string | null
+        }
+        Relationships: []
+      }
+      content_references: {
+        Row: {
+          id: string
+          organization_id: string
+          kind: string
+          url: string | null
+          text_excerpt: string | null
+          note: string | null
+          analysis: Json
+          added_by_type: string
+          added_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          kind: string
+          url?: string | null
+          text_excerpt?: string | null
+          note?: string | null
+          analysis?: Json
+          added_by_type: string
+          added_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          kind?: string
+          url?: string | null
+          text_excerpt?: string | null
+          note?: string | null
+          analysis?: Json
+          added_by_type?: string
+          added_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      content_assets: {
+        Row: {
+          id: string
+          organization_id: string
+          kind: string
+          storage_ref: string
+          generation_method: string
+          dimensions: Json
+          content_hash: string
+          created_by_type: string
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          kind: string
+          storage_ref: string
+          generation_method: string
+          dimensions?: Json
+          content_hash: string
+          created_by_type: string
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          kind?: string
+          storage_ref?: string
+          generation_method?: string
+          dimensions?: Json
+          content_hash?: string
+          created_by_type?: string
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      content_items: {
+        Row: {
+          id: string
+          organization_id: string
+          platform: string
+          objective: string
+          format: string
+          strategy_id: string | null
+          target_service: string | null
+          title: string
+          current_version_id: string | null
+          created_by_type: string
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          platform: string
+          objective: string
+          format: string
+          strategy_id?: string | null
+          target_service?: string | null
+          title: string
+          current_version_id?: string | null
+          created_by_type: string
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          platform?: string
+          objective?: string
+          format?: string
+          strategy_id?: string | null
+          target_service?: string | null
+          title?: string
+          current_version_id?: string | null
+          created_by_type?: string
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      content_versions: {
+        Row: {
+          id: string
+          organization_id: string
+          item_id: string
+          version: number
+          body: string
+          cta: string | null
+          hashtags: string[]
+          asset_ids: string[]
+          reference_ids: string[]
+          content_hash: string
+          state: string
+          review: Json | null
+          approval_request_id: string | null
+          scheduled_for: string | null
+          supersedes_version_id: string | null
+          created_by_type: string
+          created_by: string | null
+          created_at: string
+          state_changed_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          item_id: string
+          version: number
+          body: string
+          cta?: string | null
+          hashtags?: string[]
+          asset_ids?: string[]
+          reference_ids?: string[]
+          content_hash: string
+          state?: string
+          review?: Json | null
+          approval_request_id?: string | null
+          scheduled_for?: string | null
+          supersedes_version_id?: string | null
+          created_by_type: string
+          created_by?: string | null
+          created_at?: string
+          state_changed_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          item_id?: string
+          version?: number
+          body?: string
+          cta?: string | null
+          hashtags?: string[]
+          asset_ids?: string[]
+          reference_ids?: string[]
+          content_hash?: string
+          state?: string
+          review?: Json | null
+          approval_request_id?: string | null
+          scheduled_for?: string | null
+          supersedes_version_id?: string | null
+          created_by_type?: string
+          created_by?: string | null
+          created_at?: string
+          state_changed_at?: string
+        }
+        Relationships: []
+      }
+      social_publications: {
+        Row: {
+          id: string
+          organization_id: string
+          version_id: string
+          execution_id: string
+          platform: string
+          external_ref: string
+          url: string | null
+          published_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          version_id: string
+          execution_id: string
+          platform: string
+          external_ref: string
+          url?: string | null
+          published_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          version_id?: string
+          execution_id?: string
+          platform?: string
+          external_ref?: string
+          url?: string | null
+          published_at?: string
+        }
+        Relationships: []
+      }
+      ad_campaigns: {
+        Row: {
+          id: string
+          organization_id: string
+          platform: string
+          name: string
+          objective: string
+          target_service: string | null
+          currency: string
+          status: string
+          current_version_id: string | null
+          live_version_id: string | null
+          provider_sync_pending: string | null
+          created_by_type: string
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          platform: string
+          name: string
+          objective?: string
+          target_service?: string | null
+          currency?: string
+          status?: string
+          current_version_id?: string | null
+          live_version_id?: string | null
+          provider_sync_pending?: string | null
+          created_by_type: string
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          platform?: string
+          name?: string
+          objective?: string
+          target_service?: string | null
+          currency?: string
+          status?: string
+          current_version_id?: string | null
+          live_version_id?: string | null
+          provider_sync_pending?: string | null
+          created_by_type?: string
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      ad_campaign_versions: {
+        Row: {
+          id: string
+          organization_id: string
+          campaign_id: string
+          version: number
+          plan: Json
+          budget_daily_minor: number
+          budget_total_minor: number | null
+          start_date: string | null
+          end_date: string | null
+          change_kind: string
+          change_amount_minor: number
+          content_hash: string
+          state: string
+          review: Json | null
+          approval_request_id: string | null
+          supersedes_version_id: string | null
+          created_by_type: string
+          created_by: string | null
+          created_at: string
+          state_changed_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          campaign_id: string
+          version: number
+          plan: Json
+          budget_daily_minor: number
+          budget_total_minor?: number | null
+          start_date?: string | null
+          end_date?: string | null
+          change_kind?: string
+          change_amount_minor?: number
+          content_hash: string
+          state?: string
+          review?: Json | null
+          approval_request_id?: string | null
+          supersedes_version_id?: string | null
+          created_by_type: string
+          created_by?: string | null
+          created_at?: string
+          state_changed_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          campaign_id?: string
+          version?: number
+          plan?: Json
+          budget_daily_minor?: number
+          budget_total_minor?: number | null
+          start_date?: string | null
+          end_date?: string | null
+          change_kind?: string
+          change_amount_minor?: number
+          content_hash?: string
+          state?: string
+          review?: Json | null
+          approval_request_id?: string | null
+          supersedes_version_id?: string | null
+          created_by_type?: string
+          created_by?: string | null
+          created_at?: string
+          state_changed_at?: string
+        }
+        Relationships: []
+      }
+      ad_provider_objects: {
+        Row: {
+          id: string
+          organization_id: string
+          campaign_id: string
+          platform: string
+          object_type: string
+          provider_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          campaign_id: string
+          platform: string
+          object_type: string
+          provider_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          campaign_id?: string
+          platform?: string
+          object_type?: string
+          provider_id?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      ad_applications: {
+        Row: {
+          id: string
+          organization_id: string
+          version_id: string
+          execution_id: string
+          provider_campaign_id: string
+          applied_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          version_id: string
+          execution_id: string
+          provider_campaign_id: string
+          applied_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          version_id?: string
+          execution_id?: string
+          provider_campaign_id?: string
+          applied_at?: string
+        }
+        Relationships: []
+      }
+      ad_metrics: {
+        Row: {
+          id: string
+          organization_id: string
+          campaign_id: string
+          metric_date: string
+          reported_at: string
+          spend_minor: number
+          impressions: number
+          clicks: number
+          platform_leads: number
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          campaign_id: string
+          metric_date: string
+          reported_at?: string
+          spend_minor: number
+          impressions?: number
+          clicks?: number
+          platform_leads?: number
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          campaign_id?: string
+          metric_date?: string
+          reported_at?: string
+          spend_minor?: number
+          impressions?: number
+          clicks?: number
+          platform_leads?: number
+        }
+        Relationships: []
+      }
+      ad_provider_statuses: {
+        Row: {
+          id: string
+          organization_id: string
+          campaign_id: string
+          status: string
+          detail: string | null
+          reported_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          campaign_id: string
+          status: string
+          detail?: string | null
+          reported_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          campaign_id?: string
+          status?: string
+          detail?: string | null
+          reported_at?: string
+        }
+        Relationships: []
+      }
+      campaign_health_records: {
+        Row: {
+          id: string
+          organization_id: string
+          campaign_id: string
+          kind: string
+          severity: string
+          detail: Json
+          recommended_action: string
+          assessed_on: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          campaign_id: string
+          kind: string
+          severity: string
+          detail?: Json
+          recommended_action: string
+          assessed_on?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          campaign_id?: string
+          kind?: string
+          severity?: string
+          detail?: Json
+          recommended_action?: string
+          assessed_on?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      landing_pages: {
+        Row: {
+          id: string
+          organization_id: string
+          name: string
+          slug: string
+          target_service: string | null
+          status: string
+          current_version_id: string | null
+          live_version_id: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          name: string
+          slug: string
+          target_service?: string | null
+          status?: string
+          current_version_id?: string | null
+          live_version_id?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          name?: string
+          slug?: string
+          target_service?: string | null
+          status?: string
+          current_version_id?: string | null
+          live_version_id?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      landing_page_versions: {
+        Row: {
+          id: string
+          organization_id: string
+          page_id: string
+          version: number
+          content: Json
+          whatsapp_number: string
+          public_url: string
+          tracking: Json
+          content_hash: string
+          state: string
+          review: Json | null
+          approval_request_id: string | null
+          supersedes_version_id: string | null
+          created_by_type: string
+          created_by: string | null
+          created_at: string
+          state_changed_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          page_id: string
+          version: number
+          content: Json
+          whatsapp_number: string
+          public_url: string
+          tracking?: Json
+          content_hash: string
+          state?: string
+          review?: Json | null
+          approval_request_id?: string | null
+          supersedes_version_id?: string | null
+          created_by_type: string
+          created_by?: string | null
+          created_at?: string
+          state_changed_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          page_id?: string
+          version?: number
+          content?: Json
+          whatsapp_number?: string
+          public_url?: string
+          tracking?: Json
+          content_hash?: string
+          state?: string
+          review?: Json | null
+          approval_request_id?: string | null
+          supersedes_version_id?: string | null
+          created_by_type?: string
+          created_by?: string | null
+          created_at?: string
+          state_changed_at?: string
+        }
+        Relationships: []
+      }
+      landing_deployments: {
+        Row: {
+          id: string
+          organization_id: string
+          version_id: string
+          execution_id: string
+          deployed_url: string
+          deployed_html_hash: string
+          deployed_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          version_id: string
+          execution_id: string
+          deployed_url: string
+          deployed_html_hash: string
+          deployed_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          version_id?: string
+          execution_id?: string
+          deployed_url?: string
+          deployed_html_hash?: string
+          deployed_at?: string
+        }
+        Relationships: []
+      }
+      landing_verifications: {
+        Row: {
+          id: string
+          organization_id: string
+          deployment_id: string
+          checks: Json
+          passed: boolean
+          verified_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          deployment_id: string
+          checks: Json
+          passed: boolean
+          verified_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          deployment_id?: string
+          checks?: Json
+          passed?: boolean
+          verified_at?: string
+        }
+        Relationships: []
+      }
+      b2b_platform_rules: {
+        Row: {
+          id: string
+          organization_id: string
+          platform: string
+          offplatform_contact: string
+          automation_mode: string
+          note: string | null
+          updated_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          platform: string
+          offplatform_contact?: string
+          automation_mode?: string
+          note?: string | null
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          platform?: string
+          offplatform_contact?: string
+          automation_mode?: string
+          note?: string | null
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      b2b_settings: {
+        Row: {
+          organization_id: string
+          min_budget_minor: number | null
+          excluded_terms: string[]
+          score_threshold: number
+          monthly_connects_cap: number | null
+          updated_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          organization_id: string
+          min_budget_minor?: number | null
+          excluded_terms?: string[]
+          score_threshold?: number
+          monthly_connects_cap?: number | null
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          organization_id?: string
+          min_budget_minor?: number | null
+          excluded_terms?: string[]
+          score_threshold?: number
+          monthly_connects_cap?: number | null
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      b2b_opportunities: {
+        Row: {
+          id: string
+          organization_id: string
+          platform: string
+          external_ref: string
+          url: string | null
+          title: string
+          description: string
+          budget_min_minor: number | null
+          budget_max_minor: number | null
+          currency: string
+          client_country: string | null
+          posted_at: string | null
+          source: string
+          status: string
+          fit_score: number | null
+          fit_reasons: Json
+          skip_reason: string | null
+          lead_id: string | null
+          outcome_value_minor: number | null
+          outcome_note: string | null
+          closed_at: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          platform: string
+          external_ref: string
+          url?: string | null
+          title: string
+          description?: string
+          budget_min_minor?: number | null
+          budget_max_minor?: number | null
+          currency?: string
+          client_country?: string | null
+          posted_at?: string | null
+          source: string
+          status?: string
+          fit_score?: number | null
+          fit_reasons?: Json
+          skip_reason?: string | null
+          lead_id?: string | null
+          outcome_value_minor?: number | null
+          outcome_note?: string | null
+          closed_at?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          platform?: string
+          external_ref?: string
+          url?: string | null
+          title?: string
+          description?: string
+          budget_min_minor?: number | null
+          budget_max_minor?: number | null
+          currency?: string
+          client_country?: string | null
+          posted_at?: string | null
+          source?: string
+          status?: string
+          fit_score?: number | null
+          fit_reasons?: Json
+          skip_reason?: string | null
+          lead_id?: string | null
+          outcome_value_minor?: number | null
+          outcome_note?: string | null
+          closed_at?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      b2b_proposal_versions: {
+        Row: {
+          id: string
+          organization_id: string
+          opportunity_id: string
+          version: number
+          body: string
+          currency: string
+          price_minor: number | null
+          timeline_days: number | null
+          connects_cost: number
+          portfolio_item_ids: string[]
+          content_hash: string
+          state: string
+          review: Json | null
+          approval_request_id: string | null
+          external_ref: string | null
+          submitted_via: string | null
+          created_by_type: string
+          created_by: string | null
+          created_at: string
+          state_changed_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          opportunity_id: string
+          version: number
+          body: string
+          currency?: string
+          price_minor?: number | null
+          timeline_days?: number | null
+          connects_cost?: number
+          portfolio_item_ids?: string[]
+          content_hash: string
+          state?: string
+          review?: Json | null
+          approval_request_id?: string | null
+          external_ref?: string | null
+          submitted_via?: string | null
+          created_by_type: string
+          created_by?: string | null
+          created_at?: string
+          state_changed_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          opportunity_id?: string
+          version?: number
+          body?: string
+          currency?: string
+          price_minor?: number | null
+          timeline_days?: number | null
+          connects_cost?: number
+          portfolio_item_ids?: string[]
+          content_hash?: string
+          state?: string
+          review?: Json | null
+          approval_request_id?: string | null
+          external_ref?: string | null
+          submitted_via?: string | null
+          created_by_type?: string
+          created_by?: string | null
+          created_at?: string
+          state_changed_at?: string
+        }
+        Relationships: []
+      }
+      b2b_profile_versions: {
+        Row: {
+          id: string
+          organization_id: string
+          platform: string
+          version: number
+          content: Json
+          content_hash: string
+          state: string
+          review: Json | null
+          approval_request_id: string | null
+          evidence_url: string | null
+          created_by_type: string
+          created_by: string | null
+          created_at: string
+          state_changed_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          platform: string
+          version: number
+          content: Json
+          content_hash: string
+          state?: string
+          review?: Json | null
+          approval_request_id?: string | null
+          evidence_url?: string | null
+          created_by_type: string
+          created_by?: string | null
+          created_at?: string
+          state_changed_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          platform?: string
+          version?: number
+          content?: Json
+          content_hash?: string
+          state?: string
+          review?: Json | null
+          approval_request_id?: string | null
+          evidence_url?: string | null
+          created_by_type?: string
+          created_by?: string | null
+          created_at?: string
+          state_changed_at?: string
+        }
+        Relationships: []
+      }
+      social_metrics: {
+        Row: {
+          id: string
+          organization_id: string
+          publication_id: string
+          collected_at: string
+          impressions: number | null
+          reach: number | null
+          engagements: number | null
+          clicks: number | null
+          profile_visits: number | null
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          publication_id: string
+          collected_at?: string
+          impressions?: number | null
+          reach?: number | null
+          engagements?: number | null
+          clicks?: number | null
+          profile_visits?: number | null
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          publication_id?: string
+          collected_at?: string
+          impressions?: number | null
+          reach?: number | null
+          engagements?: number | null
+          clicks?: number | null
+          profile_visits?: number | null
+        }
+        Relationships: []
+      }
+      qualification_models: {
+        Row: {
+          id: string
+          organization_id: string
+          version: number
+          weights: Json
+          note: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          version: number
+          weights: Json
+          note?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          version?: number
+          weights?: Json
+          note?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      blocked_prospects: {
+        Row: {
+          id: string
+          organization_id: string
+          kind: string
+          value: string
+          reason: string
+          created_by: string | null
+          created_at: string
+          lifted_at: string | null
+          lifted_by: string | null
+          lift_reason: string | null
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          kind: string
+          value: string
+          reason: string
+          created_by?: string | null
+          created_at?: string
+          lifted_at?: string | null
+          lifted_by?: string | null
+          lift_reason?: string | null
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          kind?: string
+          value?: string
+          reason?: string
+          created_by?: string | null
+          created_at?: string
+          lifted_at?: string | null
+          lifted_by?: string | null
+          lift_reason?: string | null
+        }
+        Relationships: []
+      }
+      prospect_facts: {
+        Row: {
+          id: string
+          organization_id: string
+          prospect_id: string
+          fact: string
+          source_kind: string
+          source_url: string | null
+          observed_at: string
+          recorded_by_type: string
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          prospect_id: string
+          fact: string
+          source_kind: string
+          source_url?: string | null
+          observed_at?: string
+          recorded_by_type?: string
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          prospect_id?: string
+          fact?: string
+          source_kind?: string
+          source_url?: string | null
+          observed_at?: string
+          recorded_by_type?: string
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      prospect_qualifications: {
+        Row: {
+          id: string
+          organization_id: string
+          prospect_id: string
+          model_version: number
+          icp_version: number | null
+          score: number
+          factor_scores: Json
+          reasoning: string | null
+          signals: Json
+          missing_information: Json
+          disqualifiers: Json
+          decision: string
+          threshold: number
+          evaluated_by_type: string
+          evaluated_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          prospect_id: string
+          model_version: number
+          icp_version?: number | null
+          score: number
+          factor_scores: Json
+          reasoning?: string | null
+          signals?: Json
+          missing_information?: Json
+          disqualifiers?: Json
+          decision: string
+          threshold: number
+          evaluated_by_type: string
+          evaluated_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          prospect_id?: string
+          model_version?: number
+          icp_version?: number | null
+          score?: number
+          factor_scores?: Json
+          reasoning?: string | null
+          signals?: Json
+          missing_information?: Json
+          disqualifiers?: Json
+          decision?: string
+          threshold?: number
+          evaluated_by_type?: string
+          evaluated_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      subtask_requests: {
+        Row: {
+          id: string
+          organization_id: string
+          lead_id: string
+          kind: string
+          requested_by_owner: string
+          assignee: string | null
+          status: string
+          priority: number
+          objective: string
+          input: Json
+          context_refs: Json
+          requirement_version_id: string | null
+          meeting_id: string | null
+          proposal_id: string | null
+          progress: Json
+          result: Json | null
+          failure_reason: string | null
+          returned_to_owner: string | null
+          idempotency_key: string
+          correlation_id: string | null
+          created_by: string | null
+          created_at: string
+          accepted_at: string | null
+          completed_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          lead_id: string
+          kind: string
+          requested_by_owner: string
+          assignee?: string | null
+          status?: string
+          priority?: number
+          objective: string
+          input: Json
+          context_refs?: Json
+          requirement_version_id?: string | null
+          meeting_id?: string | null
+          proposal_id?: string | null
+          progress?: Json
+          result?: Json | null
+          failure_reason?: string | null
+          returned_to_owner?: string | null
+          idempotency_key: string
+          correlation_id?: string | null
+          created_by?: string | null
+          created_at?: string
+          accepted_at?: string | null
+          completed_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          lead_id?: string
+          kind?: string
+          requested_by_owner?: string
+          assignee?: string | null
+          status?: string
+          priority?: number
+          objective?: string
+          input?: Json
+          context_refs?: Json
+          requirement_version_id?: string | null
+          meeting_id?: string | null
+          proposal_id?: string | null
+          progress?: Json
+          result?: Json | null
+          failure_reason?: string | null
+          returned_to_owner?: string | null
+          idempotency_key?: string
+          correlation_id?: string | null
+          created_by?: string | null
+          created_at?: string
+          accepted_at?: string | null
+          completed_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      acquisition_integrations: {
+        Row: {
+          id: string
+          organization_id: string
+          provider: string
+          integration_type: string | null
+          environment: string
+          label: string
+          status: string
+          verification: string
+          adapter_implemented: boolean
+          account_ref: string | null
+          api_version: string | null
+          capabilities: Json
+          webhook: Json
+          rate_limit: Json
+          health: string | null
+          last_checked_at: string | null
+          last_success_at: string | null
+          last_failure_at: string | null
+          last_error_class: string | null
+          last_error: string | null
+          status_reason: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          provider: string
+          integration_type?: string | null
+          environment?: string
+          label?: string
+          status?: string
+          verification?: string
+          adapter_implemented?: boolean
+          account_ref?: string | null
+          api_version?: string | null
+          capabilities?: Json
+          webhook?: Json
+          rate_limit?: Json
+          health?: string | null
+          last_checked_at?: string | null
+          last_success_at?: string | null
+          last_failure_at?: string | null
+          last_error_class?: string | null
+          last_error?: string | null
+          status_reason?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          provider?: string
+          integration_type?: string | null
+          environment?: string
+          label?: string
+          status?: string
+          verification?: string
+          adapter_implemented?: boolean
+          account_ref?: string | null
+          api_version?: string | null
+          capabilities?: Json
+          webhook?: Json
+          rate_limit?: Json
+          health?: string | null
+          last_checked_at?: string | null
+          last_success_at?: string | null
+          last_failure_at?: string | null
+          last_error_class?: string | null
+          last_error?: string | null
+          status_reason?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      connector_credentials: {
+        Row: {
+          id: string
+          organization_id: string
+          integration_id: string
+          name: string
+          ciphertext: string
+          iv: string
+          auth_tag: string
+          hint: string | null
+          expires_on: string | null
+          status: string
+          created_by: string | null
+          created_at: string
+          rotated_at: string | null
+          revoked_at: string | null
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          integration_id: string
+          name: string
+          ciphertext: string
+          iv: string
+          auth_tag: string
+          hint?: string | null
+          expires_on?: string | null
+          status?: string
+          created_by?: string | null
+          created_at?: string
+          rotated_at?: string | null
+          revoked_at?: string | null
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          integration_id?: string
+          name?: string
+          ciphertext?: string
+          iv?: string
+          auth_tag?: string
+          hint?: string | null
+          expires_on?: string | null
+          status?: string
+          created_by?: string | null
+          created_at?: string
+          rotated_at?: string | null
+          revoked_at?: string | null
+        }
+        Relationships: []
+      }
+      acquisition_policies: {
+        Row: {
+          id: string
+          organization_id: string
+          action_type: string
+          mode: string
+          approval_above_minor: number | null
+          escalate_above_minor: number | null
+          updated_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          action_type: string
+          mode: string
+          approval_above_minor?: number | null
+          escalate_above_minor?: number | null
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          action_type?: string
+          mode?: string
+          approval_above_minor?: number | null
+          escalate_above_minor?: number | null
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      acquisition_usage: {
+        Row: {
+          id: string
+          organization_id: string
+          channel: string
+          metric: string
+          amount: number
+          ref: string | null
+          occurred_at: string
+          correlation_id: string | null
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          channel: string
+          metric: string
+          amount: number
+          ref?: string | null
+          occurred_at?: string
+          correlation_id?: string | null
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          channel?: string
+          metric?: string
+          amount?: number
+          ref?: string | null
+          occurred_at?: string
+          correlation_id?: string | null
+        }
+        Relationships: []
+      }
+      acquisition_decisions: {
+        Row: {
+          id: string
+          organization_id: string
+          action_type: string
+          channel: string | null
+          amount_minor: number | null
+          decision: string
+          reason: string
+          policy_version: string | null
+          correlation_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          action_type: string
+          channel?: string | null
+          amount_minor?: number | null
+          decision: string
+          reason: string
+          policy_version?: string | null
+          correlation_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          action_type?: string
+          channel?: string | null
+          amount_minor?: number | null
+          decision?: string
+          reason?: string
+          policy_version?: string | null
+          correlation_id?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      approval_bindings: {
+        Row: {
+          approval_request_id: string
+          organization_id: string
+          artifact_type: string
+          artifact_id: string
+          version: number
+          content_hash: string
+          valid_until: string
+          created_at: string
+        }
+        Insert: {
+          approval_request_id: string
+          organization_id: string
+          artifact_type: string
+          artifact_id: string
+          version: number
+          content_hash: string
+          valid_until: string
+          created_at?: string
+        }
+        Update: {
+          approval_request_id?: string
+          organization_id?: string
+          artifact_type?: string
+          artifact_id?: string
+          version?: number
+          content_hash?: string
+          valid_until?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      governed_executions: {
+        Row: {
+          id: string
+          organization_id: string
+          approval_request_id: string
+          artifact_type: string
+          artifact_id: string
+          content_hash: string
+          action_type: string
+          channel: string | null
+          status: string
+          attempt: number
+          external_ref: string | null
+          evidence: Json
+          started_at: string
+          finished_at: string | null
+          verified_at: string | null
+          correlation_id: string | null
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          approval_request_id: string
+          artifact_type: string
+          artifact_id: string
+          content_hash: string
+          action_type: string
+          channel?: string | null
+          status?: string
+          attempt?: number
+          external_ref?: string | null
+          evidence?: Json
+          started_at?: string
+          finished_at?: string | null
+          verified_at?: string | null
+          correlation_id?: string | null
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          approval_request_id?: string
+          artifact_type?: string
+          artifact_id?: string
+          content_hash?: string
+          action_type?: string
+          channel?: string | null
+          status?: string
+          attempt?: number
+          external_ref?: string | null
+          evidence?: Json
+          started_at?: string
+          finished_at?: string | null
+          verified_at?: string | null
+          correlation_id?: string | null
+        }
+        Relationships: []
+      }
+      whatsapp_handoff_settings: {
+        Row: {
+          organization_id: string
+          business_number: string | null
+          link_ttl_days: number
+          updated_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          organization_id: string
+          business_number?: string | null
+          link_ttl_days?: number
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          organization_id?: string
+          business_number?: string | null
+          link_ttl_days?: number
+          updated_by?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      channel_handoffs: {
+        Row: {
+          id: string
+          organization_id: string
+          lead_id: string
+          contact_id: string | null
+          opportunity_id: string | null
+          source_channel: string
+          source_platform: string | null
+          source_agent: string
+          destination_channel: string
+          destination_agent: string
+          status: string
+          token_hash: string
+          context_version: number
+          context: Json
+          next_action: string | null
+          expires_at: string
+          opened_at: string | null
+          resolved_at: string | null
+          resolved_phone: string | null
+          bind_outcome: string | null
+          consumed_at: string | null
+          consumed_contact_id: string | null
+          consumed_lead_id: string | null
+          consume_outcome: string | null
+          cancel_reason: string | null
+          created_by: string | null
+          correlation_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id: string
+          organization_id: string
+          lead_id: string
+          contact_id?: string | null
+          opportunity_id?: string | null
+          source_channel: string
+          source_platform?: string | null
+          source_agent: string
+          destination_channel?: string
+          destination_agent?: string
+          status?: string
+          token_hash: string
+          context_version?: number
+          context: Json
+          next_action?: string | null
+          expires_at: string
+          opened_at?: string | null
+          resolved_at?: string | null
+          resolved_phone?: string | null
+          bind_outcome?: string | null
+          consumed_at?: string | null
+          consumed_contact_id?: string | null
+          consumed_lead_id?: string | null
+          consume_outcome?: string | null
+          cancel_reason?: string | null
+          created_by?: string | null
+          correlation_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          lead_id?: string
+          contact_id?: string | null
+          opportunity_id?: string | null
+          source_channel?: string
+          source_platform?: string | null
+          source_agent?: string
+          destination_channel?: string
+          destination_agent?: string
+          status?: string
+          token_hash?: string
+          context_version?: number
+          context?: Json
+          next_action?: string | null
+          expires_at?: string
+          opened_at?: string | null
+          resolved_at?: string | null
+          resolved_phone?: string | null
+          bind_outcome?: string | null
+          consumed_at?: string | null
+          consumed_contact_id?: string | null
+          consumed_lead_id?: string | null
+          consume_outcome?: string | null
+          cancel_reason?: string | null
+          created_by?: string | null
+          correlation_id?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      identity_keys: {
+        Row: {
+          id: string
+          organization_id: string
+          kind: string
+          value: string
+          contact_id: string
+          source: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          kind: string
+          value: string
+          contact_id: string
+          source?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          kind?: string
+          value?: string
+          contact_id?: string
+          source?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      duplicate_reviews: {
+        Row: {
+          id: string
+          organization_id: string
+          contact_a: string
+          contact_b: string
+          reason: string
+          signals: Json
+          status: string
+          decided_by: string | null
+          decided_at: string | null
+          decision_note: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          contact_a: string
+          contact_b: string
+          reason: string
+          signals?: Json
+          status?: string
+          decided_by?: string | null
+          decided_at?: string | null
+          decision_note?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          contact_a?: string
+          contact_b?: string
+          reason?: string
+          signals?: Json
+          status?: string
+          decided_by?: string | null
+          decided_at?: string | null
+          decision_note?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      lead_touchpoints: {
+        Row: {
+          id: string
+          organization_id: string
+          lead_id: string
+          channel: string
+          platform: string | null
+          touch_type: string
+          campaign: Json
+          utm: Json
+          external_ref: string | null
+          occurred_at: string
+          recorded_at: string
+          correlation_id: string | null
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          lead_id: string
+          channel: string
+          platform?: string | null
+          touch_type: string
+          campaign?: Json
+          utm?: Json
+          external_ref?: string | null
+          occurred_at?: string
+          recorded_at?: string
+          correlation_id?: string | null
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          lead_id?: string
+          channel?: string
+          platform?: string | null
+          touch_type?: string
+          campaign?: Json
+          utm?: Json
+          external_ref?: string | null
+          occurred_at?: string
+          recorded_at?: string
+          correlation_id?: string | null
+        }
+        Relationships: []
+      }
+      lead_conversation_owner: {
+        Row: {
+          lead_id: string
+          organization_id: string
+          owner: string
+          version: number
+          since: string
+          updated_at: string
+        }
+        Insert: {
+          lead_id: string
+          organization_id: string
+          owner: string
+          version?: number
+          since?: string
+          updated_at?: string
+        }
+        Update: {
+          lead_id?: string
+          organization_id?: string
+          owner?: string
+          version?: number
+          since?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      conversation_owner_transfers: {
+        Row: {
+          id: string
+          organization_id: string
+          lead_id: string
+          from_owner: string | null
+          to_owner: string
+          reason: string
+          workflow_state: string | null
+          context: Json
+          actor_id: string | null
+          correlation_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          lead_id: string
+          from_owner?: string | null
+          to_owner: string
+          reason: string
+          workflow_state?: string | null
+          context?: Json
+          actor_id?: string | null
+          correlation_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          lead_id?: string
+          from_owner?: string | null
+          to_owner?: string
+          reason?: string
+          workflow_state?: string | null
+          context?: Json
+          actor_id?: string | null
+          correlation_id?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      target_services: {
+        Row: {
+          id: string
+          organization_id: string
+          name: string
+          description: string | null
+          priority: number
+          active: boolean
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          name: string
+          description?: string | null
+          priority?: number
+          active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          name?: string
+          description?: string | null
+          priority?: number
+          active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      icp_versions: {
+        Row: {
+          id: string
+          organization_id: string
+          version: number
+          definition: Json
+          note: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          version: number
+          definition: Json
+          note?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          organization_id?: string
+          version?: number
+          definition?: Json
+          note?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      acquisition_channels: {
+        Row: {
+          organization_id: string
+          channel: string
+          enabled: boolean
+          paused: boolean
+          pause_reason: string | null
+          paused_by: string | null
+          paused_at: string | null
+          monthly_qualified_target: number | null
+          monthly_budget_minor: number | null
+          daily_limit: number | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          organization_id: string
+          channel: string
+          enabled?: boolean
+          paused?: boolean
+          pause_reason?: string | null
+          paused_by?: string | null
+          paused_at?: string | null
+          monthly_qualified_target?: number | null
+          monthly_budget_minor?: number | null
+          daily_limit?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          organization_id?: string
+          channel?: string
+          enabled?: boolean
+          paused?: boolean
+          pause_reason?: string | null
+          paused_by?: string | null
+          paused_at?: string | null
+          monthly_qualified_target?: number | null
+          monthly_budget_minor?: number | null
+          daily_limit?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       outreach_settings: {
         Row: {
           organization_id: string
@@ -4815,6 +6846,9 @@ export type Database = {
           notes: string | null
           organization_id: string
           phone: string | null
+          reachable_via: string | null
+          merged_at: string | null
+          merged_into_contact_id: string | null
           preferred_language: string | null
           preferred_language_set_by: string | null
           updated_at: string
@@ -4830,6 +6864,9 @@ export type Database = {
           notes?: string | null
           organization_id: string
           phone?: string | null
+          reachable_via?: string | null
+          merged_at?: string | null
+          merged_into_contact_id?: string | null
           preferred_language?: string | null
           preferred_language_set_by?: string | null
           updated_at?: string
@@ -4845,6 +6882,9 @@ export type Database = {
           notes?: string | null
           organization_id?: string
           phone?: string | null
+          reachable_via?: string | null
+          merged_at?: string | null
+          merged_into_contact_id?: string | null
           preferred_language?: string | null
           preferred_language_set_by?: string | null
           updated_at?: string
@@ -6368,6 +8408,514 @@ export type Database = {
       }
     }
     Functions: {
+      record_social_audit: {
+        Args: { p_by_type?: string; p_findings: Json; p_integration: string; p_organization_id: string; p_platform: string; p_source: string; p_summary: Json }
+        Returns: { outcome: string | null; audit_id: string | null }[]
+      }
+      create_social_strategy: {
+        Args: { p_audit: string; p_by_type?: string; p_content: Json; p_horizon: number; p_organization_id: string; p_platform: string; p_rationale: string }
+        Returns: { outcome: string | null; strategy_id: string | null; version: number | null }[]
+      }
+      activate_social_strategy: {
+        Args: { p_strategy: string }
+        Returns: { outcome: string | null }[]
+      }
+      add_content_reference: {
+        Args: { p_analysis?: Json; p_by_type?: string; p_excerpt: string; p_kind: string; p_note: string; p_organization_id: string; p_url: string }
+        Returns: { outcome: string | null; reference_id: string | null }[]
+      }
+      add_content_asset: {
+        Args: { p_by_type?: string; p_dimensions: Json; p_hash: string; p_kind: string; p_method: string; p_organization_id: string; p_storage_ref: string }
+        Returns: { outcome: string | null; asset_id: string | null }[]
+      }
+      create_content_item: {
+        Args: { p_by_type?: string; p_format: string; p_objective: string; p_organization_id: string; p_platform: string; p_service: string; p_strategy: string; p_title: string }
+        Returns: { outcome: string | null; item_id: string | null }[]
+      }
+      add_content_version: {
+        Args: { p_asset_ids: string[]; p_body: string; p_by_type?: string; p_cta: string; p_hashtags: string[]; p_item: string; p_organization_id: string; p_reference_ids: string[] }
+        Returns: { outcome: string | null; version_id: string | null; version: number | null; content_hash: string | null }[]
+      }
+      review_content_version: {
+        Args: { p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; passed: boolean | null; blocking: Json | null; warnings: Json | null }[]
+      }
+      submit_for_admin_review: {
+        Args: { p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; approval_request_id: string | null }[]
+      }
+      content_status: {
+        Args: { p_version: string }
+        Returns: string | null
+      }
+      schedule_content: {
+        Args: { p_organization_id: string; p_version: string; p_when: string }
+        Returns: { outcome: string | null; reason: string | null }[]
+      }
+      cancel_content_version: {
+        Args: { p_organization_id: string; p_reason: string; p_version: string }
+        Returns: { outcome: string | null }[]
+      }
+      sync_content_approvals: {
+        Args: { p_limit?: number }
+        Returns: number
+      }
+      begin_content_publish: {
+        Args: { p_correlation_id?: string; p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; reason: string | null; execution_id: string | null }[]
+      }
+      record_publish: {
+        Args: { p_evidence?: Json; p_execution: string; p_external_ref: string; p_organization_id: string; p_status: string; p_url: string; p_version: string }
+        Returns: { outcome: string | null }[]
+      }
+      record_social_metrics: {
+        Args: { p_clicks: number; p_engagements: number; p_impressions: number; p_organization_id: string; p_profile_visits: number; p_publication: string; p_reach: number }
+        Returns: { outcome: string | null }[]
+      }
+      social_performance: {
+        Args: Record<PropertyKey, never>
+        Returns: { platform: string | null; objective: string | null; format: string | null; published: number | null; impressions: number | null; engagements: number | null; clicks: number | null }[]
+      }
+      content_queue: {
+        Args: { p_limit?: number }
+        Returns: { item_id: string | null; version_id: string | null; version: number | null; platform: string | null; objective: string | null; format: string | null; title: string | null; body_preview: string | null; state: string | null; status: string | null; scheduled_for: string | null; review: Json | null; created_at: string | null }[]
+      }
+      due_content: {
+        Args: { p_limit?: number }
+        Returns: { organization_id: string | null; version_id: string | null; platform: string | null; scheduled_for: string | null }[]
+      }
+      ad_plan_problems: {
+        Args: { p_plan: Json; p_platform: string }
+        Returns: Json
+      }
+      create_ad_campaign: {
+        Args: { p_by_type?: string; p_name: string; p_objective?: string; p_organization_id: string; p_platform: string; p_target_service?: string }
+        Returns: { outcome: string | null; campaign_id: string | null }[]
+      }
+      add_ad_version: {
+        Args: { p_by_type?: string; p_campaign: string; p_daily_minor: number; p_end?: string; p_organization_id: string; p_plan: Json; p_start?: string; p_total_minor?: number }
+        Returns: { outcome: string | null; version_id: string | null }[]
+      }
+      check_ad_version: {
+        Args: { p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; problems: Json | null }[]
+      }
+      submit_ad_version: {
+        Args: { p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; approval_request_id: string | null }[]
+      }
+      begin_ad_apply: {
+        Args: { p_correlation_id?: string; p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; reason: string | null; execution_id: string | null }[]
+      }
+      record_ad_apply: {
+        Args: { p_evidence?: Json; p_execution: string; p_objects?: Json; p_organization_id: string; p_provider_campaign_id: string; p_status: string; p_version: string }
+        Returns: { outcome: string | null }[]
+      }
+      request_ad_change: {
+        Args: { p_action: string; p_campaign: string; p_organization_id: string; p_reason: string }
+        Returns: { outcome: string | null }[]
+      }
+      confirm_ad_change: {
+        Args: { p_campaign: string; p_confirmed: boolean; p_detail?: string; p_organization_id: string }
+        Returns: { outcome: string | null }[]
+      }
+      enforce_ad_stops: {
+        Args: { p_limit?: number }
+        Returns: number
+      }
+      pending_ad_changes: {
+        Args: { p_limit?: number }
+        Returns: { organization_id: string | null; campaign_id: string | null; platform: string | null; action: string | null }[]
+      }
+      sync_ad_approvals: {
+        Args: { p_limit?: number }
+        Returns: number
+      }
+      record_ad_metrics: {
+        Args: { p_campaign: string; p_clicks: number; p_date: string; p_impressions: number; p_organization_id: string; p_platform_leads: number; p_spend_minor: number }
+        Returns: { outcome: string | null; counted_minor: number | null }[]
+      }
+      record_ad_status: {
+        Args: { p_campaign: string; p_detail?: string; p_organization_id: string; p_status: string }
+        Returns: { outcome: string | null }[]
+      }
+      ad_outcomes: {
+        Args: { p_campaign?: string }
+        Returns: { campaign_id: string | null; platform: string | null; name: string | null; spend_minor: number | null; impressions: number | null; clicks: number | null; platform_leads: number | null; leads: number | null; qualified: number | null; meetings: number | null; quotes: number | null; won: number | null; revenue_minor: number | null; cost_per_lead_minor: number | null; cost_per_qualified_minor: number | null; cost_per_meeting_minor: number | null; cost_per_won_minor: number | null; insufficient_data: boolean | null }[]
+      }
+      ad_recommendations: {
+        Args: Record<PropertyKey, never>
+        Returns: { campaign_id: string | null; name: string | null; recommendation: string | null; basis: Json | null }[]
+      }
+      assess_campaign_health: {
+        Args: { p_campaign: string; p_organization_id: string }
+        Returns: { outcome: string | null; recorded: number | null }[]
+      }
+      landing_content_problems: {
+        Args: { p_content: Json }
+        Returns: Json
+      }
+      create_landing_page: {
+        Args: { p_name: string; p_organization_id: string; p_slug: string; p_target_service?: string }
+        Returns: { outcome: string | null; page_id: string | null }[]
+      }
+      add_landing_version: {
+        Args: { p_by_type?: string; p_content: Json; p_organization_id: string; p_page: string; p_public_url: string }
+        Returns: { outcome: string | null; version_id: string | null }[]
+      }
+      check_landing_version: {
+        Args: { p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; problems: Json | null }[]
+      }
+      submit_landing_version: {
+        Args: { p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; approval_request_id: string | null }[]
+      }
+      begin_landing_deploy: {
+        Args: { p_correlation_id?: string; p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; reason: string | null; execution_id: string | null }[]
+      }
+      record_landing_deploy: {
+        Args: { p_deployed_url: string; p_evidence?: Json; p_execution: string; p_html_hash: string; p_organization_id: string; p_status: string; p_version: string }
+        Returns: { outcome: string | null }[]
+      }
+      record_landing_verification: {
+        Args: { p_checks: Json; p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null }[]
+      }
+      retire_landing_page: {
+        Args: { p_organization_id: string; p_page: string; p_reason: string }
+        Returns: { outcome: string | null }[]
+      }
+      sync_landing_approvals: {
+        Args: { p_limit?: number }
+        Returns: number
+      }
+      record_landing_arrival: {
+        Args: { p_lead: string; p_message: string; p_message_at?: string; p_organization_id: string }
+        Returns: { outcome: string | null }[]
+      }
+      ensure_b2b_defaults: {
+        Args: Record<PropertyKey, never>
+        Returns: { outcome: string | null }[]
+      }
+      set_b2b_platform_rule: {
+        Args: { p_mode: string; p_note: string; p_offplatform: string; p_platform: string }
+        Returns: { outcome: string | null }[]
+      }
+      set_b2b_settings: {
+        Args: { p_excluded_terms: string[]; p_min_budget_minor: number; p_monthly_connects_cap: number; p_score_threshold: number }
+        Returns: { outcome: string | null }[]
+      }
+      record_b2b_opportunity: {
+        Args: { p_budget_max_minor: number; p_budget_min_minor: number; p_client_country: string; p_currency: string; p_description: string; p_external_ref: string; p_organization_id: string; p_platform: string; p_posted_at: string; p_source?: string; p_title: string; p_url: string }
+        Returns: { outcome: string | null; opportunity_id: string | null; status: string | null; score: number | null }[]
+      }
+      decide_b2b_opportunity: {
+        Args: { p_decision: string; p_opportunity: string; p_organization_id: string; p_reason?: string }
+        Returns: { outcome: string | null }[]
+      }
+      record_b2b_outcome: {
+        Args: { p_note: string; p_opportunity: string; p_organization_id: string; p_outcome: string; p_value_minor: number }
+        Returns: { outcome: string | null }[]
+      }
+      link_b2b_opportunity_lead: {
+        Args: { p_lead: string; p_opportunity: string; p_organization_id: string }
+        Returns: { outcome: string | null }[]
+      }
+      add_b2b_proposal_version: {
+        Args: { p_body: string; p_by_type?: string; p_connects_cost: number; p_opportunity: string; p_organization_id: string; p_portfolio_item_ids: string[]; p_price_minor: number; p_timeline_days: number }
+        Returns: { outcome: string | null; version_id: string | null }[]
+      }
+      check_b2b_proposal: {
+        Args: { p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; problems: Json | null }[]
+      }
+      submit_b2b_proposal: {
+        Args: { p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; approval_request_id: string | null }[]
+      }
+      begin_b2b_submit: {
+        Args: { p_correlation_id?: string; p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; reason: string | null; execution_id: string | null }[]
+      }
+      record_b2b_submit: {
+        Args: { p_evidence?: Json; p_execution: string; p_external_ref: string; p_organization_id: string; p_status: string; p_version: string }
+        Returns: { outcome: string | null }[]
+      }
+      record_manual_b2b_submission: {
+        Args: { p_external_ref: string; p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; reason: string | null }[]
+      }
+      sync_b2b_approvals: {
+        Args: { p_limit?: number }
+        Returns: number
+      }
+      add_b2b_profile_version: {
+        Args: { p_by_type?: string; p_content: Json; p_organization_id: string; p_platform: string }
+        Returns: { outcome: string | null; version_id: string | null }[]
+      }
+      check_b2b_profile: {
+        Args: { p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; problems: Json | null }[]
+      }
+      submit_b2b_profile: {
+        Args: { p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; approval_request_id: string | null }[]
+      }
+      record_manual_profile_update: {
+        Args: { p_evidence_url: string; p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; reason: string | null }[]
+      }
+      b2b_outcomes: {
+        Args: Record<PropertyKey, never>
+        Returns: { platform: string | null; found: number | null; shortlisted: number | null; submitted: number | null; won: number | null; lost: number | null; revenue_minor: number | null; connects_spent: number | null; win_rate_pct: number | null; insufficient_data: boolean | null }[]
+      }
+      acquisition_funnel: {
+        Args: { p_days?: number }
+        Returns: { channel: string | null; leads: number | null; qualified: number | null; meetings: number | null; quotes: number | null; won: number | null; revenue: Json | null; spend_minor: number | null; cost_per_lead_minor: number | null; cost_per_qualified_minor: number | null; cost_per_won_minor: number | null; last_touch_leads: number | null; touched_leads: number | null; won_last_touch: number | null; insufficient_data: boolean | null }[]
+      }
+      acquisition_goal_progress: {
+        Args: Record<PropertyKey, never>
+        Returns: { channel: string | null; enabled: boolean | null; paused: boolean | null; qualified_target: number | null; qualified_this_month: number | null; pace_pct: number | null; on_pace: boolean | null; budget_minor: number | null; spend_this_month_minor: number | null; budget_used_pct: number | null; days_elapsed: number | null; days_in_month: number | null }[]
+      }
+      acquisition_failures: {
+        Args: { p_limit?: number }
+        Returns: { kind: string | null; severity: string | null; channel: string | null; ref_id: string | null; summary: string | null; since: string | null; advice: string | null }[]
+      }
+      acquisition_recommendations: {
+        Args: { p_days?: number }
+        Returns: { channel: string | null; recommendation: string | null; basis: Json | null }[]
+      }
+      record_manual_ad_apply: {
+        Args: { p_objects?: Json; p_organization_id: string; p_provider_campaign_id: string; p_version: string }
+        Returns: { outcome: string | null; reason: string | null }[]
+      }
+      record_manual_ad_change: {
+        Args: { p_campaign: string; p_confirmed: boolean; p_detail?: string; p_organization_id: string }
+        Returns: { outcome: string | null }[]
+      }
+      record_manual_ad_metrics: {
+        Args: { p_campaign: string; p_clicks: number; p_date: string; p_impressions: number; p_organization_id: string; p_platform_leads: number; p_spend_minor: number }
+        Returns: { outcome: string | null; counted_minor: number | null }[]
+      }
+      record_manual_publish: {
+        Args: { p_external_ref: string; p_organization_id: string; p_url?: string; p_version: string }
+        Returns: { outcome: string | null; reason: string | null }[]
+      }
+      record_manual_landing_deploy: {
+        Args: { p_html_hash: string; p_organization_id: string; p_version: string }
+        Returns: { outcome: string | null; reason: string | null }[]
+      }
+      acquisition_attribution_models: {
+        Args: { p_days?: number }
+        Returns: { channel: string | null; first_touch: number | null; last_touch: number | null; linear: number | null; position_based: number | null }[]
+      }
+      acquisition_trend: {
+        Args: { p_weeks?: number }
+        Returns: { week_start: string | null; channel: string | null; leads: number | null; qualified: number | null }[]
+      }
+      save_qualification_model: {
+        Args: { p_note: string; p_weights: Json }
+        Returns: { outcome: string | null; version: number | null }[]
+      }
+      current_qualification_weights: {
+        Args: { p_organization_id: string }
+        Returns: Json
+      }
+      block_prospect: {
+        Args: { p_kind: string; p_reason: string; p_value: string }
+        Returns: { outcome: string | null }[]
+      }
+      lift_prospect_block: {
+        Args: { p_block: string; p_reason: string }
+        Returns: { outcome: string | null }[]
+      }
+      add_prospect_fact: {
+        Args: { p_fact: string; p_organization_id: string; p_prospect: string; p_recorded_by_type?: string; p_source_kind: string; p_source_url: string }
+        Returns: { outcome: string | null; fact_id: string | null }[]
+      }
+      qualify_prospect: {
+        Args: { p_evaluated_by_type?: string; p_factors: Json; p_organization_id: string; p_prospect: string; p_reasoning: string; p_signals: Json }
+        Returns: { outcome: string | null; qualification_id: string | null; decision: string | null; score: number | null; disqualifiers: Json | null; missing: Json | null }[]
+      }
+      validate_outreach_draft: {
+        Args: { p_body: string; p_claims: Json; p_organization_id: string; p_prospect: string; p_subject: string }
+        Returns: { valid: boolean | null; problems: Json | null }[]
+      }
+      email_followup_blockers: {
+        Args: { p_organization_id: string; p_prospect: string }
+        Returns: string[]
+      }
+      email_funnel: {
+        Args: { p_since?: string }
+        Returns: { stage: string | null; n: number | null }[]
+      }
+      request_subtask: {
+        Args: { p_correlation_id?: string; p_idempotency_key: string; p_input: Json; p_kind: string; p_lead: string; p_objective: string; p_organization_id: string; p_priority?: number; p_requesting_agent: string }
+        Returns: { outcome: string | null; subtask_id: string | null; meeting_id: string | null }[]
+      }
+      accept_subtask: {
+        Args: { p_assignee: string; p_organization_id: string; p_subtask: string }
+        Returns: { outcome: string | null }[]
+      }
+      link_subtask_proposal: {
+        Args: { p_organization_id: string; p_proposal: string; p_subtask: string }
+        Returns: { outcome: string | null }[]
+      }
+      cancel_subtask: {
+        Args: { p_organization_id: string; p_reason: string; p_subtask: string }
+        Returns: { outcome: string | null }[]
+      }
+      fail_subtask: {
+        Args: { p_organization_id: string; p_reason: string; p_subtask: string }
+        Returns: { outcome: string | null }[]
+      }
+      register_integration: {
+        Args: { p_adapter_implemented: boolean; p_environment: string; p_label: string; p_provider: string }
+        Returns: { outcome: string | null; integration_id: string | null }[]
+      }
+      sync_integration_adapter: {
+        Args: { p_implemented: boolean; p_integration: string; p_organization_id: string }
+        Returns: { outcome: string | null }[]
+      }
+      store_connector_secret: {
+        Args: { p_auth_tag: string; p_ciphertext: string; p_expires_on: string; p_hint: string; p_integration: string; p_iv: string; p_name: string }
+        Returns: { outcome: string | null; credential_id: string | null }[]
+      }
+      set_integration_state: {
+        Args: { p_integration: string; p_reason: string; p_to: string }
+        Returns: { outcome: string | null }[]
+      }
+      record_integration_check: {
+        Args: { p_account_ref: string; p_api_version?: string; p_capabilities: Json; p_error: string; p_error_class: string; p_integration: string; p_ok: boolean; p_organization_id: string }
+        Returns: { outcome: string | null }[]
+      }
+      set_acquisition_policy: {
+        Args: { p_action: string; p_approval_above_minor: number; p_escalate_above_minor: number; p_mode: string }
+        Returns: { outcome: string | null }[]
+      }
+      ensure_acquisition_approval_policies: {
+        Args: Record<PropertyKey, never>
+        Returns: { outcome: string | null }[]
+      }
+      record_acquisition_usage: {
+        Args: { p_amount: number; p_channel: string; p_correlation_id?: string; p_metric: string; p_organization_id: string; p_ref?: string }
+        Returns: { outcome: string | null }[]
+      }
+      acquisition_decide: {
+        Args: { p_action: string; p_amount_minor?: number; p_channel?: string; p_correlation_id?: string; p_organization_id: string; p_requested_count?: number }
+        Returns: { decision: string | null; reason: string | null; required_role: string | null; policy_version: string | null }[]
+      }
+      bind_approval: {
+        Args: { p_amount_minor: number; p_artifact_id: string; p_artifact_type: string; p_content_hash: string; p_correlation_id?: string; p_organization_id: string; p_requested_by_id: string; p_requested_by_type: string; p_summary: string; p_valid_hours?: number; p_version: number }
+        Returns: { outcome: string | null; request_id: string | null }[]
+      }
+      approval_check: {
+        Args: { p_artifact_id: string; p_artifact_type: string; p_content_hash: string; p_request: string }
+        Returns: { covered: boolean | null; reason: string | null }[]
+      }
+      begin_governed_execution: {
+        Args: { p_action: string; p_artifact_id: string; p_artifact_type: string; p_channel: string; p_content_hash: string; p_correlation_id?: string; p_organization_id: string; p_request: string }
+        Returns: { outcome: string | null; reason: string | null; execution_id: string | null }[]
+      }
+      finish_governed_execution: {
+        Args: { p_evidence: Json; p_execution: string; p_external_ref: string; p_organization_id: string; p_status: string }
+        Returns: { outcome: string | null }[]
+      }
+      verify_governed_execution: {
+        Args: { p_evidence: Json; p_execution: string; p_organization_id: string }
+        Returns: { outcome: string | null }[]
+      }
+      set_handoff_settings: {
+        Args: { p_business_number: string; p_link_ttl_days: number }
+        Returns: { outcome: string | null }[]
+      }
+      create_channel_handoff: {
+        Args: { p_correlation_id?: string; p_handoff_id: string; p_lead: string; p_next_action?: string; p_organization_id: string; p_source_agent: string; p_source_channel: string; p_source_platform: string; p_token_hash: string; p_ttl_days?: number }
+        Returns: { outcome: string | null; handoff_id: string | null; expires_at: string | null }[]
+      }
+      open_channel_handoff: {
+        Args: { p_token_hash: string }
+        Returns: { outcome: string | null; business_number: string | null }[]
+      }
+      bind_handoff_from_message: {
+        Args: { p_code_hash: string; p_from: string; p_phone_number_id: string }
+        Returns: { outcome: string | null; handoff_id: string | null; organization_id: string | null }[]
+      }
+      consume_channel_handoff: {
+        Args: { p_contact_id: string; p_handoff_id: string; p_lead_id: string; p_organization_id: string }
+        Returns: { outcome: string | null }[]
+      }
+      cancel_channel_handoff: {
+        Args: { p_handoff_id: string; p_reason: string }
+        Returns: { outcome: string | null }[]
+      }
+      expire_channel_handoffs: {
+        Args: { p_limit?: number }
+        Returns: number
+      }
+      resolve_identity: {
+        Args: { p_organization_id: string; p_signals: Json; p_source?: string }
+        Returns: { outcome: string | null; contact_id: string | null; review_id: string | null; created: boolean | null }[]
+      }
+      request_agent_task: {
+        Args: { p_agent: string; p_organization_id: string; p_task: string }
+        Returns: { outcome: string | null; job_id: string | null }[]
+      }
+      agent_results: {
+        Args: { p_days?: number; p_organization_id: string }
+        Returns: { channel: string | null; leads: number | null; qualified: number | null; won: number | null; spend_minor: number | null; cost_per_qualified_minor: number | null; insufficient_data: boolean | null }[]
+      }
+      merge_contacts: {
+        Args: { p_loser: string; p_organization_id: string; p_reason: string; p_winner: string }
+        Returns: { outcome: string | null }[]
+      }
+      decide_duplicate_review: {
+        Args: { p_decision: string; p_note: string; p_review: string }
+        Returns: { outcome: string | null }[]
+      }
+      record_touchpoint: {
+        Args: { p_campaign?: Json; p_channel: string; p_correlation_id?: string; p_external_ref?: string; p_lead: string; p_occurred_at?: string; p_organization_id: string; p_platform: string; p_touch_type: string; p_utm?: Json }
+        Returns: { outcome: string | null; touchpoint_id: string | null }[]
+      }
+      lead_attribution: {
+        Args: { p_lead: string }
+        Returns: { first_channel: string | null; first_platform: string | null; first_at: string | null; first_campaign: Json | null; last_channel: string | null; last_platform: string | null; last_at: string | null; last_campaign: Json | null; touch_count: number | null; channels: string[] | null }[]
+      }
+      transfer_conversation_owner: {
+        Args: { p_context?: Json; p_correlation_id?: string; p_expected_from: string; p_lead: string; p_organization_id: string; p_reason: string; p_to: string; p_workflow_state?: string }
+        Returns: { outcome: string | null }[]
+      }
+      lead_outcome: {
+        Args: { p_lead: string }
+        Returns: string | null
+      }
+      ensure_acquisition_defaults: {
+        Args: Record<PropertyKey, never>
+        Returns: { outcome: string | null }[]
+      }
+      set_target_service: {
+        Args: { p_active: boolean; p_description: string; p_id: string; p_name: string; p_priority: number }
+        Returns: { outcome: string | null; service_id: string | null }[]
+      }
+      set_channel_settings: {
+        Args: { p_channel: string; p_daily_limit: number; p_enabled: boolean; p_monthly_budget_minor: number; p_monthly_qualified_target: number }
+        Returns: { outcome: string | null }[]
+      }
+      set_channel_pause: {
+        Args: { p_channel: string; p_paused: boolean; p_reason: string }
+        Returns: { outcome: string | null }[]
+      }
+      save_icp: {
+        Args: { p_definition: Json; p_note: string }
+        Returns: { outcome: string | null; version: number | null }[]
+      }
+      acquisition_blocked: {
+        Args: { p_channel: string; p_organization_id: string }
+        Returns: string | null
+      }
       set_outreach_settings: {
         Args: { p_bounce_pause_percent: number; p_cold_basis_enabled?: boolean; p_daily_cap: number; p_postal_address: string; p_reply_to: string; p_sender_name: string }
         Returns: {

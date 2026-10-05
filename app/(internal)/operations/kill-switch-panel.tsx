@@ -9,7 +9,7 @@ import { Badge, FormMessage, buttonClass, inputClass } from '@/ui';
 import { setKillSwitchAction } from './kill-switch-actions';
 
 /**
- * Emergency controls — SCR-068. Three switches, each with what it does
+ * Emergency controls — SCR-068. Four switches, each with what it does
  * written beside it, a reason required either way, and the audit trail as
  * the record. Drawn with controls for the owner alone; everyone else sees
  * the state and who set it.

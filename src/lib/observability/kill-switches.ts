@@ -8,10 +8,11 @@ import { err, ok, unreadable, type Result } from '@/lib/result';
 /**
  * Emergency controls — SCR-068, `core.kill_switches` (20261001150000).
  *
- * Three switches an owner throws with a reason: agents_paused (no agent job
+ * Four switches an owner throws with a reason: agents_paused (no agent job
  * is claimed or continued past its next step), outbound_paused (every send
  * through crm.send_outbound_message is refused), jobs_paused (no job of any
- * kind is claimed). Owner only here (`hasRole(context, 'owner')`, the
+ * kind is claimed), acquisition_paused (no lead-generation engine takes a new
+ * external action — crm.acquisition_blocked, 20261015100000). Owner only here (`hasRole(context, 'owner')`, the
  * union) and again inside `core.set_kill_switch`; audited as
  * kill_switch.engaged / kill_switch.released.
  */

@@ -23,7 +23,10 @@ const SUBJECT_LABEL: Record<string, string> = {
   prototype: 'Prototype',
   agent_action: 'Agent action',
   ticket_plan: 'Ticket plan',
-  ui_version: 'UI version',
+  ui_version: 'UI version',  social_content: 'Social content',
+  b2b_proposal: 'B2B proposal',
+  ad_campaign: 'Ad campaign',
+  acquisition_action: 'Lead generation action',
 };
 
 const STATE_TONE: Record<string, 'success' | 'danger' | 'warning' | 'neutral'> = {
