@@ -28,6 +28,8 @@ type Admin = ReturnType<typeof createAdminClient>;
  * and the GST details. It reminds; it never asks anything new.
  */
 export const MAX_ONBOARDING_REMINDERS = 2;
+/** The most waiting projects one organization's sweep will look at in a tick - a bound, not a target. */
+const MAX_WAITING_PER_ORG = 1000;
 const DAY_MS = 86_400_000;
 
 export type FollowUpDecision =
@@ -75,25 +77,34 @@ export async function runOnboardingFollowUps(admin: Admin, now: Date = new Date(
     const days = typeof raw === 'string' || typeof raw === 'number' ? Number(raw) : NaN;
     if (!Number.isInteger(days) || days < 1 || days > 30) continue;
 
-    const { data: phases, error: phaseError } = await admin
-      .schema('projects')
-      .from('phase_two')
-      .select('project_id')
-      .eq('organization_id', org.id)
-      .eq('state', 'waiting_client')
-      .limit(limit);
-    if (phaseError) {
-      console.error(JSON.stringify({ level: 'error', scope: 'runOnboardingFollowUps.phases', detail: phaseError.message }));
-      out.failed = true;
-      continue;
-    }
+    // Every waiting project, a page at a time in a fixed order. This was `.limit(limit)` with no order, so the first `limit` rows were the
+    // only ones ever looked at: with more than that many projects waiting, the others were never reminded (found when a verifier's own
+    // project, planted after fifty leftovers, was never chased). `limit` is the page size; MAX_WAITING_PER_ORG is the safety bound.
+    let offset = 0;
+    while (offset < MAX_WAITING_PER_ORG) {
+      const { data: phases, error: phaseError } = await admin
+        .schema('projects')
+        .from('phase_two')
+        .select('project_id')
+        .eq('organization_id', org.id)
+        .eq('state', 'waiting_client')
+        .order('project_id', { ascending: true })
+        .range(offset, offset + limit - 1);
+      if (phaseError) {
+        console.error(JSON.stringify({ level: 'error', scope: 'runOnboardingFollowUps.phases', detail: phaseError.message }));
+        out.failed = true;
+        break;
+      }
 
-    for (const { project_id: projectId } of phases ?? []) {
-      out.checked += 1;
-      const result = await followUpOne(admin, org.id, org.timezone ?? 'UTC', outreachWindow(org.settings as Record<string, unknown> | null), projectId, days, now);
-      if (result === 'sent') out.sent += 1;
-      else if (result === 'failed') out.failed = true;
-      else if (result === 'held') out.held += 1;
+      for (const { project_id: projectId } of phases ?? []) {
+        out.checked += 1;
+        const result = await followUpOne(admin, org.id, org.timezone ?? 'UTC', outreachWindow(org.settings as Record<string, unknown> | null), projectId, days, now);
+        if (result === 'sent') out.sent += 1;
+        else if (result === 'failed') out.failed = true;
+        else if (result === 'held') out.held += 1;
+      }
+      if ((phases ?? []).length < limit) break;
+      offset += limit;
     }
   }
   return out;

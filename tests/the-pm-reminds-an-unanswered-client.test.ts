@@ -6,7 +6,7 @@ import { pmFollowUp } from '../src/modules/projects/pm-messages.ts';
 
 mock.module('../src/modules/crm/system-message.ts', { namedExports: { sendSystemText: async () => ({ kind: 'sent', messageId: 'm' }) } });
 mock.module('../src/modules/projects/pm-client-comms.ts', { namedExports: { loadContext: async () => 'gone' } });
-const { decideOnboardingFollowUp, MAX_ONBOARDING_REMINDERS } = await import('../src/modules/projects/pm-followups.ts');
+const { decideOnboardingFollowUp, MAX_ONBOARDING_REMINDERS, runOnboardingFollowUps } = await import('../src/modules/projects/pm-followups.ts');
 
 const read = (p: string) => readFileSync(p, 'utf8');
 const TZ = 'Asia/Kolkata';
@@ -85,5 +85,51 @@ describe('the owner chooses the number, and nothing chases until they do', () =>
 
   test('the runner calls it each tick', () => {
     assert.match(read('app/api/jobs/run/route.ts'), /await runOnboardingFollowUps\(admin\)/);
+  });
+});
+
+/**
+ * A chainable stand-in for the query builder. Only what the sweep touches: the organizations that chose a wait, their waiting phases (paged
+ * with `range`), and one billing-profile read per phase - answered with a finished non-GST profile, so every project is "nothing to chase".
+ */
+function sweepAdmin(waiting: number) {
+  const ids = Array.from({ length: waiting }, (_, i) => ({ project_id: `p-${String(i).padStart(4, '0')}` }));
+  const make = (table: string) => {
+    let window: [number, number] | null = null;
+    let cap: number | null = null;
+    const q: Record<string, unknown> = {
+      select: () => q, eq: () => q, not: () => q, order: () => q,
+      limit: (n: number) => { cap = n; return q; },
+      range: (a: number, b: number) => { window = [a, b]; return q; },
+      maybeSingle: async () => ({ data: table === 'billing_profiles' ? { mode: 'non_gst', version: 1 } : null, error: null }),
+      then: (resolve: (v: unknown) => unknown) => {
+        if (table === 'organizations') return resolve({ data: [{ id: 'org-1', timezone: 'UTC', settings: { onboarding_followup_days: '2' } }], error: null });
+        if (table === 'phase_two') {
+          const rows = window ? ids.slice(window[0], window[1] + 1) : ids.slice(0, cap ?? ids.length);
+          return resolve({ data: rows, error: null });
+        }
+        return resolve({ data: [], error: null });
+      },
+    };
+    return q;
+  };
+  return { schema: () => ({ from: make }) };
+}
+
+describe('the sweep looks at every waiting project, not the first fifty', () => {
+  test('120 waiting projects are all checked', async () => {
+    const out = await runOnboardingFollowUps(sweepAdmin(120) as never, new Date('2026-10-07T05:30:00Z'));
+    assert.equal(out.checked, 120);
+    assert.equal(out.failed, false);
+  });
+
+  test('and exactly one page of fifty is still one page', async () => {
+    const out = await runOnboardingFollowUps(sweepAdmin(50) as never, new Date('2026-10-07T05:30:00Z'));
+    assert.equal(out.checked, 50);
+  });
+
+  test('a small organization is checked once, not paged forever', async () => {
+    const out = await runOnboardingFollowUps(sweepAdmin(3) as never, new Date('2026-10-07T05:30:00Z'));
+    assert.equal(out.checked, 3);
   });
 });
