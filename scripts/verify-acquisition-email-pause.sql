@@ -33,19 +33,21 @@ insert into core.users (id, email, full_name) values
   ('00000000-0000-4000-8000-00000000a001', 'lg-owner@example.test', 'LG Owner'),
   ('00000000-0000-4000-8000-00000000a002', 'lg-admin@example.test', 'LG Admin') on conflict do nothing;
 
+-- a fresh organisation: the shared CI database holds other verifiers' sends today, and the daily cap with warm-up counts them
+insert into core.organizations (id, name, slug) values ('00000000-0000-4000-8000-0000000000c9', 'Pause Test Agency', 'pause-test-agency') on conflict do nothing;
 set local role authenticated;
-select pg_temp.as_user('00000000-0000-4000-8000-00000000a001', '00000000-0000-4000-8000-000000000001', 'owner');
+select pg_temp.as_user('00000000-0000-4000-8000-00000000a001', '00000000-0000-4000-8000-0000000000c9', 'owner');
 select pg_temp.check((select outcome from crm.set_outreach_settings('Asha', '1 Test Road, Pune 411001', null, 500, 5, true)) = 'saved', 'owner saves the sender identity and allows cold outreach');
-select pg_temp.as_user('00000000-0000-4000-8000-00000000a002', '00000000-0000-4000-8000-000000000001', 'ops_admin');
+select pg_temp.as_user('00000000-0000-4000-8000-00000000a002', '00000000-0000-4000-8000-0000000000c9', 'ops_admin');
 create temp table fx (k text primary key, v uuid);
 grant all on fx to public;
 insert into fx select 'tpl', template_id from crm.create_email_template('Intro', 'en', 'A thought for {{company}}', 'Hello {{first_name}}, we build websites. - {{sender_name}}');
-select pg_temp.as_user('00000000-0000-4000-8000-00000000a001', '00000000-0000-4000-8000-000000000001', 'owner');
+select pg_temp.as_user('00000000-0000-4000-8000-00000000a001', '00000000-0000-4000-8000-0000000000c9', 'owner');
 select pg_temp.check((select outcome from crm.approve_email_template((select v from fx where k = 'tpl'))) = 'approved', 'a second person approves the template');
-select pg_temp.as_user('00000000-0000-4000-8000-00000000a002', '00000000-0000-4000-8000-000000000001', 'ops_admin');
+select pg_temp.as_user('00000000-0000-4000-8000-00000000a002', '00000000-0000-4000-8000-0000000000c9', 'ops_admin');
 select pg_temp.check((select inserted from crm.add_outreach_prospects('[{"email":"lgpause-buyer@example.test","fullName":"Buyer","company":"Acme","provenance":"public website","lawfulBasis":"b2b_legitimate_interest"}]')) = 1, 'a prospect is added');
 insert into fx select 'camp', campaign_id from crm.create_email_campaign('Pause test', '{}', jsonb_build_array(jsonb_build_object('templateId', (select v from fx where k = 'tpl'), 'delayDays', 0)));
-select pg_temp.as_user('00000000-0000-4000-8000-00000000a001', '00000000-0000-4000-8000-000000000001', 'owner');
+select pg_temp.as_user('00000000-0000-4000-8000-00000000a001', '00000000-0000-4000-8000-0000000000c9', 'owner');
 select pg_temp.check((select outcome from crm.approve_email_campaign((select v from fx where k = 'camp'))) = 'approved', 'a second person approves the campaign');
 select pg_temp.check((select outcome from crm.set_email_campaign_state((select v from fx where k = 'camp'), 'running', null)) = 'running', 'the campaign runs');
 
@@ -57,10 +59,10 @@ select set_config('request.jwt.claims', '', true);
 reset role;
 update core.kill_switches set active = false where false;  -- (no-op; keeps the shape obvious)
 insert into core.kill_switches (organization_id, switch, active, reason, set_by, set_at)
-  values ('00000000-0000-4000-8000-000000000001', 'acquisition_paused', true, 'test', '00000000-0000-4000-8000-00000000a001', now())
+  values ('00000000-0000-4000-8000-0000000000c9', 'acquisition_paused', true, 'test', '00000000-0000-4000-8000-00000000a001', now())
   on conflict (organization_id, switch) do update set active = true, reason = 'test';
 set local role service_role;
-select pg_temp.check((select count(*) from crm.claim_outreach_sends('00000000-0000-4000-8000-000000000001', 1000) c where c.campaign_id = (select v from fx where k = 'camp')) = 0, 'with the global stop engaged the email chokepoint sends nothing');
+select pg_temp.check((select count(*) from crm.claim_outreach_sends('00000000-0000-4000-8000-0000000000c9', 1000) c where c.campaign_id = (select v from fx where k = 'camp')) = 0, 'with the global stop engaged the email chokepoint sends nothing');
 reset role;
 select pg_temp.check((select status from crm.email_campaign_recipients where campaign_id = (select v from fx where k = 'camp') limit 1) = 'pending', '…and the recipient is still waiting, not refused or consumed');
 select pg_temp.check((select count(*) from crm.email_outreach_sends where campaign_id = (select v from fx where k = 'camp')) = 0, '…and nothing was reserved');
@@ -68,19 +70,19 @@ update core.kill_switches set active = false, reason = 'released' where switch =
 
 -- 2. the channel stop
 insert into crm.acquisition_channels (organization_id, channel, paused, pause_reason)
-  values ('00000000-0000-4000-8000-000000000001', 'email', true, 'bounce spike')
+  values ('00000000-0000-4000-8000-0000000000c9', 'email', true, 'bounce spike')
   on conflict (organization_id, channel) do update set paused = true, pause_reason = 'bounce spike';
 set local role service_role;
-select pg_temp.check((select count(*) from crm.claim_outreach_sends('00000000-0000-4000-8000-000000000001', 1000) c where c.campaign_id = (select v from fx where k = 'camp')) = 0, 'with the email channel paused the chokepoint sends nothing');
+select pg_temp.check((select count(*) from crm.claim_outreach_sends('00000000-0000-4000-8000-0000000000c9', 1000) c where c.campaign_id = (select v from fx where k = 'camp')) = 0, 'with the email channel paused the chokepoint sends nothing');
 reset role;
 update crm.acquisition_channels set paused = false, pause_reason = null where channel = 'email';
 
 -- 3. a pause on ANOTHER channel does not stop email
 insert into crm.acquisition_channels (organization_id, channel, paused, pause_reason)
-  values ('00000000-0000-4000-8000-000000000001', 'social', true, 'unrelated')
+  values ('00000000-0000-4000-8000-0000000000c9', 'social', true, 'unrelated')
   on conflict (organization_id, channel) do update set paused = true, pause_reason = 'unrelated';
 set local role service_role;
-select pg_temp.check((select count(*) from crm.claim_outreach_sends('00000000-0000-4000-8000-000000000001', 1000) c where c.campaign_id = (select v from fx where k = 'camp')) >= 1, 'a paused SOCIAL channel does not stop email: the queued sends are reserved once everything is clear (the campaign may hold more than one recipient on a shared database)');
+select pg_temp.check((select count(*) from crm.claim_outreach_sends('00000000-0000-4000-8000-0000000000c9', 1000) c where c.campaign_id = (select v from fx where k = 'camp')) >= 1, 'a paused SOCIAL channel does not stop email: the queued sends are reserved once everything is clear (the campaign may hold more than one recipient on a shared database)');
 reset role;
 select pg_temp.check((select count(*) from crm.email_outreach_sends where status = 'reserved' and campaign_id = (select v from fx where k = 'camp')) >= 1, '…as reservations');
 

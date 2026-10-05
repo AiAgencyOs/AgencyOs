@@ -30,7 +30,9 @@ create or replace function pg_temp.as_service() returns void language plpgsql as
 begin perform set_config('request.jwt.claims', '{"role":"service_role"}', true); end $$;
 grant execute on function pg_temp.as_service() to public;
 
-\set ORG '00000000-0000-4000-8000-000000000001'
+\set ORG '00000000-0000-4000-8000-0000000000ca'
+-- a fresh organisation: the shared CI database holds other verifiers' sends today, and the daily cap with warm-up counts them
+insert into core.organizations (id, name, slug) values (:'ORG', 'Email Engine Test Agency', 'email-engine-test-agency') on conflict do nothing;
 \set ORGB '00000000-0000-4000-8000-0000000000b2'
 \set OWNER '00000000-0000-4000-8000-00000000a001'
 \set ADMIN '00000000-0000-4000-8000-00000000a002'
