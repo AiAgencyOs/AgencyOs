@@ -212,17 +212,17 @@ grant select, insert, update on sales.discount_decisions to service_role;
 -- Same shape 20260923130000 used for `ui_version`: add the subject type to
 -- both CHECK constraints rather than inventing a second approval mechanism.
 
+-- The list is the LATEST one (20261016100000 added the four acquisition types) plus 'discount_decision'. This file was written against an older main and
+-- carried the older list, which would have dropped those four and made every lead-generation approval policy insert fail (found by CI).
 alter table approvals.approval_requests drop constraint if exists approval_requests_subject_type_check;
 alter table approvals.approval_requests add constraint approval_requests_subject_type_check
-  check (subject_type in ('proposal', 'deliverable', 'invoice', 'refund',
-                          'scope_change', 'prototype', 'agent_action', 'ticket_plan',
-                          'handover', 'ui_version', 'discount_decision'));
+  check (subject_type in ('proposal', 'deliverable', 'invoice', 'refund', 'scope_change', 'prototype', 'agent_action', 'ticket_plan', 'handover', 'ui_version',
+                          'social_content', 'b2b_proposal', 'ad_campaign', 'acquisition_action', 'discount_decision'));
 
 alter table approvals.approval_policies drop constraint if exists approval_policies_subject_type_check;
 alter table approvals.approval_policies add constraint approval_policies_subject_type_check
-  check (subject_type in ('proposal', 'deliverable', 'invoice', 'refund',
-                          'scope_change', 'prototype', 'agent_action', 'ticket_plan',
-                          'handover', 'ui_version', 'discount_decision'));
+  check (subject_type in ('proposal', 'deliverable', 'invoice', 'refund', 'scope_change', 'prototype', 'agent_action', 'ticket_plan', 'handover', 'ui_version',
+                          'social_content', 'b2b_proposal', 'ad_campaign', 'acquisition_action', 'discount_decision'));
 
 -- No policy row is seeded here, for the same reason 20260923130000 seeded
 -- none for `ui_version`: approval_policies is per-organization data an owner

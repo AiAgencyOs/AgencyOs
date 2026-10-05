@@ -167,3 +167,23 @@ describe('pricing a draft is not blocked by a missing discount policy', () => {
     assert.match(sql, /update sales\.discount_decisions set status = 'cancelled', updated_at = now\(\) where id = v_id;/);
   });
 });
+
+describe('the subject-type lists keep every type the latest migration allowed', () => {
+  const sql = readFileSync('supabase/migrations/20261030100000_a_discount_is_a_decision_not_a_mutation.sql', 'utf8');
+  const latest = readFileSync('supabase/migrations/20261016100000_connectors_policy_and_exact_version_approval.sql', 'utf8');
+  const listOf = (text: string, constraint: string): string[] => {
+    const at = text.lastIndexOf(`add constraint ${constraint}`);
+    const open = text.indexOf('(', text.indexOf('check', at));
+    const close = text.indexOf(');', open);
+    return [...text.slice(open, close).matchAll(/'([a-z_0-9]+)'/g)].map((m) => m[1]!);
+  };
+  for (const constraint of ['approval_policies_subject_type_check', 'approval_requests_subject_type_check']) {
+    test(`${constraint}: nothing the latest list allowed is dropped, and discount_decision is added`, () => {
+      const before = listOf(latest, constraint);
+      const after = listOf(sql, constraint);
+      assert.ok(before.length >= 13 && after.length > before.length, `${before.length} -> ${after.length}`);
+      for (const type of before) assert.ok(after.includes(type), `${type} was dropped`);
+      assert.ok(after.includes('discount_decision'));
+    });
+  }
+});
