@@ -88,6 +88,7 @@ describe('lead generation - what the acquisition tools do when an agent calls th
       ['ads.draftCampaign', { platform: 'tiktok', name: 'x', plan: {}, dailyMinor: 1 }],
       ['email.recordProspectFact', { prospectId: U, fact: 'x', sourceKind: 'manual', sourceUrl: 'https://x.example' }],
       ['marketplace.draftProposal', { opportunityId: U }],
+      ['marketplace.scoreOpportunity', { platform: 'upwork', externalRef: 'up-1', url: 'up-1', title: 'A job', description: 'A description.' }],
       ['email.checkDraft', { prospectId: U, subject: 's', body: 'b', claims: [{ text: 't' }] }],
     ] as const) {
       const f = fake();
