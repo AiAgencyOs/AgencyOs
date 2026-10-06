@@ -75,6 +75,12 @@ import {
   announceBuildFeedbackRouted,
   announceTask4Complete,
   announceM2PaymentVerified,
+  announcePhaseSevenReady,
+  announceDeploymentApproved,
+  announceProductionValidated,
+  announceProductionValidationFailed,
+  announceHandoverReady,
+  announceProjectCompleted,
   handleRouteLead,
   handleClassifyLeadIdentity,
 } from '@/modules/crm/handlers';
@@ -95,6 +101,7 @@ import {
   type HandlerResult,
   type UnlockJob,
 } from '@/modules/projects/handlers';
+import { handleOpenPhaseSeven, handleRunDeployment } from '@/modules/projects/phase-seven-handlers';
 import { runOnboardingFollowUps } from '@/modules/projects/pm-followups';
 import { handleAskClarification, handleReadClarificationAnswer } from '@/modules/projects/pm-clarifications';
 import { handleAnnouncePhaseThree, handleAskFinalConfirmation } from '@/modules/projects/pm-design-comms';
@@ -940,6 +947,53 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       correlationId,
     });
   }
+  /**
+   * ── Phase 7: open the workspace (Phase6Completed / M4PaymentVerified), then record the approved deployment (P701 §2, P704 §13) ──
+   *
+   * Pure database work. The deployment executor is NOT configured: the deploy job records an honest blocker and never a success.
+   */
+  const phaseSevenOpen = await runEventJobs(admin, PHASE_SEVEN_OPEN_JOB_KIND, handleOpenPhaseSeven, 'runPhaseSevenOpenJobs');
+  if (phaseSevenOpen.claimed > 0) {
+    return NextResponse.json({
+      claimed: phaseSevenOpen.claimed,
+      kind: PHASE_SEVEN_OPEN_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      phaseSevenOpen: phaseSevenOpen.results,
+      correlationId,
+    });
+  }
+  const phaseSevenDeploy = await runEventJobs(admin, PHASE_SEVEN_DEPLOY_JOB_KIND, handleRunDeployment, 'runPhaseSevenDeploymentJobs');
+  if (phaseSevenDeploy.claimed > 0) {
+    return NextResponse.json({
+      claimed: phaseSevenDeploy.claimed,
+      kind: PHASE_SEVEN_DEPLOY_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      phaseSevenDeploy: phaseSevenDeploy.results,
+      correlationId,
+    });
+  }
   const qaSchedule = await runEventJobs(admin, QA_SCHEDULE_JOB_KIND, handleScheduleQaJobs, 'runQaScheduleJobs');
   if (qaSchedule.claimed > 0) {
     return NextResponse.json({
@@ -1309,6 +1363,13 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const financiallyClosedAnnouncements = await runEventJobs(admin, FINANCIALLY_CLOSED_ANNOUNCE_JOB_KIND, announceFinanciallyClosed, 'runFinanciallyClosedAnnouncementJobs');
   // PM6-M01 (Phase 6 PM Agent spec): Task 4 start.
   const phaseSixReadyAnnouncements = await runEventJobs(admin, PHASE_SIX_READY_ANNOUNCE_JOB_KIND, announcePhaseSixReady, 'runPhaseSixReadyAnnouncementJobs');
+  // PM7 (Phase 7 PM Agent spec): Task 5 start, deployment approved, production validated / failed, handover ready, project completed.
+  const phaseSevenReadyAnnouncements = await runEventJobs(admin, PHASE_SEVEN_READY_ANNOUNCE_JOB_KIND, announcePhaseSevenReady, 'runPhaseSevenReadyAnnouncementJobs');
+  const deploymentApprovedAnnouncements = await runEventJobs(admin, DEPLOYMENT_APPROVED_ANNOUNCE_JOB_KIND, announceDeploymentApproved, 'runDeploymentApprovedAnnouncementJobs');
+  const productionValidatedAnnouncements = await runEventJobs(admin, PRODUCTION_VALIDATED_ANNOUNCE_JOB_KIND, announceProductionValidated, 'runProductionValidatedAnnouncementJobs');
+  const productionValidationFailedAnnouncements = await runEventJobs(admin, PRODUCTION_VALIDATION_FAILED_ANNOUNCE_JOB_KIND, announceProductionValidationFailed, 'runProductionValidationFailedAnnouncementJobs');
+  const handoverReadyAnnouncements = await runEventJobs(admin, HANDOVER_READY_ANNOUNCE_JOB_KIND, announceHandoverReady, 'runHandoverReadyAnnouncementJobs');
+  const projectCompletedAnnouncements = await runEventJobs(admin, PROJECT_COMPLETED_ANNOUNCE_JOB_KIND, announceProjectCompleted, 'runProjectCompletedAnnouncementJobs');
   // PM5-M01..M04 (Phase 5 PM Agent spec), beside the Task 2 set.
   const m3VerifiedAnnouncements = await runEventJobs(admin, M3_VERIFIED_ANNOUNCE_JOB_KIND, announceM3PaymentVerified, 'runM3VerifiedAnnouncementJobs');
   const buildFeedbackRoutedAnnouncements = await runEventJobs(admin, BUILD_FEEDBACK_ROUTED_ANNOUNCE_JOB_KIND, announceBuildFeedbackRouted, 'runBuildFeedbackRoutedAnnouncementJobs');
@@ -1606,6 +1667,12 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     devClarificationAnnouncements: devClarificationAnnouncements.results,
     m3VerifiedAnnouncements: m3VerifiedAnnouncements.results,
     phaseSixReadyAnnouncements: phaseSixReadyAnnouncements.results,
+    phaseSevenReadyAnnouncements: phaseSevenReadyAnnouncements.results,
+    deploymentApprovedAnnouncements: deploymentApprovedAnnouncements.results,
+    productionValidatedAnnouncements: productionValidatedAnnouncements.results,
+    productionValidationFailedAnnouncements: productionValidationFailedAnnouncements.results,
+    handoverReadyAnnouncements: handoverReadyAnnouncements.results,
+    projectCompletedAnnouncements: projectCompletedAnnouncements.results,
     testingStartedAnnouncements: testingStartedAnnouncements.results,
     qaClarificationAnnouncements: qaClarificationAnnouncements.results,
     qaDefectProgressAnnouncements: qaDefectProgressAnnouncements.results,
@@ -1776,6 +1843,14 @@ const M4_VERIFIED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceM4PaymentVer
 const FINANCIALLY_CLOSED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceFinanciallyClosed'];
 const QA_INTAKE_JOB_KIND = HANDLER_JOB_KIND['projects:validateQaIntake'];
 const PHASE_SIX_READY_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announcePhaseSixReady'];
+const PHASE_SEVEN_OPEN_JOB_KIND = HANDLER_JOB_KIND['projects:openPhaseSeven'];
+const PHASE_SEVEN_DEPLOY_JOB_KIND = HANDLER_JOB_KIND['projects:runDeployment'];
+const PHASE_SEVEN_READY_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announcePhaseSevenReady'];
+const DEPLOYMENT_APPROVED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceDeploymentApproved'];
+const PRODUCTION_VALIDATED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceProductionValidated'];
+const PRODUCTION_VALIDATION_FAILED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceProductionValidationFailed'];
+const HANDOVER_READY_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceHandoverReady'];
+const PROJECT_COMPLETED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceProjectCompleted'];
 const M3_VERIFIED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceM3PaymentVerified'];
 const BUILD_FEEDBACK_ROUTED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceBuildFeedbackRouted'];
 const M2_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM2Invoice'];

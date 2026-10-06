@@ -112,7 +112,7 @@ describe('Phase 6 exit and Phase 7 intake', () => {
     assert.match(exit, /grant execute on function projects\.record_m4_verified\(uuid\) to service_role;/);
     assert.match(exit, /offset 3 limit 1/);
     assert.ok((subs['invoice.paid'] ?? []).includes('projects:recordM4Verified'));
-    assert.deepEqual(subs['project.m4_payment_verified'], ['crm:announceM4PaymentVerified']);
+    assert.deepEqual(subs['project.m4_payment_verified'], ['crm:announceM4PaymentVerified', 'projects:openPhaseSeven']);
   });
   test('the nine QA specialists are installed disabled and verified by quality_assurance alone', () => {
     assert.equal((specialists.match(/'L1', false,/g) ?? []).length, 9);

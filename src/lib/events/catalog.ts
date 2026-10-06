@@ -119,6 +119,15 @@ export const HANDLERS = [
   'crm:announceM2PaymentVerified',
   'crm:routeLead',
   'crm:classifyLeadIdentity',
+  // Phase 7 (Production Launch & Handover): the entry gate, the deployment runner door, and the PM7 announcers
+  'projects:openPhaseSeven',
+  'projects:runDeployment',
+  'crm:announcePhaseSevenReady',
+  'crm:announceDeploymentApproved',
+  'crm:announceProductionValidated',
+  'crm:announceProductionValidationFailed',
+  'crm:announceHandoverReady',
+  'crm:announceProjectCompleted',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -679,12 +688,26 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   /** PM6: the source changed after approval; testing is repeated. */
   'project.phase_six_evidence_stale': ['crm:announceQaReverification'],
   /** P601 §41: M4 verified paid in full, recorded once; the PM tells the team. */
-  'project.m4_payment_verified': ['crm:announceM4PaymentVerified'],
+  'project.m4_payment_verified': ['crm:announceM4PaymentVerified', 'projects:openPhaseSeven'],
   /** Phase 9: a Finance person or Admin closed the project's finances (NOT project completion); the PM tells the team. */
   'project.financially_closed': ['crm:announceFinanciallyClosed'],
   /** P601 §3: Phase 6 READY (once) -> the QA intake is validated and the PM announces Task 4. */
   'project.phase_six_ready': ['projects:validateQaIntake', 'crm:announcePhaseSixReady'],
-  'project.phase_six_completed': ['finance:generateM4Invoice', 'crm:announceTask4Complete'],
+  'project.phase_six_completed': ['finance:generateM4Invoice', 'crm:announceTask4Complete', 'projects:openPhaseSeven'],
+  /** P701 §14 Phase 7: Phase7Ready -> PM7-M01 (Task 5 start). Emitted once by `open_phase_seven`, only after Phase6Completed + the exact candidate + M4 verified. */
+  'project.phase_seven_ready': ['crm:announcePhaseSevenReady'],
+  /** P704: DeploymentApproved -> the runner door records the deployment (the executor is NOT configured: it records a blocker) + the PM tells the team approval is not deployment. */
+  'project.deployment_approved': ['projects:runDeployment', 'crm:announceDeploymentApproved'],
+  /** P706: after a ROLLBACK recovery is verified and the incident closed, the same approved candidate is redeployed through the same runner door. */
+  'project.deployment_incident_closed': ['projects:runDeployment'],
+  /** P705: ProductionValidated (QA/Release evidence, never a deployment claim) -> PM7 prepares the handover communication. */
+  'project.production_validated': ['crm:announceProductionValidated'],
+  /** P705/P706: DeploymentValidationFailed -> a controlled, client-safe status; completion is paused. */
+  'project.production_validation_failed': ['crm:announceProductionValidationFailed'],
+  /** P707/P708: the Admin-approved package was delivered -> invite the client's formal review. */
+  'project.handover_delivered': ['crm:announceHandoverReady'],
+  /** P701/P708: ProjectCompleted (gate passed, immutable record written) -> completion + support/warranty message and the Customer Success transition. */
+  'project.completed': ['crm:announceProjectCompleted'],
   /**
    * Audit 1.2/1.3 (docs/AGENCYOS_BUSINESS_PHASE_1_4_AUDIT.json), Implementation
    * Plan Phase 1 items 1 and 3 — the two gaps the audit named "no
@@ -818,6 +841,14 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'crm:announceM2PaymentVerified': 'm2_payment_verified.announce',
   'crm:routeLead': 'lead.route',
   'crm:classifyLeadIdentity': 'lead.identity_classify',
+  'projects:openPhaseSeven': 'phase_seven.open',
+  'projects:runDeployment': 'phase_seven.run_deployment',
+  'crm:announcePhaseSevenReady': 'phase_seven_ready.announce',
+  'crm:announceDeploymentApproved': 'deployment_approved.announce',
+  'crm:announceProductionValidated': 'production_validated.announce',
+  'crm:announceProductionValidationFailed': 'production_validation_failed.announce',
+  'crm:announceHandoverReady': 'handover_ready.announce',
+  'crm:announceProjectCompleted': 'project_completed.announce',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);

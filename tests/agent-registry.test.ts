@@ -79,13 +79,15 @@ describe('A. what is defined is what exists', () => {
         'compatibility_test', 'regression_test', 'release_readiness',
         // layer 7 - finance additions (ADM-115, Phase 9)
         'finance_reconciliation', 'finance_communication', 'finance_close',
+        // layer 7 — Phase 7 production launch (P704-P706)
+        'deployment_agent', 'release_qa', 'incident_recovery',
       ],
     );
     assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'foundation').length, 4);
     // six since Phase 2 Planning §1 named the Project Planning Agent separately from the PM
     assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'core').length, 6);
-    // seven since ADM-115 added the three Phase 9 finance agents to the operations layer
-    assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'operations').length, 7);
+    // nine: four since Phase 1, three Phase 9 finance agents (ADM-115) and the Phase 7 Deployment and Incident/Recovery agents, all installed disabled
+    assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'operations').length, 9);
   });
 
   test('and every one of them is installed disabled', () => {

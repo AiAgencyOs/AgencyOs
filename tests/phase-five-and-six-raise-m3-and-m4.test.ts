@@ -29,7 +29,7 @@ describe('the events fan out exactly as Phase 4’s does', () => {
   });
 
   test('Phase 6 raises M4 and the Task 4 message', () => {
-    assert.deepEqual([...subscribersFor('project.phase_six_completed')], ['finance:generateM4Invoice', 'crm:announceTask4Complete']);
+    assert.deepEqual([...subscribersFor('project.phase_six_completed')], ['finance:generateM4Invoice', 'crm:announceTask4Complete', 'projects:openPhaseSeven']);
   });
 
   test('every new handler is registered with its own job kind', () => {

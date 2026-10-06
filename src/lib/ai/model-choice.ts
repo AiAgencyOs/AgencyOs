@@ -88,6 +88,10 @@ export const AGENT_CATEGORY: Readonly<Record<string, RoutingCategory>> = {
   finance_reconciliation: 'money',
   finance_communication: 'client_facing',
   finance_close: 'money',
+  // Phase 7 (P704-P706): deployment is engineering work, production validation is certification, incident coordination is coordination.
+  deployment_agent: 'engineering',
+  release_qa: 'certification',
+  incident_recovery: 'coordination',
 };
 
 export function categoryForAgent(agentKey: string): RoutingCategory | null {

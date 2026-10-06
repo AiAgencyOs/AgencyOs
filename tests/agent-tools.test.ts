@@ -51,8 +51,8 @@ describe('A0. the file says what is true about itself — G-187', () => {
 
   test('and the number of bindings the registry actually holds', () => {
     assert.equal(bound.length, 73);
-    assert.equal(Object.keys(AGENT_DEFINITIONS).length, 41);
-    assert.match(SOURCE, /binds seventy-three of them across\n \* forty-one agents/);
+    assert.equal(Object.keys(AGENT_DEFINITIONS).length, 44);
+    assert.match(SOURCE, /binds seventy-three of them across\n \* forty-four agents/);
   });
 
   test('and it no longer claims the list is empty', () => {
