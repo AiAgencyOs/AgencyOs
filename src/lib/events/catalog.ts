@@ -33,6 +33,9 @@ export const HANDLERS = [
   'projects:startPhaseFive',
   'projects:recordM3Verified',
   'projects:startPhaseSix',
+  'projects:recordM4Verified',
+  'crm:announceReleaseCandidateApproved',
+  'crm:announceM4PaymentVerified',
   'projects:validateQaIntake',
   'crm:announcePhaseSixReady',
   'crm:announceM3PaymentVerified',
@@ -123,7 +126,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   // than trusted from the payload, filtered to M2 (position 2) inside the
   // handler — this is not a second gate, only a second listener on one.
   // Phase 2 Planning §2: the advance verified opens planning. The agent itself decides whether this invoice IS the advance.
-  'invoice.paid': ['projects:unlockNextMilestone', 'crm:announceM2PaymentVerified', 'projects:startPhaseFive', 'projects:recordM3Verified', 'project_planning:draftBlueprint', 'projects:updateClientOnPayment'],
+  'invoice.paid': ['projects:unlockNextMilestone', 'crm:announceM2PaymentVerified', 'projects:startPhaseFive', 'projects:recordM3Verified', 'projects:recordM4Verified', 'project_planning:draftBlueprint', 'projects:updateClientOnPayment'],
   'project.planning_requested': ['project_planning:draftBlueprint'],
   /** Planning §10: the planner's question goes to the client through the PM, one at a time. */
   'project.clarification_required': ['projects:askClarification'],
@@ -638,6 +641,10 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * from `projects.complete_phase` (`20261009100000_phase_five_and_six_...`).
    */
   'project.phase_five_completed': ['finance:generateM3Invoice', 'crm:announceTask3Complete', 'projects:startPhaseSix'],
+  /** PM6: the Admin approved the exact release candidate. */
+  'project.release_candidate_approved': ['crm:announceReleaseCandidateApproved'],
+  /** P601 §41: M4 verified paid in full, recorded once; the PM tells the team. */
+  'project.m4_payment_verified': ['crm:announceM4PaymentVerified'],
   /** P601 §3: Phase 6 READY (once) -> the QA intake is validated and the PM announces Task 4. */
   'project.phase_six_ready': ['projects:validateQaIntake', 'crm:announcePhaseSixReady'],
   'project.phase_six_completed': ['finance:generateM4Invoice', 'crm:announceTask4Complete'],
@@ -688,6 +695,9 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:startPhaseFive': 'phase_five.start',
   'projects:recordM3Verified': 'm3.record_verified',
   'projects:startPhaseSix': 'phase_six.start',
+  'projects:recordM4Verified': 'm4.record_verified',
+  'crm:announceReleaseCandidateApproved': 'release_candidate_approved.announce',
+  'crm:announceM4PaymentVerified': 'm4_verified.announce',
   'projects:validateQaIntake': 'phase_six.validate_intake',
   'crm:announcePhaseSixReady': 'phase_six_ready.announce',
   'crm:announceM3PaymentVerified': 'm3_verified.announce',

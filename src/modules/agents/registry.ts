@@ -56,7 +56,7 @@ import { createHash } from 'node:crypto';
  */
 
 /** Where an agent sits in ADM-82's activation order. */
-export type AgentLayer = 'foundation' | 'core' | 'operations' | 'acquisition' | 'development';
+export type AgentLayer = 'foundation' | 'core' | 'operations' | 'acquisition' | 'development' | 'qa';
 
 /**
  * What an agent may attempt, declared rather than inferred.
@@ -229,7 +229,12 @@ const QA: AgentDefinition = {
   tools: [],
   clientFacing: false,
   moneyAuthority: 'none',
-  handoffTargets: [],
+  // ADM-114: the QA Orchestrator routes the Phase 6 test work to its specialists. A route hands work over and grants nothing; QA stays the only
+  // agent that may decide whether work is complete, and the Admin alone approves a release candidate.
+  handoffTargets: [
+    'functional_test', 'ui_journey_test', 'api_integration_test', 'database_test', 'security_test', 'performance_test',
+    'compatibility_test', 'regression_test', 'release_readiness',
+  ],
   // The one true value on the roster. ADM-82 gives this authority to QA and
   // withholds it from everybody else, by name.
   mayVerify: true,
@@ -912,6 +917,39 @@ const DOCUMENTATION = developmentSpecialist({
 });
 
 
+/**
+ * The Phase 6 QA specialists - ADM-114, installed DISABLED. The QA Orchestrator of the specification IS `quality_assurance` (ADM-82's one verifier);
+ * no second orchestrator is created. These produce TEST EVIDENCE; none of them can declare work complete, approve a candidate, record an exception,
+ * verify a payment or deploy anything, and none holds a tool today. QA Independence: creator != validator is enforced in the database for every
+ * result they would record (the person or agent that produced the build cannot record its result).
+ */
+function qaSpecialist(input: { key: string; displayName: string; purpose: string; capabilities: readonly AgentCapability[]; handoffTargets: readonly string[] }): AgentDefinition {
+  return {
+    key: input.key,
+    displayName: input.displayName,
+    layer: 'qa',
+    purpose: input.purpose,
+    capabilities: input.capabilities,
+    tools: [],
+    clientFacing: false,
+    moneyAuthority: 'none',
+    handoffTargets: input.handoffTargets,
+    mayVerify: false,
+    verification: { selfAssertionAllowed: false, requiredEvidence: ['tests'], verifiedBy: 'quality_assurance' },
+    retry: { maxAttempts: 2, onExhausted: 'escalate' },
+  };
+}
+const FUNCTIONAL_TEST = qaSpecialist({ key: 'functional_test', handoffTargets: ['quality_assurance'], displayName: 'Functional Test Agent', purpose: 'Verifies features, business rules and acceptance criteria against the exact release candidate. Does not fix.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
+const UI_E2E_TEST = qaSpecialist({ key: 'ui_journey_test', handoffTargets: ['quality_assurance'], displayName: 'UI / E2E Test Agent', purpose: 'Tests the approved UI and the critical user journeys end to end. A preference is not a defect unless the approved UI supports it.', capabilities: ['reasoning', 'long_context', 'structured_output', 'multimodal'] });
+const API_INTEGRATION_TEST = qaSpecialist({ key: 'api_integration_test', handoffTargets: ['quality_assurance'], displayName: 'API / Integration Test Agent', purpose: 'Tests API contracts and integrations. Configured is not verified; a mock success is not a provider verification.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
+const DATABASE_TEST = qaSpecialist({ key: 'database_test', handoffTargets: ['quality_assurance'], displayName: 'Database Test Agent', purpose: 'Tests schema, constraints, RLS, tenant isolation, migrations and transactions. Never destructive against production.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
+const SECURITY_TEST = qaSpecialist({ key: 'security_test', handoffTargets: ['quality_assurance'], displayName: 'Security Test Agent', purpose: 'Independent security and permission validation. Raw exploit detail never reaches a client-facing view.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
+const PERFORMANCE_TEST = qaSpecialist({ key: 'performance_test', handoffTargets: ['quality_assurance'], displayName: 'Performance Test Agent', purpose: 'Measures against project-specific targets and records the method and environment. Never invents a universal threshold.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
+const COMPATIBILITY_TEST = qaSpecialist({ key: 'compatibility_test', handoffTargets: ['quality_assurance'], displayName: 'Compatibility / Device Test Agent', purpose: 'Tests the declared browser/device matrix. A simulator is not a device; one browser is not all browsers; an unavailable target is BLOCKED, never a pass.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
+const REGRESSION_TEST = qaSpecialist({ key: 'regression_test', handoffTargets: ['quality_assurance'], displayName: 'Regression Test Agent', purpose: 'Targeted, expanded and full relevant regression and escaped-defect protection. Flaky is not a pass.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
+const RELEASE_READINESS = qaSpecialist({ key: 'release_readiness', handoffTargets: ['quality_assurance'], displayName: 'Release / Production Readiness Agent', purpose: 'Freezes the exact candidate, evaluates the gates and readiness, prepares exception requests and the Phase 7 intake. Approves nothing, deploys nothing.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
+
+
 export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
   // Foundation — ADM-82 layer 1
   REQUIREMENT_COLLECTOR,
@@ -947,6 +985,16 @@ export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
   BUG_FIX,
   REFACTOR_PERFORMANCE,
   DOCUMENTATION,
+  // QA specialists - ADM-114 (Phase 6)
+  FUNCTIONAL_TEST,
+  UI_E2E_TEST,
+  API_INTEGRATION_TEST,
+  DATABASE_TEST,
+  SECURITY_TEST,
+  PERFORMANCE_TEST,
+  COMPATIBILITY_TEST,
+  REGRESSION_TEST,
+  RELEASE_READINESS,
 ];
 
 export const AGENT_KEYS: readonly string[] = AGENT_DEFINITIONS.map((a) => a.key);

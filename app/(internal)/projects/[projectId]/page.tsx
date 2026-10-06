@@ -85,6 +85,7 @@ import {
 } from '@/modules/finance/schema';
 import { listPhaseFourEscalations, getProject, listPaymentPlan, readGroupSetup, readPhaseTwo, readPhaseFourOverview, readProjectGroupName } from '@/modules/projects/queries';
 import { readPhaseFiveOverview } from '@/modules/projects/phase-five-queries';
+import { readPhaseSixOverview } from '@/modules/projects/phase-six-queries';
 import { listApprovalsForSubject } from '@/modules/approvals/queries';
 import { listDefects, readProjectQuality } from '@/modules/qa/queries';
 import { blocksDelivery, type DefectSeverity, type DefectStatus } from '@/modules/qa/schema';
@@ -135,6 +136,7 @@ import { CLIENT_SECRET_KIND_LABELS, listClientSecrets } from '@/modules/projects
 import { PhaseTwoPanel } from './phase-two-panel';
 import { PhaseFourPanel } from './phase-four-panel';
 import { PhaseFivePanel } from './phase-five-panel';
+import { PhaseSixPanel } from './phase-six-panel';
 import { PhaseCompletionPanel } from './phase-completion-panel';
 import { readPhaseCompletions } from '@/modules/projects/phase-completion-queries';
 import { ONBOARDING_MARK, OnboardingItemForm } from './onboarding-panel';
@@ -219,6 +221,7 @@ export default async function ProjectPage({
   const phaseTwo = await readPhaseTwo(projectId);
   const phaseFour = await readPhaseFourOverview(projectId);
   const phaseFive = await readPhaseFiveOverview(projectId);
+  const phaseSix = await readPhaseSixOverview(projectId);
   // Q-PH56: where Phase 5 and Phase 6 stand, read from Development and QA data.
   const phaseCompletions = await readPhaseCompletions(projectId);
   /**
@@ -884,6 +887,8 @@ export default async function ProjectPage({
       <PhaseFourPanel view={phaseFour} projectId={projectId} />
 
       <PhaseFivePanel view={phaseFive} projectId={projectId} />
+
+      <PhaseSixPanel view={phaseSix} projectId={projectId} />
 
       <PhaseCompletionPanel
         projectId={projectId}

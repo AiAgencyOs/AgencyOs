@@ -1064,3 +1064,43 @@ export async function handleValidateQaIntake(admin: Admin, job: UnlockJob): Prom
   if (row?.outcome === 'waiting_m3_verified') return { status: 'succeeded', outcome: 'waiting', detail: 'M3 is not verified yet.' };
   return { status: 'failed', permanent: false, detail: `the door answered ${row?.outcome ?? 'nothing'}` };
 }
+
+
+/**
+ * `invoice.paid` -> M4PaymentVerified, once - P601 §41. `invoice.paid` fires for every milestone; the DOOR (`record_m4_verified`) decides from the
+ * rows whether the FOURTH priced milestone is verified paid in full, and emits `project.m4_payment_verified` exactly once. The Phase 7 financial gate
+ * reads only that fact.
+ */
+export async function handleRecordM4Verified(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const invoiceId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+  if (!invoiceId) return { status: 'failed', permanent: true, detail: 'the event named no invoice' };
+
+  const { data: invoice, error: invoiceError } = await admin
+    .schema('finance')
+    .from('invoices')
+    .select('id, project_id')
+    .eq('id', invoiceId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+  if (invoiceError) return { status: 'failed', permanent: false, detail: `the invoice could not be read: ${invoiceError.message}` };
+  if (!invoice) return { status: 'succeeded', outcome: 'gone', detail: 'the invoice no longer exists' };
+  if (!invoice.project_id) return { status: 'succeeded', outcome: 'not_mine', detail: 'this invoice belongs to no project' };
+
+  const { data, error } = await admin.schema('projects').rpc('record_m4_verified', { p_project_id: invoice.project_id } as never);
+  if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+  const outcome = row?.outcome ?? 'no answer';
+  switch (outcome) {
+    case 'recorded':
+      return { status: 'succeeded', outcome, detail: 'M4PaymentVerified recorded; the Phase 7 financial gate is open.' };
+    case 'already_recorded':
+      return { status: 'succeeded', outcome, detail: 'M4PaymentVerified was already recorded.' };
+    case 'not_verified':
+      return { status: 'succeeded', outcome: 'not_mine', detail: 'M4 is not verified paid (another milestone, or a partial payment).' };
+    case 'not_found':
+      return { status: 'failed', permanent: true, detail: 'the project no longer exists.' };
+    default:
+      return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
+  }
+}

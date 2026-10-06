@@ -1933,3 +1933,24 @@ export function phaseSixReadyAnnouncementFor(input: { projectName: string | null
     'We will tell you if anything needs your input; otherwise the next update is when testing completes.',
   ].join('\n');
 }
+
+
+/** PM6: the exact release candidate was approved by an Admin (internal): Phase 6 may complete. */
+export const releaseCandidateApprovedEventSchema = z.object({ projectId: z.uuid(), version: z.number() }).strip();
+export function releaseCandidateApprovedAnnouncementFor(input: { projectName: string | null; version: number }): string {
+  return [
+    `Release candidate v${input.version} was approved by an Admin after independent testing.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'It is exactly the build that was tested; if the source changes, a new candidate and a new approval are needed.',
+  ].join('\n');
+}
+
+/** PM6: M4 verified - the Phase 7 financial gate is open. */
+export const m4PaymentVerifiedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function m4PaymentVerifiedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'M4 (20%) has been verified paid by an Admin. Phase 7 (launch and handover) is financially available.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'A claim, a proof or a match would not have opened it; only the verification did.',
+  ].join('\n');
+}

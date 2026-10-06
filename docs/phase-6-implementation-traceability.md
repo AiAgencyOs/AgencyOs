@@ -1,0 +1,36 @@
+# Phase 6 implementation traceability
+
+Source: the Phase 6 PDFs P601–P603 and P605–P614 (read from `~/Downloads`, not committed). **P604 (Functional Test Agent) was not supplied;** its requirements were taken from the master prompt (§17) and P601 §15 only. Status: EXISTS · PARTIAL · MISSING · MANUAL_EXTERNAL. Evidence is a migration/script that was run (`scripts/verify-phase-four-e2e.sql` is the whole Phase 4→5→6 journey on a real Postgres; each control was removed, watched to fail, and restored).
+
+| REQ | Spec | Requirement | Status | Evidence |
+|---|---|---|---|---|
+| P6-SEC-01 | 16 / prompt §59 | A client reads no internal QA/security evidence | EXISTS | `20261101090000`: every Phase 5/6 internal table is `org AND is_internal()`; `scripts/verify-internal-only-reads.sql`. **Fixed a P1 from Phase 5**: those tables were readable by a portal client |
+| P6-GATE-01 | 01 §3, §39 | Phase 6 exists from Phase5Completed, WAITING_M3_VERIFIED; READY once on M3 verified in full | EXISTS | `20261101100000` `start_phase_six`; E2E (waiting → ready once, replay safe) |
+| P6-STATE-01 | 01 §39 | The twelve states | EXISTS | `projects.phase_six.state` CHECK, moved by the doors |
+| P6-INTAKE-01 | 01 §9–10 | QA intake validated against the exact Phase 5 build; typed blockers (owner + resume condition); a different-build approval, stale scope/UI, missing M3 rejected; external dependencies explicit | EXISTS | `validate_qa_intake`; E2E |
+| P6-INTAKE-02 | 01 §9 | Intake carries API/data contracts, supported platforms/devices/browsers, change-request history | PARTIAL | build/commit/artifact/scope/UI/integrations/M3 carried; contracts, platform list and CR history are not fields |
+| P6-PLAN-01 | 01 §11–13 | Versioned Master Test Plan, risk matrix, requirement coverage | EXISTS | `20261101110000`; E2E; coverage = every included scope item + category + critical journey; mandatory functional/e2e/security |
+| P6-RISK-01 | 01 §12 | Payment/auth/tenant/destructive work never recorded low or shallow | EXISTS | CHECK on `risk_items`; E2E |
+| P6-EXEC-01 | 01 §25 | Execution states; PASS needs evidence on the exact commit; blocked/skipped ≠ pass; critical never skipped | EXISTS | `phase6_cases` + `record_case_result`; E2E |
+| P6-EXEC-02 | 01 §25 | INVALIDATED on build change, history preserved | EXISTS | `invalidate_stale_results`; E2E |
+| P6-INDEP-01 | 03 | Creator ≠ validator for every result | EXISTS | `self_review` in the case and category doors; E2E |
+| P6-DEF-01 | 01 §26–28, 12 | S0–S4, classification (test/environment ≠ product), Change Request routing, fix handoff, retest on the FIXED commit, reopen | EXISTS | `20261101120000`; E2E |
+| P6-DEF-02 | 12 | Triage/Assigned/In-progress as distinct states; duplicate linking to a canonical defect | PARTIAL | triage fields + classification replace states; no canonical-defect link |
+| P6-CAT-01 | 05–11 | Per-category evidence (functional, e2e, api, integration, database, security, performance, compatibility, regression) | EXISTS (verdicts) | `category_results`; a category passes only when every case passed on the commit |
+| P6-CAT-02 | 05–11 | The test agents' depth (browser runner, load generator, device lab, scanners) | MANUAL_EXTERNAL / MISSING | the nine QA specialists are defined, disabled; no runner exists; needs a funded model key and environments |
+| P6-RC-01 | 01 §31, 13 | Release candidate = one exact commit/build/artifact hash; a new commit is a new candidate | EXISTS | `qa.release_candidates`; E2E |
+| P6-GATE-02 | 01 §34, 13 | 15 hard gates; a failed mandatory gate blocks regardless of score | EXISTS | `evaluate_hard_gates`; E2E (score 90+, blocked) |
+| P6-SCORE-01 | 01 §32–33, 13 | Weighted readiness; unknown/blocked not full score | EXISTS | `evaluate_readiness`; `readiness_assessments` CHECK: ready ⇒ all gates ∧ score ≥ 70 |
+| P6-EXC-01 | 01 §35, 13 | Human-only, expiring, bounded exceptions; none for critical gates | EXISTS | `release_exceptions`; E2E (owner-only, not the requester, expiry, not editable) |
+| P6-ADMIN-01 | 01 §36–37 | Admin decisions bound to the exact candidate; EDIT/RETEST loop | EXISTS | `decide_release_candidate`; E2E |
+| P6-DONE-01 | 01 §40 | Phase6Completed only on an Admin-approved, still-current candidate; once | EXISTS | `phase_readiness(…,6)` rewrite + `complete_phase`; E2E |
+| P6-P7-01 | 01 §42 | Frozen Phase 7 intake; Phase 6 deploys nothing | EXISTS | `phase_six_handoffs` (CHECK `not production_deployed`, frozen); E2E |
+| P6-M4-01 | 14 | M4 20% invoice once; only Admin-verified in full opens Phase 7; runner-only once-only `M4PaymentVerified` | EXISTS | `generateM4Invoice` (pre-existing) + `20261101140000`; E2E |
+| P6-M4-02 | 14 | An old owner override of an unverified final milestone (`release_payment_overrides`) | SPEC_CONFLICT | NOT consulted by `phase_seven_gate_status`; the override table still exists and still exists for Phase 7's older release tab. **Owner decision needed** (docs/phase-6-manual-actions.md) |
+| P6-PM-01 | 02 | PM6 messages | PARTIAL | Task 4 start, candidate approved, M3 verified, M4 verified, Task 4 complete (internal channel, like PM4/PM5). PM6-M02..M10 client-facing set not built |
+| P6-EVT-01 | 01 §44 | Events/jobs, idempotent | EXISTS | `phase_six_ready`, `qa_intake_validated`, `master_test_plan_approved`, `release_candidate_created/approved`, `release_readiness_evaluated`, `release_exception_requested`, `m4_payment_verified`; handlers once-only, red-proven doors |
+| P6-ADMINUI-01 | 01 §46 | Admin screens | PARTIAL | Phase 6 overview on the project page with a form for every door (intake, plan, risk, cases, results, defects, candidate, evidence, gates, exceptions, review, completion). Typechecked, linted, unit-tested; **not rendered or clicked**. No dedicated dashboards (performance trend, device matrix) |
+| P6-AGENT-01 | 03–13 | QA specialists | EXISTS (definitions) | nine agents, disabled, `quality_assurance` is the QA Orchestrator (no duplicate) |
+| P6-AGENT-02 | 03 | QA Orchestrator routing/job graph, safe parallelism | MISSING | no handler schedules QA jobs or assigns the specialists |
+| P6-STALE-02 | 01 §45 | Re-verification after source change post-completion | PARTIAL | gates show the approval no longer holds (E2E); no automatic re-open of Phase 6 |
+| P6-E2E-01 | 01 §56 | 87-step Phase 6 scenario | PARTIAL | core steps run in SQL: gate, intake (incl. wrong-build), plan, risk, results, defects (fail → reopen → verified), candidate, 90+ score blocked, exceptions, review loop, completion, M4, stale. Agent-executed testing is not runnable here |

@@ -29,6 +29,10 @@ import {
   m3PaymentVerifiedEventSchema,
   phaseSixReadyEventSchema,
   phaseSixReadyAnnouncementFor,
+  releaseCandidateApprovedEventSchema,
+  releaseCandidateApprovedAnnouncementFor,
+  m4PaymentVerifiedEventSchema,
+  m4PaymentVerifiedAnnouncementFor,
   m3PaymentVerifiedAnnouncementFor,
   buildFeedbackRoutedEventSchema,
   buildFeedbackRoutedAnnouncementFor,
@@ -3274,5 +3278,34 @@ export async function announcePhaseSixReady(admin: Admin, job: AnnounceJob): Pro
   return announceToInternalChannel(admin, job, {
     body: phaseSixReadyAnnouncementFor({ projectName }),
     externalRef: `phase-six-ready:${parsed.data.projectId}`,
+  });
+}
+
+
+/** `project.release_candidate_approved` -> the PM tells the team the exact candidate was approved. */
+export async function announceReleaseCandidateApproved(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = releaseCandidateApprovedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.release_candidate_approved payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: releaseCandidateApprovedAnnouncementFor({ projectName, version: parsed.data.version }),
+    externalRef: `release-candidate-approved:${typeof envelope.subjectId === 'string' ? envelope.subjectId : parsed.data.projectId}`,
+  });
+}
+
+/** `project.m4_payment_verified` -> the PM tells the team Phase 7 is financially open. */
+export async function announceM4PaymentVerified(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = m4PaymentVerifiedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.m4_payment_verified payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: m4PaymentVerifiedAnnouncementFor({ projectName }),
+    externalRef: `m4-payment-verified:${parsed.data.projectId}`,
   });
 }

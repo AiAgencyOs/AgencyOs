@@ -71,3 +71,75 @@ describe('Phase 6 defects', () => {
     assert.match(defects, /'reopened'/);
   });
 });
+
+const release = read('supabase/migrations/20261101130000_a_release_candidate_is_one_exact_commit_and_gates_decide.sql');
+const exit = read('supabase/migrations/20261101140000_phase_six_completes_on_an_approved_candidate_and_hands_phase_seven_an_intake.sql');
+const specialists = read('supabase/migrations/20261101150000_the_phase_six_qa_specialists_are_installed_disabled.sql');
+
+describe('release candidate, gates, exceptions, Admin review', () => {
+  test('a candidate is one exact commit; approval cannot be a status edit', () => {
+    assert.match(release, /a release candidate is one exact commit and build: a different commit is a new candidate/);
+    assert.match(release, /approved through the Admin review door, never by a status edit/);
+  });
+  test('gates decide and the score cannot override them (a CHECK, not a convention)', () => {
+    assert.match(release, /check \(result <> 'ready' or \(all_gates_satisfied and score >= 70\)\)/);
+    for (const gate of ['build_succeeds', 'critical_tests', 'no_s0_s1', 'security', 'database_migration', 'regression', 'unique_artifact', 'evidence_current', 'rollback', 'client_acceptance', 'admin_approval']) {
+      assert.ok(release.includes(`'${gate}'`), gate);
+    }
+  });
+  test('exceptions are human-only, bounded, expiring, and only for gates policy allows', () => {
+    assert.match(release, /gate in \('performance', 'compatibility', 'observability', 'deployment_config'\)/);
+    assert.match(release, /core\.is_owner\(\)/);
+    assert.match(release, /requester_cannot_approve/);
+    assert.match(release, /e\.status = 'approved' and e\.expires_at > now\(\)/);
+  });
+  test('only an Admin decides, for the exact candidate, and the approval re-checks everything now', () => {
+    assert.match(release, /core\.is_admin\(\)/);
+    assert.match(release, /'wrong_candidate'/);
+    assert.match(release, /select \* into v_a from qa\.evaluate_readiness\(v_c\.id\);\s+if v_a\.result <> 'ready'/);
+  });
+});
+
+describe('Phase 6 exit and Phase 7 intake', () => {
+  test('Phase 6 deploys nothing: a CHECK and a frozen row', () => {
+    assert.match(exit, /production_deployed\s+boolean not null default false check \(not production_deployed\)/);
+    assert.match(exit, /never edited/);
+  });
+  test('Phase6Completed needs an Admin-approved candidate that is still the build, every gate now, no FIX_READY awaiting retest', () => {
+    for (const text of ['No release candidate is approved by an Admin', 'The approved candidate is stale', 'Hard gate not satisfied', 'await independent retest']) assert.ok(exit.includes(text), text);
+  });
+  test('M4 is a runner-only once-only fact and the Phase 7 gate ignores every override', () => {
+    assert.match(exit, /grant execute on function projects\.record_m4_verified\(uuid\) to service_role;/);
+    assert.match(exit, /offset 3 limit 1/);
+    assert.ok((subs['invoice.paid'] ?? []).includes('projects:recordM4Verified'));
+    assert.deepEqual(subs['project.m4_payment_verified'], ['crm:announceM4PaymentVerified']);
+  });
+  test('the nine QA specialists are installed disabled and verified by quality_assurance alone', () => {
+    assert.equal((specialists.match(/'L1', false,/g) ?? []).length, 9);
+    assert.ok(!/'L[012]', true/.test(specialists));
+  });
+});
+
+describe('the Phase 6 Admin surface calls only whitelisted doors', () => {
+  const actions = read('src/modules/projects/phase-six-actions.ts');
+  const panel = read('app/(internal)/projects/[projectId]/phase-six-panel.tsx');
+  const queries = read('src/modules/projects/phase-six-queries.ts');
+  test('an unknown door name is refused and every action is gated on project.write', () => {
+    assert.match(actions, /hasOwnProperty\.call\(DOORS, name\)/);
+    assert.match(actions, /Unknown action/);
+    assert.match(actions, /can\(context, 'project\.write'\)/);
+  });
+  test('every door the panel offers is in the whitelist', () => {
+    const used = [...panel.matchAll(/door="([a-z_]+)"/g)].map((m) => m[1]);
+    assert.ok(used.length >= 15, `only ${used.length} doors found`);
+    for (const door of used) assert.ok(actions.includes(`${String(door)}:`), String(door));
+  });
+  test('the project page renders the panel and every read is guarded', () => {
+    assert.match(read('app/(internal)/projects/[projectId]/page.tsx'), /<PhaseSixPanel view=\{phaseSix\} projectId=\{projectId\} \/>/);
+    assert.ok((queries.match(/unreadable\('readPhaseSixOverview\./g) ?? []).length >= 18);
+  });
+  test('the panel says the score is a summary and shows the gates', () => {
+    assert.match(panel, /a high score cannot hide a failed gate/);
+    assert.match(panel, /candidate\.gates\.map/);
+  });
+});

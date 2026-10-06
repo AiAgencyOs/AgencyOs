@@ -74,6 +74,16 @@ export const AGENT_CATEGORY: Readonly<Record<string, RoutingCategory>> = {
   refactor_performance: 'engineering',
   documentation: 'engineering',
   security_review: 'certification',
+  // ADM-114 (Phase 6): QA specialists route as certification, the tightest category.
+  functional_test: 'certification',
+  ui_journey_test: 'certification',
+  api_integration_test: 'certification',
+  database_test: 'certification',
+  security_test: 'certification',
+  performance_test: 'certification',
+  compatibility_test: 'certification',
+  regression_test: 'certification',
+  release_readiness: 'certification',
 };
 
 export function categoryForAgent(agentKey: string): RoutingCategory | null {

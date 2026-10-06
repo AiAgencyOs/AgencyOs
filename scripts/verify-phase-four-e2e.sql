@@ -48,6 +48,7 @@ insert into approvals.approval_policies (organization_id, subject_type, required
 -- ── fixture: a project that has finished Phase 3 (the handoff row is what Phase 3's lock writes) ──
 insert into core.client_accounts (organization_id, name) values (:'ORG', 'zztest p4 e2e client') returning id \gset A_
 insert into projects.projects (organization_id, client_account_id, name, project_code) values (:'ORG', :'A_id', 'zztest p4 e2e', 'ZP4-E2E') returning id \gset P_
+select set_config('e2e.p', :'P_id', false); -- the project id, for DO blocks (psql variables do not reach inside $$)
 insert into projects.milestones (organization_id, project_id, name, position, amount_minor, currency) values (:'ORG', :'P_id', 'M1', 1, 50000, 'INR');
 insert into projects.milestones (organization_id, project_id, name, position, amount_minor, currency) values (:'ORG', :'P_id', 'M2', 2, 100000, 'INR') returning id \gset MS2_
 
@@ -394,11 +395,12 @@ select pg_temp.check(pg_temp.refused(format('update projects.routing_decisions s
 do $$ begin
   begin
     insert into ai.handoffs (organization_id, correlation_id, from_agent, to_agent, project_id, subject_type, subject_id, objective)
-      values ('00000000-0000-4000-8000-000000000001', gen_random_uuid(), 'orchestrator', 'finance', (select id from projects.projects where project_code = 'ZP4-E2E'), 'development_task', gen_random_uuid(), 'route development to Finance');
+      values ('00000000-0000-4000-8000-000000000001', gen_random_uuid(), 'orchestrator', 'finance', current_setting('e2e.p')::uuid, 'development_task', gen_random_uuid(), 'route development to Finance');
     raise exception 'FAILED: the Orchestrator handed development work to Finance';
   exception when others then
     if sqlerrm like 'FAILED:%' then raise; end if;
-    raise notice 'ok  the database refuses a route the registry does not declare (orchestrator -> finance)';
+    if sqlerrm not like '%handoff%' and sqlerrm not like '%declared%' and sqlerrm not like '%target%' then raise exception 'FAILED: refused for the wrong reason: %', sqlerrm; end if;
+    raise notice 'ok  the database refuses a route the registry does not declare (orchestrator -> finance): %', left(sqlerrm, 80);
   end;
 end $$;
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
@@ -720,7 +722,7 @@ select payment_id as pid from finance.record_manual_payment(:'I3_i', 'UTR-M3-2',
 select finance.verify_payment(:'PY3b_pid', :'OWNER');
 select pg_temp.check(projects.m3_verified_paid(:'P_id'), 'M3 verified paid in full: the Phase 6 financial gate opens');
 do $$ begin
-  begin perform projects.record_m3_verified((select id from projects.projects where project_code = 'ZP4-E2E'));
+  begin perform projects.record_m3_verified(current_setting('e2e.p')::uuid);
         raise exception 'FAILED: a signed-in person called the runner-only M3 door';
   exception when insufficient_privilege then raise notice 'ok  a person cannot emit M3PaymentVerified: the runner-only door refuses them'; end;
 end $$;
@@ -882,6 +884,195 @@ update qa.defects set status = 'fixed', resolution = 'third: regression test add
 select pg_temp.as_user('00000000-0000-4000-8000-00000000f523', :'ORG', 'ops_admin');
 set local role authenticated;
 select pg_temp.check((select outcome from qa.record_retest(:'RF_d'::uuid, true, 'fix9999', 'https://qa.example.test/retest-3')) = 'verified', 'verified again after the regression fix');
+reset role;
+
+-- ═════════ Phase 6: release candidate, evidence, hard gates, exceptions, Admin review, completion ═════════
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select candidate_id as rc from qa.create_release_candidate(:'P_id') \gset RC_
+select pg_temp.check(:'RC_rc' <> '', 'an exact release candidate is frozen: one commit, one build, one artifact hash');
+select pg_temp.check((select commit_ref = 'abc1234' and artifact_sha256 = repeat('a', 64) and version = 1 from qa.release_candidates where id = :'RC_rc'::uuid), 'it names the exact commit and the artifact hash from the build run');
+select pg_temp.check((select outcome from qa.create_release_candidate(:'P_id')) = 'candidate_exists_for_this_commit', 'a second candidate for the same commit is not created');
+reset role;
+select pg_temp.check(pg_temp.refused(format('update qa.release_candidates set commit_ref = ''zzz'' where id = %L', :'RC_rc'), 'new candidate'), 'a candidate is one exact commit: a different commit is a new candidate');
+select pg_temp.check(pg_temp.refused(format('update qa.release_candidates set status = ''approved'', approved_by = %L, approved_at = now() where id = %L', :'OWNER', :'RC_rc'), 'Admin review door'), 'a candidate cannot be approved by a status edit');
+
+-- category evidence: independent, and only when every case of the category passed on this commit
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f523', :'ORG', 'ops_admin');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.record_category_result(:'RC_rc'::uuid, 'security', 'pass', 'https://qa.example.test/sec')) = 'cases_not_passing', 'NEGATIVE: security cannot pass while its case is failing');
+-- the defect behind the failing security case was verified fixed above; the independent QA person re-runs the cases on the candidate
+select pg_temp.check((select outcome from qa.record_case_result(:'CS3_c3', 'pass', 'https://qa.example.test/3-rerun')) = 'recorded', 'the security case is re-run and passes');
+select pg_temp.check((select outcome from qa.record_case_result(:'CS2_c2', 'pass', 'https://qa.example.test/2-rerun')) = 'recorded', 'the end-to-end case is re-run and passes (its failure was a test defect)');
+reset role;
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f522', :'ORG', 'member');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.record_category_result(:'RC_rc'::uuid, 'functional', 'pass', 'https://qa.example.test/f')) = 'self_review', 'whoever built the build cannot record a category verdict on it');
+reset role;
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f523', :'ORG', 'ops_admin');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.record_category_result(:'RC_rc'::uuid, 'functional', 'pass', 'https://qa.example.test/f')) = 'recorded', 'functional passes (every functional case passed on this commit)');
+select pg_temp.check((select outcome from qa.record_category_result(:'RC_rc'::uuid, 'ui_e2e', 'pass', 'https://qa.example.test/e2e')) = 'recorded', 'critical end-to-end passes');
+select pg_temp.check((select outcome from qa.record_category_result(:'RC_rc'::uuid, 'security', 'pass', 'https://qa.example.test/sec')) = 'recorded', 'security passes');
+select pg_temp.check((select outcome from qa.record_category_result(:'RC_rc'::uuid, 'performance', 'pass', 'https://qa.example.test/p')) = 'category_not_in_plan', 'a category the approved plan does not require is not recorded');
+
+-- the score is a summary, not authority: ~90 points, band strong, and still BLOCKED because mandatory gates fail
+select outcome as o, score as sc, band as bd, result as rs from qa.evaluate_readiness(:'RC_rc'::uuid) \gset RA1_
+select pg_temp.check(:'RA1_sc'::int >= 85 and :'RA1_bd' in ('strong', 'controlled'), 'the readiness score is high (' || :'RA1_sc' || ')');
+select pg_temp.check(:'RA1_rs' = 'blocked', 'BUT the candidate is BLOCKED: a high score cannot hide failed hard gates');
+select pg_temp.check((select not passed from qa.evaluate_hard_gates(:'RC_rc'::uuid) where gate = 'rollback'), 'the rollback gate fails: no rollback plan');
+select pg_temp.check((select not passed from qa.evaluate_hard_gates(:'RC_rc'::uuid) where gate = 'observability'), 'the observability gate fails: no monitoring prerequisites');
+select pg_temp.check((select passed from qa.evaluate_hard_gates(:'RC_rc'::uuid) where gate = 'security'), 'while security passes');
+reset role;
+do $$ begin
+  begin
+    insert into qa.readiness_assessments (organization_id, candidate_id, commit_ref, score, band, dimensions, gates, all_gates_satisfied, result)
+      values ('00000000-0000-4000-8000-000000000001', (select id from qa.release_candidates order by created_at desc limit 1), 'abc1234', 97, 'strong', '[]', '[]', false, 'ready');
+    raise exception 'FAILED: a ready assessment with an unsatisfied gate was written';
+  exception when check_violation then raise notice 'ok  a "ready" assessment with an unsatisfied gate cannot even be written (score 97 notwithstanding)'; end;
+end $$;
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f523', :'ORG', 'ops_admin');
+set local role authenticated;
+
+-- exceptions: only for gates policy allows, with an expiry, approved by a person who is the owner and did not ask for it
+select pg_temp.check((select outcome from qa.request_release_exception(:'RC_rc'::uuid, 'rollback', 'r', 'b', 'm', 'ops', 'c', now() + interval '14 days')) = 'gate_cannot_be_excepted', 'NEGATIVE: the rollback gate cannot be excepted');
+select pg_temp.check((select outcome from qa.request_release_exception(:'RC_rc'::uuid, 'observability', 'no alerts yet', 'launch date', 'manual checks hourly', 'ops lead', 'roll back if error rate > 2%', now() + interval '200 days')) = 'expiry_required_within_90_days', 'an exception needs an expiry within 90 days');
+select exception_id as ex from qa.request_release_exception(:'RC_rc'::uuid, 'observability', 'no alerts yet', 'launch date', 'manual checks hourly', 'ops lead', 'roll back if error rate > 2%', now() + interval '14 days') \gset EX_
+select pg_temp.check(:'EX_ex' <> '', 'an exception is REQUESTED (by an agent or a person); it is not yet an exception');
+select pg_temp.check((select not satisfied from qa.evaluate_hard_gates(:'RC_rc'::uuid) where gate = 'observability'), 'a requested exception satisfies nothing');
+select pg_temp.check((select outcome from qa.approve_release_exception(:'EX_ex'::uuid)) = 'not_authorized', 'an ops_admin cannot approve an exception: only the owner');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.approve_release_exception(:'EX_ex'::uuid)) = 'approved', 'the owner approves the exception');
+select pg_temp.check((select exceptioned and satisfied and not passed from qa.evaluate_hard_gates(:'RC_rc'::uuid) where gate = 'observability'), 'the gate is satisfied by the exception, and says it was not passed');
+reset role;
+-- an expired exception no longer satisfies
+set local session_replication_role = replica;
+update qa.release_exceptions set expires_at = now() - interval '1 hour' where id = :'EX_ex'::uuid;
+set local session_replication_role = origin;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select not satisfied from qa.evaluate_hard_gates(:'RC_rc'::uuid) where gate = 'observability'), 'an EXPIRED exception satisfies nothing');
+reset role;
+select pg_temp.check(pg_temp.refused(format('update qa.release_exceptions set mitigation = ''different'' where id = %L', :'EX_ex'), 'never edited'), 'an approved exception is never edited');
+
+-- the prerequisites are supplied; the candidate goes to review
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.set_candidate_prerequisites(:'RC_rc'::uuid, 'prod-config-v1', 'redeploy the previous artifact; restore the pre-deploy database snapshot', 'ops lead', 'error-rate and latency alerts; request logs retained 30 days', '[{"title":"WhatsApp not verified","impact":"no delivery receipts","workaround":"manual follow-up","owner":"ops","blocking":false,"disclose":true}]')) = 'set', 'rollback, monitoring and configuration are recorded');
+reset role;
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f523', :'ORG', 'ops_admin');
+set local role authenticated;
+select outcome as o, result as rs, score as sc from qa.submit_candidate_for_review(:'RC_rc'::uuid) \gset SR_
+select pg_temp.check(:'SR_o' = 'in_review' and :'SR_rs' = 'ready', 'with every gate satisfied the candidate goes to Admin review');
+select pg_temp.check((select state from projects.phase_six where project_id = :'P_id') = 'admin_review', 'Phase 6 is ADMIN_REVIEW');
+reset role;
+
+-- Admin review: human; a retest request loops back; the approval is for the exact candidate and re-checks everything NOW
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f522', :'ORG', 'member');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.decide_release_candidate(:'RC_rc'::uuid, 'approve')) = 'not_authorized', 'a delivery person cannot approve a release candidate');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.decide_release_candidate(:'RC_rc'::uuid, 'request_retest')) = 'note_required', 'a retest request says what to retest');
+select pg_temp.check((select outcome from qa.decide_release_candidate(:'RC_rc'::uuid, 'request_retest', 'retest the receipt email on a clean tenant')) = 'sent_back', 'the Admin requests a retest');
+select pg_temp.check((select status from qa.release_candidates where id = :'RC_rc'::uuid) = 'blocked', 'the candidate goes back to BLOCKED: no approval carries over');
+select pg_temp.check((select state from projects.phase_six where project_id = :'P_id') = 'defect_fix_loop', 'Phase 6 is back in the DEFECT_FIX_LOOP');
+select id as "AD_id" from qa.defects where project_id = :'P_id' and title like 'Admin request retest%' \gset
+select pg_temp.check(:'AD_id' <> '', 'the request became a tracked defect with the exact commit');
+reset role;
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f522', :'ORG', 'member');
+update qa.defects set status = 'fixed', resolution = 'receipt template corrected' where id = :'AD_id'::uuid;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select count(*) from projects.phase_readiness(:'P_id', 6) r, unnest(r.missing) m where m like '%await independent retest%') = 1, 'Phase 6 cannot complete while a FIX_READY defect awaits independent retest');
+reset role;
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f523', :'ORG', 'ops_admin');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.record_retest(:'AD_id'::uuid, true, 'fix7777', 'https://qa.example.test/retest-admin')) = 'verified', 'QA independently retests the fix on the fixed build');
+select outcome as o, result as rs from qa.submit_candidate_for_review(:'RC_rc'::uuid) \gset SR2_
+select pg_temp.check(:'SR2_o' = 'in_review', 'the candidate goes back to Admin review');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.decide_release_candidate(:'RC_rc'::uuid, 'approve', 'reviewed the evidence')) = 'approved', 'the Admin approves the EXACT candidate');
+select pg_temp.check((select outcome from qa.decide_release_candidate(:'RC_rc'::uuid, 'approve')) = 'wrong_candidate', 'a second decision on a candidate no longer under review is refused');
+select pg_temp.check((select count(*) from qa.admin_qa_reviews where candidate_id = :'RC_rc'::uuid) = 2, 'both decisions are in the append-only review history');
+select pg_temp.check((select count(*) from core.outbox_events where type = 'project.release_candidate_approved' and subject_id = :'RC_rc'::uuid) = 1, 'the approval was announced once');
+select pg_temp.check((select r.outcome from projects.phase_readiness(:'P_id', 6) r) = 'ready', 'every Phase 6 condition now holds');
+select pg_temp.check((select outcome from projects.complete_phase(:'P_id', 6)) = 'completed', 'Phase6Completed');
+select pg_temp.check((select outcome from projects.complete_phase(:'P_id', 6)) = 'already_completed', 'a duplicate Phase6Completed completes nothing twice');
+select pg_temp.check((select count(*) from core.outbox_events where type = 'project.phase_six_completed' and subject_id = :'P_id') = 1, 'Phase6Completed was emitted exactly once');
+select pg_temp.check((select state from projects.phase_six where project_id = :'P_id') = 'm4_due', 'Phase 6 is M4_DUE');
+select pg_temp.check((select not production_deployed and commit_ref = 'abc1234' from projects.phase_six_handoffs where project_id = :'P_id'), 'the Phase 7 intake names the exact commit and records that NOTHING was deployed');
+select pg_temp.check((select jsonb_array_length(payload->'knownLimitations') = 1 and payload->'deployment'->>'rollbackOwner' = 'ops lead' from projects.phase_six_handoffs where project_id = :'P_id'), 'the intake carries the rollback, observability, configuration and known limitations');
+select pg_temp.check((select jsonb_array_length(payload->'exceptions') = 1 from projects.phase_six_handoffs where project_id = :'P_id'), 'the (expired) approved exception is recorded in the intake: nothing is hidden from Phase 7');
+reset role;
+select pg_temp.check(pg_temp.refused(format('update projects.phase_six_handoffs set commit_ref = ''zzz'' where project_id = %L', :'P_id'), 'never edited'), 'the Phase 7 intake is frozen');
+do $$ begin
+  begin
+    update projects.phase_six_handoffs set production_deployed = true where project_id = current_setting('e2e.p')::uuid;
+    raise exception 'FAILED: Phase 6 recorded a production deployment';
+  exception when restrict_violation or check_violation then raise notice 'ok  Phase 6 cannot record a production deployment (it is a CHECK and the row is frozen)'; end;
+end $$;
+
+-- source changes after approval: the approval no longer holds
+set local session_replication_role = replica;
+update projects.deliverable_details set commit_ref = 'eee0002' where deliverable_id = :'BD1_bd';
+set local session_replication_role = origin;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select not passed from qa.evaluate_hard_gates(:'RC_rc'::uuid) where gate = 'evidence_current'), 'a changed commit makes the recorded evidence not current');
+select pg_temp.check((select not passed from qa.evaluate_hard_gates(:'RC_rc'::uuid) where gate = 'build_succeeds'), 'and the build gate no longer holds for the approved candidate');
+select pg_temp.check((select outcome from qa.invalidate_stale_results(:'P_id')) = 'invalidated', 'stale results are invalidated');
+select pg_temp.check((select count(*) from qa.phase6_cases where plan_id = (select plan_id from qa.release_candidates where id = :'RC_rc'::uuid) and status = 'invalidated') >= 3, 'every old result is INVALIDATED, not left as a pass');
+select pg_temp.check((select count(*) from qa.phase6_result_history where status = 'invalidated') >= 3, 'and the invalidation is in history: nothing was overwritten');
+select pg_temp.check((select status from projects.qa_intakes where project_id = :'P_id') = 'stale', 'the QA intake is STALE');
+reset role;
+set local session_replication_role = replica;
+update projects.deliverable_details set commit_ref = 'abc1234' where deliverable_id = :'BD1_bd';
+set local session_replication_role = origin;
+
+-- ═════════ Phase 6 -> 7: M4 (20%) and the Phase 7 financial gate ═════════
+insert into projects.milestones (organization_id, project_id, name, position, amount_minor, currency) values (:'ORG', :'P_id', 'M4', 4, 100000, 'INR') returning id \gset MS4_
+select pg_temp.as_service();
+set local role service_role;
+select invoice_id as i from finance.create_milestone_invoice(:'ORG', :'A_id', :'P_id', :'MS4_id', 'ZP4-M4-1', 'INR', 100000, 0, 100000, '[{"position":0,"description":"M4 - 20%","quantity":1,"unit_price_minor":100000,"amount_minor":100000,"tax_rate_bp":0}]', now() + interval '7 days', null, null) \gset I4_
+select pg_temp.check((select outcome from finance.create_milestone_invoice(:'ORG', :'A_id', :'P_id', :'MS4_id', 'ZP4-M4-2', 'INR', 100000, 0, 100000, '[{"position":0,"description":"M4 - 20%","quantity":1,"unit_price_minor":100000,"amount_minor":100000,"tax_rate_bp":0}]', now() + interval '7 days', null, null)) = 'already_invoiced', 'a duplicate M4 invoice event creates no second invoice');
+select finance.issue_invoice(:'I4_i', now() + interval '7 days');
+select pg_temp.check((select outcome from projects.record_m4_verified(:'P_id')) = 'not_verified', 'NEGATIVE: an issued M4 emits no M4PaymentVerified');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.phase_seven_gate_status(:'P_id')) = 'invoice_issued', 'M4 issued: the Phase 7 financial gate is closed');
+insert into finance.payment_submissions (organization_id, invoice_id, account_id, amount_minor, currency, method, reference, status, submitted_at, submitted_by_agent)
+  values (:'ORG', :'I4_i', :'PAY_id', 100000, 'INR', 'upi', 'UTR-M4-1', 'pending_verification', now(), 'project_manager');
+select pg_temp.check((select outcome from projects.phase_seven_gate_status(:'P_id')) = 'invoice_issued', 'a payment submission (proof) does not open the Phase 7 gate');
+select payment_id as pid from finance.record_manual_payment(:'I4_i', 'UTR-M4-1', 50000, now(), 'upi') \gset PY4a_
+select finance.verify_payment(:'PY4a_pid', :'OWNER');
+select pg_temp.check(not projects.m4_verified_paid(:'P_id'), 'M4 underpaid (50,000 of 100,000 verified): the gate is still closed');
+select payment_id as pid from finance.record_manual_payment(:'I4_i', 'UTR-M4-2', 50000, now(), 'upi') \gset PY4b_
+select pg_temp.check((select outcome from projects.phase_seven_gate_status(:'P_id')) <> 'verified', 'a recorded but unverified balance does not open the gate');
+select finance.verify_payment(:'PY4b_pid', :'OWNER');
+select pg_temp.check(projects.m4_verified_paid(:'P_id'), 'M4 verified paid in full by the owner');
+do $$ begin
+  begin perform projects.record_m4_verified(current_setting('e2e.p')::uuid);
+        raise exception 'FAILED: a signed-in person called the runner-only M4 door';
+  exception when insufficient_privilege then raise notice 'ok  a person cannot emit M4PaymentVerified: the runner-only door refuses them'; end;
+end $$;
+reset role;
+select pg_temp.as_service();
+set local role service_role;
+select pg_temp.check((select outcome from projects.record_m4_verified(:'P_id')) = 'recorded', 'M4PaymentVerified is recorded by the runner once the payment is verified in full');
+select pg_temp.check((select outcome from projects.record_m4_verified(:'P_id')) = 'already_recorded', 'a replay emits nothing a second time');
+select pg_temp.check((select count(*) from core.outbox_events where type = 'project.m4_payment_verified' and subject_id = :'P_id') = 1, 'exactly one M4PaymentVerified event exists');
+select pg_temp.check((select state from projects.phase_six where project_id = :'P_id') = 'phase7_financially_ready', 'Phase 6 reaches PHASE7_FINANCIALLY_READY');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.phase_seven_gate_status(:'P_id')) = 'verified', 'ONLY NOW the Phase 7 financial gate is open');
 reset role;
 
 rollback;

@@ -58,6 +58,8 @@ import {
   announceBuildApproved,
   announceM3PaymentVerified,
   announcePhaseSixReady,
+  announceReleaseCandidateApproved,
+  announceM4PaymentVerified,
   announceBuildFeedbackRouted,
   announceTask4Complete,
   announceM2PaymentVerified,
@@ -74,6 +76,7 @@ import {
   handleStartPhaseFive,
   handleRecordM3Verified,
   handleStartPhaseSix,
+  handleRecordM4Verified,
   handleValidateQaIntake,
   type HandlerResult,
   type UnlockJob,
@@ -820,6 +823,33 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   }
 
   /**
+   * ── M4PaymentVerified (P601 §41) ────────────────────────────────────────
+   *
+   * Pure database work, drained right after the payment that can make it true.
+   */
+  const m4Verified = await runEventJobs(admin, M4_VERIFIED_JOB_KIND, handleRecordM4Verified, 'runM4VerifiedJobs');
+  if (m4Verified.claimed > 0) {
+    return NextResponse.json({
+      claimed: m4Verified.claimed,
+      kind: M4_VERIFIED_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      m4Verified: m4Verified.results,
+      correlationId,
+    });
+  }
+
+  /**
    * ── Phase 6: create/ready the workspace, then validate the QA intake (P601 §3, §10) ──
    *
    * Pure database work, drained right after the facts that open it.
@@ -1159,6 +1189,9 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     'runTask2CompleteAnnouncementJobs',
   );
 
+  // PM6 (Phase 6 PM Agent spec): candidate approved, M4 verified.
+  const rcApprovedAnnouncements = await runEventJobs(admin, RC_APPROVED_ANNOUNCE_JOB_KIND, announceReleaseCandidateApproved, 'runReleaseCandidateApprovedAnnouncementJobs');
+  const m4VerifiedAnnouncements = await runEventJobs(admin, M4_VERIFIED_ANNOUNCE_JOB_KIND, announceM4PaymentVerified, 'runM4VerifiedAnnouncementJobs');
   // PM6-M01 (Phase 6 PM Agent spec): Task 4 start.
   const phaseSixReadyAnnouncements = await runEventJobs(admin, PHASE_SIX_READY_ANNOUNCE_JOB_KIND, announcePhaseSixReady, 'runPhaseSixReadyAnnouncementJobs');
   // PM5-M01..M04 (Phase 5 PM Agent spec), beside the Task 2 set.
@@ -1450,6 +1483,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     buildApprovedAnnouncements: buildApprovedAnnouncements.results,
     m3VerifiedAnnouncements: m3VerifiedAnnouncements.results,
     phaseSixReadyAnnouncements: phaseSixReadyAnnouncements.results,
+    rcApprovedAnnouncements: rcApprovedAnnouncements.results,
+    m4VerifiedAnnouncements: m4VerifiedAnnouncements.results,
     buildFeedbackRoutedAnnouncements: buildFeedbackRoutedAnnouncements.results,
     task4CompleteAnnouncements: task4CompleteAnnouncements.results,
     m2PaymentVerifiedAnnouncements: m2PaymentVerifiedAnnouncements.results,
@@ -1592,6 +1627,9 @@ const PHASE_FOUR_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['projects:completePhaseFou
 const PHASE_FIVE_START_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseFive'];
 const M3_VERIFIED_JOB_KIND = HANDLER_JOB_KIND['projects:recordM3Verified'];
 const PHASE_SIX_START_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseSix'];
+const M4_VERIFIED_JOB_KIND = HANDLER_JOB_KIND['projects:recordM4Verified'];
+const RC_APPROVED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceReleaseCandidateApproved'];
+const M4_VERIFIED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceM4PaymentVerified'];
 const QA_INTAKE_JOB_KIND = HANDLER_JOB_KIND['projects:validateQaIntake'];
 const PHASE_SIX_READY_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announcePhaseSixReady'];
 const M3_VERIFIED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceM3PaymentVerified'];
