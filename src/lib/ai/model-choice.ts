@@ -84,6 +84,10 @@ export const AGENT_CATEGORY: Readonly<Record<string, RoutingCategory>> = {
   compatibility_test: 'certification',
   regression_test: 'certification',
   release_readiness: 'certification',
+  // ADM-115 (Phase 9): finance proposals about money route as money; the reminder DRAFT is what a client will eventually read.
+  finance_reconciliation: 'money',
+  finance_communication: 'client_facing',
+  finance_close: 'money',
 };
 
 export function categoryForAgent(agentKey: string): RoutingCategory | null {

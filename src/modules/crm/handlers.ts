@@ -48,6 +48,8 @@ import {
   releaseCandidateApprovedEventSchema,
   releaseCandidateApprovedAnnouncementFor,
   m4PaymentVerifiedEventSchema,
+  financiallyClosedEventSchema,
+  financiallyClosedAnnouncementFor,
   m4PaymentVerifiedAnnouncementFor,
   masterTestPlanApprovedEventSchema,
   testingStartedAnnouncementFor,
@@ -3340,6 +3342,21 @@ export async function announceReleaseCandidateApproved(admin: Admin, job: Announ
   return announceToInternalChannel(admin, job, {
     body: releaseCandidateApprovedAnnouncementFor({ projectName, version: parsed.data.version }),
     externalRef: `release-candidate-approved:${typeof envelope.subjectId === 'string' ? envelope.subjectId : parsed.data.projectId}`,
+    projectId: parsed.data.projectId,
+  });
+}
+
+/** `project.financially_closed` -> the PM tells the team the project's finances are closed (not that the project is complete). */
+export async function announceFinanciallyClosed(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = financiallyClosedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.financially_closed payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: financiallyClosedAnnouncementFor({ projectName, mode: parsed.data.mode }),
+    externalRef: `financially-closed:${parsed.data.projectId}`,
     projectId: parsed.data.projectId,
   });
 }

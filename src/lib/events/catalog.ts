@@ -45,6 +45,7 @@ export const HANDLERS = [
   'crm:announceReleaseExceptionRequested',
   'crm:announceQaReverification',
   'crm:announceM4PaymentVerified',
+  'crm:announceFinanciallyClosed',
   'projects:validateQaIntake',
   'crm:announcePhaseSixReady',
   'crm:announceM3PaymentVerified',
@@ -679,6 +680,8 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   'project.phase_six_evidence_stale': ['crm:announceQaReverification'],
   /** P601 §41: M4 verified paid in full, recorded once; the PM tells the team. */
   'project.m4_payment_verified': ['crm:announceM4PaymentVerified'],
+  /** Phase 9: a Finance person or Admin closed the project's finances (NOT project completion); the PM tells the team. */
+  'project.financially_closed': ['crm:announceFinanciallyClosed'],
   /** P601 §3: Phase 6 READY (once) -> the QA intake is validated and the PM announces Task 4. */
   'project.phase_six_ready': ['projects:validateQaIntake', 'crm:announcePhaseSixReady'],
   'project.phase_six_completed': ['finance:generateM4Invoice', 'crm:announceTask4Complete'],
@@ -741,6 +744,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'crm:announceReleaseExceptionRequested': 'release_exception_requested.announce',
   'crm:announceQaReverification': 'qa_reverification.announce',
   'crm:announceM4PaymentVerified': 'm4_verified.announce',
+  'crm:announceFinanciallyClosed': 'financially_closed.announce',
   'projects:validateQaIntake': 'phase_six.validate_intake',
   'crm:announcePhaseSixReady': 'phase_six_ready.announce',
   'crm:announceM3PaymentVerified': 'm3_verified.announce',

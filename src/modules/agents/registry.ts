@@ -961,6 +961,31 @@ const COMPATIBILITY_TEST = qaSpecialist({ key: 'compatibility_test', handoffTarg
 const REGRESSION_TEST = qaSpecialist({ key: 'regression_test', handoffTargets: ['quality_assurance'], verifiedBy: 'quality_assurance', displayName: 'Regression Test Agent', purpose: 'Targeted, expanded and full relevant regression and escaped-defect protection. Flaky is not a pass.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
 const RELEASE_READINESS = qaSpecialist({ key: 'release_readiness', handoffTargets: ['quality_assurance'], verifiedBy: 'quality_assurance', displayName: 'Release / Production Readiness Agent', purpose: 'Freezes the exact candidate, evaluates the gates and readiness, prepares exception requests and the Phase 7 intake. Approves nothing, deploys nothing.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
 
+/**
+ * The Phase 9 finance agents - ADM-115, installed DISABLED. The Finance Agent of the specification IS `finance`; these three are the reviewable
+ * identities for responsibilities it does not hold: reconciliation findings, payment-reminder DRAFTS and close-readiness notes. Each holds no tool, none
+ * can verify a payment, change an amount, issue a refund, decide a waiver, close a book or message a client (`moneyAuthority: 'none'`), and each PROPOSES
+ * into a record a person accepts or rejects (creator != reviewer, in the database).
+ */
+function financeSpecialist(input: { key: string; displayName: string; purpose: string }): AgentDefinition {
+  return {
+    key: input.key,
+    displayName: input.displayName,
+    layer: 'operations',
+    purpose: input.purpose,
+    capabilities: ['reasoning', 'structured_output'],
+    tools: [],
+    clientFacing: false,
+    moneyAuthority: 'none',
+    handoffTargets: ['finance'],
+    mayVerify: false,
+    verification: { selfAssertionAllowed: false, requiredEvidence: ['record'], verifiedBy: 'quality_assurance' },
+    retry: { maxAttempts: 2, onExhausted: 'escalate' },
+  };
+}
+const FINANCE_RECONCILIATION = financeSpecialist({ key: 'finance_reconciliation', displayName: 'Finance Reconciliation Agent', purpose: 'Compares what AgencyOS recorded with what the project and period books show and proposes findings and anomaly flags with evidence. Rewrites nothing, verifies nothing.' });
+const FINANCE_COMMUNICATION = financeSpecialist({ key: 'finance_communication', displayName: 'Finance Communication Agent', purpose: 'Drafts payment reminders and payment-status messages from the invoice\'s real outstanding balance. Drafts only: never sends, never promises a discount, waiver, refund or deferral.' });
+const FINANCE_CLOSE = financeSpecialist({ key: 'finance_close', displayName: 'Finance Close Agent', purpose: 'Reads a project\'s financial position and proposes close-readiness notes and exception classifications. Closes nothing; the close is a person\'s act.' });
 
 export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
   // Foundation — ADM-82 layer 1
@@ -1007,6 +1032,10 @@ export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
   COMPATIBILITY_TEST,
   REGRESSION_TEST,
   RELEASE_READINESS,
+  // Finance additions - ADM-115 (Phase 9)
+  FINANCE_RECONCILIATION,
+  FINANCE_COMMUNICATION,
+  FINANCE_CLOSE,
 ];
 
 export const AGENT_KEYS: readonly string[] = AGENT_DEFINITIONS.map((a) => a.key);
