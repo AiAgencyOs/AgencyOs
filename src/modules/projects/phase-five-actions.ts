@@ -12,6 +12,7 @@ import { handleRouteDevelopmentPlan } from '@/modules/orchestrator/handlers';
 import { notConfiguredExecutor, runBuild, type Executor } from './build-runner';
 import { triggerBuild } from './git-write-service';
 import { runIntegrationCheck, type HttpClient } from './integration-check';
+import { integrationCheckLogWriter } from './integration-check-log';
 
 /**
  * Phase 5 Admin actions - one thin server action per database door the Phase 5 overview describes. NOTHING here decides: each action asks a
@@ -384,6 +385,8 @@ export async function runIntegrationCheckAction(_prev: FormState, formData: Form
     note: async (checkClass) => {
       await (admin.schema('projects') as unknown as { rpc(name: string, args: unknown): PromiseLike<unknown> }).rpc('note_integration_check', { p_connection_id: connectionId, p_class: checkClass });
     },
+    // the measured form: HTTP status and latency go to the check log (it is used instead of `note`)
+    log: integrationCheckLogWriter(admin, connectionId),
   });
   revalidatePath(`/projects/${projectId}`);
   if (outcome.recorded === 'verified') return { status: 'success', message: `Verified: ${outcome.detail}` };

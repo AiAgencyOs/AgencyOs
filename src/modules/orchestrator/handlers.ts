@@ -7,6 +7,8 @@ import { decideDesignerActivation } from './designer-activation';
 import { buildExecutionEnvelope, decideDevelopmentRoute, routingPolicyVersion, validateExecutionEnvelope } from './development-route';
 import { decideAgentForTask } from './route';
 
+export { handleRouteQaOutcome } from './qa-outcome';
+
 type Admin = ReturnType<typeof createAdminClient>;
 
 /**

@@ -14,8 +14,9 @@ import { routingDecisionRow } from './event-map';
  *
  * Every function here goes through a service-role door (`projects.claim_concurrency_lease` and the rest), whose own checks are the rules; this file
  * only carries a call and reports the door's answer in words. It does not decide: a refusal is the database's, and `outcome` is returned verbatim so
- * a caller can not mistake "conflict" for "claimed". None of it is called by a running job yet (see event-map.ts); it is the write side a verdict
- * handler or a dispatcher would use, and it is exercised by the SQL verifier (`scripts/verify-phase5-orchestrator.sql`), not by a live run.
+ * a caller can not mistake "conflict" for "claimed". Callers: `recordUsageCost` (app/api/jobs/run/usage-cost.ts, every model call), `writeDispatchDenial` (agents/policy-enforcement.ts), `recordRoutingDecision`
+ * (qa-outcome.ts) and `expireLeases` (sweeps.ts). Lease claims and releases happen in the database, in `start_task` and a task trigger
+ * (scripts/verify-phase5-wiring.sql); `claimLease`, `releaseLease` and `recordFallback` have no running caller yet.
  *
  * Generated database types do not know these doors until `db:types` is regenerated, so the client is narrowed to the one structural shape used.
  */

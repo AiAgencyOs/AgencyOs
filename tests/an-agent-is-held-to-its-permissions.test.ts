@@ -88,9 +88,10 @@ describe('C. the runner enforces it — structurally', () => {
     assert.doesNotMatch(code, /\bdispatchTool\(/, 'a workflow reaches dispatchTool without asking the policy');
     assert.match(code, /dispatchToolUnderPolicy\(\{/);
     assert.match(enforcement, /refuseToolCallIfUnpermitted\(/);
-    assert.match(enforcement, /if \(!verdict\.allowed\) return err\('FORBIDDEN', verdict\.reason\);/);
+    // a refusal answers FORBIDDEN (after being written to the denial audit: tests/orchestrator-wiring.test.ts)
+    assert.match(enforcement, /if \(!verdict\.allowed\) \{[\s\S]{0,400}?return err\('FORBIDDEN', verdict\.reason\);\s*\}/);
     // The policy is asked BEFORE dispatchTool, never after.
-    assert.ok(enforcement.indexOf('refuseToolCallIfUnpermitted(') < enforcement.indexOf('return dispatchTool({'));
+    assert.ok(enforcement.indexOf('refuseToolCallIfUnpermitted(') < enforcement.indexOf('await dispatchTool({'));
   });
 
   test('openRun asks the assignment before a run is opened on a project, and stops the workflow by throwing', () => {

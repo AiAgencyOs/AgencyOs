@@ -35,6 +35,9 @@ export function backoffMs(attempt: number, retryAfterSeconds: number | null | un
   return base + ((seed * 7919 + attempt * 104729) % 250);
 }
 
+/** What one check measured: the class, the HTTP status the provider answered with (null when nothing answered) and how long the call took. */
+export type CheckLogEntry = { checkClass: CheckClass; httpStatus: number | null; latencyMs: number | null };
+
 export type CheckOutcome = { recorded: 'verified' | 'degraded' | 'nothing'; checkClass: CheckClass; attempts: number; detail: string };
 
 export async function runIntegrationCheck(input: {
@@ -48,23 +51,30 @@ export async function runIntegrationCheck(input: {
   record: (args: { ok: boolean; evidence: string }) => Promise<string>;
   /** Records the class through `projects.note_integration_check`. */
   note: (checkClass: CheckClass) => Promise<void>;
+  /**
+   * Records the class WITH the measurement through `projects.log_integration_check` (HTTP status and latency from the injected clock). When given it
+   * is used instead of `note`, so one check is one log row; a check that asked nothing of the provider (no target, no credential) carries no
+   * measurement, never a made-up one.
+   */
+  log?: (entry: CheckLogEntry) => Promise<void>;
   maxAttempts?: number;
   timeoutMs?: number;
 }): Promise<CheckOutcome> {
   const { connection: c } = input;
+  const report = (entry: CheckLogEntry) => (input.log ? input.log(entry) : input.note(entry.checkClass));
   const max = input.maxAttempts ?? 3;
   if (c.isMock) {
     return { recorded: 'nothing', checkClass: 'no_target', attempts: 0, detail: 'a mock integration is never verified: a mock success proves nothing about a provider' };
   }
   if (!c.checkUrl) {
-    await input.note('no_target');
+    await report({ checkClass: 'no_target', httpStatus: null, latencyMs: null });
     return { recorded: 'nothing', checkClass: 'no_target', attempts: 0, detail: 'no check URL is set for this integration' };
   }
   const headers: Record<string, string> = { accept: 'application/json' };
   if (c.credentialRef) {
     const secret = input.env[c.credentialRef];
     if (!secret) {
-      await input.note('credential_missing');
+      await report({ checkClass: 'credential_missing', httpStatus: null, latencyMs: null });
       return { recorded: 'nothing', checkClass: 'credential_missing', attempts: 0, detail: `the secret named ${c.credentialRef} is not set; nothing was checked and nothing was verified` };
     }
     headers.authorization = `Bearer ${secret}`;
@@ -72,21 +82,29 @@ export async function runIntegrationCheck(input: {
 
   let last: CheckClass = 'network';
   let attempts = 0;
+  let lastStatus: number | null = null;
+  let lastLatency: number | null = null;
   for (let attempt = 1; attempt <= max; attempt += 1) {
     attempts = attempt;
     let retryAfter: number | null | undefined = null;
+    const startedAt = input.now().getTime();
+    const elapsed = () => Math.max(0, Math.round(input.now().getTime() - startedAt));
     try {
       const res = await input.http({ url: c.checkUrl, headers, timeoutMs: input.timeoutMs ?? 10_000 });
+      lastLatency = elapsed();
+      lastStatus = res.status;
       last = classifyStatus(res.status);
       retryAfter = res.retryAfterSeconds;
       if (last === 'ok') {
         const host = new URL(c.checkUrl).host;
         const evidence = `HTTP ${res.status} from ${host} at ${input.now().toISOString()} by adapter ${input.adapter}`;
         const outcome = await input.record({ ok: true, evidence });
-        await input.note('ok');
+        await report({ checkClass: 'ok', httpStatus: lastStatus, latencyMs: lastLatency });
         return { recorded: outcome === 'verified' ? 'verified' : 'nothing', checkClass: 'ok', attempts, detail: outcome === 'verified' ? evidence : `the door answered ${outcome}` };
       }
     } catch (error) {
+      lastStatus = null;
+      lastLatency = elapsed();
       last = error instanceof Error && /timeout|abort/i.test(error.name + error.message) ? 'timeout' : 'network';
     }
     if (!isRetryable(last) || attempt === max) break;
@@ -94,6 +112,6 @@ export async function runIntegrationCheck(input: {
   }
   const evidence = `check failed: ${last.replace(/_/g, ' ')} after ${attempts} attempt(s)`;
   const outcome = await input.record({ ok: false, evidence });
-  await input.note(last);
+  await report({ checkClass: last, httpStatus: lastStatus, latencyMs: lastLatency });
   return { recorded: outcome === 'degraded' ? 'degraded' : 'nothing', checkClass: last, attempts, detail: evidence };
 }
