@@ -263,7 +263,7 @@ export async function triggerBuild(input: TriggerBuildInput): Promise<Result<{ d
 
   let url: string | null = null;
   if (link.workflowFile) {
-    const dispatched = await dispatchWorkflow({ link, workflowFile: link.workflowFile, ref: link.defaultBranch });
+    const dispatched = await dispatchWorkflow({ link, workflowFile: link.workflowFile, ref: link.defaultBranch, ...(parsed.data.inputs ? { inputs: parsed.data.inputs } : {}) });
     if (!dispatched.ok) return githubRefused(dispatched.reason, dispatched.detail);
     url = dispatched.data.url;
   }
@@ -274,7 +274,7 @@ export async function triggerBuild(input: TriggerBuildInput): Promise<Result<{ d
     repository: link.full,
     reference: link.workflowFile ?? 'record only',
     url,
-    detail: { dispatched: Boolean(link.workflowFile), ref: link.defaultBranch, note: parsed.data.note ?? null },
+    detail: { dispatched: Boolean(link.workflowFile), ref: link.defaultBranch, note: parsed.data.note ?? null, inputs: parsed.data.inputs ? Object.keys(parsed.data.inputs) : [] },
   });
   if (!recorded.ok) return recorded;
   return ok({ dispatched: Boolean(link.workflowFile), workflowFile: link.workflowFile, url });

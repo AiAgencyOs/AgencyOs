@@ -1488,6 +1488,36 @@ update projects.deliverable_details set qa_status = 'passed', qa_decided_at = no
 select pg_temp.check((select count(*) from core.outbox_events where type = 'project.build_ready_for_admin' and subject_id = :'BD9_bd') >= 1, 'QA passing a build tells the Admin it waits (A01)');
 select pg_temp.check((select count(*) from core.outbox_events where type = 'project.build_ready_for_admin' and subject_id = :'BD9_bd' and payload::text like '%findings%') = 0, 'and the event carries ids only');
 
+
+-- a build is requested before it is run
+reset role;
+update projects.deliverable_details set commit_ref = 'ddd4444' where deliverable_id = :'BD9_bd';
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select outcome as o, request_id as r from projects.request_build(:'BD9_bd') \gset RQ_
+select pg_temp.check(:'RQ_o' = 'requested', 'an Admin requests a build of the exact commit');
+select pg_temp.check((select outcome from projects.request_build(:'BD9_bd')) = 'already_requested', 'a second request for the same commit while one is open is refused');
+select pg_temp.check((select commit_ref = 'ddd4444' from projects.build_requests where id = :'RQ_r'::uuid), 'the request names the commit once');
+reset role;
+select set_config('e2e.rq', :'RQ_r', false);
+select set_config('e2e.bd9c', :'BD9_bd', false);
+select pg_temp.as_service();
+set local role service_role;
+select pg_temp.check((select request_id = :'RQ_r'::uuid from projects.open_build_request_for(:'BD9_bd', 'ddd4444')), 'the report endpoint finds the open request for that deliverable and commit');
+select pg_temp.check((select count(*) from projects.open_build_request_for(:'BD9_bd', 'zzz0000')) = 0, 'and none for a commit nobody requested');
+select pg_temp.check((select outcome from projects.settle_build_request(:'RQ_r'::uuid, 'reported', 'workflow run 1')) = 'settled', 'a report settles the request');
+select pg_temp.check((select outcome from projects.settle_build_request(:'RQ_r'::uuid, 'cancelled', null)) = 'already_settled', 'a settled request is final');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+do $$ begin
+  begin perform projects.settle_build_request(current_setting('e2e.rq')::uuid, 'cancelled', null); raise exception 'NOT REFUSED';
+  exception when insufficient_privilege then null; end;
+end $$;
+select pg_temp.check(true, 'a person cannot settle a request');
+select pg_temp.check((select outcome from projects.request_build(:'BD9_bd')) = 'requested', 'after settling, a new request can be made');
+reset role;
+
 -- a plan with no baseline to measure against is not coverage
 reset role;
 do $$ declare pl uuid; begin

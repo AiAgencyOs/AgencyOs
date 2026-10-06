@@ -10,6 +10,7 @@ import type { FormState } from '@/modules/identity/types';
 
 import { handleRouteDevelopmentPlan } from '@/modules/orchestrator/handlers';
 import { notConfiguredExecutor, runBuild, type Executor } from './build-runner';
+import { triggerBuild } from './git-write-service';
 import { runIntegrationCheck, type HttpClient } from './integration-check';
 
 /**
@@ -417,6 +418,31 @@ export async function runBuildAction(_prev: FormState, formData: FormData): Prom
   if (!dd || !commit) return { status: 'error', message: 'This build names no exact commit, so it cannot be built.' };
   const admin = createAdminClient();
   const rpc = (admin.schema('projects') as unknown as { rpc(name: string, args: unknown): PromiseLike<{ data: unknown }> });
+
+  // GitHub Actions is bound when the project's linked repository names a workflow file AND the report secret is set: REQUEST the build (a record
+  // with a state), have the governed git writer dispatch the workflow on the exact commit, and wait for its signed report
+  const { data: link } = await supabase.schema('projects').from('repository_links').select('workflow_file').eq('project_id', projectId).not('workflow_file', 'is', null).limit(1).maybeSingle();
+  const workflowFile = (link as { workflow_file?: string | null } | null)?.workflow_file ?? null;
+  if (workflowFile && process.env.BUILD_REPORT_SECRET) {
+    const requested = first((await supabase.schema('projects').rpc('request_build' as never, { p_deliverable_id: deliverableId } as never)).data) as { outcome?: string; request_id?: string; commit_ref?: string; environment?: string };
+    if (requested.outcome !== 'requested' || !requested.request_id) {
+      const outcome = String(requested.outcome ?? 'no answer');
+      return { status: 'error', message: outcome === 'already_requested' ? 'A build of this exact commit is already requested and waiting for its report.' : `Refused: ${outcome.replace(/_/g, ' ')}.` };
+    }
+    const base = (process.env.NEXT_PUBLIC_APP_URL ?? '').replace(/\/$/, '');
+    const sent = await triggerBuild({
+      projectId,
+      note: `Build of ${requested.commit_ref ?? commit} (request ${requested.request_id})`,
+      inputs: { commit: requested.commit_ref ?? commit, request_id: requested.request_id, deliverable_id: deliverableId, environment: requested.environment ?? 'review', report_url: `${base}/api/builds/report` },
+    });
+    revalidatePath(`/projects/${projectId}`);
+    if (!sent.ok) {
+      await rpc.rpc('settle_build_request', { p_request_id: requested.request_id, p_status: 'dispatch_failed', p_detail: sent.error.message });
+      return { status: 'error', message: `The build was requested but GitHub did not start it: ${sent.error.message}` };
+    }
+    return { status: 'success', message: 'Build requested on GitHub Actions for this exact commit. The result is recorded when the workflow sends its signed report.' };
+  }
+
   const result = await runBuild(boundBuildExecutor(), {
     deliverableId,
     commit,
@@ -445,7 +471,7 @@ export async function runBuildAction(_prev: FormState, formData: FormData): Prom
   });
   revalidatePath(`/projects/${projectId}`);
   if (result.status === 'succeeded') return { status: 'success', message: 'Built and the artifact verified; the run is recorded on this exact commit.' };
-  if (result.failureClass === 'environment_missing') return { status: 'error', message: 'No build executor is bound to this deployment, so nothing was built. The blocker is recorded; connect a CI worker to build.' };
+  if (result.failureClass === 'environment_missing') return { status: 'error', message: `No build executor is bound to this deployment, so nothing was built. The blocker is recorded. To build on GitHub Actions: link the repository with its workflow file on the Repository tab, and set BUILD_REPORT_SECRET.` };
   return { status: 'error', message: `The build ${result.status}: ${result.detail}` };
 }
 
