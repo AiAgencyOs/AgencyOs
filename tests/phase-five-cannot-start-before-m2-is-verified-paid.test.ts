@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
  * (run against a real Postgres, red-proven by mangling the live function).
  */
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), 'utf8');
-const migration = read('supabase/migrations/20261031100000_phase_five_cannot_start_before_m2_is_verified_paid.sql');
+const migration = read('supabase/migrations/20261031100001_phase_five_cannot_start_before_m2_is_verified_paid.sql');
 
 describe('the Phase 5 start gate', () => {
   test('start_task refuses a development task unless projects.m2_verified_paid', () => {

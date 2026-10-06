@@ -10,6 +10,7 @@ import {
   decideDuplicateReviewAction,
   mergeContactsAction,
   askAgentAction,
+  setAutopilotAction,
   saveHandoffSettingsAction,
   saveChannelSettingsAction,
   saveIcpAction,
@@ -172,6 +173,17 @@ export function MergeContactsForm({ a, b }: { a: { id: string; name: string }; b
       </div>
       <button type="submit" name="keep" value={`${a.id}:${b.id}`} disabled={pending} className={buttonClass('primary')}>Keep {a.name}</button>
       <button type="submit" name="keep" value={`${b.id}:${a.id}`} disabled={pending} className={buttonClass('secondary')}>Keep {b.name}</button>
+      <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+export function AutopilotForm({ enabled }: { enabled: boolean }) {
+  const [state, action, pending] = useActionState(setAutopilotAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex items-center gap-3">
+      <input type="hidden" name="enabled" value={enabled ? '0' : '1'} />
+      <button type="submit" disabled={pending} className={buttonClass(enabled ? 'secondary' : 'primary')}>{enabled ? 'Turn the weekly autopilot off' : 'Turn the weekly autopilot on'}</button>
       <FormMessage status={state.status} message={state.message} />
     </form>
   );

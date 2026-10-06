@@ -9,7 +9,7 @@ Every unit proven against a real scratch Postgres (`scripts/apply-migrations-loc
 - **Reviews** (`20261031170000`): `code_reviews` append-only; self-review refused; HIGH/critical finding cannot pass; stale on a new commit; reviewer who changed code needs a second reviewer; `submit_deliverable` needs a passed review.
 - **Feedback** (`20261031180000`): seven categories; BUG/MISSED/UI_MISMATCH → defect; NEW_FEATURE/POSSIBLE_SCOPE_CHANGE → Change Request, a CHECK forbids a defect on them; classification written once.
 - **Specialists** (`20261031190000`, registry): eleven agents defined, installed disabled, verified by QA alone; ADM-113.
-- **Truth states** (`20261031200000`): integration health (adapter-only `verified`, mock never, evidence required); `phase_five_agent_state` (NOT_REQUIRED keeps its reason; seeded at start).
+- **Truth states** (`20261031200001`): integration health (adapter-only `verified`, mock never, evidence required); `phase_five_agent_state` (NOT_REQUIRED keeps its reason; seeded at start).
 - **Intake** (`20261031210000`): frozen `phase_five_handoffs` written with the completion fact; `independent_verification_required` always true.
 - **E2E**: `scripts/verify-phase-four-e2e.sql` extended through Phase 5 start, builds, reviews, QA, Admin, client approval, feedback, DoD, completion + intake, M3 invoice/underpayment/verification and the Phase 6 financial gate.
 - **PM5 messages** (`20261031220000`, `crm/handlers.ts`): Task 3 start, build shared, feedback received (event carries no client words), final build approved; filtered to `kind = 'build'`; internal channel, as PM4.

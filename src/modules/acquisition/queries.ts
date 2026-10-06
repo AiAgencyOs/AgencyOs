@@ -144,6 +144,14 @@ export async function listConfirmedUnmerged(limit = 50): Promise<DuplicateReview
     .map((r) => ({ id: r.id, reason: r.reason, createdAt: r.created_at, signals: (r.signals ?? {}) as Record<string, unknown>, a: view(r.contact_a), b: view(r.contact_b) }));
 }
 
+/** Whether the weekly autopilot is on for this organisation. No row means off. */
+export async function readAutopilot(): Promise<{ enabled: boolean; changedAt: string | null }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('acquisition_autopilot').select('enabled, changed_at').maybeSingle();
+  if (error) unreadable('readAutopilot', error);
+  return { enabled: data?.enabled === true, changedAt: data?.changed_at ?? null };
+}
+
 export type AgentRunView = { id: string; status: string; startedAt: string | null; finishedAt: string | null; summary: string | null; actions: string[]; error: string | null };
 
 /** The latest runs of one acquisition agent: what it reported doing, or why it did not. A person reads this before approving what it drafted. */

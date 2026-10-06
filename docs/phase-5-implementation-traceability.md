@@ -4,7 +4,7 @@ Source: the 15 PDFs in `phase 5/` (not committed; local). Status legend: EXISTS 
 
 | REQ | Spec | Requirement | Status | Evidence |
 |---|---|---|---|---|
-| P5-GATE-01 | 01 | Phase 5 cannot start before Phase 4 complete + M2 Admin-verified | EXISTS | `20261031100000`, `20261031150000` (`start_phase_five`, `start_task`); `scripts/verify-phase-five-gate.sql`, `verify-phase-four-e2e.sql` (red-proven) |
+| P5-GATE-01 | 01 | Phase 5 cannot start before Phase 4 complete + M2 Admin-verified | EXISTS | `20261031100001`, `20261031150000` (`start_phase_five`, `start_task`); `scripts/verify-phase-five-gate.sql`, `verify-phase-four-e2e.sql` (red-proven) |
 | P5-GATE-02 | 01 | `invoice.paid` → Phase 5 ready (event-driven, idempotent) | EXISTS | `projects:startPhaseFive` handler + catalog + job route; `tests/phase-five-foundation.test.ts`. Handler itself not run end-to-end (needs the job runner) |
 | P5-BASE-01 | 01 | Development baseline: exact locked UI version, approved prototype build, active scope; never "latest"; immutable | EXISTS | `projects.development_baselines` + freeze trigger; E2E asserts v4 / build 4 |
 | P5-BASE-02 | 01 | Baseline names repository + base commit | PARTIAL | `repository_id` linked when a repo exists, `base_commit` nullable and never invented; nothing populates `base_commit` yet |
@@ -22,7 +22,7 @@ Source: the 15 PDFs in `phase 5/` (not committed; local). Status legend: EXISTS 
 | P5-DEFECT-01 | 12 | FIX_READY ≠ VERIFIED; fixer cannot verify; fix claim keeps a blocker blocking | EXISTS | `20261031140000`; `scripts/verify-phase-five-defects.sql` (11 checks, 2 red-proofs) |
 | P5-DEFECT-02 | 12 | NOT_REPRODUCED / NEEDS_EVIDENCE explicit | EXISTS | same |
 | P5-DEFECT-03 | 12 | Defect ↔ build/task lineage, fix-build link, S0–S4 | PARTIAL | `qa.defects.build_id/task_id/deliverable_id` exist; severities remain blocker/major/minor/trivial |
-| P5-INTEG-01 | 08 | Six health states; CONFIGURED ≠ VERIFIED; mock ≠ verified; adapter-only verification | EXISTS (data + doors) | `20261031200000`; `scripts/verify-phase-five-integrations.sql` |
+| P5-INTEG-01 | 08 | Six health states; CONFIGURED ≠ VERIFIED; mock ≠ verified; adapter-only verification | EXISTS (data + doors) | `20261031200001`; `scripts/verify-phase-five-integrations.sql` |
 | P5-INTEG-02 | 08 | Real adapter checks that call `record_integration_check` | MISSING | no adapter calls the door yet (MANUAL_EXTERNAL credentials) |
 | P5-COND-01 | 07/13 | Mobile / Refactor NOT_REQUIRED with recorded reason | EXISTS | `phase_five_agent_state` seeded at start; E2E |
 | P5-FEED-01 | 01/02 | Client feedback on a build in 7 categories; BUG→defect; NEW_FEATURE→Change Request, never a defect | EXISTS | `20261031180000`; E2E (+ CHECK) |

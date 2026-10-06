@@ -7,7 +7,7 @@ Every unit below was proven against a real scratch Postgres (`scripts/apply-migr
 ## 2026-10-06 — Phase 5 cannot START before M2 is verified paid
 - **Existed:** `projects.m2_verified_paid` gated Phase 5 *completion* only (`phase_readiness`). A module/feature task could be started on an unpaid M2.
 - **Changed:** `projects.start_task` refuses `m2_not_verified` for a development task (module or feature attached). `projects.phase_five_gate_status` (the Admin Panel's "CAN PHASE 5 START?") now delegates to `m2_verified_paid`; it used to say `verified` on `status='paid'` alone, so the panel could say yes while the gate said no.
-- **Files:** `supabase/migrations/20261031100000_*`, `src/modules/projects/task-doors-service.ts`, `scripts/verify-phase-five-gate.sql`, `tests/phase-five-cannot-start-before-m2-is-verified-paid.test.ts`; `scripts/verify-r2-roles-and-gates.mjs` now builds a verified-paid M2 fixture (NOT run here: needs PostgREST).
+- **Files:** `supabase/migrations/20261031100001_*`, `src/modules/projects/task-doors-service.ts`, `scripts/verify-phase-five-gate.sql`, `tests/phase-five-cannot-start-before-m2-is-verified-paid.test.ts`; `scripts/verify-r2-roles-and-gates.mjs` now builds a verified-paid M2 fixture (NOT run here: needs PostgREST).
 - **Result:** 10 live checks; red-proof fails with the gate removed.
 
 ## 2026-10-06 — A person cannot review what they produced (ADM-82 in the database)

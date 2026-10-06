@@ -897,5 +897,89 @@
     "nth": 1
    }
   ]
+ },
+ "digest": {
+  "migration": "supabase/migrations/20261031100000_the_week_in_lead_generation_is_told_once.sql",
+  "verifier": "scripts/verify-acquisition-digest.sql",
+  "cases": [
+   {
+    "name": "the week is told again after it was acknowledged",
+    "find": "    if exists (select 1 from core.alerts a where a.organization_id = o.id and a.fingerprint = v_fp) then continue; end if;\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "a quiet organisation is told anyway",
+    "find": "    if v_text = '' and v_wait = 0 then continue; end if;   -- nothing happened and nothing waits: no digest is a real answer\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "a signed-in session may run the digest",
+    "find": "grant execute on function crm.run_acquisition_digest(timestamptz) to service_role;",
+    "replace": "grant execute on function crm.run_acquisition_digest(timestamptz) to service_role, authenticated;",
+    "nth": 1
+   },
+   {
+    "name": "the digest ignores what waits for a person",
+    "find": "    select (select count(*) from crm.content_versions v where v.organization_id = o.id and v.state = 'ADMIN_REVIEW')\n",
+    "replace": "    select (select 0)\n",
+    "nth": 1
+   }
+  ]
+ },
+ "autopilot": {
+  "migration": "supabase/migrations/20261031200000_the_acquisition_agents_start_their_week_when_asked_to.sql",
+  "verifier": "scripts/verify-acquisition-autopilot.sql",
+  "cases": [
+   {
+    "name": "the autopilot runs for an organisation that never opted in",
+    "find": "from crm.acquisition_autopilot p join core.organizations g on g.id = p.organization_id where p.enabled loop",
+    "replace": "from crm.acquisition_autopilot p join core.organizations g on g.id = p.organization_id loop",
+    "nth": 1
+   },
+   {
+    "name": "the week opens before Monday 09:00 local",
+    "find": "    if extract(isodow from v_local) = 1 and extract(hour from v_local) < 9 then continue; end if;\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "an agent that is switched off is given work",
+    "find": "      if not exists (select 1 from ai.agents g where g.key = a.agent and g.enabled) then continue; end if;\n",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "a channel outside the plan is given work",
+    "find": " and exists (select 1 from crm.acquisition_channels ch where ch.organization_id = o.id and ch.channel = c and ch.enabled)",
+    "replace": "",
+    "nth": 1
+   },
+   {
+    "name": "a stopped channel is given work",
+    "find": "        if crm.acquisition_blocked(o.id, c) is null\n",
+    "replace": "        if true\n",
+    "nth": 1
+   },
+   {
+    "name": "the same week is queued twice",
+    "find": "'autopilot:' || a.kind || ':' || v_week || ':' || o.id::text",
+    "replace": "'autopilot:' || a.kind || ':' || gen_random_uuid()::text",
+    "nth": 1
+   },
+   {
+    "name": "a member may turn the autopilot on",
+    "find": "  if not crm._social_caller_ok(p_organization_id, true) then return query select 'forbidden'::text; return; end if;\n  if (select auth.uid()) is not null and not coalesce((select core.is_internal()), false) then return query select 'forbidden'::text; return; end if;\n  if p_enabled is null",
+    "replace": "  if p_enabled is null",
+    "nth": 1
+   },
+   {
+    "name": "a signed-in session may run the autopilot",
+    "find": "grant execute on function crm.run_acquisition_autopilot(timestamptz) to service_role;",
+    "replace": "grant execute on function crm.run_acquisition_autopilot(timestamptz) to service_role, authenticated;",
+    "nth": 1
+   }
+  ]
  }
 }

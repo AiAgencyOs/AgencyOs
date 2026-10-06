@@ -56,7 +56,7 @@ describe('Phase 5 builds, DoD and the Phase 6 gate', () => {
 
 const reviews = read('supabase/migrations/20261031170000_a_build_is_reviewed_by_someone_who_did_not_write_it.sql');
 const feedback = read('supabase/migrations/20261031180000_client_feedback_on_a_build_is_classified_and_routed.sql');
-const truth = read('supabase/migrations/20261031200000_integrations_are_verified_by_evidence_and_specialists_say_when_not_required.sql');
+const truth = read('supabase/migrations/20261031200001_integrations_are_verified_by_evidence_and_specialists_say_when_not_required.sql');
 const handoff = read('supabase/migrations/20261031210000_phase_five_hands_phase_six_a_frozen_intake.sql');
 const specialists = read('supabase/migrations/20261031190000_the_phase_five_specialists_are_installed_disabled.sql');
 
