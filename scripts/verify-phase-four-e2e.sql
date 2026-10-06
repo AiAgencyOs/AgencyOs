@@ -445,17 +445,17 @@ select pg_temp.check((select outcome from projects.record_build_run(:'BD1_bd', '
 select pg_temp.check((select outcome from projects.record_build_run(:'BD1_bd', 'production', 'succeeded', null, '[{"name":"build","status":"ok"}]', '{"node":"22"}', repeat('a', 64), null)) = 'bad_environment', 'a production environment is refused in Phase 5');
 do $$ begin
   begin
-    perform projects.record_build_run((select id from projects.deliverables where title = 'Development build 1'), 'review', 'succeeded', null, '[{"name":"build","status":"ok"}]', '{"env":"API_KEY=sk-abcdefghijklmnopqrstuvwx"}', repeat('a', 64), null);
+    perform projects.record_build_run((select id from projects.deliverables where title = 'Development build 1'), 'review', 'succeeded', null, '[{"name":"build","status":"ok"},{"name":"artifact_verify","status":"ok"}]', '{"env":"API_KEY=sk-abcdefghijklmnopqrstuvwx"}', repeat('a', 64), null, null, 'https://ci.example.test/build/1');
     raise exception 'FAILED: a secret value was stored in a build run';
   exception when restrict_violation then raise notice 'ok  a build run cannot carry a secret value'; end;
 end $$;
 do $$ begin
   begin
-    perform projects.record_build_run((select id from projects.deliverables where title = 'Development build 1'), 'review', 'succeeded', null, '[{"name":"build","status":"ok"}]', '{"node":"22"}', repeat('a', 63), null);
+    perform projects.record_build_run((select id from projects.deliverables where title = 'Development build 1'), 'review', 'succeeded', null, '[{"name":"build","status":"ok"},{"name":"artifact_verify","status":"ok"}]', '{"node":"22"}', repeat('a', 63), null, null, 'https://ci.example.test/build/1');
     raise exception 'FAILED: a malformed artifact hash was accepted';
   exception when check_violation then raise notice 'ok  an artifact hash must be a real sha256'; end;
 end $$;
-select outcome as o from projects.record_build_run(:'BD1_bd', 'review', 'succeeded', null, '[{"name":"lint","status":"ok"},{"name":"test","status":"ok"},{"name":"build","status":"ok"}]', '{"os":"linux","node":"22","lockfile":"sha256:abc"}', repeat('a', 64), null) \gset BR5_
+select outcome as o from projects.record_build_run(:'BD1_bd', 'review', 'succeeded', null, '[{"name":"lint","status":"ok"},{"name":"test","status":"ok"},{"name":"build","status":"ok"},{"name":"artifact_verify","status":"ok"}]', '{"os":"linux","node":"22","lockfile":"sha256:abc"}', repeat('a', 64), null, null, 'https://ci.example.test/build/1') \gset BR5_
 select pg_temp.check(:'BR5_o' = 'recorded', 'the successful run records stages, fingerprint and the artifact hash');
 reset role;
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
@@ -1283,6 +1283,22 @@ do $$ begin
 end $$;
 select pg_temp.check(true, 'a person cannot write the PM message log');
 select pg_temp.check((select milestone_key = 'PM5-M01' and template_version = 1 and delivery = 'sent' from projects.pm_message_history(:'P_id') limit 1), 'the history reads milestone, wording version and the message''s own delivery state');
+reset role;
+
+
+-- build pipeline hardening: idempotent, no false green, no deploy dressed as a build, a person's success needs evidence
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.record_build_run(:'BD9_bd', 'review', 'succeeded', null, '[{"name":"build","status":"failed"},{"name":"artifact_verify","status":"ok"}]', '{"node":"22"}', repeat('b', 64), null, null, 'https://ci.example.test/x')) = 'failed_required_stage', 'a succeeded run cannot hide a failed required stage');
+select pg_temp.check((select outcome from projects.record_build_run(:'BD9_bd', 'review', 'succeeded', null, '[{"name":"build","status":"ok"}]', '{"node":"22"}', repeat('b', 64), null, null, 'https://ci.example.test/x')) = 'missing_mandatory_stages', 'a succeeded run has the mandatory stages (build and artifact verification)');
+select pg_temp.check((select outcome from projects.record_build_run(:'BD9_bd', 'review', 'succeeded', null, '[{"name":"build","status":"ok"},{"name":"artifact_verify","status":"ok"}]', '{"command":"vercel deploy --prod"}', repeat('b', 64), null, null, 'https://ci.example.test/x')) = 'deploy_is_not_a_build', 'a build command that deploys is refused: a build never deploys');
+select pg_temp.check((select outcome from projects.record_build_run(:'BD9_bd', 'review', 'succeeded', null, '[{"name":"build","status":"ok"},{"name":"artifact_verify","status":"ok"}]', '{"node":"22"}', repeat('b', 64), null, null, null)) = 'manual_success_needs_evidence', 'a person''s hand-recorded success must name its evidence');
+select pg_temp.check((select outcome from projects.record_build_run(:'BD9_bd', 'review', 'succeeded', null, '[{"name":"build","status":"ok"},{"name":"nonsense","status":"great"}]', '{"node":"22"}', repeat('b', 64), null, null, 'https://ci.example.test/x')) = 'bad_stages', 'an unknown stage status is refused');
+select outcome as o, run_id as r from projects.record_build_run(:'BD9_bd', 'review', 'succeeded', null, '[{"name":"build","status":"ok"},{"name":"artifact_verify","status":"ok"}]', '{"node":"22"}', repeat('b', 64), null, 'req-1', 'https://ci.example.test/x') \gset IDM1_
+select outcome as o, run_id as r from projects.record_build_run(:'BD9_bd', 'review', 'succeeded', null, '[{"name":"build","status":"ok"},{"name":"artifact_verify","status":"ok"}]', '{"node":"22"}', repeat('b', 64), null, 'req-1', 'https://ci.example.test/x') \gset IDM2_
+select pg_temp.check(:'IDM1_o' = 'recorded' and :'IDM2_o' = 'already_recorded' and :'IDM1_r' = :'IDM2_r', 'a replayed build request answers with the run it already made (idempotent)');
+select pg_temp.check((select count(*) from projects.build_runs where deliverable_id = :'BD9_bd') = 1, 'and no duplicate run was written');
+select pg_temp.check((select manual and evidence_url is not null from projects.build_runs where id = :'IDM1_r'::uuid), 'a hand-recorded run is marked manual and keeps its evidence');
 reset role;
 
 -- a plan with no baseline to measure against is not coverage
