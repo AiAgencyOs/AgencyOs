@@ -84,7 +84,7 @@ import {
   type MilestoneBillingEntry,
 } from '@/modules/finance/schema';
 import { listPhaseFourEscalations, getProject, listPaymentPlan, readGroupSetup, readPhaseTwo, readPhaseFourOverview, readProjectGroupName } from '@/modules/projects/queries';
-import { readBuildBlockers, readBuildRuns, readPhaseFiveRecords, readOpenEscalations, readPhaseFiveOverview, readTaskBoard, readPmOverview, readPmMessageHistory, readProjectRepositories } from '@/modules/projects/phase-five-queries';
+import { readBuildBlockers, readBuildRuns, readFeedbackSuggestions, readPhaseFiveRecords, readOpenEscalations, readPhaseFiveOverview, readTaskBoard, readPmOverview, readPmMessageHistory, readProjectRepositories } from '@/modules/projects/phase-five-queries';
 import { readPhaseSixOverview } from '@/modules/projects/phase-six-queries';
 import { listApprovalsForSubject } from '@/modules/approvals/queries';
 import { listDefects, readProjectQuality } from '@/modules/qa/queries';
@@ -230,6 +230,7 @@ export default async function ProjectPage({
   const buildRuns = await readBuildRuns(projectId);
   const buildBlockers = await readBuildBlockers(projectId);
   const records = await readPhaseFiveRecords(projectId);
+  const feedbackSuggestions = await readFeedbackSuggestions(projectId);
   // Q-PH56: where Phase 5 and Phase 6 stand, read from Development and QA data.
   const phaseCompletions = await readPhaseCompletions(projectId);
   /**
@@ -894,7 +895,7 @@ export default async function ProjectPage({
 
       <PhaseFourPanel view={phaseFour} projectId={projectId} />
 
-      <PhaseFivePanel view={phaseFive} projectId={projectId} repositories={repositories} />
+      <PhaseFivePanel view={phaseFive} projectId={projectId} repositories={repositories} suggestions={feedbackSuggestions} />
 
       <PhaseSixPanel view={phaseSix} projectId={projectId} />
 

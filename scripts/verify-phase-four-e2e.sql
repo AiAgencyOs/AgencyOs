@@ -1435,6 +1435,32 @@ set local role authenticated;
 select pg_temp.check((select count(*) from projects.m3_invoice_summary(:'P_id')) = 0 and (select count(*) from projects.feature_coverage(:'P_id')) = 0, 'a portal client reads neither');
 reset role;
 
+
+-- the PM agent's SUGGESTION of a feedback classification: recorded beside the door, deciding nothing
+reset role;
+insert into projects.build_feedback (organization_id, project_id, deliverable_id, client_words) values (:'ORG', :'P_id', :'BD9_bd', 'the pay button does nothing on my phone') returning id \gset FS_
+select set_config('e2e.fs', :'FS_id', false);
+select pg_temp.as_service();
+set local role service_role;
+select pg_temp.check((select outcome from projects.record_feedback_suggestion(:'FS_id', 'bug', 'the approved checkout pays; this does not', null, null)) = 'recorded', 'the agent''s suggestion is recorded');
+select pg_temp.check((select outcome from projects.record_feedback_suggestion(:'FS_id', 'new_feature', 'a replay with a different answer', null, null)) = 'recorded' and (select classification from projects.build_feedback_suggestions where feedback_id = :'FS_id') = 'bug', 'a replay keeps the first suggestion');
+select pg_temp.check((select outcome from projects.record_feedback_suggestion(:'FS_id', 'made_up', 'x', null, null)) in ('bad_input', 'recorded') and (select count(*) from projects.build_feedback_suggestions where feedback_id = :'FS_id') = 1, 'an invented class never becomes a second row');
+reset role;
+select pg_temp.check((select state from projects.build_feedback where id = :'FS_id') = 'received' and (select classification from projects.build_feedback where id = :'FS_id') is null, 'the suggestion changed NOTHING on the feedback: it is still waiting for a person');
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+do $$ begin
+  begin perform projects.record_feedback_suggestion(current_setting('e2e.fs')::uuid, 'bug', 'x', null, null); raise exception 'NOT REFUSED';
+  exception when insufficient_privilege then null; end;
+end $$;
+select pg_temp.check(true, 'a person cannot write a suggestion');
+select pg_temp.check((select count(*) from projects.build_feedback_suggestions where feedback_id = :'FS_id') = 1, 'staff read the suggestion');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'client');
+set local role authenticated;
+select pg_temp.check((select count(*) from projects.build_feedback_suggestions) = 0, 'a portal client reads no suggestion');
+reset role;
+
 -- a plan with no baseline to measure against is not coverage
 reset role;
 do $$ declare pl uuid; begin

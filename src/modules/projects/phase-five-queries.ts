@@ -507,3 +507,22 @@ export async function readPhaseFiveRecords(projectId: string): Promise<RecordsVi
     commit: features[0]?.build_commit ?? null,
   };
 }
+
+export type FeedbackSuggestion = { classification: string; reasoning: string; question: string | null };
+
+/** The PM agent's proposed classification for each unclassified piece of feedback. A proposal only: the person's door still decides. */
+export async function readFeedbackSuggestions(projectId: string): Promise<Record<string, FeedbackSuggestion>> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('build_feedback_suggestions' as never)
+    .select('feedback_id, classification, reasoning, clarifying_question')
+    .eq('project_id' as never, projectId as never)
+    .limit(200);
+  if (error) unreadable('readFeedbackSuggestions', error);
+  const out: Record<string, FeedbackSuggestion> = {};
+  for (const r of (data ?? []) as unknown as { feedback_id: string; classification: string; reasoning: string; clarifying_question: string | null }[]) {
+    out[r.feedback_id] = { classification: r.classification, reasoning: r.reasoning, question: r.clarifying_question };
+  }
+  return out;
+}

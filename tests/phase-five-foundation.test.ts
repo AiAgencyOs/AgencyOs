@@ -99,7 +99,7 @@ describe('Phase 5 Admin Panel overview is reachable and honest about failed read
   const panel = read('app/(internal)/projects/[projectId]/phase-five-panel.tsx');
   test('the project page reads the overview and renders the panel', () => {
     assert.match(page, /readPhaseFiveOverview\(projectId\)/);
-    assert.match(page, /<PhaseFivePanel view=\{phaseFive\} projectId=\{projectId\} repositories=\{repositories\} \/>/);
+    assert.match(page, /<PhaseFivePanel view=\{phaseFive\} projectId=\{projectId\} repositories=\{repositories\} suggestions=\{feedbackSuggestions\} \/>/);
   });
   test('every read is guarded: a failed read is unreadable, never "nothing yet"', () => {
     const awaited = (queries.match(/\{ data: [A-Za-z]+, error: [A-Za-z]+ \}/g) ?? []).length;

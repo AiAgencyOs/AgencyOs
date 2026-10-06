@@ -70,6 +70,7 @@ export const HANDLERS = [
   'ui_designer:draftUIVersion',
   'ui_designer:reviseUIVersion',
   'project_manager:classifyClientFeedback',
+  'project_manager:suggestBuildFeedbackClass',
   'project_manager:readDesignReply',
   'sales:readIntent',
   'sales:readMeetingRequest',
@@ -634,7 +635,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   /** PM5-M01 (Phase 5 PM Agent spec): Task 3 Start, off the fact `start_phase_five` emits. */
   'project.phase_five_started': ['crm:announcePhaseFiveStarted'],
   /** PM5-M03: the client's feedback on a build was recorded and is awaiting classification. */
-  'project.build_feedback_received': ['crm:announceBuildFeedbackReceived'],
+  'project.build_feedback_received': ['crm:announceBuildFeedbackReceived', 'project_manager:suggestBuildFeedbackClass'],
   /** PM5: what became of the feedback (defect, change request, revision, clarification). */
   'project.build_feedback_routed': ['crm:announceBuildFeedbackRouted'],
   /** Finance spec, Phase 6 gate: M3 verified paid in full, recorded once; the PM tells the team. */
@@ -743,6 +744,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'ui_designer:draftUIVersion': 'ui.version_draft',
   'ui_designer:reviseUIVersion': 'ui.version_revise',
   'project_manager:classifyClientFeedback': 'ui_version.classify_client_feedback',
+  'project_manager:suggestBuildFeedbackClass': 'build_feedback.suggest_classification',
   'project_manager:readDesignReply': 'design.read_reply',
   'sales:readIntent': 'message.intent',
   'sales:readMeetingRequest': 'meeting.request_read',

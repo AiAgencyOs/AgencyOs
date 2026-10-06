@@ -174,13 +174,13 @@ const CLASSES: [string, string][] = [
   ['new_feature', 'New feature'],
 ];
 
-export function ClassifyFeedbackForm({ projectId, feedbackId }: { projectId: string; feedbackId: string }) {
+export function ClassifyFeedbackForm({ projectId, feedbackId, suggested }: { projectId: string; feedbackId: string; suggested?: string }) {
   const [state, action, pending] = useActionState(classifyBuildFeedbackAction, IDLE_STATE);
   return (
     <form action={action} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="feedbackId" value={feedbackId} />
-      <select aria-label="Feedback classification" name="classification" defaultValue="bug" className={field}>
+      <select aria-label="Feedback classification" name="classification" defaultValue={CLASSES.some(([v]) => v === suggested) ? suggested : 'bug'} className={field}>
         {CLASSES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
       </select>
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Routing…' : 'Classify and route'}</button>

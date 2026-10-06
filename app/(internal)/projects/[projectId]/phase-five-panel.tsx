@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import type { BuildBlockerRow, BuildRunRow, RecordsView, EscalationRow, PhaseFiveOverview, PmMessageRow, PmOverview, TaskBoard } from '@/modules/projects/phase-five-queries';
+import type { BuildBlockerRow, BuildRunRow, FeedbackSuggestion, RecordsView, EscalationRow, PhaseFiveOverview, PmMessageRow, PmOverview, TaskBoard } from '@/modules/projects/phase-five-queries';
 import { Badge, Card, humanize, type Tone } from '@/ui';
 
 import {
@@ -67,7 +67,7 @@ const BUILD_TONE: Record<string, Tone> = {
   superseded: 'neutral',
 };
 
-export function PhaseFivePanel({ view, projectId, repositories = [] }: { view: PhaseFiveOverview; projectId: string; repositories?: { id: string; name: string }[] }) {
+export function PhaseFivePanel({ view, projectId, repositories = [], suggestions = {} }: { view: PhaseFiveOverview; projectId: string; repositories?: { id: string; name: string }[]; suggestions?: Record<string, FeedbackSuggestion> }) {
   const { workspace, gates, baseline, readiness, phaseSixMissing, builds, defects, feedback, integrations, agentStates, handoff, plan, unplannedTasks, flaky, documents, routing, testGaps, staleDocuments, recentRuns } = view;
 
   if (!workspace) {
@@ -245,7 +245,13 @@ export function PhaseFivePanel({ view, projectId, repositories = [] }: { view: P
                 <span>{f.words}</span>
                 {f.defectId ? <span>→ defect</span> : null}
                 {f.changeRequestId ? <span>→ change request</span> : null}
-                {!f.classification ? <ClassifyFeedbackForm projectId={projectId} feedbackId={f.id} /> : null}
+                {!f.classification && suggestions[f.id] ? (
+                  <span className="basis-full text-muted">
+                    PM agent suggests <span className="font-medium">{humanize(suggestions[f.id]!.classification)}</span>: {suggestions[f.id]!.reasoning}
+                    {suggestions[f.id]!.question ? ` Question to ask: ${suggestions[f.id]!.question}` : ''} (a suggestion only; you decide)
+                  </span>
+                ) : null}
+                {!f.classification ? <ClassifyFeedbackForm projectId={projectId} feedbackId={f.id} suggested={suggestions[f.id]?.classification} /> : null}
               </li>
             ))}
           </ul>
