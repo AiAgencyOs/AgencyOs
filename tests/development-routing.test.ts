@@ -4,7 +4,7 @@ import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { HANDLER_JOB_KIND, HANDLERS, SUBSCRIPTIONS } from '../src/lib/events/catalog.ts';
-import { buildExecutionEnvelope, decideDevelopmentRoute, decideIndependentReviewer, FAILURE_CLASSES, handleExecutionFailure } from '../src/modules/orchestrator/development-route.ts';
+import { buildExecutionEnvelope, decideDevelopmentRoute, decideIndependentReviewer, FAILURE_CLASSES, handleExecutionFailure, requiresSecurityReview, validateExecutionEnvelope } from '../src/modules/orchestrator/development-route.ts';
 
 /** Phase 5 Orchestrator spec: capability matching, eligibility (disabled / NOT_REQUIRED), creator != validator, and reachability. */
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), 'utf8');
@@ -101,6 +101,72 @@ describe('the execution envelope', () => {
     assert.deepEqual(env.toolPermissions, []);
   });
   test('the handler records the envelope on the handoff it writes', () => {
-    assert.match(read('src/modules/orchestrator/handlers.ts'), /envelope: JSON\.parse\(JSON\.stringify\(buildExecutionEnvelope\(/);
+    const h = read('src/modules/orchestrator/handlers.ts');
+    assert.match(h, /const builtEnvelope = buildExecutionEnvelope\(/);
+    assert.match(h, /validateExecutionEnvelope\(builtEnvelope\)/);
+    assert.match(h, /envelope: JSON\.parse\(JSON\.stringify\(builtEnvelope\)\)/);
+  });
+});
+
+
+describe('routing readiness, activation conditions and the explained decision', () => {
+  const ready = { enabled: on('backend_developer', 'bug_fix', 'devops_build'), agentState: none, baselineId: 'b1', openDependencies: 0 };
+  test('no locked baseline holds the task: never routed against "the latest design"', () => {
+    const r = decideDevelopmentRoute({ ...ready, requiredCapability: 'backend_developer', baselineId: null });
+    assert.equal(r.outcome, 'held');
+    assert.equal(r.outcome === 'held' && r.code, 'no_baseline');
+  });
+  test('open upstream tasks hold the task', () => {
+    const r = decideDevelopmentRoute({ ...ready, requiredCapability: 'backend_developer', openDependencies: 2 });
+    assert.equal(r.outcome === 'held' && r.code, 'dependencies_open');
+  });
+  test('a ready, enabled task routes', () => {
+    assert.equal(decideDevelopmentRoute({ ...ready, requiredCapability: 'backend_developer' }).outcome, 'routed');
+  });
+  test('a Bug Fix task with no linked defect is refused (a feature mislabelled as a bug)', () => {
+    const r = decideDevelopmentRoute({ ...ready, requiredCapability: 'bug_fix', hasLinkedDefect: false });
+    assert.equal(r.outcome === 'refused' && r.code, 'activation_condition');
+    assert.equal(decideDevelopmentRoute({ ...ready, requiredCapability: 'bug_fix', hasLinkedDefect: true }).outcome, 'routed');
+  });
+  test('a task that deploys to production is refused for every specialist', () => {
+    for (const text of ['Deploy the app to production', 'publish to the App Store', 'push the release to prod']) {
+      const r = decideDevelopmentRoute({ ...ready, requiredCapability: 'devops_build', taskText: text });
+      assert.equal(r.outcome === 'refused' && r.code, 'production_deploy_not_permitted', text);
+    }
+    assert.equal(decideDevelopmentRoute({ ...ready, requiredCapability: 'devops_build', taskText: 'Build the review artifact and record its hash' }).outcome, 'routed');
+  });
+  test('every decision lists every development specialist with the reason each was not chosen', () => {
+    const r = decideDevelopmentRoute({ ...ready, requiredCapability: 'backend_developer' });
+    assert.equal(r.candidates.length, 11);
+    assert.deepEqual(r.candidates.filter((c) => c.eligible).map((c) => c.agent), ['backend_developer']);
+    assert.ok(r.candidates.filter((c) => !c.eligible).every((c) => typeof c.rejected === 'string' && c.rejected.length > 0));
+  });
+  test('security review is required by risk or by a sensitive path', () => {
+    assert.equal(requiresSecurityReview('high', []), true);
+    assert.equal(requiresSecurityReview('critical', null), true);
+    assert.equal(requiresSecurityReview('low', ['src/modules/auth/session.ts']), true);
+    assert.equal(requiresSecurityReview('medium', ['supabase/migrations/2026_x.sql']), true);
+    assert.equal(requiresSecurityReview('low', ['app/page.tsx']), false);
+  });
+  test('the new failure classes follow the rules: a build or test failure goes back to the same specialist; a wait or a conflict is not retried', () => {
+    assert.deepEqual(handleExecutionFailure('build_failure', 1, 3), { retry: 'safe', fallback: false, escalate: false });
+    assert.deepEqual(handleExecutionFailure('test_failure', 3, 3), { retry: 'never', fallback: false, escalate: true });
+    assert.equal(handleExecutionFailure('dependency_blocked', 1, 3).retry, 'never');
+    assert.equal(handleExecutionFailure('repo_conflict', 1, 3).escalate, false);
+    assert.equal(handleExecutionFailure('policy_block', 1, 3).escalate, true);
+    for (const f of FAILURE_CLASSES) assert.ok(['safe', 'after_reconcile', 'never'].includes(handleExecutionFailure(f, 1, 3).retry), f);
+  });
+  test('an incomplete or unsafe envelope is rejected', () => {
+    const good = buildExecutionEnvelope({
+      task: { id: 't', title: 'x', acceptanceCriteria: 'it works' }, planId: 'p', organizationId: 'o', projectId: 'pr', baselineId: 'b', destination: 'backend_developer', routingReason: 'r',
+    });
+    assert.deepEqual(validateExecutionEnvelope(good), []);
+    assert.ok(validateExecutionEnvelope({ ...good, baselineId: null }).some((p) => /baseline/.test(p)));
+    assert.ok(validateExecutionEnvelope({ ...good, acceptanceCriteria: '  ' }).some((p) => /acceptance/.test(p)));
+    assert.ok(validateExecutionEnvelope({ ...good, destination: 'finance' }).length > 0);
+    assert.ok(validateExecutionEnvelope({ ...good, intent: 'use sk-abcdefghijklmnopqrstuv' }).some((p) => /secret/.test(p)));
+    assert.ok(validateExecutionEnvelope({ ...good, toolPermissions: ['made_up_tool'] }).some((p) => /tool/.test(p)));
+    assert.ok(good.forbiddenActions.includes('deploy to production'));
+    assert.deepEqual([...good.requiredEvidence].length > 0, true);
   });
 });

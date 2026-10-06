@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import type { PhaseFiveOverview, PmMessageRow } from '@/modules/projects/phase-five-queries';
+import type { EscalationRow, PhaseFiveOverview, PmMessageRow } from '@/modules/projects/phase-five-queries';
 import { Badge, Card, humanize, type Tone } from '@/ui';
 
 import {
@@ -18,6 +18,7 @@ import {
   ResolveFlakyForm,
   SpecialistStateForm,
   RecordBaselineCommitForm,
+  ResolveEscalationForm,
   StartPhaseFiveForm,
 } from './phase-five-forms';
 
@@ -384,6 +385,26 @@ export function PmMessageHistoryPanel({ rows }: { rows: PmMessageRow[] }) {
           ))}
         </ul>
       )}
+    </Card>
+  );
+}
+
+
+/** Work the Orchestrator could not place, or that failed past its rules: each waits for a person's decision and says why. */
+export function EscalationsPanel({ rows, projectId }: { rows: EscalationRow[]; projectId: string }) {
+  if (rows.length === 0) return null;
+  return (
+    <Card>
+      <h3 className="text-[15px] font-semibold">Waiting for a decision</h3>
+      <ul className="mt-2 flex flex-col gap-3 text-[13px]">
+        {rows.map((r) => (
+          <li key={r.id} className="flex flex-col gap-1">
+            <span><span className="font-medium">{r.taskTitle}</span> <Badge tone="warning">{humanize(r.rootCause)}</Badge></span>
+            <span className="text-muted">{r.recommendation}</span>
+            <ResolveEscalationForm projectId={projectId} escalationId={r.id} />
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }

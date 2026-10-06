@@ -331,3 +331,28 @@ export async function readProjectRepositories(projectId: string): Promise<Reposi
   if (error) unreadable('readProjectRepositories', error);
   return ((data ?? []) as { id: string; name: string }[]).map((r) => ({ id: r.id, name: r.name }));
 }
+
+export type EscalationRow = { id: string; taskTitle: string; rootCause: string; recommendation: string; createdAt: string };
+
+/** Tasks the Orchestrator could not route or that failed past their rules: each waits for a person's decision. */
+export async function readOpenEscalations(projectId: string): Promise<EscalationRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('orchestrator_escalations' as never)
+    .select('id, task_id, root_cause, recommendation, created_at')
+    .eq('project_id' as never, projectId as never)
+    .eq('status' as never, 'open' as never)
+    .order('created_at' as never, { ascending: true })
+    .limit(50);
+  if (error) unreadable('readOpenEscalations', error);
+  const rows = (data ?? []) as unknown as { id: string; task_id: string; root_cause: string; recommendation: string; created_at: string }[];
+  const ids = rows.map((r) => r.task_id);
+  const titles = new Map<string, string>();
+  if (ids.length > 0) {
+    const { data: tasks, error: taskError } = await supabase.schema('projects').from('tasks').select('id, title').in('id', ids);
+    if (taskError) unreadable('readOpenEscalations.tasks', taskError);
+    for (const t of (tasks ?? []) as { id: string; title: string }[]) titles.set(t.id, t.title);
+  }
+  return rows.map((r) => ({ id: r.id, taskTitle: titles.get(r.task_id) ?? 'a task', rootCause: r.root_cause, recommendation: r.recommendation, createdAt: r.created_at }));
+}

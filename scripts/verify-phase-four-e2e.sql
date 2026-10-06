@@ -1301,6 +1301,33 @@ select pg_temp.check((select count(*) from projects.build_runs where deliverable
 select pg_temp.check((select manual and evidence_url is not null from projects.build_runs where id = :'IDM1_r'::uuid), 'a hand-recorded run is marked manual and keeps its evidence');
 reset role;
 
+
+-- orchestrator: a failed attempt is remembered, an escalation is a record a person closes
+select set_config('e2e.t2', :'T2_id', false);
+reset role;
+select pg_temp.as_service();
+set local role service_role;
+select pg_temp.check((select outcome from projects.record_execution_failure(:'T2_id', 1, 'build_failure', 'safe', false, false, 'tsc failed')) = 'recorded', 'a failed attempt is recorded with what was decided about it');
+select pg_temp.check((select outcome from projects.record_execution_failure(:'T2_id', 1, 'build_failure', 'safe', false, false, 'tsc failed')) = 'recorded', 'a replay is accepted and records nothing twice');
+select pg_temp.check((select count(*) from projects.execution_attempts where task_id = :'T2_id') = 1, 'one row per (task, attempt, class)');
+select pg_temp.check((select outcome from projects.record_execution_failure(:'T2_id', 2, 'made_up_class', 'safe', false, false, null)) = 'bad_input', 'an unknown failure class is refused');
+select pg_temp.check((select count(*) from projects.orchestrator_escalations where task_id = :'T2_id') = 0, 'a failure that does not escalate opens no escalation');
+select pg_temp.check((select outcome from projects.record_execution_failure(:'T2_id', 3, 'test_failure', 'never', false, true, 'retries used up')) = 'recorded', 'an exhausted failure is recorded and escalates');
+select pg_temp.check((select count(*) from projects.orchestrator_escalations where task_id = :'T2_id' and status = 'open') = 1, 'it opened exactly one escalation for a person');
+select pg_temp.check((select outcome from projects.record_execution_failure(:'T2_id', 3, 'test_failure', 'never', false, true, 'retries used up')) = 'recorded' and (select count(*) from projects.orchestrator_escalations where task_id = :'T2_id') = 1, 'a replay opens no second escalation');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+do $$ begin
+  begin perform projects.record_execution_failure(current_setting('e2e.t2')::uuid, 9, 'timeout', 'safe', true, false, null); raise exception 'NOT REFUSED';
+  exception when insufficient_privilege then null; end;
+end $$;
+select pg_temp.check(true, 'a person cannot write execution attempts');
+select pg_temp.check((select outcome from projects.resolve_escalation((select id from projects.orchestrator_escalations where task_id = current_setting('e2e.t2')::uuid and status = 'open'), '  ')) = 'resolution_required', 'closing an escalation needs the decision taken');
+select pg_temp.check((select outcome from projects.resolve_escalation((select id from projects.orchestrator_escalations where task_id = current_setting('e2e.t2')::uuid and status = 'open'), 'Reassigned to the backend developer with a smaller scope')) = 'resolved', 'an Admin closes it with the decision');
+select pg_temp.check((select count(*) from projects.orchestrator_escalations where task_id = current_setting('e2e.t2')::uuid and status = 'open') = 0, 'and it no longer reads open');
+reset role;
+
 -- a plan with no baseline to measure against is not coverage
 reset role;
 do $$ declare pl uuid; begin

@@ -17,6 +17,7 @@ import {
   setSpecialistStateAction,
   startPhaseFiveAction,
   recordBaselineCommitAction,
+  resolveEscalationAction,
   decideBuildAdminAction,
   recordBuildFeedbackAction,
   recordBuildQaAction,
@@ -396,6 +397,20 @@ export function RecordBaselineCommitForm({ projectId, repositories }: { projectI
       </select>
       <input aria-label="Base commit" name="baseCommit" required placeholder="abc1234" className="rounded-md border border-line bg-surface px-2 py-1" />
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Recording…' : 'Record base commit'}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+
+export function ResolveEscalationForm({ projectId, escalationId }: { projectId: string; escalationId: string }) {
+  const [state, action, pending] = useActionState(resolveEscalationAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="escalationId" value={escalationId} />
+      <input aria-label="Decision taken" name="resolution" required className={`${field} min-w-64`} placeholder="What was decided" />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? '…' : 'Close'}</button>
       <Message state={state} />
     </form>
   );

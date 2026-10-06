@@ -51,6 +51,7 @@ const WORDS: Record<string, string> = {
   bad_commit: 'A base commit is 7 to 40 lowercase hex characters.',
   already_recorded: 'The baseline already has its base commit; it is never replaced.',
   repository_not_on_project: 'That repository is not linked to this project.',
+  not_found_or_closed: 'That escalation is not open.',
   created: 'Plan created.',
   planned: 'Task planned.',
   approved: 'Plan approved.',
@@ -307,4 +308,9 @@ export async function recordBaselineCommitAction(_prev: FormState, formData: For
     p_repository_id: text(formData, 'repositoryId'),
     p_base_commit: text(formData, 'baseCommit').toLowerCase(),
   }, ['recorded']);
+}
+
+
+export async function resolveEscalationAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  return run(text(formData, 'projectId'), 'resolve_escalation', { p_escalation_id: text(formData, 'escalationId'), p_resolution: text(formData, 'resolution') }, ['resolved']);
 }
