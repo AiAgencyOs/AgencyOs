@@ -135,6 +135,7 @@ import { RevealClientSecretForm, RevokeClientSecretForm, StoreClientSecretForm }
 import { CLIENT_SECRET_KIND_LABELS, listClientSecrets } from '@/modules/projects/client-secrets-service';
 import { PhaseTwoPanel } from './phase-two-panel';
 import { PhaseFourPanel } from './phase-four-panel';
+import { PmDepthPanel } from './pm-depth-panel';
 import { DevClarificationsPanel, EscalationsPanel, PhaseFivePanel, PmMessageHistoryPanel, RecordsPanel, WorkboardPanel } from './phase-five-panel';
 import { PhaseSixPanel } from './phase-six-panel';
 import { PhaseCompletionPanel } from './phase-completion-panel';
@@ -903,6 +904,8 @@ export default async function ProjectPage({
       <WorkboardPanel board={taskBoard} runs={buildRuns} projectId={projectId} blockers={buildBlockers} />
 
       <RecordsPanel view={records} />
+
+      <PmDepthPanel projectId={projectId} features={records.features.map((f) => ({ id: f.id, name: f.name }))} />
 
       <DevClarificationsPanel rows={devClarifications} projectId={projectId} />
 
