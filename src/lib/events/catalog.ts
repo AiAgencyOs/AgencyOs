@@ -40,6 +40,9 @@ export const HANDLERS = [
   'crm:announceQaDefectProgress',
   'projects:recordM4Verified',
   'crm:announceReleaseCandidateApproved',
+  'crm:announceReleaseCandidateReady',
+  'crm:announceReleaseExceptionRequested',
+  'crm:announceQaReverification',
   'crm:announceM4PaymentVerified',
   'projects:validateQaIntake',
   'crm:announcePhaseSixReady',
@@ -664,6 +667,12 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   'project.qa_defect_handed_off': ['crm:announceQaDefectProgress'],
   /** PM6: the Admin approved the exact release candidate. */
   'project.release_candidate_approved': ['crm:announceReleaseCandidateApproved'],
+  /** PM6-A01: a release candidate was frozen; an Admin is asked to review it. */
+  'project.release_candidate_created': ['crm:announceReleaseCandidateReady'],
+  /** PM6-A02: an exception to a release rule waits for the owner. */
+  'project.release_exception_requested': ['crm:announceReleaseExceptionRequested'],
+  /** PM6: the source changed after approval; testing is repeated. */
+  'project.phase_six_evidence_stale': ['crm:announceQaReverification'],
   /** P601 §41: M4 verified paid in full, recorded once; the PM tells the team. */
   'project.m4_payment_verified': ['crm:announceM4PaymentVerified'],
   /** P601 §3: Phase 6 READY (once) -> the QA intake is validated and the PM announces Task 4. */
@@ -723,6 +732,9 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'crm:announceQaDefectProgress': 'qa_defect_progress.announce',
   'projects:recordM4Verified': 'm4.record_verified',
   'crm:announceReleaseCandidateApproved': 'release_candidate_approved.announce',
+  'crm:announceReleaseCandidateReady': 'release_candidate_ready.announce',
+  'crm:announceReleaseExceptionRequested': 'release_exception_requested.announce',
+  'crm:announceQaReverification': 'qa_reverification.announce',
   'crm:announceM4PaymentVerified': 'm4_verified.announce',
   'projects:validateQaIntake': 'phase_six.validate_intake',
   'crm:announcePhaseSixReady': 'phase_six_ready.announce',

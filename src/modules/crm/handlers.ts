@@ -20,6 +20,12 @@ import {
   moduleCompletedAnnouncementFor,
   devClarificationRequestedEventSchema,
   devClarificationAnnouncementFor,
+  releaseCandidateCreatedEventSchema,
+  releaseCandidateReadyAnnouncementFor,
+  releaseExceptionRequestedEventSchema,
+  releaseExceptionRequestedAnnouncementFor,
+  phaseSixEvidenceStaleEventSchema,
+  qaReverificationAnnouncementFor,
   conversationClientWaitingEventSchema,
   conversationEscalatedEventSchema,
   escalationAnnouncementFor,
@@ -3470,6 +3476,51 @@ export async function announceDevClarification(admin: Admin, job: AnnounceJob): 
   return announceToInternalChannel(admin, job, {
     body: devClarificationAnnouncementFor({ projectName }),
     externalRef: `dev-clarification:${typeof envelope.subjectId === 'string' ? envelope.subjectId : parsed.data.projectId}`,
+    projectId: parsed.data.projectId,
+  });
+}
+
+/** `project.release_candidate_created` -> PM6-A01: an Admin is asked to review the exact candidate. Once per candidate (keyed by it). */
+export async function announceReleaseCandidateReady(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = releaseCandidateCreatedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.release_candidate_created payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: releaseCandidateReadyAnnouncementFor({ projectName, version: parsed.data.version }),
+    externalRef: `release-candidate-ready:${typeof envelope.subjectId === 'string' ? envelope.subjectId : `${parsed.data.projectId}:v${parsed.data.version}`}`,
+    projectId: parsed.data.projectId,
+  });
+}
+
+/** `project.release_exception_requested` -> PM6-A02. The gate and the reason stay on the record; the message only says a decision waits. */
+export async function announceReleaseExceptionRequested(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = releaseExceptionRequestedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.release_exception_requested payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: releaseExceptionRequestedAnnouncementFor({ projectName }),
+    externalRef: `release-exception-requested:${typeof envelope.subjectId === 'string' ? envelope.subjectId : parsed.data.projectId}`,
+    projectId: parsed.data.projectId,
+  });
+}
+
+/** `project.phase_six_evidence_stale` -> the build changed after approval; testing is repeated. Once per candidate. */
+export async function announceQaReverification(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = phaseSixEvidenceStaleEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.phase_six_evidence_stale payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: qaReverificationAnnouncementFor({ projectName }),
+    externalRef: `qa-reverification:${typeof envelope.subjectId === 'string' ? envelope.subjectId : parsed.data.projectId}`,
     projectId: parsed.data.projectId,
   });
 }

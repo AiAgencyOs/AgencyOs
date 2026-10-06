@@ -2062,8 +2062,44 @@ export const PM_TEMPLATES: Readonly<Record<string, { milestone: string; version:
   'qa-defect-progress': { milestone: 'PM6-DEFECT-PROGRESS', version: 1 },
   'release-candidate-approved': { milestone: 'PM6-CANDIDATE-APPROVED', version: 1 },
   'm4-payment-verified': { milestone: 'PM6-M4-VERIFIED', version: 1 },
+  'release-candidate-ready': { milestone: 'PM6-A01', version: 1 },
+  'release-exception-requested': { milestone: 'PM6-A02', version: 1 },
+  'qa-reverification': { milestone: 'PM6-REVERIFICATION', version: 1 },
+  'task3-complete': { milestone: 'PM5-TASK3-COMPLETE', version: 1 },
+  'task4-complete': { milestone: 'PM6-M07', version: 1 },
 };
 
 export function pmTemplateFor(externalRef: string): { milestone: string; version: number } | null {
   return PM_TEMPLATES[externalRef.split(':')[0] ?? ''] ?? null;
+}
+
+
+/** PM6-A01 - a release candidate (one exact commit and artifact) was frozen: an Admin reviews it. Names the version only, never a finding. */
+export const releaseCandidateCreatedEventSchema = z.object({ projectId: z.uuid(), version: z.number() }).strip();
+export function releaseCandidateReadyAnnouncementFor(input: { projectName: string | null; version: number }): string {
+  return [
+    `Release candidate v${input.version} is ready for the Admin's review.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'It is one exact build. Open the project to see the readiness summary and decide.',
+  ].join('\n');
+}
+
+/** PM6-A02 - a person is asked to decide an exception to a release rule. The rule and the reason are read from the record, never put in the message. */
+export const releaseExceptionRequestedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function releaseExceptionRequestedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'A release exception is waiting for the owner\'s decision.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Open the project: the request, its limits and its expiry are listed under the release candidate. Nothing is released until it is decided.',
+  ].join('\n');
+}
+
+/** PM6 - the source changed after approval: testing is being repeated on the new build. Client-safe: no finding, no commit, no agent. */
+export const phaseSixEvidenceStaleEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function qaReverificationAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'The build changed after it was approved, so testing is being repeated on the new version.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'No action is needed from the client. We will confirm when the new version has been verified.',
+  ].join('\n');
 }
