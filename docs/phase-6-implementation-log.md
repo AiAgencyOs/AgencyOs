@@ -19,3 +19,16 @@ All proven against a real scratch Postgres; each control removed, watched to fai
 
 ## Not built
 Any test runner or specialist actually running (needs a funded model key, runners and environments); a stored PM message-template version and delivery record beyond the generic outbound log.
+
+## Independent review (2026-10-06)
+
+Two read-only reviews (TypeScript wiring, SQL authorization) found real defects; each confirmed one was fixed.
+
+Fixed (migration `20261101180000`, TypeScript, verifier red-proven):
+- `qa.invalidate_stale_results` was a SECURITY DEFINER door with no organization check (cross-tenant write). It now refuses a foreign project.
+- `projects.tasks` and `qa.defects` had FOR ALL write policies, so a direct UPDATE walked around `start_task` / triage. Guard triggers now refuse a direct (non-door) start, plan change, severity/class/duplicate change, or a defect inserted already verified. `start_task` became a definer door that checks the organization itself.
+- `qa.mark_duplicate` could hide an open blocker behind a closed canonical defect.
+- Handlers now prove an event-payload id belongs to the job's organization; `reopenOnSourceChange` and the build announcers only spend a job on `kind = build`.
+- Form inputs (`days`, severity) are validated; an Admin "Start Phase 5" door exists for when the one-shot payment event did not start it; duplicate React keys fixed.
+
+Open from the SQL review (not fixed, recorded): QA/Admin approval of a build is not bound to a commit (item 6); a code reviewer who changed the code can also record an independent review (7); several gates pass vacuously when the project has no baseline / derived documents / plan categories (8); `ingest_test_report` accepts un-evidenced person reports (9); quarantine can be renewed indefinitely and some check-then-act races (10); new tables lack an explicit `revoke from public, anon, authenticated` (11); payment booleans are readable by portal clients (12).

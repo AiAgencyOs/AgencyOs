@@ -17,6 +17,7 @@ import {
   RegisterIntegrationForm,
   ResolveFlakyForm,
   SpecialistStateForm,
+  StartPhaseFiveForm,
 } from './phase-five-forms';
 
 /**
@@ -75,6 +76,7 @@ export function PhaseFivePanel({ view, projectId }: { view: PhaseFiveOverview; p
           Phase 5 starts only when Phase 4 is complete and an Admin has verified the M2 payment; it then locks a baseline of the exact approved UI,
           prototype and scope. Neither has happened yet.
         </p>
+        {gates.m2VerifiedPaid ? <StartPhaseFiveForm projectId={projectId} /> : null}
       </Card>
     );
   }

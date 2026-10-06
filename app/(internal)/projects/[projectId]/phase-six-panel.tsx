@@ -58,11 +58,11 @@ export function PhaseSixPanel({ view, projectId }: { view: PhaseSixOverview; pro
               <span>platform: {intake.platforms.length > 0 ? intake.platforms.join(', ') : 'not recorded (not inferred)'}</span>
               <span>{intake.changeRequests} change request(s) on record</span>
             </div>
-            {intake.blockers.map((b) => (
-              <p key={b.detail} className="text-danger">{humanize(b.type)}: {b.detail}. Owner: {humanize(b.owner)}. Resume when: {b.resumeCondition}.</p>
+            {intake.blockers.map((b, i) => (
+              <p key={`${i}-${b.detail}`} className="text-danger">{humanize(b.type)}: {b.detail}. Owner: {humanize(b.owner)}. Resume when: {b.resumeCondition}.</p>
             ))}
-            {intake.external.map((e) => (
-              <p key={e.name}>External dependency: {e.detail}. Tests that need it are BLOCKED, never skipped.</p>
+            {intake.external.map((e, i) => (
+              <p key={`${i}-${e.name}`}>External dependency: {e.detail}. Tests that need it are BLOCKED, never skipped.</p>
             ))}
           </div>
         ) : (
@@ -71,7 +71,7 @@ export function PhaseSixPanel({ view, projectId }: { view: PhaseSixOverview; pro
         <DoorForm door="validate_intake" projectId={projectId} submit="Validate the intake against the exact Phase 5 build" />
         <span className="text-xs text-faint">API / data contracts the tests run against (declared, never inferred)</span>
         {contracts.length === 0 ? <p className="text-xs text-muted">None declared.</p> : (
-          <ul className="list-disc pl-5 text-xs text-muted">{contracts.map((c) => (<li key={c.name}>{c.name}: {c.ref}</li>))}</ul>
+          <ul className="list-disc pl-5 text-xs text-muted">{contracts.map((c, i) => (<li key={`${i}-${c.name}`}>{c.name}: {c.ref}</li>))}</ul>
         )}
         {intake ? (
           <details>
@@ -147,7 +147,7 @@ export function PhaseSixPanel({ view, projectId }: { view: PhaseSixOverview; pro
             ) : null}
             <span className="text-faint">Risk matrix</span>
             {plan.risks.length === 0 ? <p>None recorded.</p> : (
-              <ul className="list-disc pl-5">{plan.risks.map((r) => (<li key={`${r.area}-${r.kind}`}>{r.area} ({humanize(r.kind)}): {r.level}, {r.depth}</li>))}</ul>
+              <ul className="list-disc pl-5">{plan.risks.map((r, i) => (<li key={`${i}-${r.area}-${r.kind}`}>{r.area} ({humanize(r.kind)}): {r.level}, {r.depth}</li>))}</ul>
             )}
             <span className="text-faint">Cases</span>
             <ul className="flex flex-col gap-1">
@@ -280,7 +280,7 @@ export function PhaseSixPanel({ view, projectId }: { view: PhaseSixOverview; pro
                 {e.status === 'requested' ? <DoorForm door="approve_exception" projectId={projectId} hidden={{ exceptionId: e.id }} submit="Approve (owner only)" /> : null}
               </p>
             ))}
-            {candidate.reviews.map((r) => (<p key={r.decidedAt}>Admin: {humanize(r.decision)}{r.note ? ` — ${r.note}` : ''}</p>))}
+            {candidate.reviews.map((r, i) => (<p key={`${i}-${r.decidedAt}`}>Admin: {humanize(r.decision)}{r.note ? ` — ${r.note}` : ''}</p>))}
             {candidate.status === 'draft' || candidate.status === 'blocked' ? (
               <>
                 <details>

@@ -931,11 +931,18 @@ select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
 set local role authenticated;
 select pg_temp.check((select outcome from qa.mark_duplicate(:'DUP_id'::uuid, :'DUP_id'::uuid)) = 'cannot_duplicate_itself', 'a defect cannot be its own duplicate');
 select pg_temp.check((select outcome from qa.mark_duplicate(:'DUP_id'::uuid, :'RF2_d'::uuid)) = 'canonical_is_not_a_product_defect', 'the canonical defect must be a real product defect');
-select pg_temp.check((select outcome from qa.mark_duplicate(:'DUP_id'::uuid, :'RF_d'::uuid, 'same missing tenant check')) = 'marked', 'a duplicate points at the canonical defect');
-select pg_temp.check((select classification = 'duplicate' and duplicate_of = :'RF_d'::uuid from qa.defects where id = :'DUP_id'::uuid), 'it is classified duplicate, linked to the canonical one');
-select pg_temp.check(exists (select 1 from qa.defect_evidence where defect_id = :'RF_d'::uuid and value like 'Duplicate report:%'), 'the duplicate''s own evidence is preserved on the canonical defect');
+select pg_temp.check((select outcome from qa.mark_duplicate(:'DUP_id'::uuid, :'RF_d'::uuid, 'same missing tenant check')) = 'canonical_is_closed', 'a duplicate cannot hide behind a canonical defect that is already closed (that is a regression: reopen it)');
+reset role;
+insert into qa.defects (organization_id, project_id, deliverable_id, severity, title, reproduction, reported_by, phase6, found_commit)
+  values (:'ORG', :'P_id', :'BD1_bd', 'major', 'cart readable across tenants (canonical)', 'open the cart id as another tenant', :'OWNER', true, 'abc1234') returning id \gset CAN_
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.mark_duplicate(:'DUP_id'::uuid, :'CAN_id'::uuid, 'same missing tenant check')) = 'marked', 'a duplicate points at the open canonical defect');
+select pg_temp.check((select classification = 'duplicate' and duplicate_of = :'CAN_id'::uuid from qa.defects where id = :'DUP_id'::uuid), 'it is classified duplicate, linked to the canonical one');
+select pg_temp.check(exists (select 1 from qa.defect_evidence where defect_id = :'CAN_id'::uuid and value like 'Duplicate report:%'), 'the duplicate''s own evidence is preserved on the canonical defect');
 select pg_temp.check(not exists (select 1 from qa.unresolved_product_defects(:'P_id') where defect_id = :'DUP_id'::uuid), 'and the duplicate does not count twice against the gates');
 reset role;
+update qa.defects set status = 'wontfix', resolution = 'fixture: canonical closed so the readiness gate sees only the scenario defects' where id = :'CAN_id'::uuid;
 
 -- ═════════ Phase 6: release candidate, evidence, hard gates, exceptions, Admin review, completion ═════════
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
@@ -1163,6 +1170,43 @@ select pg_temp.check((select execution_mode from qa.qa_jobs where plan_id = :'MP
 select pg_temp.check((select execution_mode from qa.qa_jobs where plan_id = :'MP9_id' and category = 'performance') = 'exclusive', 'performance tests run EXCLUSIVE (they own the environment)');
 select pg_temp.check((select depends_on = array['functional', 'ui_e2e'] from qa.qa_jobs where plan_id = :'MP9_id' and category = 'regression'), 'regression waits for functional and end-to-end');
 select pg_temp.check((select count(*) from qa.qa_jobs where plan_id = :'MP9_id' and execution_mode = 'parallel') = 7, 'the independent categories (and regression, once its dependencies finish) run in parallel');
+reset role;
+
+
+-- review fixes: the doors' facts cannot be rewritten around them, and a door cannot be pointed at another tenant
+insert into core.organizations (id, name, slug) values ('00000000-0000-4000-8000-0000000000c3', 'Other Agency (review)', 'other-agency-review') on conflict (id) do nothing;
+insert into auth.users (id, email) values ('00000000-0000-4000-8000-00000000c301', 'review-other@example.test') on conflict do nothing;
+insert into core.users (id, email, full_name) values ('00000000-0000-4000-8000-00000000c301', 'review-other@example.test', 'Other Member') on conflict do nothing;
+insert into core.memberships (organization_id, user_id, role) values ('00000000-0000-4000-8000-0000000000c3', '00000000-0000-4000-8000-00000000c301', 'member') on conflict do nothing;
+select pg_temp.as_user('00000000-0000-4000-8000-00000000c301', '00000000-0000-4000-8000-0000000000c3', 'member');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.invalidate_stale_results(:'P_id')) = 'no_intake', 'another tenant calling invalidate_stale_results on this project is told nothing and changes nothing');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+do $$ begin
+  begin
+    insert into projects.tasks (organization_id, project_id, title, status) values ('00000000-0000-4000-8000-000000000001', current_setting('e2e.p')::uuid, 'zz direct done', 'done');
+    raise exception 'NOT REFUSED';
+  exception when restrict_violation then null; end;
+end $$;
+select pg_temp.check(true, 'a direct INSERT of a started Phase 5 task is refused (the gate lives in start_task)');
+do $$ declare t uuid; begin
+  select id into t from projects.tasks where project_id = current_setting('e2e.p')::uuid order by created_at limit 1;
+  if t is null then raise notice 'no task to probe'; return; end if;
+  begin
+    update projects.tasks set status = 'in_progress' where id = t and status = 'todo';
+  exception when restrict_violation then return; end;
+  if found then raise exception 'NOT REFUSED'; end if;
+end $$;
+select pg_temp.check(true, 'a direct status move out of todo on a Phase 5 task is refused');
+do $$ begin
+  begin
+    insert into qa.defects (organization_id, project_id, severity, status, title, reproduction) values ('00000000-0000-4000-8000-000000000001', current_setting('e2e.p')::uuid, 'blocker', 'verified', 'zz born verified', 'x');
+    raise exception 'NOT REFUSED';
+  exception when restrict_violation then null; end;
+end $$;
+select pg_temp.check(true, 'a defect cannot be inserted already verified');
 reset role;
 
 rollback;

@@ -857,6 +857,11 @@ export type PlannedJob = {
  * own carry. Authority never lives in this filter.
  */
 const HANDLER_RELEVANT: Partial<Record<Handler, (event: OutboxEvent) => boolean>> = {
+  // `project.deliverable_submitted` / `_decided` fire for every deliverable kind: only a development build is these handlers' business. Like the
+  // filters below, this decides only whether to SPEND a job; each handler re-checks the row itself.
+  'projects:reopenOnSourceChange': (event) => (event.payload as { kind?: string } | null)?.kind === 'build',
+  'crm:announceBuildShared': (event) => (event.payload as { kind?: string } | null)?.kind === 'build',
+  'crm:announceBuildApproved': (event) => (event.payload as { kind?: string } | null)?.kind === 'build',
   'crm:dispatchApprovedQuotation': (event) =>
     (event.payload as { subjectType?: string } | null)?.subjectType === 'proposal',
   'sales:reviseQuotation': (event) =>

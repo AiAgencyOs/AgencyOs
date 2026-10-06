@@ -15,6 +15,7 @@ import {
   resolveFlakyTestAction,
   setIntegrationStateAction,
   setSpecialistStateAction,
+  startPhaseFiveAction,
   decideBuildAdminAction,
   recordBuildFeedbackAction,
   recordBuildQaAction,
@@ -359,6 +360,19 @@ export function DeriveDocumentsForm({ projectId }: { projectId: string }) {
     <form action={action} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="projectId" value={projectId} />
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Deriving…' : 'Derive documentation from the current records'}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+
+export function StartPhaseFiveForm({ projectId }: { projectId: string }) {
+  const [state, action, pending] = useActionState(startPhaseFiveAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-col gap-2 rounded-md border border-line p-3">
+      <p className="text-[13px] text-muted">Normally Phase 5 starts by itself when the M2 payment is verified. If it did not, ask the door: it re-checks Phase 4, M2, the locked UI, the approved prototype and the scope.</p>
+      <input type="hidden" name="projectId" value={projectId} />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Checking…' : 'Start Phase 5'}</button>
       <Message state={state} />
     </form>
   );

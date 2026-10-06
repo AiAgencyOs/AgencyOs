@@ -1028,6 +1028,7 @@ export async function handleStartPhaseSix(admin: Admin, job: UnlockJob): Promise
   const projectId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
   if (!projectId) return { status: 'failed', permanent: true, detail: 'the event named no project' };
 
+  if (!(await inOrganization(admin, { schema: 'projects', name: 'projects' }, projectId, job.organization_id))) return { status: 'succeeded', outcome: 'gone', detail: 'the project is not in this organization' };
   const { data, error } = await admin.schema('projects').rpc('start_phase_six', { p_project_id: projectId } as never);
   if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
   const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
@@ -1055,6 +1056,7 @@ export async function handleValidateQaIntake(admin: Admin, job: UnlockJob): Prom
   const projectId = typeof event.projectId === 'string' ? event.projectId : null;
   if (!projectId) return { status: 'failed', permanent: true, detail: 'the event named no project' };
 
+  if (!(await inOrganization(admin, { schema: 'projects', name: 'projects' }, projectId, job.organization_id))) return { status: 'succeeded', outcome: 'gone', detail: 'the project is not in this organization' };
   const { data, error } = await admin.schema('projects').rpc('validate_qa_intake', { p_project_id: projectId } as never);
   if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
   const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; status?: string } | undefined;
@@ -1114,6 +1116,7 @@ export async function handleScheduleQaJobs(admin: Admin, job: UnlockJob): Promis
   const envelope = job.payload ?? {};
   const planId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
   if (!planId) return { status: 'failed', permanent: true, detail: 'the event named no test plan' };
+  if (!(await inOrganization(admin, { schema: 'qa', name: 'master_test_plans' }, planId, job.organization_id))) return { status: 'succeeded', outcome: 'gone', detail: 'the plan is not in this organization' };
   const { data, error } = await admin.schema('qa').rpc('schedule_plan_jobs' as never, { p_plan_id: planId } as never);
   if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
   const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; routed?: number; held?: number } | undefined;
@@ -1139,6 +1142,7 @@ export async function handleReopenOnSourceChange(admin: Admin, job: UnlockJob): 
   if (event.kind !== 'build') return { status: 'succeeded', outcome: 'not_mine', detail: 'only a development build can change what QA approved' };
   const projectId = typeof event.projectId === 'string' ? event.projectId : null;
   if (!projectId) return { status: 'failed', permanent: true, detail: 'the event named no project' };
+  if (!(await inOrganization(admin, { schema: 'projects', name: 'projects' }, projectId, job.organization_id))) return { status: 'succeeded', outcome: 'gone', detail: 'the project is not in this organization' };
   const { data, error } = await admin.schema('qa').rpc('reopen_on_source_change' as never, { p_project_id: projectId } as never);
   if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
   const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
@@ -1154,4 +1158,15 @@ export async function handleReopenOnSourceChange(admin: Admin, job: UnlockJob): 
     default:
       return { status: 'failed', permanent: false, detail: `the door answered ${row?.outcome ?? 'nothing'}` };
   }
+}
+
+/** A handler that passes an id from an event payload to a service-role door first proves the row is in the job's own organization. */
+async function inOrganization(admin: Admin, table: { schema: 'projects' | 'qa'; name: string }, id: string, organizationId: string): Promise<boolean> {
+  const { data } = await (admin.schema(table.schema) as unknown as { from(t: string): { select(c: string): { eq(c: string, v: string): { eq(c: string, v: string): { maybeSingle(): PromiseLike<{ data: unknown }> } } } } })
+    .from(table.name)
+    .select('id')
+    .eq('id', id)
+    .eq('organization_id', organizationId)
+    .maybeSingle();
+  return Boolean(data);
 }

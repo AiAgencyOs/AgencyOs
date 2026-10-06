@@ -41,6 +41,13 @@ const WORDS: Record<string, string> = {
   not_reviewable: 'This build is no longer open for review.',
   wrong_kind: 'That is not a development build.',
   no_policy: 'No approval policy is configured for client approval of builds.',
+  started: 'Phase 5 started and its baseline locked.',
+  already_started: 'Phase 5 had already started.',
+  phase_four_incomplete: 'Phase 4 is not complete yet.',
+  no_locked_ui: 'There is no locked UI version to build against.',
+  no_approved_prototype: 'There is no client-approved prototype build.',
+  no_active_scope: 'There is no active scope version.',
+  m2_not_verified: 'The M2 payment is not verified paid in full.',
   created: 'Plan created.',
   planned: 'Task planned.',
   approved: 'Plan approved.',
@@ -257,7 +264,11 @@ export async function recordFlakyTestAction(_prev: FormState, formData: FormData
 }
 
 export async function resolveFlakyTestAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const days = Number(text(formData, 'days') || '7');
+  const rawDays = text(formData, 'days') || '7';
+  const days = Number(rawDays);
+  if (text(formData, 'action') === 'quarantine' && !(Number.isInteger(days) && days >= 1 && days <= 30)) {
+    return { status: 'error', message: 'A quarantine lasts a whole number of days from 1 to 30.' };
+  }
   return runQa(text(formData, 'projectId'), 'resolve_flaky_test', {
     p_flaky_id: text(formData, 'flakyId'),
     p_action: text(formData, 'action'),
@@ -276,4 +287,11 @@ export async function linkTaskTestRunAction(_prev: FormState, formData: FormData
 
 export async function deriveDocumentsAction(_prev: FormState, formData: FormData): Promise<FormState> {
   return run(text(formData, 'projectId'), 'derive_phase_five_documents', { p_project_id: text(formData, 'projectId') }, ['derived']);
+}
+
+
+/** The one-shot trigger (the verified-payment event) is not the only way in: a person may ask the door to start Phase 5. The door re-checks every condition. */
+export async function startPhaseFiveAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await run(text(formData, 'projectId'), 'start_phase_five', { p_project_id: text(formData, 'projectId') }, ['started', 'already_started']);
+  return result;
 }

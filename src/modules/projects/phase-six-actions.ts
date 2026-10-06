@@ -16,6 +16,12 @@ import type { FormState } from '@/modules/identity/types';
 type Fd = FormData;
 const text = (fd: Fd, key: string) => String(fd.get(key) ?? '').trim();
 const optional = (fd: Fd, key: string) => text(fd, key) || null;
+/** A number from a form, or null when it is not a finite number inside the bounds (never NaN, never an invalid Date). */
+const bounded = (fd: Fd, key: string, fallback: number, min: number, max: number): number | null => {
+  const raw = text(fd, key);
+  const n = raw === '' ? fallback : Number(raw);
+  return Number.isFinite(n) && Number.isInteger(n) && n >= min && n <= max ? n : null;
+};
 const lines = (fd: Fd, key: string) => text(fd, key).split('\n').map((l) => l.trim()).filter(Boolean);
 
 type Door = { schema: 'projects' | 'qa'; rpc: string; args: (fd: Fd) => Record<string, unknown>; ok: readonly string[] };
@@ -60,7 +66,7 @@ const DOORS: Record<string, Door> = {
   triage: {
     schema: 'qa',
     rpc: 'triage_defect',
-    args: (fd) => ({ p_defect_id: text(fd, 'defectId'), p_s_level: Number(text(fd, 'sLevel') || '2'), p_classification: text(fd, 'classification'), p_assignee_id: null, p_reason: optional(fd, 'reason') }),
+    args: (fd) => ({ p_defect_id: text(fd, 'defectId'), p_s_level: bounded(fd, 'sLevel', 2, 0, 4), p_classification: text(fd, 'classification'), p_assignee_id: null, p_reason: optional(fd, 'reason') }),
     ok: ['triaged'],
   },
   hand_off: { schema: 'qa', rpc: 'hand_off_defect', args: (fd) => ({ p_defect_id: text(fd, 'defectId') }), ok: ['handed_off', 'already_handed_off'] },
@@ -99,7 +105,7 @@ const DOORS: Record<string, Door> = {
     rpc: 'request_release_exception',
     args: (fd) => ({
       p_candidate_id: text(fd, 'candidateId'), p_gate: text(fd, 'gate'), p_risk: text(fd, 'risk'), p_business_reason: text(fd, 'businessReason'), p_mitigation: text(fd, 'mitigation'),
-      p_owner: text(fd, 'owner'), p_containment_plan: text(fd, 'containment'), p_expires_at: new Date(Date.now() + (Number(text(fd, 'days') || '14') * 86_400_000)).toISOString(),
+      p_owner: text(fd, 'owner'), p_containment_plan: text(fd, 'containment'), p_expires_at: (() => { const days = bounded(fd, 'days', 14, 1, 90); return days === null ? null : new Date(Date.now() + days * 86_400_000).toISOString(); })(),
     }),
     ok: ['requested'],
   },
@@ -185,8 +191,11 @@ export async function phaseSixDoorAction(_prev: FormState, formData: FormData): 
   const door = Object.prototype.hasOwnProperty.call(DOORS, name) ? DOORS[name] : undefined;
   if (!door) return { status: 'error', message: 'Unknown action.' };
 
+  const built = door.args(formData);
+  if (Object.values(built).some((v) => v === null && (name === 'triage' || name === 'request_exception') && false)) return { status: 'error', message: 'Invalid value.' };
+  if ((name === 'triage' && built.p_s_level === null) || (name === 'request_exception' && built.p_expires_at === null)) return { status: 'error', message: name === 'triage' ? 'Severity must be a whole number from 0 to 4.' : 'Expiry must be a whole number of days from 1 to 90.' };
   const supabase = await createClient();
-  const { data, error } = await supabase.schema(door.schema).rpc(door.rpc as never, door.args(formData) as never);
+  const { data, error } = await supabase.schema(door.schema).rpc(door.rpc as never, built as never);
   if (error) return { status: 'error', message: 'The database did not answer; nothing was recorded.' };
   const row = ((Array.isArray(data) ? data[0] : data) ?? {}) as { outcome?: string | null; result?: string | null };
   const outcome = String(row.outcome ?? 'no answer');
