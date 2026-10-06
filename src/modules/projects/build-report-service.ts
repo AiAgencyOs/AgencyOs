@@ -2,6 +2,7 @@ import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
 
+import { appendBuildLog } from './build-logs-service';
 import { runBuild, type RunPlan } from './build-runner';
 import { reportExecutor, type BuildReport } from './github-build';
 
@@ -41,7 +42,12 @@ export async function recordBuildReport(admin: Admin, report: BuildReport): Prom
       });
       if (e) return { outcome: `error: ${e.message}`, runId: null };
       const row = first(data);
-      return { outcome: String(row.outcome ?? 'no answer'), runId: (row.run_id as string | undefined) ?? null };
+      const runId = (row.run_id as string | undefined) ?? null;
+      // the worker's own stage logs are kept, masked in the runner AND again in the database; a log that cannot be stored never blocks the record
+      if (row.outcome === 'recorded' && runId) {
+        for (const s of report.stages) if (s.log) await appendBuildLog(admin, runId, s.name, s.log);
+      }
+      return { outcome: String(row.outcome ?? 'no answer'), runId };
     },
     recordSmoke: async (a) => {
       await rpc.rpc('record_smoke_check', { p_deliverable_id: report.deliverableId, p_result: a.result, p_checks: a.checks, p_device_target: a.deviceTarget, p_reason: a.reason, p_evidence_url: a.evidenceUrl });

@@ -63,10 +63,11 @@ const SECRET_PATTERNS: RegExp[] = [
   /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}/g,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)/g,
   /\b[a-z][a-z0-9+.-]*:\/\/[^\s:@/]+:[^\s@/]+@[^\s/]+/gi,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/gi,
   /\b(api[_-]?key|secret|token|password|passwd)\s*[=:]\s*\S{6,}/gi,
 ];
 
-/** Masks anything that looks like a secret. Applied to every log line before it is stored or shown. */
+/** Masks anything that looks like a secret. Applied to every log line before it is stored or shown. (The database masks again: projects.mask_secrets, same families.) */
 export function maskSecrets(text: string): string {
   return SECRET_PATTERNS.reduce((acc, re) => acc.replace(re, '[masked]'), text);
 }
