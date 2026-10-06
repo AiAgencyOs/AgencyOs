@@ -53,7 +53,7 @@
     "db:verify:orgsettings": "node scripts/verify-organization-settings.mjs",
     "db:verify:deliverables": "node scripts/verify-deliverables.mjs",
     "db:verify:phase3": "node scripts/verify-phase-three.mjs",
-    "db:verify:phase4": "psql \"${VERIFY_DB_URL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}\" -v ON_ERROR_STOP=1 -q -f scripts/verify-phase-five-gate.sql -f scripts/verify-phase-four-qa-independence.sql -f scripts/verify-phase-four-qa-fix-loop.sql -f scripts/verify-phase-five-defects.sql -f scripts/verify-phase-five-integrations.sql -f scripts/verify-internal-only-reads.sql -f scripts/verify-phase-four-e2e.sql",
+    "db:verify:phase4": "psql \"${VERIFY_DB_URL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}\" -v ON_ERROR_STOP=1 -q -f scripts/verify-phase-five-gate.sql -f scripts/verify-phase-four-qa-independence.sql -f scripts/verify-phase-four-qa-fix-loop.sql -f scripts/verify-phase-five-defects.sql -f scripts/verify-phase-five-integrations.sql -f scripts/verify-internal-only-reads.sql -f scripts/verify-phase-four-e2e.sql -f scripts/verify-phase5-orchestrator.sql -f scripts/verify-phase5-build-depth.sql -f scripts/verify-phase5-pm-depth.sql",
     "db:verify:qa": "node scripts/verify-qa-gate.mjs",
     "db:verify:handover": "node scripts/verify-handover.mjs",
     "db:verify:modules": "node scripts/verify-modules.mjs",
