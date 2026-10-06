@@ -360,3 +360,93 @@ export async function readOpenEscalations(projectId: string): Promise<Escalation
   }
   return rows.map((r) => ({ id: r.id, taskTitle: titles.get(r.task_id) ?? 'a task', rootCause: r.root_cause, recommendation: r.recommendation, createdAt: r.created_at }));
 }
+
+export type PmOverview = {
+  state: string;
+  nextGate: string;
+  blockers: string[];
+  packageBuild: { deliverableId: string; version: number; lines: { item: string; ok: boolean; detail: string }[] } | null;
+};
+
+/** What the PM says Phase 5 is waiting for (derived, never stored) and the review package for the newest build that is not yet approved. */
+export async function readPmOverview(projectId: string): Promise<PmOverview | null> {
+  const supabase = await createClient();
+  const projects = supabase.schema('projects');
+  const { data: stateRows, error: stateError } = await projects.rpc('pm_phase_five_state' as never, { p_project_id: projectId } as never);
+  if (stateError) unreadable('readPmOverview.state', stateError);
+  const row = ((Array.isArray(stateRows) ? stateRows[0] : stateRows) ?? null) as { state: string; next_gate: string; blockers: string[] | null } | null;
+  if (!row) return null;
+  const { data: buildRows, error: buildError } = await projects
+    .from('deliverables')
+    .select('id, version, status')
+    .eq('project_id', projectId)
+    .eq('kind', 'build')
+    .neq('status', 'superseded')
+    .order('version', { ascending: false })
+    .limit(1);
+  if (buildError) unreadable('readPmOverview.build', buildError);
+  const build = ((buildRows ?? [])[0] ?? null) as { id: string; version: number; status: string } | null;
+  let packageBuild: PmOverview['packageBuild'] = null;
+  if (build && build.status !== 'approved') {
+    const { data: lines, error: lineError } = await projects.rpc('build_review_package' as never, { p_deliverable_id: build.id } as never);
+    if (lineError) unreadable('readPmOverview.package', lineError);
+    packageBuild = {
+      deliverableId: build.id,
+      version: build.version,
+      lines: ((lines ?? []) as unknown as { item: string; ok: boolean; detail: string }[]).map((l) => ({ item: l.item, ok: l.ok === true, detail: l.detail })),
+    };
+  }
+  return { state: row.state, nextGate: row.next_gate, blockers: row.blockers ?? [], packageBuild };
+}
+
+export type BuildRunRow = { buildVersion: number; commit: string; environment: string; attempt: number; status: string; failureClass: string | null; sha256: string | null; manual: boolean; stages: { name: string; status: string }[]; at: string };
+
+/** Every recorded build run of this project's builds, newest first: what ran, on which exact commit, and what it produced. */
+export async function readBuildRuns(projectId: string): Promise<BuildRunRow[]> {
+  const supabase = await createClient();
+  const projects = supabase.schema('projects');
+  const { data, error } = await projects
+    .from('build_runs' as never)
+    .select('deliverable_id, commit_ref, environment, attempt, status, failure_class, artifact_sha256, manual, stages, created_at')
+    .eq('project_id' as never, projectId as never)
+    .order('created_at' as never, { ascending: false })
+    .limit(30);
+  if (error) unreadable('readBuildRuns', error);
+  const rows = (data ?? []) as unknown as { deliverable_id: string; commit_ref: string; environment: string; attempt: number; status: string; failure_class: string | null; artifact_sha256: string | null; manual: boolean; stages: { name: string; status: string }[]; created_at: string }[];
+  const ids = [...new Set(rows.map((r) => r.deliverable_id))];
+  const versions = new Map<string, number>();
+  if (ids.length > 0) {
+    const { data: ds, error: dError } = await projects.from('deliverables').select('id, version').in('id', ids);
+    if (dError) unreadable('readBuildRuns.versions', dError);
+    for (const d of (ds ?? []) as { id: string; version: number }[]) versions.set(d.id, d.version);
+  }
+  return rows.map((r) => ({
+    buildVersion: versions.get(r.deliverable_id) ?? 0, commit: r.commit_ref, environment: r.environment, attempt: r.attempt, status: r.status,
+    failureClass: r.failure_class, sha256: r.artifact_sha256, manual: r.manual === true, stages: Array.isArray(r.stages) ? r.stages : [], at: r.created_at,
+  }));
+}
+
+export type TaskBoard = Record<'backlog' | 'in_progress' | 'in_review' | 'blocked' | 'done', { id: string; title: string }[]>;
+
+/** The Phase 5 task board: tasks grouped by what they are doing now. A task with an unfinished dependency is shown Blocked, not Backlog. */
+export async function readTaskBoard(projectId: string): Promise<TaskBoard> {
+  const supabase = await createClient();
+  const projects = supabase.schema('projects');
+  const { data, error } = await projects.from('tasks').select('id, title, status').eq('project_id', projectId).neq('status', 'cancelled').is('archived_at', null).limit(500);
+  if (error) unreadable('readTaskBoard', error);
+  const tasks = (data ?? []) as { id: string; title: string; status: string }[];
+  const { data: deps, error: depError } = await projects.from('task_dependencies').select('task_id, depends_on_task_id').in('task_id', tasks.map((t) => t.id).length ? tasks.map((t) => t.id) : ['00000000-0000-0000-0000-000000000000']);
+  if (depError) unreadable('readTaskBoard.dependencies', depError);
+  const status = new Map(tasks.map((t) => [t.id, t.status]));
+  const blockedIds = new Set(((deps ?? []) as { task_id: string; depends_on_task_id: string }[]).filter((d) => status.get(d.depends_on_task_id) !== 'done' && status.get(d.task_id) === 'todo').map((d) => d.task_id));
+  const board: TaskBoard = { backlog: [], in_progress: [], in_review: [], blocked: [], done: [] };
+  for (const t of tasks) {
+    const row = { id: t.id, title: t.title };
+    if (t.status === 'done') board.done.push(row);
+    else if (t.status === 'in_review') board.in_review.push(row);
+    else if (t.status === 'in_progress') board.in_progress.push(row);
+    else if (t.status === 'blocked' || blockedIds.has(t.id)) board.blocked.push(row);
+    else board.backlog.push(row);
+  }
+  return board;
+}

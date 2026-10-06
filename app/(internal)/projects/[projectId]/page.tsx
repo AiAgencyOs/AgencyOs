@@ -84,7 +84,7 @@ import {
   type MilestoneBillingEntry,
 } from '@/modules/finance/schema';
 import { listPhaseFourEscalations, getProject, listPaymentPlan, readGroupSetup, readPhaseTwo, readPhaseFourOverview, readProjectGroupName } from '@/modules/projects/queries';
-import { readOpenEscalations, readPhaseFiveOverview, readPmMessageHistory, readProjectRepositories } from '@/modules/projects/phase-five-queries';
+import { readBuildRuns, readOpenEscalations, readPhaseFiveOverview, readTaskBoard, readPmOverview, readPmMessageHistory, readProjectRepositories } from '@/modules/projects/phase-five-queries';
 import { readPhaseSixOverview } from '@/modules/projects/phase-six-queries';
 import { listApprovalsForSubject } from '@/modules/approvals/queries';
 import { listDefects, readProjectQuality } from '@/modules/qa/queries';
@@ -135,7 +135,7 @@ import { RevealClientSecretForm, RevokeClientSecretForm, StoreClientSecretForm }
 import { CLIENT_SECRET_KIND_LABELS, listClientSecrets } from '@/modules/projects/client-secrets-service';
 import { PhaseTwoPanel } from './phase-two-panel';
 import { PhaseFourPanel } from './phase-four-panel';
-import { EscalationsPanel, PhaseFivePanel, PmMessageHistoryPanel } from './phase-five-panel';
+import { EscalationsPanel, PhaseFivePanel, PmMessageHistoryPanel, WorkboardPanel } from './phase-five-panel';
 import { PhaseSixPanel } from './phase-six-panel';
 import { PhaseCompletionPanel } from './phase-completion-panel';
 import { readPhaseCompletions } from '@/modules/projects/phase-completion-queries';
@@ -225,6 +225,9 @@ export default async function ProjectPage({
   const pmMessages = await readPmMessageHistory(projectId);
   const repositories = await readProjectRepositories(projectId);
   const escalations = await readOpenEscalations(projectId);
+  const pmOverview = await readPmOverview(projectId);
+  const taskBoard = await readTaskBoard(projectId);
+  const buildRuns = await readBuildRuns(projectId);
   // Q-PH56: where Phase 5 and Phase 6 stand, read from Development and QA data.
   const phaseCompletions = await readPhaseCompletions(projectId);
   /**
@@ -893,9 +896,11 @@ export default async function ProjectPage({
 
       <PhaseSixPanel view={phaseSix} projectId={projectId} />
 
+      <WorkboardPanel board={taskBoard} runs={buildRuns} />
+
       <EscalationsPanel rows={escalations} projectId={projectId} />
 
-      <PmMessageHistoryPanel rows={pmMessages} />
+      <PmMessageHistoryPanel rows={pmMessages} overview={pmOverview} />
 
       <PhaseCompletionPanel
         projectId={projectId}

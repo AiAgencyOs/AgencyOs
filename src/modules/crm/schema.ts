@@ -1996,9 +1996,9 @@ export function qaDefectProgressAnnouncementFor(input: { projectName: string | n
  */
 export const PM_TEMPLATES: Readonly<Record<string, { milestone: string; version: number }>> = {
   'phase-five-started': { milestone: 'PM5-M01', version: 1 },
-  'build-shared': { milestone: 'PM5-M02', version: 1 },
-  'build-feedback': { milestone: 'PM5-M03', version: 1 },
-  'build-approved': { milestone: 'PM5-M04', version: 1 },
+  'build-shared': { milestone: 'PM5-M04', version: 1 },
+  'build-feedback': { milestone: 'PM5-M05', version: 1 },
+  'build-approved': { milestone: 'PM5-M07', version: 1 },
   'build-feedback-routed': { milestone: 'PM5-FEEDBACK-ROUTED', version: 1 },
   'm3-payment-verified': { milestone: 'PM5-M3-VERIFIED', version: 1 },
   'phase-six-ready': { milestone: 'PM6-M01', version: 1 },

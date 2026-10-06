@@ -1357,6 +1357,21 @@ select pg_temp.check((select outcome from projects.set_integration_check_target(
 select pg_temp.check((select health = 'configured' and verification_evidence is null and verified_at is null and verified_by_adapter is null from projects.integration_connections where id = :'IC_id'), 'and it DROPS the proof: the evidence described a connection that no longer exists');
 reset role;
 
+
+-- the PM's derived state and the review package
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select state from projects.pm_phase_five_state(:'P_id')) in ('READY_FOR_PHASE6', 'WAITING_M3'), 'a completed Phase 5 reads READY_FOR_PHASE6 or WAITING_M3, by the M3 payment alone [' || (select state from projects.pm_phase_five_state(:'P_id')) || ']');
+select pg_temp.check((select (state = 'READY_FOR_PHASE6') = projects.m3_verified_paid(:'P_id') from projects.pm_phase_five_state(:'P_id')), 'and only a VERIFIED M3 payment moves it to READY_FOR_PHASE6');
+select pg_temp.check((select count(*) from projects.build_review_package(:'BD9_bd')) = 8, 'the review package has its eight lines for one exact build');
+select pg_temp.check((select not ok from projects.build_review_package(:'BD9_bd') where item = 'Independent code review passed on this commit'), 'an un-reviewed build says so: the line is not ok');
+select pg_temp.check((select ok from projects.build_review_package(:'BD9_bd') where item = 'Exact commit'), 'and its exact commit is shown');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'client');
+set local role authenticated;
+select pg_temp.check((select count(*) from projects.pm_phase_five_state(:'P_id')) = 0 and (select count(*) from projects.build_review_package(:'BD9_bd')) = 0, 'a portal client reads neither the PM state nor the review package');
+reset role;
+
 -- a plan with no baseline to measure against is not coverage
 reset role;
 do $$ declare pl uuid; begin

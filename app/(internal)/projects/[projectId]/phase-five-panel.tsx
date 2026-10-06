@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import type { EscalationRow, PhaseFiveOverview, PmMessageRow } from '@/modules/projects/phase-five-queries';
+import type { BuildRunRow, EscalationRow, PhaseFiveOverview, PmMessageRow, PmOverview, TaskBoard } from '@/modules/projects/phase-five-queries';
 import { Badge, Card, humanize, type Tone } from '@/ui';
 
 import {
@@ -370,9 +370,26 @@ export function PhaseFivePanel({ view, projectId, repositories = [] }: { view: P
 
 
 /** What the PM said, in which wording (template version), and whether the message arrived: the record P5-PM-01 / P6-PM-01 asked for. */
-export function PmMessageHistoryPanel({ rows }: { rows: PmMessageRow[] }) {
+export function PmMessageHistoryPanel({ rows, overview = null }: { rows: PmMessageRow[]; overview?: PmOverview | null }) {
   return (
     <Card>
+      {overview ? (
+        <div className="mb-3 flex flex-col gap-2 border-b border-line pb-3">
+          <h3 className="text-[15px] font-semibold">What Phase 5 is waiting for</h3>
+          <p className="text-[13px]"><Badge tone="neutral">{humanize(overview.state)}</Badge> <span className="text-muted">Next: {overview.nextGate}</span></p>
+          {overview.blockers.map((b, i) => (<p key={`${i}-${b}`} className="text-[13px] text-danger">{b}</p>))}
+          {overview.packageBuild ? (
+            <details>
+              <summary className="cursor-pointer text-[13px] underline underline-offset-2">Review package for build v{overview.packageBuild.version}</summary>
+              <ul className="mt-1 flex flex-col gap-1 text-[13px]">
+                {overview.packageBuild.lines.map((l, i) => (
+                  <li key={`${i}-${l.item}`} className="flex flex-wrap items-center gap-2"><Badge tone={l.ok ? 'success' : 'danger'}>{l.ok ? 'Yes' : 'No'}</Badge><span>{l.item}</span><span className="text-muted">{l.detail}</span></li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
       <h3 className="text-[15px] font-semibold">PM messages</h3>
       <p className="mt-1 text-[13px] text-muted">Each milestone message, the version of its wording, and its delivery state. Staff relay to the client.</p>
       {rows.length === 0 ? (
@@ -408,6 +425,41 @@ export function EscalationsPanel({ rows, projectId }: { rows: EscalationRow[]; p
           </li>
         ))}
       </ul>
+    </Card>
+  );
+}
+
+
+const BOARD_COLUMNS: [keyof TaskBoard, string][] = [['backlog', 'Backlog'], ['blocked', 'Blocked'], ['in_progress', 'In progress'], ['in_review', 'In review'], ['done', 'Done']];
+
+/** The Phase 5 task board and the build runs behind every build: what is being done, and what actually ran on which exact commit. */
+export function WorkboardPanel({ board, runs }: { board: TaskBoard; runs: BuildRunRow[] }) {
+  return (
+    <Card>
+      <h3 className="text-[15px] font-semibold">Task board</h3>
+      <div className="mt-2 grid grid-cols-2 gap-3 text-[13px] md:grid-cols-5">
+        {BOARD_COLUMNS.map(([key, label]) => (
+          <div key={key} className="flex flex-col gap-1">
+            <span className="text-xs font-medium uppercase tracking-wide text-faint">{label} ({board[key].length})</span>
+            {board[key].length === 0 ? <span className="text-muted">-</span> : board[key].map((t) => (<span key={t.id}>{t.title}</span>))}
+          </div>
+        ))}
+      </div>
+      <h3 className="mt-4 text-[15px] font-semibold">Build runs</h3>
+      {runs.length === 0 ? (
+        <p className="mt-1 text-[13px] text-muted">No build has been run. Nothing is shown as built until a run is recorded on an exact commit.</p>
+      ) : (
+        <ul className="mt-2 flex flex-col gap-1 text-[13px]">
+          {runs.map((r, i) => (
+            <li key={`${i}-${r.at}`} className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">v{r.buildVersion}</span>
+              <Badge tone={r.status === 'succeeded' ? 'success' : 'danger'}>{r.status === 'failed' && r.failureClass ? humanize(r.failureClass) : humanize(r.status)}</Badge>
+              <span className="text-muted">{r.commit} · {r.environment} · attempt {r.attempt}{r.manual ? ' · recorded by hand, not by CI' : ''}{r.sha256 ? ` · sha256 ${r.sha256.slice(0, 12)}…` : ''}</span>
+              <span className="text-muted">{r.stages.map((s) => `${s.name}:${s.status}`).join(' → ')}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   );
 }
