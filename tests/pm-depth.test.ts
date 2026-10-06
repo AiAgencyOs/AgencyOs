@@ -41,6 +41,11 @@ const RENDERED: Record<string, string> = {
   qaReverification: schema.qaReverificationAnnouncementFor({ projectName: NAME }),
   m4PaymentVerified: schema.m4PaymentVerifiedAnnouncementFor({ projectName: NAME }),
   task4Complete: schema.task4CompleteAnnouncementFor({ projectName: NAME }),
+  phaseEightStarted: schema.phaseEightStartedAnnouncementFor({ projectName: NAME }),
+  supportTicketEscalated: schema.supportTicketEscalatedAnnouncementFor({ projectName: NAME }),
+  supportSlaBreached: schema.supportSlaBreachedAnnouncementFor({ projectName: NAME, kind: 'response' }),
+  retentionRecoveryRequired: schema.retentionRecoveryRequiredAnnouncementFor({ projectName: NAME }),
+  maintenanceRenewalDue: schema.maintenanceRenewalDueAnnouncementFor({ projectName: NAME }),
 };
 
 describe('every PM5/PM6 message is free of leaks', () => {

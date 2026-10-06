@@ -69,6 +69,11 @@ import {
   announceReleaseCandidateApproved,
   announceReleaseCandidateReady,
   announceReleaseExceptionRequested,
+  announcePhaseEightStarted,
+  announceSupportTicketEscalated,
+  announceSupportSlaBreached,
+  announceRetentionRecoveryRequired,
+  announceMaintenanceRenewalDue,
   announceQaReverification,
   announceM4PaymentVerified,
   announceBuildFeedbackRouted,
@@ -1301,6 +1306,12 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const rcApprovedAnnouncements = await runEventJobs(admin, RC_APPROVED_ANNOUNCE_JOB_KIND, announceReleaseCandidateApproved, 'runReleaseCandidateApprovedAnnouncementJobs');
   const rcReadyAnnouncements = await runEventJobs(admin, RC_READY_ANNOUNCE_JOB_KIND, announceReleaseCandidateReady, 'runReleaseCandidateReadyAnnouncementJobs');
   const rcExceptionAnnouncements = await runEventJobs(admin, RC_EXCEPTION_ANNOUNCE_JOB_KIND, announceReleaseExceptionRequested, 'runReleaseExceptionAnnouncementJobs');
+  // PM8 (Phase 8A): Customer Success / Support announcements, internal channel only.
+  const phaseEightStartedAnnouncements = await runEventJobs(admin, PHASE_EIGHT_STARTED_ANNOUNCE_JOB_KIND, announcePhaseEightStarted, 'runPhaseEightStartedAnnouncementJobs');
+  const supportEscalatedAnnouncements = await runEventJobs(admin, SUPPORT_ESCALATED_ANNOUNCE_JOB_KIND, announceSupportTicketEscalated, 'runSupportTicketEscalatedAnnouncementJobs');
+  const supportSlaBreachedAnnouncements = await runEventJobs(admin, SUPPORT_SLA_BREACHED_ANNOUNCE_JOB_KIND, announceSupportSlaBreached, 'runSupportSlaBreachedAnnouncementJobs');
+  const retentionRecoveryAnnouncements = await runEventJobs(admin, RETENTION_RECOVERY_ANNOUNCE_JOB_KIND, announceRetentionRecoveryRequired, 'runRetentionRecoveryAnnouncementJobs');
+  const maintenanceRenewalDueAnnouncements = await runEventJobs(admin, MAINTENANCE_RENEWAL_DUE_ANNOUNCE_JOB_KIND, announceMaintenanceRenewalDue, 'runMaintenanceRenewalDueAnnouncementJobs');
   const qaReverificationAnnouncements = await runEventJobs(admin, QA_REVERIFICATION_ANNOUNCE_JOB_KIND, announceQaReverification, 'runQaReverificationAnnouncementJobs');
   const m4VerifiedAnnouncements = await runEventJobs(admin, M4_VERIFIED_ANNOUNCE_JOB_KIND, announceM4PaymentVerified, 'runM4VerifiedAnnouncementJobs');
   // PM6-M01 (Phase 6 PM Agent spec): Task 4 start.
@@ -1608,6 +1619,11 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     rcApprovedAnnouncements: rcApprovedAnnouncements.results,
     rcReadyAnnouncements: rcReadyAnnouncements.results,
     rcExceptionAnnouncements: rcExceptionAnnouncements.results,
+    phaseEightStartedAnnouncements: phaseEightStartedAnnouncements.results,
+    supportEscalatedAnnouncements: supportEscalatedAnnouncements.results,
+    supportSlaBreachedAnnouncements: supportSlaBreachedAnnouncements.results,
+    retentionRecoveryAnnouncements: retentionRecoveryAnnouncements.results,
+    maintenanceRenewalDueAnnouncements: maintenanceRenewalDueAnnouncements.results,
     qaReverificationAnnouncements: qaReverificationAnnouncements.results,
     m4VerifiedAnnouncements: m4VerifiedAnnouncements.results,
     buildFeedbackRoutedAnnouncements: buildFeedbackRoutedAnnouncements.results,
@@ -1766,6 +1782,11 @@ const M4_VERIFIED_JOB_KIND = HANDLER_JOB_KIND['projects:recordM4Verified'];
 const RC_APPROVED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceReleaseCandidateApproved'];
 const RC_READY_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceReleaseCandidateReady'];
 const RC_EXCEPTION_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceReleaseExceptionRequested'];
+const PHASE_EIGHT_STARTED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announcePhaseEightStarted'];
+const SUPPORT_ESCALATED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceSupportTicketEscalated'];
+const SUPPORT_SLA_BREACHED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceSupportSlaBreached'];
+const RETENTION_RECOVERY_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceRetentionRecoveryRequired'];
+const MAINTENANCE_RENEWAL_DUE_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceRenewalDue'];
 const QA_REVERIFICATION_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceQaReverification'];
 const M4_VERIFIED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceM4PaymentVerified'];
 const QA_INTAKE_JOB_KIND = HANDLER_JOB_KIND['projects:validateQaIntake'];

@@ -44,6 +44,16 @@ import {
   buildApprovedAnnouncementFor,
   m3PaymentVerifiedEventSchema,
   phaseSixReadyEventSchema,
+  phaseEightStartedEventSchema,
+  phaseEightStartedAnnouncementFor,
+  supportTicketEscalatedEventSchema,
+  supportTicketEscalatedAnnouncementFor,
+  supportSlaBreachedEventSchema,
+  supportSlaBreachedAnnouncementFor,
+  retentionRecoveryRequiredEventSchema,
+  retentionRecoveryRequiredAnnouncementFor,
+  maintenanceRenewalDueEventSchema,
+  maintenanceRenewalDueAnnouncementFor,
   phaseSixReadyAnnouncementFor,
   releaseCandidateApprovedEventSchema,
   releaseCandidateApprovedAnnouncementFor,
@@ -3521,6 +3531,83 @@ export async function announceQaReverification(admin: Admin, job: AnnounceJob): 
   return announceToInternalChannel(admin, job, {
     body: qaReverificationAnnouncementFor({ projectName }),
     externalRef: `qa-reverification:${typeof envelope.subjectId === 'string' ? envelope.subjectId : parsed.data.projectId}`,
+    projectId: parsed.data.projectId,
+  });
+}
+
+// ── Phase 8A announcers: internal channel only, once per record, never to a client ───────────────────────────────────────────────────────
+
+/** `project.phase_eight_started` -> see PM_TEMPLATES. Internal channel only; once per record (keyed by it). */
+export async function announcePhaseEightStarted(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = phaseEightStartedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.phase_eight_started payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: phaseEightStartedAnnouncementFor({ projectName }),
+    externalRef: `phase-eight-started:${parsed.data.projectId}`,
+    projectId: parsed.data.projectId,
+  });
+}
+
+/** `support.ticket_escalated` -> see PM_TEMPLATES. Internal channel only; once per record (keyed by it). */
+export async function announceSupportTicketEscalated(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = supportTicketEscalatedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed support.ticket_escalated payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: supportTicketEscalatedAnnouncementFor({ projectName }),
+    externalRef: `support-ticket-escalated:${parsed.data.ticketId}`,
+    projectId: parsed.data.projectId,
+  });
+}
+
+/** `support.sla_breached` -> see PM_TEMPLATES. Internal channel only; once per record (keyed by it). */
+export async function announceSupportSlaBreached(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = supportSlaBreachedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed support.sla_breached payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: supportSlaBreachedAnnouncementFor({ projectName, kind: parsed.data.kind }),
+    externalRef: `support-sla-breached:${parsed.data.ticketId}:${parsed.data.kind}`,
+    projectId: parsed.data.projectId,
+  });
+}
+
+/** `customer.retention_recovery_required` -> see PM_TEMPLATES. Internal channel only; once per record (keyed by it). */
+export async function announceRetentionRecoveryRequired(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = retentionRecoveryRequiredEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed customer.retention_recovery_required payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: retentionRecoveryRequiredAnnouncementFor({ projectName }),
+    externalRef: `retention-recovery-required:${parsed.data.planId}`,
+    projectId: parsed.data.projectId,
+  });
+}
+
+/** `maintenance.renewal_due` -> see PM_TEMPLATES. Internal channel only; once per record (keyed by it). */
+export async function announceMaintenanceRenewalDue(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = maintenanceRenewalDueEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed maintenance.renewal_due payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: maintenanceRenewalDueAnnouncementFor({ projectName }),
+    externalRef: `maintenance-renewal-due:${parsed.data.planId}:${parsed.data.endsOn ?? 'open'}`,
     projectId: parsed.data.projectId,
   });
 }

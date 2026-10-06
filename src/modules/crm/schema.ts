@@ -2067,6 +2067,11 @@ export const PM_TEMPLATES: Readonly<Record<string, { milestone: string; version:
   'qa-reverification': { milestone: 'PM6-REVERIFICATION', version: 1 },
   'task3-complete': { milestone: 'PM5-TASK3-COMPLETE', version: 1 },
   'task4-complete': { milestone: 'PM6-M07', version: 1 },
+  'phase-eight-started': { milestone: 'PM8-M01', version: 1 },
+  'support-ticket-escalated': { milestone: 'PM8-A01', version: 1 },
+  'support-sla-breached': { milestone: 'PM8-A02', version: 1 },
+  'retention-recovery-required': { milestone: 'PM8-RECOVERY', version: 1 },
+  'maintenance-renewal-due': { milestone: 'PM8-RENEWAL-DUE', version: 1 },
 };
 
 export function pmTemplateFor(externalRef: string): { milestone: string; version: number } | null {
@@ -2101,5 +2106,59 @@ export function qaReverificationAnnouncementFor(input: { projectName: string | n
     'The build changed after it was approved, so testing is being repeated on the new version.',
     `Project: ${input.projectName ?? 'an unnamed project'}`,
     'No action is needed from the client. We will confirm when the new version has been verified.',
+  ].join('\n');
+}
+
+// ── Phase 8A (Customer Success, Support, Upsell): internal-channel announcements ───────────────────────────────────────────────────────────
+// Every one goes to the INTERNAL channel, names only the project, and points at the record. None carries a ticket's text, a client's words, a health
+// signal, a price or an agent. Nothing here is ever sent to a client.
+
+/** PM8-M01 - Phase 8 started: a person defined the warranty window and the Customer Success owner was set. */
+export const phaseEightStartedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function phaseEightStartedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Phase 8 (Customer Success) has started for a completed project.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'The post-handover check-in is due. Open the project to see the warranty window and the support queue.',
+  ].join('\n');
+}
+
+/** PM8-A01 - a support ticket was escalated to a person. The reason stays on the ticket. */
+export const supportTicketEscalatedEventSchema = z.object({ projectId: z.uuid(), ticketId: z.uuid() }).strip();
+export function supportTicketEscalatedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'A support ticket was escalated and waits for a person.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Open the project: the ticket, the reason and its history are on the record.',
+  ].join('\n');
+}
+
+/** PM8-A02 - a support ticket missed a target. Which target stays on the ticket; the message never says who is late. */
+export const supportSlaBreachedEventSchema = z.object({ projectId: z.uuid(), ticketId: z.uuid(), kind: z.enum(['response', 'resolution']) }).strip();
+export function supportSlaBreachedAnnouncementFor(input: { projectName: string | null; kind: 'response' | 'resolution' }): string {
+  return [
+    `A support ticket missed its ${input.kind} target.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'It has been escalated to a person. Open the project to see the ticket and its clock.',
+  ].join('\n');
+}
+
+/** PM8-RECOVERY - an account is at risk or critical and a recovery plan was opened. The signals are read from the health snapshot, never put in the message. */
+export const retentionRecoveryRequiredEventSchema = z.object({ projectId: z.uuid(), planId: z.uuid(), status: z.enum(['at_risk', 'critical']) }).strip();
+export function retentionRecoveryRequiredAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'An account needs service recovery before any commercial outreach.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'A recovery plan is open and needs an owner, a root cause and a deadline. The contributing signals are on the project.',
+  ].join('\n');
+}
+
+/** PM8-RENEWAL-DUE - a maintenance plan entered its renewal window. A review was opened; nothing was renewed, re-dated or sent. */
+export const maintenanceRenewalDueEventSchema = z.object({ projectId: z.uuid(), planId: z.uuid(), endsOn: z.string().optional() }).strip();
+export function maintenanceRenewalDueAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'A maintenance plan is approaching its renewal date.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'A renewal review is open. Nothing has been renewed or sent: a person proposes the renewal.',
   ].join('\n');
 }
