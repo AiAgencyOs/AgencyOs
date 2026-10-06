@@ -36,6 +36,8 @@ export const HANDLERS = [
   'projects:scheduleQaJobs',
   'projects:reopenOnSourceChange',
   'crm:announceTestingStarted',
+  'crm:announceQaClarification',
+  'crm:announceQaDefectProgress',
   'projects:recordM4Verified',
   'crm:announceReleaseCandidateApproved',
   'crm:announceM4PaymentVerified',
@@ -646,6 +648,10 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   'project.phase_five_completed': ['finance:generateM3Invoice', 'crm:announceTask3Complete', 'projects:startPhaseSix'],
   /** P601 §55: an approved Master Test Plan is scheduled to the QA specialists (held, not faked, while they are disabled); the PM tells the team testing began. */
   'project.master_test_plan_approved': ['projects:scheduleQaJobs', 'crm:announceTestingStarted'],
+  /** P601 §38: QA may ask the client ONE genuinely ambiguous question; the PM is told it exists. */
+  'project.qa_clarification_requested': ['crm:announceQaClarification'],
+  /** PM6: a defect found in testing is being corrected (client-safe: severity class only). */
+  'project.qa_defect_handed_off': ['crm:announceQaDefectProgress'],
   /** PM6: the Admin approved the exact release candidate. */
   'project.release_candidate_approved': ['crm:announceReleaseCandidateApproved'],
   /** P601 §41: M4 verified paid in full, recorded once; the PM tells the team. */
@@ -703,6 +709,8 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:scheduleQaJobs': 'qa.schedule_jobs',
   'projects:reopenOnSourceChange': 'qa.reopen_on_source_change',
   'crm:announceTestingStarted': 'testing_started.announce',
+  'crm:announceQaClarification': 'qa_clarification.announce',
+  'crm:announceQaDefectProgress': 'qa_defect_progress.announce',
   'projects:recordM4Verified': 'm4.record_verified',
   'crm:announceReleaseCandidateApproved': 'release_candidate_approved.announce',
   'crm:announceM4PaymentVerified': 'm4_verified.announce',

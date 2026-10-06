@@ -170,3 +170,28 @@ describe('QA scheduling, canonical defects, source change', () => {
     assert.match(read('app/api/jobs/run/route.ts'), /handleScheduleQaJobs/);
   });
 });
+
+describe('contracts, client clarification, client-safe progress, dashboards', () => {
+  const m = read('supabase/migrations/20261101170000_contracts_are_declared_the_client_is_asked_one_question_and_progress_is_client_safe.sql');
+  const panel = read('app/(internal)/projects/[projectId]/phase-six-panel.tsx');
+  test('a contract is declared by a person with a name and a reference; none is inferred', () => {
+    assert.match(m, /each_contract_needs_a_name_and_a_reference/);
+  });
+  test('the client is asked one question at a time; the question and answer are history; the event never carries the question', () => {
+    assert.match(m, /already_open/);
+    assert.match(m, /asked once and answered once; neither is edited/);
+    assert.match(m, /the question itself is read from the row/);
+  });
+  test('the defect-progress fact carries the severity class, never the finding', () => {
+    assert.match(m, /jsonb_build_object\('projectId', v_d\.project_id, 'sLevel', v_d\.s_level\)/);
+    assert.ok(!/'title', v_d\.title/.test(m));
+  });
+  test('both PM messages are reachable', () => {
+    assert.deepEqual(subs['project.qa_clarification_requested'], ['crm:announceQaClarification']);
+    assert.deepEqual(subs['project.qa_defect_handed_off'], ['crm:announceQaDefectProgress']);
+    assert.match(read('app/api/jobs/run/route.ts'), /announceQaClarification/);
+  });
+  test('the dashboards use the project\'s own targets and never invent a threshold', () => {
+    for (const text of ['No performance targets set: none is invented', 'Over target', 'A simulator is not a device', '<DoorForm door="declare_contracts"', '<DoorForm door="ask_clarification"']) assert.ok(panel.includes(text), text);
+  });
+});

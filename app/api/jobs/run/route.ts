@@ -59,6 +59,8 @@ import {
   announceM3PaymentVerified,
   announcePhaseSixReady,
   announceTestingStarted,
+  announceQaClarification,
+  announceQaDefectProgress,
   announceReleaseCandidateApproved,
   announceM4PaymentVerified,
   announceBuildFeedbackRouted,
@@ -1236,6 +1238,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
 
   // PM6 (Phase 6 PM Agent spec): testing started, candidate approved, M4 verified.
   const testingStartedAnnouncements = await runEventJobs(admin, TESTING_STARTED_ANNOUNCE_JOB_KIND, announceTestingStarted, 'runTestingStartedAnnouncementJobs');
+  const qaClarificationAnnouncements = await runEventJobs(admin, QA_CLARIFICATION_ANNOUNCE_JOB_KIND, announceQaClarification, 'runQaClarificationAnnouncementJobs');
+  const qaDefectProgressAnnouncements = await runEventJobs(admin, QA_DEFECT_PROGRESS_ANNOUNCE_JOB_KIND, announceQaDefectProgress, 'runQaDefectProgressAnnouncementJobs');
   const rcApprovedAnnouncements = await runEventJobs(admin, RC_APPROVED_ANNOUNCE_JOB_KIND, announceReleaseCandidateApproved, 'runReleaseCandidateApprovedAnnouncementJobs');
   const m4VerifiedAnnouncements = await runEventJobs(admin, M4_VERIFIED_ANNOUNCE_JOB_KIND, announceM4PaymentVerified, 'runM4VerifiedAnnouncementJobs');
   // PM6-M01 (Phase 6 PM Agent spec): Task 4 start.
@@ -1530,6 +1534,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     m3VerifiedAnnouncements: m3VerifiedAnnouncements.results,
     phaseSixReadyAnnouncements: phaseSixReadyAnnouncements.results,
     testingStartedAnnouncements: testingStartedAnnouncements.results,
+    qaClarificationAnnouncements: qaClarificationAnnouncements.results,
+    qaDefectProgressAnnouncements: qaDefectProgressAnnouncements.results,
     rcApprovedAnnouncements: rcApprovedAnnouncements.results,
     m4VerifiedAnnouncements: m4VerifiedAnnouncements.results,
     buildFeedbackRoutedAnnouncements: buildFeedbackRoutedAnnouncements.results,
@@ -1677,6 +1683,8 @@ const PHASE_SIX_START_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseSix'];
 const QA_SCHEDULE_JOB_KIND = HANDLER_JOB_KIND['projects:scheduleQaJobs'];
 const QA_REOPEN_JOB_KIND = HANDLER_JOB_KIND['projects:reopenOnSourceChange'];
 const TESTING_STARTED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceTestingStarted'];
+const QA_CLARIFICATION_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceQaClarification'];
+const QA_DEFECT_PROGRESS_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceQaDefectProgress'];
 const M4_VERIFIED_JOB_KIND = HANDLER_JOB_KIND['projects:recordM4Verified'];
 const RC_APPROVED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceReleaseCandidateApproved'];
 const M4_VERIFIED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceM4PaymentVerified'];

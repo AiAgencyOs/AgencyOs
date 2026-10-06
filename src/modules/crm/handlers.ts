@@ -35,6 +35,10 @@ import {
   m4PaymentVerifiedAnnouncementFor,
   masterTestPlanApprovedEventSchema,
   testingStartedAnnouncementFor,
+  qaClarificationRequestedEventSchema,
+  qaClarificationAnnouncementFor,
+  qaDefectHandedOffEventSchema,
+  qaDefectProgressAnnouncementFor,
   m3PaymentVerifiedAnnouncementFor,
   buildFeedbackRoutedEventSchema,
   buildFeedbackRoutedAnnouncementFor,
@@ -3324,5 +3328,34 @@ export async function announceTestingStarted(admin: Admin, job: AnnounceJob): Pr
   return announceToInternalChannel(admin, job, {
     body: testingStartedAnnouncementFor({ projectName }),
     externalRef: `testing-started:${typeof envelope.subjectId === 'string' ? envelope.subjectId : parsed.data.projectId}`,
+  });
+}
+
+
+/** `project.qa_clarification_requested` -> the PM is told a question awaits the client. One announcement per question. */
+export async function announceQaClarification(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = qaClarificationRequestedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.qa_clarification_requested payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: qaClarificationAnnouncementFor({ projectName }),
+    externalRef: `qa-clarification:${typeof envelope.subjectId === 'string' ? envelope.subjectId : parsed.data.projectId}`,
+  });
+}
+
+/** `project.qa_defect_handed_off` -> client-safe progress. One announcement per defect. */
+export async function announceQaDefectProgress(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = qaDefectHandedOffEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.qa_defect_handed_off payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: qaDefectProgressAnnouncementFor({ projectName, sLevel: parsed.data.sLevel }),
+    externalRef: `qa-defect-progress:${typeof envelope.subjectId === 'string' ? envelope.subjectId : parsed.data.projectId}`,
   });
 }

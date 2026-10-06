@@ -1965,3 +1965,26 @@ export function testingStartedAnnouncementFor(input: { projectName: string | nul
     'We will contact you only if something genuinely needs your decision; otherwise the next update is when testing completes.',
   ].join('\n');
 }
+
+
+/** PM6: QA has a genuinely ambiguous expected behaviour to clarify. The PM reads the question from the row; the event carries only that one exists. */
+export const qaClarificationRequestedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function qaClarificationAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Testing found an expected behaviour that is genuinely ambiguous. One question is waiting to be put to the client.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Ask it as written, one question at a time, and record the answer; QA will not guess.',
+  ].join('\n');
+}
+
+/** PM6: a defect found in testing is being corrected. Client-safe: severity class only, never the finding. */
+export const qaDefectHandedOffEventSchema = z.object({ projectId: z.uuid(), sLevel: z.number() }).strip();
+export function qaDefectProgressAnnouncementFor(input: { projectName: string | null; sLevel: number }): string {
+  return [
+    input.sLevel <= 1
+      ? 'Testing found a serious issue. It is being corrected and will be independently retested before anything is approved.'
+      : 'Testing found an issue. It is being corrected and will be independently retested.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'No action is needed from the client.',
+  ].join('\n');
+}

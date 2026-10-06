@@ -852,6 +852,24 @@ select pg_temp.check((select s_level = 1 from qa.defects where id = :'RF_d'::uui
 select pg_temp.check((select outcome from qa.hand_off_defect(:'RF_d'::uuid)) = 'handed_off', 'the defect is handed to the Bug Fix capability with the exact build and the required retest');
 select pg_temp.check((select outcome from qa.hand_off_defect(:'RF_d'::uuid)) = 'already_handed_off', 'a duplicate handoff is not created');
 select pg_temp.check((select state from projects.phase_six where project_id = :'P_id') = 'defect_fix_loop', 'Phase 6 is in the DEFECT_FIX_LOOP');
+select pg_temp.check((select count(*) from core.outbox_events where type = 'project.qa_defect_handed_off' and subject_id = :'RF_d'::uuid) = 1 and not exists (select 1 from core.outbox_events where type = 'project.qa_defect_handed_off' and payload::text ilike '%tenant%'), 'the handoff emits a client-safe progress fact: severity only, never the finding');
+-- the declared contracts the QA tests against
+select pg_temp.check((select outcome from qa.declare_intake_contracts(:'P_id', '[{"name":"Cart API"}]')) = 'each_contract_needs_a_name_and_a_reference', 'a contract needs a name and a reference: none is inferred');
+select pg_temp.check((select outcome from qa.declare_intake_contracts(:'P_id', '[{"name":"Cart API","ref":"docs/api/cart.openapi.yaml"}]')) = 'declared', 'the API contract the tests run against is declared by a person');
+select pg_temp.check((select jsonb_array_length(api_contract_refs) = 1 from projects.qa_intakes where project_id = :'P_id'), 'and recorded on the intake');
+-- the client is asked one genuinely ambiguous question, once, and the answer is a recorded fact
+select pg_temp.check((select outcome from qa.ask_clarification(:'P_id', '   ', :'CS1_c1')) = 'invalid_question', 'an empty question is refused');
+select clarification_id as cq from qa.ask_clarification(:'P_id', 'Should a refunded order still show a receipt?', :'CS1_c1') \gset CQ_
+select pg_temp.check(:'CQ_cq' <> '', 'QA asks one question about an ambiguous expected behaviour');
+select pg_temp.check((select outcome from qa.ask_clarification(:'P_id', 'And another?', :'CS1_c1')) = 'already_open', 'one open question per case: the client is asked one thing at a time');
+select pg_temp.check((select count(*) from core.outbox_events where type = 'project.qa_clarification_requested' and subject_id = :'CQ_cq'::uuid) = 1 and not exists (select 1 from core.outbox_events where type = 'project.qa_clarification_requested' and payload::text ilike '%refunded%'), 'the PM is told a question exists; the question itself is read from the row, not carried in the event');
+select pg_temp.check((select outcome from qa.answer_clarification(:'CQ_cq'::uuid, '')) = 'answer_required', 'an answer cannot be empty');
+select pg_temp.check((select outcome from qa.answer_clarification(:'CQ_cq'::uuid, 'Yes: a refund keeps the receipt, marked refunded.')) = 'answered', 'the answer is recorded');
+select pg_temp.check((select outcome from qa.answer_clarification(:'CQ_cq'::uuid, 'Actually no.')) = 'already_answered', 'asked once, answered once: the answer is not rewritten');
+reset role;
+select pg_temp.check(pg_temp.refused(format('update qa.qa_clarifications set question = ''changed'' where id = %L', :'CQ_cq'), 'neither is edited'), 'the question is history');
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
 select pg_temp.check((select (context->>'foundCommit') = 'abc1234' and (requirements->>'qaMustRetestFixedBuild')::boolean from ai.handoffs where subject_type = 'defect' and subject_id = :'RF_d'::uuid), 'the handoff carries the exact commit and says QA must retest the fixed build');
 -- a failing case that is really a test defect, and a client request that is really a Change Request: neither is a product defect
 select outcome as o, defect_id as d from qa.record_case_result(:'CS2_c2', 'fail', 'https://qa.example.test/2', 'the checkout button was not found') \gset RF2_

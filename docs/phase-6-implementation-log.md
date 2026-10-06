@@ -15,5 +15,7 @@ All proven against a real scratch Postgres; each control removed, watched to fai
 
 - **Remaining tasks** `20261101160000`: QA job scheduling with safe-parallelism rules (held, never faked, while disabled), canonical-defect linking, `reopen_on_source_change` + `phase_seven_candidate_current`, intake platform + change-request history; handlers on plan approval and every new build; panel sections.
 
+- **Part 2** `20261101170000`: declared API/data contracts on the intake; client clarification (one question per case, asked once, answered once); a client-safe defect-progress fact; two PM6 messages; panel dashboards for performance (the project's own targets), devices and the compatibility matrix.
+
 ## Not built
-Any test runner or specialist actually running; the rest of the client-facing PM6 set; performance/device dashboards; the intake's API/data-contract field.
+Any test runner or specialist actually running (needs a funded model key, runners and environments); a stored PM message-template version and delivery record beyond the generic outbound log.

@@ -18,7 +18,7 @@ const RESULT_TONE: Record<string, Tone> = { pass: 'success', fail: 'danger', blo
 const CATEGORIES: [string, string][] = ['functional', 'ui_e2e', 'api', 'integration', 'database', 'security', 'performance', 'compatibility', 'regression'].map((c) => [c, humanize(c)]);
 
 export function PhaseSixPanel({ view, projectId }: { view: PhaseSixOverview; projectId: string }) {
-  const { workspace, gates, intake, plan, defects, candidate, completion, phaseSevenIntake, jobs, candidateCurrent } = view;
+  const { workspace, gates, intake, plan, defects, candidate, completion, phaseSevenIntake, jobs, candidateCurrent, contracts, clarifications, performance, devices, compatibilityMatrix } = view;
 
   if (!workspace) {
     return (
@@ -69,6 +69,65 @@ export function PhaseSixPanel({ view, projectId }: { view: PhaseSixOverview; pro
           <p className="text-xs text-muted">Not validated yet.</p>
         )}
         <DoorForm door="validate_intake" projectId={projectId} submit="Validate the intake against the exact Phase 5 build" />
+        <span className="text-xs text-faint">API / data contracts the tests run against (declared, never inferred)</span>
+        {contracts.length === 0 ? <p className="text-xs text-muted">None declared.</p> : (
+          <ul className="list-disc pl-5 text-xs text-muted">{contracts.map((c) => (<li key={c.name}>{c.name}: {c.ref}</li>))}</ul>
+        )}
+        {intake ? (
+          <details>
+            <summary className="cursor-pointer text-xs underline underline-offset-2">Declare contracts</summary>
+            <DoorForm door="declare_contracts" projectId={projectId} submit="Declare" fields={[{ kind: 'textarea', name: 'contracts', label: 'One per line: name | reference (file, link or document id)', required: true }]} />
+          </details>
+        ) : null}
+        <span className="text-xs text-faint">Questions for the client (one at a time; QA does not guess)</span>
+        {clarifications.length === 0 ? <p className="text-xs text-muted">None.</p> : (
+          <ul className="flex flex-col gap-1 text-xs text-muted">
+            {clarifications.map((q) => (
+              <li key={q.id} className="flex flex-wrap items-center gap-2">
+                <Badge tone={q.status === 'answered' ? 'success' : 'warning'}>{humanize(q.status)}</Badge>
+                <span>{q.question}</span>
+                {q.answer ? <span>→ {q.answer}</span> : (
+                  <details>
+                    <summary className="cursor-pointer underline underline-offset-2">Record the answer</summary>
+                    <DoorForm door="answer_clarification" projectId={projectId} hidden={{ clarificationId: q.id }} submit="Record answer" fields={[{ kind: 'textarea', name: 'answer', label: "The client's answer", required: true }]} />
+                  </details>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        <details>
+          <summary className="cursor-pointer text-xs underline underline-offset-2">Ask the client a question</summary>
+          <DoorForm door="ask_clarification" projectId={projectId} submit="Ask" intro="Only for a genuinely ambiguous expected behaviour. The PM relays it as written."
+            fields={[{ kind: 'textarea', name: 'question', label: 'The question', required: true }, { kind: 'text', name: 'caseId', label: 'Test case id it blocks (optional)' }]} />
+        </details>
+      </section>
+
+      <section className="flex flex-col gap-1 border-t border-line pt-3">
+        <span className="text-xs font-medium uppercase tracking-wide text-faint">Performance (against this project's own targets)</span>
+        {performance.length === 0 ? <p className="text-xs text-muted">No performance targets set: none is invented.</p> : (
+          <ul className="flex flex-col gap-1 text-xs text-muted">
+            {performance.map((m) => (
+              <li key={m.metric} className="flex flex-wrap items-center gap-2">
+                <Badge tone={m.ok === null ? 'neutral' : m.ok ? 'success' : 'danger'}>{m.ok === null ? 'No measurement' : m.ok ? 'Within target' : 'Over target'}</Badge>
+                <span>{m.metric}: target {m.lowerIsBetter ? '≤' : '≥'} {m.target} {m.unit}</span>
+                <span>{m.latest === null ? 'not measured' : `latest ${m.latest} ${m.unit}`}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-1 border-t border-line pt-3">
+        <span className="text-xs font-medium uppercase tracking-wide text-faint">Compatibility and devices</span>
+        <p className="text-xs text-muted">{compatibilityMatrix.length > 0 ? `The plan declares ${compatibilityMatrix.length} target(s).` : 'The plan declares no matrix.'} A simulator is not a device, one browser is not all browsers, and an unavailable target is BLOCKED, never a pass.</p>
+        {devices.length === 0 ? <p className="text-xs text-muted">No devices configured.</p> : (
+          <ul className="flex flex-wrap gap-2 text-xs text-muted">
+            {devices.map((d) => (
+              <li key={d.name} title={d.reason ?? undefined}>{d.name} ({d.platform}): <Badge tone={d.status === 'supported' ? 'success' : 'neutral'}>{humanize(d.status)}</Badge></li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="flex flex-col gap-2 border-t border-line pt-3">

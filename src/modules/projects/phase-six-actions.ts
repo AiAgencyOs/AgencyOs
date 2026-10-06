@@ -107,6 +107,15 @@ const DOORS: Record<string, Door> = {
   mark_duplicate: { schema: 'qa', rpc: 'mark_duplicate', args: (fd) => ({ p_defect_id: text(fd, 'defectId'), p_canonical_id: text(fd, 'canonicalId'), p_reason: optional(fd, 'reason') }), ok: ['marked'] },
   schedule_jobs: { schema: 'qa', rpc: 'schedule_plan_jobs', args: (fd) => ({ p_plan_id: text(fd, 'planId') }), ok: ['scheduled'] },
   reopen_on_change: { schema: 'qa', rpc: 'reopen_on_source_change', args: (fd) => ({ p_project_id: text(fd, 'projectId') }), ok: ['reopened', 'source_unchanged', 'already_stale'] },
+  declare_contracts: {
+    schema: 'qa',
+    rpc: 'declare_intake_contracts',
+    // one contract per line as "name | reference"
+    args: (fd) => ({ p_project_id: text(fd, 'projectId'), p_refs: lines(fd, 'contracts').map((l) => { const [name, ...rest] = l.split('|'); return { name: (name ?? '').trim(), ref: rest.join('|').trim() }; }) }),
+    ok: ['declared'],
+  },
+  ask_clarification: { schema: 'qa', rpc: 'ask_clarification', args: (fd) => ({ p_project_id: text(fd, 'projectId'), p_question: text(fd, 'question'), p_case_id: optional(fd, 'caseId') }), ok: ['asked'] },
+  answer_clarification: { schema: 'qa', rpc: 'answer_clarification', args: (fd) => ({ p_clarification_id: text(fd, 'clarificationId'), p_answer: text(fd, 'answer') }), ok: ['answered'] },
   complete_phase: { schema: 'projects', rpc: 'complete_phase', args: (fd) => ({ p_project_id: text(fd, 'projectId'), p_phase: 6 }), ok: ['completed', 'already_completed'] },
 };
 
@@ -152,6 +161,14 @@ const WORDS: Record<string, string> = {
   no_approved_plan: 'There is no approved Master Test Plan.',
   candidate_exists_for_this_commit: 'A candidate for this exact commit already exists.',
   note_required: 'A note is required.',
+  declared: 'Contracts declared on the intake.',
+  asked: 'Asked. The PM relays one question at a time; QA will not guess.',
+  answered: 'Answer recorded.',
+  already_open: 'That case already has an open question.',
+  already_answered: 'Already answered; an answer is not rewritten.',
+  answer_required: 'An answer is required.',
+  invalid_question: 'A question needs words.',
+  each_contract_needs_a_name_and_a_reference: 'Each contract needs a name and a reference (one per line: name | reference).',
   marked: 'Linked to the canonical defect; its evidence is kept there.',
   scheduled: 'Scheduled. Jobs for a specialist that is not enabled are held, not started.',
   source_unchanged: 'The build is unchanged: the approval still stands.',

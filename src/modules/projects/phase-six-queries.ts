@@ -45,6 +45,11 @@ export type PhaseSixOverview = {
     cases: { id: string; title: string; category: string; priority: string; status: string; journey: string | null }[];
   } | null;
   defects: { id: string; title: string; sLevel: number | null; classification: string; status: string; duplicateOf: string | null }[];
+  contracts: { name: string; ref: string }[];
+  clarifications: { id: string; question: string; status: string; answer: string | null }[];
+  performance: { metric: string; target: number; unit: string; lowerIsBetter: boolean; latest: number | null; ok: boolean | null }[];
+  devices: { name: string; platform: string; status: string; reason: string | null }[];
+  compatibilityMatrix: unknown[];
   jobs: { category: string; specialist: string; mode: string; status: string; reason: string; dependsOn: string[] }[];
   candidateCurrent: boolean;
   candidate: {
@@ -71,7 +76,7 @@ export async function readPhaseSixOverview(projectId: string): Promise<PhaseSixO
   const projects = supabase.schema('projects') as unknown as Loose;
   const qa = supabase.schema('qa') as unknown as Loose;
 
-  const { data: ws, error: wsError } = await projects.from('phase_six').select('id, state, blocked_reason').eq('project_id', projectId).maybeSingle();
+  const { data: ws, error: wsError } = await projects.from('phase_six').select('id, organization_id, state, blocked_reason').eq('project_id', projectId).maybeSingle();
   if (wsError) unreadable('readPhaseSixOverview.workspace', wsError);
 
   const [
@@ -85,17 +90,25 @@ export async function readPhaseSixOverview(projectId: string): Promise<PhaseSixO
     { data: completion, error: completionError },
     { data: handoffRow, error: handoffError },
     { data: currentRaw, error: currentError },
+    { data: clarRows, error: clarError },
+    { data: budgetRows, error: budgetError },
+    { data: metricRows, error: metricError },
+    { data: deviceRows, error: deviceError },
   ] = await Promise.all([
     projects.rpc('m3_verified_paid', { p_project_id: projectId }),
     projects.rpc('m4_verified_paid', { p_project_id: projectId }),
     projects.rpc('phase_seven_gate_status', { p_project_id: projectId }),
     projects.from('qa_intakes').select('status, commit_ref, artifact_sha256, blockers, external_dependencies, supported_platforms, change_request_history').eq('project_id', projectId).maybeSingle(),
-    qa.from('master_test_plans').select('id, version, status, required_categories, critical_journeys').eq('project_id', projectId).order('version', { ascending: false }).limit(1),
+    qa.from('master_test_plans').select('id, version, status, required_categories, critical_journeys, compatibility_matrix').eq('project_id', projectId).order('version', { ascending: false }).limit(1),
     qa.from('defects').select('id, title, s_level, classification, status, duplicate_of').eq('project_id', projectId).order('created_at', { ascending: true }).limit(200),
     qa.from('release_candidates').select('id, version, status, commit_ref, artifact_sha256, rollback_plan, observability_notes, config_version').eq('project_id', projectId).order('version', { ascending: false }).limit(1),
     projects.rpc('phase_readiness', { p_project_id: projectId, p_phase: 6 }),
     projects.from('phase_six_handoffs').select('id, commit_ref, production_deployed').eq('project_id', projectId).maybeSingle(),
     projects.rpc('phase_seven_candidate_current', { p_project_id: projectId }),
+    qa.from('qa_clarifications').select('id, question, status, answer').eq('project_id', projectId).order('created_at', { ascending: true }).limit(50),
+    qa.from('performance_budgets').select('metric, target, unit, lower_is_better').eq('project_id', projectId).limit(50),
+    qa.from('metric_results').select('metric, value, unit, created_at, test_runs!inner(project_id)').eq('test_runs.project_id', projectId).order('created_at', { ascending: false }).limit(200),
+    qa.from('device_configurations').select('name, platform, status, reason').eq('organization_id', ((ws as Row | null)?.organization_id as string | undefined) ?? '00000000-0000-0000-0000-000000000000').order('name', { ascending: true }).limit(60),
   ]);
   if (m3Error) unreadable('readPhaseSixOverview.m3', m3Error);
   if (m4Error) unreadable('readPhaseSixOverview.m4', m4Error);
@@ -107,6 +120,10 @@ export async function readPhaseSixOverview(projectId: string): Promise<PhaseSixO
   if (completionError) unreadable('readPhaseSixOverview.completion', completionError);
   if (handoffError) unreadable('readPhaseSixOverview.phaseSevenIntake', handoffError);
   if (currentError) unreadable('readPhaseSixOverview.candidateCurrent', currentError);
+  if (clarError) unreadable('readPhaseSixOverview.clarifications', clarError);
+  if (budgetError) unreadable('readPhaseSixOverview.performanceBudgets', budgetError);
+  if (metricError) unreadable('readPhaseSixOverview.metrics', metricError);
+  if (deviceError) unreadable('readPhaseSixOverview.devices', deviceError);
 
   let plan: PhaseSixOverview['plan'] = null;
   let jobs: PhaseSixOverview['jobs'] = [];
@@ -195,6 +212,17 @@ export async function readPhaseSixOverview(projectId: string): Promise<PhaseSixO
       .map((d) => ({ id: String(d.id), title: String(d.title), sLevel: num(d.s_level), classification: String(d.classification), status: String(d.status), duplicateOf: str(d.duplicate_of) })),
     jobs,
     candidateCurrent: currentRaw === true,
+    contracts: rows(intake?.api_contract_refs).map((c) => ({ name: String(c.name), ref: String(c.ref) })),
+    clarifications: rows(clarRows).map((c) => ({ id: String(c.id), question: String(c.question), status: String(c.status), answer: str(c.answer) })),
+    performance: rows(budgetRows).map((b) => {
+      const latest = rows(metricRows).find((m) => m.metric === b.metric);
+      const value = latest ? Number(latest.value) : null;
+      const target = Number(b.target);
+      const lower = b.lower_is_better === true;
+      return { metric: String(b.metric), target, unit: String(b.unit), lowerIsBetter: lower, latest: value, ok: value === null ? null : lower ? value <= target : value >= target };
+    }),
+    devices: rows(deviceRows).map((d) => ({ name: String(d.name), platform: String(d.platform), status: String(d.status), reason: str(d.reason) })),
+    compatibilityMatrix: (planRow?.compatibility_matrix as unknown[] | null) ?? [],
     candidate,
     completion: done ? { outcome: String(done.outcome), missing: (done.missing as string[] | null) ?? [] } : null,
     phaseSevenIntake: handoff ? { id: String(handoff.id), commit: String(handoff.commit_ref), productionDeployed: handoff.production_deployed === true } : null,
