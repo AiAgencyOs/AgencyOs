@@ -591,6 +591,26 @@ select pg_temp.check((select outcome from projects.record_technical_document(:'P
 select pg_temp.check((select outcome from projects.record_technical_document(:'P_id', 'api', 'Cart API', 'implemented', null, null, 'POST /cart')) = 'invalid', 'IMPLEMENTED with no evidence is refused');
 select pg_temp.check((select outcome from projects.record_technical_document(:'P_id', 'api', 'Cart API', 'implemented', 'src/cart/route.ts', null, 'POST /cart')) = 'recorded', 'IMPLEMENTED names the evidence it was derived from');
 select pg_temp.check((select outcome from projects.record_technical_document(:'P_id', 'architecture', 'Config', 'implemented', 'docs/config.md', null, 'RAZORPAY_API_KEY=sk-abcdefghijklmnopqrstuvwx')) = 'refused', 'a secret value is never written into a document');
+-- a runner's machine-readable report: counts are computed, flaky is not green, the evidence is named
+select pg_temp.check((select outcome from qa.ingest_test_report(:'BD1_bd', 'functional', '{"tests":[]}')) = 'empty_report', 'an empty report is refused');
+select pg_temp.check((select outcome from qa.ingest_test_report(:'BD1_bd', 'functional', '{"tests":[{"name":"a","status":"passed"},{"name":"a","status":"passed"}]}')) = 'duplicate_test_names', 'a report that names a test twice is refused');
+select pg_temp.check((select outcome from qa.ingest_test_report(:'BD1_bd', 'functional', '{"total":9,"tests":[{"name":"a","status":"passed"}]}')) = 'inconsistent_report', 'a header that disagrees with the tests is refused: counts are computed, never trusted');
+select pg_temp.check((select outcome from qa.ingest_test_report(:'BD1_bd', 'functional', '{"tests":[{"name":"a","status":"mostly"}]}')) = 'malformed_report', 'an unknown status is refused');
+select outcome as o, run_id as r, passed as p, failed as f, flaky as k from qa.ingest_test_report(:'BD1_bd', 'functional', '{"total":3,"tests":[{"name":"cart.add","status":"passed"},{"name":"cart.pay","status":"flaky","retries":2},{"name":"cart.remove","status":"skipped"}]}') \gset ING_
+select pg_temp.check(:'ING_o' = 'ingested' and :'ING_p'::int = 1 and :'ING_f'::int = 1 and :'ING_k'::int = 1, 'a test that passed only on retry is counted as a FAILURE of the run, not a pass');
+select pg_temp.check((select failed = 1 and passed = 1 and total = 3 from qa.test_runs where id = :'ING_r'), 'the run row carries the computed counts');
+select pg_temp.check((select count(*) from qa.test_run_cases where test_run_id = :'ING_r') = 3, 'every test is stored as a machine-readable row');
+select pg_temp.check((select status from qa.flaky_tests where project_id = :'P_id' and test_key = 'cart.pay') = 'open', 'the flaky test is filed for an owner (and blocks completion until resolved)');
+select flaky_id as fi from qa.record_flaky_test(:'P_id', 'cart.pay') \gset ING2_
+select qa.resolve_flaky_test(:'ING2_fi', 'resolve', 'removed the shared fixture; fixed in abc1234');
+reset role;
+select pg_temp.as_service();
+set local role service_role;
+select pg_temp.check((select outcome from qa.ingest_test_report(:'BD1_bd', 'api', '{"tests":[{"name":"x","status":"passed"}]}')) = 'evidence_required', 'a CI runner must name the evidence its report came from');
+select pg_temp.check((select outcome from qa.ingest_test_report(:'BD1_bd', 'api', '{"tests":[{"name":"x","status":"passed"}]}', 'https://ci.example.test/run/1')) = 'ingested', 'with its evidence a runner''s report is ingested');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
 reset role;
 
 -- 19c. Phase 5 completes only when the DoD holds, and hands Phase 6 a frozen intake

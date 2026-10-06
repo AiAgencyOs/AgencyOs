@@ -48,7 +48,7 @@ export type PhaseFiveOverview = {
     status: string;
     summary: string;
     problems: string[];
-    tasks: { id: string; title: string; capability: string | null; hasCriteria: boolean; status: string }[];
+    tasks: { id: string; title: string; capability: string | null; hasCriteria: boolean; status: string; waitsFor: { title: string; status: string }[] }[];
   } | null;
   unplannedTasks: { id: string; title: string }[];
   flaky: { id: string; testKey: string; status: string; occurrences: number; expiresAt: string | null }[];
@@ -202,6 +202,20 @@ export async function readPhaseFiveOverview(projectId: string): Promise<PhaseFiv
     ]);
     if (planTaskError) unreadable('readPhaseFiveOverview.planTasks', planTaskError);
     if (problemError) unreadable('readPhaseFiveOverview.planProblems', problemError);
+    const planTaskIds = ((planTaskRows ?? []) as Row[]).map((t) => String(t.id));
+    const { data: dependencyRows, error: dependencyError } =
+      planTaskIds.length === 0
+        ? { data: [] as Row[], error: null }
+        : await projects.from('task_dependencies').select('task_id, depends_on:tasks!task_dependencies_depends_on_task_id_fkey(title, status)').in('task_id', planTaskIds);
+    if (dependencyError) unreadable('readPhaseFiveOverview.dependencies', dependencyError);
+    const waits = new Map<string, { title: string; status: string }[]>();
+    for (const d of (dependencyRows ?? []) as Row[]) {
+      const dep = Array.isArray(d.depends_on) ? (d.depends_on[0] as Row | undefined) : (d.depends_on as Row | null);
+      if (!dep) continue;
+      const list = waits.get(String(d.task_id)) ?? [];
+      list.push({ title: String(dep.title), status: String(dep.status) });
+      waits.set(String(d.task_id), list);
+    }
     plan = {
       id: planId,
       version: Number(planRow.version),
@@ -214,6 +228,7 @@ export async function readPhaseFiveOverview(projectId: string): Promise<PhaseFiv
         capability: str(t.required_capability),
         hasCriteria: typeof t.acceptance_criteria === 'string' && t.acceptance_criteria.trim().length > 0,
         status: String(t.status),
+        waitsFor: waits.get(String(t.id)) ?? [],
       })),
     };
   }

@@ -115,6 +115,12 @@ export function PhaseFivePanel({ view, projectId }: { view: PhaseFiveOverview; p
                   <span>{t.title}</span>
                   <Badge tone={t.capability ? 'info' : 'warning'}>{t.capability ? humanize(t.capability) : 'No specialist'}</Badge>
                   {t.hasCriteria ? null : <span className="text-danger">no acceptance criteria</span>}
+                  {t.waitsFor.length > 0 ? (
+                    <span>
+                      waits for:{' '}
+                      {t.waitsFor.map((w) => `${w.title} (${w.status === 'done' ? 'done' : humanize(w.status)})`).join(', ')}
+                    </span>
+                  ) : null}
                 </li>
               ))}
             </ul>

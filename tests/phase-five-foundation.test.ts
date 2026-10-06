@@ -176,7 +176,7 @@ describe('the remaining records are readable and operable from the panel', () =>
     }
   });
   test('the new reads are guarded like the rest', () => {
-    for (const scope of ['plan', 'planTasks', 'planProblems', 'flaky', 'documents', 'tasks']) {
+    for (const scope of ['plan', 'planTasks', 'planProblems', 'dependencies', 'flaky', 'documents', 'tasks', 'routing', 'testGaps', 'staleDocuments', 'runs']) {
       assert.match(queries, new RegExp(`unreadable\\('readPhaseFiveOverview\\.${scope}'`), scope);
     }
   });
@@ -216,5 +216,19 @@ describe('traceable evidence, stored routing decisions, derived documents', () =
   });
   test('the panel shows all three', () => {
     for (const text of ['Test evidence per task', 'Routing decisions', '<DeriveDocumentsForm', '<LinkTestRunForm', 'are stale']) assert.ok(panel.includes(text), text);
+  });
+});
+
+
+describe('machine-readable reports and the dependency view', () => {
+  const migration = read('supabase/migrations/20261031300000_a_runners_report_is_ingested_and_flaky_is_not_green.sql');
+  test('a report is computed, never trusted; flaky counts as a failure of the run', () => {
+    assert.match(migration, /inconsistent_report/);
+    assert.match(migration, /v_total, v_passed, v_failed \+ v_flaky, v_skipped/);
+    assert.match(migration, /FLAKY != PASS/);
+    assert.match(migration, /evidence_required/);
+  });
+  test('the plan shows what each task waits for', () => {
+    assert.match(read('app/(internal)/projects/[projectId]/phase-five-panel.tsx'), /waits for:/);
   });
 });
