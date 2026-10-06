@@ -1270,5 +1270,10 @@ reset role;
 insert into projects.release_payment_overrides (organization_id, project_id, overridden_by, reason) values (:'ORG', :'P_id', :'OWNER', 'a legacy override row exists');
 select pg_temp.check((select state from projects.final_payment_state(:'P_id')) is distinct from 'overridden', 'an old override row no longer satisfies the final payment of a Phase 6 project');
 
+
+-- races: the doors take the lock their check depends on (the live definitions, not the migration text)
+select pg_temp.check((select prosrc ~ 'from projects\.projects p where p\.id = v_base for update' from pg_proc where oid = 'projects.start_task(uuid)'::regprocedure), 'start_task serializes starts in a project (locks the project row before checking path conflicts)');
+select pg_temp.check((select bool_and(prosrc ~ 'qa\.defects d where d\.id = p_defect_id and d\.organization_id = v_org for update') from pg_proc where proname = 'hand_off_defect' and pronamespace = 'qa'::regnamespace), 'hand_off_defect locks the defect before checking it was not already handed off');
+
 rollback;
 \echo PHASE 4 E2E OK

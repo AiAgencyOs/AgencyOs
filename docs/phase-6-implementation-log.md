@@ -53,3 +53,7 @@ All three are red-proven in `scripts/verify-phase-four-e2e.sql`.
 ### Local Supabase
 
 The 47 pending migrations were applied to the local dev DB (479 recorded). That database already contained objects from several of them (applied outside the migration table), so 20261012300000, 20261013200000, 20261013300000 and 20261014300000 were replayed tolerantly and recorded with `migration repair`; 20261016100000 was applied with `discount_decision` kept in its subject-type CHECK because 4 local approval rows use it (20261030100000 re-adds it anyway). All 7 Phase 4-6 verifiers pass on that database (E2E 422 checks).
+
+### Races (migration `20261101220000`)
+
+`start_task` locks the project row before the path-conflict check, and `qa.hand_off_defect` locks the defect row before checking it was not already handed off (review item 10). The verifier checks the live definitions contain the locks; a true two-session concurrency test was not run.
