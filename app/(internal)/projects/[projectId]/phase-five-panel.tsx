@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import type { BuildBlockerRow, BuildRunRow, EscalationRow, PhaseFiveOverview, PmMessageRow, PmOverview, TaskBoard } from '@/modules/projects/phase-five-queries';
+import type { BuildBlockerRow, BuildRunRow, RecordsView, EscalationRow, PhaseFiveOverview, PmMessageRow, PmOverview, TaskBoard } from '@/modules/projects/phase-five-queries';
 import { Badge, Card, humanize, type Tone } from '@/ui';
 
 import {
@@ -472,6 +472,59 @@ export function WorkboardPanel({ board, runs, projectId, blockers = [] }: { boar
               <span className="text-muted">{r.commit} · {r.environment} · attempt {r.attempt}{r.manual ? ' · recorded by hand, not by CI' : ''}{r.sha256 ? ` · sha256 ${r.sha256.slice(0, 12)}…` : ''}</span>
               <span className="text-muted">{r.stages.map((s) => `${s.name}:${s.status}`).join(' → ')}</span>
             </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+
+/** Admin Panel record views: the M3 payment, feature coverage, change requests and repositories. Read-only; every number comes from its own door. */
+export function RecordsPanel({ view }: { view: RecordsView }) {
+  const money = (minor: number) => (minor / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (
+    <Card>
+      <h3 className="text-[15px] font-semibold">M3 payment</h3>
+      {view.m3 ? (
+        <p className="mt-1 text-[13px]">
+          <span className="font-medium">{view.m3.number}</span> <Badge tone={view.m3.verifiedPaid ? 'success' : 'warning'}>{view.m3.verifiedPaid ? 'Verified paid' : humanize(view.m3.status)}</Badge>{' '}
+          <span className="text-muted">verified {money(view.m3.verifiedMinor)} of {money(view.m3.totalMinor)}. Only an Admin verifying the payment opens Phase 6.</span>
+        </p>
+      ) : (
+        <p className="mt-1 text-[13px] text-muted">No M3 invoice exists yet.</p>
+      )}
+      <h3 className="mt-4 text-[15px] font-semibold">Feature coverage</h3>
+      {view.features.length === 0 ? (
+        <p className="mt-1 text-[13px] text-muted">No features are planned for this project.</p>
+      ) : (
+        <ul className="mt-1 flex flex-col gap-1 text-[13px]">
+          {view.features.map((f) => (
+            <li key={f.id} className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">{f.name}</span>
+              <Badge tone={f.tasks === 0 ? 'danger' : f.withEvidence === f.tasks ? 'success' : 'warning'}>{f.tasks === 0 ? 'No task' : `${f.withEvidence}/${f.tasks} tested`}</Badge>
+              <span className="text-muted">{f.done}/{f.tasks} done{view.commit ? ` · build ${view.commit}` : ''}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <h3 className="mt-4 text-[15px] font-semibold">Change requests</h3>
+      {view.changeRequests.length === 0 ? (
+        <p className="mt-1 text-[13px] text-muted">None. Anything the client adds beyond the approved scope becomes one; it is never built as free work.</p>
+      ) : (
+        <ul className="mt-1 flex flex-col gap-1 text-[13px]">
+          {view.changeRequests.map((c) => (
+            <li key={c.id} className="flex flex-wrap items-center gap-2"><Badge tone="neutral">{humanize(c.status)}</Badge><span>{c.requested}</span>{c.classification ? <span className="text-muted">({humanize(c.classification)})</span> : null}</li>
+          ))}
+        </ul>
+      )}
+      <h3 className="mt-4 text-[15px] font-semibold">Repositories</h3>
+      {view.repositories.length === 0 ? (
+        <p className="mt-1 text-[13px] text-muted">No repository is linked.</p>
+      ) : (
+        <ul className="mt-1 flex flex-col gap-1 text-[13px]">
+          {view.repositories.map((r) => (
+            <li key={r.id}><span className="font-medium">{r.name}</span> <span className="text-muted">{humanize(r.platform)} · {r.defaultBranch ?? 'no default branch recorded'} · {r.url}</span></li>
           ))}
         </ul>
       )}

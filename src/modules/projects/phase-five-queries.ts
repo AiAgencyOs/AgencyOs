@@ -474,3 +474,36 @@ export async function readBuildBlockers(projectId: string): Promise<BuildBlocker
   }
   return rows.map((r) => ({ id: r.id, type: r.blocker_type, owner: r.owner, resumeCondition: r.resume_condition, buildVersion: versions.get(r.deliverable_id) ?? 0 }));
 }
+
+export type RecordsView = {
+  m3: { number: string; status: string; totalMinor: number; verifiedMinor: number; verifiedPaid: boolean } | null;
+  features: { id: string; name: string; tasks: number; done: number; withEvidence: number }[];
+  changeRequests: { id: string; requested: string; status: string; classification: string | null; decidedAt: string | null }[];
+  repositories: { id: string; name: string; platform: string; url: string; defaultBranch: string | null }[];
+  commit: string | null;
+};
+
+/** The Admin Panel's record views: M3 invoice and payment, feature coverage, change requests, repositories. Read-only. */
+export async function readPhaseFiveRecords(projectId: string): Promise<RecordsView> {
+  const supabase = await createClient();
+  const projects = supabase.schema('projects');
+  const [m3, coverage, crs, repos] = await Promise.all([
+    projects.rpc('m3_invoice_summary' as never, { p_project_id: projectId } as never),
+    projects.rpc('feature_coverage' as never, { p_project_id: projectId } as never),
+    projects.from('change_requests').select('id, requested, status, classification, decided_at').eq('project_id', projectId).order('created_at', { ascending: false }).limit(20),
+    projects.from('repositories').select('id, name, platform, url, default_branch').eq('project_id', projectId).order('created_at', { ascending: true }).limit(20),
+  ]);
+  if (m3.error) unreadable('readPhaseFiveRecords.m3', m3.error);
+  if (coverage.error) unreadable('readPhaseFiveRecords.coverage', coverage.error);
+  if (crs.error) unreadable('readPhaseFiveRecords.changeRequests', crs.error);
+  if (repos.error) unreadable('readPhaseFiveRecords.repositories', repos.error);
+  const m3row = ((Array.isArray(m3.data) ? m3.data[0] : m3.data) ?? null) as { invoice_number: string; status: string; total_minor: number; verified_minor: number; verified_paid: boolean } | null;
+  const features = ((coverage.data ?? []) as unknown as { feature_id: string; feature: string; tasks: number; tasks_done: number; tasks_with_passing_evidence: number; build_commit: string | null }[]);
+  return {
+    m3: m3row ? { number: m3row.invoice_number, status: m3row.status, totalMinor: Number(m3row.total_minor), verifiedMinor: Number(m3row.verified_minor), verifiedPaid: m3row.verified_paid === true } : null,
+    features: features.map((f) => ({ id: f.feature_id, name: f.feature, tasks: f.tasks, done: f.tasks_done, withEvidence: f.tasks_with_passing_evidence })),
+    changeRequests: ((crs.data ?? []) as { id: string; requested: string; status: string; classification: string | null; decided_at: string | null }[]).map((c) => ({ id: c.id, requested: c.requested, status: c.status, classification: c.classification, decidedAt: c.decided_at })),
+    repositories: ((repos.data ?? []) as { id: string; name: string; platform: string; url: string; default_branch: string | null }[]).map((r) => ({ id: r.id, name: r.name, platform: r.platform, url: r.url, defaultBranch: r.default_branch })),
+    commit: features[0]?.build_commit ?? null,
+  };
+}

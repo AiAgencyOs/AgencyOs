@@ -1422,6 +1422,19 @@ select pg_temp.check((select outcome from projects.resolve_build_blocker((select
 reset role;
 
 select pg_temp.check((select prosrc ~ 'build_smoke_ready\(v_row\.id\)' and prosrc ~ 'no_smoke' from pg_proc where oid = 'projects.submit_deliverable(uuid,uuid,text)'::regprocedure), 'submit_deliverable refuses a build with no smoke verdict (the live definition carries the gate)');
+
+-- admin panel reads: the M3 invoice for staff who are not Finance, feature coverage, neither for a portal client
+select pg_temp.as_user(:'OWNER', :'ORG', 'delivery_lead');
+set local role authenticated;
+select pg_temp.check((select count(*) from projects.m3_invoice_summary(:'P_id')) = 1, 'a delivery lead reads the M3 invoice summary (number, status, verified amount) without Finance rights');
+select pg_temp.check((select verified_paid = projects.m3_verified_paid(:'P_id') and verified_minor <= total_minor from projects.m3_invoice_summary(:'P_id')), 'and its verified flag is the M3 gate itself');
+select pg_temp.check((select count(*) from projects.feature_coverage(:'P_id')) >= 0, 'feature coverage reads for staff');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'client');
+set local role authenticated;
+select pg_temp.check((select count(*) from projects.m3_invoice_summary(:'P_id')) = 0 and (select count(*) from projects.feature_coverage(:'P_id')) = 0, 'a portal client reads neither');
+reset role;
+
 -- a plan with no baseline to measure against is not coverage
 reset role;
 do $$ declare pl uuid; begin
