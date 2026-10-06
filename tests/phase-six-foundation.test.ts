@@ -143,3 +143,30 @@ describe('the Phase 6 Admin surface calls only whitelisted doors', () => {
     assert.match(panel, /candidate\.gates\.map/);
   });
 });
+
+
+describe('QA scheduling, canonical defects, source change', () => {
+  const m = read('supabase/migrations/20261101160000_qa_is_scheduled_duplicates_are_canonical_and_a_source_change_reopens_phase_six.sql');
+  test('safe parallelism: destructive database work serial, load testing exclusive, regression after what it protects', () => {
+    assert.match(m, /when 'database' then 'serial' when 'performance' then 'exclusive' else 'parallel'/);
+    assert.match(m, /when 'regression' then array\['functional', 'ui_e2e'\]/);
+  });
+  test('a held job is never recorded as started; it routes when the specialist is enabled', () => {
+    assert.match(m, /agent_disabled/);
+    assert.match(m, /the held work is routed/);
+  });
+  test('a duplicate points at one canonical product defect and keeps its evidence there', () => {
+    assert.match(m, /canonical_is_not_a_product_defect/);
+    assert.match(m, /Duplicate report:/);
+  });
+  test('a source change after approval makes the candidate stale and tells Phase 7', () => {
+    assert.match(m, /phase_seven_candidate_current/);
+    assert.match(m, /a new candidate and a new Admin approval are required before production/);
+  });
+  test('all of it is reachable', () => {
+    assert.deepEqual(subs['project.master_test_plan_approved'], ['projects:scheduleQaJobs', 'crm:announceTestingStarted']);
+    assert.ok((subs['project.deliverable_submitted'] ?? []).includes('projects:reopenOnSourceChange'));
+    for (const h of ['projects:scheduleQaJobs', 'projects:reopenOnSourceChange', 'crm:announceTestingStarted']) assert.ok((HANDLERS as readonly string[]).includes(h), h);
+    assert.match(read('app/api/jobs/run/route.ts'), /handleScheduleQaJobs/);
+  });
+});

@@ -32,7 +32,10 @@ create temp table internal_tables (sch text, tbl text);
 insert into internal_tables values
   ('projects','phase_five'),('projects','development_baselines'),('projects','code_reviews'),('projects','build_feedback'),('projects','integration_connections'),
   ('projects','phase_five_agent_state'),('projects','phase_five_handoffs'),('projects','development_plans'),('projects','build_runs'),('projects','task_test_evidence'),
-  ('projects','routing_decisions'),('projects','technical_documents'),('qa','flaky_tests'),('qa','test_run_cases');
+  ('projects','routing_decisions'),('projects','technical_documents'),('qa','flaky_tests'),('qa','test_run_cases'),
+  ('projects','phase_six'),('projects','qa_intakes'),('projects','phase_six_handoffs'),('qa','master_test_plans'),('qa','risk_items'),('qa','phase6_cases'),
+  ('qa','phase6_result_history'),('qa','release_candidates'),('qa','category_results'),('qa','category_result_history'),('qa','readiness_assessments'),
+  ('qa','release_exceptions'),('qa','admin_qa_reviews'),('qa','qa_jobs');
 grant select on internal_tables to public;
 
 -- every internal table has exactly the internal-only read policy

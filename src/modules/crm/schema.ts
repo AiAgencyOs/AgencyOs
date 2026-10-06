@@ -1954,3 +1954,14 @@ export function m4PaymentVerifiedAnnouncementFor(input: { projectName: string | 
     'A claim, a proof or a match would not have opened it; only the verification did.',
   ].join('\n');
 }
+
+
+/** PM6: testing has begun on a plan an Admin approved. Client-safe: no test internals, tools, agents or providers. */
+export const masterTestPlanApprovedEventSchema = z.object({ projectId: z.uuid(), version: z.number() }).strip();
+export function testingStartedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Independent testing of the build you approved has begun against an approved test plan.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'We will contact you only if something genuinely needs your decision; otherwise the next update is when testing completes.',
+  ].join('\n');
+}

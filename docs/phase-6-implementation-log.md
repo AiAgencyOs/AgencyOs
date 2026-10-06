@@ -13,5 +13,7 @@ All proven against a real scratch Postgres; each control removed, watched to fai
 - **Admin surface**: `phase-six-queries.ts`, `phase-six-actions.ts` (a whitelist of doors), `phase-six-forms.tsx`, `phase-six-panel.tsx`.
 - The older Phase 6 readiness check ("a suite ran and nothing is open") was REPLACED, not extended: it could not express an approved exact candidate.
 
+- **Remaining tasks** `20261101160000`: QA job scheduling with safe-parallelism rules (held, never faked, while disabled), canonical-defect linking, `reopen_on_source_change` + `phase_seven_candidate_current`, intake platform + change-request history; handlers on plan approval and every new build; panel sections.
+
 ## Not built
-The QA Orchestrator's job scheduling and safe parallelism; any test runner or specialist actually running; client-facing PM6-M02..M10; performance/device dashboards; automatic re-open of Phase 6 after post-completion source change; canonical-defect linking; intake contract/platform fields.
+Any test runner or specialist actually running; the rest of the client-facing PM6 set; performance/device dashboards; the intake's API/data-contract field.

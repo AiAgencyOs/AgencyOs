@@ -33,7 +33,7 @@ const first = (v: unknown): Row | null => (Array.isArray(v) ? ((v[0] as Row | un
 export type PhaseSixOverview = {
   workspace: { id: string; state: string; blockedReason: string | null } | null;
   gates: { m3VerifiedPaid: boolean; m4VerifiedPaid: boolean; phaseSevenGate: string | null };
-  intake: { status: string; commit: string; artifactSha256: string | null; blockers: { type: string; owner: string; resumeCondition: string; detail: string }[]; external: { name: string; detail: string }[] } | null;
+  intake: { status: string; commit: string; artifactSha256: string | null; platforms: string[]; changeRequests: number; blockers: { type: string; owner: string; resumeCondition: string; detail: string }[]; external: { name: string; detail: string }[] } | null;
   plan: {
     id: string;
     version: number;
@@ -44,7 +44,9 @@ export type PhaseSixOverview = {
     risks: { area: string; kind: string; level: string; depth: string }[];
     cases: { id: string; title: string; category: string; priority: string; status: string; journey: string | null }[];
   } | null;
-  defects: { id: string; title: string; sLevel: number | null; classification: string; status: string }[];
+  defects: { id: string; title: string; sLevel: number | null; classification: string; status: string; duplicateOf: string | null }[];
+  jobs: { category: string; specialist: string; mode: string; status: string; reason: string; dependsOn: string[] }[];
+  candidateCurrent: boolean;
   candidate: {
     id: string;
     version: number;
@@ -82,16 +84,18 @@ export async function readPhaseSixOverview(projectId: string): Promise<PhaseSixO
     { data: candRows, error: candError },
     { data: completion, error: completionError },
     { data: handoffRow, error: handoffError },
+    { data: currentRaw, error: currentError },
   ] = await Promise.all([
     projects.rpc('m3_verified_paid', { p_project_id: projectId }),
     projects.rpc('m4_verified_paid', { p_project_id: projectId }),
     projects.rpc('phase_seven_gate_status', { p_project_id: projectId }),
-    projects.from('qa_intakes').select('status, commit_ref, artifact_sha256, blockers, external_dependencies').eq('project_id', projectId).maybeSingle(),
+    projects.from('qa_intakes').select('status, commit_ref, artifact_sha256, blockers, external_dependencies, supported_platforms, change_request_history').eq('project_id', projectId).maybeSingle(),
     qa.from('master_test_plans').select('id, version, status, required_categories, critical_journeys').eq('project_id', projectId).order('version', { ascending: false }).limit(1),
-    qa.from('defects').select('id, title, s_level, classification, status').eq('project_id', projectId).order('created_at', { ascending: true }).limit(200),
+    qa.from('defects').select('id, title, s_level, classification, status, duplicate_of').eq('project_id', projectId).order('created_at', { ascending: true }).limit(200),
     qa.from('release_candidates').select('id, version, status, commit_ref, artifact_sha256, rollback_plan, observability_notes, config_version').eq('project_id', projectId).order('version', { ascending: false }).limit(1),
     projects.rpc('phase_readiness', { p_project_id: projectId, p_phase: 6 }),
     projects.from('phase_six_handoffs').select('id, commit_ref, production_deployed').eq('project_id', projectId).maybeSingle(),
+    projects.rpc('phase_seven_candidate_current', { p_project_id: projectId }),
   ]);
   if (m3Error) unreadable('readPhaseSixOverview.m3', m3Error);
   if (m4Error) unreadable('readPhaseSixOverview.m4', m4Error);
@@ -102,19 +106,24 @@ export async function readPhaseSixOverview(projectId: string): Promise<PhaseSixO
   if (candError) unreadable('readPhaseSixOverview.candidate', candError);
   if (completionError) unreadable('readPhaseSixOverview.completion', completionError);
   if (handoffError) unreadable('readPhaseSixOverview.phaseSevenIntake', handoffError);
+  if (currentError) unreadable('readPhaseSixOverview.candidateCurrent', currentError);
 
   let plan: PhaseSixOverview['plan'] = null;
+  let jobs: PhaseSixOverview['jobs'] = [];
   const planRow = rows(planRows)[0] ?? null;
   if (planRow) {
     const planId = String(planRow.id);
-    const [{ data: riskRows, error: riskError }, { data: caseRows, error: caseError }, { data: problemRows, error: problemError }] = await Promise.all([
+    const [{ data: riskRows, error: riskError }, { data: caseRows, error: caseError }, { data: problemRows, error: problemError }, { data: jobRows, error: jobError }] = await Promise.all([
       qa.from('risk_items').select('area, kind, level, depth').eq('plan_id', planId).order('created_at', { ascending: true }).limit(100),
       qa.from('phase6_cases').select('id, title, category, priority, status, journey').eq('plan_id', planId).order('created_at', { ascending: true }).limit(500),
       qa.rpc('plan_problems', { p_plan_id: planId }),
+      qa.from('qa_jobs').select('category, specialist, execution_mode, status, reason, depends_on').eq('plan_id', planId).order('created_at', { ascending: true }).limit(20),
     ]);
     if (riskError) unreadable('readPhaseSixOverview.risks', riskError);
     if (caseError) unreadable('readPhaseSixOverview.cases', caseError);
     if (problemError) unreadable('readPhaseSixOverview.planProblems', problemError);
+    if (jobError) unreadable('readPhaseSixOverview.jobs', jobError);
+    jobs = rows(jobRows).map((j) => ({ category: String(j.category), specialist: String(j.specialist), mode: String(j.execution_mode), status: String(j.status), reason: String(j.reason), dependsOn: (j.depends_on as string[] | null) ?? [] }));
     plan = {
       id: planId,
       version: Number(planRow.version),
@@ -174,6 +183,8 @@ export async function readPhaseSixOverview(projectId: string): Promise<PhaseSixO
           status: String(intake.status),
           commit: String(intake.commit_ref),
           artifactSha256: str(intake.artifact_sha256),
+          platforms: (intake.supported_platforms as string[] | null) ?? [],
+          changeRequests: rows(intake.change_request_history).length,
           blockers: rows(intake.blockers).map((b) => ({ type: String(b.type), owner: String(b.owner), resumeCondition: String(b.resumeCondition), detail: String(b.detail) })),
           external: rows(intake.external_dependencies).map((e) => ({ name: String(e.name), detail: String(e.detail) })),
         }
@@ -181,7 +192,9 @@ export async function readPhaseSixOverview(projectId: string): Promise<PhaseSixO
     plan,
     defects: rows(defectRows)
       .filter((d) => d.status !== undefined)
-      .map((d) => ({ id: String(d.id), title: String(d.title), sLevel: num(d.s_level), classification: String(d.classification), status: String(d.status) })),
+      .map((d) => ({ id: String(d.id), title: String(d.title), sLevel: num(d.s_level), classification: String(d.classification), status: String(d.status), duplicateOf: str(d.duplicate_of) })),
+    jobs,
+    candidateCurrent: currentRaw === true,
     candidate,
     completion: done ? { outcome: String(done.outcome), missing: (done.missing as string[] | null) ?? [] } : null,
     phaseSevenIntake: handoff ? { id: String(handoff.id), commit: String(handoff.commit_ref), productionDeployed: handoff.production_deployed === true } : null,

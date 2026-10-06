@@ -33,6 +33,8 @@ import {
   releaseCandidateApprovedAnnouncementFor,
   m4PaymentVerifiedEventSchema,
   m4PaymentVerifiedAnnouncementFor,
+  masterTestPlanApprovedEventSchema,
+  testingStartedAnnouncementFor,
   m3PaymentVerifiedAnnouncementFor,
   buildFeedbackRoutedEventSchema,
   buildFeedbackRoutedAnnouncementFor,
@@ -3307,5 +3309,20 @@ export async function announceM4PaymentVerified(admin: Admin, job: AnnounceJob):
   return announceToInternalChannel(admin, job, {
     body: m4PaymentVerifiedAnnouncementFor({ projectName }),
     externalRef: `m4-payment-verified:${parsed.data.projectId}`,
+  });
+}
+
+
+/** `project.master_test_plan_approved` -> PM6: testing has started. Once per plan. */
+export async function announceTestingStarted(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = masterTestPlanApprovedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.master_test_plan_approved payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: testingStartedAnnouncementFor({ projectName }),
+    externalRef: `testing-started:${typeof envelope.subjectId === 'string' ? envelope.subjectId : parsed.data.projectId}`,
   });
 }

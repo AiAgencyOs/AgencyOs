@@ -58,6 +58,7 @@ import {
   announceBuildApproved,
   announceM3PaymentVerified,
   announcePhaseSixReady,
+  announceTestingStarted,
   announceReleaseCandidateApproved,
   announceM4PaymentVerified,
   announceBuildFeedbackRouted,
@@ -76,6 +77,8 @@ import {
   handleStartPhaseFive,
   handleRecordM3Verified,
   handleStartPhaseSix,
+  handleScheduleQaJobs,
+  handleReopenOnSourceChange,
   handleRecordM4Verified,
   handleValidateQaIntake,
   type HandlerResult,
@@ -875,6 +878,48 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       correlationId,
     });
   }
+  const qaSchedule = await runEventJobs(admin, QA_SCHEDULE_JOB_KIND, handleScheduleQaJobs, 'runQaScheduleJobs');
+  if (qaSchedule.claimed > 0) {
+    return NextResponse.json({
+      claimed: qaSchedule.claimed,
+      kind: QA_SCHEDULE_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      qaSchedule: qaSchedule.results,
+      correlationId,
+    });
+  }
+  const qaReopen = await runEventJobs(admin, QA_REOPEN_JOB_KIND, handleReopenOnSourceChange, 'runQaReopenJobs');
+  if (qaReopen.claimed > 0) {
+    return NextResponse.json({
+      claimed: qaReopen.claimed,
+      kind: QA_REOPEN_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      qaReopen: qaReopen.results,
+      correlationId,
+    });
+  }
   const qaIntake = await runEventJobs(admin, QA_INTAKE_JOB_KIND, handleValidateQaIntake, 'runQaIntakeJobs');
   if (qaIntake.claimed > 0) {
     return NextResponse.json({
@@ -1189,7 +1234,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     'runTask2CompleteAnnouncementJobs',
   );
 
-  // PM6 (Phase 6 PM Agent spec): candidate approved, M4 verified.
+  // PM6 (Phase 6 PM Agent spec): testing started, candidate approved, M4 verified.
+  const testingStartedAnnouncements = await runEventJobs(admin, TESTING_STARTED_ANNOUNCE_JOB_KIND, announceTestingStarted, 'runTestingStartedAnnouncementJobs');
   const rcApprovedAnnouncements = await runEventJobs(admin, RC_APPROVED_ANNOUNCE_JOB_KIND, announceReleaseCandidateApproved, 'runReleaseCandidateApprovedAnnouncementJobs');
   const m4VerifiedAnnouncements = await runEventJobs(admin, M4_VERIFIED_ANNOUNCE_JOB_KIND, announceM4PaymentVerified, 'runM4VerifiedAnnouncementJobs');
   // PM6-M01 (Phase 6 PM Agent spec): Task 4 start.
@@ -1483,6 +1529,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     buildApprovedAnnouncements: buildApprovedAnnouncements.results,
     m3VerifiedAnnouncements: m3VerifiedAnnouncements.results,
     phaseSixReadyAnnouncements: phaseSixReadyAnnouncements.results,
+    testingStartedAnnouncements: testingStartedAnnouncements.results,
     rcApprovedAnnouncements: rcApprovedAnnouncements.results,
     m4VerifiedAnnouncements: m4VerifiedAnnouncements.results,
     buildFeedbackRoutedAnnouncements: buildFeedbackRoutedAnnouncements.results,
@@ -1627,6 +1674,9 @@ const PHASE_FOUR_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['projects:completePhaseFou
 const PHASE_FIVE_START_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseFive'];
 const M3_VERIFIED_JOB_KIND = HANDLER_JOB_KIND['projects:recordM3Verified'];
 const PHASE_SIX_START_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseSix'];
+const QA_SCHEDULE_JOB_KIND = HANDLER_JOB_KIND['projects:scheduleQaJobs'];
+const QA_REOPEN_JOB_KIND = HANDLER_JOB_KIND['projects:reopenOnSourceChange'];
+const TESTING_STARTED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceTestingStarted'];
 const M4_VERIFIED_JOB_KIND = HANDLER_JOB_KIND['projects:recordM4Verified'];
 const RC_APPROVED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceReleaseCandidateApproved'];
 const M4_VERIFIED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceM4PaymentVerified'];

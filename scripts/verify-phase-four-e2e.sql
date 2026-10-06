@@ -749,6 +749,8 @@ select jsonb_array_length(external_dependencies) as ne from projects.qa_intakes 
 select pg_temp.check(:'IV_st' = 'valid' and :'IV_nb'::int = 0, 'the exact Phase 5 build, scope and UI validate');
 select pg_temp.check(:'IV_ne'::int >= 2, 'unverified integrations are explicit external dependencies, never a silent skip');
 select pg_temp.check((select state from projects.phase_six where project_id = :'P_id') = 'intake_validating', 'Phase 6 moves to INTAKE_VALIDATING');
+select pg_temp.check((select supported_platforms = array['web'] from projects.qa_intakes where project_id = :'P_id'), 'the intake records the supported platform from the build''s own details, never inferred');
+select pg_temp.check((select jsonb_array_length(change_request_history) >= 1 from projects.qa_intakes where project_id = :'P_id'), 'the intake carries the project''s change-request history');
 select pg_temp.check((select artifact_sha256 = repeat('a', 64) and commit_ref = 'abc1234' from projects.qa_intakes where project_id = :'P_id'), 'the intake names the exact commit and the artifact hash from the build run');
 -- a client approval tied to a DIFFERENT build is rejected
 reset role;
@@ -800,6 +802,24 @@ select pg_temp.check((select outcome from qa.approve_master_test_plan(:'MP_id'))
 select pg_temp.check((select outcome from qa.approve_master_test_plan(:'MP_id')) = 'already_approved', 'a duplicate approval changes nothing');
 select pg_temp.check((select state from projects.phase_six where project_id = :'P_id') = 'plan_ready', 'Phase 6 is PLAN_READY');
 select pg_temp.check((select outcome from qa.add_phase6_case(:'MP_id', 'late case', 'x', 'functional')) = 'plan_not_draft', 'an approved plan takes no new cases: a change is a new version');
+reset role;
+select pg_temp.as_service();
+set local role service_role;
+select outcome as o, routed as r, held as h from qa.schedule_plan_jobs(:'MP_id') \gset QJ_
+select pg_temp.check(:'QJ_o' = 'scheduled' and :'QJ_r'::int = 0 and :'QJ_h'::int = 3, 'the QA Orchestrator schedules each required category; every specialist is disabled, so all three are HELD, none pretends to run');
+select pg_temp.check((select count(*) from qa.qa_jobs where plan_id = :'MP_id' and status = 'held' and code = 'agent_disabled') = 3, 'each held job says why');
+select pg_temp.check((select outcome from qa.schedule_plan_jobs(:'MP_id')) = 'scheduled' and (select count(*) from qa.qa_jobs where plan_id = :'MP_id') = 3, 'a redelivered event schedules nothing twice');
+reset role;
+update ai.agents set enabled = true, disabled_reason = null where key = 'functional_test';
+select pg_temp.as_service();
+set local role service_role;
+select outcome as o, routed as r, held as h from qa.schedule_plan_jobs(:'MP_id') \gset QJ2_
+select pg_temp.check(:'QJ2_r'::int = 1, 'once a specialist is enabled, re-scheduling routes the held work to it');
+select pg_temp.check((select (context->>'category') = 'functional' and (context->>'commit') = 'abc1234' and ((context->'rules')->>'independentOfTheBuilder')::boolean and context->'toolPermissions' = '[]'::jsonb from ai.handoffs where subject_type = 'qa_job' and subject_id = :'MP_id'), 'the handoff carries the exact commit, the independence rule and no tool permission');
+reset role;
+update ai.agents set enabled = false, disabled_reason = 'E2E fixture: disabled again' where key = 'functional_test';
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
 reset role;
 select pg_temp.check(pg_temp.refused(format('update qa.master_test_plans set critical_journeys = array[''other''] where id = %L', :'MP_id'), 'never edited'), 'an approved plan is not edited');
 select pg_temp.check(pg_temp.refused(format('update qa.phase6_cases set status = ''pass'' where id = %L', :'CS1_c1'), 'result door'), 'a result is never typed into the row');
@@ -884,6 +904,19 @@ update qa.defects set status = 'fixed', resolution = 'third: regression test add
 select pg_temp.as_user('00000000-0000-4000-8000-00000000f523', :'ORG', 'ops_admin');
 set local role authenticated;
 select pg_temp.check((select outcome from qa.record_retest(:'RF_d'::uuid, true, 'fix9999', 'https://qa.example.test/retest-3')) = 'verified', 'verified again after the regression fix');
+reset role;
+
+-- the same root cause reported twice: ONE canonical defect, the new evidence preserved on it
+insert into qa.defects (organization_id, project_id, deliverable_id, severity, title, reproduction, reported_by, phase6, found_commit)
+  values (:'ORG', :'P_id', :'BD1_bd', 'major', 'cart readable across tenants (second report)', 'open the cart id as another tenant', :'OWNER', true, 'abc1234') returning id \gset DUP_
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.mark_duplicate(:'DUP_id'::uuid, :'DUP_id'::uuid)) = 'cannot_duplicate_itself', 'a defect cannot be its own duplicate');
+select pg_temp.check((select outcome from qa.mark_duplicate(:'DUP_id'::uuid, :'RF2_d'::uuid)) = 'canonical_is_not_a_product_defect', 'the canonical defect must be a real product defect');
+select pg_temp.check((select outcome from qa.mark_duplicate(:'DUP_id'::uuid, :'RF_d'::uuid, 'same missing tenant check')) = 'marked', 'a duplicate points at the canonical defect');
+select pg_temp.check((select classification = 'duplicate' and duplicate_of = :'RF_d'::uuid from qa.defects where id = :'DUP_id'::uuid), 'it is classified duplicate, linked to the canonical one');
+select pg_temp.check(exists (select 1 from qa.defect_evidence where defect_id = :'RF_d'::uuid and value like 'Duplicate report:%'), 'the duplicate''s own evidence is preserved on the canonical defect');
+select pg_temp.check(not exists (select 1 from qa.unresolved_product_defects(:'P_id') where defect_id = :'DUP_id'::uuid), 'and the duplicate does not count twice against the gates');
 reset role;
 
 -- ═════════ Phase 6: release candidate, evidence, hard gates, exceptions, Admin review, completion ═════════
@@ -1073,6 +1106,45 @@ reset role;
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
 set local role authenticated;
 select pg_temp.check((select outcome from projects.phase_seven_gate_status(:'P_id')) = 'verified', 'ONLY NOW the Phase 7 financial gate is open');
+reset role;
+
+-- ═════════ after Phase 6: the source changes ═════════
+select pg_temp.as_service();
+set local role service_role;
+select pg_temp.check((select outcome from qa.reopen_on_source_change(:'P_id')) = 'source_unchanged', 'an unchanged build leaves the approval standing');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check(projects.phase_seven_candidate_current(:'P_id'), 'Phase 7 may deploy: the approved candidate is still the build');
+reset role;
+set local session_replication_role = replica;
+update projects.deliverable_details set commit_ref = 'aaa0003' where deliverable_id = :'BD1_bd';
+set local session_replication_role = origin;
+select pg_temp.as_service();
+set local role service_role;
+select pg_temp.check((select outcome from qa.reopen_on_source_change(:'P_id')) = 'reopened', 'a source change after approval REOPENS Phase 6');
+select pg_temp.check((select status from qa.release_candidates where id = :'RC_rc'::uuid) = 'stale', 'the approved candidate is STALE');
+select pg_temp.check((select state = 'blocked' and blocked_reason like '%new candidate%' from projects.phase_six where project_id = :'P_id'), 'Phase 6 is blocked, saying a new candidate and a new approval are needed');
+select pg_temp.check((select outcome from qa.reopen_on_source_change(:'P_id')) = 'already_stale', 'reopening twice changes nothing');
+select pg_temp.check(not projects.phase_seven_candidate_current(:'P_id'), 'Phase 7 is told the approved candidate no longer describes the build');
+reset role;
+
+-- scheduling modes (P601 §55): the destructive suite is serial, load testing exclusive, regression waits for what it protects
+update projects.phase_six set state = 'phase7_financially_ready' where project_id = :'P_id';
+set local session_replication_role = replica;
+update qa.master_test_plans set status = 'superseded' where project_id = :'P_id' and status = 'approved';
+insert into qa.master_test_plans (organization_id, project_id, intake_id, version, status, commit_ref, required_categories, approved_by, approved_at)
+  values (:'ORG', :'P_id', (select id from projects.qa_intakes where project_id = :'P_id'), 99, 'approved', 'abc1234',
+          array['functional', 'ui_e2e', 'api', 'integration', 'database', 'security', 'performance', 'compatibility', 'regression'], :'OWNER', now()) returning id \gset MP9_
+set local session_replication_role = origin;
+select pg_temp.as_service();
+set local role service_role;
+select outcome as o from qa.schedule_plan_jobs(:'MP9_id') \gset SJ9_
+select pg_temp.check(:'SJ9_o' = 'scheduled' and (select count(*) from qa.qa_jobs where plan_id = :'MP9_id') = 9, 'every required category gets exactly one job [' || :'SJ9_o' || ' ' || (select count(*) from qa.qa_jobs where plan_id = :'MP9_id') || ']');
+select pg_temp.check((select execution_mode from qa.qa_jobs where plan_id = :'MP9_id' and category = 'database') = 'serial', 'database tests run SERIAL (destructive, shared state)');
+select pg_temp.check((select execution_mode from qa.qa_jobs where plan_id = :'MP9_id' and category = 'performance') = 'exclusive', 'performance tests run EXCLUSIVE (they own the environment)');
+select pg_temp.check((select depends_on = array['functional', 'ui_e2e'] from qa.qa_jobs where plan_id = :'MP9_id' and category = 'regression'), 'regression waits for functional and end-to-end');
+select pg_temp.check((select count(*) from qa.qa_jobs where plan_id = :'MP9_id' and execution_mode = 'parallel') = 7, 'the independent categories (and regression, once its dependencies finish) run in parallel');
 reset role;
 
 rollback;

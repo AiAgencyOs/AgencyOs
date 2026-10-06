@@ -18,7 +18,7 @@ const RESULT_TONE: Record<string, Tone> = { pass: 'success', fail: 'danger', blo
 const CATEGORIES: [string, string][] = ['functional', 'ui_e2e', 'api', 'integration', 'database', 'security', 'performance', 'compatibility', 'regression'].map((c) => [c, humanize(c)]);
 
 export function PhaseSixPanel({ view, projectId }: { view: PhaseSixOverview; projectId: string }) {
-  const { workspace, gates, intake, plan, defects, candidate, completion, phaseSevenIntake } = view;
+  const { workspace, gates, intake, plan, defects, candidate, completion, phaseSevenIntake, jobs, candidateCurrent } = view;
 
   if (!workspace) {
     return (
@@ -55,6 +55,8 @@ export function PhaseSixPanel({ view, projectId }: { view: PhaseSixOverview; pro
               <Badge tone={intake.status === 'valid' ? 'success' : intake.status === 'pending' ? 'neutral' : 'danger'}>{humanize(intake.status)}</Badge>
               <span>commit {intake.commit}</span>
               <span>{intake.artifactSha256 ? `artifact ${intake.artifactSha256.slice(0, 12)}…` : 'no artifact hash'}</span>
+              <span>platform: {intake.platforms.length > 0 ? intake.platforms.join(', ') : 'not recorded (not inferred)'}</span>
+              <span>{intake.changeRequests} change request(s) on record</span>
             </div>
             {intake.blockers.map((b) => (
               <p key={b.detail} className="text-danger">{humanize(b.type)}: {b.detail}. Owner: {humanize(b.owner)}. Resume when: {b.resumeCondition}.</p>
@@ -105,6 +107,24 @@ export function PhaseSixPanel({ view, projectId }: { view: PhaseSixOverview; pro
                 </li>
               ))}
             </ul>
+            {plan.status === 'approved' ? (
+              <>
+                <span className="text-faint">QA jobs (scheduled by the QA Orchestrator)</span>
+                {jobs.length === 0 ? <p>Not scheduled yet.</p> : (
+                  <ul className="flex flex-col gap-1">
+                    {jobs.map((j) => (
+                      <li key={j.category} className="flex flex-wrap items-center gap-2">
+                        <Badge tone={j.status === 'routed' ? 'success' : 'warning'}>{humanize(j.status)}</Badge>
+                        <span>{humanize(j.category)} → {humanize(j.specialist)}</span>
+                        <span>({j.mode}{j.dependsOn.length > 0 ? `, after ${j.dependsOn.map(humanize).join(' and ')}` : ''})</span>
+                        <span>{j.reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <DoorForm door="schedule_jobs" projectId={projectId} hidden={{ planId: plan.id }} submit="Schedule (or re-schedule held) jobs" />
+              </>
+            ) : null}
             {plan.status === 'draft' ? (
               <>
                 <details>
@@ -142,7 +162,14 @@ export function PhaseSixPanel({ view, projectId }: { view: PhaseSixOverview; pro
                 <Badge tone={d.sLevel !== null && d.sLevel <= 1 ? 'danger' : 'neutral'}>S{d.sLevel ?? '?'}</Badge>
                 <Badge tone={d.status === 'verified' ? 'success' : d.status === 'fixed' ? 'warning' : 'danger'}>{humanize(d.status)}</Badge>
                 <span>{d.title}</span>
-                <span>({humanize(d.classification)})</span>
+                <span>({humanize(d.classification)}{d.duplicateOf ? ', duplicate of a canonical defect' : ''})</span>
+                {d.classification === 'product_defect' && d.status !== 'verified' ? (
+                  <details>
+                    <summary className="cursor-pointer underline underline-offset-2">Mark duplicate</summary>
+                    <DoorForm door="mark_duplicate" projectId={projectId} hidden={{ defectId: d.id }} submit="Link to the canonical defect" intro="Same root cause as another defect: the canonical one keeps this report's evidence."
+                      fields={[{ kind: 'select', name: 'canonicalId', label: 'Canonical defect', options: defects.filter((x) => x.id !== d.id && x.classification === 'product_defect').map((x): [string, string] => [x.id, x.title]) }, { kind: 'text', name: 'reason', label: 'Why it is the same defect' }]} />
+                  </details>
+                ) : null}
                 <details>
                   <summary className="cursor-pointer underline underline-offset-2">Triage</summary>
                   <DoorForm door="triage" projectId={projectId} hidden={{ defectId: d.id }} submit="Triage" intro="A test, environment or duplicate defect is not a product defect and says why; a new client request becomes a Change Request."
@@ -231,6 +258,13 @@ export function PhaseSixPanel({ view, projectId }: { view: PhaseSixOverview; pro
 
       <section className="flex flex-col gap-1 border-t border-line pt-3">
         <span className="text-xs font-medium uppercase tracking-wide text-faint">Can Phase 6 complete?</span>
+        {candidate && candidate.status === 'approved' || candidate?.status === 'stale' ? (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+            <span>The approved candidate still describes the build:</span>
+            <Badge tone={candidateCurrent ? 'success' : 'danger'}>{candidateCurrent ? 'Yes' : 'No: new candidate and approval needed'}</Badge>
+            <DoorForm door="reopen_on_change" projectId={projectId} submit="Check for a source change" />
+          </div>
+        ) : null}
         {phaseSevenIntake ? (
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
             <Badge tone="success">Completed</Badge>

@@ -1104,3 +1104,54 @@ export async function handleRecordM4Verified(admin: Admin, job: UnlockJob): Prom
       return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
   }
 }
+
+
+/**
+ * `project.master_test_plan_approved` -> the QA Orchestrator schedules the plan's categories to the QA specialists (P601 §55). The door stores every
+ * decision (routed, or HELD with the reason while a specialist is not enabled), applies the safe-parallelism rules, and is idempotent.
+ */
+export async function handleScheduleQaJobs(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const planId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+  if (!planId) return { status: 'failed', permanent: true, detail: 'the event named no test plan' };
+  const { data, error } = await admin.schema('qa').rpc('schedule_plan_jobs' as never, { p_plan_id: planId } as never);
+  if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; routed?: number; held?: number } | undefined;
+  switch (row?.outcome) {
+    case 'scheduled':
+      return { status: 'succeeded', outcome: (row.routed ?? 0) > 0 ? 'routed' : 'held', detail: `${row.routed ?? 0} category job(s) routed, ${row.held ?? 0} held (specialist not enabled).` };
+    case 'not_found':
+      return { status: 'succeeded', outcome: 'gone', detail: 'the plan no longer exists' };
+    case 'plan_not_approved':
+      return { status: 'succeeded', outcome: 'not_mine', detail: 'the plan is not approved' };
+    default:
+      return { status: 'failed', permanent: false, detail: `the door answered ${row?.outcome ?? 'nothing'}` };
+  }
+}
+
+/**
+ * `project.deliverable_submitted` (kind = build) -> has the source changed since a release candidate was approved? A new build after approval means the
+ * approval no longer describes what would be deployed. The DOOR compares the rows (`reopen_on_source_change`), so a build that changes nothing is a no-op.
+ */
+export async function handleReopenOnSourceChange(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const event = (envelope.event ?? {}) as { kind?: unknown; projectId?: unknown };
+  if (event.kind !== 'build') return { status: 'succeeded', outcome: 'not_mine', detail: 'only a development build can change what QA approved' };
+  const projectId = typeof event.projectId === 'string' ? event.projectId : null;
+  if (!projectId) return { status: 'failed', permanent: true, detail: 'the event named no project' };
+  const { data, error } = await admin.schema('qa').rpc('reopen_on_source_change' as never, { p_project_id: projectId } as never);
+  if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+  switch (row?.outcome) {
+    case 'reopened':
+      return { status: 'succeeded', outcome: 'reopened', detail: 'The source changed after approval: the candidate is stale and Phase 6 is blocked.' };
+    case 'source_unchanged':
+    case 'already_stale':
+    case 'no_approved_candidate':
+      return { status: 'succeeded', outcome: row.outcome, detail: 'nothing to reopen.' };
+    case 'not_found':
+      return { status: 'succeeded', outcome: 'gone', detail: 'the project no longer exists' };
+    default:
+      return { status: 'failed', permanent: false, detail: `the door answered ${row?.outcome ?? 'nothing'}` };
+  }
+}

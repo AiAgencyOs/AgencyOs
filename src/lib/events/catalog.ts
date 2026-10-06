@@ -33,6 +33,9 @@ export const HANDLERS = [
   'projects:startPhaseFive',
   'projects:recordM3Verified',
   'projects:startPhaseSix',
+  'projects:scheduleQaJobs',
+  'projects:reopenOnSourceChange',
+  'crm:announceTestingStarted',
   'projects:recordM4Verified',
   'crm:announceReleaseCandidateApproved',
   'crm:announceM4PaymentVerified',
@@ -617,7 +620,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * always emitted starting `20260923160000_m2_and_the_gate_it_actually_
    * needs.sql`; the handler filters to `kind = 'prototype'` itself.
    */
-  'project.deliverable_submitted': ['crm:announcePrototypeSubmitted', 'crm:announceBuildShared'],
+  'project.deliverable_submitted': ['crm:announcePrototypeSubmitted', 'crm:announceBuildShared', 'projects:reopenOnSourceChange'],
   /**
    * Finance §2, §5 — the M2 (20%) invoice, off the fact
    * `projects.complete_phase_four` already emits. PM4-M07 (Task 2 Complete)
@@ -641,6 +644,8 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * from `projects.complete_phase` (`20261009100000_phase_five_and_six_...`).
    */
   'project.phase_five_completed': ['finance:generateM3Invoice', 'crm:announceTask3Complete', 'projects:startPhaseSix'],
+  /** P601 §55: an approved Master Test Plan is scheduled to the QA specialists (held, not faked, while they are disabled); the PM tells the team testing began. */
+  'project.master_test_plan_approved': ['projects:scheduleQaJobs', 'crm:announceTestingStarted'],
   /** PM6: the Admin approved the exact release candidate. */
   'project.release_candidate_approved': ['crm:announceReleaseCandidateApproved'],
   /** P601 §41: M4 verified paid in full, recorded once; the PM tells the team. */
@@ -695,6 +700,9 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:startPhaseFive': 'phase_five.start',
   'projects:recordM3Verified': 'm3.record_verified',
   'projects:startPhaseSix': 'phase_six.start',
+  'projects:scheduleQaJobs': 'qa.schedule_jobs',
+  'projects:reopenOnSourceChange': 'qa.reopen_on_source_change',
+  'crm:announceTestingStarted': 'testing_started.announce',
   'projects:recordM4Verified': 'm4.record_verified',
   'crm:announceReleaseCandidateApproved': 'release_candidate_approved.announce',
   'crm:announceM4PaymentVerified': 'm4_verified.announce',

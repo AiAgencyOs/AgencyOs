@@ -19,4 +19,4 @@
 | Admin Panel? | PARTIAL (overview + a form per door; typechecked and unit-tested, never rendered or clicked) |
 | Production deployed? | NO — Phase 7 |
 
-P0: none known open in built scope. P1 (mandatory Phase 6 workflow not built): QA Orchestrator job scheduling, specialist execution, client-facing PM6 set. Open owner decisions: the `release_payment_overrides` conflict; the service-role payment-verification exemption (from Phase 4).
+P0: none known open in built scope. P1 (mandatory Phase 6 workflow not built): specialist execution (needs a funded model key, runners and environments), the rest of the client-facing PM6 set. Open owner decisions: the `release_payment_overrides` conflict; the service-role payment-verification exemption (from Phase 4).
