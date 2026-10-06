@@ -38,3 +38,7 @@ Open from the SQL review (not fixed, recorded): QA/Admin approval of a build is 
 Closed, each red-proven in `scripts/verify-phase-four-e2e.sql`: a changed `commit_ref` un-approves the build's QA and Admin verdicts (6); a reviewer who recorded "I changed the code" is never the independent second reviewer on that commit (7); a person's test-report ingest needs https evidence like a runner's (9); anon is revoked from the internal Phase 5/6 tables (11); portal clients get false from `m3_verified_paid`, `m4_verified_paid` and `phase_seven_candidate_current` (12).
 
 Still open from the review: vacuous gates on projects with no baseline/derived documents/plan categories (8) and the quarantine-renewal and check-then-act races (10).
+
+### Third round (migration `20261101200000`)
+
+`qa.plan_problems` now reports "no locked development baseline" instead of measuring requirement coverage against nothing (review item 8, the part with one right answer; red-proven). The remaining parts of item 8 are design decisions and stay open: whether `stale_documents` should fail a project that never derived any document, and which plan categories each used capability must name.

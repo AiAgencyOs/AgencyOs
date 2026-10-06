@@ -1232,5 +1232,19 @@ set local role authenticated;
 select pg_temp.check(not projects.m3_verified_paid(:'P_id') and not projects.m4_verified_paid(:'P_id') and not projects.phase_seven_candidate_current(:'P_id'), 'a portal client learns nothing about payments or the Phase 7 candidate');
 reset role;
 
+
+-- a plan with no baseline to measure against is not coverage
+reset role;
+do $$ declare pl uuid; begin
+  select id into pl from qa.master_test_plans where project_id = current_setting('e2e.p')::uuid order by version desc limit 1;
+  perform set_config('e2e.pl', pl::text, true);
+end $$;
+insert into core.client_accounts (organization_id, name) values (:'ORG', 'zztest nobaseline') returning id \gset NB_
+insert into projects.projects (organization_id, client_account_id, name, project_code) values (:'ORG', :'NB_id', 'zztest nobaseline', 'ZP-NB') returning id \gset NBP_
+alter table projects.development_baselines disable trigger user;
+update projects.development_baselines set project_id = :'NBP_id' where project_id = :'P_id';
+alter table projects.development_baselines enable trigger user;
+select pg_temp.check(exists (select 1 from qa.plan_problems(current_setting('e2e.pl')::uuid) where problem like 'There is no locked development baseline%'), 'a plan with no baseline to measure against is a problem, not silent coverage');
+
 rollback;
 \echo PHASE 4 E2E OK
