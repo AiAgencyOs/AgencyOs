@@ -53,6 +53,10 @@ export type PhaseFiveOverview = {
   unplannedTasks: { id: string; title: string }[];
   flaky: { id: string; testKey: string; status: string; occurrences: number; expiresAt: string | null }[];
   documents: { id: string; kind: string; title: string; status: string; evidenceRef: string | null }[];
+  routing: { taskTitle: string; toAgent: string | null; outcome: string; reason: string }[];
+  testGaps: { id: string; title: string }[];
+  staleDocuments: number;
+  recentRuns: { id: string; suite: string; passed: number; failed: number }[];
 };
 
 type Row = Record<string, unknown>;
@@ -96,6 +100,10 @@ export async function readPhaseFiveOverview(projectId: string): Promise<PhaseFiv
     { data: flakyRows, error: flakyError },
     { data: documentRows, error: documentError },
     { data: devTaskRows, error: devTaskError },
+    { data: routingRows, error: routingError },
+    { data: gapRows, error: gapError },
+    { data: staleRows, error: staleError },
+    { data: runRows, error: runError },
   ] = await Promise.all([
     projects.rpc('m2_verified_paid', { p_project_id: projectId }),
     projects.rpc('m3_verified_paid', { p_project_id: projectId }),
@@ -110,6 +118,10 @@ export async function readPhaseFiveOverview(projectId: string): Promise<PhaseFiv
     (supabase.schema('qa') as unknown as LooseQa).from('flaky_tests').select('id, test_key, status, occurrences, expires_at').eq('project_id', projectId).order('first_seen_at', { ascending: true }),
     projects.from('technical_documents').select('id, kind, title, status, evidence_ref').eq('project_id', projectId).order('kind', { ascending: true }),
     projects.from('tasks').select('id, title, plan_id, status, module_id, feature_id').eq('project_id', projectId).neq('status', 'cancelled').is('archived_at', null),
+    projects.from('routing_decisions').select('to_agent, outcome, reason, tasks(title)').eq('project_id', projectId).order('decided_at', { ascending: false }).limit(30),
+    projects.rpc('task_test_gaps', { p_project_id: projectId }),
+    projects.rpc('stale_documents', { p_project_id: projectId }),
+    supabase.schema('qa').from('test_runs').select('id, suite, passed, failed').eq('project_id', projectId).order('executed_at', { ascending: false }).limit(15),
   ]);
   if (m2Error) unreadable('readPhaseFiveOverview.m2', m2Error);
   if (m3Error) unreadable('readPhaseFiveOverview.m3', m3Error);
@@ -124,6 +136,10 @@ export async function readPhaseFiveOverview(projectId: string): Promise<PhaseFiv
   if (flakyError) unreadable('readPhaseFiveOverview.flaky', flakyError);
   if (documentError) unreadable('readPhaseFiveOverview.documents', documentError);
   if (devTaskError) unreadable('readPhaseFiveOverview.tasks', devTaskError);
+  if (routingError) unreadable('readPhaseFiveOverview.routing', routingError);
+  if (gapError) unreadable('readPhaseFiveOverview.testGaps', gapError);
+  if (staleError) unreadable('readPhaseFiveOverview.staleDocuments', staleError);
+  if (runError) unreadable('readPhaseFiveOverview.runs', runError);
 
   const builds = (buildRows ?? []) as Row[];
   const buildIds = builds.map((b) => String(b.id));
@@ -260,6 +276,14 @@ export async function readPhaseFiveOverview(projectId: string): Promise<PhaseFiv
       isMock: i.is_mock === true,
     })),
     agentStates,
+    routing: ((routingRows ?? []) as Row[]).map((r) => {
+      const t = r.tasks as Row | Row[] | null;
+      const title = Array.isArray(t) ? t[0]?.title : (t as Row | null)?.title;
+      return { taskTitle: typeof title === 'string' ? title : 'a task', toAgent: str(r.to_agent), outcome: String(r.outcome), reason: String(r.reason) };
+    }),
+    testGaps: ((gapRows ?? []) as Row[]).map((g) => ({ id: String(g.task_id), title: String(g.title) })),
+    staleDocuments: ((staleRows ?? []) as Row[]).length,
+    recentRuns: ((runRows ?? []) as Row[]).map((r) => ({ id: String(r.id), suite: String(r.suite), passed: Number(r.passed), failed: Number(r.failed) })),
     plan,
     unplannedTasks,
     flaky: ((flakyRows ?? []) as Row[]).map((f) => ({ id: String(f.id), testKey: String(f.test_key), status: String(f.status), occurrences: Number(f.occurrences), expiresAt: str(f.expires_at) })),

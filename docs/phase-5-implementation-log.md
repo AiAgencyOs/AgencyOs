@@ -22,6 +22,7 @@ Every unit proven against a real scratch Postgres (`scripts/apply-migrations-loc
 - **Feedback routed** (`20261031270000`): category-only PM message.
 - **Envelope + failure handling** (`development-route.ts`): execution envelope on every handoff; retry/fallback/escalate by failure class.
 - **Forms** for plans, task planning, integrations, specialist state, flaky tests and documents.
+- **Evidence and decisions** (`20261031290000`): task→test evidence (failed ≠ coverage; blocks completion), routing decisions stored append-only, documentation derived from real records with a commit stamp and stale detection; panel sections and forms for each.
 
 ## Not built (see the traceability matrix)
 The AI that drafts a plan; Orchestrator model ranking/envelope/tool gating; any specialist actually running (needs a funded model key + repo/CI binding); the build runner that calls `record_build_run`; flaky-test tracking; AI feedback classifier for builds; PM5 revision/change-request/hand-off messages; Admin forms for planning, integrations and specialist state, and a task-graph screen; Documentation agent (the record and rules exist; the agent that derives documents does not); `M3PaymentVerified` event + Phase 6 workspace (Phase 6).

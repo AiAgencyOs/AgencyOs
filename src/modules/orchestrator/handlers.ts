@@ -285,6 +285,25 @@ export async function handleRouteDevelopmentPlan(admin: Admin, job: UnlockJob): 
   for (const task of tasks ?? []) {
     if (already.has(task.id)) continue;
     const decision = decideDevelopmentRoute({ requiredCapability: task.required_capability, enabled, agentState });
+    // Every decision is stored, whatever it was: "held" and "refused" are exactly the ones an Admin needs to see. (task, outcome, code) is
+    // unique, so a redelivered event records nothing twice.
+    const { error: decisionError } = await admin
+      .schema('projects')
+      .from('routing_decisions')
+      .upsert(
+        {
+          organization_id: job.organization_id,
+          project_id: plan.project_id,
+          plan_id: plan.id,
+          task_id: task.id,
+          to_agent: 'toAgent' in decision ? decision.toAgent : null,
+          outcome: decision.outcome,
+          code: 'code' in decision ? decision.code : '',
+          reason: decision.reason,
+        },
+        { onConflict: 'task_id,outcome,code', ignoreDuplicates: true },
+      );
+    if (decisionError) return { status: 'failed', permanent: false, detail: `the routing decision for "${task.title}" could not be recorded: ${decisionError.message}` };
     if (decision.outcome === 'held') {
       held += 1;
       continue;

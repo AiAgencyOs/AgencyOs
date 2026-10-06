@@ -149,11 +149,11 @@ describe('every Phase 5 action is a thin call to a database door', () => {
   const forms = read('app/(internal)/projects/[projectId]/phase-five-forms.tsx');
   test('each door the overview describes has an action and a form', () => {
     for (const door of ['record_build_qa_verdict', 'record_code_review', 'decide_build_admin', 'submit_deliverable', 'record_build_feedback', 'classify_build_feedback',
-      'create_development_plan', 'plan_task', 'approve_development_plan', 'register_integration', 'set_integration_state', 'set_phase_five_agent_state', 'record_technical_document', 'record_flaky_test', 'resolve_flaky_test']) {
+      'create_development_plan', 'plan_task', 'approve_development_plan', 'register_integration', 'set_integration_state', 'set_phase_five_agent_state', 'record_technical_document', 'record_flaky_test', 'resolve_flaky_test', 'link_task_test_run', 'derive_phase_five_documents']) {
       assert.ok(actions.includes(`'${door}'`), door);
     }
     for (const action of ['recordBuildQaAction', 'recordCodeReviewAction', 'decideBuildAdminAction', 'shareBuildWithClientAction', 'recordBuildFeedbackAction', 'classifyBuildFeedbackAction',
-      'createDevelopmentPlanAction', 'planTaskAction', 'approveDevelopmentPlanAction', 'registerIntegrationAction', 'setIntegrationStateAction', 'setSpecialistStateAction', 'recordDocumentAction', 'recordFlakyTestAction', 'resolveFlakyTestAction']) {
+      'createDevelopmentPlanAction', 'planTaskAction', 'approveDevelopmentPlanAction', 'registerIntegrationAction', 'setIntegrationStateAction', 'setSpecialistStateAction', 'recordDocumentAction', 'recordFlakyTestAction', 'resolveFlakyTestAction', 'linkTaskTestRunAction', 'deriveDocumentsAction']) {
       assert.ok(forms.includes(action), action);
     }
   });
@@ -192,5 +192,29 @@ describe('the remaining records are readable and operable from the panel', () =>
     assert.match(migration, /check \(status <> 'quarantined' or \(owner_id is not null and expires_at is not null\)\)/);
     assert.match(migration, /an integration cannot be documented as implemented while it is/);
     assert.match(migration, /a document must not carry a secret value/);
+  });
+});
+
+
+describe('traceable evidence, stored routing decisions, derived documents', () => {
+  const migration = read('supabase/migrations/20261031290000_evidence_is_traceable_decisions_are_recorded_documents_are_derived.sql');
+  const handler = read('src/modules/orchestrator/handlers.ts');
+  const panel = read('app/(internal)/projects/[projectId]/phase-five-panel.tsx');
+  test('a failed run is not coverage; Phase 5 names uncovered tasks and stale documents', () => {
+    assert.match(migration, /r\.failed = 0 and r\.passed > 0/);
+    assert.match(migration, /no passing test evidence/);
+    assert.match(migration, /Derived documentation is stale/);
+  });
+  test('every routing decision is stored (held and refused included), once', () => {
+    assert.match(handler, /from\('routing_decisions'\)/);
+    assert.match(handler, /onConflict: 'task_id,outcome,code', ignoreDuplicates: true/);
+    assert.match(migration, /unique \(task_id, outcome, code\)/);
+  });
+  test('documents are derived from records and say what they are derived from', () => {
+    for (const source of ['projects.integration_connections', 'projects.build_runs', 'qa.test_runs', 'qa.defects']) assert.ok(migration.includes(source), source);
+    assert.match(migration, /source_commit/);
+  });
+  test('the panel shows all three', () => {
+    for (const text of ['Test evidence per task', 'Routing decisions', '<DeriveDocumentsForm', '<LinkTestRunForm', 'are stale']) assert.ok(panel.includes(text), text);
   });
 });

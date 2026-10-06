@@ -60,6 +60,11 @@ const WORDS: Record<string, string> = {
   expiry_required_within_30_days: 'A quarantine needs an expiry within 30 days.',
   resolution_required: 'Say what was fixed.',
   refused: 'Refused: a document cannot claim more than its evidence (an integration is implemented only when verified; no secret values).',
+  linked: 'Linked: this run is now evidence for the task (a failing run does not count as coverage).',
+  already_linked: 'That run is already linked to the task.',
+  wrong_project: 'That run belongs to a different project.',
+  derived: 'Documentation re-derived from the current records.',
+  no_build: 'There is no development build to derive documentation from yet.',
   invalid: 'Not recorded: an implemented document must name the evidence it came from.',
 };
 
@@ -259,4 +264,16 @@ export async function resolveFlakyTestAction(_prev: FormState, formData: FormDat
     p_resolution: text(formData, 'resolution') || null,
     p_expires_at: text(formData, 'action') === 'quarantine' ? new Date(Date.now() + days * 86_400_000).toISOString() : null,
   }, ['quarantined', 'resolved']);
+}
+
+
+export async function linkTaskTestRunAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  return run(text(formData, 'projectId'), 'link_task_test_run', {
+    p_task_id: text(formData, 'taskId'),
+    p_test_run_id: text(formData, 'testRunId'),
+  }, ['linked', 'already_linked']);
+}
+
+export async function deriveDocumentsAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  return run(text(formData, 'projectId'), 'derive_phase_five_documents', { p_project_id: text(formData, 'projectId') }, ['derived']);
 }

@@ -8,6 +8,8 @@ import {
   BuildActions,
   ClassifyFeedbackForm,
   CreatePlanForm,
+  DeriveDocumentsForm,
+  LinkTestRunForm,
   IntegrationStateForm,
   PlanTaskForm,
   RecordDocumentForm,
@@ -60,7 +62,7 @@ const BUILD_TONE: Record<string, Tone> = {
 };
 
 export function PhaseFivePanel({ view, projectId }: { view: PhaseFiveOverview; projectId: string }) {
-  const { workspace, gates, baseline, readiness, phaseSixMissing, builds, defects, feedback, integrations, agentStates, handoff, plan, unplannedTasks, flaky, documents } = view;
+  const { workspace, gates, baseline, readiness, phaseSixMissing, builds, defects, feedback, integrations, agentStates, handoff, plan, unplannedTasks, flaky, documents, routing, testGaps, staleDocuments, recentRuns } = view;
 
   if (!workspace) {
     return (
@@ -176,6 +178,41 @@ export function PhaseFivePanel({ view, projectId }: { view: PhaseFiveOverview; p
       </section>
 
       <section className="flex flex-col gap-1 border-t border-line pt-3">
+        <span className="text-xs font-medium uppercase tracking-wide text-faint">Test evidence per task</span>
+        {testGaps.length === 0 ? (
+          <p className="text-xs text-muted">Every planned task has a linked passing run (or none is planned yet).</p>
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {testGaps.map((g) => (
+              <li key={g.id} className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                <span className="text-danger">No passing evidence:</span>
+                <span>{g.title}</span>
+                <LinkTestRunForm projectId={projectId} taskId={g.id} runs={recentRuns} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-1 border-t border-line pt-3">
+        <span className="text-xs font-medium uppercase tracking-wide text-faint">Routing decisions</span>
+        {routing.length === 0 ? (
+          <p className="text-xs text-muted">No task has been routed yet (routing happens when a plan is approved).</p>
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {routing.map((r, i) => (
+              <li key={`${r.taskTitle}-${i}`} className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                <Badge tone={r.outcome === 'routed' ? 'success' : r.outcome === 'held' ? 'warning' : 'danger'}>{humanize(r.outcome)}</Badge>
+                <span>{r.taskTitle}</span>
+                {r.toAgent ? <span>→ {humanize(r.toAgent)}</span> : null}
+                <span>{r.reason}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-1 border-t border-line pt-3">
         <span className="text-xs font-medium uppercase tracking-wide text-faint">Defects</span>
         <p className="text-xs text-muted">
           {defects.unresolved} not yet verified · {defects.verified} verified · {defects.total} total. A fix claim does not count until someone other than the fixer verifies it.
@@ -262,6 +299,8 @@ export function PhaseFivePanel({ view, projectId }: { view: PhaseFiveOverview; p
             ))}
           </ul>
         )}
+        {staleDocuments > 0 ? <p className="text-xs text-danger">{staleDocuments} derived document(s) are stale: a newer build exists than the one they describe.</p> : null}
+        <DeriveDocumentsForm projectId={projectId} />
         <details>
           <summary className="cursor-pointer text-xs underline underline-offset-2">Record a document</summary>
           <RecordDocumentForm projectId={projectId} integrations={integrations.map((i) => ({ id: i.id, name: i.name }))} />

@@ -6,6 +6,8 @@ import {
   approveDevelopmentPlanAction,
   classifyBuildFeedbackAction,
   createDevelopmentPlanAction,
+  deriveDocumentsAction,
+  linkTaskTestRunAction,
   planTaskAction,
   recordDocumentAction,
   recordFlakyTestAction,
@@ -330,6 +332,33 @@ export function RecordDocumentForm({ projectId, integrations }: { projectId: str
       </select>
       <textarea aria-label="Body" name="body" rows={3} className={field} placeholder="Body" />
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Recording…' : 'Record document'}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+
+export function LinkTestRunForm({ projectId, taskId, runs }: { projectId: string; taskId: string; runs: { id: string; suite: string; passed: number; failed: number }[] }) {
+  const [state, action, pending] = useActionState(linkTaskTestRunAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="taskId" value={taskId} />
+      <select aria-label="Test run" name="testRunId" className={field} defaultValue={runs[0]?.id ?? ''}>
+        {runs.map((r) => <option key={r.id} value={r.id}>{r.suite}: {r.passed} passed, {r.failed} failed</option>)}
+      </select>
+      <button type="submit" disabled={pending || runs.length === 0} className={buttonClass('secondary', 'sm')}>{pending ? '…' : 'Link as evidence'}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+export function DeriveDocumentsForm({ projectId }: { projectId: string }) {
+  const [state, action, pending] = useActionState(deriveDocumentsAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Deriving…' : 'Derive documentation from the current records'}</button>
       <Message state={state} />
     </form>
   );

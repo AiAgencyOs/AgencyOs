@@ -385,6 +385,12 @@ reset role;
 insert into ai.handoffs (organization_id, correlation_id, from_agent, to_agent, project_id, task_id, subject_type, subject_id, objective, context)
   values (:'ORG', :'PL_pl', 'orchestrator', 'backend_developer', :'P_id', :'T3_id', 'development_task', :'T3_id', 'Development task: pay api', '{"envelope":{"idempotencyKey":"t:p:1"}}');
 select pg_temp.check((select count(*) from ai.handoffs where subject_type = 'development_task' and subject_id = :'T3_id') = 1, 'the Orchestrator can hand a planned task to the specialist the plan names');
+insert into projects.routing_decisions (organization_id, project_id, plan_id, task_id, to_agent, outcome, code, reason)
+  values (:'ORG', :'P_id', :'PL_pl', :'T2_id', 'frontend_developer', 'held', 'agent_disabled', 'frontend_developer is installed but not enabled');
+insert into projects.routing_decisions (organization_id, project_id, plan_id, task_id, to_agent, outcome, code, reason)
+  values (:'ORG', :'P_id', :'PL_pl', :'T2_id', 'frontend_developer', 'held', 'agent_disabled', 'redelivered') on conflict (task_id, outcome, code) do nothing;
+select pg_temp.check((select count(*) from projects.routing_decisions where task_id = :'T2_id') = 1, 'a redelivered routing event records the same decision once');
+select pg_temp.check(pg_temp.refused(format('update projects.routing_decisions set reason = ''edited'' where task_id = %L', :'T2_id'), 'record of what was decided'), 'a routing decision is a record: it is never edited');
 do $$ begin
   begin
     insert into ai.handoffs (organization_id, correlation_id, from_agent, to_agent, project_id, subject_type, subject_id, objective)
@@ -603,6 +609,31 @@ select pg_temp.check((select count(*) from qa.defects where project_id = :'P_id'
 set local session_replication_role = replica;
 update projects.deliverables set status = 'superseded' where title = 'dup';
 set local session_replication_role = origin;
+-- REQUIREMENT -> TASK -> TEST: every planned task needs a linked run that actually passed
+insert into qa.test_runs (organization_id, project_id, deliverable_id, suite, total, passed, failed, skipped, executed_at) values (:'ORG', :'P_id', :'BD1_bd', 'functional', 12, 10, 2, 0, now()) returning id \gset RUNF_
+insert into qa.test_runs (organization_id, project_id, deliverable_id, suite, total, passed, failed, skipped, executed_at) values (:'ORG', :'P_id', :'BD1_bd', 'functional', 12, 12, 0, 0, now() + interval '1 second') returning id \gset RUNP_
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select count(*) from projects.task_test_gaps(:'P_id')) = 4, 'four planned tasks, none with test evidence yet');
+select pg_temp.check((select outcome from projects.link_task_test_run(:'T6_id', :'RUNF_id')) = 'linked', 'a failing run can be linked (the evidence is honest)');
+select pg_temp.check((select count(*) from projects.task_test_gaps(:'P_id') where task_id = :'T6_id') = 1, 'but a failing run does not cover the task');
+select pg_temp.check((select outcome from projects.link_task_test_run(:'T6_id', :'RUNF_id')) = 'already_linked', 'linking twice links once');
+select pg_temp.check((select outcome from projects.link_task_test_run(:'TASK_id', :'RUNP_id')) = 'linked', 'a passing run covers a task');
+select projects.link_task_test_run(:'T2_id', :'RUNP_id');
+select projects.link_task_test_run(:'T3_id', :'RUNP_id');
+select pg_temp.check((select count(*) from projects.task_test_gaps(:'P_id')) = 1, 'one task is still uncovered (its only run failed)');
+select pg_temp.check(exists (select 1 from projects.phase_readiness(:'P_id', 5) r, unnest(r.missing) m where m like '%no passing test evidence%'), 'Phase 5 completion names the uncovered task');
+select projects.link_task_test_run(:'T6_id', :'RUNP_id');
+select pg_temp.check((select count(*) from projects.task_test_gaps(:'P_id')) = 0, 'every planned task now has passing evidence');
+-- documentation DERIVED from rows that exist
+select projects.set_integration_state(:'IC_ic', 'configured', 'sandbox keys pasted');
+select pg_temp.check((select outcome from projects.derive_phase_five_documents(:'P_id')) = 'derived', 'documentation is derived from the real records');
+select pg_temp.check((select status from projects.technical_documents where project_id = :'P_id' and title = 'WhatsApp Business') = 'not_implemented', 'an UNKNOWN integration is documented as not implemented');
+select pg_temp.check((select status from projects.technical_documents where project_id = :'P_id' and title = 'Razorpay') = 'partial', 'a configured/unverified one is partial: documentation does not exceed evidence');
+select pg_temp.check((select status from projects.technical_documents where project_id = :'P_id' and kind = 'build_run') = 'implemented', 'the build record is derived from the succeeded run');
+select pg_temp.check((select body like '%not verified%' or body like '%Integrations not verified%' from projects.technical_documents where project_id = :'P_id' and kind = 'known_limitations'), 'the known limitations name what is not verified');
+select pg_temp.check((select count(*) from projects.stale_documents(:'P_id')) = 0, 'freshly derived documentation is not stale');
+reset role;
 -- the development task is done (the review path for tasks is its own, already-proven door; here its status is set as the table owner)
 set local session_replication_role = replica;
 update projects.tasks set status = 'done', completed_at = now() where project_id = :'P_id' and status <> 'cancelled';
@@ -621,6 +652,16 @@ select pg_temp.check((select state from projects.phase_five where project_id = :
 reset role;
 select pg_temp.check(pg_temp.refused(format('update projects.phase_five_handoffs set final_commit_ref = ''zzz'' where project_id = %L', :'P_id'), 'never edited'), 'the intake is frozen: it cannot be edited after the fact');
 select pg_temp.check(exists (select 1 from core.outbox_events where type = 'project.phase_five_completed' and subject_id = :'P_id'), 'Phase5Completed was emitted (it triggers the M3 invoice)');
+-- a newer build makes the derived documentation STALE until it is derived again from what now exists
+select deliverable_id as nb from projects.add_deliverable(:'P_id', 'build', 'Development build 2', 'https://builds.example.test/2', 'next', null, null, null, null) \gset NB_
+insert into projects.deliverable_details (deliverable_id, organization_id, project_id, commit_ref, build_number) values (:'NB_nb', :'ORG', :'P_id', 'fff0001', 'build-2');
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select count(*) from projects.stale_documents(:'P_id')) >= 4, 'NO STALE DOCS: documentation derived from build 1 is stale the moment build 2 exists');
+select pg_temp.check((select outcome from projects.derive_phase_five_documents(:'P_id')) = 'derived', 're-deriving brings the documentation up to the current commit');
+select pg_temp.check((select count(*) from projects.stale_documents(:'P_id')) = 0, 'and nothing is stale again');
+select pg_temp.check((select status from projects.technical_documents where project_id = :'P_id' and kind = 'build_run') = 'not_implemented', 'the build document no longer claims the new commit was built: there is no run for it');
+reset role;
 
 -- 20. the Phase 6 financial gate: M3 verified paid in full, nothing less
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
