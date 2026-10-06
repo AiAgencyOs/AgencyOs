@@ -8,6 +8,7 @@ import { createAdminClient } from '@/lib/db/admin';
 import { createClient } from '@/lib/db/server';
 import type { FormState } from '@/modules/identity/types';
 
+import { notConfiguredExecutor, runBuild, type Executor } from './build-runner';
 import { runIntegrationCheck, type HttpClient } from './integration-check';
 
 /**
@@ -376,4 +377,58 @@ export async function runIntegrationCheckAction(_prev: FormState, formData: Form
   revalidatePath(`/projects/${projectId}`);
   if (outcome.recorded === 'verified') return { status: 'success', message: `Verified: ${outcome.detail}` };
   return { status: 'error', message: outcome.recorded === 'degraded' ? `Check failed and the integration is now degraded: ${outcome.detail}` : `Nothing was verified: ${outcome.detail}` };
+}
+
+
+/**
+ * The executor bound to this deployment. NONE is bound today (a build needs a CI worker or container the owner provides), so the runner records
+ * the truthful `environment_missing` blocker. When one exists it is returned here, and nothing else in the path changes.
+ */
+function boundBuildExecutor(): Executor {
+  return notConfiguredExecutor;
+}
+
+/** Run the build for one development build NOW: stage by stage, recorded through the doors, never faked. */
+export async function runBuildAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const refused = await gate();
+  if (refused) return refused;
+  const projectId = text(formData, 'projectId');
+  const deliverableId = text(formData, 'deliverableId');
+  const supabase = await createClient();
+  const { data: dd, error } = await supabase
+    .schema('projects')
+    .from('deliverable_details')
+    .select('commit_ref, target_env, deliverable_id')
+    .eq('deliverable_id', deliverableId)
+    .eq('project_id', projectId)
+    .maybeSingle();
+  if (error) return { status: 'error', message: 'The build could not be read; nothing was run.' };
+  const commit = (dd?.commit_ref ?? '').trim();
+  if (!dd || !commit) return { status: 'error', message: 'This build names no exact commit, so it cannot be built.' };
+  const admin = createAdminClient();
+  const rpc = (admin.schema('projects') as unknown as { rpc(name: string, args: unknown): PromiseLike<{ data: unknown }> });
+  const result = await runBuild(boundBuildExecutor(), {
+    deliverableId,
+    commit,
+    environment: (['dev', 'review', 'staging', 'client_test'] as const).find((e) => e === dd.target_env) ?? 'review',
+    record: async (a) => {
+      const { data } = await rpc.rpc('record_build_run', {
+        p_deliverable_id: deliverableId,
+        p_environment: (['dev', 'review', 'staging', 'client_test'] as const).find((e) => e === dd.target_env) ?? 'review',
+        p_status: a.status,
+        p_failure_class: a.failureClass,
+        p_stages: a.stages,
+        p_fingerprint: a.fingerprint,
+        p_artifact_sha256: a.artifactSha256,
+        p_retry_of: a.retryOf,
+        p_idempotency_key: a.idempotencyKey,
+      });
+      const row = first(data) as { outcome?: string; run_id?: string };
+      return { outcome: String(row.outcome ?? 'no answer'), runId: row.run_id ?? null };
+    },
+  });
+  revalidatePath(`/projects/${projectId}`);
+  if (result.status === 'succeeded') return { status: 'success', message: 'Built and the artifact verified; the run is recorded on this exact commit.' };
+  if (result.failureClass === 'environment_missing') return { status: 'error', message: 'No build executor is bound to this deployment, so nothing was built. The blocker is recorded; connect a CI worker to build.' };
+  return { status: 'error', message: `The build ${result.status}: ${result.detail}` };
 }

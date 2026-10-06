@@ -18,6 +18,7 @@ import {
   startPhaseFiveAction,
   recordBaselineCommitAction,
   resolveEscalationAction,
+  runBuildAction,
   runIntegrationCheckAction,
   setIntegrationCheckTargetAction,
   decideBuildAdminAction,
@@ -145,6 +146,7 @@ export function BuildActions({ projectId, deliverableId, status }: { projectId: 
     <div className="flex flex-col gap-2 pl-4">
       {open ? (
         <>
+          <RunBuildButton projectId={projectId} deliverableId={deliverableId} />
           <details><summary className="cursor-pointer text-xs underline underline-offset-2">QA verdict</summary><QaForm projectId={projectId} deliverableId={deliverableId} /></details>
           <details><summary className="cursor-pointer text-xs underline underline-offset-2">Code review</summary><ReviewForm projectId={projectId} deliverableId={deliverableId} /></details>
           <details><summary className="cursor-pointer text-xs underline underline-offset-2">Admin decision</summary><AdminForm projectId={projectId} deliverableId={deliverableId} /></details>
@@ -441,5 +443,18 @@ export function IntegrationCheckForm({ projectId, connectionId, checkUrl, creden
         </form>
       ) : null}
     </div>
+  );
+}
+
+
+function RunBuildButton({ projectId, deliverableId }: { projectId: string; deliverableId: string }) {
+  const [state, action, pending] = useActionState(runBuildAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex items-center gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="deliverableId" value={deliverableId} />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Building…' : 'Run the build'}</button>
+      <Message state={state} />
+    </form>
   );
 }
