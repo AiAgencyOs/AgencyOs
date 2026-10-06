@@ -52,6 +52,8 @@ import { readClientName } from '@/lib/admin/clients';
 
 import { TrailLabel } from '../../trail-label';
 import { can } from '@/lib/authz/permissions';
+import { getPhaseSixExtra } from '@/modules/projects/phase-six-extra-queries';
+import { getReviewView } from '@/modules/projects/review-queries';
 import { getTestIntegrationView } from '@/modules/projects/test-integration-queries';
 import {
   listDeliverables,
@@ -137,6 +139,8 @@ import { CLIENT_SECRET_KIND_LABELS, listClientSecrets } from '@/modules/projects
 import { PhaseTwoPanel } from './phase-two-panel';
 import { PhaseFourPanel } from './phase-four-panel';
 import { BuildDepthPanel } from './build-depth-panel';
+import { PhaseSixExtraPanel } from './phase-six-extra-panel';
+import { ReviewPanel } from './review-panel';
 import { OrchestratorPanel } from './orchestrator-panel';
 import { PmDepthPanel } from './pm-depth-panel';
 import { TestIntegrationPanel } from './test-integration-panel';
@@ -232,6 +236,8 @@ export default async function ProjectPage({
   const escalations = await readOpenEscalations(projectId);
   const pmOverview = await readPmOverview(projectId);
   const testIntegration = await getTestIntegrationView(projectId);
+  const reviewView = await getReviewView(projectId);
+  const phaseSixExtra = await getPhaseSixExtra(projectId);
   const taskBoard = await readTaskBoard(projectId);
   const buildRuns = await readBuildRuns(projectId);
   const buildBlockers = await readBuildBlockers(projectId);
@@ -911,6 +917,10 @@ export default async function ProjectPage({
       <RecordsPanel view={records} />
 
       <BuildDepthPanel projectId={projectId} canAdmin={can(context, 'project.sign_off')} />
+
+      <ReviewPanel projectId={projectId} view={reviewView} canWrite={can(context, 'project.write')} isAdmin={can(context, 'project.sign_off')} />
+
+      <PhaseSixExtraPanel extra={phaseSixExtra} />
 
       <OrchestratorPanel projectId={projectId} />
 
