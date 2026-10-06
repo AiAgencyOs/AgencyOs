@@ -134,6 +134,7 @@ import { IMAGE_GENERATION_MODEL } from '@/lib/ai/openrouter-image';
 
 import { ACQUISITION_WORKFLOWS } from './acquisition-workflows';
 import { DEVELOPMENT_WORKFLOWS } from './development-workflows';
+import { SPECIALIST_WORKFLOWS } from './specialist-workflows';
 import { dispatchToolUnderPolicy } from '@/modules/agents/policy-enforcement';
 import { dispatchableToolsFor } from '@/modules/agents/tool-dispatch';
 import { toolsFor } from '@/modules/agents/tools';
@@ -10013,7 +10014,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
  * Everything the runner claims: the workflows above plus the acquisition agents' (ADM-112 / ADM-113), kept in their own file and list so the
  * original roster's own pinned shape is not disturbed. Their tools only draft, check and ask a person to approve.
  */
-const RUNNABLE_WORKFLOWS: readonly AgentWorkflow[] = [...AGENT_WORKFLOWS, ...ACQUISITION_WORKFLOWS, ...DEVELOPMENT_WORKFLOWS];
+const RUNNABLE_WORKFLOWS: readonly AgentWorkflow[] = [...AGENT_WORKFLOWS, ...ACQUISITION_WORKFLOWS, ...DEVELOPMENT_WORKFLOWS, ...SPECIALIST_WORKFLOWS];
 
 export const AGENT_JOB_KINDS: readonly string[] = RUNNABLE_WORKFLOWS.map((w) => w.jobKind);
 
