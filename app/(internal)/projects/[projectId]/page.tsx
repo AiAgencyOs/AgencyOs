@@ -53,6 +53,7 @@ import { readClientName } from '@/lib/admin/clients';
 import { TrailLabel } from '../../trail-label';
 import { can } from '@/lib/authz/permissions';
 import { getPhaseSixExtra } from '@/modules/projects/phase-six-extra-queries';
+import { readQaSpecialistView } from '@/modules/projects/qa-specialist-queries';
 import { getReviewView } from '@/modules/projects/review-queries';
 import { getSpecialistView } from '@/modules/projects/specialist-queries';
 import { getTestIntegrationView } from '@/modules/projects/test-integration-queries';
@@ -141,6 +142,7 @@ import { PhaseTwoPanel } from './phase-two-panel';
 import { PhaseFourPanel } from './phase-four-panel';
 import { BuildDepthPanel } from './build-depth-panel';
 import { PhaseSixExtraPanel } from './phase-six-extra-panel';
+import { QaSpecialistPanel } from './qa-specialist-panel';
 import { ReviewPanel } from './review-panel';
 import { SpecialistPanel } from './specialist-panel';
 import { OrchestratorPanel } from './orchestrator-panel';
@@ -240,6 +242,7 @@ export default async function ProjectPage({
   const testIntegration = await getTestIntegrationView(projectId);
   const reviewView = await getReviewView(projectId);
   const specialists = await getSpecialistView(projectId);
+  const qaSpecialist = await readQaSpecialistView(projectId);
   const phaseSixExtra = await getPhaseSixExtra(projectId);
   const taskBoard = await readTaskBoard(projectId);
   const buildRuns = await readBuildRuns(projectId);
@@ -926,6 +929,8 @@ export default async function ProjectPage({
       <PhaseSixExtraPanel extra={phaseSixExtra} />
 
       <SpecialistPanel projectId={projectId} view={specialists} />
+
+      <QaSpecialistPanel projectId={projectId} view={qaSpecialist} />
 
       <OrchestratorPanel projectId={projectId} />
 
