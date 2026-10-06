@@ -32,3 +32,9 @@ Fixed (migration `20261101180000`, TypeScript, verifier red-proven):
 - Form inputs (`days`, severity) are validated; an Admin "Start Phase 5" door exists for when the one-shot payment event did not start it; duplicate React keys fixed.
 
 Open from the SQL review (not fixed, recorded): QA/Admin approval of a build is not bound to a commit (item 6); a code reviewer who changed the code can also record an independent review (7); several gates pass vacuously when the project has no baseline / derived documents / plan categories (8); `ingest_test_report` accepts un-evidenced person reports (9); quarantine can be renewed indefinitely and some check-then-act races (10); new tables lack an explicit `revoke from public, anon, authenticated` (11); payment booleans are readable by portal clients (12).
+
+### Second round (migration `20261101190000`)
+
+Closed, each red-proven in `scripts/verify-phase-four-e2e.sql`: a changed `commit_ref` un-approves the build's QA and Admin verdicts (6); a reviewer who recorded "I changed the code" is never the independent second reviewer on that commit (7); a person's test-report ingest needs https evidence like a runner's (9); anon is revoked from the internal Phase 5/6 tables (11); portal clients get false from `m3_verified_paid`, `m4_verified_paid` and `phase_seven_candidate_current` (12).
+
+Still open from the review: vacuous gates on projects with no baseline/derived documents/plan categories (8) and the quarantine-renewal and check-then-act races (10).

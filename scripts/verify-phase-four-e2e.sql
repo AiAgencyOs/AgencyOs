@@ -594,11 +594,12 @@ select pg_temp.check((select outcome from projects.record_technical_document(:'P
 select pg_temp.check((select outcome from projects.record_technical_document(:'P_id', 'api', 'Cart API', 'implemented', 'src/cart/route.ts', null, 'POST /cart')) = 'recorded', 'IMPLEMENTED names the evidence it was derived from');
 select pg_temp.check((select outcome from projects.record_technical_document(:'P_id', 'architecture', 'Config', 'implemented', 'docs/config.md', null, 'RAZORPAY_API_KEY=sk-abcdefghijklmnopqrstuvwx')) = 'refused', 'a secret value is never written into a document');
 -- a runner's machine-readable report: counts are computed, flaky is not green, the evidence is named
-select pg_temp.check((select outcome from qa.ingest_test_report(:'BD1_bd', 'functional', '{"tests":[]}')) = 'empty_report', 'an empty report is refused');
-select pg_temp.check((select outcome from qa.ingest_test_report(:'BD1_bd', 'functional', '{"tests":[{"name":"a","status":"passed"},{"name":"a","status":"passed"}]}')) = 'duplicate_test_names', 'a report that names a test twice is refused');
-select pg_temp.check((select outcome from qa.ingest_test_report(:'BD1_bd', 'functional', '{"total":9,"tests":[{"name":"a","status":"passed"}]}')) = 'inconsistent_report', 'a header that disagrees with the tests is refused: counts are computed, never trusted');
-select pg_temp.check((select outcome from qa.ingest_test_report(:'BD1_bd', 'functional', '{"tests":[{"name":"a","status":"mostly"}]}')) = 'malformed_report', 'an unknown status is refused');
-select outcome as o, run_id as r, passed as p, failed as f, flaky as k from qa.ingest_test_report(:'BD1_bd', 'functional', '{"total":3,"tests":[{"name":"cart.add","status":"passed"},{"name":"cart.pay","status":"flaky","retries":2},{"name":"cart.remove","status":"skipped"}]}') \gset ING_
+select pg_temp.check((select outcome from qa.ingest_test_report(:'BD1_bd', 'functional', '{"tests":[{"name":"a","status":"passed"}]}')) = 'evidence_required', 'a PERSON'' report needs its evidence too');
+select pg_temp.check((select outcome from qa.ingest_test_report(:'BD1_bd', 'functional', '{"tests":[]}', 'https://ci.example.test/run/p')) = 'empty_report', 'an empty report is refused');
+select pg_temp.check((select outcome from qa.ingest_test_report(:'BD1_bd', 'functional', '{"tests":[{"name":"a","status":"passed"},{"name":"a","status":"passed"}]}', 'https://ci.example.test/run/p')) = 'duplicate_test_names', 'a report that names a test twice is refused');
+select pg_temp.check((select outcome from qa.ingest_test_report(:'BD1_bd', 'functional', '{"total":9,"tests":[{"name":"a","status":"passed"}]}', 'https://ci.example.test/run/p')) = 'inconsistent_report', 'a header that disagrees with the tests is refused: counts are computed, never trusted');
+select pg_temp.check((select outcome from qa.ingest_test_report(:'BD1_bd', 'functional', '{"tests":[{"name":"a","status":"mostly"}]}', 'https://ci.example.test/run/p')) = 'malformed_report', 'an unknown status is refused');
+select outcome as o, run_id as r, passed as p, failed as f, flaky as k from qa.ingest_test_report(:'BD1_bd', 'functional', '{"total":3,"tests":[{"name":"cart.add","status":"passed"},{"name":"cart.pay","status":"flaky","retries":2},{"name":"cart.remove","status":"skipped"}]}', 'https://ci.example.test/run/p') \gset ING_
 select pg_temp.check(:'ING_o' = 'ingested' and :'ING_p'::int = 1 and :'ING_f'::int = 1 and :'ING_k'::int = 1, 'a test that passed only on retry is counted as a FAILURE of the run, not a pass');
 select pg_temp.check((select failed = 1 and passed = 1 and total = 3 from qa.test_runs where id = :'ING_r'), 'the run row carries the computed counts');
 select pg_temp.check((select count(*) from qa.test_run_cases where test_run_id = :'ING_r') = 3, 'every test is stored as a machine-readable row');
@@ -608,6 +609,7 @@ select qa.resolve_flaky_test(:'ING2_fi', 'resolve', 'removed the shared fixture;
 reset role;
 select pg_temp.as_service();
 set local role service_role;
+-- (a person's report needs its evidence too; a runner's is checked below)
 select pg_temp.check((select outcome from qa.ingest_test_report(:'BD1_bd', 'api', '{"tests":[{"name":"x","status":"passed"}]}')) = 'evidence_required', 'a CI runner must name the evidence its report came from');
 select pg_temp.check((select outcome from qa.ingest_test_report(:'BD1_bd', 'api', '{"tests":[{"name":"x","status":"passed"}]}', 'https://ci.example.test/run/1')) = 'ingested', 'with its evidence a runner''s report is ingested');
 reset role;
@@ -1207,6 +1209,27 @@ do $$ begin
   exception when restrict_violation then null; end;
 end $$;
 select pg_temp.check(true, 'a defect cannot be inserted already verified');
+reset role;
+
+
+-- second review round: approvals are about a commit; a client cannot ask about payments
+reset role;
+select deliverable_id as bd from projects.add_deliverable(:'P_id', 'build', 'Development build 9', 'https://builds.example.test/9', 'initial', null, '00000000-0000-4000-8000-00000000f522', null, null) \gset BD9_
+select outcome from projects.set_deliverable_details(:'BD9_bd', 'web', 'aaa1111', 'build-9', null, null);
+update projects.deliverable_details set qa_status = 'passed', qa_decided_at = now(), admin_status = 'approved', admin_decided_at = now() where deliverable_id = :'BD9_bd';
+update projects.deliverable_details set commit_ref = 'bbb2222' where deliverable_id = :'BD9_bd';
+select pg_temp.check((select qa_status = 'not_reviewed' and admin_status = 'pending' and qa_decided_at is null and admin_decided_at is null from projects.deliverable_details where deliverable_id = :'BD9_bd'), 'swapping the commit after QA and Admin approval un-approves the build');
+insert into projects.code_reviews (organization_id, project_id, deliverable_id, commit_ref, verdict, reviewer_id, reviewer_changed_code, reviewed_at)
+  values (:'ORG', :'P_id', :'BD9_bd', 'bbb2222', 'passed', :'OWNER', true, now() - interval '2 minutes'),
+         (:'ORG', :'P_id', :'BD9_bd', 'bbb2222', 'passed', :'OWNER', false, now());
+select pg_temp.check((select verdict from projects.build_review_status(:'BD9_bd')) = 'needs_second', 'a reviewer who changed the code cannot also be the independent second reviewer');
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check(projects.m3_verified_paid(:'P_id'), 'staff can ask whether M3 is verified paid');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'client');
+set local role authenticated;
+select pg_temp.check(not projects.m3_verified_paid(:'P_id') and not projects.m4_verified_paid(:'P_id') and not projects.phase_seven_candidate_current(:'P_id'), 'a portal client learns nothing about payments or the Phase 7 candidate');
 reset role;
 
 rollback;
