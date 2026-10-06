@@ -9,9 +9,8 @@ import type { RouteCandidate } from './development-route';
  *   DevelopmentTaskQAPassed   Mark eligible for integration/acceptance
  *
  * Pure functions, one per event: given the facts (re-read from rows by the caller, never trusted from an event payload), each returns a routing
- * decision shaped for `projects.routing_decisions` (`routingDecisionRow`). No event type is added to `src/lib/events/catalog.ts` and nothing here is
- * subscribed: a decision function that no event reaches is the `built-and-unreachable` defect, so this file says so plainly. It becomes live the day
- * the QA verdict handler calls it; `recordRoutingDecision` in `orchestrator-service.ts` is the write that handler would make.
+ * decision shaped for `projects.routing_decisions` (`routingDecisionRow`). The two events are `project.dev_task_qa_failed` and `project.dev_task_qa_passed` (emitted by triggers in 20261103100000), subscribed in
+ * `src/lib/events/catalog.ts` to `orchestrator:routeQaOutcome` (qa-outcome.ts), which gathers the facts from rows and records the decision.
  *
  * What the Orchestrator never does here (ADM-82): judge completion, act as QA, override QA, certify delivery. `routeQaPassed` does not decide a task
  * is done: it decides whether a task QA already passed, independently and on the exact commit now present, is ELIGIBLE for integration. A QA pass that

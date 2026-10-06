@@ -100,7 +100,8 @@ import { handleAnnouncePhaseThree, handleAskFinalConfirmation } from '@/modules/
 import { handleWelcomeClient, handleAskGstDetails, handlePaymentUpdate, handleReadBillingReply } from '@/modules/projects/pm-client-comms';
 import { handleHandoverAcceptedForFinance, handleBillingModeConfirmed, handleInvoiceIssuedForDelivery, handlePhaseFourCompletedForFinance, handlePhaseFiveCompletedForFinance, handlePhaseSixCompletedForFinance } from '@/modules/finance/handlers';
 import { learnFromDecision, learnFromRevision, syncDiscountDecision } from '@/modules/sales/handlers';
-import { handleRouteTask2Design, handleRequestUIVersionAdminReview, handleRouteDevelopmentPlan } from '@/modules/orchestrator/handlers';
+import { handleRouteTask2Design, handleRequestUIVersionAdminReview, handleRouteDevelopmentPlan, handleRouteQaOutcome } from '@/modules/orchestrator/handlers';
+import { sweepStaleOrchestratorRecords } from '@/modules/orchestrator/sweeps';
 import { handleReviewUIVersion, handleReviewPrototypeBuild } from '@/modules/qa/handlers';
 
 export const runtime = 'nodejs';
@@ -372,6 +373,9 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   await runInboundEmail(admin);
   // Tracked WhatsApp handoff links that were never used past their expiry (lead generation, 20261015300000).
   await expireHandoffs(admin);
+  // Orchestrator housekeeping, behind the same CRON_SECRET check as everything above: a build request nobody reported on for two hours is settled as a
+  // failed dispatch, and a lease past its time is expired so a crashed worker does not hold files forever.
+  await sweepStaleOrchestratorRecords(admin);
   // Scheduled social posts that are due: published through the governed door, or surfaced for a person when no publisher exists.
   await runSocialPublishing(admin, SOCIAL_PUBLISHERS);
   // Approved ad changes, pending pauses, emergency stops and campaign health (lead generation, 20261020100000).
@@ -653,6 +657,34 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       overdue,
       stamps,
       devPlanRoute: devPlanRoute.results,
+      correlationId,
+    });
+  }
+
+  /**
+   * ── Phase 5: a QA result on a development task is routed ────────────────
+   *
+   * Pure database work like the plan routing above: the task, its runs and defects are re-read, a decision is recorded, and a refusal is escalated
+   * to a person. No model call.
+   */
+  const qaOutcomeRoute = await runEventJobs(admin, QA_OUTCOME_ROUTE_JOB_KIND, handleRouteQaOutcome, 'runQaOutcomeRouteJobs');
+  if (qaOutcomeRoute.claimed > 0) {
+    return NextResponse.json({
+      claimed: qaOutcomeRoute.claimed,
+      kind: QA_OUTCOME_ROUTE_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      qaOutcomeRoute: qaOutcomeRoute.results,
       correlationId,
     });
   }
@@ -1700,6 +1732,7 @@ const PHASE_THREE_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseThree'];
 const PHASE_FOUR_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseFour'];
 const TASK2_ROUTE_JOB_KIND = HANDLER_JOB_KIND['orchestrator:routeTask2Design'];
 const DEV_PLAN_ROUTE_JOB_KIND = HANDLER_JOB_KIND['orchestrator:routeDevelopmentPlan'];
+const QA_OUTCOME_ROUTE_JOB_KIND = HANDLER_JOB_KIND['orchestrator:routeQaOutcome'];
 const LEAD_ROUTE_JOB_KIND = HANDLER_JOB_KIND['crm:routeLead'];
 const LEAD_IDENTITY_JOB_KIND = HANDLER_JOB_KIND['crm:classifyLeadIdentity'];
 const UI_VERSION_QA_JOB_KIND = HANDLER_JOB_KIND['quality_assurance:reviewUIVersion'];

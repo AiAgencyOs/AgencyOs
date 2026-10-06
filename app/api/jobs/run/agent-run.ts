@@ -29,6 +29,7 @@ import type { AiMessage, AiToolSpec, AiUsage, StructuredResponse, ToolCallRespon
 import type { createAdminClient } from '@/lib/db/admin';
 import type { Json } from '@/lib/db/types';
 import { attemptBudgetFor, settlementFor } from '@/lib/jobs/retry';
+import { recordRunUsageCost } from './usage-cost';
 import { err, type Result } from '@/lib/result';
 
 export type Admin = ReturnType<typeof createAdminClient>;
@@ -335,6 +336,9 @@ export async function recordModelCall(
       latency_ms: args.latencyMs,
       error: args.result.ok ? null : args.result.error.message,
     });
+
+  // The project's cost record, whatever became of the trace row: it never throws (see usage-cost.ts).
+  await recordRunUsageCost(admin, { runId: args.runId, providerId: args.providerId, model: args.request.model, usage });
 
   if (error) {
     console.error(
