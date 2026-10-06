@@ -109,7 +109,7 @@ describe('Phase 5 Admin Panel overview is reachable and honest about failed read
   });
   test('the panel renders no form of its own and says what is not yet a form', () => {
     assert.ok(!/<form|action=/.test(panel));
-    assert.match(panel, /Not yet built as forms/);
+    assert.match(panel, /no form is an adapter-verified integration check|one action with no form/);
     assert.match(panel, /<BuildActions /);
     assert.match(panel, /<ClassifyFeedbackForm /);
   });
@@ -148,10 +148,12 @@ describe('every Phase 5 action is a thin call to a database door', () => {
   const actions = read('src/modules/projects/phase-five-actions.ts');
   const forms = read('app/(internal)/projects/[projectId]/phase-five-forms.tsx');
   test('each door the overview describes has an action and a form', () => {
-    for (const door of ['record_build_qa_verdict', 'record_code_review', 'decide_build_admin', 'submit_deliverable', 'record_build_feedback', 'classify_build_feedback']) {
+    for (const door of ['record_build_qa_verdict', 'record_code_review', 'decide_build_admin', 'submit_deliverable', 'record_build_feedback', 'classify_build_feedback',
+      'create_development_plan', 'plan_task', 'approve_development_plan', 'register_integration', 'set_integration_state', 'set_phase_five_agent_state', 'record_technical_document', 'record_flaky_test', 'resolve_flaky_test']) {
       assert.ok(actions.includes(`'${door}'`), door);
     }
-    for (const action of ['recordBuildQaAction', 'recordCodeReviewAction', 'decideBuildAdminAction', 'shareBuildWithClientAction', 'recordBuildFeedbackAction', 'classifyBuildFeedbackAction']) {
+    for (const action of ['recordBuildQaAction', 'recordCodeReviewAction', 'decideBuildAdminAction', 'shareBuildWithClientAction', 'recordBuildFeedbackAction', 'classifyBuildFeedbackAction',
+      'createDevelopmentPlanAction', 'planTaskAction', 'approveDevelopmentPlanAction', 'registerIntegrationAction', 'setIntegrationStateAction', 'setSpecialistStateAction', 'recordDocumentAction', 'recordFlakyTestAction', 'resolveFlakyTestAction']) {
       assert.ok(forms.includes(action), action);
     }
   });
@@ -161,5 +163,34 @@ describe('every Phase 5 action is a thin call to a database door', () => {
   });
   test('and every action is gated on project.write before it calls the door', () => {
     assert.match(actions, /can\(context, 'project\.write'\)/);
+  });
+});
+
+
+describe('the remaining records are readable and operable from the panel', () => {
+  const panel = read('app/(internal)/projects/[projectId]/phase-five-panel.tsx');
+  const queries = read('src/modules/projects/phase-five-queries.ts');
+  test('the panel shows the plan, flaky tests and documentation, each with its form', () => {
+    for (const text of ['Development plan', 'Flaky tests', 'Documentation', '<CreatePlanForm', '<ApprovePlanForm', '<PlanTaskForm', '<RecordFlakyForm', '<ResolveFlakyForm', '<RecordDocumentForm', '<RegisterIntegrationForm', '<IntegrationStateForm', '<SpecialistStateForm']) {
+      assert.ok(panel.includes(text), text);
+    }
+  });
+  test('the new reads are guarded like the rest', () => {
+    for (const scope of ['plan', 'planTasks', 'planProblems', 'flaky', 'documents', 'tasks']) {
+      assert.match(queries, new RegExp(`unreadable\\('readPhaseFiveOverview\\.${scope}'`), scope);
+    }
+  });
+  test('M3PaymentVerified is a once-only fact only the runner can record', () => {
+    const migration = read('supabase/migrations/20261031280000_m3_payment_verified_is_a_fact_emitted_once.sql');
+    assert.match(migration, /grant execute on function projects\.record_m3_verified\(uuid\) to service_role;/);
+    assert.match(migration, /'already_recorded'/);
+    assert.ok((SUBSCRIPTIONS as Record<string, readonly string[]>)['invoice.paid']?.includes('projects:recordM3Verified'));
+    assert.deepEqual((SUBSCRIPTIONS as Record<string, readonly string[]>)['project.m3_payment_verified'], ['crm:announceM3PaymentVerified']);
+  });
+  test('flaky is not pass and documents do not exceed evidence', () => {
+    const migration = read('supabase/migrations/20261031260000_flaky_is_not_pass_documents_do_not_exceed_evidence.sql');
+    assert.match(migration, /check \(status <> 'quarantined' or \(owner_id is not null and expires_at is not null\)\)/);
+    assert.match(migration, /an integration cannot be documented as implemented while it is/);
+    assert.match(migration, /a document must not carry a secret value/);
   });
 });

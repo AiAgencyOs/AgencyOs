@@ -380,6 +380,23 @@ select pg_temp.check((select outcome from projects.approve_development_plan(:'PL
 select pg_temp.check((select outcome from projects.approve_development_plan(:'PL_pl')) = 'already_approved', 'a duplicate approval changes nothing');
 select pg_temp.check((select count(*) from core.outbox_events where type = 'project.development_plan_approved' and subject_id = :'PL_pl') = 1, 'the approval is announced exactly once, for the Orchestrator to route');
 select pg_temp.check((select outcome from projects.plan_task(:'T2_id', :'PL_pl', 'changed after approval', 'frontend_developer', 'low', '{}')) = 'plan_not_draft', 'an approved plan is not edited by re-planning its tasks');
+reset role;
+-- the shape of the handoff the Orchestrator's routing handler writes: accepted for a declared specialist, refused for anyone else
+insert into ai.handoffs (organization_id, correlation_id, from_agent, to_agent, project_id, task_id, subject_type, subject_id, objective, context)
+  values (:'ORG', :'PL_pl', 'orchestrator', 'backend_developer', :'P_id', :'T3_id', 'development_task', :'T3_id', 'Development task: pay api', '{"envelope":{"idempotencyKey":"t:p:1"}}');
+select pg_temp.check((select count(*) from ai.handoffs where subject_type = 'development_task' and subject_id = :'T3_id') = 1, 'the Orchestrator can hand a planned task to the specialist the plan names');
+do $$ begin
+  begin
+    insert into ai.handoffs (organization_id, correlation_id, from_agent, to_agent, project_id, subject_type, subject_id, objective)
+      values ('00000000-0000-4000-8000-000000000001', gen_random_uuid(), 'orchestrator', 'finance', (select id from projects.projects where project_code = 'ZP4-E2E'), 'development_task', gen_random_uuid(), 'route development to Finance');
+    raise exception 'FAILED: the Orchestrator handed development work to Finance';
+  exception when others then
+    if sqlerrm like 'FAILED:%' then raise; end if;
+    raise notice 'ok  the database refuses a route the registry does not declare (orchestrator -> finance)';
+  end;
+end $$;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
 select pg_temp.check((select outcome from projects.start_task(:'T3_id')) = 'dependencies_open', 'the API waits for the screen');
 select pg_temp.check((select outcome from projects.start_task(:'T2_id')) = 'started', 'the first planned task starts, stamped with the baseline');
 select pg_temp.check((select baseline_id is not null from projects.tasks where id = :'T2_id'), 'the task carries its baseline');
@@ -542,6 +559,34 @@ do $$ begin
   exception when check_violation then raise notice 'ok  scope-changing feedback can never carry a defect (a CHECK, not a prompt)'; end;
 end $$;
 
+-- 19b2. FLAKY != PASS, and documents never exceed their evidence
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select flaky_id as fl from qa.record_flaky_test(:'P_id', 'cart.pay.spec', 'e2e', 'timing') \gset FL_
+select pg_temp.check((select outcome from qa.record_flaky_test(:'P_id', 'cart.pay.spec')) = 'seen_again', 'a test seen flaking again is counted, not re-filed');
+select pg_temp.check(exists (select 1 from projects.phase_readiness(:'P_id', 5) r, unnest(r.missing) m where m like '%flaky test%'), 'an OPEN flaky test blocks Phase 5 completion (retrying until green is not a resolution)');
+select pg_temp.check((select outcome from qa.resolve_flaky_test(:'FL_fl', 'quarantine', null, now() + interval '90 days')) = 'expiry_required_within_30_days', 'a quarantine needs an expiry within 30 days');
+select pg_temp.check((select outcome from qa.resolve_flaky_test(:'FL_fl', 'quarantine', null, now() + interval '7 days')) = 'quarantined', 'a flaky test can be quarantined, owned and time-boxed');
+select pg_temp.check(not exists (select 1 from projects.phase_readiness(:'P_id', 5) r, unnest(r.missing) m where m like '%flaky test%'), 'an owned, unexpired quarantine does not block');
+reset role;
+update qa.flaky_tests set expires_at = now() - interval '1 day' where id = :'FL_fl';
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check(exists (select 1 from projects.phase_readiness(:'P_id', 5) r, unnest(r.missing) m where m like '%flaky test%'), 'an EXPIRED quarantine blocks again');
+select pg_temp.check((select outcome from qa.resolve_flaky_test(:'FL_fl', 'resolve', null)) = 'resolution_required', 'a flaky test is resolved by saying what was fixed');
+select pg_temp.check((select outcome from qa.resolve_flaky_test(:'FL_fl', 'resolve', 'removed the shared timer; fixed in abc1234')) = 'resolved', 'resolved with the root cause');
+select pg_temp.check((select outcome from qa.record_flaky_test(:'P_id', 'cart.pay.spec')) = 'seen_again', 'a resolved test seen flaking again is recorded');
+select pg_temp.check((select status from qa.flaky_tests where id = :'FL_fl') = 'open', 'and REOPENS: a fix claim was not a fix');
+select pg_temp.check((select outcome from qa.resolve_flaky_test(:'FL_fl', 'resolve', 'really fixed this time: mocked the clock')) = 'resolved', 'resolved again');
+-- documents
+select connection_id as ic from projects.register_integration(:'P_id', 'payment', 'Razorpay') \gset IC_
+select pg_temp.check((select outcome from projects.record_technical_document(:'P_id', 'integration', 'Razorpay payments', 'implemented', 'tests/pay.spec', :'IC_ic', 'configured in staging')) = 'refused', 'an integration cannot be documented IMPLEMENTED while it is not VERIFIED');
+select pg_temp.check((select outcome from projects.record_technical_document(:'P_id', 'integration', 'Razorpay payments', 'partial', null, :'IC_ic', 'configured in staging; not yet verified')) = 'recorded', 'it can be documented as PARTIAL');
+select pg_temp.check((select outcome from projects.record_technical_document(:'P_id', 'api', 'Cart API', 'implemented', null, null, 'POST /cart')) = 'invalid', 'IMPLEMENTED with no evidence is refused');
+select pg_temp.check((select outcome from projects.record_technical_document(:'P_id', 'api', 'Cart API', 'implemented', 'src/cart/route.ts', null, 'POST /cart')) = 'recorded', 'IMPLEMENTED names the evidence it was derived from');
+select pg_temp.check((select outcome from projects.record_technical_document(:'P_id', 'architecture', 'Config', 'implemented', 'docs/config.md', null, 'RAZORPAY_API_KEY=sk-abcdefghijklmnopqrstuvwx')) = 'refused', 'a secret value is never written into a document');
+reset role;
+
 -- 19c. Phase 5 completes only when the DoD holds, and hands Phase 6 a frozen intake
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
 set local role authenticated;
@@ -595,12 +640,33 @@ reset role;
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
 set local role authenticated;
 select pg_temp.check(not projects.m3_verified_paid(:'P_id'), 'M3 issued: the Phase 6 financial gate is closed');
+reset role;
+select pg_temp.as_service();
+set local role service_role;
+select pg_temp.check((select outcome from projects.record_m3_verified(:'P_id')) = 'not_verified', 'NEGATIVE: an issued M3 emits no M3PaymentVerified');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
 select payment_id as pid from finance.record_manual_payment(:'I3_i', 'UTR-M3-1', 100000, now(), 'upi') \gset PY3a_
 select finance.verify_payment(:'PY3a_pid', :'OWNER');
 select pg_temp.check(not projects.m3_verified_paid(:'P_id'), 'M3 underpaid (100,000 of 150,000 verified): still closed');
 select payment_id as pid from finance.record_manual_payment(:'I3_i', 'UTR-M3-2', 50000, now(), 'upi') \gset PY3b_
 select finance.verify_payment(:'PY3b_pid', :'OWNER');
 select pg_temp.check(projects.m3_verified_paid(:'P_id'), 'M3 verified paid in full: the Phase 6 financial gate opens');
+do $$ begin
+  begin perform projects.record_m3_verified((select id from projects.projects where project_code = 'ZP4-E2E'));
+        raise exception 'FAILED: a signed-in person called the runner-only M3 door';
+  exception when insufficient_privilege then raise notice 'ok  a person cannot emit M3PaymentVerified: the runner-only door refuses them'; end;
+end $$;
+reset role;
+select pg_temp.as_service();
+set local role service_role;
+select pg_temp.check((select outcome from projects.record_m3_verified(:'P_id')) = 'recorded', 'M3PaymentVerified is recorded by the runner once the payment is verified in full');
+select pg_temp.check((select outcome from projects.record_m3_verified(:'P_id')) = 'already_recorded', 'a replay emits nothing a second time');
+select pg_temp.check((select count(*) from core.outbox_events where type = 'project.m3_payment_verified' and subject_id = :'P_id') = 1, 'exactly one M3PaymentVerified event exists');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
 select pg_temp.check(not exists (select 1 from projects.phase_readiness(:'P_id', 6) r, unnest(r.missing) m where m = 'M3 not verified paid'), 'and Phase 6 readiness no longer names M3');
 reset role;
 

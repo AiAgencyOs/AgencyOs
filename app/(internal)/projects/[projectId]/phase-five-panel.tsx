@@ -3,7 +3,19 @@ import Link from 'next/link';
 import type { PhaseFiveOverview } from '@/modules/projects/phase-five-queries';
 import { Badge, Card, humanize, type Tone } from '@/ui';
 
-import { BuildActions, ClassifyFeedbackForm } from './phase-five-forms';
+import {
+  ApprovePlanForm,
+  BuildActions,
+  ClassifyFeedbackForm,
+  CreatePlanForm,
+  IntegrationStateForm,
+  PlanTaskForm,
+  RecordDocumentForm,
+  RecordFlakyForm,
+  RegisterIntegrationForm,
+  ResolveFlakyForm,
+  SpecialistStateForm,
+} from './phase-five-forms';
 
 /**
  * Phase 5 Overview - the Admin Panel's answer to "what is current, what is blocked, who approved what, can Phase 6 start?" for full
@@ -48,7 +60,7 @@ const BUILD_TONE: Record<string, Tone> = {
 };
 
 export function PhaseFivePanel({ view, projectId }: { view: PhaseFiveOverview; projectId: string }) {
-  const { workspace, gates, baseline, readiness, phaseSixMissing, builds, defects, feedback, integrations, agentStates, handoff } = view;
+  const { workspace, gates, baseline, readiness, phaseSixMissing, builds, defects, feedback, integrations, agentStates, handoff, plan, unplannedTasks, flaky, documents } = view;
 
   if (!workspace) {
     return (
@@ -84,6 +96,54 @@ export function PhaseFivePanel({ view, projectId }: { view: PhaseFiveOverview; p
         ) : (
           <p className="text-xs text-muted">No baseline recorded.</p>
         )}
+      </section>
+
+      <section className="flex flex-col gap-2 border-t border-line pt-3">
+        <span className="text-xs font-medium uppercase tracking-wide text-faint">Development plan</span>
+        {plan ? (
+          <div className="flex flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+              <span>v{plan.version}</span>
+              <Badge tone={plan.status === 'approved' ? 'success' : plan.status === 'draft' ? 'warning' : 'neutral'}>{humanize(plan.status)}</Badge>
+              <span>{plan.summary}</span>
+            </div>
+            <ul className="flex flex-col gap-1">
+              {plan.tasks.map((t) => (
+                <li key={t.id} className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                  <span>{t.title}</span>
+                  <Badge tone={t.capability ? 'info' : 'warning'}>{t.capability ? humanize(t.capability) : 'No specialist'}</Badge>
+                  {t.hasCriteria ? null : <span className="text-danger">no acceptance criteria</span>}
+                </li>
+              ))}
+            </ul>
+            {plan.status === 'draft' && plan.problems.length > 0 ? (
+              <ul className="list-disc pl-5 text-xs text-danger">
+                {plan.problems.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+            ) : null}
+            {plan.status === 'draft' ? (
+              <>
+                {unplannedTasks.map((t) => (
+                  <details key={t.id}>
+                    <summary className="cursor-pointer text-xs underline underline-offset-2">Plan task: {t.title}</summary>
+                    <PlanTaskForm projectId={projectId} planId={plan.id} taskId={t.id} title={t.title} />
+                  </details>
+                ))}
+                <ApprovePlanForm projectId={projectId} planId={plan.id} />
+              </>
+            ) : null}
+          </div>
+        ) : (
+          <p className="text-xs text-muted">No plan yet. Development does not start without an approved plan.</p>
+        )}
+        {!plan || plan.status !== 'draft' ? (
+          <details>
+            <summary className="cursor-pointer text-xs underline underline-offset-2">{plan ? 'Create a new plan version' : 'Create the plan'}</summary>
+            <CreatePlanForm projectId={projectId} />
+          </details>
+        ) : null}
       </section>
 
       <section className="flex flex-col gap-1 border-t border-line pt-3">
@@ -153,10 +213,59 @@ export function PhaseFivePanel({ view, projectId }: { view: PhaseFiveOverview; p
                 <span>({humanize(i.kind)})</span>
                 <Badge tone={HEALTH_TONE[i.health] ?? 'neutral'}>{humanize(i.health)}</Badge>
                 {i.isMock ? <span>mock only</span> : null}
+                <IntegrationStateForm projectId={projectId} connectionId={i.id} />
               </li>
             ))}
           </ul>
         )}
+        <details>
+          <summary className="cursor-pointer text-xs underline underline-offset-2">Register an integration</summary>
+          <RegisterIntegrationForm projectId={projectId} />
+        </details>
+      </section>
+
+      <section className="flex flex-col gap-1 border-t border-line pt-3">
+        <span className="text-xs font-medium uppercase tracking-wide text-faint">Flaky tests</span>
+        {flaky.length === 0 ? (
+          <p className="text-xs text-muted">None recorded. A flaky test is never a pass; an open one, or an expired quarantine, blocks completion.</p>
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {flaky.map((f) => (
+              <li key={f.id} className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                <span>{f.testKey}</span>
+                <Badge tone={f.status === 'resolved' ? 'success' : f.status === 'quarantined' ? 'warning' : 'danger'}>{humanize(f.status)}</Badge>
+                <span>seen {f.occurrences}x</span>
+                {f.expiresAt ? <span>quarantine until {f.expiresAt.slice(0, 10)}</span> : null}
+                {f.status !== 'resolved' ? <ResolveFlakyForm projectId={projectId} flakyId={f.id} /> : null}
+              </li>
+            ))}
+          </ul>
+        )}
+        <details>
+          <summary className="cursor-pointer text-xs underline underline-offset-2">Record a flaky test</summary>
+          <RecordFlakyForm projectId={projectId} />
+        </details>
+      </section>
+
+      <section className="flex flex-col gap-1 border-t border-line pt-3">
+        <span className="text-xs font-medium uppercase tracking-wide text-faint">Documentation</span>
+        {documents.length === 0 ? (
+          <p className="text-xs text-muted">No technical documents recorded.</p>
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {documents.map((d) => (
+              <li key={d.id} className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                <span>{humanize(d.kind)}: {d.title}</span>
+                <Badge tone={d.status === 'implemented' ? 'success' : d.status === 'blocked' ? 'danger' : 'neutral'}>{humanize(d.status)}</Badge>
+                {d.evidenceRef ? <span>evidence: {d.evidenceRef}</span> : null}
+              </li>
+            ))}
+          </ul>
+        )}
+        <details>
+          <summary className="cursor-pointer text-xs underline underline-offset-2">Record a document</summary>
+          <RecordDocumentForm projectId={projectId} integrations={integrations.map((i) => ({ id: i.id, name: i.name }))} />
+        </details>
       </section>
 
       <section className="flex flex-col gap-1 border-t border-line pt-3">
@@ -165,6 +274,7 @@ export function PhaseFivePanel({ view, projectId }: { view: PhaseFiveOverview; p
           {agentStates.map((a) => (
             <li key={a.agentKey} className="text-xs text-muted" title={a.reason ?? undefined}>
               {humanize(a.agentKey)}: <Badge tone={a.state === 'not_required' ? 'neutral' : 'info'}>{humanize(a.state)}</Badge>
+              <SpecialistStateForm projectId={projectId} agentKey={a.agentKey} state={a.state} />
             </li>
           ))}
         </ul>
@@ -199,7 +309,7 @@ export function PhaseFivePanel({ view, projectId }: { view: PhaseFiveOverview; p
         ) : null}
       </section>
       <p className="text-xs text-faint" data-project={projectId}>
-        Each form calls a database door that checks the role, the independence rules and the gates; its refusal is shown as written. Not yet built as forms: plan creation and task planning, integration state, specialist state.
+        Each form calls a database door that checks the role, the independence rules and the gates; its refusal is shown as written. The one action with no form is an adapter-verified integration check, which only a runner's real result can make.
       </p>
     </Card>
   );

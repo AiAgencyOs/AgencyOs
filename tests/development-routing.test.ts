@@ -4,7 +4,7 @@ import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { HANDLER_JOB_KIND, HANDLERS, SUBSCRIPTIONS } from '../src/lib/events/catalog.ts';
-import { decideDevelopmentRoute, decideIndependentReviewer } from '../src/modules/orchestrator/development-route.ts';
+import { buildExecutionEnvelope, decideDevelopmentRoute, decideIndependentReviewer, FAILURE_CLASSES, handleExecutionFailure } from '../src/modules/orchestrator/development-route.ts';
 
 /** Phase 5 Orchestrator spec: capability matching, eligibility (disabled / NOT_REQUIRED), creator != validator, and reachability. */
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), 'utf8');
@@ -64,5 +64,43 @@ describe('the routing is reachable', () => {
     const handler = read('src/modules/orchestrator/handlers.ts');
     assert.match(handler, /if \(already\.has\(task\.id\)\) continue;/);
     assert.match(handler, /plan\.status !== 'approved'/);
+  });
+});
+
+
+describe('failure handling: a retry never repeats a side effect', () => {
+  test('transient failures retry safely until the budget is gone, then escalate', () => {
+    for (const f of ['transient_provider_error', 'timeout', 'rate_limit'] as const) {
+      assert.deepEqual(handleExecutionFailure(f, 1, 3), { retry: 'safe', fallback: true, escalate: false });
+      assert.deepEqual(handleExecutionFailure(f, 3, 3), { retry: 'never', fallback: true, escalate: true });
+    }
+  });
+  test('an uncertain side effect is reconciled, never blindly retried, and never falls back', () => {
+    assert.deepEqual(handleExecutionFailure('side_effect_uncertain', 1, 3), { retry: 'after_reconcile', fallback: false, escalate: true });
+  });
+  test('a permission or guard refusal is never retried and never worked around by a fallback', () => {
+    for (const f of ['permission_denied', 'business_guard_failure', 'no_capable_route'] as const) {
+      const h = handleExecutionFailure(f, 1, 3);
+      assert.deepEqual([h.retry, h.fallback, h.escalate], ['never', false, true], f);
+    }
+  });
+  test('every class is handled', () => {
+    for (const f of FAILURE_CLASSES) assert.ok(handleExecutionFailure(f, 1, 2));
+  });
+});
+
+describe('the execution envelope', () => {
+  const env = buildExecutionEnvelope({ task: { id: 't1', title: 'Pay API', acceptanceCriteria: 'returns 200' }, planId: 'p1', organizationId: 'o1', projectId: 'pr1', baselineId: 'b1', destination: 'backend_developer', routingReason: 'plan' });
+  test('it carries the ids, the criteria, the retry budget and an idempotency key', () => {
+    assert.equal(env.idempotencyKey, 't1:p1:1');
+    assert.equal(env.acceptanceCriteria, 'returns 200');
+    assert.equal(env.retryBudget, 3);
+    assert.equal(env.sourceActor, 'orchestrator');
+  });
+  test('tool permissions are exactly what the registry binds: a specialist holds none today', () => {
+    assert.deepEqual(env.toolPermissions, []);
+  });
+  test('the handler records the envelope on the handoff it writes', () => {
+    assert.match(read('src/modules/orchestrator/handlers.ts'), /envelope: JSON\.parse\(JSON\.stringify\(buildExecutionEnvelope\(/);
   });
 });

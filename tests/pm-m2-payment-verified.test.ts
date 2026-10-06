@@ -57,7 +57,7 @@ describe('B. idempotency keyed on the milestone, not the invoice', () => {
 
 describe('C. it is reachable — the defect this repository has found repeatedly', () => {
   test('invoice.paid fans out to both the milestone unlock AND the PM announcement', () => {
-    assert.deepEqual(SUBSCRIPTIONS['invoice.paid'], ['projects:unlockNextMilestone', 'crm:announceM2PaymentVerified', 'projects:startPhaseFive', 'project_planning:draftBlueprint', 'projects:updateClientOnPayment']);
+    assert.deepEqual(SUBSCRIPTIONS['invoice.paid'], ['projects:unlockNextMilestone', 'crm:announceM2PaymentVerified', 'projects:startPhaseFive', 'projects:recordM3Verified', 'project_planning:draftBlueprint', 'projects:updateClientOnPayment']);
     assert.ok(HANDLERS.includes('crm:announceM2PaymentVerified'));
     assert.equal(HANDLER_JOB_KIND['crm:announceM2PaymentVerified'], 'm2_payment_verified.announce');
   });

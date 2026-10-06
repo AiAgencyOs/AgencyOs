@@ -18,6 +18,10 @@ Every unit proven against a real scratch Postgres (`scripts/apply-migrations-loc
 - **Routing** (`20261031240000`, `development-route.ts`): the Orchestrator gets declared routes to the eleven specialists; an approved plan is routed task by task, HELD with the reason while a specialist is disabled or NOT_REQUIRED; creator ≠ validator helper.
 - **Build runs** (`20261031250000`): stages, fingerprint, artifact hash, classified failures, bounded transient retries, no secrets; shared builds need a succeeded run on the same commit.
 - **Admin forms** (`phase-five-actions.ts`, `phase-five-forms.tsx`): QA verdict, code review, Admin decision, share, record and classify client feedback.
+- **Flaky tests, documents, M3** (`20261031260000`, `20261031280000`): flaky tracking that blocks completion; technical documents that cannot exceed evidence; `M3PaymentVerified` recorded once by the runner.
+- **Feedback routed** (`20261031270000`): category-only PM message.
+- **Envelope + failure handling** (`development-route.ts`): execution envelope on every handoff; retry/fallback/escalate by failure class.
+- **Forms** for plans, task planning, integrations, specialist state, flaky tests and documents.
 
 ## Not built (see the traceability matrix)
-The AI that drafts a plan; Orchestrator model ranking/envelope/tool gating; any specialist actually running (needs a funded model key + repo/CI binding); the build runner that calls `record_build_run`; flaky-test tracking; AI feedback classifier for builds; PM5 revision/change-request/hand-off messages; Admin forms for planning, integrations and specialist state, and a task-graph screen; Documentation agent; `M3PaymentVerified` event + Phase 6 workspace (Phase 6).
+The AI that drafts a plan; Orchestrator model ranking/envelope/tool gating; any specialist actually running (needs a funded model key + repo/CI binding); the build runner that calls `record_build_run`; flaky-test tracking; AI feedback classifier for builds; PM5 revision/change-request/hand-off messages; Admin forms for planning, integrations and specialist state, and a task-graph screen; Documentation agent (the record and rules exist; the agent that derives documents does not); `M3PaymentVerified` event + Phase 6 workspace (Phase 6).

@@ -4,7 +4,7 @@ import type { createAdminClient } from '@/lib/db/admin';
 import type { HandlerResult, UnlockJob } from '@/modules/projects/handlers';
 
 import { decideDesignerActivation } from './designer-activation';
-import { decideDevelopmentRoute } from './development-route';
+import { buildExecutionEnvelope, decideDevelopmentRoute } from './development-route';
 import { decideAgentForTask } from './route';
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -261,7 +261,7 @@ export async function handleRouteDevelopmentPlan(admin: Admin, job: UnlockJob): 
   if (plan.status !== 'approved') return { status: 'succeeded', outcome: 'not_mine', detail: `the plan is ${plan.status}, not approved` };
 
   const [{ data: tasks, error: taskError }, { data: agents, error: agentError }, { data: states, error: stateError }, { data: existing, error: existingError }] = await Promise.all([
-    admin.schema('projects').from('tasks').select('id, title, required_capability').eq('plan_id', plan.id).eq('status', 'todo'),
+    admin.schema('projects').from('tasks').select('id, title, required_capability, acceptance_criteria').eq('plan_id', plan.id).eq('status', 'todo'),
     admin.schema('ai').from('agents').select('key, enabled'),
     admin.schema('projects').from('phase_five_agent_state').select('agent_key, state').eq('project_id', plan.project_id),
     admin.schema('ai').from('handoffs').select('subject_id').eq('organization_id', job.organization_id).eq('subject_type', 'development_task').eq('project_id', plan.project_id),
@@ -270,6 +270,10 @@ export async function handleRouteDevelopmentPlan(admin: Admin, job: UnlockJob): 
   if (agentError) return { status: 'failed', permanent: false, detail: `the agents could not be read: ${agentError.message}` };
   if (stateError) return { status: 'failed', permanent: false, detail: `the specialist states could not be read: ${stateError.message}` };
   if (existingError) return { status: 'failed', permanent: false, detail: `existing handoffs could not be read: ${existingError.message}` };
+
+  const { data: baselineRow, error: baselineError } = await admin.schema('projects').from('development_baselines').select('id').eq('project_id', plan.project_id).maybeSingle();
+  if (baselineError) return { status: 'failed', permanent: false, detail: `the baseline could not be read: ${baselineError.message}` };
+  const baselineId = baselineRow?.id ?? null;
 
   const enabled = new Map((agents ?? []).map((a) => [a.key as string, a.enabled === true]));
   const agentState = new Map((states ?? []).map((s) => [s.agent_key as string, s.state as string]));
@@ -302,7 +306,19 @@ export async function handleRouteDevelopmentPlan(admin: Admin, job: UnlockJob): 
         subject_type: 'development_task',
         subject_id: task.id,
         objective: `Development task: ${task.title}`,
-        context: { planId: plan.id, routingReason: decision.reason },
+        context: {
+          planId: plan.id,
+          routingReason: decision.reason,
+          envelope: JSON.parse(JSON.stringify(buildExecutionEnvelope({
+            task: { id: task.id, title: task.title, acceptanceCriteria: task.acceptance_criteria ?? '' },
+            planId: plan.id,
+            organizationId: job.organization_id,
+            projectId: plan.project_id,
+            baselineId,
+            destination: decision.toAgent,
+            routingReason: decision.reason,
+          }))),
+        },
       });
     if (insertError) return { status: 'failed', permanent: false, detail: `the handoff for "${task.title}" could not be recorded: ${insertError.message}` };
     routed += 1;

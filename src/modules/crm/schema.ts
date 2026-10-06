@@ -1891,3 +1891,34 @@ export function buildApprovedAnnouncementFor(input: { projectName: string | null
     'Phase 5 can complete once every other condition holds.',
   ].join('\n');
 }
+
+
+/** PM5: M3 verified - Phase 6's financial gate is open. */
+export const m3PaymentVerifiedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function m3PaymentVerifiedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'M3 (30%) has been verified paid by an Admin. Phase 6 (Master QA) is financially available.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'A claim, a proof or a match would not have opened it; only the verification did.',
+  ].join('\n');
+}
+
+/** PM5: client feedback on a build was classified and routed. The category is named, the client's words are not repeated. */
+export const buildFeedbackRoutedEventSchema = z
+  .object({ projectId: z.uuid(), deliverableId: z.uuid(), classification: z.string() })
+  .strip();
+export function buildFeedbackRoutedAnnouncementFor(input: { projectName: string | null; classification: string }): string {
+  const where: Record<string, string> = {
+    bug: 'a defect to fix and re-verify',
+    missed_requirement: 'a defect to fix and re-verify',
+    ui_mismatch: 'a defect against the approved UI',
+    included_small_revision: 'the controlled revision flow',
+    clarification: 'a question to resolve before anything changes',
+    possible_scope_change: 'a Change Request for evaluation',
+    new_feature: 'a Change Request: it is new work, not a free fix',
+  };
+  return [
+    `Client feedback was classified as ${input.classification.replace(/_/g, ' ')} and routed to ${where[input.classification] ?? 'review'}.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+  ].join('\n');
+}

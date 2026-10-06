@@ -42,9 +42,32 @@ export type PhaseFiveOverview = {
   integrations: { id: string; kind: string; name: string; health: string; isMock: boolean }[];
   agentStates: { agentKey: string; state: string; reason: string | null }[];
   handoff: { id: string; commit: string; createdAt: string } | null;
+  plan: {
+    id: string;
+    version: number;
+    status: string;
+    summary: string;
+    problems: string[];
+    tasks: { id: string; title: string; capability: string | null; hasCriteria: boolean; status: string }[];
+  } | null;
+  unplannedTasks: { id: string; title: string }[];
+  flaky: { id: string; testKey: string; status: string; occurrences: number; expiresAt: string | null }[];
+  documents: { id: string; kind: string; title: string; status: string; evidenceRef: string | null }[];
 };
 
 type Row = Record<string, unknown>;
+
+/**
+ * `qa.flaky_tests` (20261031260000) is not in the generated database types yet: `npm run db:types` needs the Docker stack migrated to this
+ * revision. Until it is regenerated this one read goes through a minimal structural type rather than hand-editing a generated file.
+ */
+type LooseQa = {
+  from(table: string): {
+    select(columns: string): {
+      eq(column: string, value: string): { order(column: string, options: { ascending: boolean }): PromiseLike<{ data: unknown; error: { message: string } | null }> };
+    };
+  };
+};
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 const num = (v: unknown): number | null => (typeof v === 'number' ? v : null);
 
@@ -69,6 +92,10 @@ export async function readPhaseFiveOverview(projectId: string): Promise<PhaseFiv
     { data: feedbackRows, error: feedbackError },
     { data: integrationRows, error: integrationError },
     { data: handoffRow, error: handoffError },
+    { data: planRows, error: planError },
+    { data: flakyRows, error: flakyError },
+    { data: documentRows, error: documentError },
+    { data: devTaskRows, error: devTaskError },
   ] = await Promise.all([
     projects.rpc('m2_verified_paid', { p_project_id: projectId }),
     projects.rpc('m3_verified_paid', { p_project_id: projectId }),
@@ -79,6 +106,10 @@ export async function readPhaseFiveOverview(projectId: string): Promise<PhaseFiv
     projects.from('build_feedback').select('id, client_words, classification, state, defect_id, change_request_id').eq('project_id', projectId).order('created_at', { ascending: true }),
     projects.from('integration_connections').select('id, kind, name, health, is_mock').eq('project_id', projectId).order('kind', { ascending: true }),
     projects.from('phase_five_handoffs').select('id, final_commit_ref, created_at').eq('project_id', projectId).maybeSingle(),
+    projects.from('development_plans').select('id, version, status, summary').eq('project_id', projectId).order('version', { ascending: false }).limit(1),
+    (supabase.schema('qa') as unknown as LooseQa).from('flaky_tests').select('id, test_key, status, occurrences, expires_at').eq('project_id', projectId).order('first_seen_at', { ascending: true }),
+    projects.from('technical_documents').select('id, kind, title, status, evidence_ref').eq('project_id', projectId).order('kind', { ascending: true }),
+    projects.from('tasks').select('id, title, plan_id, status, module_id, feature_id').eq('project_id', projectId).neq('status', 'cancelled').is('archived_at', null),
   ]);
   if (m2Error) unreadable('readPhaseFiveOverview.m2', m2Error);
   if (m3Error) unreadable('readPhaseFiveOverview.m3', m3Error);
@@ -89,6 +120,10 @@ export async function readPhaseFiveOverview(projectId: string): Promise<PhaseFiv
   if (feedbackError) unreadable('readPhaseFiveOverview.feedback', feedbackError);
   if (integrationError) unreadable('readPhaseFiveOverview.integrations', integrationError);
   if (handoffError) unreadable('readPhaseFiveOverview.handoff', handoffError);
+  if (planError) unreadable('readPhaseFiveOverview.plan', planError);
+  if (flakyError) unreadable('readPhaseFiveOverview.flaky', flakyError);
+  if (documentError) unreadable('readPhaseFiveOverview.documents', documentError);
+  if (devTaskError) unreadable('readPhaseFiveOverview.tasks', devTaskError);
 
   const builds = (buildRows ?? []) as Row[];
   const buildIds = builds.map((b) => String(b.id));
@@ -139,6 +174,35 @@ export async function readPhaseFiveOverview(projectId: string): Promise<PhaseFiv
     }
     agentStates = ((states ?? []) as Row[]).map((s) => ({ agentKey: String(s.agent_key), state: String(s.state), reason: str(s.reason) }));
   }
+
+  const planRow = ((planRows ?? []) as Row[])[0] ?? null;
+  let plan: PhaseFiveOverview['plan'] = null;
+  const devTasks = ((devTaskRows ?? []) as Row[]).filter((t) => t.module_id !== null || t.feature_id !== null);
+  if (planRow) {
+    const planId = String(planRow.id);
+    const [{ data: planTaskRows, error: planTaskError }, { data: problemRows, error: problemError }] = await Promise.all([
+      projects.from('tasks').select('id, title, required_capability, acceptance_criteria, status').eq('plan_id', planId).neq('status', 'cancelled'),
+      projects.rpc('check_development_plan', { p_plan_id: planId }),
+    ]);
+    if (planTaskError) unreadable('readPhaseFiveOverview.planTasks', planTaskError);
+    if (problemError) unreadable('readPhaseFiveOverview.planProblems', problemError);
+    plan = {
+      id: planId,
+      version: Number(planRow.version),
+      status: String(planRow.status),
+      summary: String(planRow.summary),
+      problems: ((problemRows ?? []) as Row[]).map((r) => String(r.problem)),
+      tasks: ((planTaskRows ?? []) as Row[]).map((t) => ({
+        id: String(t.id),
+        title: String(t.title),
+        capability: str(t.required_capability),
+        hasCriteria: typeof t.acceptance_criteria === 'string' && t.acceptance_criteria.trim().length > 0,
+        status: String(t.status),
+      })),
+    };
+  }
+  // Tasks a draft plan could still take: development tasks not yet in any plan and not started.
+  const unplannedTasks = devTasks.filter((t) => t.plan_id === null && t.status === 'todo').map((t) => ({ id: String(t.id), title: String(t.title) }));
 
   const readiness = (Array.isArray(readinessRows) ? readinessRows[0] : readinessRows) as Row | null | undefined;
   const phaseSix = (Array.isArray(phaseSixRows) ? phaseSixRows[0] : phaseSixRows) as Row | null | undefined;
@@ -196,6 +260,10 @@ export async function readPhaseFiveOverview(projectId: string): Promise<PhaseFiv
       isMock: i.is_mock === true,
     })),
     agentStates,
+    plan,
+    unplannedTasks,
+    flaky: ((flakyRows ?? []) as Row[]).map((f) => ({ id: String(f.id), testKey: String(f.test_key), status: String(f.status), occurrences: Number(f.occurrences), expiresAt: str(f.expires_at) })),
+    documents: ((documentRows ?? []) as Row[]).map((d) => ({ id: String(d.id), kind: String(d.kind), title: String(d.title), status: String(d.status), evidenceRef: str(d.evidence_ref) })),
     handoff: handoff ? { id: String(handoff.id), commit: String(handoff.final_commit_ref), createdAt: String(handoff.created_at) } : null,
   };
 }

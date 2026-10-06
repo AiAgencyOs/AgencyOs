@@ -3,7 +3,16 @@
 import { useActionState } from 'react';
 
 import {
+  approveDevelopmentPlanAction,
   classifyBuildFeedbackAction,
+  createDevelopmentPlanAction,
+  planTaskAction,
+  recordDocumentAction,
+  recordFlakyTestAction,
+  registerIntegrationAction,
+  resolveFlakyTestAction,
+  setIntegrationStateAction,
+  setSpecialistStateAction,
   decideBuildAdminAction,
   recordBuildFeedbackAction,
   recordBuildQaAction,
@@ -162,6 +171,165 @@ export function ClassifyFeedbackForm({ projectId, feedbackId }: { projectId: str
         {CLASSES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
       </select>
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Routing…' : 'Classify and route'}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+
+const SPECIALISTS = ['frontend_developer', 'backend_developer', 'database_developer', 'mobile_developer', 'integration', 'devops_build', 'test_automation', 'security_review', 'bug_fix', 'refactor_performance', 'documentation'];
+const label = (v: string) => v.replace(/_/g, ' ');
+
+export function CreatePlanForm({ projectId }: { projectId: string }) {
+  const [state, action, pending] = useActionState(createDevelopmentPlanAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-col gap-2 rounded-md border border-line p-3">
+      <p className="text-[13px] text-muted">A technical plan over the locked baseline. Planning is not the PM&apos;s job; an Admin approves it.</p>
+      <input type="hidden" name="projectId" value={projectId} />
+      <textarea aria-label="Plan summary" name="summary" rows={2} required className={field} placeholder="What will be built, in technical terms" />
+      <textarea aria-label="Risks" name="risks" rows={2} className={field} placeholder="Risks (optional)" />
+      <input aria-label="Test strategy" name="testStrategy" className={field} placeholder="Test strategy (optional)" />
+      <input aria-label="Rollback plan" name="rollbackPlan" className={field} placeholder="Rollback plan (optional)" />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Creating…' : 'Create plan'}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+export function PlanTaskForm({ projectId, planId, taskId, title }: { projectId: string; planId: string; taskId: string; title: string }) {
+  const [state, action, pending] = useActionState(planTaskAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-col gap-2 rounded-md border border-line p-3">
+      <p className="text-[13px]">{title}</p>
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="planId" value={planId} />
+      <input type="hidden" name="taskId" value={taskId} />
+      <textarea aria-label="Acceptance criteria" name="acceptanceCriteria" rows={2} required className={field} placeholder="Acceptance criteria: how will anyone know this is done?" />
+      <select aria-label="Specialist" name="capability" defaultValue="backend_developer" className={field}>
+        {SPECIALISTS.map((k) => <option key={k} value={k}>{label(k)}</option>)}
+      </select>
+      <select aria-label="Risk level" name="riskLevel" defaultValue="medium" className={field}>
+        {['low', 'medium', 'high', 'critical'].map((k) => <option key={k} value={k}>{k}</option>)}
+      </select>
+      <input aria-label="Affected files" name="paths" className={field} placeholder="Files it touches, comma separated (for conflict detection)" />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Planning…' : 'Add to the plan'}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+export function ApprovePlanForm({ projectId, planId }: { projectId: string; planId: string }) {
+  const [state, action, pending] = useActionState(approveDevelopmentPlanAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-col gap-2 rounded-md border border-line p-3">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="planId" value={planId} />
+      <button type="submit" disabled={pending} className={buttonClass()}>{pending ? 'Approving…' : 'Approve this plan (Admin)'}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+export function RegisterIntegrationForm({ projectId }: { projectId: string }) {
+  const [state, action, pending] = useActionState(registerIntegrationAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-col gap-2 rounded-md border border-line p-3">
+      <input type="hidden" name="projectId" value={projectId} />
+      <select aria-label="Integration kind" name="kind" defaultValue="whatsapp" className={field}>
+        {['whatsapp', 'email', 'sms_otp', 'oauth', 'firebase', 'payment', 'storage', 'maps', 'analytics', 'ai_api', 'other'].map((k) => <option key={k} value={k}>{label(k)}</option>)}
+      </select>
+      <input aria-label="Integration name" name="name" required className={field} placeholder="Name, e.g. Razorpay sandbox" />
+      <label className="flex items-center gap-2 text-[13px]"><input type="checkbox" name="isMock" /> Only a mock exists (a mock can never be verified)</label>
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Registering…' : 'Register integration'}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+export function IntegrationStateForm({ projectId, connectionId }: { projectId: string; connectionId: string }) {
+  const [state, action, pending] = useActionState(setIntegrationStateAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="connectionId" value={connectionId} />
+      <select aria-label="Integration state" name="health" defaultValue="configured" className={field}>
+        {['configured', 'degraded', 'blocked', 'disabled', 'unknown'].map((k) => <option key={k} value={k}>{k}</option>)}
+      </select>
+      <input aria-label="Note" name="note" className={field} placeholder="Note" />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? '…' : 'Set'}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+export function SpecialistStateForm({ projectId, agentKey, state: current }: { projectId: string; agentKey: string; state: string }) {
+  const [state, action, pending] = useActionState(setSpecialistStateAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="agentKey" value={agentKey} />
+      <select aria-label={`State of ${label(agentKey)}`} name="state" defaultValue={current} className={field}>
+        {['required', 'not_required', 'active', 'blocked', 'complete'].map((k) => <option key={k} value={k}>{label(k)}</option>)}
+      </select>
+      <input aria-label="Reason" name="reason" className={field} placeholder="Reason (required for not required / blocked)" />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? '…' : 'Set'}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+export function RecordFlakyForm({ projectId }: { projectId: string }) {
+  const [state, action, pending] = useActionState(recordFlakyTestAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-col gap-2 rounded-md border border-line p-3">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input aria-label="Test" name="testKey" required className={field} placeholder="Test name or path" />
+      <input aria-label="Suite" name="suite" className={field} placeholder="Suite (optional)" />
+      <input aria-label="Suspected cause" name="cause" className={field} placeholder="Suspected cause (optional)" />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Recording…' : 'Record a flaky test'}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+export function ResolveFlakyForm({ projectId, flakyId }: { projectId: string; flakyId: string }) {
+  const [state, action, pending] = useActionState(resolveFlakyTestAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="flakyId" value={flakyId} />
+      <select aria-label="Action" name="action" defaultValue="quarantine" className={field}>
+        <option value="quarantine">Quarantine (owned, time-boxed)</option>
+        <option value="resolve">Resolve (root cause fixed)</option>
+      </select>
+      <input aria-label="Quarantine days" name="days" type="number" min={1} max={30} defaultValue={7} className={`${field} w-20`} />
+      <input aria-label="What was fixed" name="resolution" className={field} placeholder="What was fixed (to resolve)" />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? '…' : 'Apply'}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+export function RecordDocumentForm({ projectId, integrations }: { projectId: string; integrations: { id: string; name: string }[] }) {
+  const [state, action, pending] = useActionState(recordDocumentAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-col gap-2 rounded-md border border-line p-3">
+      <p className="text-[13px] text-muted">Document what exists. An implemented document names its evidence; an integration is implemented only when it is verified; never a secret value.</p>
+      <input type="hidden" name="projectId" value={projectId} />
+      <select aria-label="Document kind" name="kind" defaultValue="api" className={field}>
+        {['architecture', 'api', 'database', 'integration', 'build_run', 'test', 'known_limitations', 'handoff', 'other'].map((k) => <option key={k} value={k}>{label(k)}</option>)}
+      </select>
+      <input aria-label="Title" name="title" required className={field} placeholder="Title" />
+      <select aria-label="Status" name="status" defaultValue="partial" className={field}>
+        {['implemented', 'partial', 'not_implemented', 'not_required', 'manual_external', 'blocked', 'deprecated'].map((k) => <option key={k} value={k}>{label(k)}</option>)}
+      </select>
+      <input aria-label="Evidence" name="evidenceRef" className={field} placeholder="Evidence: file, test or run it was derived from" />
+      <select aria-label="Integration" name="integrationId" defaultValue="" className={field}>
+        <option value="">(not an integration document)</option>
+        {integrations.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+      </select>
+      <textarea aria-label="Body" name="body" rows={3} className={field} placeholder="Body" />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Recording…' : 'Record document'}</button>
       <Message state={state} />
     </form>
   );

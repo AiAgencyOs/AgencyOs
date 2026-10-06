@@ -26,6 +26,10 @@ import {
   buildFeedbackReceivedEventSchema,
   buildFeedbackReceivedAnnouncementFor,
   buildApprovedAnnouncementFor,
+  m3PaymentVerifiedEventSchema,
+  m3PaymentVerifiedAnnouncementFor,
+  buildFeedbackRoutedEventSchema,
+  buildFeedbackRoutedAnnouncementFor,
   uiVersionAdminApprovedAnnouncementFor,
   uiVersionClientDecidedEventSchema,
   uiVersionChangeRequestedAnnouncementFor,
@@ -3224,5 +3228,34 @@ export async function announceBuildApproved(admin: Admin, job: AnnounceJob): Pro
   return announceToInternalChannel(admin, job, {
     body: buildApprovedAnnouncementFor({ projectName, version: event.version }),
     externalRef: `build-approved:${event.projectId}:v${event.version}`,
+  });
+}
+
+
+/** `project.m3_payment_verified` -> the PM tells the team Phase 6 is financially open. */
+export async function announceM3PaymentVerified(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = m3PaymentVerifiedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.m3_payment_verified payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: m3PaymentVerifiedAnnouncementFor({ projectName }),
+    externalRef: `m3-payment-verified:${parsed.data.projectId}`,
+  });
+}
+
+/** `project.build_feedback_routed` -> PM5: what became of the client's feedback. */
+export async function announceBuildFeedbackRouted(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = buildFeedbackRoutedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.build_feedback_routed payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: buildFeedbackRoutedAnnouncementFor({ projectName, classification: parsed.data.classification }),
+    externalRef: `build-feedback-routed:${typeof envelope.subjectId === 'string' ? envelope.subjectId : parsed.data.deliverableId}`,
   });
 }

@@ -41,6 +41,26 @@ const WORDS: Record<string, string> = {
   not_reviewable: 'This build is no longer open for review.',
   wrong_kind: 'That is not a development build.',
   no_policy: 'No approval policy is configured for client approval of builds.',
+  created: 'Plan created.',
+  planned: 'Task planned.',
+  approved: 'Plan approved.',
+  already_approved: 'That plan is already approved.',
+  not_approvable: 'The plan still has problems; they are listed above.',
+  plan_not_draft: 'An approved plan is not edited: a change is a new plan version.',
+  task_started: 'That task has already started.',
+  no_baseline: 'There is no locked development baseline yet.',
+  registered: 'Integration registered (unknown until an adapter verifies it).',
+  already_registered: 'That integration is already registered.',
+  set: 'Recorded.',
+  only_an_adapter_verifies: 'A person cannot mark an integration verified; only an adapter result with evidence can.',
+  reason_required: 'Say why: NOT_REQUIRED and blocked both need a reason.',
+  quarantined: 'Quarantined with an owner and an expiry.',
+  resolved: 'Resolved.',
+  seen_again: 'Counted again.',
+  expiry_required_within_30_days: 'A quarantine needs an expiry within 30 days.',
+  resolution_required: 'Say what was fixed.',
+  refused: 'Refused: a document cannot claim more than its evidence (an integration is implemented only when verified; no secret values).',
+  invalid: 'Not recorded: an implemented document must name the evidence it came from.',
 };
 
 type Door = { outcome?: string | null };
@@ -142,4 +162,101 @@ export async function classifyBuildFeedbackAction(_prev: FormState, formData: Fo
     p_feedback_id: text(formData, 'feedbackId'),
     p_classification: text(formData, 'classification'),
   }, ['defect_raised', 'change_request_raised', 'revision_routed', 'clarification_needed']);
+}
+
+
+export async function createDevelopmentPlanAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  return run(text(formData, 'projectId'), 'create_development_plan', {
+    p_project_id: text(formData, 'projectId'),
+    p_summary: text(formData, 'summary'),
+    p_risks: text(formData, 'risks') || null,
+    p_test_strategy: text(formData, 'testStrategy') || null,
+    p_rollback_plan: text(formData, 'rollbackPlan') || null,
+  }, ['created']);
+}
+
+export async function planTaskAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  return run(text(formData, 'projectId'), 'plan_task', {
+    p_task_id: text(formData, 'taskId'),
+    p_plan_id: text(formData, 'planId'),
+    p_acceptance_criteria: text(formData, 'acceptanceCriteria'),
+    p_required_capability: text(formData, 'capability'),
+    p_risk_level: text(formData, 'riskLevel') || 'medium',
+    p_affected_paths: text(formData, 'paths').split(/[\s,]+/).filter(Boolean),
+  }, ['planned']);
+}
+
+export async function approveDevelopmentPlanAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  return run(text(formData, 'projectId'), 'approve_development_plan', { p_plan_id: text(formData, 'planId') }, ['approved', 'already_approved']);
+}
+
+export async function registerIntegrationAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  return run(text(formData, 'projectId'), 'register_integration', {
+    p_project_id: text(formData, 'projectId'),
+    p_kind: text(formData, 'kind'),
+    p_name: text(formData, 'name'),
+    p_is_mock: formData.get('isMock') === 'on',
+  }, ['registered', 'already_registered']);
+}
+
+export async function setIntegrationStateAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  return run(text(formData, 'projectId'), 'set_integration_state', {
+    p_connection_id: text(formData, 'connectionId'),
+    p_health: text(formData, 'health'),
+    p_note: text(formData, 'note') || null,
+  }, ['set']);
+}
+
+export async function setSpecialistStateAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  return run(text(formData, 'projectId'), 'set_phase_five_agent_state', {
+    p_project_id: text(formData, 'projectId'),
+    p_agent_key: text(formData, 'agentKey'),
+    p_state: text(formData, 'state'),
+    p_reason: text(formData, 'reason') || null,
+  }, ['set']);
+}
+
+export async function recordDocumentAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  return run(text(formData, 'projectId'), 'record_technical_document', {
+    p_project_id: text(formData, 'projectId'),
+    p_kind: text(formData, 'kind'),
+    p_title: text(formData, 'title'),
+    p_status: text(formData, 'status'),
+    p_evidence_ref: text(formData, 'evidenceRef') || null,
+    p_integration_id: text(formData, 'integrationId') || null,
+    p_body: text(formData, 'body') || null,
+  }, ['recorded']);
+}
+
+/** The flaky-test doors live in the `qa` schema. */
+async function runQa(projectId: string, rpc: string, args: Record<string, unknown>, success: readonly string[]): Promise<FormState> {
+  const refused = await gate();
+  if (refused) return refused;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('qa').rpc(rpc as never, args as never);
+  if (error) return { status: 'error', message: 'The database did not answer; nothing was recorded.' };
+  const outcome = String(first(data).outcome ?? 'no answer');
+  const message = WORDS[outcome] ?? `Refused: ${outcome.replace(/_/g, ' ')}.`;
+  if (!success.includes(outcome)) return { status: 'error', message };
+  revalidatePath(`/projects/${projectId}`);
+  return { status: 'success', message };
+}
+
+export async function recordFlakyTestAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  return runQa(text(formData, 'projectId'), 'record_flaky_test', {
+    p_project_id: text(formData, 'projectId'),
+    p_test_key: text(formData, 'testKey'),
+    p_suite: text(formData, 'suite') || null,
+    p_suspected_cause: text(formData, 'cause') || null,
+  }, ['recorded', 'seen_again']);
+}
+
+export async function resolveFlakyTestAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const days = Number(text(formData, 'days') || '7');
+  return runQa(text(formData, 'projectId'), 'resolve_flaky_test', {
+    p_flaky_id: text(formData, 'flakyId'),
+    p_action: text(formData, 'action'),
+    p_resolution: text(formData, 'resolution') || null,
+    p_expires_at: text(formData, 'action') === 'quarantine' ? new Date(Date.now() + days * 86_400_000).toISOString() : null,
+  }, ['quarantined', 'resolved']);
 }

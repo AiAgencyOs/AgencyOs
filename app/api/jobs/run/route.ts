@@ -56,6 +56,8 @@ import {
   announceBuildShared,
   announceBuildFeedbackReceived,
   announceBuildApproved,
+  announceM3PaymentVerified,
+  announceBuildFeedbackRouted,
   announceTask4Complete,
   announceM2PaymentVerified,
   handleRouteLead,
@@ -69,6 +71,7 @@ import {
   handlePossibleScopeChangeDetected,
   handleDeliverableDecided,
   handleStartPhaseFive,
+  handleRecordM3Verified,
   type HandlerResult,
   type UnlockJob,
 } from '@/modules/projects/handlers';
@@ -814,6 +817,33 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   }
 
   /**
+   * ── M3PaymentVerified (Finance spec, Phase 6 gate) ──────────────────────
+   *
+   * Pure database work, drained right after the payment that can make it true.
+   */
+  const m3Verified = await runEventJobs(admin, M3_VERIFIED_JOB_KIND, handleRecordM3Verified, 'runM3VerifiedJobs');
+  if (m3Verified.claimed > 0) {
+    return NextResponse.json({
+      claimed: m3Verified.claimed,
+      kind: M3_VERIFIED_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      m3Verified: m3Verified.results,
+      correlationId,
+    });
+  }
+
+  /**
    * ── Phase 5 start (Phase 5 Master Flow) ─────────────────────────────────
    *
    * Pure database work, drained right after the payment that can open it.
@@ -1079,6 +1109,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   );
 
   // PM5-M01..M04 (Phase 5 PM Agent spec), beside the Task 2 set.
+  const m3VerifiedAnnouncements = await runEventJobs(admin, M3_VERIFIED_ANNOUNCE_JOB_KIND, announceM3PaymentVerified, 'runM3VerifiedAnnouncementJobs');
+  const buildFeedbackRoutedAnnouncements = await runEventJobs(admin, BUILD_FEEDBACK_ROUTED_ANNOUNCE_JOB_KIND, announceBuildFeedbackRouted, 'runBuildFeedbackRoutedAnnouncementJobs');
   const phaseFiveStartedAnnouncements = await runEventJobs(admin, PHASE_FIVE_STARTED_ANNOUNCE_JOB_KIND, announcePhaseFiveStarted, 'runPhaseFiveStartedAnnouncementJobs');
   const buildSharedAnnouncements = await runEventJobs(admin, BUILD_SHARED_ANNOUNCE_JOB_KIND, announceBuildShared, 'runBuildSharedAnnouncementJobs');
   const buildFeedbackAnnouncements = await runEventJobs(admin, BUILD_FEEDBACK_ANNOUNCE_JOB_KIND, announceBuildFeedbackReceived, 'runBuildFeedbackAnnouncementJobs');
@@ -1363,6 +1395,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     buildSharedAnnouncements: buildSharedAnnouncements.results,
     buildFeedbackAnnouncements: buildFeedbackAnnouncements.results,
     buildApprovedAnnouncements: buildApprovedAnnouncements.results,
+    m3VerifiedAnnouncements: m3VerifiedAnnouncements.results,
+    buildFeedbackRoutedAnnouncements: buildFeedbackRoutedAnnouncements.results,
     task4CompleteAnnouncements: task4CompleteAnnouncements.results,
     m2PaymentVerifiedAnnouncements: m2PaymentVerifiedAnnouncements.results,
     dispatches: dispatches.results,
@@ -1502,6 +1536,9 @@ const PM_CLARIFY_JOB_KIND = HANDLER_JOB_KIND['projects:askClarification'];
 const PM_CLARIFICATION_ANSWER_JOB_KIND = HANDLER_JOB_KIND['projects:readClarificationAnswer'];
 const PHASE_FOUR_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['projects:completePhaseFourOnPrototypeApproval'];
 const PHASE_FIVE_START_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseFive'];
+const M3_VERIFIED_JOB_KIND = HANDLER_JOB_KIND['projects:recordM3Verified'];
+const M3_VERIFIED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceM3PaymentVerified'];
+const BUILD_FEEDBACK_ROUTED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceBuildFeedbackRouted'];
 const M2_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM2Invoice'];
 const M3_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM3Invoice'];
 const M4_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM4Invoice'];

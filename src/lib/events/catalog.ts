@@ -31,6 +31,9 @@ export const HANDLERS = [
   'quality_assurance:reviewPrototypeBuild',
   'projects:completePhaseFourOnPrototypeApproval',
   'projects:startPhaseFive',
+  'projects:recordM3Verified',
+  'crm:announceM3PaymentVerified',
+  'crm:announceBuildFeedbackRouted',
   'finance:generateM1Invoice',
   'finance:deliverIssuedInvoice',
   'finance:raiseFreeMaintenance',
@@ -117,7 +120,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   // than trusted from the payload, filtered to M2 (position 2) inside the
   // handler — this is not a second gate, only a second listener on one.
   // Phase 2 Planning §2: the advance verified opens planning. The agent itself decides whether this invoice IS the advance.
-  'invoice.paid': ['projects:unlockNextMilestone', 'crm:announceM2PaymentVerified', 'projects:startPhaseFive', 'project_planning:draftBlueprint', 'projects:updateClientOnPayment'],
+  'invoice.paid': ['projects:unlockNextMilestone', 'crm:announceM2PaymentVerified', 'projects:startPhaseFive', 'projects:recordM3Verified', 'project_planning:draftBlueprint', 'projects:updateClientOnPayment'],
   'project.planning_requested': ['project_planning:draftBlueprint'],
   /** Planning §10: the planner's question goes to the client through the PM, one at a time. */
   'project.clarification_required': ['projects:askClarification'],
@@ -621,6 +624,10 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   'project.phase_five_started': ['crm:announcePhaseFiveStarted'],
   /** PM5-M03: the client's feedback on a build was recorded and is awaiting classification. */
   'project.build_feedback_received': ['crm:announceBuildFeedbackReceived'],
+  /** PM5: what became of the feedback (defect, change request, revision, clarification). */
+  'project.build_feedback_routed': ['crm:announceBuildFeedbackRouted'],
+  /** Finance spec, Phase 6 gate: M3 verified paid in full, recorded once; the PM tells the team. */
+  'project.m3_payment_verified': ['crm:announceM3PaymentVerified'],
   /**
    * Q-PH56 (owner, round 3) — exactly as Phase 4 above: completing Phase 5
    * (development) raises the M3 invoice and the PM's Task 3 message; completing
@@ -674,6 +681,9 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'quality_assurance:reviewPrototypeBuild': 'prototype.qa_review',
   'projects:completePhaseFourOnPrototypeApproval': 'phase_four.complete',
   'projects:startPhaseFive': 'phase_five.start',
+  'projects:recordM3Verified': 'm3.record_verified',
+  'crm:announceM3PaymentVerified': 'm3_verified.announce',
+  'crm:announceBuildFeedbackRouted': 'build_feedback_routed.announce',
   'finance:generateM1Invoice': 'invoice.generate_m1',
   'finance:deliverIssuedInvoice': 'invoice.deliver',
   'finance:raiseFreeMaintenance': 'invoice.free_maintenance',

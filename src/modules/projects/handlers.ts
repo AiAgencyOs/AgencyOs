@@ -977,3 +977,41 @@ export async function handleStartPhaseFive(admin: Admin, job: UnlockJob): Promis
       return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
   }
 }
+
+
+/**
+ * `invoice.paid` -> M3PaymentVerified, once. `invoice.paid` fires for every milestone; the DOOR (`record_m3_verified`) decides whether the
+ * THIRD priced milestone is now verified paid in full, from the rows, and emits `project.m3_payment_verified` exactly once.
+ */
+export async function handleRecordM3Verified(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const invoiceId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+  if (!invoiceId) return { status: 'failed', permanent: true, detail: 'the event named no invoice' };
+
+  const { data: invoice, error: invoiceError } = await admin
+    .schema('finance')
+    .from('invoices')
+    .select('id, project_id')
+    .eq('id', invoiceId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+  if (invoiceError) return { status: 'failed', permanent: false, detail: `the invoice could not be read: ${invoiceError.message}` };
+  if (!invoice) return { status: 'succeeded', outcome: 'gone', detail: 'the invoice no longer exists' };
+  if (!invoice.project_id) return { status: 'succeeded', outcome: 'not_mine', detail: 'this invoice belongs to no project' };
+
+  const { data, error } = await admin.schema('projects').rpc('record_m3_verified', { p_project_id: invoice.project_id } as never);
+  if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+  const outcome = row?.outcome ?? 'no answer';
+  switch (outcome) {
+    case 'recorded':
+      return { status: 'succeeded', outcome, detail: 'M3PaymentVerified recorded; the Phase 6 financial gate is open.' };
+    case 'already_recorded':
+    case 'not_verified':
+      return { status: 'succeeded', outcome: outcome === 'not_verified' ? 'not_mine' : outcome, detail: outcome === 'not_verified' ? 'M3 is not verified paid (this was another milestone, or a partial payment).' : 'M3PaymentVerified was already recorded.' };
+    case 'not_found':
+      return { status: 'failed', permanent: true, detail: 'the project no longer exists.' };
+    default:
+      return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
+  }
+}
