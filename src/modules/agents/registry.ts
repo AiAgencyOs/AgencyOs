@@ -804,6 +804,7 @@ const UPSELL: AgentDefinition = {
  * money, a payment, or production.
  */
 function developmentSpecialist(input: {
+  verifiedBy?: 'quality_assurance';
   key: string;
   displayName: string;
   purpose: string;
@@ -833,6 +834,7 @@ const FRONTEND_DEVELOPER = developmentSpecialist({
   purpose: 'Implements the exact client-approved UI version and prototype: screens, states, forms, accessibility. No silent redesign.',
   capabilities: ['coding', 'reasoning', 'long_context'],
   handoffTargets: ['quality_assurance', 'security_review'],
+  verifiedBy: 'quality_assurance',
   requiredEvidence: ['typecheck', 'lint', 'tests', 'build'],
 });
 const BACKEND_DEVELOPER = developmentSpecialist({
@@ -841,6 +843,7 @@ const BACKEND_DEVELOPER = developmentSpecialist({
   purpose: 'Implements authoritative business logic, APIs and server actions that trace to approved requirements. Never redefines scope.',
   capabilities: ['coding', 'reasoning', 'long_context'],
   handoffTargets: ['quality_assurance', 'security_review'],
+  verifiedBy: 'quality_assurance',
   requiredEvidence: ['typecheck', 'lint', 'tests', 'build'],
 });
 const DATABASE_DEVELOPER = developmentSpecialist({
@@ -849,6 +852,7 @@ const DATABASE_DEVELOPER = developmentSpecialist({
   purpose: 'Writes schema, constraints, RLS and migrations. Never rewrites migration history, never weakens RLS to make a feature work.',
   capabilities: ['coding', 'reasoning', 'long_context'],
   handoffTargets: ['quality_assurance', 'security_review'],
+  verifiedBy: 'quality_assurance',
   requiredEvidence: ['tests', 'live', 'record'],
 });
 const MOBILE_DEVELOPER = developmentSpecialist({
@@ -857,6 +861,7 @@ const MOBILE_DEVELOPER = developmentSpecialist({
   purpose: 'Implements the approved mobile UI on Flutter / Android / iOS. NOT_REQUIRED for a web-only project; never fabricates a device test.',
   capabilities: ['coding', 'reasoning', 'long_context', 'multimodal'],
   handoffTargets: ['quality_assurance', 'security_review'],
+  verifiedBy: 'quality_assurance',
   requiredEvidence: ['tests', 'build'],
 });
 const INTEGRATION = developmentSpecialist({
@@ -865,6 +870,7 @@ const INTEGRATION = developmentSpecialist({
   purpose: 'Connects approved external services through canonical adapters. CONFIGURED is not VERIFIED; a mock success is not a real integration.',
   capabilities: ['coding', 'reasoning', 'structured_output'],
   handoffTargets: ['quality_assurance', 'security_review'],
+  verifiedBy: 'quality_assurance',
   requiredEvidence: ['tests', 'live'],
 });
 const DEVOPS_BUILD = developmentSpecialist({
@@ -873,6 +879,7 @@ const DEVOPS_BUILD = developmentSpecialist({
   purpose: 'Runs the development build system: environment checks, builds, artifacts with source traceability. No production deployment in Phase 5.',
   capabilities: ['coding', 'reasoning'],
   handoffTargets: ['quality_assurance'],
+  verifiedBy: 'quality_assurance',
   requiredEvidence: ['build'],
 });
 const TEST_AUTOMATION = developmentSpecialist({
@@ -881,6 +888,7 @@ const TEST_AUTOMATION = developmentSpecialist({
   purpose: 'Writes and runs unit, API, database, integration and E2E tests and records machine-readable results. Automated green is not independent QA pass.',
   capabilities: ['coding', 'reasoning', 'structured_output'],
   handoffTargets: ['quality_assurance'],
+  verifiedBy: 'quality_assurance',
   requiredEvidence: ['tests'],
 });
 const SECURITY_REVIEW = developmentSpecialist({
@@ -889,6 +897,7 @@ const SECURITY_REVIEW = developmentSpecialist({
   purpose: 'Reviews the exact commit independently of whoever wrote it: auth, RLS, tenancy, secrets, injection. Records findings; verification authority stays with QA.',
   capabilities: ['reasoning', 'long_context'],
   handoffTargets: ['quality_assurance'],
+  verifiedBy: 'quality_assurance',
   requiredEvidence: ['record'],
 });
 const BUG_FIX = developmentSpecialist({
@@ -897,6 +906,7 @@ const BUG_FIX = developmentSpecialist({
   purpose: 'Reproduces a defect, finds the root cause and makes the minimal fix. Produces FIX_READY only; QA verifies. Never closes its own defect.',
   capabilities: ['coding', 'reasoning', 'long_context'],
   handoffTargets: ['quality_assurance', 'security_review'],
+  verifiedBy: 'quality_assurance',
   requiredEvidence: ['tests', 'build'],
 });
 const REFACTOR_PERFORMANCE = developmentSpecialist({
@@ -905,6 +915,7 @@ const REFACTOR_PERFORMANCE = developmentSpecialist({
   purpose: 'Conditional: only for approved technical debt or a measured performance problem; baseline first, before-and-after measurement, no functional change.',
   capabilities: ['coding', 'reasoning', 'long_context'],
   handoffTargets: ['quality_assurance', 'security_review'],
+  verifiedBy: 'quality_assurance',
   requiredEvidence: ['tests', 'build'],
 });
 const DOCUMENTATION = developmentSpecialist({
@@ -913,6 +924,7 @@ const DOCUMENTATION = developmentSpecialist({
   purpose: 'Keeps implementation-derived documentation current and builds the Phase 6 QA intake. Documents what exists; never what is planned, never a secret.',
   capabilities: ['reasoning', 'long_context', 'structured_output'],
   handoffTargets: ['quality_assurance'],
+  verifiedBy: 'quality_assurance',
   requiredEvidence: ['record'],
 });
 
@@ -923,7 +935,7 @@ const DOCUMENTATION = developmentSpecialist({
  * verify a payment or deploy anything, and none holds a tool today. QA Independence: creator != validator is enforced in the database for every
  * result they would record (the person or agent that produced the build cannot record its result).
  */
-function qaSpecialist(input: { key: string; displayName: string; purpose: string; capabilities: readonly AgentCapability[]; handoffTargets: readonly string[] }): AgentDefinition {
+function qaSpecialist(input: { verifiedBy?: 'quality_assurance'; key: string; displayName: string; purpose: string; capabilities: readonly AgentCapability[]; handoffTargets: readonly string[] }): AgentDefinition {
   return {
     key: input.key,
     displayName: input.displayName,
@@ -939,15 +951,15 @@ function qaSpecialist(input: { key: string; displayName: string; purpose: string
     retry: { maxAttempts: 2, onExhausted: 'escalate' },
   };
 }
-const FUNCTIONAL_TEST = qaSpecialist({ key: 'functional_test', handoffTargets: ['quality_assurance'], displayName: 'Functional Test Agent', purpose: 'Verifies features, business rules and acceptance criteria against the exact release candidate. Does not fix.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
-const UI_E2E_TEST = qaSpecialist({ key: 'ui_journey_test', handoffTargets: ['quality_assurance'], displayName: 'UI / E2E Test Agent', purpose: 'Tests the approved UI and the critical user journeys end to end. A preference is not a defect unless the approved UI supports it.', capabilities: ['reasoning', 'long_context', 'structured_output', 'multimodal'] });
-const API_INTEGRATION_TEST = qaSpecialist({ key: 'api_integration_test', handoffTargets: ['quality_assurance'], displayName: 'API / Integration Test Agent', purpose: 'Tests API contracts and integrations. Configured is not verified; a mock success is not a provider verification.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
-const DATABASE_TEST = qaSpecialist({ key: 'database_test', handoffTargets: ['quality_assurance'], displayName: 'Database Test Agent', purpose: 'Tests schema, constraints, RLS, tenant isolation, migrations and transactions. Never destructive against production.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
-const SECURITY_TEST = qaSpecialist({ key: 'security_test', handoffTargets: ['quality_assurance'], displayName: 'Security Test Agent', purpose: 'Independent security and permission validation. Raw exploit detail never reaches a client-facing view.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
-const PERFORMANCE_TEST = qaSpecialist({ key: 'performance_test', handoffTargets: ['quality_assurance'], displayName: 'Performance Test Agent', purpose: 'Measures against project-specific targets and records the method and environment. Never invents a universal threshold.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
-const COMPATIBILITY_TEST = qaSpecialist({ key: 'compatibility_test', handoffTargets: ['quality_assurance'], displayName: 'Compatibility / Device Test Agent', purpose: 'Tests the declared browser/device matrix. A simulator is not a device; one browser is not all browsers; an unavailable target is BLOCKED, never a pass.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
-const REGRESSION_TEST = qaSpecialist({ key: 'regression_test', handoffTargets: ['quality_assurance'], displayName: 'Regression Test Agent', purpose: 'Targeted, expanded and full relevant regression and escaped-defect protection. Flaky is not a pass.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
-const RELEASE_READINESS = qaSpecialist({ key: 'release_readiness', handoffTargets: ['quality_assurance'], displayName: 'Release / Production Readiness Agent', purpose: 'Freezes the exact candidate, evaluates the gates and readiness, prepares exception requests and the Phase 7 intake. Approves nothing, deploys nothing.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
+const FUNCTIONAL_TEST = qaSpecialist({ key: 'functional_test', handoffTargets: ['quality_assurance'], verifiedBy: 'quality_assurance', displayName: 'Functional Test Agent', purpose: 'Verifies features, business rules and acceptance criteria against the exact release candidate. Does not fix.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
+const UI_E2E_TEST = qaSpecialist({ key: 'ui_journey_test', handoffTargets: ['quality_assurance'], verifiedBy: 'quality_assurance', displayName: 'UI / E2E Test Agent', purpose: 'Tests the approved UI and the critical user journeys end to end. A preference is not a defect unless the approved UI supports it.', capabilities: ['reasoning', 'long_context', 'structured_output', 'multimodal'] });
+const API_INTEGRATION_TEST = qaSpecialist({ key: 'api_integration_test', handoffTargets: ['quality_assurance'], verifiedBy: 'quality_assurance', displayName: 'API / Integration Test Agent', purpose: 'Tests API contracts and integrations. Configured is not verified; a mock success is not a provider verification.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
+const DATABASE_TEST = qaSpecialist({ key: 'database_test', handoffTargets: ['quality_assurance'], verifiedBy: 'quality_assurance', displayName: 'Database Test Agent', purpose: 'Tests schema, constraints, RLS, tenant isolation, migrations and transactions. Never destructive against production.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
+const SECURITY_TEST = qaSpecialist({ key: 'security_test', handoffTargets: ['quality_assurance'], verifiedBy: 'quality_assurance', displayName: 'Security Test Agent', purpose: 'Independent security and permission validation. Raw exploit detail never reaches a client-facing view.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
+const PERFORMANCE_TEST = qaSpecialist({ key: 'performance_test', handoffTargets: ['quality_assurance'], verifiedBy: 'quality_assurance', displayName: 'Performance Test Agent', purpose: 'Measures against project-specific targets and records the method and environment. Never invents a universal threshold.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
+const COMPATIBILITY_TEST = qaSpecialist({ key: 'compatibility_test', handoffTargets: ['quality_assurance'], verifiedBy: 'quality_assurance', displayName: 'Compatibility / Device Test Agent', purpose: 'Tests the declared browser/device matrix. A simulator is not a device; one browser is not all browsers; an unavailable target is BLOCKED, never a pass.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
+const REGRESSION_TEST = qaSpecialist({ key: 'regression_test', handoffTargets: ['quality_assurance'], verifiedBy: 'quality_assurance', displayName: 'Regression Test Agent', purpose: 'Targeted, expanded and full relevant regression and escaped-defect protection. Flaky is not a pass.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
+const RELEASE_READINESS = qaSpecialist({ key: 'release_readiness', handoffTargets: ['quality_assurance'], verifiedBy: 'quality_assurance', displayName: 'Release / Production Readiness Agent', purpose: 'Freezes the exact candidate, evaluates the gates and readiness, prepares exception requests and the Phase 7 intake. Approves nothing, deploys nothing.', capabilities: ['reasoning', 'long_context', 'structured_output'] });
 
 
 export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [

@@ -303,17 +303,19 @@ try {
   // ── G ──────────────────────────────────────────────────────────────────
   console.log('\n  G. and the rule binds the row, not one caller');
 
+  // A document, not a build: since Phase 5 a build reaches review only with a commit, a build run, a code review, QA and Admin approval, which
+  // is not what this check is about. It asks whether the SCREEN rule is specific to designs.
   const build = one(
     await rest('POST', 'projects', 'rpc/add_deliverable', {
       p_project_id: project.id,
-      p_kind: 'build',
-      p_title: `${MARKER} build`,
+      p_kind: 'document',
+      p_title: `${MARKER} document`,
     }),
   );
   const buildReview = await rpc('submit_deliverable', { p_deliverable_id: build.deliverable_id });
   check(
     buildReview?.outcome === 'submitted',
-    'a build is not a design and is not gated on screens',
+    'a document is not a design and is not gated on screens',
     buildReview?.outcome,
   );
 
