@@ -1,11 +1,15 @@
+import { createMetaAdsAdapter } from './meta-ads-adapter';
 import type { Provider, ProviderAdapter } from './providers';
 
 /**
- * The provider adapters that actually exist. EMPTY, deliberately: no adapter has been written, and the registry says so
- * (NOT_IMPLEMENTED) instead of pretending. An adapter lands here with its own contract tests, and the connection screens
- * pick it up with no other change. Never register a stub that returns ok.
+ * The provider adapters that actually exist: ONE, and it is read-only. `meta_ads` can verify a connection (a real, read-only
+ * Graph API check) and nothing else; it cannot launch or change a campaign, and the capabilities it records say so. Every other
+ * provider is NOT_IMPLEMENTED, and the registry says so instead of pretending. An adapter lands here with its own contract tests, and
+ * the connection screens pick it up with no other change. Never register a stub that returns ok.
  */
-export const ADAPTERS: Partial<Record<Provider, ProviderAdapter>> = {};
+export const ADAPTERS: Partial<Record<Provider, ProviderAdapter>> = {
+  meta_ads: createMetaAdsAdapter(),
+};
 
 export const hasAdapter = (provider: string): boolean => Object.hasOwn(ADAPTERS, provider);
 

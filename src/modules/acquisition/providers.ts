@@ -24,7 +24,7 @@ export type ProviderInfo = {
 };
 
 export const PROVIDER_CATALOG: Record<Provider, ProviderInfo> = {
-  meta_ads: { label: 'Meta / Facebook Ads', kind: 'ads', credentials: ['access_token'], humanStep: 'A Meta Business account owner authorises the app and picks the ad account.' },
+  meta_ads: { label: 'Meta / Facebook Ads', kind: 'ads', credentials: ['access_token', 'ad_account_id'], humanStep: 'A Meta Business account owner creates a system-user token for the app (ads_read, ads_management), assigns the ad account to that system user, and enters the ad account id (act_...). The id is not a secret; it is stored with the token.' },
   google_ads: { label: 'Google Ads', kind: 'ads', credentials: ['developer_token', 'client_id', 'client_secret', 'refresh_token'], humanStep: 'A Google Ads manager authorises access and supplies the customer ID.' },
   facebook_page: { label: 'Facebook Page', kind: 'social', credentials: ['page_access_token'], humanStep: 'A Page admin authorises the app for the Page.' },
   instagram: { label: 'Instagram', kind: 'social', credentials: ['access_token'], humanStep: 'The Instagram professional account owner authorises the app.' },

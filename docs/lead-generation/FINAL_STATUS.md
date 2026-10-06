@@ -7,8 +7,8 @@ Re-audit date: 2026-10-05. Method: every claim below points at a file, a verifie
 
 **`NOT_PRODUCTION_READY` for the five-engine, agent-driven system the specification describes. Ready for assisted use.**
 
-*Why not production-ready:* no provider adapter exists for any platform (Meta, Google Ads, Hostinger, LinkedIn, Instagram, Facebook,
-any marketplace), no discovery source, and none of the acquisition agents - so nothing reaches out to a platform on its own.
+*Why not production-ready:* exactly one provider adapter exists, Meta Ads, and it is read-only (it verifies a connection and cannot launch or change anything); none exists for Google Ads, Hostinger, LinkedIn, Instagram, Facebook
+or any marketplace; there is no discovery source, and none of the acquisition agents - so nothing reaches out to a platform on its own.
 That is a statement about what is **not built**, not about verification pending: it is the largest remaining body of work and most of it
 needs a credential or a decision only the owner can give (`HUMAN_DEPENDENCIES.md`).
 
