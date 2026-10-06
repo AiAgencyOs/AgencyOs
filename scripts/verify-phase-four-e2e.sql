@@ -25,6 +25,10 @@ begin
       'app_metadata', jsonb_build_object('organization_id', p_org, 'role', p_role))::text, true);
 end $$;
 grant execute on function pg_temp.as_user(uuid, uuid, text) to public;
+create or replace function pg_temp.refused(stmt text, needle text) returns boolean language plpgsql as $$
+begin execute stmt; return false;
+exception when restrict_violation then return position(needle in sqlerrm) > 0; end $$;
+grant execute on function pg_temp.refused(text, text) to public;
 create or replace function pg_temp.as_service() returns void language plpgsql as $$
 begin perform set_config('request.jwt.claims', jsonb_build_object('role','service_role')::text, true); end $$;
 grant execute on function pg_temp.as_service() to public;
@@ -242,6 +246,14 @@ reset role;
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
 set local role authenticated;
 select pg_temp.check((select outcome from projects.start_task(:'TASK_id')) = 'm2_not_verified', 'invoice issued: Phase 5 is still blocked');
+reset role;
+select pg_temp.as_service();
+set local role service_role;
+select pg_temp.check((select outcome from projects.start_phase_five(:'P_id')) = 'm2_not_verified', 'NEGATIVE: the Phase 5 workspace is refused before M2 is verified (invoice issued is not enough)');
+select pg_temp.check((select count(*) from projects.phase_five where project_id = :'P_id') = 0, 'and no workspace or baseline exists');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
 select pg_temp.check((select outcome from projects.phase_five_gate_status(:'P_id')) = 'invoice_issued', 'and the panel says so');
 reset role;
 -- the client SAYS paid (a message; there is no row for a claim) - nothing to change; the next states are the real ones
@@ -299,7 +311,215 @@ select pg_temp.check((select count(*) from finance.receipts where payment_id in 
 select pg_temp.check((select outcome from projects.phase_five_gate_status(:'P_id')) = 'verified', 'M2 is verified paid in full: the gate status says verified');
 select pg_temp.check((select outcome from projects.start_task(:'TASK_id')) <> 'm2_not_verified', 'ONLY NOW the Phase 5 start gate is open (M2PaymentVerified)');
 reset role;
+
+-- 17. Phase 5 READY: the workspace locks the exact baseline
+insert into projects.scope_versions (organization_id, project_id, version, status, frozen_at, source) values (:'ORG', :'P_id', 1, 'active', now(), 'onboarding');
+select pg_temp.check((select outcome from projects.start_task(:'TASK_id')) = 'no_baseline', 'M2 verified but no baseline yet: a development task still cannot start against "the latest design"');
+select pg_temp.as_service();
+set local role service_role;
+select outcome as o, phase_five_id as f5 from projects.start_phase_five(:'P_id') \gset P5_
+select pg_temp.check(:'P5_o' = 'started', 'Phase 5 starts (Phase 4 complete + M2 verified)');
+select pg_temp.check((select outcome from projects.start_phase_five(:'P_id')) = 'already_started', 'a duplicate Phase5Started starts nothing twice');
+select pg_temp.check((select count(*) from projects.development_baselines where project_id = :'P_id') = 1, 'exactly one baseline');
+select pg_temp.check((select ui_version_id from projects.development_baselines where project_id = :'P_id') = pg_temp.ver(:'F_id',4), 'the baseline names the EXACT locked UI version (v4), not the latest');
+select pg_temp.check((select prototype_deliverable_id from projects.development_baselines where project_id = :'P_id') = :'B4_d', 'and the EXACT client-approved prototype build (build 4)');
+select pg_temp.check(exists (select 1 from core.outbox_events where type = 'project.phase_five_started' and subject_id = :'P5_f5'), 'Phase5Started was emitted');
+select pg_temp.check(pg_temp.refused(format('update projects.development_baselines set base_commit = ''abc'' where project_id = %L', :'P_id'), 'never edited'), 'a locked baseline cannot be edited');
+select pg_temp.check((select count(*) from projects.phase_five_agent_state where project_id = :'P_id') = 11, 'every specialist has a recorded state when Phase 5 starts');
+select pg_temp.check((select state = 'not_required' and length(reason) > 0 from projects.phase_five_agent_state where project_id = :'P_id' and agent_key = 'mobile_developer'), 'a web project: the Mobile Developer is NOT_REQUIRED, with the reason recorded');
+select pg_temp.check((select state = 'not_required' and length(reason) > 0 from projects.phase_five_agent_state where project_id = :'P_id' and agent_key = 'refactor_performance'), 'no approved need: Refactor/Performance is NOT_REQUIRED, with the reason recorded');
+do $$ begin
+  begin
+    update projects.phase_five_agent_state set reason = null where agent_key = 'mobile_developer';
+    raise exception 'FAILED: NOT_REQUIRED without a reason was accepted';
+  exception when check_violation then raise notice 'ok  NOT_REQUIRED cannot lose its reason (a CHECK)'; end;
+end $$;
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.start_task(:'TASK_id')) not in ('m2_not_verified', 'no_baseline'), 'with the baseline locked, the task start moves on to its ordinary checks');
+select pg_temp.check((select outcome from projects.set_phase_five_agent_state(:'P_id', 'mobile_developer', 'not_required', null)) = 'reason_required', 'the Admin cannot mark a specialist NOT_REQUIRED without saying why');
+select pg_temp.check((select outcome from projects.set_phase_five_agent_state(:'P_id', 'mobile_developer', 'required', null)) = 'set', 'the Admin can turn a conditional specialist on (the client added a mobile app)');
+reset role;
 select pg_temp.check((select count(*) from core.outbox_events where type = 'invoice.paid' and subject_id = :'I1_i') = 1, 'the verified-payment event (the Task 3 start trigger) fired exactly once');
+
+-- ═════════ Phase 5: development builds, the client-test gate, DoD, and the Phase 6 financial gate ═════════
+-- 18. a development build must resolve to an exact commit, be QA'd independently, and be Admin-approved before the client sees it
+select pg_temp.as_service();
+set local role service_role;
+select deliverable_id as bd from projects.add_deliverable(:'P_id', 'build', 'Development build 1', 'https://builds.example.test/1', 'initial', null, '00000000-0000-4000-8000-00000000f522', null, null) \gset BD1_
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select outcome as o from projects.submit_deliverable(:'BD1_bd', :'OWNER', 'build 1') \gset X1_
+select pg_temp.check(:'X1_o' = 'no_commit', 'NEGATIVE: a build with no exact commit cannot be sent to the client');
+select pg_temp.check((select outcome from projects.set_deliverable_details(:'BD1_bd', 'web', 'abc1234', 'build-1', null, null)) is not null, 'the build records its exact commit and number');
+select outcome as o from projects.submit_deliverable(:'BD1_bd', :'OWNER', 'build 1') \gset XR0_
+select pg_temp.check(:'XR0_o' = 'review_missing', 'NEGATIVE: an exact build with no independent code review is not sent');
+reset role;
+-- independent code / security review of the exact commit
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f522', :'ORG', 'member');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.record_code_review(:'BD1_bd', 'passed')) = 'self_review', 'the developer cannot approve their own code');
+reset role;
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f523', :'ORG', 'ops_admin');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.record_code_review(:'BD1_bd', 'passed', '[{"severity":"high","title":"SQL built from user input"}]')) = 'blocking_finding', 'a review carrying a HIGH finding cannot pass');
+select pg_temp.check((select outcome from projects.record_code_review(:'BD1_bd', 'passed', '[]', true, 'I rewrote the query myself')) = 'recorded', 'a reviewer who edited the code records a pass');
+select pg_temp.check((select verdict from projects.build_review_status(:'BD1_bd')) = 'needs_second', 'but a reviewer who changed the code is not independent of it: a second reviewer is required');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.record_code_review(:'BD1_bd', 'passed', '[{"severity":"low","title":"naming"}]')) = 'recorded', 'a second independent reviewer passes the same commit');
+select pg_temp.check((select verdict from projects.build_review_status(:'BD1_bd')) = 'passed', 'the review stands');
+select projects.set_deliverable_details(:'BD1_bd', 'web', 'def5678', 'build-1', null, null);
+select pg_temp.check((select verdict from projects.build_review_status(:'BD1_bd')) = 'stale', 'a changed commit makes the earlier review STALE');
+select projects.set_deliverable_details(:'BD1_bd', 'web', 'abc1234', 'build-1', null, null);
+select outcome as o from projects.submit_deliverable(:'BD1_bd', :'OWNER', 'build 1') \gset X2_
+select pg_temp.check(:'X2_o' = 'not_qa_passed', 'NEGATIVE: an exact, reviewed build that has not passed QA is not sent');
+reset role;
+-- no production deployment in Phase 5 (a CHECK, not a convention)
+do $$ begin
+  begin
+    update projects.deliverable_details set target_env = 'production' where deliverable_id = (select id from projects.deliverables where title = 'Development build 1');
+    raise exception 'FAILED: a production target was accepted in Phase 5';
+  exception when check_violation then raise notice 'ok  a Phase 5 build cannot target production'; end;
+end $$;
+-- duplicate build number
+do $$ declare v uuid; begin
+  insert into projects.deliverables (organization_id, project_id, kind, version, title) values ('00000000-0000-4000-8000-000000000001', (select project_id from projects.deliverables where title = 'Development build 1'), 'build', 99, 'dup') returning id into v;
+  begin
+    insert into projects.deliverable_details (deliverable_id, organization_id, project_id, build_number) select v, organization_id, project_id, 'build-1' from projects.deliverables where id = v;
+    raise exception 'FAILED: a duplicate build number was accepted';
+  exception when unique_violation then raise notice 'ok  a build number is unique within the project'; end;
+end $$;
+
+-- the builder (f522) cannot pass their own build; an independent person can
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f522', :'ORG', 'member');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.record_build_qa_verdict(:'BD1_bd', 'passed', 'looks fine')) = 'self_review', 'the builder cannot QA-pass their own build');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.decide_build_admin(:'BD1_bd', 'approved', 'ok')) = 'not_qa_passed', 'NEGATIVE: the Admin cannot approve a build QA has not passed');
+reset role;
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f523', :'ORG', 'ops_admin');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.record_build_qa_verdict(:'BD1_bd', 'passed', 'smoke + regression green')) = 'recorded', 'an independent person records the QA pass');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.decide_build_admin(:'BD1_bd', 'approved', 'ok')) = 'decided', 'the Admin approves the QA-passed build');
+select outcome as o from projects.submit_deliverable(:'BD1_bd', :'OWNER', 'build 1') \gset X3_
+select pg_temp.check(:'X3_o' = 'submitted', 'QA PASS + ADMIN APPROVED + exact commit: the PM shares the build');
+select id as "RBD1_id" from approvals.approval_requests where subject_type = 'deliverable' and subject_id = :'BD1_bd' \gset
+select pg_temp.check(exists (select 1 from projects.phase_readiness(:'P_id', 5) r, unnest(r.missing) m where m = 'No client-approved development build.'), 'DoD: shared is not approved - Phase 5 is not complete');
+reset role;
+-- a change to the shared build's commit is refused
+do $$ begin
+  begin
+    update projects.deliverable_details set commit_ref = 'ffff999' where deliverable_id = (select id from projects.deliverables where title = 'Development build 1');
+    raise exception 'FAILED: a shared build''s commit was rewritten';
+  exception when restrict_violation then raise notice 'ok  a client-shared build''s commit cannot be rewritten'; end;
+end $$;
+
+-- 19. a defect found in the shared build: a FIX claim does not make the build final
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+insert into qa.defects (organization_id, project_id, deliverable_id, severity, title, reproduction, reported_by) values (:'ORG', :'P_id', :'BD1_bd', 'major', 'client found a crash', 'open the cart', :'OWNER') returning id \gset DF_
+set local role authenticated;
+select approvals.decide_approval(:'RBD1_id', 'approved', 'approved by client', 'whatsapp:msg-20', null);
+select projects.sync_deliverable_decision(:'BD1_bd');
+select pg_temp.check((select status from projects.deliverables where id = :'BD1_bd') = 'approved', 'the client approves the exact build (build 1)');
+select pg_temp.check('major defect is not verified fixed.' = any (select regexp_replace(m, '^\d+ ', '') from unnest((select missing from projects.phase_readiness(:'P_id', 5))) m) or exists (select 1 from unnest((select missing from projects.phase_readiness(:'P_id', 5))) m where m like '%not verified fixed%'), 'DoD: an unverified major defect blocks Phase 5 completion');
+reset role;
+update qa.defects set status = 'fixed', resolution = 'patched' where id = :'DF_id';
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check(exists (select 1 from projects.phase_readiness(:'P_id', 5) r, unnest(r.missing) m where m like '%not verified fixed%'), 'FIX_READY still blocks completion: only a verified fix counts');
+reset role;
+
+-- 19b. client feedback on the shared build is classified and routed; a new feature is never a free "bug"
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select feedback_id as fid from projects.record_build_feedback(:'BD1_bd', 'The cart page crashes when I tap pay', 'whatsapp:msg-30') \gset FB1_
+select feedback_id as fid from projects.record_build_feedback(:'BD1_bd', 'Please also add a loyalty points programme', 'whatsapp:msg-31') \gset FB2_
+select feedback_id as fid from projects.record_build_feedback(:'BD1_bd', 'Can the header be a bit friendlier?', 'whatsapp:msg-32') \gset FB3_
+select pg_temp.check((select outcome from projects.classify_build_feedback(:'FB1_fid', 'bug')) = 'defect_raised', 'a BUG becomes a mandatory defect');
+select pg_temp.check((select count(*) from qa.defects where deliverable_id = :'BD1_bd' and title like 'Client feedback (bug)%' and status = 'open') = 1, 'the defect is open against the exact build');
+select pg_temp.check((select outcome from projects.classify_build_feedback(:'FB2_fid', 'new_feature')) = 'change_request_raised', 'a NEW_FEATURE becomes a Change Request');
+select pg_temp.check((select count(*) from qa.defects where deliverable_id = :'BD1_bd' and title like '%loyalty%') = 0, 'and it is NOT raised as a defect to make it free');
+select pg_temp.check((select outcome from projects.classify_build_feedback(:'FB2_fid', 'bug')) = 'already_classified', 'a routed new feature cannot be re-labelled as a bug');
+select pg_temp.check((select outcome from projects.classify_build_feedback(:'FB3_fid', 'clarification')) = 'clarification_needed', 'a CLARIFICATION is resolved before implementation');
+reset role;
+select pg_temp.check(pg_temp.refused(format('update projects.build_feedback set classification = ''bug'' where id = %L', :'FB2_fid'), 'cannot be re-labelled'), 'the database refuses re-labelling a new feature as a bug');
+do $$ begin
+  begin
+    update projects.build_feedback set defect_id = (select id from qa.defects where title like 'Client feedback (bug)%' limit 1) where classification = 'new_feature';
+    raise exception 'FAILED: a new feature was linked to a defect';
+  exception when check_violation then raise notice 'ok  scope-changing feedback can never carry a defect (a CHECK, not a prompt)'; end;
+end $$;
+
+-- 19c. Phase 5 completes only when the DoD holds, and hands Phase 6 a frozen intake
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.complete_phase(:'P_id', 5)) = 'not_ready', 'NEGATIVE: Phase 5 will not complete while defects are unverified and tasks are open');
+select pg_temp.check((select outcome from projects.register_integration(:'P_id', 'whatsapp', 'WhatsApp Business')) = 'registered', 'an integration is registered (and is only UNKNOWN)');
+reset role;
+-- QA verifies the two defects: the first was a fix claim made earlier, the second is fixed by the developer and verified by QA
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f522', :'ORG', 'member');
+update qa.defects set status = 'fixed', resolution = 'patched' where deliverable_id = :'BD1_bd' and title like 'Client feedback (bug)%';
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f523', :'ORG', 'ops_admin');
+update qa.defects set status = 'verified', verified_by = '00000000-0000-4000-8000-00000000f523', verified_at = now() where deliverable_id = :'BD1_bd' and status = 'fixed';
+select pg_temp.check((select count(*) from qa.defects where project_id = :'P_id' and status <> 'verified') = 0, 'every defect is VERIFIED by someone other than its fixer');
+-- (the duplicate-number fixture build from step 18 was a stray draft; it is retired so the DoD sees only real builds)
+set local session_replication_role = replica;
+update projects.deliverables set status = 'superseded' where title = 'dup';
+set local session_replication_role = origin;
+-- the development task is done (the review path for tasks is its own, already-proven door; here its status is set as the table owner)
+set local session_replication_role = replica;
+update projects.tasks set status = 'done', completed_at = now() where id = :'TASK_id';
+set local session_replication_role = origin;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select outcome as o, array_to_string(missing, ' | ') as m from projects.complete_phase(:'P_id', 5) \gset CP_
+select pg_temp.check(:'CP_o' = 'completed', 'with the DoD met, Phase 5 completes [' || :'CP_m' || ']');
+select pg_temp.check((select outcome from projects.complete_phase(:'P_id', 5)) = 'already_completed', 'a duplicate Phase5Completed completes nothing twice');
+select pg_temp.check((select count(*) from projects.phase_five_handoffs where project_id = :'P_id') = 1, 'exactly one Phase 6 intake exists');
+select pg_temp.check((select payload->'build'->>'commit' from projects.phase_five_handoffs where project_id = :'P_id') = 'abc1234', 'the intake names the exact final commit');
+select pg_temp.check((select independent_verification_required from projects.phase_five_handoffs where project_id = :'P_id'), 'Phase 6 is told to verify independently, not to trust Phase 5');
+select pg_temp.check((select jsonb_array_length(payload->'knownLimitations') >= 1 from projects.phase_five_handoffs where project_id = :'P_id'), 'an unverified integration is a named known limitation');
+select pg_temp.check((select payload->'defects'->>'unresolved' from projects.phase_five_handoffs where project_id = :'P_id') = '0', 'the intake records the defect history');
+select pg_temp.check((select state from projects.phase_five where project_id = :'P_id') = 'completed', 'the Phase 5 workspace is completed');
+reset role;
+select pg_temp.check(pg_temp.refused(format('update projects.phase_five_handoffs set final_commit_ref = ''zzz'' where project_id = %L', :'P_id'), 'never edited'), 'the intake is frozen: it cannot be edited after the fact');
+select pg_temp.check(exists (select 1 from core.outbox_events where type = 'project.phase_five_completed' and subject_id = :'P_id'), 'Phase5Completed was emitted (it triggers the M3 invoice)');
+
+-- 20. the Phase 6 financial gate: M3 verified paid in full, nothing less
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check(not projects.m3_verified_paid(:'P_id'), 'M3 is not verified paid');
+select pg_temp.check(exists (select 1 from projects.phase_readiness(:'P_id', 6) r, unnest(r.missing) m where m = 'M3 not verified paid'), 'Phase 6 readiness names the missing M3 payment');
+reset role;
+
+-- 21. M3 (30%): issued, submitted, verified; only the fully verified payment satisfies the gate
+insert into projects.milestones (organization_id, project_id, name, position, amount_minor, currency) values (:'ORG', :'P_id', 'M3', 3, 150000, 'INR') returning id \gset MS3_
+select pg_temp.as_service();
+set local role service_role;
+select invoice_id as i from finance.create_milestone_invoice(:'ORG', :'A_id', :'P_id', :'MS3_id', 'ZP4-M3-1', 'INR', 150000, 0, 150000, '[{"position":0,"description":"M3 - 30%","quantity":1,"unit_price_minor":150000,"amount_minor":150000,"tax_rate_bp":0}]', now() + interval '7 days', null, null) \gset I3_
+select pg_temp.check((select outcome from finance.create_milestone_invoice(:'ORG', :'A_id', :'P_id', :'MS3_id', 'ZP4-M3-2', 'INR', 150000, 0, 150000, '[{"position":0,"description":"M3 - 30%","quantity":1,"unit_price_minor":150000,"amount_minor":150000,"tax_rate_bp":0}]', now() + interval '7 days', null, null)) = 'already_invoiced', 'a duplicate M3 invoice event creates no second invoice');
+select finance.issue_invoice(:'I3_i', now() + interval '7 days');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check(not projects.m3_verified_paid(:'P_id'), 'M3 issued: the Phase 6 financial gate is closed');
+select payment_id as pid from finance.record_manual_payment(:'I3_i', 'UTR-M3-1', 100000, now(), 'upi') \gset PY3a_
+select finance.verify_payment(:'PY3a_pid', :'OWNER');
+select pg_temp.check(not projects.m3_verified_paid(:'P_id'), 'M3 underpaid (100,000 of 150,000 verified): still closed');
+select payment_id as pid from finance.record_manual_payment(:'I3_i', 'UTR-M3-2', 50000, now(), 'upi') \gset PY3b_
+select finance.verify_payment(:'PY3b_pid', :'OWNER');
+select pg_temp.check(projects.m3_verified_paid(:'P_id'), 'M3 verified paid in full: the Phase 6 financial gate opens');
+select pg_temp.check(not exists (select 1 from projects.phase_readiness(:'P_id', 6) r, unnest(r.missing) m where m = 'M3 not verified paid'), 'and Phase 6 readiness no longer names M3');
+reset role;
 
 rollback;
 \echo PHASE 4 E2E OK

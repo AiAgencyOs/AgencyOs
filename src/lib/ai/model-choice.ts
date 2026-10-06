@@ -62,6 +62,18 @@ export const AGENT_CATEGORY: Readonly<Record<string, RoutingCategory>> = {
   email_outreach: 'client_facing',
   social_media: 'client_facing',
   marketplace_opportunity: 'client_facing',
+  // ADM-113 (Phase 5). Engineering work routes as engineering; the independent reviewer routes as certification, the tightest.
+  frontend_developer: 'engineering',
+  backend_developer: 'engineering',
+  database_developer: 'engineering',
+  mobile_developer: 'engineering',
+  integration: 'engineering',
+  devops_build: 'engineering',
+  test_automation: 'engineering',
+  bug_fix: 'engineering',
+  refactor_performance: 'engineering',
+  documentation: 'engineering',
+  security_review: 'certification',
 };
 
 export function categoryForAgent(agentKey: string): RoutingCategory | null {

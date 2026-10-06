@@ -39,8 +39,9 @@ import { definitionFor } from './registry';
  * is empty and it stopped being true without anybody noticing** (G-187, the
  * same defect class the audit found in the webhook route's docblock): the list
  * holds thirty-five tools and the registry binds seventy-three of them across
- * eighteen agents (ADM-112 added four agents and twenty-one tools, none of which
- * dispatches: they are bound and authorizable only).
+ * twenty-nine agents (ADM-112 added four agents and twenty-one tools, none of which
+ * dispatches: they are bound and authorizable only; ADM-113 added eleven development
+ * specialists that hold no tool at all).
  *
  * **ADM-99 (2026-09-20) answered which of them run: the four read-only
  * tools.** `callModelWithTools` in `app/api/jobs/run/agent-run.ts` is the tool

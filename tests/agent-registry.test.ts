@@ -71,6 +71,9 @@ describe('A. what is defined is what exists', () => {
         'finance', 'support', 'customer_success', 'upsell',
         // layer 4 — acquisition (ADM-112)
         'ad_manager', 'email_outreach', 'social_media', 'marketplace_opportunity',
+        // layer 5 — development specialists (ADM-113, Phase 5)
+        'frontend_developer', 'backend_developer', 'database_developer', 'mobile_developer', 'integration',
+        'devops_build', 'test_automation', 'security_review', 'bug_fix', 'refactor_performance', 'documentation',
       ],
     );
     assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'foundation').length, 4);

@@ -56,7 +56,7 @@ import { createHash } from 'node:crypto';
  */
 
 /** Where an agent sits in ADM-82's activation order. */
-export type AgentLayer = 'foundation' | 'core' | 'operations' | 'acquisition';
+export type AgentLayer = 'foundation' | 'core' | 'operations' | 'acquisition' | 'development';
 
 /**
  * What an agent may attempt, declared rather than inferred.
@@ -784,6 +784,129 @@ const UPSELL: AgentDefinition = {
   retry: { maxAttempts: 2, onExhausted: 'escalate' },
 };
 
+/**
+ * The Phase 5 development specialists: the owner's Phase 5 specification (eleven agents) - granted by ADM-113, installed DISABLED.
+ *
+ * Definition is not activation. None of them holds a tool today: the code they would write, the builds they would run and the reviews they
+ * would record all go through governed doors a person (or QA) opens, and nothing here can merge, deploy to production, approve or verify.
+ * Every one is verified by `quality_assurance` and no other agent; `security_review` REVIEWS (a record with an independent reviewer) but does
+ * not hold verification authority - ADM-82 gives that to QA alone. What they cannot reach is the point: no agent here reaches a client,
+ * money, a payment, or production.
+ */
+function developmentSpecialist(input: {
+  key: string;
+  displayName: string;
+  purpose: string;
+  capabilities: readonly AgentCapability[];
+  handoffTargets: readonly string[];
+  requiredEvidence: readonly EvidenceKind[];
+}): AgentDefinition {
+  return {
+    key: input.key,
+    displayName: input.displayName,
+    layer: 'development',
+    purpose: input.purpose,
+    capabilities: input.capabilities,
+    tools: [],
+    clientFacing: false,
+    moneyAuthority: 'none',
+    handoffTargets: input.handoffTargets,
+    mayVerify: false,
+    verification: { selfAssertionAllowed: false, requiredEvidence: input.requiredEvidence, verifiedBy: 'quality_assurance' },
+    retry: { maxAttempts: 3, onExhausted: 'escalate' },
+  };
+}
+
+const FRONTEND_DEVELOPER = developmentSpecialist({
+  key: 'frontend_developer',
+  displayName: 'Frontend Developer',
+  purpose: 'Implements the exact client-approved UI version and prototype: screens, states, forms, accessibility. No silent redesign.',
+  capabilities: ['coding', 'reasoning', 'long_context'],
+  handoffTargets: ['quality_assurance', 'security_review'],
+  requiredEvidence: ['typecheck', 'lint', 'tests', 'build'],
+});
+const BACKEND_DEVELOPER = developmentSpecialist({
+  key: 'backend_developer',
+  displayName: 'Backend / API Developer',
+  purpose: 'Implements authoritative business logic, APIs and server actions that trace to approved requirements. Never redefines scope.',
+  capabilities: ['coding', 'reasoning', 'long_context'],
+  handoffTargets: ['quality_assurance', 'security_review'],
+  requiredEvidence: ['typecheck', 'lint', 'tests', 'build'],
+});
+const DATABASE_DEVELOPER = developmentSpecialist({
+  key: 'database_developer',
+  displayName: 'Database Developer',
+  purpose: 'Writes schema, constraints, RLS and migrations. Never rewrites migration history, never weakens RLS to make a feature work.',
+  capabilities: ['coding', 'reasoning', 'long_context'],
+  handoffTargets: ['quality_assurance', 'security_review'],
+  requiredEvidence: ['tests', 'live', 'record'],
+});
+const MOBILE_DEVELOPER = developmentSpecialist({
+  key: 'mobile_developer',
+  displayName: 'Mobile Developer',
+  purpose: 'Implements the approved mobile UI on Flutter / Android / iOS. NOT_REQUIRED for a web-only project; never fabricates a device test.',
+  capabilities: ['coding', 'reasoning', 'long_context', 'multimodal'],
+  handoffTargets: ['quality_assurance', 'security_review'],
+  requiredEvidence: ['tests', 'build'],
+});
+const INTEGRATION = developmentSpecialist({
+  key: 'integration',
+  displayName: 'Integration Agent',
+  purpose: 'Connects approved external services through canonical adapters. CONFIGURED is not VERIFIED; a mock success is not a real integration.',
+  capabilities: ['coding', 'reasoning', 'structured_output'],
+  handoffTargets: ['quality_assurance', 'security_review'],
+  requiredEvidence: ['tests', 'live'],
+});
+const DEVOPS_BUILD = developmentSpecialist({
+  key: 'devops_build',
+  displayName: 'DevOps / Build Agent',
+  purpose: 'Runs the development build system: environment checks, builds, artifacts with source traceability. No production deployment in Phase 5.',
+  capabilities: ['coding', 'reasoning'],
+  handoffTargets: ['quality_assurance'],
+  requiredEvidence: ['build'],
+});
+const TEST_AUTOMATION = developmentSpecialist({
+  key: 'test_automation',
+  displayName: 'Test Automation Agent',
+  purpose: 'Writes and runs unit, API, database, integration and E2E tests and records machine-readable results. Automated green is not independent QA pass.',
+  capabilities: ['coding', 'reasoning', 'structured_output'],
+  handoffTargets: ['quality_assurance'],
+  requiredEvidence: ['tests'],
+});
+const SECURITY_REVIEW = developmentSpecialist({
+  key: 'security_review',
+  displayName: 'Security & Code Review Agent',
+  purpose: 'Reviews the exact commit independently of whoever wrote it: auth, RLS, tenancy, secrets, injection. Records findings; verification authority stays with QA.',
+  capabilities: ['reasoning', 'long_context'],
+  handoffTargets: ['quality_assurance'],
+  requiredEvidence: ['record'],
+});
+const BUG_FIX = developmentSpecialist({
+  key: 'bug_fix',
+  displayName: 'Bug Fix Agent',
+  purpose: 'Reproduces a defect, finds the root cause and makes the minimal fix. Produces FIX_READY only; QA verifies. Never closes its own defect.',
+  capabilities: ['coding', 'reasoning', 'long_context'],
+  handoffTargets: ['quality_assurance', 'security_review'],
+  requiredEvidence: ['tests', 'build'],
+});
+const REFACTOR_PERFORMANCE = developmentSpecialist({
+  key: 'refactor_performance',
+  displayName: 'Refactoring & Performance Agent',
+  purpose: 'Conditional: only for approved technical debt or a measured performance problem; baseline first, before-and-after measurement, no functional change.',
+  capabilities: ['coding', 'reasoning', 'long_context'],
+  handoffTargets: ['quality_assurance', 'security_review'],
+  requiredEvidence: ['tests', 'build'],
+});
+const DOCUMENTATION = developmentSpecialist({
+  key: 'documentation',
+  displayName: 'Documentation Agent',
+  purpose: 'Keeps implementation-derived documentation current and builds the Phase 6 QA intake. Documents what exists; never what is planned, never a secret.',
+  capabilities: ['reasoning', 'long_context', 'structured_output'],
+  handoffTargets: ['quality_assurance'],
+  requiredEvidence: ['record'],
+});
+
+
 export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
   // Foundation — ADM-82 layer 1
   REQUIREMENT_COLLECTOR,
@@ -807,6 +930,18 @@ export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
   EMAIL_OUTREACH,
   SOCIAL_MEDIA,
   MARKETPLACE_OPPORTUNITY,
+  // Development specialists - ADM-113 (Phase 5)
+  FRONTEND_DEVELOPER,
+  BACKEND_DEVELOPER,
+  DATABASE_DEVELOPER,
+  MOBILE_DEVELOPER,
+  INTEGRATION,
+  DEVOPS_BUILD,
+  TEST_AUTOMATION,
+  SECURITY_REVIEW,
+  BUG_FIX,
+  REFACTOR_PERFORMANCE,
+  DOCUMENTATION,
 ];
 
 export const AGENT_KEYS: readonly string[] = AGENT_DEFINITIONS.map((a) => a.key);

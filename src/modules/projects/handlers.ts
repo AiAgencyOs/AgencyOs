@@ -919,3 +919,61 @@ export async function handleDeliverableDecided(admin: Admin, job: UnlockJob): Pr
       return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
   }
 }
+
+
+/**
+ * `invoice.paid` -> start Phase 5 (Task 3) - Phase 5 Master Flow: PHASE 4 COMPLETE + M2 ADMIN VERIFIED -> PHASE 5 READY.
+ *
+ * `invoice.paid` fires for every milestone, so most events are not this handler's; the DOOR decides whether Phase 5 may start
+ * (`start_phase_five` re-checks Phase 4 complete, M2 verified paid in full, the locked UI, the approved prototype and the active
+ * scope). The invoice row is re-read for its project: the payload is a claim about the past, the row is the present.
+ * A refusal other than "this was not the M2 payment" is a normal wait (for instance the prototype is not approved yet), not a failure.
+ */
+export async function handleStartPhaseFive(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const invoiceId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+  if (!invoiceId) {
+    return { status: 'failed', permanent: true, detail: 'the event named no invoice' };
+  }
+
+  const { data: invoice, error: invoiceError } = await admin
+    .schema('finance')
+    .from('invoices')
+    .select('id, project_id')
+    .eq('id', invoiceId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+  if (invoiceError) {
+    return { status: 'failed', permanent: false, detail: `the invoice could not be read: ${invoiceError.message}` };
+  }
+  if (!invoice) {
+    return { status: 'succeeded', outcome: 'gone', detail: 'the invoice no longer exists' };
+  }
+  if (!invoice.project_id) {
+    return { status: 'succeeded', outcome: 'not_mine', detail: 'this invoice belongs to no project' };
+  }
+
+  const { data, error } = await admin.schema('projects').rpc('start_phase_five', { p_project_id: invoice.project_id } as never);
+  if (error) {
+    return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+  const outcome = row?.outcome ?? 'no answer';
+
+  switch (outcome) {
+    case 'started':
+      return { status: 'succeeded', outcome, detail: 'Phase 5 started and its development baseline is locked.' };
+    case 'already_started':
+      return { status: 'succeeded', outcome, detail: 'Phase 5 had already started for this project.' };
+    case 'phase_four_incomplete':
+    case 'm2_not_verified':
+    case 'no_locked_ui':
+    case 'no_approved_prototype':
+    case 'no_active_scope':
+      return { status: 'succeeded', outcome: 'not_ready', detail: `Phase 5 is not ready to start: ${outcome}.` };
+    case 'unknown_project':
+      return { status: 'failed', permanent: true, detail: 'the project no longer exists.' };
+    default:
+      return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
+  }
+}

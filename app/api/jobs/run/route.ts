@@ -64,6 +64,7 @@ import {
   handlePhaseFourReady,
   handlePossibleScopeChangeDetected,
   handleDeliverableDecided,
+  handleStartPhaseFive,
   type HandlerResult,
   type UnlockJob,
 } from '@/modules/projects/handlers';
@@ -782,6 +783,38 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   }
 
   /**
+   * ── Phase 5 start (Phase 5 Master Flow) ─────────────────────────────────
+   *
+   * Pure database work, drained right after the payment that can open it.
+   */
+  const phaseFiveStarts = await runEventJobs(
+    admin,
+    PHASE_FIVE_START_JOB_KIND,
+    handleStartPhaseFive,
+    'runPhaseFiveStartJobs',
+  );
+  if (phaseFiveStarts.claimed > 0) {
+    return NextResponse.json({
+      claimed: phaseFiveStarts.claimed,
+      kind: PHASE_FIVE_START_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      phaseFiveStarts: phaseFiveStarts.results,
+      correlationId,
+    });
+  }
+
+  /**
    * ── M2 invoice auto-generation (Finance §2, §5) ─────────────────────────
    *
    * Same tier as M1's above: pure database work, drained right after Task 2
@@ -1426,6 +1459,7 @@ const PM_BILLING_REPLY_JOB_KIND = HANDLER_JOB_KIND['projects:readBillingReply'];
 const PM_CLARIFY_JOB_KIND = HANDLER_JOB_KIND['projects:askClarification'];
 const PM_CLARIFICATION_ANSWER_JOB_KIND = HANDLER_JOB_KIND['projects:readClarificationAnswer'];
 const PHASE_FOUR_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['projects:completePhaseFourOnPrototypeApproval'];
+const PHASE_FIVE_START_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseFive'];
 const M2_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM2Invoice'];
 const M3_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM3Invoice'];
 const M4_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM4Invoice'];
