@@ -228,7 +228,7 @@ select pg_temp.as_user(:'U', :'ORG', 'member');
 set local role authenticated;
 select pg_temp.check(pg_temp.denied(format('select projects.log_integration_check(%L, ''ok'')', :'W_c')), 'a signed-in person cannot write the check log');
 select pg_temp.check(pg_temp.denied(format('insert into projects.integration_check_log (organization_id, project_id, connection_id, check_class) values (%L, %L, %L, ''ok'')', :'ORG', :'P_id', :'W_c')), 'nor insert into it');
-select pg_temp.check((select count(*) from projects.integration_check_log) = 6, 'staff read the log');
+select pg_temp.check((select count(*) from projects.integration_check_log where project_id = :'P_id') = 6, 'staff read the log');
 select checks_counted as n, error_rate as er, last_failure_class as fc, last_success_at is not null as ls, avg_latency_ms as al from projects.integration_observability(:'P_id', 20) where connection_id = :'W_c' \gset OBS_
 select pg_temp.check(:'OBS_n'::int = 5 and :'OBS_er'::numeric = 0.4 and :'OBS_fc' = 'timeout' and :'OBS_ls' = 't', 'staff read: 5 counted checks (the no_target one is not a provider failure), 40% errors, last failure timeout, a last success');
 select pg_temp.check(:'OBS_al'::int = 150, 'the average latency ignores a check that has none ((100+300+50)/3 = 150)');

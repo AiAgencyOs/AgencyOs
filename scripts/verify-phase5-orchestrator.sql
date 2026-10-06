@@ -129,7 +129,7 @@ select pg_temp.check((select state from projects.concurrency_leases where task_i
 select expired as n_expired from projects.expire_concurrency_leases(:'P_id') \gset
 select pg_temp.check(:n_expired = 1, 'the sweep expires exactly the one stale lease');
 select pg_temp.check((select state from projects.concurrency_leases where task_id = :'TF_id') = 'expired', 'the stale lease is now expired');
-select pg_temp.check((select count(*) from projects.concurrency_leases where state = 'active' and expires_at <= now()) = 0, 'no active lease is past its expiry');
+select pg_temp.check((select count(*) from projects.concurrency_leases where project_id = :'P_id' and state = 'active' and expires_at <= now()) = 0, 'no active lease is past its expiry');
 select outcome as o_g2 from projects.claim_concurrency_lease(:'TG_id', 'database_developer', array['supabase/migrations/20261102900002_b.sql']) \gset
 select pg_temp.check(:'o_g2' = 'claimed', 'with the stale lease expired, the migration author can claim');
 reset role;
@@ -243,7 +243,7 @@ select pg_temp.check((select outcome from projects.record_usage_cost(:'P_id', 'b
 reset role;
 select pg_temp.check(pg_temp.raises(format($q$insert into projects.usage_cost_records (organization_id, project_id, agent_key, cost_source, cost_usd) values (%L, %L, 'a', 'unknown', 0)$q$, :'ORG', :'P_id'), '23514'), 'the table refuses unknown with a numeric cost (0 is a number)');
 select pg_temp.check(pg_temp.raises(format($q$insert into projects.usage_cost_records (organization_id, project_id, agent_key, cost_source) values (%L, %L, 'a', 'reported')$q$, :'ORG', :'P_id'), '23514'), 'the table refuses reported with no cost');
-select pg_temp.check((select count(*) from projects.usage_cost_records where cost_source = 'unknown' and cost_usd is null) = 1, 'the unknown row stores NULL');
+select pg_temp.check((select count(*) from projects.usage_cost_records where project_id = :'P_id' and cost_source = 'unknown' and cost_usd is null) = 1, 'the unknown row stores NULL');
 select pg_temp.check(pg_temp.raises(format($q$update projects.usage_cost_records set cost_usd = 0 where project_id = %L$q$, :'P_id'), '23001'), 'a usage record is never rewritten');
 
 select pg_temp.as_user(:'U', :'ORG', 'owner');

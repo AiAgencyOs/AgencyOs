@@ -154,7 +154,7 @@ select pg_temp.check(pg_temp.propose(:'RF_rq', 'functional_test', 'case_result',
 select pg_temp.check(pg_temp.propose(:'RF_rq', 'functional_test', 'case_result', :'C2_id', 'passed', 'ok', array['run:ci-1']) = 'bad_result', 'REFUSED: a result outside the closed set');
 select pg_temp.check(pg_temp.propose(:'RF_rq', 'functional_test', 'gate_summary', null, null, 'gates look fine', '{}') = 'kind_not_for_this_agent', 'REFUSED: a gate summary from an agent that is not release_readiness');
 select pg_temp.check(pg_temp.propose(:'RR_rq', 'release_readiness', 'case_result', :'C2_id', 'pass', 'x', array['run:ci-1']) = 'kind_not_for_this_agent', 'REFUSED: release_readiness proposing a case result');
-select pg_temp.check((select count(*) from qa.specialist_findings) = 0, 'nothing was written by any refused proposal');
+select pg_temp.check((select count(*) from qa.specialist_findings where organization_id = :'ORG') = 0, 'nothing was written by any refused proposal');
 -- allowed proposals
 select pg_temp.check(pg_temp.propose(:'RF_rq', 'functional_test', 'case_result', :'C2_id', 'pass', 'total matches the cart', array['run:ci-1']) = 'proposed', 'a proposed pass WITH evidence on a non-critical case is recorded as a proposal');
 select pg_temp.check(pg_temp.propose(:'RF_rq', 'functional_test', 'case_result', :'C2_id', 'pass', 'total matches the cart', array['run:ci-1']) = 'already_proposed', 'a redelivered run proposes nothing twice');

@@ -140,7 +140,7 @@ set local role authenticated;
 select pg_temp.check(pg_temp.refused(format('select projects.append_build_log(%L, %L, %L)', :'BA1_run', 'build', 'a person writing a log'), 'permission denied'), 'a person (even the owner) cannot write a build log: the door is the runner''s');
 select pg_temp.check(pg_temp.refused(format('insert into projects.build_logs (organization_id, project_id, build_run_id, stage, attempt, masked_text) values (%L, %L, %L, %L, 1, %L)', :'ORG', :'PA_id', :'BA1_run', 'build', 'x'), 'permission denied'), 'and cannot insert into the table');
 select pg_temp.check((select count(*) from projects.build_logs_for_run(:'BA1_run')) = 2, 'staff read the logs of a run through the read function (in order)');
-select pg_temp.check((select count(*) from projects.build_logs) = 2, 'and through the table (internal-only policy)');
+select pg_temp.check((select count(*) from projects.build_logs where project_id = :'PA_id') = 2, 'and through the table (internal-only policy)');
 select pg_temp.check((select count(*) from projects.build_runs_client_safe where deliverable_id = :'BA1') = 1, 'staff see the run in the client-safe view as well');
 reset role;
 select pg_temp.as_client(:'CLIENT', :'ORG', :'A_id');
