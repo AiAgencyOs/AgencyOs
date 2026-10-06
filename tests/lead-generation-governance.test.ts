@@ -88,8 +88,10 @@ describe('lead generation, slice 4 - connectors, one policy question, exact-vers
   });
 
   describe('the registry never overstates what has been proven', () => {
-    test('no adapter has been written, and none is registered: every provider is NOT_IMPLEMENTED today', () => {
-      assert.deepEqual(Object.keys(ADAPTERS), []);
+    test('exactly one adapter exists (Meta Ads, read-only): every other provider is NOT_IMPLEMENTED today', () => {
+      assert.deepEqual(Object.keys(ADAPTERS), ['meta_ads']);
+      // the only adapter can verify a connection and nothing else: its contract has no method that launches, posts or spends
+      assert.deepEqual(Object.keys(ADAPTERS.meta_ads ?? {}).sort(), ['provider', 'testConnection']);
     });
 
     test('verification can only be moved by the doors: a trigger refuses any other write', () => {
