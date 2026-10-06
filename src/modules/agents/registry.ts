@@ -1007,6 +1007,26 @@ export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
   COMPATIBILITY_TEST,
   REGRESSION_TEST,
   RELEASE_READINESS,
+  // Phase 7 production launch agents (P704-P706), installed DISABLED. Reused, not duplicated: project_manager, orchestrator, finance, handover, customer_success.
+  // Each hands off only to QA; none verifies, approves a deployment, declares ProductionValidated, edits source in production or holds a tool.
+  {
+    key: 'deployment_agent', displayName: 'Deployment Agent', layer: 'operations', clientFacing: false, moneyAuthority: 'none', tools: [],
+    purpose: 'Deploys the exact Admin-approved Phase 6 candidate to production with validated configuration, migrations and rollback controls. Never approves its own deployment and never declares ProductionValidated.',
+    capabilities: ['coding', 'reasoning'], handoffTargets: ['quality_assurance'], mayVerify: false,
+    verification: { selfAssertionAllowed: false, requiredEvidence: ['build'], verifiedBy: 'quality_assurance' }, retry: { maxAttempts: 2, onExhausted: 'escalate' },
+  },
+  {
+    key: 'release_qa', displayName: 'QA / Release Agent', layer: 'qa', clientFacing: false, moneyAuthority: 'none', tools: [],
+    purpose: 'Independently validates the exact deployed candidate in production: smoke, live critical flows, monitoring and rollback verification. A deployment claim is not production validation.',
+    capabilities: ['reasoning', 'long_context', 'structured_output'], handoffTargets: ['quality_assurance'], mayVerify: false,
+    verification: { selfAssertionAllowed: false, requiredEvidence: ['live'], verifiedBy: 'quality_assurance' }, retry: { maxAttempts: 2, onExhausted: 'escalate' },
+  },
+  {
+    key: 'incident_recovery', displayName: 'Production Incident and Recovery Agent', layer: 'operations', clientFacing: false, moneyAuthority: 'none', tools: [],
+    purpose: 'Coordinates production incidents, controlled rollback and recovery for the exact release. Completion stays paused until recovery is verified.',
+    capabilities: ['reasoning', 'long_context'], handoffTargets: ['quality_assurance'], mayVerify: false,
+    verification: { selfAssertionAllowed: false, requiredEvidence: ['record'], verifiedBy: 'quality_assurance' }, retry: { maxAttempts: 2, onExhausted: 'escalate' },
+  },
 ];
 
 export const AGENT_KEYS: readonly string[] = AGENT_DEFINITIONS.map((a) => a.key);

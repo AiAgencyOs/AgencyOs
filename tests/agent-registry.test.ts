@@ -77,12 +77,15 @@ describe('A. what is defined is what exists', () => {
         // layer 6 — QA specialists (ADM-114, Phase 6)
         'functional_test', 'ui_journey_test', 'api_integration_test', 'database_test', 'security_test', 'performance_test',
         'compatibility_test', 'regression_test', 'release_readiness',
+        // layer 7 — Phase 7 production launch (P704-P706)
+        'deployment_agent', 'release_qa', 'incident_recovery',
       ],
     );
     assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'foundation').length, 4);
     // six since Phase 2 Planning §1 named the Project Planning Agent separately from the PM
     assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'core').length, 6);
-    assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'operations').length, 4);
+    // four since Phase 1, plus the Phase 7 Deployment and Incident/Recovery agents (installed disabled)
+    assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'operations').length, 6);
   });
 
   test('and every one of them is installed disabled', () => {

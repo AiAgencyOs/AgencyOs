@@ -2065,6 +2065,12 @@ export const PM_TEMPLATES: Readonly<Record<string, { milestone: string; version:
   'release-candidate-ready': { milestone: 'PM6-A01', version: 1 },
   'release-exception-requested': { milestone: 'PM6-A02', version: 1 },
   'qa-reverification': { milestone: 'PM6-REVERIFICATION', version: 1 },
+  'phase-seven-ready': { milestone: 'PM7-M01', version: 1 },
+  'deployment-approved': { milestone: 'PM7-DEPLOY-APPROVED', version: 1 },
+  'production-validated': { milestone: 'PM7-VALIDATED', version: 1 },
+  'production-validation-failed': { milestone: 'PM7-INCIDENT', version: 1 },
+  'handover-ready': { milestone: 'PM7-HANDOVER-READY', version: 1 },
+  'project-completed': { milestone: 'PM7-COMPLETE', version: 1 },
   'task3-complete': { milestone: 'PM5-TASK3-COMPLETE', version: 1 },
   'task4-complete': { milestone: 'PM6-M07', version: 1 },
 };
@@ -2101,5 +2107,64 @@ export function qaReverificationAnnouncementFor(input: { projectName: string | n
     'The build changed after it was approved, so testing is being repeated on the new version.',
     `Project: ${input.projectName ?? 'an unnamed project'}`,
     'No action is needed from the client. We will confirm when the new version has been verified.',
+  ].join('\n');
+}
+
+/**
+ * PM7 (Phase 7 PM Agent spec, P702): the PM COMMUNICATES authoritative state and never creates it. Each message below is grounded in a fact the database
+ * already holds (an event emitted by a Phase 7 door), is client-safe (no secret, stack trace, model, provider, commit or agent name) and never claims more than
+ * the fact: approval is not deployment, deployment is not validation, validation is not handover acceptance, acceptance is not completion.
+ */
+export const phaseSevenReadyEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function phaseSevenReadyAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Task 5, Production Launch and Handover, is ready to begin.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'The tested build has been approved and the final payment is verified. Nothing has been deployed yet: a deployment plan comes first, and the Admin decides.',
+  ].join('\n');
+}
+
+export const deploymentApprovedEventSchema = z.object({ projectId: z.uuid(), version: z.number().optional() }).strip();
+export function deploymentApprovedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'The Admin approved deploying the exact approved build.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Approval is not deployment: the release still has to run and then be verified in production. Do not tell the client it is released until that verification is recorded.',
+  ].join('\n');
+}
+
+export const productionValidatedEventSchema = z.object({ projectId: z.uuid(), deploymentId: z.uuid().optional() }).strip();
+export function productionValidatedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'The release was verified in production.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Prepare the handover communication. The project is not complete yet: the handover package must be approved, delivered and formally accepted first.',
+  ].join('\n');
+}
+
+export const productionValidationFailedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function productionValidationFailedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'A check on the release did not pass, so completion is paused while the team resolves it.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Client-safe wording only: we found an issue while verifying the release and are resolving it; we will confirm when it has been verified. Do not describe the cause and do not call the release verified.',
+  ].join('\n');
+}
+
+export const handoverDeliveredEventSchema = z.object({ projectId: z.uuid(), version: z.number() }).strip();
+export function handoverReadyAnnouncementFor(input: { projectName: string | null; version: number }): string {
+  return [
+    `Handover package v${input.version} was approved by the Admin and is ready for the client to review.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Share exactly this version. A casual "looks good" is not acceptance: ask for the formal acceptance and keep the evidence. Credentials are never sent in chat; use the secure transfer.',
+  ].join('\n');
+}
+
+export const projectCompletedEventSchema = z.object({ projectId: z.uuid(), completionRecordId: z.uuid().optional() }).strip();
+export function projectCompletedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'The project is complete: it was verified in production, the handover was accepted and the final payment is cleared.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Send the completion and support/warranty message, then hand over to Customer Success. State only what the completion record says.',
   ].join('\n');
 }
