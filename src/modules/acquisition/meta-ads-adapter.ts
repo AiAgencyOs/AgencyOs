@@ -100,3 +100,58 @@ export function createMetaAdsAdapter(options: { fetcher?: MetaFetch; baseUrl?: s
     },
   };
 }
+
+// ── reading a campaign's daily figures (read-only) ─────────────────────────────────────────────────────────────────────
+
+export type MetaInsightDay = { date: string; spend: string; impressions: number; clicks: number; leads: number };
+export type MetaInsightsResult =
+  | { ok: true; currency: string | null; days: MetaInsightDay[] }
+  | { ok: false; errorClass: 'transient' | 'permanent' | 'conditional' | 'security'; message: string };
+
+/**
+ * What the platform CLAIMS about leads, and only as a claim: the CRM is the authority on who became a lead. For a Click-to-WhatsApp ad
+ * Meta counts "messaging conversations started"; for a form ad it counts "lead". One of them, never their sum (they overlap).
+ */
+export function platformLeadsOf(actions: unknown): number {
+  const list = Array.isArray(actions) ? (actions as { action_type?: string; value?: string }[]) : [];
+  const get = (t: string) => Number(list.find((a) => a.action_type === t)?.value ?? 0) || 0;
+  const messaging = get('onsite_conversion.messaging_conversation_started_7d');
+  return messaging > 0 ? messaging : get('lead');
+}
+
+/** One campaign's figures per day. A GET, like everything in this file. Meta's `spend` is a decimal string in the account's currency. */
+const insightsFailure = (errorClass: 'transient' | 'permanent' | 'conditional' | 'security', message: string): MetaInsightsResult => ({ ok: false, errorClass, message });
+
+export async function readMetaCampaignInsights(
+  input: { token: string; providerCampaignId: string; since: string; until: string; signal: AbortSignal },
+  options: { fetcher?: MetaFetch; baseUrl?: string } = {},
+): Promise<MetaInsightsResult> {
+  const fetcher: MetaFetch = options.fetcher ?? ((url, init) => fetch(url, { headers: init.headers, signal: init.signal, cache: 'no-store' }));
+  if (!/^\d{5,25}$/.test(input.providerCampaignId)) return insightsFailure('permanent', 'The provider campaign id is not a Meta campaign id.');
+  const range = encodeURIComponent(JSON.stringify({ since: input.since, until: input.until }));
+  const url = `${options.baseUrl ?? DEFAULT_BASE}/${META_GRAPH_VERSION}/${input.providerCampaignId}/insights?fields=spend,impressions,clicks,actions,account_currency&time_increment=1&time_range=${range}&limit=100`;
+  let res: { status: number; json: () => Promise<unknown> };
+  try {
+    res = await fetcher(url, { headers: { Authorization: `Bearer ${input.token}`, Accept: 'application/json' }, signal: input.signal });
+  } catch (e) {
+    return insightsFailure('transient', e instanceof Error && e.name === 'AbortError' ? 'Meta did not answer in time.' : 'Could not reach Meta.');
+  }
+  let body: unknown;
+  try { body = await res.json(); } catch { body = null; }
+  if (res.status !== 200) {
+    const message = (body as GraphError | null)?.error?.message;
+    return insightsFailure(classifyProviderError({ status: res.status, credentialExpired: res.status === 401 }), message ? `Meta said: ${message}`.slice(0, 300) : 'Meta refused the request.');
+  }
+  const rows = (body as { data?: Record<string, unknown>[] } | null)?.data;
+  if (!Array.isArray(rows)) return insightsFailure('permanent', 'Meta answered, but not with figures. Nothing was recorded.');
+  const days: MetaInsightDay[] = [];
+  let currency: string | null = null;
+  for (const r of rows) {
+    const date = typeof r.date_start === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.date_start) ? r.date_start : null;
+    const spend = typeof r.spend === 'string' && /^\d+(\.\d+)?$/.test(r.spend) ? r.spend : null;
+    if (!date || spend === null) continue; // a row that is not a day with a spend is not a figure
+    if (typeof r.account_currency === 'string') currency = r.account_currency;
+    days.push({ date, spend, impressions: Number(r.impressions ?? 0) || 0, clicks: Number(r.clicks ?? 0) || 0, leads: platformLeadsOf(r.actions) });
+  }
+  return { ok: true, currency, days };
+}

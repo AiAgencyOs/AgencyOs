@@ -23,6 +23,7 @@ import { AD_PROVIDERS, B2B_CONNECTORS, LANDING_DEPLOYER, SOCIAL_PUBLISHERS } fro
 import { runB2bOperations } from '@/modules/acquisition/b2b';
 import { runLandingOperations } from '@/modules/acquisition/landing';
 import { runAdOperations } from '@/modules/acquisition/ads';
+import { syncMetaAdMetrics } from '@/modules/acquisition/meta-metrics-sync';
 import { runSocialPublishing } from '@/modules/acquisition/social';
 import { runProviderMaintenance } from '@/lib/ai/provider-maintenance';
 import { publishDueAnnouncements } from '@/modules/crm/announcement-worker';
@@ -368,6 +369,11 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   await runSocialPublishing(admin, SOCIAL_PUBLISHERS);
   // Approved ad changes, pending pauses, emergency stops and campaign health (lead generation, 20261020100000).
   await runAdOperations(admin, AD_PROVIDERS);
+  // Meta's daily figures for the campaigns a person recorded as launched, read-only and recorded through the door a hand-copied figure uses.
+  // Every fifteenth minute is enough (the figures are daily and restated late), and a connection with nothing launched never calls Meta.
+  if (Math.floor(Date.now() / 60_000) % 15 === 0) {
+    try { await syncMetaAdMetrics(admin); } catch (e) { console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `meta metrics: ${e instanceof Error ? e.message : 'unknown'}` })); }
+  }
   // Approved landing pages: deployed through the governed door, then checked at the public address (20261021100000).
   await runLandingOperations(admin, LANDING_DEPLOYER);
   // Approved marketplace proposals: sent only by a connector the owner allowed, else a person is told (20261022100000).
