@@ -57,6 +57,7 @@ import {
   announceBuildFeedbackReceived,
   announceBuildApproved,
   announceM3PaymentVerified,
+  announcePhaseSixReady,
   announceBuildFeedbackRouted,
   announceTask4Complete,
   announceM2PaymentVerified,
@@ -72,6 +73,8 @@ import {
   handleDeliverableDecided,
   handleStartPhaseFive,
   handleRecordM3Verified,
+  handleStartPhaseSix,
+  handleValidateQaIntake,
   type HandlerResult,
   type UnlockJob,
 } from '@/modules/projects/handlers';
@@ -817,6 +820,54 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   }
 
   /**
+   * ── Phase 6: create/ready the workspace, then validate the QA intake (P601 §3, §10) ──
+   *
+   * Pure database work, drained right after the facts that open it.
+   */
+  const phaseSixStart = await runEventJobs(admin, PHASE_SIX_START_JOB_KIND, handleStartPhaseSix, 'runPhaseSixStartJobs');
+  if (phaseSixStart.claimed > 0) {
+    return NextResponse.json({
+      claimed: phaseSixStart.claimed,
+      kind: PHASE_SIX_START_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      phaseSixStart: phaseSixStart.results,
+      correlationId,
+    });
+  }
+  const qaIntake = await runEventJobs(admin, QA_INTAKE_JOB_KIND, handleValidateQaIntake, 'runQaIntakeJobs');
+  if (qaIntake.claimed > 0) {
+    return NextResponse.json({
+      claimed: qaIntake.claimed,
+      kind: QA_INTAKE_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      qaIntake: qaIntake.results,
+      correlationId,
+    });
+  }
+
+  /**
    * ── M3PaymentVerified (Finance spec, Phase 6 gate) ──────────────────────
    *
    * Pure database work, drained right after the payment that can make it true.
@@ -1108,6 +1159,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     'runTask2CompleteAnnouncementJobs',
   );
 
+  // PM6-M01 (Phase 6 PM Agent spec): Task 4 start.
+  const phaseSixReadyAnnouncements = await runEventJobs(admin, PHASE_SIX_READY_ANNOUNCE_JOB_KIND, announcePhaseSixReady, 'runPhaseSixReadyAnnouncementJobs');
   // PM5-M01..M04 (Phase 5 PM Agent spec), beside the Task 2 set.
   const m3VerifiedAnnouncements = await runEventJobs(admin, M3_VERIFIED_ANNOUNCE_JOB_KIND, announceM3PaymentVerified, 'runM3VerifiedAnnouncementJobs');
   const buildFeedbackRoutedAnnouncements = await runEventJobs(admin, BUILD_FEEDBACK_ROUTED_ANNOUNCE_JOB_KIND, announceBuildFeedbackRouted, 'runBuildFeedbackRoutedAnnouncementJobs');
@@ -1396,6 +1449,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     buildFeedbackAnnouncements: buildFeedbackAnnouncements.results,
     buildApprovedAnnouncements: buildApprovedAnnouncements.results,
     m3VerifiedAnnouncements: m3VerifiedAnnouncements.results,
+    phaseSixReadyAnnouncements: phaseSixReadyAnnouncements.results,
     buildFeedbackRoutedAnnouncements: buildFeedbackRoutedAnnouncements.results,
     task4CompleteAnnouncements: task4CompleteAnnouncements.results,
     m2PaymentVerifiedAnnouncements: m2PaymentVerifiedAnnouncements.results,
@@ -1537,6 +1591,9 @@ const PM_CLARIFICATION_ANSWER_JOB_KIND = HANDLER_JOB_KIND['projects:readClarific
 const PHASE_FOUR_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['projects:completePhaseFourOnPrototypeApproval'];
 const PHASE_FIVE_START_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseFive'];
 const M3_VERIFIED_JOB_KIND = HANDLER_JOB_KIND['projects:recordM3Verified'];
+const PHASE_SIX_START_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseSix'];
+const QA_INTAKE_JOB_KIND = HANDLER_JOB_KIND['projects:validateQaIntake'];
+const PHASE_SIX_READY_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announcePhaseSixReady'];
 const M3_VERIFIED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceM3PaymentVerified'];
 const BUILD_FEEDBACK_ROUTED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceBuildFeedbackRouted'];
 const M2_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM2Invoice'];

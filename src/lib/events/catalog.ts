@@ -32,6 +32,9 @@ export const HANDLERS = [
   'projects:completePhaseFourOnPrototypeApproval',
   'projects:startPhaseFive',
   'projects:recordM3Verified',
+  'projects:startPhaseSix',
+  'projects:validateQaIntake',
+  'crm:announcePhaseSixReady',
   'crm:announceM3PaymentVerified',
   'crm:announceBuildFeedbackRouted',
   'finance:generateM1Invoice',
@@ -627,14 +630,16 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   /** PM5: what became of the feedback (defect, change request, revision, clarification). */
   'project.build_feedback_routed': ['crm:announceBuildFeedbackRouted'],
   /** Finance spec, Phase 6 gate: M3 verified paid in full, recorded once; the PM tells the team. */
-  'project.m3_payment_verified': ['crm:announceM3PaymentVerified'],
+  'project.m3_payment_verified': ['crm:announceM3PaymentVerified', 'projects:startPhaseSix'],
   /**
    * Q-PH56 (owner, round 3) — exactly as Phase 4 above: completing Phase 5
    * (development) raises the M3 invoice and the PM's Task 3 message; completing
    * Phase 6 (testing) raises M4 and the PM's Task 4 message. Both events come
    * from `projects.complete_phase` (`20261009100000_phase_five_and_six_...`).
    */
-  'project.phase_five_completed': ['finance:generateM3Invoice', 'crm:announceTask3Complete'],
+  'project.phase_five_completed': ['finance:generateM3Invoice', 'crm:announceTask3Complete', 'projects:startPhaseSix'],
+  /** P601 §3: Phase 6 READY (once) -> the QA intake is validated and the PM announces Task 4. */
+  'project.phase_six_ready': ['projects:validateQaIntake', 'crm:announcePhaseSixReady'],
   'project.phase_six_completed': ['finance:generateM4Invoice', 'crm:announceTask4Complete'],
   /**
    * Audit 1.2/1.3 (docs/AGENCYOS_BUSINESS_PHASE_1_4_AUDIT.json), Implementation
@@ -682,6 +687,9 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:completePhaseFourOnPrototypeApproval': 'phase_four.complete',
   'projects:startPhaseFive': 'phase_five.start',
   'projects:recordM3Verified': 'm3.record_verified',
+  'projects:startPhaseSix': 'phase_six.start',
+  'projects:validateQaIntake': 'phase_six.validate_intake',
+  'crm:announcePhaseSixReady': 'phase_six_ready.announce',
   'crm:announceM3PaymentVerified': 'm3_verified.announce',
   'crm:announceBuildFeedbackRouted': 'build_feedback_routed.announce',
   'finance:generateM1Invoice': 'invoice.generate_m1',

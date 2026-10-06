@@ -25,7 +25,7 @@ describe('the events fan out exactly as Phase 4’s does', () => {
   });
 
   test('Phase 5 raises M3 and the Task 3 message', () => {
-    assert.deepEqual([...subscribersFor('project.phase_five_completed')], ['finance:generateM3Invoice', 'crm:announceTask3Complete']);
+    assert.deepEqual([...subscribersFor('project.phase_five_completed')], ['finance:generateM3Invoice', 'crm:announceTask3Complete', 'projects:startPhaseSix']);
   });
 
   test('Phase 6 raises M4 and the Task 4 message', () => {

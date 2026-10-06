@@ -1015,3 +1015,52 @@ export async function handleRecordM3Verified(admin: Admin, job: UnlockJob): Prom
       return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
   }
 }
+
+
+/**
+ * `project.phase_five_completed` / `project.m3_payment_verified` -> create Phase 6, or make it READY - P601 §3, §39.
+ *
+ * Both events name the project as their subject. The door decides: Phase 6 is created WAITING_M3_VERIFIED when Phase 5 completes, and becomes
+ * READY exactly once when M3 is Admin-verified paid in full. A replay of either event is `already_started`, never a second Phase6Ready.
+ */
+export async function handleStartPhaseSix(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const projectId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+  if (!projectId) return { status: 'failed', permanent: true, detail: 'the event named no project' };
+
+  const { data, error } = await admin.schema('projects').rpc('start_phase_six', { p_project_id: projectId } as never);
+  if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+  const outcome = row?.outcome ?? 'no answer';
+  switch (outcome) {
+    case 'ready':
+      return { status: 'succeeded', outcome, detail: 'Phase 6 is READY: M3 is verified paid in full.' };
+    case 'waiting_m3_verified':
+      return { status: 'succeeded', outcome, detail: 'Phase 6 exists and is waiting for the M3 payment to be verified.' };
+    case 'already_started':
+      return { status: 'succeeded', outcome, detail: 'Phase 6 had already started for this project.' };
+    case 'phase_five_incomplete':
+      return { status: 'succeeded', outcome: 'not_ready', detail: 'Phase 5 has not completed (no intake exists).' };
+    case 'unknown_project':
+      return { status: 'failed', permanent: true, detail: 'the project no longer exists.' };
+    default:
+      return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
+  }
+}
+
+/** `project.phase_six_ready` -> validate the QA intake against the exact Phase 5 build (P601 §10). A blocked intake is a normal, recorded outcome. */
+export async function handleValidateQaIntake(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const event = (envelope.event ?? {}) as { projectId?: unknown };
+  const projectId = typeof event.projectId === 'string' ? event.projectId : null;
+  if (!projectId) return { status: 'failed', permanent: true, detail: 'the event named no project' };
+
+  const { data, error } = await admin.schema('projects').rpc('validate_qa_intake', { p_project_id: projectId } as never);
+  if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; status?: string } | undefined;
+  if (row?.outcome === 'validated') {
+    return { status: 'succeeded', outcome: row.status === 'valid' ? 'valid' : 'blocked', detail: `the QA intake is ${row.status}.` };
+  }
+  if (row?.outcome === 'waiting_m3_verified') return { status: 'succeeded', outcome: 'waiting', detail: 'M3 is not verified yet.' };
+  return { status: 'failed', permanent: false, detail: `the door answered ${row?.outcome ?? 'nothing'}` };
+}

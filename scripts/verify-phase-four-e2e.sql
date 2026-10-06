@@ -705,6 +705,11 @@ reset role;
 select pg_temp.as_service();
 set local role service_role;
 select pg_temp.check((select outcome from projects.record_m3_verified(:'P_id')) = 'not_verified', 'NEGATIVE: an issued M3 emits no M3PaymentVerified');
+-- Phase 6 exists from Phase5Completed but WAITS for the money: an issued M3 is not an opened gate
+select pg_temp.check((select outcome from projects.start_phase_six(:'P_id')) = 'waiting_m3_verified', 'Phase 6 is created WAITING_M3_VERIFIED: Phase 5 done, the financial gate not satisfied');
+select pg_temp.check((select state from projects.phase_six where project_id = :'P_id') = 'waiting_m3_verified', 'its state is waiting_m3_verified');
+select pg_temp.check((select status from projects.validate_qa_intake(:'P_id')) = 'blocked_finance', 'NEGATIVE: the QA intake is blocked_finance while M3 is unverified');
+select pg_temp.check(not exists (select 1 from core.outbox_events where type = 'project.phase_six_ready' and subject_id = (select id from projects.phase_six where project_id = :'P_id')), 'and Phase6Ready has not fired');
 reset role;
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
 set local role authenticated;
@@ -729,6 +734,154 @@ reset role;
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
 set local role authenticated;
 select pg_temp.check(not exists (select 1 from projects.phase_readiness(:'P_id', 6) r, unnest(r.missing) m where m = 'M3 not verified paid'), 'and Phase 6 readiness no longer names M3');
+reset role;
+
+-- ═════════ Phase 6: entry gate and QA intake ═════════
+select pg_temp.as_service();
+set local role service_role;
+select pg_temp.check((select outcome from projects.start_phase_six(:'P_id')) = 'ready', 'M3 verified in full: Phase 6 becomes READY');
+select pg_temp.check((select outcome from projects.start_phase_six(:'P_id')) = 'already_started', 'a duplicate Phase6Ready starts nothing twice');
+select pg_temp.check((select count(*) from core.outbox_events where type = 'project.phase_six_ready' and subject_id = (select id from projects.phase_six where project_id = :'P_id')) = 1, 'Phase6Ready was emitted exactly once');
+select status as st, jsonb_array_length(blockers) as nb from projects.validate_qa_intake(:'P_id') \gset IV_
+select jsonb_array_length(external_dependencies) as ne from projects.qa_intakes where project_id = :'P_id' \gset IV_
+select pg_temp.check(:'IV_st' = 'valid' and :'IV_nb'::int = 0, 'the exact Phase 5 build, scope and UI validate');
+select pg_temp.check(:'IV_ne'::int >= 2, 'unverified integrations are explicit external dependencies, never a silent skip');
+select pg_temp.check((select state from projects.phase_six where project_id = :'P_id') = 'intake_validating', 'Phase 6 moves to INTAKE_VALIDATING');
+select pg_temp.check((select artifact_sha256 = repeat('a', 64) and commit_ref = 'abc1234' from projects.qa_intakes where project_id = :'P_id'), 'the intake names the exact commit and the artifact hash from the build run');
+-- a client approval tied to a DIFFERENT build is rejected
+reset role;
+set local session_replication_role = replica;
+update projects.deliverables set status = 'approved' where id = :'NB_nb';
+set local session_replication_role = origin;
+set local role service_role;
+select pg_temp.check((select status from projects.validate_qa_intake(:'P_id')) = 'blocked_build', 'NEGATIVE: a client approval tied to a different build blocks the intake');
+select pg_temp.check((select state from projects.phase_six where project_id = :'P_id') = 'blocked', 'and Phase 6 is BLOCKED, with the reason');
+select pg_temp.check((select blockers->0->>'owner' is not null and blockers->0->>'resumeCondition' is not null from projects.qa_intakes where project_id = :'P_id'), 'the blocker is typed with an owner and a resume condition');
+reset role;
+set local session_replication_role = replica;
+update projects.deliverables set status = 'draft' where id = :'NB_nb';
+set local session_replication_role = origin;
+set local role service_role;
+select pg_temp.check((select status from projects.validate_qa_intake(:'P_id')) = 'valid', 'resolving the blocker revalidates the intake');
+select pg_temp.check(pg_temp.refused(format('update projects.qa_intakes set commit_ref = ''zzz'' where project_id = %L', :'P_id'), 'never edited'), 'an intake is about one exact build: its identity is never edited');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select count(*) from projects.qa_intakes) = 1, 'staff can read the intake');
+reset role;
+
+-- ═════════ Phase 6: the Master Test Plan ═════════
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.create_master_test_plan(:'P_id', array['functional', 'ui_e2e', 'security'], array['checkout'], array['staging'], 'synthetic data, resettable', 'baseline then compare', '[]')) = 'created', 'a Master Test Plan is created over the validated intake');
+select id as "MP_id" from qa.master_test_plans where project_id = :'P_id' \gset
+select pg_temp.check((select commit_ref = 'abc1234' from qa.master_test_plans where id = :'MP_id'), 'the plan is for the intake''s exact commit');
+select pg_temp.check((select count(*) from qa.plan_problems(:'MP_id')) >= 4, 'a bare plan names its gaps: no risk matrix, requirement, categories and journey uncovered');
+select pg_temp.check((select outcome from qa.approve_master_test_plan(:'MP_id')) = 'not_approvable', 'NEGATIVE: a plan with gaps cannot be approved');
+select pg_temp.check((select outcome from qa.add_risk_item(:'MP_id', 'checkout payment', 'payment', 'low', 'standard', 'rarely used')) = 'depth_cannot_be_reduced', 'NEGATIVE: payment risk cannot be recorded low or shallow');
+select pg_temp.check((select outcome from qa.add_risk_item(:'MP_id', 'checkout payment', 'payment', 'high', 'deep', 'money moves here')) = 'added', 'payment risk is recorded high and deep');
+select pg_temp.check((select outcome from qa.add_risk_item(:'MP_id', 'tenant data in the cart', 'tenant_data', 'medium', 'deep', 'x')) = 'depth_cannot_be_reduced', 'tenant data cannot be recorded medium either');
+select id as "SI_id" from projects.scope_items where title = 'The customer can pay' limit 1 \gset
+select case_id as c1 from qa.add_phase6_case(:'MP_id', 'customer can pay', 'a paid order shows a receipt', 'functional', 'critical', :'SI_id', null, 'open the cart, pay', 'a receipt is shown') \gset CS1_
+select case_id as c2 from qa.add_phase6_case(:'MP_id', 'checkout journey', 'the whole checkout works end to end', 'ui_e2e', 'critical', null, 'checkout', 'browse, add, pay', 'order confirmed') \gset CS2_
+select case_id as c3 from qa.add_phase6_case(:'MP_id', 'cart is tenant-isolated', 'another tenant cannot read this cart', 'security', 'high', null, null, 'try the cart id as another tenant', 'refused') \gset CS3_
+select pg_temp.check((select outcome from qa.add_phase6_case(:'MP_id', 'speed', 'fast', 'performance', 'medium')) = 'category_not_in_plan', 'a case outside the plan''s required categories is refused');
+select pg_temp.check((select count(*) from qa.plan_problems(:'MP_id')) = 0, 'every requirement, category and journey is now covered');
+reset role;
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f522', :'ORG', 'member');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.approve_master_test_plan(:'MP_id')) = 'not_authorized', 'a delivery person cannot approve the test plan: an Admin does');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.approve_master_test_plan(:'MP_id')) = 'approved', 'the Admin approves the plan');
+select pg_temp.check((select outcome from qa.approve_master_test_plan(:'MP_id')) = 'already_approved', 'a duplicate approval changes nothing');
+select pg_temp.check((select state from projects.phase_six where project_id = :'P_id') = 'plan_ready', 'Phase 6 is PLAN_READY');
+select pg_temp.check((select outcome from qa.add_phase6_case(:'MP_id', 'late case', 'x', 'functional')) = 'plan_not_draft', 'an approved plan takes no new cases: a change is a new version');
+reset role;
+select pg_temp.check(pg_temp.refused(format('update qa.master_test_plans set critical_journeys = array[''other''] where id = %L', :'MP_id'), 'never edited'), 'an approved plan is not edited');
+select pg_temp.check(pg_temp.refused(format('update qa.phase6_cases set status = ''pass'' where id = %L', :'CS1_c1'), 'result door'), 'a result is never typed into the row');
+
+-- results: independent, evidenced, on the exact commit
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f522', :'ORG', 'member');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.record_case_result(:'CS1_c1', 'pass', 'https://qa.example.test/1')) = 'self_review', 'whoever built the build cannot record its test result');
+reset role;
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f523', :'ORG', 'ops_admin');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.record_case_result(:'CS1_c1', 'pass')) = 'evidence_required', 'a PASS without evidence is refused');
+select pg_temp.check((select outcome from qa.record_case_result(:'CS1_c1', 'skipped_with_reason', null, 'not needed')) = 'critical_cannot_be_skipped', 'a critical case is never silently skipped');
+select pg_temp.check((select outcome from qa.record_case_result(:'CS1_c1', 'blocked')) = 'reason_required', 'BLOCKED needs a reason');
+select pg_temp.check((select outcome from qa.record_case_result(:'CS1_c1', 'pass', 'https://qa.example.test/1')) = 'recorded', 'an independent person records a PASS with evidence');
+select pg_temp.check((select state from projects.phase_six where project_id = :'P_id') = 'testing', 'Phase 6 is TESTING');
+select outcome as o, defect_id as d from qa.record_case_result(:'CS3_c3', 'fail', 'https://qa.example.test/3', 'another tenant could read the cart') \gset RF_
+select pg_temp.check(:'RF_o' = 'recorded' and :'RF_d' <> '', 'a FAIL raises a defect');
+select pg_temp.check((select severity = 'major' and project_id = :'P_id' from qa.defects where id = :'RF_d'::uuid), 'the defect carries the case''s priority as severity and the exact build');
+select pg_temp.check((select status = 'fail' and defect_id = :'RF_d'::uuid from qa.phase6_cases where id = :'CS3_c3'), 'the case links its defect');
+select pg_temp.check((select count(*) from qa.phase6_result_history where case_id in (:'CS1_c1', :'CS3_c3')) = 2, 'every result is in the append-only history');
+reset role;
+
+-- ═════════ Phase 6: defects - triage, handoff, independent retest of the FIXED build ═════════
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select s_level = 2 and phase6 and found_commit = 'abc1234' and classification = 'product_defect' from qa.defects where id = :'RF_d'::uuid), 'the Phase 6 defect starts at S2 (from the case priority), on the commit it was found on, a product defect');
+select pg_temp.check((select outcome from qa.triage_defect(:'RF_d'::uuid, 1, 'product_defect')) = 'triaged', 'triage sets S1 (cross-tenant read is critical)');
+select pg_temp.check((select s_level = 1 from qa.defects where id = :'RF_d'::uuid), 'the level is recorded');
+select pg_temp.check((select outcome from qa.hand_off_defect(:'RF_d'::uuid)) = 'handed_off', 'the defect is handed to the Bug Fix capability with the exact build and the required retest');
+select pg_temp.check((select outcome from qa.hand_off_defect(:'RF_d'::uuid)) = 'already_handed_off', 'a duplicate handoff is not created');
+select pg_temp.check((select state from projects.phase_six where project_id = :'P_id') = 'defect_fix_loop', 'Phase 6 is in the DEFECT_FIX_LOOP');
+select pg_temp.check((select (context->>'foundCommit') = 'abc1234' and (requirements->>'qaMustRetestFixedBuild')::boolean from ai.handoffs where subject_type = 'defect' and subject_id = :'RF_d'::uuid), 'the handoff carries the exact commit and says QA must retest the fixed build');
+-- a failing case that is really a test defect, and a client request that is really a Change Request: neither is a product defect
+select outcome as o, defect_id as d from qa.record_case_result(:'CS2_c2', 'fail', 'https://qa.example.test/2', 'the checkout button was not found') \gset RF2_
+reset role;
+-- (recorded by the independent person above; the next two triages are the delivery lead's)
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.triage_defect(:'RF2_d'::uuid, 3, 'test_defect')) = 'reason_required', 'NEGATIVE: calling something a test defect needs a reason');
+select pg_temp.check((select outcome from qa.triage_defect(:'RF2_d'::uuid, 3, 'test_defect', null, 'the selector in the script was wrong, the product is fine')) = 'triaged', 'a defect in the TEST is classified as such, with its reason');
+select pg_temp.check(not exists (select 1 from qa.unresolved_product_defects(:'P_id') where defect_id = :'RF2_d'::uuid), 'a test defect is not a product defect: the hard gates do not count it');
+select pg_temp.check(exists (select 1 from qa.unresolved_product_defects(:'P_id') where defect_id = :'RF_d'::uuid), 'the real product defect still counts');
+reset role;
+insert into qa.defects (organization_id, project_id, deliverable_id, severity, title, reproduction, reported_by, phase6, found_commit)
+  values (:'ORG', :'P_id', :'BD1_bd', 'minor', 'client also wants a wishlist', 'asked during QA', :'OWNER', true, 'abc1234') returning id \gset D3_
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select count(*) from projects.change_requests where project_id = :'P_id') = (select count(*) from projects.change_requests where project_id = :'P_id'), 'baseline count of change requests');
+select count(*) as n from projects.change_requests where project_id = :'P_id' \gset CRB_
+select pg_temp.check((select outcome from qa.triage_defect(:'D3_id'::uuid, 4, 'change_request', null, 'a new feature, not a defect')) = 'triaged', 'a new client request found in QA becomes a Change Request');
+select pg_temp.check((select count(*) from projects.change_requests where project_id = :'P_id') = :'CRB_n'::int + 1, 'a Change Request was raised');
+select pg_temp.check(not exists (select 1 from qa.unresolved_product_defects(:'P_id') where defect_id = :'D3_id'::uuid), 'and it is out of the gates');
+reset role;
+
+-- fix claim, then the independent retest on the FIXED build
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f522', :'ORG', 'member');
+update qa.defects set status = 'fixed', resolution = 'tenant check added' where id = :'RF_d'::uuid;
+set local role authenticated;
+select pg_temp.check((select outcome from qa.record_retest(:'RF_d'::uuid, true, 'fix9999', 'https://qa.example.test/retest')) = 'fixer_cannot_verify', 'the fixer cannot verify their own fix');
+reset role;
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f523', :'ORG', 'ops_admin');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.record_retest(:'RF_d'::uuid, true, 'abc1234', 'https://qa.example.test/retest')) = 'retest_on_the_wrong_build', 'NEGATIVE: a retest on the build the defect was found on does not verify it');
+select pg_temp.check((select outcome from qa.record_retest(:'RF_d'::uuid, true, 'fix9999', null)) = 'retest_incomplete', 'a retest without evidence verifies nothing');
+select pg_temp.check((select outcome from qa.record_retest(:'RF_d'::uuid, false, 'fix9999', 'https://qa.example.test/retest-1')) = 'reopened', 'a retest that fails REOPENS the defect');
+select pg_temp.check((select status = 'open' and fixed_by is null from qa.defects where id = :'RF_d'::uuid), 'and the fix claim is cleared');
+reset role;
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f522', :'ORG', 'member');
+update qa.defects set status = 'fixed', resolution = 'second attempt: scoped the query by tenant' where id = :'RF_d'::uuid;
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f523', :'ORG', 'ops_admin');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.record_retest(:'RF_d'::uuid, true, 'fix9999', 'https://qa.example.test/retest-2')) = 'verified', 'an independent retest of the fixed build verifies it');
+select pg_temp.check((select retest_commit = 'fix9999' and verified_by = '00000000-0000-4000-8000-00000000f523'::uuid from qa.defects where id = :'RF_d'::uuid), 'the verification names the commit retested and who did it');
+reset role;
+-- a regression: a verified defect that comes back reopens, and the verification is dropped
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+update qa.defects set status = 'open' where id = :'RF_d'::uuid;
+select pg_temp.check((select status = 'open' and retest_commit is null and verified_by is null from qa.defects where id = :'RF_d'::uuid), 'a regressed, previously verified Phase 6 defect REOPENS with the verification dropped');
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f522', :'ORG', 'member');
+update qa.defects set status = 'fixed', resolution = 'third: regression test added' where id = :'RF_d'::uuid;
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f523', :'ORG', 'ops_admin');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.record_retest(:'RF_d'::uuid, true, 'fix9999', 'https://qa.example.test/retest-3')) = 'verified', 'verified again after the regression fix');
 reset role;
 
 rollback;

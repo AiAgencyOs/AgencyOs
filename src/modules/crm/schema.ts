@@ -1922,3 +1922,14 @@ export function buildFeedbackRoutedAnnouncementFor(input: { projectName: string 
     `Project: ${input.projectName ?? 'an unnamed project'}`,
   ].join('\n');
 }
+
+
+/** PM6-M01 - Task 4 Start (Phase 6 PM Agent spec). Client-safe: no test internals, no agent or provider names. */
+export const phaseSixReadyEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function phaseSixReadyAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Task 4 has started: independent testing and quality assurance of the exact build you approved.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'We will tell you if anything needs your input; otherwise the next update is when testing completes.',
+  ].join('\n');
+}

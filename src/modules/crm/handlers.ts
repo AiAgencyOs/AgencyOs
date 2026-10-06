@@ -27,6 +27,8 @@ import {
   buildFeedbackReceivedAnnouncementFor,
   buildApprovedAnnouncementFor,
   m3PaymentVerifiedEventSchema,
+  phaseSixReadyEventSchema,
+  phaseSixReadyAnnouncementFor,
   m3PaymentVerifiedAnnouncementFor,
   buildFeedbackRoutedEventSchema,
   buildFeedbackRoutedAnnouncementFor,
@@ -3257,5 +3259,20 @@ export async function announceBuildFeedbackRouted(admin: Admin, job: AnnounceJob
   return announceToInternalChannel(admin, job, {
     body: buildFeedbackRoutedAnnouncementFor({ projectName, classification: parsed.data.classification }),
     externalRef: `build-feedback-routed:${typeof envelope.subjectId === 'string' ? envelope.subjectId : parsed.data.deliverableId}`,
+  });
+}
+
+
+/** `project.phase_six_ready` -> PM6-M01, Task 4 Start. Once per project (keyed by it), internal channel like every PM milestone here. */
+export async function announcePhaseSixReady(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = phaseSixReadyEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.phase_six_ready payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: phaseSixReadyAnnouncementFor({ projectName }),
+    externalRef: `phase-six-ready:${parsed.data.projectId}`,
   });
 }

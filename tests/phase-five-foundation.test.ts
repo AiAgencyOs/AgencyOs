@@ -185,7 +185,7 @@ describe('the remaining records are readable and operable from the panel', () =>
     assert.match(migration, /grant execute on function projects\.record_m3_verified\(uuid\) to service_role;/);
     assert.match(migration, /'already_recorded'/);
     assert.ok((SUBSCRIPTIONS as Record<string, readonly string[]>)['invoice.paid']?.includes('projects:recordM3Verified'));
-    assert.deepEqual((SUBSCRIPTIONS as Record<string, readonly string[]>)['project.m3_payment_verified'], ['crm:announceM3PaymentVerified']);
+    assert.deepEqual((SUBSCRIPTIONS as Record<string, readonly string[]>)['project.m3_payment_verified'], ['crm:announceM3PaymentVerified', 'projects:startPhaseSix']);
   });
   test('flaky is not pass and documents do not exceed evidence', () => {
     const migration = read('supabase/migrations/20261031260000_flaky_is_not_pass_documents_do_not_exceed_evidence.sql');
