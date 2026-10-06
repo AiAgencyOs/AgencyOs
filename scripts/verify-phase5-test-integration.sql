@@ -337,7 +337,7 @@ select pg_temp.check((select outcome from projects.record_test_case_draft(:'T1_i
 select pg_temp.check((select outcome from projects.record_test_case_draft(gen_random_uuid(), 'n', 'api', 'd', '[]', 'e')) = 'not_found', 'a task that does not exist is not found');
 reset role;
 select pg_temp.check((select organization_id = :'ORG' and project_id = :'P_id' and status = 'draft' from projects.test_case_drafts where task_id = :'T1_id'), 'the draft takes its organization and project from the TASK and is a draft');
-select pg_temp.check(pg_temp.refused(format('update projects.test_case_drafts set status = ''accepted'' where task_id = %L', :'T1_id'), 'test_case_drafts_status_check'), 'a draft cannot be marked anything but a draft by a write');
+select pg_temp.check(pg_temp.refused(format('update projects.test_case_drafts set status = ''executed'' where task_id = %L', :'T1_id'), 'test_case_drafts_'), 'a draft cannot be given any status outside draft, accepted and rejected (the last two only through the review door)');
 select pg_temp.check((select count(*) from qa.test_runs) = :'DR_runs0'::int and (select count(*) from qa.test_run_cases) = :'DC_cases0'::int, 'a proposed test case is never a run or a result: no evidence was created');
 select pg_temp.as_user(:'UB', :'ORGB', 'owner');
 set local role authenticated;

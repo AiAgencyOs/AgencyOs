@@ -280,7 +280,7 @@ same('tables with RLS', roadmap.baseline.tablesWithRls, rls.size, ROADMAP, 'the 
 
 let output = '';
 try {
-  output = execFileSync('npm', ['test', '--silent'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  output = execFileSync('npm', ['test', '--silent'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 });
 } catch (error) {
   output = error.stdout || '';
 }

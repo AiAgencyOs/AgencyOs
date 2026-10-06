@@ -97,7 +97,7 @@ describe('the two workflows are registered for specialists the registry defines'
   });
   test('the runner claims them through ONE appended spread', () => {
     const src = read('app/api/jobs/run/workflows.ts');
-    assert.match(src, /\.\.\.DEVELOPMENT_WORKFLOWS, \.\.\.SPECIALIST_WORKFLOWS\]/);
+    assert.match(src, /\.\.\.DEVELOPMENT_WORKFLOWS, \.\.\.SPECIALIST_WORKFLOWS/);
     assert.match(src, /import \{ SPECIALIST_WORKFLOWS \} from '\.\/specialist-workflows'/);
   });
   test('their job kinds collide with no other workflow', () => {

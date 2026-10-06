@@ -354,9 +354,10 @@ describe('where the workflows can write', () => {
     assert.match(sql, /status\s+text not null default 'proposed' check \(status in \('proposed'\)\)/);
     assert.doesNotMatch(sql, /insert into qa\.|insert into approvals\.|update projects\.tasks/);
   });
-  test('the runner claims them only through the parent\'s one spread (reported, not edited here)', () => {
+  test('the runner claims them through one appended spread and one import', () => {
     const wfSrc = read('app/api/jobs/run/workflows.ts');
-    assert.doesNotMatch(wfSrc, /DEVELOPMENT_SPECIALIST_WORKFLOWS/, 'the parent appends the spread; this slice does not edit workflows.ts');
+    assert.equal((wfSrc.match(/\.\.\.DEVELOPMENT_SPECIALIST_WORKFLOWS/g) ?? []).length, 1);
+    assert.match(wfSrc, /import \{ DEVELOPMENT_SPECIALIST_WORKFLOWS \} from '\.\/development-specialist-workflows'/);
   });
 });
 
