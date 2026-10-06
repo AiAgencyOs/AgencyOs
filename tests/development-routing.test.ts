@@ -1,0 +1,68 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { describe, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+
+import { HANDLER_JOB_KIND, HANDLERS, SUBSCRIPTIONS } from '../src/lib/events/catalog.ts';
+import { decideDevelopmentRoute, decideIndependentReviewer } from '../src/modules/orchestrator/development-route.ts';
+
+/** Phase 5 Orchestrator spec: capability matching, eligibility (disabled / NOT_REQUIRED), creator != validator, and reachability. */
+const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), 'utf8');
+const allOff = new Map<string, boolean>();
+const on = (...keys: string[]) => new Map(keys.map((k) => [k, true] as const));
+const none = new Map<string, string>();
+
+describe('decideDevelopmentRoute', () => {
+  test('a task with no specialist is refused, not guessed', () => {
+    const r = decideDevelopmentRoute({ requiredCapability: null, enabled: allOff, agentState: none });
+    assert.equal(r.outcome, 'refused');
+  });
+  test('a value that is not a development specialist cannot be routed to (a model cannot name its own route)', () => {
+    for (const key of ['finance', 'quality_assurance', 'orchestrator', 'sales', 'made_up']) {
+      const r = decideDevelopmentRoute({ requiredCapability: key, enabled: on(key), agentState: none });
+      assert.equal(r.outcome, 'refused', key);
+    }
+  });
+  test('an installed-but-disabled specialist HOLDS the task with the reason; it is not routed as if it ran', () => {
+    const r = decideDevelopmentRoute({ requiredCapability: 'backend_developer', enabled: allOff, agentState: none });
+    assert.deepEqual([r.outcome, 'code' in r ? r.code : null], ['held', 'agent_disabled']);
+  });
+  test('a specialist recorded NOT_REQUIRED holds the task even when enabled', () => {
+    const r = decideDevelopmentRoute({ requiredCapability: 'mobile_developer', enabled: on('mobile_developer'), agentState: new Map([['mobile_developer', 'not_required']]) });
+    assert.deepEqual([r.outcome, 'code' in r ? r.code : null], ['held', 'not_required']);
+  });
+  test('an enabled, required specialist is routed', () => {
+    const r = decideDevelopmentRoute({ requiredCapability: 'frontend_developer', enabled: on('frontend_developer'), agentState: new Map([['frontend_developer', 'required']]) });
+    assert.equal(r.outcome, 'routed');
+  });
+});
+
+describe('decideIndependentReviewer: creator != validator', () => {
+  test('a developer is reviewed by security_review and verified by quality_assurance', () => {
+    const r = decideIndependentReviewer('backend_developer');
+    assert.deepEqual([r.reviewer, r.verifier], ['security_review', 'quality_assurance']);
+  });
+  test('security_review never reviews its own work', () => {
+    const r = decideIndependentReviewer('security_review');
+    assert.equal(r.reviewer, null);
+    assert.equal(r.verifier, 'quality_assurance');
+  });
+  test('an unknown agent gets no reviewer', () => {
+    assert.equal(decideIndependentReviewer('nobody').reviewer, null);
+  });
+});
+
+describe('the routing is reachable', () => {
+  test('an approved plan emits an event the Orchestrator acts on, through a registered handler and job kind', () => {
+    assert.deepEqual((SUBSCRIPTIONS as Record<string, readonly string[]>)['project.development_plan_approved'], ['orchestrator:routeDevelopmentPlan']);
+    assert.ok((HANDLERS as readonly string[]).includes('orchestrator:routeDevelopmentPlan'));
+    assert.equal((HANDLER_JOB_KIND as Record<string, string>)['orchestrator:routeDevelopmentPlan'], 'development.route_plan');
+    assert.match(read('app/api/jobs/run/route.ts'), /handleRouteDevelopmentPlan/);
+    assert.match(read('supabase/migrations/20261031240000_an_approved_plan_is_routed_to_its_specialists.sql'), /'project\.development_plan_approved'/);
+  });
+  test('the handler is idempotent and re-reads the plan', () => {
+    const handler = read('src/modules/orchestrator/handlers.ts');
+    assert.match(handler, /if \(already\.has\(task\.id\)\) continue;/);
+    assert.match(handler, /plan\.status !== 'approved'/);
+  });
+});

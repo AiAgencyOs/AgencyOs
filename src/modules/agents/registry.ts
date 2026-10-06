@@ -442,7 +442,12 @@ const ORCHESTRATOR: AgentDefinition = {
   // details to clients. Nothing it produces is client-facing.
   clientFacing: false,
   moneyAuthority: 'none',
-  handoffTargets: [],
+  // ADM-113: the Orchestrator routes approved development tasks to the specialists. A route is not authority: it hands work over, it
+  // never approves, verifies or widens a tool.
+  handoffTargets: [
+    'frontend_developer', 'backend_developer', 'database_developer', 'mobile_developer', 'integration', 'devops_build',
+    'test_automation', 'security_review', 'bug_fix', 'refactor_performance', 'documentation',
+  ],
   mayVerify: false,
   verification: {
     selfAssertionAllowed: false,

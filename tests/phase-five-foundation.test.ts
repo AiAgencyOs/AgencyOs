@@ -107,9 +107,11 @@ describe('Phase 5 Admin Panel overview is reachable and honest about failed read
     assert.ok(awaited >= 11, `only ${awaited} reads found`);
     assert.ok(guards >= awaited, `${awaited} reads, ${guards} guards`);
   });
-  test('the panel is read-only and says so', () => {
+  test('the panel renders no form of its own and says what is not yet a form', () => {
     assert.ok(!/<form|action=/.test(panel));
-    assert.match(panel, /Read-only/);
+    assert.match(panel, /Not yet built as forms/);
+    assert.match(panel, /<BuildActions /);
+    assert.match(panel, /<ClassifyFeedbackForm /);
   });
   test('the panel shows the gates that matter: baseline, review, QA, M3, the intake', () => {
     for (const text of ['Locked baseline', 'Review:', 'QA:', 'M3 payment', 'QA intake', 'Can Phase 5 complete?']) assert.ok(panel.includes(text), text);
@@ -138,5 +140,26 @@ describe('PM5 messages are reachable and filtered to their own kind', () => {
   test('the feedback event carries the project and build, never the client\'s words', () => {
     const migration = read('supabase/migrations/20261031220000_the_pm_hears_about_build_feedback.sql');
     assert.match(migration, /jsonb_build_object\('projectId', v_row\.project_id, 'deliverableId', v_row\.id, 'version', v_row\.version\)/);
+  });
+});
+
+
+describe('every Phase 5 action is a thin call to a database door', () => {
+  const actions = read('src/modules/projects/phase-five-actions.ts');
+  const forms = read('app/(internal)/projects/[projectId]/phase-five-forms.tsx');
+  test('each door the overview describes has an action and a form', () => {
+    for (const door of ['record_build_qa_verdict', 'record_code_review', 'decide_build_admin', 'submit_deliverable', 'record_build_feedback', 'classify_build_feedback']) {
+      assert.ok(actions.includes(`'${door}'`), door);
+    }
+    for (const action of ['recordBuildQaAction', 'recordCodeReviewAction', 'decideBuildAdminAction', 'shareBuildWithClientAction', 'recordBuildFeedbackAction', 'classifyBuildFeedbackAction']) {
+      assert.ok(forms.includes(action), action);
+    }
+  });
+  test('the actions decide nothing: no rule is restated, only the door\'s refusal is reported', () => {
+    assert.ok(!/\b(self_review|independent)\b.*===/.test(actions));
+    assert.match(actions, /Refused: \$\{outcome/);
+  });
+  test('and every action is gated on project.write before it calls the door', () => {
+    assert.match(actions, /can\(context, 'project\.write'\)/);
   });
 });

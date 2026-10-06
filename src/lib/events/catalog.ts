@@ -23,6 +23,7 @@ export const HANDLERS = [
   'projects:askFinalDesignConfirmation',
   'projects:startPhaseFour',
   'orchestrator:routeTask2Design',
+  'orchestrator:routeDevelopmentPlan',
   'quality_assurance:reviewUIVersion',
   'orchestrator:requestUIVersionAdminReview',
   'ui_prototype:build',
@@ -614,6 +615,8 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * fans out from the same event, independent of the invoicing chain.
    */
   'project.phase_four_completed': ['finance:generateM2Invoice', 'crm:announceTask2Complete'],
+  /** Phase 5 Orchestrator spec: an Admin-approved plan is routed task by task to the named specialists (held, not faked, while they are disabled). */
+  'project.development_plan_approved': ['orchestrator:routeDevelopmentPlan'],
   /** PM5-M01 (Phase 5 PM Agent spec): Task 3 Start, off the fact `start_phase_five` emits. */
   'project.phase_five_started': ['crm:announcePhaseFiveStarted'],
   /** PM5-M03: the client's feedback on a build was recorded and is awaiting classification. */
@@ -663,6 +666,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:askFinalDesignConfirmation': 'pm.design_final_ask',
   'projects:startPhaseFour': 'phase_four.start',
   'orchestrator:routeTask2Design': 'phase_four.route_task2_design',
+  'orchestrator:routeDevelopmentPlan': 'development.route_plan',
   'quality_assurance:reviewUIVersion': 'ui_version.qa_review',
   'orchestrator:requestUIVersionAdminReview': 'ui_version.request_admin_review',
   'ui_prototype:build': 'prototype.build',

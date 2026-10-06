@@ -3,9 +3,11 @@ import Link from 'next/link';
 import type { PhaseFiveOverview } from '@/modules/projects/phase-five-queries';
 import { Badge, Card, humanize, type Tone } from '@/ui';
 
+import { BuildActions, ClassifyFeedbackForm } from './phase-five-forms';
+
 /**
  * Phase 5 Overview - the Admin Panel's answer to "what is current, what is blocked, who approved what, can Phase 6 start?" for full
- * development. READ-ONLY: it renders the STORED state (baseline, builds, QA, reviews, defects, feedback, integrations, specialists, the
+ * development. Read-first: it renders the STORED state (baseline, builds, QA, reviews, defects, feedback, integrations, specialists, the
  * Phase 6 intake) and never re-derives a verdict. The writes live behind the database doors (`record_build_qa_verdict`,
  * `decide_build_admin`, `record_code_review`, `classify_build_feedback`, ...); a form for each is not built yet and is named here rather
  * than assumed done.
@@ -106,6 +108,7 @@ export function PhaseFivePanel({ view, projectId }: { view: PhaseFiveOverview; p
                     Artifact
                   </Link>
                 ) : null}
+                <BuildActions projectId={projectId} deliverableId={b.deliverableId} status={b.status} />
               </li>
             ))}
           </ul>
@@ -131,6 +134,7 @@ export function PhaseFivePanel({ view, projectId }: { view: PhaseFiveOverview; p
                 <span>{f.words}</span>
                 {f.defectId ? <span>→ defect</span> : null}
                 {f.changeRequestId ? <span>→ change request</span> : null}
+                {!f.classification ? <ClassifyFeedbackForm projectId={projectId} feedbackId={f.id} /> : null}
               </li>
             ))}
           </ul>
@@ -195,7 +199,7 @@ export function PhaseFivePanel({ view, projectId }: { view: PhaseFiveOverview; p
         ) : null}
       </section>
       <p className="text-xs text-faint" data-project={projectId}>
-        Read-only: the actions behind this view (QA verdict, Admin decision, code review, feedback classification, integration check) are database doors; their forms are not built yet.
+        Each form calls a database door that checks the role, the independence rules and the gates; its refusal is shown as written. Not yet built as forms: plan creation and task planning, integration state, specialist state.
       </p>
     </Card>
   );

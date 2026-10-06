@@ -78,7 +78,7 @@ import { handleAnnouncePhaseThree, handleAskFinalConfirmation } from '@/modules/
 import { handleWelcomeClient, handleAskGstDetails, handlePaymentUpdate, handleReadBillingReply } from '@/modules/projects/pm-client-comms';
 import { handleHandoverAcceptedForFinance, handleBillingModeConfirmed, handleInvoiceIssuedForDelivery, handlePhaseFourCompletedForFinance, handlePhaseFiveCompletedForFinance, handlePhaseSixCompletedForFinance } from '@/modules/finance/handlers';
 import { learnFromDecision, learnFromRevision, syncDiscountDecision } from '@/modules/sales/handlers';
-import { handleRouteTask2Design, handleRequestUIVersionAdminReview } from '@/modules/orchestrator/handlers';
+import { handleRouteTask2Design, handleRequestUIVersionAdminReview, handleRouteDevelopmentPlan } from '@/modules/orchestrator/handlers';
 import { handleReviewUIVersion, handleReviewPrototypeBuild } from '@/modules/qa/handlers';
 
 export const runtime = 'nodejs';
@@ -586,6 +586,33 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       overdue,
       stamps,
       task2Route: task2Route.results,
+      correlationId,
+    });
+  }
+
+  /**
+   * ── Phase 5: an approved development plan is routed to its specialists ───
+   *
+   * Pure database work (registry lookup, a handful of reads and inserts, no model call).
+   */
+  const devPlanRoute = await runEventJobs(admin, DEV_PLAN_ROUTE_JOB_KIND, handleRouteDevelopmentPlan, 'runDevelopmentPlanRouteJobs');
+  if (devPlanRoute.claimed > 0) {
+    return NextResponse.json({
+      claimed: devPlanRoute.claimed,
+      kind: DEV_PLAN_ROUTE_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      devPlanRoute: devPlanRoute.results,
       correlationId,
     });
   }
@@ -1456,6 +1483,7 @@ const PHASE_TWO_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseTwo'];
 const PHASE_THREE_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseThree'];
 const PHASE_FOUR_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseFour'];
 const TASK2_ROUTE_JOB_KIND = HANDLER_JOB_KIND['orchestrator:routeTask2Design'];
+const DEV_PLAN_ROUTE_JOB_KIND = HANDLER_JOB_KIND['orchestrator:routeDevelopmentPlan'];
 const LEAD_ROUTE_JOB_KIND = HANDLER_JOB_KIND['crm:routeLead'];
 const LEAD_IDENTITY_JOB_KIND = HANDLER_JOB_KIND['crm:classifyLeadIdentity'];
 const UI_VERSION_QA_JOB_KIND = HANDLER_JOB_KIND['quality_assurance:reviewUIVersion'];

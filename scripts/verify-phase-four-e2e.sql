@@ -344,6 +344,55 @@ reset role;
 select pg_temp.check((select count(*) from core.outbox_events where type = 'invoice.paid' and subject_id = :'I1_i') = 1, 'the verified-payment event (the Task 3 start trigger) fired exactly once');
 
 -- ═════════ Phase 5: development builds, the client-test gate, DoD, and the Phase 6 financial gate ═════════
+-- 17b. PLAN before code: acceptance criteria, a named specialist, full scope coverage, no unsequenced work on the same files, an Admin's approval
+select id as sv from projects.scope_versions where project_id = :'P_id' and status = 'active' \gset SC_
+insert into projects.features (organization_id, project_id, module_id, name) values (:'ORG', :'P_id', :'MOD_id', 'zztest cart') returning id \gset FEAT_
+-- (a frozen scope version refuses new items by design; the fixture adds the item as the table owner)
+set local session_replication_role = replica;
+insert into projects.scope_items (organization_id, scope_version_id, feature_id, title, inclusion, position) values (:'ORG', :'SC_sv', :'FEAT_id', 'The customer can pay', 'included', 0);
+set local session_replication_role = origin;
+insert into projects.tasks (organization_id, project_id, title, feature_id, module_id, status) values (:'ORG', :'P_id', 'zztest pay screen', :'FEAT_id', :'MOD_id', 'todo') returning id \gset T2_
+insert into projects.tasks (organization_id, project_id, title, feature_id, module_id, status) values (:'ORG', :'P_id', 'zztest pay api', :'FEAT_id', :'MOD_id', 'todo') returning id \gset T3_
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.start_task(:'T2_id')) = 'no_approved_plan', 'NEGATIVE: with a baseline but no approved plan, development does not start');
+select plan_id as pl from projects.create_development_plan(:'P_id', 'Build the checkout', 'payment provider sandbox', 'unit + API + E2E', 'revert the release') \gset PL_
+select pg_temp.check(exists (select 1 from projects.check_development_plan(:'PL_pl') c where c.problem = 'The plan has no tasks.'), 'an empty plan names its problem');
+select pg_temp.check((select outcome from projects.plan_task(:'TASK_id', :'PL_pl', 'the module task works', 'backend_developer', 'low', '{}')) = 'planned', 'a task is planned with criteria, a specialist and a risk');
+select pg_temp.check(exists (select 1 from projects.check_development_plan(:'PL_pl') c where c.problem like 'Scope not covered: feature "zztest cart"%'), 'a feature with an included scope item and no task is NOT covered');
+select pg_temp.check((select outcome from projects.plan_task(:'T2_id', :'PL_pl', null, 'refactor_performance', 'high', '{src/cart.ts}')) = 'planned', 'task two planned with no criteria and a NOT_REQUIRED specialist');
+select pg_temp.check((select outcome from projects.plan_task(:'T3_id', :'PL_pl', 'the pay API returns 200 and a receipt', 'backend_developer', 'high', '{src/cart.ts}')) = 'planned', 'task three planned on the same file');
+select pg_temp.check(exists (select 1 from projects.check_development_plan(:'PL_pl') c where c.problem like 'Task "zztest pay screen" has no acceptance criteria.'), 'a task with no acceptance criteria is a problem');
+select pg_temp.check(exists (select 1 from projects.check_development_plan(:'PL_pl') c where c.problem like '%refactor_performance, which is NOT_REQUIRED%'), 'work cannot be given to a specialist recorded NOT_REQUIRED');
+select pg_temp.check(exists (select 1 from projects.check_development_plan(:'PL_pl') c where c.problem like '%touch the same files and are not sequenced%'), 'two tasks on the same files with no dependency is a problem');
+select pg_temp.check((select outcome from projects.approve_development_plan(:'PL_pl')) = 'not_approvable', 'a plan with problems cannot be approved');
+select pg_temp.check((select outcome from projects.plan_task(:'T2_id', :'PL_pl', 'the pay screen shows totals and a pay button', 'frontend_developer', 'medium', '{src/cart.ts}')) = 'planned', 'task two re-planned properly');
+select pg_temp.check((select outcome from projects.add_task_dependency(:'T3_id', :'T2_id')) = 'added', 'the API depends on the screen: sequenced');
+reset role;
+select pg_temp.as_user('00000000-0000-4000-8000-00000000f522', :'ORG', 'member');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.approve_development_plan(:'PL_pl')) = 'not_authorized', 'a delivery person (the PM) cannot approve the plan: an Admin does');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check(not exists (select 1 from projects.check_development_plan(:'PL_pl')), 'the plan now has no problems');
+select pg_temp.check((select outcome from projects.approve_development_plan(:'PL_pl')) = 'approved', 'the Admin approves the plan');
+select pg_temp.check((select outcome from projects.approve_development_plan(:'PL_pl')) = 'already_approved', 'a duplicate approval changes nothing');
+select pg_temp.check((select count(*) from core.outbox_events where type = 'project.development_plan_approved' and subject_id = :'PL_pl') = 1, 'the approval is announced exactly once, for the Orchestrator to route');
+select pg_temp.check((select outcome from projects.plan_task(:'T2_id', :'PL_pl', 'changed after approval', 'frontend_developer', 'low', '{}')) = 'plan_not_draft', 'an approved plan is not edited by re-planning its tasks');
+select pg_temp.check((select outcome from projects.start_task(:'T3_id')) = 'dependencies_open', 'the API waits for the screen');
+select pg_temp.check((select outcome from projects.start_task(:'T2_id')) = 'started', 'the first planned task starts, stamped with the baseline');
+select pg_temp.check((select baseline_id is not null from projects.tasks where id = :'T2_id'), 'the task carries its baseline');
+reset role;
+-- a task that is planned but touches the files of a task in progress with no sequencing cannot start beside it
+insert into projects.tasks (organization_id, project_id, title, feature_id, module_id, status, plan_id, affected_paths)
+  values (:'ORG', :'P_id', 'zztest hotfix cart', :'FEAT_id', :'MOD_id', 'todo', :'PL_pl', '{src/cart.ts}') returning id \gset T6_
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.start_task(:'T6_id')) = 'path_conflict', 'two agents are not put on the same files without sequencing');
+reset role;
+select pg_temp.check(pg_temp.refused(format('update projects.development_plans set summary = ''rewritten'' where id = %L', :'PL_pl'), 'never edited'), 'an approved plan cannot be edited: a change is a new version');
+
 -- 18. a development build must resolve to an exact commit, be QA'd independently, and be Admin-approved before the client sees it
 select pg_temp.as_service();
 set local role service_role;
@@ -354,8 +403,40 @@ set local role authenticated;
 select outcome as o from projects.submit_deliverable(:'BD1_bd', :'OWNER', 'build 1') \gset X1_
 select pg_temp.check(:'X1_o' = 'no_commit', 'NEGATIVE: a build with no exact commit cannot be sent to the client');
 select pg_temp.check((select outcome from projects.set_deliverable_details(:'BD1_bd', 'web', 'abc1234', 'build-1', null, null)) is not null, 'the build records its exact commit and number');
+select outcome as o from projects.submit_deliverable(:'BD1_bd', :'OWNER', 'build 1') \gset XB0_
+select pg_temp.check(:'XB0_o' = 'no_build_run', 'NEGATIVE: an exact commit with no recorded build run (stages, fingerprint, hash) is not sent');
+reset role;
+-- the CI runner (service role) records its runs
+select pg_temp.as_service();
+set local role service_role;
+select outcome as o, run_id as r from projects.record_build_run(:'BD1_bd', 'review', 'failed', 'test_failed', '[{"name":"test","status":"failed"}]', '{"node":"22"}', null, null) \gset BR1_
+select pg_temp.check(:'BR1_o' = 'recorded', 'a failed run is recorded with its failure class');
+select pg_temp.check((select outcome from projects.record_build_run(:'BD1_bd', 'review', 'failed', 'test_failed', '[]', '{}', null, :'BR1_r')) = 'not_retryable', 'a deterministic failure is not retried: it goes back to the specialist');
+select outcome as o, run_id as r from projects.record_build_run(:'BD1_bd', 'review', 'failed', 'infra_transient', '[{"name":"install","status":"failed"}]', '{"node":"22"}', null, null) \gset BR2_
+select outcome as o, run_id as r from projects.record_build_run(:'BD1_bd', 'review', 'failed', 'infra_transient', '[]', '{}', null, :'BR2_r') \gset BR3_
+select pg_temp.check(:'BR3_o' = 'recorded', 'a transient infrastructure failure may be retried (attempt 2)');
+select outcome as o, run_id as r from projects.record_build_run(:'BD1_bd', 'review', 'failed', 'infra_transient', '[]', '{}', null, :'BR3_r') \gset BR4_
+select pg_temp.check((select outcome from projects.record_build_run(:'BD1_bd', 'review', 'failed', 'infra_transient', '[]', '{}', null, :'BR4_r')) = 'retries_exhausted', 'retries are bounded: the fourth attempt is refused');
+select pg_temp.check((select outcome from projects.record_build_run(:'BD1_bd', 'production', 'succeeded', null, '[{"name":"build","status":"ok"}]', '{"node":"22"}', repeat('a', 64), null)) = 'bad_environment', 'a production environment is refused in Phase 5');
+do $$ begin
+  begin
+    perform projects.record_build_run((select id from projects.deliverables where title = 'Development build 1'), 'review', 'succeeded', null, '[{"name":"build","status":"ok"}]', '{"env":"API_KEY=sk-abcdefghijklmnopqrstuvwx"}', repeat('a', 64), null);
+    raise exception 'FAILED: a secret value was stored in a build run';
+  exception when restrict_violation then raise notice 'ok  a build run cannot carry a secret value'; end;
+end $$;
+do $$ begin
+  begin
+    perform projects.record_build_run((select id from projects.deliverables where title = 'Development build 1'), 'review', 'succeeded', null, '[{"name":"build","status":"ok"}]', '{"node":"22"}', repeat('a', 63), null);
+    raise exception 'FAILED: a malformed artifact hash was accepted';
+  exception when check_violation then raise notice 'ok  an artifact hash must be a real sha256'; end;
+end $$;
+select outcome as o from projects.record_build_run(:'BD1_bd', 'review', 'succeeded', null, '[{"name":"lint","status":"ok"},{"name":"test","status":"ok"},{"name":"build","status":"ok"}]', '{"os":"linux","node":"22","lockfile":"sha256:abc"}', repeat('a', 64), null) \gset BR5_
+select pg_temp.check(:'BR5_o' = 'recorded', 'the successful run records stages, fingerprint and the artifact hash');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
 select outcome as o from projects.submit_deliverable(:'BD1_bd', :'OWNER', 'build 1') \gset XR0_
-select pg_temp.check(:'XR0_o' = 'review_missing', 'NEGATIVE: an exact build with no independent code review is not sent');
+select pg_temp.check(:'XR0_o' = 'review_missing', 'NEGATIVE: a built exact commit with no independent code review is not sent');
 reset role;
 -- independent code / security review of the exact commit
 select pg_temp.as_user('00000000-0000-4000-8000-00000000f522', :'ORG', 'member');
@@ -479,7 +560,7 @@ update projects.deliverables set status = 'superseded' where title = 'dup';
 set local session_replication_role = origin;
 -- the development task is done (the review path for tasks is its own, already-proven door; here its status is set as the table owner)
 set local session_replication_role = replica;
-update projects.tasks set status = 'done', completed_at = now() where id = :'TASK_id';
+update projects.tasks set status = 'done', completed_at = now() where project_id = :'P_id' and status <> 'cancelled';
 set local session_replication_role = origin;
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
 set local role authenticated;

@@ -4,6 +4,7 @@ import type { createAdminClient } from '@/lib/db/admin';
 import type { HandlerResult, UnlockJob } from '@/modules/projects/handlers';
 
 import { decideDesignerActivation } from './designer-activation';
+import { decideDevelopmentRoute } from './development-route';
 import { decideAgentForTask } from './route';
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -233,4 +234,79 @@ export async function handleRequestUIVersionAdminReview(admin: Admin, job: Unloc
     default:
       return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
   }
+}
+
+
+/**
+ * `project.development_plan_approved` -> route each planned task to its specialist - Phase 5 Orchestrator spec.
+ *
+ * Plan rows are RE-READ, never trusted from the event. A task is routed (an `ai.handoffs` row, orchestrator -> specialist, subject = the task),
+ * or HELD with the reason (agent not enabled / NOT_REQUIRED), or refused. Idempotent: a task that already has a handoff is left alone, so a
+ * redelivered event routes nothing twice. Nothing here starts a task: `start_task` is its own gate.
+ */
+export async function handleRouteDevelopmentPlan(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const planId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+  if (!planId) return { status: 'failed', permanent: true, detail: 'the event named no development plan' };
+
+  const { data: plan, error: planError } = await admin
+    .schema('projects')
+    .from('development_plans')
+    .select('id, project_id, status')
+    .eq('id', planId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+  if (planError) return { status: 'failed', permanent: false, detail: `the plan could not be read: ${planError.message}` };
+  if (!plan) return { status: 'succeeded', outcome: 'gone', detail: 'the plan no longer exists' };
+  if (plan.status !== 'approved') return { status: 'succeeded', outcome: 'not_mine', detail: `the plan is ${plan.status}, not approved` };
+
+  const [{ data: tasks, error: taskError }, { data: agents, error: agentError }, { data: states, error: stateError }, { data: existing, error: existingError }] = await Promise.all([
+    admin.schema('projects').from('tasks').select('id, title, required_capability').eq('plan_id', plan.id).eq('status', 'todo'),
+    admin.schema('ai').from('agents').select('key, enabled'),
+    admin.schema('projects').from('phase_five_agent_state').select('agent_key, state').eq('project_id', plan.project_id),
+    admin.schema('ai').from('handoffs').select('subject_id').eq('organization_id', job.organization_id).eq('subject_type', 'development_task').eq('project_id', plan.project_id),
+  ]);
+  if (taskError) return { status: 'failed', permanent: false, detail: `the tasks could not be read: ${taskError.message}` };
+  if (agentError) return { status: 'failed', permanent: false, detail: `the agents could not be read: ${agentError.message}` };
+  if (stateError) return { status: 'failed', permanent: false, detail: `the specialist states could not be read: ${stateError.message}` };
+  if (existingError) return { status: 'failed', permanent: false, detail: `existing handoffs could not be read: ${existingError.message}` };
+
+  const enabled = new Map((agents ?? []).map((a) => [a.key as string, a.enabled === true]));
+  const agentState = new Map((states ?? []).map((s) => [s.agent_key as string, s.state as string]));
+  const already = new Set((existing ?? []).map((h) => h.subject_id as string));
+
+  let routed = 0;
+  let held = 0;
+  let refused = 0;
+  for (const task of tasks ?? []) {
+    if (already.has(task.id)) continue;
+    const decision = decideDevelopmentRoute({ requiredCapability: task.required_capability, enabled, agentState });
+    if (decision.outcome === 'held') {
+      held += 1;
+      continue;
+    }
+    if (decision.outcome === 'refused') {
+      refused += 1;
+      continue;
+    }
+    const { error: insertError } = await admin
+      .schema('ai')
+      .from('handoffs')
+      .insert({
+        organization_id: job.organization_id,
+        correlation_id: plan.id,
+        from_agent: 'orchestrator',
+        to_agent: decision.toAgent,
+        project_id: plan.project_id,
+        task_id: task.id,
+        subject_type: 'development_task',
+        subject_id: task.id,
+        objective: `Development task: ${task.title}`,
+        context: { planId: plan.id, routingReason: decision.reason },
+      });
+    if (insertError) return { status: 'failed', permanent: false, detail: `the handoff for "${task.title}" could not be recorded: ${insertError.message}` };
+    routed += 1;
+  }
+
+  return { status: 'succeeded', outcome: routed > 0 ? 'routed' : held > 0 ? 'held' : 'nothing_to_route', detail: `${routed} routed, ${held} held (specialist not enabled or not required), ${refused} refused.` };
 }
