@@ -1406,7 +1406,7 @@ const UI_VERSION_REVISE: AgentWorkflow = {
     // the other.
     const eventType = job.payload?.eventType;
     let phaseFourId: string;
-    let feedbackSource: 'client' | 'admin';
+    let feedbackSource: 'client' | 'admin' | 'qa';
 
     if (eventType === 'project.ui_version_client_decided') {
       const parsed = uiVersionClientDecidedEventSchema.safeParse(job.payload?.event);
@@ -1434,6 +1434,19 @@ const UI_VERSION_REVISE: AgentWorkflow = {
       }
       phaseFourId = parsed.data.phaseFourId;
       feedbackSource = 'admin';
+    } else if (eventType === 'project.ui_version_qa_reviewed') {
+      // Design QA's own defect (qa_changes_required): the Designer fixes it as a NEW version that is reviewed from scratch.
+      const event = (job.payload?.event ?? {}) as { phaseFourId?: unknown; outcome?: unknown };
+      if (typeof event.phaseFourId !== 'string') {
+        await failJob(admin, job, 'malformed project.ui_version_qa_reviewed payload: no workspace named');
+        return { status: 'failed', reason: 'bad payload' };
+      }
+      if (event.outcome !== 'qa_changes_required') {
+        await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+        return { status: 'succeeded', outcome: 'not_mine', reason: `QA outcome ${String(event.outcome)} is not a defect` };
+      }
+      phaseFourId = event.phaseFourId;
+      feedbackSource = 'qa';
     } else {
       await failJob(admin, job, `unrecognised trigger event: ${String(eventType)}`);
       return { status: 'failed', reason: 'bad payload' };
@@ -1447,7 +1460,7 @@ const UI_VERSION_REVISE: AgentWorkflow = {
     const { data: phaseFour } = await admin
       .schema('projects')
       .from('phase_four')
-      .select('id, organization_id, project_id, phase_three_handoff_id, ui_revision_count, ui_revision_limit')
+      .select('id, organization_id, project_id, phase_three_handoff_id, ui_revision_count, ui_revision_limit, ui_qa_fix_count, ui_qa_fix_limit')
       .eq('id', phaseFourId)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
@@ -1457,23 +1470,25 @@ const UI_VERSION_REVISE: AgentWorkflow = {
       return { status: 'succeeded', reason: 'the Phase 4 workspace no longer exists' };
     }
 
-    if (phaseFour.ui_revision_count >= phaseFour.ui_revision_limit) {
+    const used = feedbackSource === 'qa' ? phaseFour.ui_qa_fix_count : phaseFour.ui_revision_count;
+    const allowed = feedbackSource === 'qa' ? phaseFour.ui_qa_fix_limit : phaseFour.ui_revision_limit;
+    if (used >= allowed) {
       // The door itself enforces this and stops the workspace at
       // revision_limit_escalation; checked here first only to avoid an AI
       // call the door would refuse anyway.
       await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
-      return { status: 'succeeded', outcome: 'revision_limit_reached', reason: 'ui_revision_count already at ui_revision_limit' };
+      return { status: 'succeeded', outcome: 'revision_limit_reached', reason: feedbackSource === 'qa' ? 'ui_qa_fix_count already at ui_qa_fix_limit' : 'ui_revision_count already at ui_revision_limit' };
     }
 
     const { data: prior } = await admin
       .schema('projects')
       .from('ui_versions')
-      .select('id, screens, status')
+      .select('id, screens, status, qa_findings')
       .eq('id', priorVersionId)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
 
-    if (!prior || (prior.status !== 'client_change' && prior.status !== 'admin_edit')) {
+    if (!prior || (prior.status !== 'client_change' && prior.status !== 'admin_edit' && prior.status !== 'qa_changes_required')) {
       await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
       return { status: 'succeeded', reason: 'the prior version is no longer awaiting revision' };
     }
@@ -1503,6 +1518,8 @@ const UI_VERSION_REVISE: AgentWorkflow = {
         .order('created_at', { ascending: false })
         .limit(1);
       feedback = decisions?.[0]?.client_words ?? feedback;
+    } else if (feedbackSource === 'qa') {
+      feedback = `Design QA found defects in this version:\n${JSON.stringify(prior.qa_findings ?? [])}`;
     } else {
       const { data: reviewNote } = await admin
         .schema('approvals')
@@ -1528,7 +1545,7 @@ const UI_VERSION_REVISE: AgentWorkflow = {
       [
         {
           role: 'user',
-          content: `Your prior draft:\n\n${JSON.stringify(prior.screens)}\n\nThe ${feedbackSource === 'client' ? "client's" : "Admin's"} feedback:\n\n${feedback}`,
+          content: `Your prior draft:\n\n${JSON.stringify(prior.screens)}\n\nThe ${feedbackSource === 'client' ? "client's" : feedbackSource === 'qa' ? "Design QA's" : "Admin's"} feedback:\n\n${feedback}`,
         },
       ],
       runId,
@@ -2280,30 +2297,64 @@ const PROTOTYPE_BUILD_REVISE: AgentWorkflow = {
 
   async run(ctx) {
     const { admin, job } = ctx;
-    const deliverableId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
-    const parsed = deliverableDecidedEventSchema.safeParse(job.payload?.event);
+    // Two paths back to the Prototype Agent share this workflow: a reviewer's changes_requested on the deliverable (the client/Admin
+    // loop) and Prototype QA's own qa_changes_required on the build (the QA defect loop - FIXED is not VERIFIED, the fix is a new build
+    // that is QA'd from scratch). Each arrives on its own event, told apart by eventType.
+    const subjectId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+    const fromQa = job.payload?.eventType === 'project.prototype_qa_reviewed';
+    const fromAdmin = job.payload?.eventType === 'project.prototype_admin_decided';
+    let deliverableId: string | null = null;
+    let artifactQuery: { column: 'id' | 'deliverable_id'; value: string };
 
-    if (!deliverableId || !parsed.success) {
-      await failJob(
-        admin,
-        job,
-        `malformed project.deliverable_decided payload: ${parsed.success ? 'no deliverable named' : (parsed.error.issues[0]?.message ?? 'unparseable')}`,
-      );
-      return { status: 'failed', reason: 'bad payload' };
-    }
-
-    if (parsed.data.kind !== 'prototype' || parsed.data.status !== 'changes_requested') {
-      // approved closes Task 2 (projects:completePhaseFourOnPrototypeApproval);
-      // every other kind is not this workflow's concern.
-      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
-      return { status: 'succeeded', outcome: 'not_mine', reason: `${parsed.data.kind}/${parsed.data.status} is not a prototype revision` };
+    if (fromQa) {
+      const qaOutcome = (job.payload?.event as { outcome?: unknown } | undefined)?.outcome;
+      if (!subjectId) {
+        await failJob(admin, job, 'malformed project.prototype_qa_reviewed payload: no build named');
+        return { status: 'failed', reason: 'bad payload' };
+      }
+      if (qaOutcome !== 'qa_changes_required') {
+        await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+        return { status: 'succeeded', outcome: 'not_mine', reason: `QA outcome ${String(qaOutcome)} is not a defect` };
+      }
+      artifactQuery = { column: 'id', value: subjectId };
+    } else if (fromAdmin) {
+      // The Admin's own EDIT: ADMIN EDIT -> PROTOTYPE AGENT -> QA -> ADMIN AGAIN, never ADMIN EDIT -> CLIENT. Counted on the revision budget.
+      const adminDecision = (job.payload?.event as { decision?: unknown } | undefined)?.decision;
+      if (!subjectId) {
+        await failJob(admin, job, 'malformed project.prototype_admin_decided payload: no deliverable named');
+        return { status: 'failed', reason: 'bad payload' };
+      }
+      if (adminDecision !== 'changes_required') {
+        await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+        return { status: 'succeeded', outcome: 'not_mine', reason: `Admin decision ${String(adminDecision)} is not an edit` };
+      }
+      deliverableId = subjectId;
+      artifactQuery = { column: 'deliverable_id', value: subjectId };
+    } else {
+      const parsed = deliverableDecidedEventSchema.safeParse(job.payload?.event);
+      if (!subjectId || !parsed.success) {
+        await failJob(
+          admin,
+          job,
+          `malformed project.deliverable_decided payload: ${parsed.success ? 'no deliverable named' : (parsed.error.issues[0]?.message ?? 'unparseable')}`,
+        );
+        return { status: 'failed', reason: 'bad payload' };
+      }
+      if (parsed.data.kind !== 'prototype' || parsed.data.status !== 'changes_requested') {
+        // approved closes Task 2 (projects:completePhaseFourOnPrototypeApproval);
+        // every other kind is not this workflow's concern.
+        await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+        return { status: 'succeeded', outcome: 'not_mine', reason: `${parsed.data.kind}/${parsed.data.status} is not a prototype revision` };
+      }
+      deliverableId = subjectId;
+      artifactQuery = { column: 'deliverable_id', value: subjectId };
     }
 
     const { data: artifact } = await admin
       .schema('projects')
       .from('prototype_artifacts')
-      .select('id, ui_version_id, screens')
-      .eq('deliverable_id', deliverableId)
+      .select('id, ui_version_id, screens, status, qa_findings, deliverable_id')
+      .eq(artifactQuery.column, artifactQuery.value)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
 
@@ -2311,6 +2362,7 @@ const PROTOTYPE_BUILD_REVISE: AgentWorkflow = {
       await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
       return { status: 'succeeded', reason: 'no prototype artifact for that deliverable' };
     }
+    if (fromQa) deliverableId = artifact.deliverable_id;
 
     const { data: version } = await admin
       .schema('projects')
@@ -2328,7 +2380,7 @@ const PROTOTYPE_BUILD_REVISE: AgentWorkflow = {
     const { data: phaseFour } = await admin
       .schema('projects')
       .from('phase_four')
-      .select('id, organization_id, project_id, prototype_revision_count, prototype_revision_limit')
+      .select('id, organization_id, project_id, prototype_revision_count, prototype_revision_limit, prototype_qa_fix_count, prototype_qa_fix_limit')
       .eq('id', version.phase_four_id)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
@@ -2338,12 +2390,14 @@ const PROTOTYPE_BUILD_REVISE: AgentWorkflow = {
       return { status: 'succeeded', reason: 'the Phase 4 workspace no longer exists' };
     }
 
-    if (phaseFour.prototype_revision_count >= phaseFour.prototype_revision_limit) {
+    const used = fromQa ? phaseFour.prototype_qa_fix_count : phaseFour.prototype_revision_count;
+    const allowed = fromQa ? phaseFour.prototype_qa_fix_limit : phaseFour.prototype_revision_limit;
+    if (used >= allowed) {
       // The door itself enforces this and stops the workspace at
       // revision_limit_escalation; checked here first only to avoid an AI
       // call the door would refuse anyway.
       await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
-      return { status: 'succeeded', outcome: 'revision_limit_reached', reason: 'prototype_revision_count already at prototype_revision_limit' };
+      return { status: 'succeeded', outcome: 'revision_limit_reached', reason: fromQa ? 'prototype_qa_fix_count already at prototype_qa_fix_limit' : 'prototype_revision_count already at prototype_revision_limit' };
     }
 
     const designScreens = (version.screens ?? []) as Array<{ screenKey?: string }>;
@@ -2354,12 +2408,26 @@ const PROTOTYPE_BUILD_REVISE: AgentWorkflow = {
       .from('approval_requests')
       .select('decision_note, decided_at')
       .eq('subject_type', 'deliverable')
-      .eq('subject_id', deliverableId)
+      .eq('subject_id', deliverableId ?? '')
       .eq('state', 'changes_requested')
       .order('decided_at', { ascending: false })
       .limit(1);
 
-    const note = reviewNote?.[0]?.decision_note ?? '(no specific note was recorded)';
+    let adminNote: string | null = null;
+    if (fromAdmin) {
+      const { data: details } = await admin
+        .schema('projects')
+        .from('deliverable_details')
+        .select('admin_note')
+        .eq('deliverable_id', deliverableId ?? '')
+        .maybeSingle();
+      adminNote = details?.admin_note ?? null;
+    }
+    const note = fromQa
+      ? `Prototype QA found defects in this build:\n${JSON.stringify(artifact.qa_findings ?? [])}`
+      : fromAdmin
+        ? (adminNote ?? '(the Admin asked for changes without a note)')
+        : (reviewNote?.[0]?.decision_note ?? '(no specific note was recorded)');
 
     const runId = await openRun(ctx, {
       type: 'projects.ui_version',

@@ -529,7 +529,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * own row-authority check (not the payload) is what decides whether review
    * is actually raised — see `handleRequestUIVersionAdminReview`'s docblock.
    */
-  'project.ui_version_qa_reviewed': ['orchestrator:requestUIVersionAdminReview'],
+  'project.ui_version_qa_reviewed': ['orchestrator:requestUIVersionAdminReview', 'ui_designer:reviseUIVersion'],
   /**
    * PROTO §4, §8 — the Prototype Agent's first build, off the fact
    * `20260923140000_the_client_confirms_the_locked_ui.sql`'s `lock_ui_version`
@@ -572,6 +572,16 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * `record_prototype_build` already emits.
    */
   'project.prototype_build_ready': ['quality_assurance:reviewPrototypeBuild'],
+  /**
+   * QAP §Prototype QA defect flow: a build Prototype QA sent back (qa_changes_required) is fixed by the Prototype Agent as a NEW build that
+   * is QA'd from scratch (FIXED is not VERIFIED). The workflow filters to qa_changes_required itself - the event fires for every verdict.
+   */
+  'project.prototype_qa_reviewed': ['ui_prototype:reviseBuild'],
+  /**
+   * Prototype spec, Admin review: ADMIN EDIT -> PROTOTYPE AGENT -> QA -> ADMIN AGAIN (never ADMIN EDIT -> CLIENT). Fires for approved too;
+   * the workflow filters to changes_required itself.
+   */
+  'project.prototype_admin_decided': ['ui_prototype:reviseBuild'],
   /**
    * Impl §7.4; Master steps 39-40 — Task 2 closes on the FINAL prototype's
    * approval. `project.deliverable_decided` (new, `20260923160000_m2_and_

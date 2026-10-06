@@ -3,6 +3,7 @@ import 'server-only';
 import type { createAdminClient } from '@/lib/db/admin';
 import type { HandlerResult, UnlockJob } from '@/modules/projects/handlers';
 
+import { decideDesignerActivation } from './designer-activation';
 import { decideAgentForTask } from './route';
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -93,6 +94,13 @@ export async function handleRouteTask2Design(admin: Admin, job: UnlockJob): Prom
     };
   }
 
+  // UI Designer §activation: the Designer wakes for a NAMED reason. This hop's reason is condition A (Phase 4 starts on a valid Phase 3
+  // baseline - `start_phase_four` already refused anything else); it is recorded on the handoff so the Admin can see why the Designer ran.
+  const activation = decideDesignerActivation('initial_phase_four');
+  if (!activation.activate) {
+    return { status: 'failed', permanent: true, detail: `the Designer was not activated: ${activation.refusedBecause}` };
+  }
+
   const decision = decideAgentForTask({
     fromAgent: phaseFour.pm_agent_key,
     requiredCapabilities: ['multimodal', 'long_context'],
@@ -125,7 +133,7 @@ export async function handleRouteTask2Design(admin: Admin, job: UnlockJob): Prom
       subject_type: 'phase_four',
       subject_id: phaseFour.id,
       objective: 'Task 2: design the complete UI from the locked Phase 3 baseline.',
-      context: { phaseThreeHandoffId: phaseFour.phase_three_handoff_id },
+      context: { phaseThreeHandoffId: phaseFour.phase_three_handoff_id, activationReason: activation.reason, routingReason: decision.reason, candidates: [...decision.candidates] },
     })
     .select('id')
     .single();

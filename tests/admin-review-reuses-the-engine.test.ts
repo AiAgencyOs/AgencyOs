@@ -136,7 +136,7 @@ describe('F. the guards every table and door in this repository carries', () => 
 
 describe('G. it is reachable — the defect this repository has found repeatedly', () => {
   test('the catalog subscribes admin-review-raising to the QA-verdict event', () => {
-    assert.deepEqual(SUBSCRIPTIONS['project.ui_version_qa_reviewed'], ['orchestrator:requestUIVersionAdminReview']);
+    assert.deepEqual(SUBSCRIPTIONS['project.ui_version_qa_reviewed'], ['orchestrator:requestUIVersionAdminReview', 'ui_designer:reviseUIVersion']);
     assert.ok(HANDLERS.includes('orchestrator:requestUIVersionAdminReview'));
     assert.equal(HANDLER_JOB_KIND['orchestrator:requestUIVersionAdminReview'], 'ui_version.request_admin_review');
   });

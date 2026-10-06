@@ -99,7 +99,7 @@ describe('E. the workflow filters to change_requested and checks the limit befor
   });
 
   test('the limit is checked before any model call, to avoid spending one the door would refuse', () => {
-    const limitCheckIndex = WORKFLOW.indexOf('ui_revision_count >= phaseFour.ui_revision_limit');
+    const limitCheckIndex = WORKFLOW.indexOf('used >= allowed');
     const modelCallIndex = WORKFLOW.indexOf('callModel(');
     assert.ok(limitCheckIndex > 0, 'limit check not found');
     assert.ok(modelCallIndex > limitCheckIndex, 'the model is called before the limit is checked');
