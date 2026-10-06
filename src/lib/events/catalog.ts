@@ -43,6 +43,11 @@ export const HANDLERS = [
   'crm:announceReleaseCandidateApproved',
   'crm:announceReleaseCandidateReady',
   'crm:announceReleaseExceptionRequested',
+  'crm:announcePhaseEightStarted',
+  'crm:announceSupportTicketEscalated',
+  'crm:announceSupportSlaBreached',
+  'crm:announceRetentionRecoveryRequired',
+  'crm:announceMaintenanceRenewalDue',
   'crm:announceQaReverification',
   'crm:announceM4PaymentVerified',
   'crm:announceFinanciallyClosed',
@@ -685,6 +690,16 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   'project.release_candidate_created': ['crm:announceReleaseCandidateReady'],
   /** PM6-A02: an exception to a release rule waits for the owner. */
   'project.release_exception_requested': ['crm:announceReleaseExceptionRequested'],
+  /** PM8-M01: Phase 8 (Customer Success) started for a completed project. */
+  'project.phase_eight_started': ['crm:announcePhaseEightStarted'],
+  /** PM8-A01: a support ticket was escalated to a person. */
+  'support.ticket_escalated': ['crm:announceSupportTicketEscalated'],
+  /** PM8-A02: a support ticket missed its response or resolution target. */
+  'support.sla_breached': ['crm:announceSupportSlaBreached'],
+  /** PM8-RECOVERY: an account is at risk and a recovery plan was opened. */
+  'customer.retention_recovery_required': ['crm:announceRetentionRecoveryRequired'],
+  /** PM8-RENEWAL-DUE: a maintenance plan entered its renewal window; a review was opened, nothing was renewed. */
+  'maintenance.renewal_due': ['crm:announceMaintenanceRenewalDue'],
   /** PM6: the source changed after approval; testing is repeated. */
   'project.phase_six_evidence_stale': ['crm:announceQaReverification'],
   /** P601 §41: M4 verified paid in full, recorded once; the PM tells the team. */
@@ -765,6 +780,11 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'crm:announceReleaseCandidateApproved': 'release_candidate_approved.announce',
   'crm:announceReleaseCandidateReady': 'release_candidate_ready.announce',
   'crm:announceReleaseExceptionRequested': 'release_exception_requested.announce',
+  'crm:announcePhaseEightStarted': 'phase_eight_started.announce',
+  'crm:announceSupportTicketEscalated': 'support_ticket_escalated.announce',
+  'crm:announceSupportSlaBreached': 'support_sla_breached.announce',
+  'crm:announceRetentionRecoveryRequired': 'retention_recovery_required.announce',
+  'crm:announceMaintenanceRenewalDue': 'maintenance_renewal_due.announce',
   'crm:announceQaReverification': 'qa_reverification.announce',
   'crm:announceM4PaymentVerified': 'm4_verified.announce',
   'crm:announceFinanciallyClosed': 'financially_closed.announce',

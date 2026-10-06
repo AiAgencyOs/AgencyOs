@@ -145,6 +145,7 @@ import { PhaseFourPanel } from './phase-four-panel';
 import { BuildDepthPanel } from './build-depth-panel';
 import { PhaseSixExtraPanel } from './phase-six-extra-panel';
 import { PhaseEightBPanel } from './phase-eight-b-panel';
+import { PhaseEightPanel } from './phase-eight-panel';
 import { PhaseNinePanel } from './phase-nine-panel';
 import { PhaseSevenPanel } from './phase-seven-panel';
 import { QaSpecialistPanel } from './qa-specialist-panel';
@@ -940,6 +941,8 @@ export default async function ProjectPage({
       <QaSpecialistPanel projectId={projectId} view={qaSpecialist} />
 
       <PhaseSevenPanel view={phaseSeven} projectId={projectId} />
+
+      <PhaseEightPanel projectId={projectId} />
 
       <PhaseEightBPanel projectId={projectId} view={phaseEightB} />
 

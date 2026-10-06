@@ -967,7 +967,7 @@ const RELEASE_READINESS = qaSpecialist({ key: 'release_readiness', handoffTarget
  * can verify a payment, change an amount, issue a refund, decide a waiver, close a book or message a client (`moneyAuthority: 'none'`), and each PROPOSES
  * into a record a person accepts or rejects (creator != reviewer, in the database).
  */
-function financeSpecialist(input: { key: string; displayName: string; purpose: string }): AgentDefinition {
+function financeSpecialist(input: { key: string; displayName: string; purpose: string; handoffTargets: readonly ['finance']; verifiedBy: 'quality_assurance' }): AgentDefinition {
   return {
     key: input.key,
     displayName: input.displayName,
@@ -977,15 +977,15 @@ function financeSpecialist(input: { key: string; displayName: string; purpose: s
     tools: [],
     clientFacing: false,
     moneyAuthority: 'none',
-    handoffTargets: ['finance'],
+    handoffTargets: [...input.handoffTargets],
     mayVerify: false,
-    verification: { selfAssertionAllowed: false, requiredEvidence: ['record'], verifiedBy: 'quality_assurance' },
+    verification: { selfAssertionAllowed: false, requiredEvidence: ['record'], verifiedBy: input.verifiedBy },
     retry: { maxAttempts: 2, onExhausted: 'escalate' },
   };
 }
-const FINANCE_RECONCILIATION = financeSpecialist({ key: 'finance_reconciliation', displayName: 'Finance Reconciliation Agent', purpose: 'Compares what AgencyOS recorded with what the project and period books show and proposes findings and anomaly flags with evidence. Rewrites nothing, verifies nothing.' });
-const FINANCE_COMMUNICATION = financeSpecialist({ key: 'finance_communication', displayName: 'Finance Communication Agent', purpose: 'Drafts payment reminders and payment-status messages from the invoice\'s real outstanding balance. Drafts only: never sends, never promises a discount, waiver, refund or deferral.' });
-const FINANCE_CLOSE = financeSpecialist({ key: 'finance_close', displayName: 'Finance Close Agent', purpose: 'Reads a project\'s financial position and proposes close-readiness notes and exception classifications. Closes nothing; the close is a person\'s act.' });
+const FINANCE_RECONCILIATION = financeSpecialist({ key: 'finance_reconciliation', handoffTargets: ['finance'], verifiedBy: 'quality_assurance', displayName: 'Finance Reconciliation Agent', purpose: 'Compares what AgencyOS recorded with what the project and period books show and proposes findings and anomaly flags with evidence. Rewrites nothing, verifies nothing.' });
+const FINANCE_COMMUNICATION = financeSpecialist({ key: 'finance_communication', handoffTargets: ['finance'], verifiedBy: 'quality_assurance', displayName: 'Finance Communication Agent', purpose: 'Drafts payment reminders and payment-status messages from the invoice\'s real outstanding balance. Drafts only: never sends, never promises a discount, waiver, refund or deferral.' });
+const FINANCE_CLOSE = financeSpecialist({ key: 'finance_close', handoffTargets: ['finance'], verifiedBy: 'quality_assurance', displayName: 'Finance Close Agent', purpose: 'Reads a project\'s financial position and proposes close-readiness notes and exception classifications. Closes nothing; the close is a person\'s act.' });
 
 export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
   // Foundation — ADM-82 layer 1
