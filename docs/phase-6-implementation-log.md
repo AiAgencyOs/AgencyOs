@@ -42,3 +42,14 @@ Still open from the review: vacuous gates on projects with no baseline/derived d
 ### Third round (migration `20261101200000`)
 
 `qa.plan_problems` now reports "no locked development baseline" instead of measuring requirement coverage against nothing (review item 8, the part with one right answer; red-proven). The remaining parts of item 8 are design decisions and stay open: whether `stale_documents` should fail a project that never derived any document, and which plan categories each used capability must name.
+
+### Owner decisions (migration `20261101210000`, 2026-10-06)
+
+- Flaky-test quarantine: a member starts it; only an Admin renews it, at most twice (`renewals`), then the test is fixed or removed.
+- "Documentation current" now fails a project that has a build but never derived a document.
+- The owner's release-payment override no longer applies to a project under the Phase 6 M4 gate (door refuses `m4_gate_has_no_override`; `final_payment_state` ignores an old override row for such projects). Legacy projects without Phase 6 are unchanged.
+All three are red-proven in `scripts/verify-phase-four-e2e.sql`.
+
+### Local Supabase
+
+The 47 pending migrations were applied to the local dev DB (479 recorded). That database already contained objects from several of them (applied outside the migration table), so 20261012300000, 20261013200000, 20261013300000 and 20261014300000 were replayed tolerantly and recorded with `migration repair`; 20261016100000 was applied with `discount_decision` kept in its subject-type CHECK because 4 local approval rows use it (20261030100000 re-adds it anyway). All 7 Phase 4-6 verifiers pass on that database (E2E 422 checks).

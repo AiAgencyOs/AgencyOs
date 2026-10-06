@@ -1246,5 +1246,29 @@ update projects.development_baselines set project_id = :'NBP_id' where project_i
 alter table projects.development_baselines enable trigger user;
 select pg_temp.check(exists (select 1 from qa.plan_problems(current_setting('e2e.pl')::uuid) where problem like 'There is no locked development baseline%'), 'a plan with no baseline to measure against is a problem, not silent coverage');
 
+
+-- owner decisions: quarantine renewal, derived documentation, the M4 override
+reset role;
+insert into qa.flaky_tests (organization_id, project_id, test_key) values (:'ORG', :'P_id', 'zz.renewal.test') returning id \gset FQ_
+select pg_temp.as_user(:'OWNER', :'ORG', 'member');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.resolve_flaky_test(:'FQ_id', 'quarantine', null, now() + interval '5 days')) = 'quarantined', 'a member starts a quarantine');
+select pg_temp.check((select outcome from qa.resolve_flaky_test(:'FQ_id', 'quarantine', null, now() + interval '5 days')) = 'renewal_needs_admin', 'a member cannot renew it');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.resolve_flaky_test(:'FQ_id', 'quarantine', null, now() + interval '5 days')) = 'renewed', 'an Admin renews it (1)');
+select pg_temp.check((select outcome from qa.resolve_flaky_test(:'FQ_id', 'quarantine', null, now() + interval '5 days')) = 'renewed', 'an Admin renews it (2)');
+select pg_temp.check((select outcome from qa.resolve_flaky_test(:'FQ_id', 'quarantine', null, now() + interval '5 days')) = 'renewal_limit_reached_fix_or_remove_the_test', 'the third renewal is refused: fix or remove the test');
+reset role;
+update projects.technical_documents set derived = false where project_id = :'P_id';
+select pg_temp.check(exists (select 1 from projects.stale_documents(:'P_id') where document_id is null and title like 'No documentation has been derived%'), 'a build with no derived documentation is not "documentation current"');
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.override_release_payment(:'P_id', 'the client promised to pay on Friday')) = 'm4_gate_has_no_override', 'the owner cannot override the payment of a project under the Phase 6 M4 gate');
+reset role;
+insert into projects.release_payment_overrides (organization_id, project_id, overridden_by, reason) values (:'ORG', :'P_id', :'OWNER', 'a legacy override row exists');
+select pg_temp.check((select state from projects.final_payment_state(:'P_id')) is distinct from 'overridden', 'an old override row no longer satisfies the final payment of a Phase 6 project');
+
 rollback;
 \echo PHASE 4 E2E OK
