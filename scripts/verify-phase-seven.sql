@@ -71,7 +71,6 @@ insert into projects.milestones (organization_id, project_id, name, position, am
 create or replace function pg_temp.seed_candidate(p_org uuid, p_project uuid, p_commit text, p_version int, p_hash text, p_owner uuid) returns uuid language plpgsql as $$
 declare v_del uuid; v_plan uuid; v_c uuid;
 begin
-  perform set_config('session_replication_role', 'replica', true);
   update qa.release_candidates set status = 'superseded' where project_id = p_project and status = 'approved';
   update qa.master_test_plans set status = 'superseded' where project_id = p_project and status = 'approved';
   insert into projects.deliverables (organization_id, project_id, kind, version, title, status) values (p_org, p_project, 'build', p_version, 'build v' || p_version, 'approved') returning id into v_del;
@@ -82,12 +81,14 @@ begin
   insert into qa.release_candidates (organization_id, project_id, plan_id, intake_id, version, status, commit_ref, build_deliverable_id, artifact_sha256, config_version, rollback_plan, rollback_owner, observability_notes, known_limitations, approved_by, approved_at)
   values (p_org, p_project, v_plan, gen_random_uuid(), p_version, 'approved', p_commit, v_del, p_hash, 'cfg-' || p_version, 'redeploy the previous artifact', 'ops lead', 'error rate and latency dashboards', '["Export is slow above 10k rows", "Safari 15 is untested"]', p_owner, now()) returning id into v_c;
   insert into qa.category_results (organization_id, candidate_id, category, status, commit_ref, evidence_ref) values (p_org, v_c, 'security', 'pass', p_commit, 'https://ci.example.test/security/' || p_version);
-  perform set_config('session_replication_role', 'origin', true);
   return v_c;
 end $$;
 grant execute on function pg_temp.seed_candidate(uuid, uuid, text, int, text, uuid) to public;
 
+-- triggers off for the Phase 6 FIXTURE only (a top-level SET: a function may not set the parameter on a non-superuser connection)
+set local session_replication_role = replica;
 select pg_temp.seed_candidate(:'ORG', :'P_id', 'abc1234', 1, :'H1', :'OWNER') as c \gset C1_
+set local session_replication_role = origin;
 select set_config('p7.c1', :'C1_c', false);
 select pg_temp.check((select count(*) = 0 from qa.evaluate_hard_gates(:'C1_c'::uuid) where not satisfied), 'the seeded Phase 6 candidate satisfies every hard gate (the fixture is honest)');
 set local session_replication_role = replica;
@@ -386,7 +387,9 @@ select pg_temp.check((select outcome from projects.request_deployment(:'PL2_pl',
 select pg_temp.check((select outcome from projects.rebind_phase_seven_candidate(:'P_id')) = 'unchanged', 'no new candidate exists yet: nothing to rebind');
 reset role;
 -- Phase 6 raises a NEW governed candidate on the fixed build; first its evidence is incomplete
+set local session_replication_role = replica;
 select pg_temp.seed_candidate(:'ORG', :'P_id', 'def5678', 2, :'H2', :'OWNER') as c \gset C2_
+set local session_replication_role = origin;
 set local session_replication_role = replica;
 update qa.category_results set status = 'fail', reason = 'regression found', evidence_ref = null where candidate_id = :'C2_c';
 set local session_replication_role = origin;

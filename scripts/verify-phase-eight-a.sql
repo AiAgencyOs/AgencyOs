@@ -77,20 +77,20 @@ begin
   insert into projects.projects (organization_id, client_account_id, name, project_code, status) values (v_org, v_a, 'zztest p8a ' || p_code, p_code, 'completed') returning id into v_p;
   insert into projects.scope_versions (organization_id, project_id, version, status, frozen_at) values (v_org, v_p, 1, 'active', now()) returning id into v_sv;
   if p_good then
-    perform set_config('session_replication_role', 'replica', true);
+    alter table projects.handovers disable trigger user;
     insert into projects.handovers (organization_id, project_id, status, delivered_at, accepted_at) values (v_org, v_p, 'accepted', now(), now());
-    perform set_config('session_replication_role', 'origin', true);
+    alter table projects.handovers enable trigger user;
     insert into projects.release_verifications (organization_id, project_id, environment, outcome) values (v_org, v_p, 'production', 'passed');
     insert into crm.contacts (organization_id, client_account_id, full_name, email) values (v_org, v_a, 'Contact ' || p_code, lower(p_code) || '@client.example.test');
   else
-    perform set_config('session_replication_role', 'replica', true);
+    alter table finance.invoices disable trigger user;
     insert into finance.invoices (organization_id, client_account_id, project_id, number, kind, status, issued_at, total_minor) values (v_org, v_a, v_p, 'ZZ-' || p_code, 'milestone', 'issued', now(), 1000);
-    perform set_config('session_replication_role', 'origin', true);
+    alter table finance.invoices enable trigger user;
   end if;
-  perform set_config('session_replication_role', 'replica', true);
+  alter table projects.completion_records disable trigger user;
   insert into projects.completion_records (organization_id, project_id, client_account_id, scope_version_id, scope_version, invoiced_minor, verified_minor, completed_at, known_limitations)
   values (v_org, v_p, v_a, v_sv, 1, case when p_good then 0 else 1000 end, 0, now(), p_limits);
-  perform set_config('session_replication_role', 'origin', true);
+  alter table projects.completion_records enable trigger user;
   return query select v_a, v_p;
 end $$;
 grant execute on function pg_temp.mk(text, text, boolean, uuid) to public;
