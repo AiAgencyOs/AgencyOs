@@ -69,6 +69,8 @@ const DOORS: Record<string, Door> = {
     args: (fd) => ({ p_defect_id: text(fd, 'defectId'), p_s_level: bounded(fd, 'sLevel', 2, 0, 4), p_classification: text(fd, 'classification'), p_assignee_id: null, p_reason: optional(fd, 'reason') }),
     ok: ['triaged'],
   },
+  assign_defect: { schema: 'qa', rpc: 'assign_defect', args: (fd) => ({ p_defect_id: text(fd, 'defectId'), p_assignee: null }), ok: ['assigned'] },
+  start_defect_work: { schema: 'qa', rpc: 'start_defect_work', args: (fd) => ({ p_defect_id: text(fd, 'defectId') }), ok: ['started'] },
   hand_off: { schema: 'qa', rpc: 'hand_off_defect', args: (fd) => ({ p_defect_id: text(fd, 'defectId') }), ok: ['handed_off', 'already_handed_off'] },
   retest: {
     schema: 'qa',
@@ -133,6 +135,13 @@ const WORDS: Record<string, string> = {
   already_approved: 'Already approved.',
   recorded: 'Recorded.',
   triaged: 'Triaged.',
+  assigned: 'Assigned to you.',
+  started: 'Work started: the defect is in progress.',
+  not_assigned: 'Nobody holds this defect yet: assign it first.',
+  not_open: 'Only an open defect is assigned or worked.',
+  already_in_progress: 'Work had already started.',
+  not_the_assignee: 'Only the assignee (or a delivery manager) starts the work.',
+  assignee_not_in_organization: 'That person is not in this organization.',
   handed_off: 'Handed to the Bug Fix capability with the exact build and the required retest.',
   already_handed_off: 'Already handed off.',
   verified: 'Verified by an independent retest of the fixed build.',
@@ -181,7 +190,7 @@ const WORDS: Record<string, string> = {
   already_stale: 'Already marked stale.',
   cannot_duplicate_itself: 'A defect cannot be its own duplicate.',
   canonical_is_not_a_product_defect: 'The canonical defect must be a real product defect.',
-  not_a_product_defect: 'Only a product defect is handed to development.',
+  not_a_product_defect: 'Only a product defect is assigned or handed to development.',
 };
 
 export async function phaseSixDoorAction(_prev: FormState, formData: FormData): Promise<FormState> {

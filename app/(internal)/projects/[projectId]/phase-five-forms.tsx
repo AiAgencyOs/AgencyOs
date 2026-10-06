@@ -16,6 +16,7 @@ import {
   setIntegrationStateAction,
   setSpecialistStateAction,
   startPhaseFiveAction,
+  recordBaselineCommitAction,
   decideBuildAdminAction,
   recordBuildFeedbackAction,
   recordBuildQaAction,
@@ -373,6 +374,28 @@ export function StartPhaseFiveForm({ projectId }: { projectId: string }) {
       <p className="text-[13px] text-muted">Normally Phase 5 starts by itself when the M2 payment is verified. If it did not, ask the door: it re-checks Phase 4, M2, the locked UI, the approved prototype and the scope.</p>
       <input type="hidden" name="projectId" value={projectId} />
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Checking…' : 'Start Phase 5'}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+
+export function RecordBaselineCommitForm({ projectId, repositories }: { projectId: string; repositories: { id: string; name: string }[] }) {
+  const [state, action, pending] = useActionState(recordBaselineCommitAction, IDLE_STATE);
+  if (repositories.length === 0) {
+    return <p className="text-[13px] text-muted">Link a repository to this project to record the baseline's base commit.</p>;
+  }
+  return (
+    <form action={action} className="flex flex-col gap-2 rounded-md border border-line p-3">
+      <p className="text-[13px] text-muted">The baseline has no base commit yet. Record the commit it was cut from; this is done once and never changed.</p>
+      <input type="hidden" name="projectId" value={projectId} />
+      <select aria-label="Repository" name="repositoryId" className="rounded-md border border-line bg-surface px-2 py-1">
+        {repositories.map((r) => (
+          <option key={r.id} value={r.id}>{r.name}</option>
+        ))}
+      </select>
+      <input aria-label="Base commit" name="baseCommit" required placeholder="abc1234" className="rounded-md border border-line bg-surface px-2 py-1" />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Recording…' : 'Record base commit'}</button>
       <Message state={state} />
     </form>
   );

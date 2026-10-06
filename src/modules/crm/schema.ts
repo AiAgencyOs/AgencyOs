@@ -1988,3 +1988,27 @@ export function qaDefectProgressAnnouncementFor(input: { projectName: string | n
     'No action is needed from the client.',
   ].join('\n');
 }
+
+
+/**
+ * The PM5 / PM6 milestone messages and the VERSION of the wording each was built from. Change a template's text and you raise its version here;
+ * `crm.pm_message_log` then says which wording every message that went out used. Keyed by the externalRef prefix the announcer already writes.
+ */
+export const PM_TEMPLATES: Readonly<Record<string, { milestone: string; version: number }>> = {
+  'phase-five-started': { milestone: 'PM5-M01', version: 1 },
+  'build-shared': { milestone: 'PM5-M02', version: 1 },
+  'build-feedback': { milestone: 'PM5-M03', version: 1 },
+  'build-approved': { milestone: 'PM5-M04', version: 1 },
+  'build-feedback-routed': { milestone: 'PM5-FEEDBACK-ROUTED', version: 1 },
+  'm3-payment-verified': { milestone: 'PM5-M3-VERIFIED', version: 1 },
+  'phase-six-ready': { milestone: 'PM6-M01', version: 1 },
+  'testing-started': { milestone: 'PM6-TESTING-STARTED', version: 1 },
+  'qa-clarification': { milestone: 'PM6-QA-QUESTION', version: 1 },
+  'qa-defect-progress': { milestone: 'PM6-DEFECT-PROGRESS', version: 1 },
+  'release-candidate-approved': { milestone: 'PM6-CANDIDATE-APPROVED', version: 1 },
+  'm4-payment-verified': { milestone: 'PM6-M4-VERIFIED', version: 1 },
+};
+
+export function pmTemplateFor(externalRef: string): { milestone: string; version: number } | null {
+  return PM_TEMPLATES[externalRef.split(':')[0] ?? ''] ?? null;
+}

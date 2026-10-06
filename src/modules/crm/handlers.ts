@@ -10,6 +10,7 @@ import { deferSend, markAsOutreach, planOutbound } from './outbound-window';
 import {
   approvalDecidedEventSchema,
   announcementFor,
+  pmTemplateFor,
   conversationClientWaitingEventSchema,
   conversationEscalatedEventSchema,
   escalationAnnouncementFor,
@@ -1924,7 +1925,7 @@ export async function handlePhaseThreeCompleted(
 async function announceToInternalChannel(
   admin: Admin,
   job: AnnounceJob,
-  input: { body: string; externalRef: string; noGroupOutcome?: string },
+  input: { body: string; externalRef: string; noGroupOutcome?: string; projectId?: string },
 ): Promise<HandlerResult> {
   const { channel: group, error: groupError } = await internalChannel(admin, job.organization_id);
 
@@ -1962,6 +1963,16 @@ async function announceToInternalChannel(
 
   if (!queued) {
     return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
+  }
+  // which wording was sent: the template version, recorded once per message (a no-op for a milestone that has no template entry)
+  const template = pmTemplateFor(input.externalRef);
+  if (template && queued.message_id) {
+    await (admin.schema('crm') as unknown as { rpc(name: string, args: unknown): PromiseLike<unknown> }).rpc('record_pm_message', {
+      p_message_id: queued.message_id,
+      p_milestone: template.milestone,
+      p_template_version: template.version,
+      ...(input.projectId ? { p_project_id: input.projectId } : {}),
+    });
   }
   if (queued.outcome === OUTBOUND_PAUSED) return outboundPaused();
   if (queued.outcome === 'not_found') {
@@ -3188,6 +3199,7 @@ export async function announcePhaseFiveStarted(admin: Admin, job: AnnounceJob): 
   return announceToInternalChannel(admin, job, {
     body: phaseFiveStartedAnnouncementFor({ projectName }),
     externalRef: `phase-five-started:${parsed.data.projectId}`,
+    projectId: parsed.data.projectId,
   });
 }
 
@@ -3206,6 +3218,7 @@ export async function announceBuildShared(admin: Admin, job: AnnounceJob): Promi
   return announceToInternalChannel(admin, job, {
     body: buildSharedAnnouncementFor({ projectName, version: event.version }),
     externalRef: `build-shared:${event.projectId}:v${event.version}`,
+    projectId: event.projectId,
   });
 }
 
@@ -3222,6 +3235,7 @@ export async function announceBuildFeedbackReceived(admin: Admin, job: AnnounceJ
     body: buildFeedbackReceivedAnnouncementFor({ projectName, version: event.version }),
     // one announcement per piece of feedback, keyed by the feedback row the event is about
     externalRef: `build-feedback:${typeof envelope.subjectId === 'string' ? envelope.subjectId : event.deliverableId}`,
+    projectId: event.projectId,
   });
 }
 
@@ -3240,6 +3254,7 @@ export async function announceBuildApproved(admin: Admin, job: AnnounceJob): Pro
   return announceToInternalChannel(admin, job, {
     body: buildApprovedAnnouncementFor({ projectName, version: event.version }),
     externalRef: `build-approved:${event.projectId}:v${event.version}`,
+    projectId: event.projectId,
   });
 }
 
@@ -3255,6 +3270,7 @@ export async function announceM3PaymentVerified(admin: Admin, job: AnnounceJob):
   return announceToInternalChannel(admin, job, {
     body: m3PaymentVerifiedAnnouncementFor({ projectName }),
     externalRef: `m3-payment-verified:${parsed.data.projectId}`,
+    projectId: parsed.data.projectId,
   });
 }
 
@@ -3269,6 +3285,7 @@ export async function announceBuildFeedbackRouted(admin: Admin, job: AnnounceJob
   return announceToInternalChannel(admin, job, {
     body: buildFeedbackRoutedAnnouncementFor({ projectName, classification: parsed.data.classification }),
     externalRef: `build-feedback-routed:${typeof envelope.subjectId === 'string' ? envelope.subjectId : parsed.data.deliverableId}`,
+    projectId: parsed.data.projectId,
   });
 }
 
@@ -3284,6 +3301,7 @@ export async function announcePhaseSixReady(admin: Admin, job: AnnounceJob): Pro
   return announceToInternalChannel(admin, job, {
     body: phaseSixReadyAnnouncementFor({ projectName }),
     externalRef: `phase-six-ready:${parsed.data.projectId}`,
+    projectId: parsed.data.projectId,
   });
 }
 
@@ -3299,6 +3317,7 @@ export async function announceReleaseCandidateApproved(admin: Admin, job: Announ
   return announceToInternalChannel(admin, job, {
     body: releaseCandidateApprovedAnnouncementFor({ projectName, version: parsed.data.version }),
     externalRef: `release-candidate-approved:${typeof envelope.subjectId === 'string' ? envelope.subjectId : parsed.data.projectId}`,
+    projectId: parsed.data.projectId,
   });
 }
 
@@ -3313,6 +3332,7 @@ export async function announceM4PaymentVerified(admin: Admin, job: AnnounceJob):
   return announceToInternalChannel(admin, job, {
     body: m4PaymentVerifiedAnnouncementFor({ projectName }),
     externalRef: `m4-payment-verified:${parsed.data.projectId}`,
+    projectId: parsed.data.projectId,
   });
 }
 
@@ -3328,6 +3348,7 @@ export async function announceTestingStarted(admin: Admin, job: AnnounceJob): Pr
   return announceToInternalChannel(admin, job, {
     body: testingStartedAnnouncementFor({ projectName }),
     externalRef: `testing-started:${typeof envelope.subjectId === 'string' ? envelope.subjectId : parsed.data.projectId}`,
+    projectId: parsed.data.projectId,
   });
 }
 
@@ -3343,6 +3364,7 @@ export async function announceQaClarification(admin: Admin, job: AnnounceJob): P
   return announceToInternalChannel(admin, job, {
     body: qaClarificationAnnouncementFor({ projectName }),
     externalRef: `qa-clarification:${typeof envelope.subjectId === 'string' ? envelope.subjectId : parsed.data.projectId}`,
+    projectId: parsed.data.projectId,
   });
 }
 
@@ -3357,5 +3379,6 @@ export async function announceQaDefectProgress(admin: Admin, job: AnnounceJob): 
   return announceToInternalChannel(admin, job, {
     body: qaDefectProgressAnnouncementFor({ projectName, sLevel: parsed.data.sLevel }),
     externalRef: `qa-defect-progress:${typeof envelope.subjectId === 'string' ? envelope.subjectId : parsed.data.projectId}`,
+    projectId: parsed.data.projectId,
   });
 }

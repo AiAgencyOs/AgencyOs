@@ -48,6 +48,9 @@ const WORDS: Record<string, string> = {
   no_approved_prototype: 'There is no client-approved prototype build.',
   no_active_scope: 'There is no active scope version.',
   m2_not_verified: 'The M2 payment is not verified paid in full.',
+  bad_commit: 'A base commit is 7 to 40 lowercase hex characters.',
+  already_recorded: 'The baseline already has its base commit; it is never replaced.',
+  repository_not_on_project: 'That repository is not linked to this project.',
   created: 'Plan created.',
   planned: 'Task planned.',
   approved: 'Plan approved.',
@@ -294,4 +297,14 @@ export async function deriveDocumentsAction(_prev: FormState, formData: FormData
 export async function startPhaseFiveAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const result = await run(text(formData, 'projectId'), 'start_phase_five', { p_project_id: text(formData, 'projectId') }, ['started', 'already_started']);
   return result;
+}
+
+
+/** Name the repository and base commit the locked baseline was cut from: recorded once, never edited. */
+export async function recordBaselineCommitAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  return run(text(formData, 'projectId'), 'record_baseline_commit', {
+    p_project_id: text(formData, 'projectId'),
+    p_repository_id: text(formData, 'repositoryId'),
+    p_base_commit: text(formData, 'baseCommit').toLowerCase(),
+  }, ['recorded']);
 }

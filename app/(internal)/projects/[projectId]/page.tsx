@@ -84,7 +84,7 @@ import {
   type MilestoneBillingEntry,
 } from '@/modules/finance/schema';
 import { listPhaseFourEscalations, getProject, listPaymentPlan, readGroupSetup, readPhaseTwo, readPhaseFourOverview, readProjectGroupName } from '@/modules/projects/queries';
-import { readPhaseFiveOverview } from '@/modules/projects/phase-five-queries';
+import { readPhaseFiveOverview, readPmMessageHistory, readProjectRepositories } from '@/modules/projects/phase-five-queries';
 import { readPhaseSixOverview } from '@/modules/projects/phase-six-queries';
 import { listApprovalsForSubject } from '@/modules/approvals/queries';
 import { listDefects, readProjectQuality } from '@/modules/qa/queries';
@@ -135,7 +135,7 @@ import { RevealClientSecretForm, RevokeClientSecretForm, StoreClientSecretForm }
 import { CLIENT_SECRET_KIND_LABELS, listClientSecrets } from '@/modules/projects/client-secrets-service';
 import { PhaseTwoPanel } from './phase-two-panel';
 import { PhaseFourPanel } from './phase-four-panel';
-import { PhaseFivePanel } from './phase-five-panel';
+import { PhaseFivePanel, PmMessageHistoryPanel } from './phase-five-panel';
 import { PhaseSixPanel } from './phase-six-panel';
 import { PhaseCompletionPanel } from './phase-completion-panel';
 import { readPhaseCompletions } from '@/modules/projects/phase-completion-queries';
@@ -222,6 +222,8 @@ export default async function ProjectPage({
   const phaseFour = await readPhaseFourOverview(projectId);
   const phaseFive = await readPhaseFiveOverview(projectId);
   const phaseSix = await readPhaseSixOverview(projectId);
+  const pmMessages = await readPmMessageHistory(projectId);
+  const repositories = await readProjectRepositories(projectId);
   // Q-PH56: where Phase 5 and Phase 6 stand, read from Development and QA data.
   const phaseCompletions = await readPhaseCompletions(projectId);
   /**
@@ -886,9 +888,11 @@ export default async function ProjectPage({
 
       <PhaseFourPanel view={phaseFour} projectId={projectId} />
 
-      <PhaseFivePanel view={phaseFive} projectId={projectId} />
+      <PhaseFivePanel view={phaseFive} projectId={projectId} repositories={repositories} />
 
       <PhaseSixPanel view={phaseSix} projectId={projectId} />
+
+      <PmMessageHistoryPanel rows={pmMessages} />
 
       <PhaseCompletionPanel
         projectId={projectId}

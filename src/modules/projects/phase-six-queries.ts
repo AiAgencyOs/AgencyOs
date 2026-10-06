@@ -44,7 +44,7 @@ export type PhaseSixOverview = {
     risks: { area: string; kind: string; level: string; depth: string }[];
     cases: { id: string; title: string; category: string; priority: string; status: string; journey: string | null }[];
   } | null;
-  defects: { id: string; title: string; sLevel: number | null; classification: string; status: string; duplicateOf: string | null }[];
+  defects: { id: string; title: string; sLevel: number | null; classification: string; status: string; duplicateOf: string | null; workState: string }[];
   contracts: { name: string; ref: string }[];
   clarifications: { id: string; question: string; status: string; answer: string | null }[];
   performance: { metric: string; target: number; unit: string; lowerIsBetter: boolean; latest: number | null; ok: boolean | null }[];
@@ -100,7 +100,7 @@ export async function readPhaseSixOverview(projectId: string): Promise<PhaseSixO
     projects.rpc('phase_seven_gate_status', { p_project_id: projectId }),
     projects.from('qa_intakes').select('status, commit_ref, artifact_sha256, blockers, external_dependencies, supported_platforms, change_request_history').eq('project_id', projectId).maybeSingle(),
     qa.from('master_test_plans').select('id, version, status, required_categories, critical_journeys, compatibility_matrix').eq('project_id', projectId).order('version', { ascending: false }).limit(1),
-    qa.from('defects').select('id, title, s_level, classification, status, duplicate_of').eq('project_id', projectId).order('created_at', { ascending: true }).limit(200),
+    qa.from('defects').select('id, title, s_level, classification, status, duplicate_of, work_state').eq('project_id', projectId).order('created_at', { ascending: true }).limit(200),
     qa.from('release_candidates').select('id, version, status, commit_ref, artifact_sha256, rollback_plan, observability_notes, config_version').eq('project_id', projectId).order('version', { ascending: false }).limit(1),
     projects.rpc('phase_readiness', { p_project_id: projectId, p_phase: 6 }),
     projects.from('phase_six_handoffs').select('id, commit_ref, production_deployed').eq('project_id', projectId).maybeSingle(),
@@ -209,7 +209,7 @@ export async function readPhaseSixOverview(projectId: string): Promise<PhaseSixO
     plan,
     defects: rows(defectRows)
       .filter((d) => d.status !== undefined)
-      .map((d) => ({ id: String(d.id), title: String(d.title), sLevel: num(d.s_level), classification: String(d.classification), status: String(d.status), duplicateOf: str(d.duplicate_of) })),
+      .map((d) => ({ id: String(d.id), title: String(d.title), sLevel: num(d.s_level), classification: String(d.classification), status: String(d.status), duplicateOf: str(d.duplicate_of), workState: String(d.work_state ?? 'triage') })),
     jobs,
     candidateCurrent: currentRaw === true,
     contracts: rows(intake?.api_contract_refs).map((c) => ({ name: String(c.name), ref: String(c.ref) })),

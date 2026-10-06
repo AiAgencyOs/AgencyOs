@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import type { PhaseFiveOverview } from '@/modules/projects/phase-five-queries';
+import type { PhaseFiveOverview, PmMessageRow } from '@/modules/projects/phase-five-queries';
 import { Badge, Card, humanize, type Tone } from '@/ui';
 
 import {
@@ -17,6 +17,7 @@ import {
   RegisterIntegrationForm,
   ResolveFlakyForm,
   SpecialistStateForm,
+  RecordBaselineCommitForm,
   StartPhaseFiveForm,
 } from './phase-five-forms';
 
@@ -62,7 +63,7 @@ const BUILD_TONE: Record<string, Tone> = {
   superseded: 'neutral',
 };
 
-export function PhaseFivePanel({ view, projectId }: { view: PhaseFiveOverview; projectId: string }) {
+export function PhaseFivePanel({ view, projectId, repositories = [] }: { view: PhaseFiveOverview; projectId: string; repositories?: { id: string; name: string }[] }) {
   const { workspace, gates, baseline, readiness, phaseSixMissing, builds, defects, feedback, integrations, agentStates, handoff, plan, unplannedTasks, flaky, documents, routing, testGaps, staleDocuments, recentRuns } = view;
 
   if (!workspace) {
@@ -100,6 +101,7 @@ export function PhaseFivePanel({ view, projectId }: { view: PhaseFiveOverview; p
         ) : (
           <p className="text-xs text-muted">No baseline recorded.</p>
         )}
+        {baseline && !baseline.baseCommit ? <RecordBaselineCommitForm projectId={projectId} repositories={repositories} /> : null}
       </section>
 
       <section className="flex flex-col gap-2 border-t border-line pt-3">
@@ -358,6 +360,30 @@ export function PhaseFivePanel({ view, projectId }: { view: PhaseFiveOverview; p
       <p className="text-xs text-faint" data-project={projectId}>
         Each form calls a database door that checks the role, the independence rules and the gates; its refusal is shown as written. The one action with no form is an adapter-verified integration check, which only a runner's real result can make.
       </p>
+    </Card>
+  );
+}
+
+
+/** What the PM said, in which wording (template version), and whether the message arrived: the record P5-PM-01 / P6-PM-01 asked for. */
+export function PmMessageHistoryPanel({ rows }: { rows: PmMessageRow[] }) {
+  return (
+    <Card>
+      <h3 className="text-[15px] font-semibold">PM messages</h3>
+      <p className="mt-1 text-[13px] text-muted">Each milestone message, the version of its wording, and its delivery state. Staff relay to the client.</p>
+      {rows.length === 0 ? (
+        <p className="mt-2 text-[13px] text-muted">No PM milestone message has gone out for this project yet.</p>
+      ) : (
+        <ul className="mt-2 flex flex-col gap-1 text-[13px]">
+          {rows.map((r, i) => (
+            <li key={`${i}-${r.milestone}-${r.sentAt}`} className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">{r.milestone}</span>
+              <Badge tone={r.delivery === 'sent' ? 'success' : r.delivery === 'failed' ? 'danger' : 'neutral'}>{humanize(r.delivery)}</Badge>
+              <span className="text-muted">wording v{r.templateVersion} · {new Date(r.sentAt).toLocaleString()}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   );
 }

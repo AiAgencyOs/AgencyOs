@@ -306,3 +306,28 @@ export async function readPhaseFiveOverview(projectId: string): Promise<PhaseFiv
     handoff: handoff ? { id: String(handoff.id), commit: String(handoff.final_commit_ref), createdAt: String(handoff.created_at) } : null,
   };
 }
+
+export type PmMessageRow = { milestone: string; templateVersion: number; delivery: string; sentAt: string };
+
+/** The project's PM milestone messages: which wording (template version) went out, and the message's own delivery state. Staff only. */
+export async function readPmMessageHistory(projectId: string): Promise<PmMessageRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('pm_message_history' as never, { p_project_id: projectId } as never);
+  if (error) unreadable('readPmMessageHistory', error);
+  return ((data ?? []) as unknown as { milestone_key: string; template_version: number; delivery: string; sent_at: string }[]).map((r) => ({
+    milestone: r.milestone_key,
+    templateVersion: r.template_version,
+    delivery: r.delivery,
+    sentAt: r.sent_at,
+  }));
+}
+
+export type RepositoryOption = { id: string; name: string };
+
+/** The repositories linked to a project (for naming the baseline's base commit). */
+export async function readProjectRepositories(projectId: string): Promise<RepositoryOption[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').from('repositories').select('id, name').eq('project_id', projectId).order('created_at', { ascending: true }).limit(50);
+  if (error) unreadable('readProjectRepositories', error);
+  return ((data ?? []) as { id: string; name: string }[]).map((r) => ({ id: r.id, name: r.name }));
+}

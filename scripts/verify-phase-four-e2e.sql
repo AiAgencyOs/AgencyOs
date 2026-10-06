@@ -1233,6 +1233,58 @@ select pg_temp.check(not projects.m3_verified_paid(:'P_id') and not projects.m4_
 reset role;
 
 
+
+-- third round: assigned / in progress, the baseline's base commit, the PM message template version
+reset role;
+insert into qa.defects (organization_id, project_id, severity, title, reproduction, s_level) values (:'ORG', :'P_id', 'major', 'zz work-state defect', 'x', 2) returning id \gset WS_
+select set_config('e2e.ws', :'WS_id', false);
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select work_state from qa.defects where id = :'WS_id') = 'triage', 'a new defect is in triage');
+select pg_temp.check((select outcome from qa.start_defect_work(:'WS_id')) = 'not_assigned', 'work cannot start on a defect nobody holds');
+select pg_temp.check((select outcome from qa.assign_defect(:'WS_id')) = 'assigned', 'a delivery manager assigns it (to themselves by default)');
+select pg_temp.check((select work_state = 'assigned' and assigned_to = :'OWNER' from qa.defects where id = :'WS_id'), 'it reads Assigned, to that person');
+select pg_temp.check((select outcome from qa.assign_defect(:'WS_id', '00000000-0000-4000-8000-0000000fffff')) = 'assignee_not_in_organization', 'it cannot be assigned to someone outside the organization');
+select pg_temp.check((select outcome from qa.start_defect_work(:'WS_id')) = 'started', 'the assignee starts work');
+select pg_temp.check((select work_state from qa.defects where id = :'WS_id') = 'in_progress', 'it reads In progress');
+do $$ begin
+  begin update qa.defects set work_state = 'triage' where id = current_setting('e2e.ws')::uuid; raise exception 'NOT REFUSED';
+  exception when restrict_violation then null; end;
+end $$;
+select pg_temp.check(true, 'a direct write of the work state is refused');
+reset role;
+
+insert into projects.repositories (organization_id, project_id, name, platform, url) values (:'ORG', :'P_id', 'zz repo', 'github', 'https://github.com/example/zz') returning id \gset RP_
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.record_baseline_commit(:'P_id', :'RP_id', 'not-a-sha')) = 'bad_commit', 'a base commit must look like a commit');
+select pg_temp.check((select outcome from projects.record_baseline_commit(:'P_id', :'RP_id', 'abc1234def')) = 'recorded', 'the base commit and repository are recorded once');
+select pg_temp.check((select base_commit = 'abc1234def' and repository_id = :'RP_id' from projects.development_baselines where project_id = :'P_id'), 'the baseline now names them');
+select pg_temp.check((select outcome from projects.record_baseline_commit(:'P_id', :'RP_id', 'fff9999')) = 'already_recorded', 'a recorded base commit is never replaced');
+do $$ begin
+  begin update projects.development_baselines set base_commit = 'eee1111' where project_id = current_setting('e2e.p')::uuid;
+  exception when others then null; end;
+end $$;
+select pg_temp.check((select base_commit = 'abc1234def' from projects.development_baselines where project_id = :'P_id'), 'the baseline stays frozen: a direct edit changes nothing');
+reset role;
+
+insert into crm.conversations (organization_id, channel, status, kind) values (:'ORG', 'whatsapp', 'active', 'internal_group') returning id \gset PMC_
+insert into crm.conversation_messages (organization_id, conversation_id, seq, author_type, body, metadata) values (:'ORG', :'PMC_id', 1, 'system', 'PM5-M01 test', '{"delivery":"sent"}') returning id \gset PMM_
+select set_config('e2e.pmm', :'PMM_id', false);
+select pg_temp.as_service();
+set local role service_role;
+select pg_temp.check((select outcome from crm.record_pm_message(:'PMM_id', 'PM5-M01', 1, :'P_id')) = 'recorded', 'the runner records which template version a PM message used');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+do $$ begin
+  begin perform crm.record_pm_message(current_setting('e2e.pmm')::uuid, 'PM5-M01', 2, current_setting('e2e.p')::uuid); raise exception 'NOT REFUSED';
+  exception when insufficient_privilege then null; end;
+end $$;
+select pg_temp.check(true, 'a person cannot write the PM message log');
+select pg_temp.check((select milestone_key = 'PM5-M01' and template_version = 1 and delivery = 'sent' from projects.pm_message_history(:'P_id') limit 1), 'the history reads milestone, wording version and the message''s own delivery state');
+reset role;
+
 -- a plan with no baseline to measure against is not coverage
 reset role;
 do $$ declare pl uuid; begin

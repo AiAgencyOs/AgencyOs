@@ -222,6 +222,9 @@ export function PhaseSixPanel({ view, projectId }: { view: PhaseSixOverview; pro
                 <Badge tone={d.status === 'verified' ? 'success' : d.status === 'fixed' ? 'warning' : 'danger'}>{humanize(d.status)}</Badge>
                 <span>{d.title}</span>
                 <span>({humanize(d.classification)}{d.duplicateOf ? ', duplicate of a canonical defect' : ''})</span>
+                {d.classification === 'product_defect' && d.status === 'open' ? <Badge tone={d.workState === 'in_progress' ? 'warning' : 'neutral'}>{humanize(d.workState)}</Badge> : null}
+                {d.classification === 'product_defect' && d.status === 'open' && d.workState === 'triage' ? <DoorForm door="assign_defect" projectId={projectId} hidden={{ defectId: d.id }} submit="Assign to me" /> : null}
+                {d.classification === 'product_defect' && d.status === 'open' && d.workState === 'assigned' ? <DoorForm door="start_defect_work" projectId={projectId} hidden={{ defectId: d.id }} submit="Start work" /> : null}
                 {d.classification === 'product_defect' && d.status !== 'verified' ? (
                   <details>
                     <summary className="cursor-pointer underline underline-offset-2">Mark duplicate</summary>
