@@ -1,10 +1,12 @@
 import Link from 'next/link';
 
-import type { BuildBlockerRow, BuildRunRow, FeedbackSuggestion, RecordsView, EscalationRow, PhaseFiveOverview, PmMessageRow, PmOverview, TaskBoard } from '@/modules/projects/phase-five-queries';
+import type { BuildBlockerRow, BuildRunRow, DevClarificationRow, FeedbackSuggestion, RecordsView, EscalationRow, PhaseFiveOverview, PmMessageRow, PmOverview, TaskBoard } from '@/modules/projects/phase-five-queries';
 import { Badge, Card, humanize, type Tone } from '@/ui';
 
 import {
+  AnswerDevClarificationForm,
   ApprovePlanForm,
+  AskDevClarificationForm,
   BuildActions,
   ClassifyFeedbackForm,
   CreatePlanForm,
@@ -534,6 +536,30 @@ export function RecordsPanel({ view }: { view: RecordsView }) {
           ))}
         </ul>
       )}
+    </Card>
+  );
+}
+
+
+/** Development's questions to the client: one at a time, relayed by the PM, answered by staff on the client's behalf with the evidence. */
+export function DevClarificationsPanel({ rows, projectId }: { rows: DevClarificationRow[]; projectId: string }) {
+  return (
+    <Card>
+      <h3 className="text-[15px] font-semibold">Questions for the client</h3>
+      {rows.length === 0 ? <p className="mt-1 text-[13px] text-muted">None asked.</p> : (
+        <ul className="mt-2 flex flex-col gap-3 text-[13px]">
+          {rows.map((r) => (
+            <li key={r.id} className="flex flex-col gap-1">
+              <span><Badge tone={r.status === 'open' ? 'warning' : 'success'}>{humanize(r.status)}</Badge> <span className="font-medium">{r.question}</span>{r.taskTitle ? <span className="text-muted"> (task: {r.taskTitle})</span> : null}</span>
+              {r.answer ? <span className="text-muted">Answer: {r.answer}</span> : <AnswerDevClarificationForm projectId={projectId} clarificationId={r.id} />}
+            </li>
+          ))}
+        </ul>
+      )}
+      <details className="mt-3">
+        <summary className="cursor-pointer text-[13px] underline underline-offset-2">Ask the client a question</summary>
+        <AskDevClarificationForm projectId={projectId} />
+      </details>
     </Card>
   );
 }

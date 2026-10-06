@@ -1461,6 +1461,33 @@ set local role authenticated;
 select pg_temp.check((select count(*) from projects.build_feedback_suggestions) = 0, 'a portal client reads no suggestion');
 reset role;
 
+
+-- PM5 events: the clarification loop, ready for the Admin, escalated work, module progress
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select set_config('e2e.dcq', '', false);
+select outcome as o, clarification_id as c from projects.ask_dev_clarification(:'P_id', 'Which payment provider should checkout use?', :'T2_id', 'checkout cannot be built without it') \gset DCQ_
+select set_config('e2e.dcq', :'DCQ_c', false);
+select pg_temp.check(:'DCQ_o' = 'asked', 'development asks the client ONE question');
+select pg_temp.check((select outcome from projects.ask_dev_clarification(:'P_id', 'Another question on the same task', :'T2_id', null)) = 'already_open', 'one open question per task: the client is asked one thing at a time');
+select pg_temp.check((select outcome from projects.ask_dev_clarification(:'P_id', '   ', null, null)) = 'invalid_question', 'an empty question is refused');
+select pg_temp.check((select count(*) from core.outbox_events where type = 'project.dev_clarification_requested' and subject_id = :'DCQ_c'::uuid and not payload::text like '%payment provider%') = 1, 'the event names the question by id and never carries its words');
+select pg_temp.check((select outcome from projects.answer_dev_clarification(:'DCQ_c'::uuid, '  ')) = 'answer_required', 'an answer is required');
+select pg_temp.check((select outcome from projects.answer_dev_clarification(:'DCQ_c'::uuid, 'Stripe, test mode first', 'wamid.ANSWER1')) = 'answered', 'staff record the client''s answer with its evidence');
+select pg_temp.check((select outcome from projects.answer_dev_clarification(:'DCQ_c'::uuid, 'something else')) = 'already_answered', 'an answered question is final');
+reset role;
+do $$ begin
+  begin update projects.dev_clarifications set answer = 'rewritten' where id = current_setting('e2e.dcq')::uuid; raise exception 'NOT REFUSED';
+  exception when restrict_violation then null; end;
+end $$;
+select pg_temp.check((select answer from projects.dev_clarifications where id = :'DCQ_c'::uuid) = 'Stripe, test mode first', 'and cannot be rewritten, even by the table owner');
+select pg_temp.check((select count(*) from core.outbox_events where type = 'project.development_escalated') >= 1, 'an escalation told the team (A02)');
+update projects.deliverable_details set qa_status = 'not_reviewed', qa_decided_at = null where deliverable_id = :'BD9_bd';
+update projects.deliverable_details set qa_status = 'passed', qa_decided_at = now() where deliverable_id = :'BD9_bd';
+select pg_temp.check((select count(*) from core.outbox_events where type = 'project.build_ready_for_admin' and subject_id = :'BD9_bd') >= 1, 'QA passing a build tells the Admin it waits (A01)');
+select pg_temp.check((select count(*) from core.outbox_events where type = 'project.build_ready_for_admin' and subject_id = :'BD9_bd' and payload::text like '%findings%') = 0, 'and the event carries ids only');
+
 -- a plan with no baseline to measure against is not coverage
 reset role;
 do $$ declare pl uuid; begin

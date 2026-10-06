@@ -18,6 +18,8 @@ import {
   startPhaseFiveAction,
   recordBaselineCommitAction,
   resolveEscalationAction,
+  answerDevClarificationAction,
+  askDevClarificationAction,
   recordSmokeAction,
   rerouteHeldTasksAction,
   resolveBuildBlockerAction,
@@ -507,6 +509,35 @@ export function ResolveBuildBlockerForm({ projectId, blockerId }: { projectId: s
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="blockerId" value={blockerId} />
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? '…' : 'Mark resolved'}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+
+export function AskDevClarificationForm({ projectId }: { projectId: string }) {
+  const [state, action, pending] = useActionState(askDevClarificationAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-col gap-2 rounded-md border border-line p-3">
+      <p className="text-[13px] text-muted">Only for something genuinely ambiguous that the approved scope and UI do not answer. One open question per task; the PM relays it as written.</p>
+      <input type="hidden" name="projectId" value={projectId} />
+      <textarea aria-label="Question for the client" name="question" required rows={2} maxLength={1000} className={field} placeholder="The one question the client must answer" />
+      <input aria-label="Why it is needed" name="why" maxLength={600} className={field} placeholder="Why development cannot continue without it (optional)" />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? '…' : 'Ask'}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+export function AnswerDevClarificationForm({ projectId, clarificationId }: { projectId: string; clarificationId: string }) {
+  const [state, action, pending] = useActionState(answerDevClarificationAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="clarificationId" value={clarificationId} />
+      <input aria-label="The client's answer" name="answer" required className={`${field} min-w-64`} placeholder="The client's answer, in their words" />
+      <input aria-label="Evidence (message reference)" name="evidenceRef" className={field} placeholder="WhatsApp message ref (optional)" />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? '…' : 'Record answer'}</button>
       <Message state={state} />
     </form>
   );

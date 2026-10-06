@@ -84,7 +84,7 @@ import {
   type MilestoneBillingEntry,
 } from '@/modules/finance/schema';
 import { listPhaseFourEscalations, getProject, listPaymentPlan, readGroupSetup, readPhaseTwo, readPhaseFourOverview, readProjectGroupName } from '@/modules/projects/queries';
-import { readBuildBlockers, readBuildRuns, readFeedbackSuggestions, readPhaseFiveRecords, readOpenEscalations, readPhaseFiveOverview, readTaskBoard, readPmOverview, readPmMessageHistory, readProjectRepositories } from '@/modules/projects/phase-five-queries';
+import { readBuildBlockers, readBuildRuns, readDevClarifications, readFeedbackSuggestions, readPhaseFiveRecords, readOpenEscalations, readPhaseFiveOverview, readTaskBoard, readPmOverview, readPmMessageHistory, readProjectRepositories } from '@/modules/projects/phase-five-queries';
 import { readPhaseSixOverview } from '@/modules/projects/phase-six-queries';
 import { listApprovalsForSubject } from '@/modules/approvals/queries';
 import { listDefects, readProjectQuality } from '@/modules/qa/queries';
@@ -135,7 +135,7 @@ import { RevealClientSecretForm, RevokeClientSecretForm, StoreClientSecretForm }
 import { CLIENT_SECRET_KIND_LABELS, listClientSecrets } from '@/modules/projects/client-secrets-service';
 import { PhaseTwoPanel } from './phase-two-panel';
 import { PhaseFourPanel } from './phase-four-panel';
-import { EscalationsPanel, PhaseFivePanel, PmMessageHistoryPanel, RecordsPanel, WorkboardPanel } from './phase-five-panel';
+import { DevClarificationsPanel, EscalationsPanel, PhaseFivePanel, PmMessageHistoryPanel, RecordsPanel, WorkboardPanel } from './phase-five-panel';
 import { PhaseSixPanel } from './phase-six-panel';
 import { PhaseCompletionPanel } from './phase-completion-panel';
 import { readPhaseCompletions } from '@/modules/projects/phase-completion-queries';
@@ -231,6 +231,7 @@ export default async function ProjectPage({
   const buildBlockers = await readBuildBlockers(projectId);
   const records = await readPhaseFiveRecords(projectId);
   const feedbackSuggestions = await readFeedbackSuggestions(projectId);
+  const devClarifications = await readDevClarifications(projectId);
   // Q-PH56: where Phase 5 and Phase 6 stand, read from Development and QA data.
   const phaseCompletions = await readPhaseCompletions(projectId);
   /**
@@ -902,6 +903,8 @@ export default async function ProjectPage({
       <WorkboardPanel board={taskBoard} runs={buildRuns} projectId={projectId} blockers={buildBlockers} />
 
       <RecordsPanel view={records} />
+
+      <DevClarificationsPanel rows={devClarifications} projectId={projectId} />
 
       <EscalationsPanel rows={escalations} projectId={projectId} />
 

@@ -526,3 +526,27 @@ export async function readFeedbackSuggestions(projectId: string): Promise<Record
   }
   return out;
 }
+
+export type DevClarificationRow = { id: string; question: string; status: string; answer: string | null; taskTitle: string | null; createdAt: string };
+
+/** The questions development has put to the client, one at a time, and what the client answered (recorded by staff). */
+export async function readDevClarifications(projectId: string): Promise<DevClarificationRow[]> {
+  const supabase = await createClient();
+  const projects = supabase.schema('projects');
+  const { data, error } = await projects
+    .from('dev_clarifications' as never)
+    .select('id, task_id, question, status, answer, created_at')
+    .eq('project_id' as never, projectId as never)
+    .order('created_at' as never, { ascending: false })
+    .limit(30);
+  if (error) unreadable('readDevClarifications', error);
+  const rows = (data ?? []) as unknown as { id: string; task_id: string | null; question: string; status: string; answer: string | null; created_at: string }[];
+  const ids = rows.map((r) => r.task_id).filter((x): x is string => Boolean(x));
+  const titles = new Map<string, string>();
+  if (ids.length > 0) {
+    const { data: tasks, error: taskError } = await projects.from('tasks').select('id, title').in('id', ids);
+    if (taskError) unreadable('readDevClarifications.tasks', taskError);
+    for (const t of (tasks ?? []) as { id: string; title: string }[]) titles.set(t.id, t.title);
+  }
+  return rows.map((r) => ({ id: r.id, question: r.question, status: r.status, answer: r.answer, taskTitle: r.task_id ? (titles.get(r.task_id) ?? null) : null, createdAt: r.created_at }));
+}

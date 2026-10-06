@@ -502,6 +502,8 @@ try {
   // outbox events and zero jobs. Without this it fails on rows this script
   // left, which is exactly what CI caught.
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.approval_request');
+  // a build whose QA passes tells the Admin it waits (project.build_ready_for_admin, subject = the deliverable); this script created those builds
+  await rest('DELETE', 'core', 'outbox_events?subject_type=eq.deliverable');
   if (created.project) {
     await rest('DELETE', 'qa', `defects?project_id=eq.${created.project}`);
     await rest('DELETE', 'projects', `deliverables?project_id=eq.${created.project}`);

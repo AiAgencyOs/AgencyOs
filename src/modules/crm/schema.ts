@@ -1994,8 +1994,63 @@ export function qaDefectProgressAnnouncementFor(input: { projectName: string | n
  * The PM5 / PM6 milestone messages and the VERSION of the wording each was built from. Change a template's text and you raise its version here;
  * `crm.pm_message_log` then says which wording every message that went out used. Keyed by the externalRef prefix the announcer already writes.
  */
+/** PM5-A01 - a build passed QA on its exact commit and waits for an Admin decision. */
+export const buildReadyForAdminEventSchema = z.object({ projectId: z.uuid(), deliverableId: z.uuid(), version: z.number() }).strip();
+export function buildReadyForAdminAnnouncementFor(input: { projectName: string | null; version: number }): string {
+  return [
+    `Development build v${input.version} passed QA and is waiting for an Admin decision.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Open the build\'s review package, check the exact commit, then approve it or request changes.',
+  ].join('\n');
+}
+
+/** PM5-A02 - work the Orchestrator could not place, or that failed past its rules, waits for a person. */
+export const developmentEscalatedEventSchema = z.object({ projectId: z.uuid(), taskId: z.uuid() }).strip();
+export function developmentEscalatedAnnouncementFor(input: { projectName: string | null; taskTitle: string | null; cause: string }): string {
+  return [
+    `A development task needs a decision: ${input.taskTitle ?? 'a task'}.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    `Why: ${input.cause.replace(/_/g, ' ')}.`,
+    'Open the project: it is listed under "Waiting for a decision" with what was considered.',
+  ].join('\n');
+}
+
+/** PM5-M03 - progress, client-safe: a module is complete. Names the module, never a branch, agent or model. */
+export const moduleCompletedEventSchema = z.object({ projectId: z.uuid(), moduleId: z.uuid() }).strip();
+export function moduleCompletedAnnouncementFor(input: { projectName: string | null; moduleName: string | null }): string {
+  return [
+    `Progress: the ${input.moduleName ?? 'a'} module is complete.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Its tasks are done and tested. The next milestone is a build for you to test.',
+  ].join('\n');
+}
+
+/** PM5-M02 - one question awaits the client before development can continue. The question itself is read from the row. */
+export const devClarificationRequestedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function devClarificationAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Development needs one answer from the client before work can continue.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Put the question to the client as written, one at a time, and record the answer; nothing is built on a guess.',
+  ].join('\n');
+}
+
+/** PM5-M06 - a revised build, after the client's feedback, is ready to test again. */
+export function buildRevisedAnnouncementFor(input: { projectName: string | null; version: number }): string {
+  return [
+    `Revised development build v${input.version} has passed QA, code review and Admin approval and is ready for the client to test again.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Share exactly this build and say which of their feedback it answers.',
+  ].join('\n');
+}
+
 export const PM_TEMPLATES: Readonly<Record<string, { milestone: string; version: number }>> = {
   'phase-five-started': { milestone: 'PM5-M01', version: 1 },
+  'dev-clarification': { milestone: 'PM5-M02', version: 1 },
+  'module-progress': { milestone: 'PM5-M03', version: 1 },
+  'build-revised': { milestone: 'PM5-M06', version: 1 },
+  'build-ready-for-admin': { milestone: 'PM5-A01', version: 1 },
+  'development-escalated': { milestone: 'PM5-A02', version: 1 },
   'build-shared': { milestone: 'PM5-M04', version: 1 },
   'build-feedback': { milestone: 'PM5-M05', version: 1 },
   'build-approved': { milestone: 'PM5-M07', version: 1 },

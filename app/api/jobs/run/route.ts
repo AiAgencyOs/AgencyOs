@@ -61,6 +61,10 @@ import {
   announcePhaseSixReady,
   announceTestingStarted,
   announceQaClarification,
+  announceBuildReadyForAdmin,
+  announceDevelopmentEscalated,
+  announceModuleCompleted,
+  announceDevClarification,
   announceQaDefectProgress,
   announceReleaseCandidateApproved,
   announceM4PaymentVerified,
@@ -1269,6 +1273,10 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const phaseFiveStartedAnnouncements = await runEventJobs(admin, PHASE_FIVE_STARTED_ANNOUNCE_JOB_KIND, announcePhaseFiveStarted, 'runPhaseFiveStartedAnnouncementJobs');
   const buildSharedAnnouncements = await runEventJobs(admin, BUILD_SHARED_ANNOUNCE_JOB_KIND, announceBuildShared, 'runBuildSharedAnnouncementJobs');
   const buildFeedbackAnnouncements = await runEventJobs(admin, BUILD_FEEDBACK_ANNOUNCE_JOB_KIND, announceBuildFeedbackReceived, 'runBuildFeedbackAnnouncementJobs');
+  const buildReadyForAdminAnnouncements = await runEventJobs(admin, BUILD_READY_FOR_ADMIN_ANNOUNCE_JOB_KIND, announceBuildReadyForAdmin, 'runBuildReadyForAdminAnnouncementJobs');
+  const developmentEscalatedAnnouncements = await runEventJobs(admin, DEVELOPMENT_ESCALATED_ANNOUNCE_JOB_KIND, announceDevelopmentEscalated, 'runDevelopmentEscalatedAnnouncementJobs');
+  const moduleCompletedAnnouncements = await runEventJobs(admin, MODULE_COMPLETED_ANNOUNCE_JOB_KIND, announceModuleCompleted, 'runModuleCompletedAnnouncementJobs');
+  const devClarificationAnnouncements = await runEventJobs(admin, DEV_CLARIFICATION_ANNOUNCE_JOB_KIND, announceDevClarification, 'runDevClarificationAnnouncementJobs');
   const buildApprovedAnnouncements = await runEventJobs(admin, BUILD_APPROVED_ANNOUNCE_JOB_KIND, announceBuildApproved, 'runBuildApprovedAnnouncementJobs');
 
   // Q-PH56: the PM's Task 3 / Task 4 Complete messages, beside Task 2's.
@@ -1550,6 +1558,10 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     buildSharedAnnouncements: buildSharedAnnouncements.results,
     buildFeedbackAnnouncements: buildFeedbackAnnouncements.results,
     buildApprovedAnnouncements: buildApprovedAnnouncements.results,
+    buildReadyForAdminAnnouncements: buildReadyForAdminAnnouncements.results,
+    developmentEscalatedAnnouncements: developmentEscalatedAnnouncements.results,
+    moduleCompletedAnnouncements: moduleCompletedAnnouncements.results,
+    devClarificationAnnouncements: devClarificationAnnouncements.results,
     m3VerifiedAnnouncements: m3VerifiedAnnouncements.results,
     phaseSixReadyAnnouncements: phaseSixReadyAnnouncements.results,
     testingStartedAnnouncements: testingStartedAnnouncements.results,
@@ -1703,6 +1715,10 @@ const QA_SCHEDULE_JOB_KIND = HANDLER_JOB_KIND['projects:scheduleQaJobs'];
 const QA_REOPEN_JOB_KIND = HANDLER_JOB_KIND['projects:reopenOnSourceChange'];
 const TESTING_STARTED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceTestingStarted'];
 const QA_CLARIFICATION_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceQaClarification'];
+const BUILD_READY_FOR_ADMIN_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceBuildReadyForAdmin'];
+const DEVELOPMENT_ESCALATED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceDevelopmentEscalated'];
+const MODULE_COMPLETED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceModuleCompleted'];
+const DEV_CLARIFICATION_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceDevClarification'];
 const QA_DEFECT_PROGRESS_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceQaDefectProgress'];
 const M4_VERIFIED_JOB_KIND = HANDLER_JOB_KIND['projects:recordM4Verified'];
 const RC_APPROVED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceReleaseCandidateApproved'];

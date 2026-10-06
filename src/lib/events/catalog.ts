@@ -106,6 +106,10 @@ export const HANDLERS = [
   'crm:announceBuildShared',
   'crm:announceBuildFeedbackReceived',
   'crm:announceBuildApproved',
+  'crm:announceBuildReadyForAdmin',
+  'crm:announceDevelopmentEscalated',
+  'crm:announceModuleCompleted',
+  'crm:announceDevClarification',
   'crm:announceTask4Complete',
   'crm:announceM2PaymentVerified',
   'crm:routeLead',
@@ -635,6 +639,11 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   /** PM5-M01 (Phase 5 PM Agent spec): Task 3 Start, off the fact `start_phase_five` emits. */
   'project.phase_five_started': ['crm:announcePhaseFiveStarted'],
   /** PM5-M03: the client's feedback on a build was recorded and is awaiting classification. */
+  /** PM5-A01 / A02 / M03 / M02: ready for the Admin, escalated work, module progress, a clarification question. */
+  'project.build_ready_for_admin': ['crm:announceBuildReadyForAdmin'],
+  'project.development_escalated': ['crm:announceDevelopmentEscalated'],
+  'project.module_completed': ['crm:announceModuleCompleted'],
+  'project.dev_clarification_requested': ['crm:announceDevClarification'],
   'project.build_feedback_received': ['crm:announceBuildFeedbackReceived', 'project_manager:suggestBuildFeedbackClass'],
   /** PM5: what became of the feedback (defect, change request, revision, clarification). */
   'project.build_feedback_routed': ['crm:announceBuildFeedbackRouted'],
@@ -780,6 +789,10 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'crm:announceBuildShared': 'build_shared.announce',
   'crm:announceBuildFeedbackReceived': 'build_feedback.announce',
   'crm:announceBuildApproved': 'build_approved.announce',
+  'crm:announceBuildReadyForAdmin': 'build_ready_for_admin.announce',
+  'crm:announceDevelopmentEscalated': 'development_escalated.announce',
+  'crm:announceModuleCompleted': 'module_completed.announce',
+  'crm:announceDevClarification': 'dev_clarification.announce',
   'crm:announceTask4Complete': 'task4_complete.announce',
   'crm:announceM2PaymentVerified': 'm2_payment_verified.announce',
   'crm:routeLead': 'lead.route',

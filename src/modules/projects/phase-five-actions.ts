@@ -61,6 +61,13 @@ const WORDS: Record<string, string> = {
   bad_credential_name: 'A secret is named in capitals and underscores (for example STRIPE_TEST_KEY); never paste the value.',
   pass_needs_checks_and_evidence: 'A smoke PASS names the checks that ran and an https evidence link.',
   bad_result: 'Choose a smoke result.',
+  asked: 'Question recorded; the PM is told it awaits the client.',
+  already_open: 'A question is already open for that task: one at a time.',
+  invalid_question: 'A question is required (at most 1,000 characters).',
+  task_not_on_project: 'That task is not on this project.',
+  answer_required: 'Record the client\'s answer.',
+  answered: 'Answer recorded.',
+  already_answered: 'That question was already answered.',
   created: 'Plan created.',
   planned: 'Task planned.',
   approved: 'Plan approved.',
@@ -490,4 +497,22 @@ export async function recordSmokeAction(_prev: FormState, formData: FormData): P
 
 export async function resolveBuildBlockerAction(_prev: FormState, formData: FormData): Promise<FormState> {
   return run(text(formData, 'projectId'), 'resolve_build_blocker', { p_blocker_id: text(formData, 'blockerId') }, ['resolved']);
+}
+
+
+export async function askDevClarificationAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  return run(text(formData, 'projectId'), 'ask_dev_clarification', {
+    p_project_id: text(formData, 'projectId'),
+    p_question: text(formData, 'question'),
+    p_task_id: text(formData, 'taskId') || null,
+    p_why: text(formData, 'why') || null,
+  }, ['asked']);
+}
+
+export async function answerDevClarificationAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  return run(text(formData, 'projectId'), 'answer_dev_clarification', {
+    p_clarification_id: text(formData, 'clarificationId'),
+    p_answer: text(formData, 'answer'),
+    p_evidence_ref: text(formData, 'evidenceRef') || null,
+  }, ['answered']);
 }
