@@ -1372,6 +1372,17 @@ set local role authenticated;
 select pg_temp.check((select count(*) from projects.pm_phase_five_state(:'P_id')) = 0 and (select count(*) from projects.build_review_package(:'BD9_bd')) = 0, 'a portal client reads neither the PM state nor the review package');
 reset role;
 
+
+-- test ingest: idempotent delivery, and a report for its own commit
+select pg_temp.as_service();
+set local role service_role;
+select outcome as o, run_id as r from qa.ingest_test_report(:'BD1_bd', 'smoke', '{"tests":[{"name":"smoke.home","status":"passed"}]}', 'https://ci.example.test/smoke/1') \gset IR1_
+select outcome as o, run_id as r from qa.ingest_test_report(:'BD1_bd', 'smoke', '{"tests":[{"name":"smoke.home","status":"passed"}]}', 'https://ci.example.test/smoke/1') \gset IR2_
+select pg_temp.check(:'IR1_o' = 'ingested' and :'IR2_o' = 'already_ingested' and :'IR1_r' = :'IR2_r', 'a redelivered report answers with the run it already made');
+select pg_temp.check((select count(*) from qa.test_runs where deliverable_id = :'BD1_bd' and evidence_url = 'https://ci.example.test/smoke/1') = 1, 'and no second run exists');
+select pg_temp.check((select outcome from qa.ingest_test_report(:'BD1_bd', 'smoke', '{"commit":"0000000","tests":[{"name":"smoke.home","status":"passed"}]}', 'https://ci.example.test/smoke/2')) = 'stale_report', 'a report for another commit is refused as stale');
+reset role;
+
 -- a plan with no baseline to measure against is not coverage
 reset role;
 do $$ declare pl uuid; begin
