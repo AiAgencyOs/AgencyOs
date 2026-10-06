@@ -12,6 +12,8 @@ Every unit proven against a real scratch Postgres (`scripts/apply-migrations-loc
 - **Truth states** (`20261031200000`): integration health (adapter-only `verified`, mock never, evidence required); `phase_five_agent_state` (NOT_REQUIRED keeps its reason; seeded at start).
 - **Intake** (`20261031210000`): frozen `phase_five_handoffs` written with the completion fact; `independent_verification_required` always true.
 - **E2E**: `scripts/verify-phase-four-e2e.sql` extended through Phase 5 start, builds, reviews, QA, Admin, client approval, feedback, DoD, completion + intake, M3 invoice/underpayment/verification and the Phase 6 financial gate.
+- **PM5 messages** (`20261031220000`, `crm/handlers.ts`): Task 3 start, build shared, feedback received (event carries no client words), final build approved; filtered to `kind = 'build'`; internal channel, as PM4.
+- **Admin Panel** (`phase-five-queries.ts`, `phase-five-panel.tsx`): read-only Phase 5 Overview wired into the project page; every read guarded (`unreadable`), never "nothing yet" on a failed read.
 
 ## Not built (see the traceability matrix)
-Technical planning engine and task acceptance criteria; Orchestrator Phase 5 routing/envelope; any specialist actually running (needs a funded model key + repo/CI binding); build pipeline (fingerprint, hash, logs); flaky-test tracking; AI feedback classifier for builds; PM5 message set; Admin Panel screens; Documentation agent; `M3PaymentVerified` event + Phase 6 workspace (Phase 6).
+Technical planning engine and task acceptance criteria; Orchestrator Phase 5 routing/envelope; any specialist actually running (needs a funded model key + repo/CI binding); build pipeline (fingerprint, hash, logs); flaky-test tracking; AI feedback classifier for builds; PM5 revision/change-request/hand-off messages; Admin Panel action forms and plan screen; Documentation agent; `M3PaymentVerified` event + Phase 6 workspace (Phase 6).

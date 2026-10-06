@@ -135,6 +135,7 @@ describe('F. it is reachable — the defect this repository has found repeatedly
     assert.deepEqual(SUBSCRIPTIONS['project.deliverable_decided'], [
       'projects:completePhaseFourOnPrototypeApproval',
       'crm:announcePrototypeChangeRequested',
+      'crm:announceBuildApproved',
       'ui_prototype:reviseBuild',
     ]);
     assert.deepEqual(SUBSCRIPTIONS['project.phase_four_completed'], [

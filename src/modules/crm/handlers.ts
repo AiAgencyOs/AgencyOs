@@ -20,6 +20,12 @@ import {
   phaseFourStartedEventSchema,
   phaseFourStartedAnnouncementFor,
   uiVersionAdminReviewedEventSchema,
+  phaseFiveStartedEventSchema,
+  phaseFiveStartedAnnouncementFor,
+  buildSharedAnnouncementFor,
+  buildFeedbackReceivedEventSchema,
+  buildFeedbackReceivedAnnouncementFor,
+  buildApprovedAnnouncementFor,
   uiVersionAdminApprovedAnnouncementFor,
   uiVersionClientDecidedEventSchema,
   uiVersionChangeRequestedAnnouncementFor,
@@ -3149,4 +3155,74 @@ export async function handleClassifyLeadIdentity(admin: Admin, job: AnnounceJob)
     default:
       return { status: 'failed', permanent: false, detail: `classify_lead_identity answered ${outcome}` };
   }
+}
+
+
+/**
+ * `project.phase_five_started` -> PM5-M01, Task 3 Start - Phase 5 PM Agent spec. Announced to the INTERNAL channel, as every PM4 milestone is:
+ * staff relay to the client over WhatsApp (ADM-08d), so no automated client-send path exists for a Task 3 milestone.
+ */
+export async function announcePhaseFiveStarted(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = phaseFiveStartedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.phase_five_started payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: phaseFiveStartedAnnouncementFor({ projectName }),
+    externalRef: `phase-five-started:${parsed.data.projectId}`,
+  });
+}
+
+/** `project.deliverable_submitted` (kind = build) -> PM5-M02, the exact build shared for client testing. */
+export async function announceBuildShared(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = deliverableSubmittedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.deliverable_submitted payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const event = parsed.data;
+  if (event.kind !== 'build') {
+    return { status: 'succeeded', outcome: 'not_mine', detail: `a ${event.kind} submission is not a development build` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, event.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: buildSharedAnnouncementFor({ projectName, version: event.version }),
+    externalRef: `build-shared:${event.projectId}:v${event.version}`,
+  });
+}
+
+/** `project.build_feedback_received` -> PM5-M03. */
+export async function announceBuildFeedbackReceived(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = buildFeedbackReceivedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.build_feedback_received payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const event = parsed.data;
+  const projectName = await projectNameFor(admin, job.organization_id, event.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: buildFeedbackReceivedAnnouncementFor({ projectName, version: event.version }),
+    // one announcement per piece of feedback, keyed by the feedback row the event is about
+    externalRef: `build-feedback:${typeof envelope.subjectId === 'string' ? envelope.subjectId : event.deliverableId}`,
+  });
+}
+
+/** `project.deliverable_decided` (kind = build, approved) -> PM5-M04, the exact final build approved. */
+export async function announceBuildApproved(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = deliverableDecidedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.deliverable_decided payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const event = parsed.data;
+  if (event.kind !== 'build' || event.status !== 'approved') {
+    return { status: 'succeeded', outcome: 'not_mine', detail: `${event.kind}/${event.status} is not a final development build approval` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, event.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: buildApprovedAnnouncementFor({ projectName, version: event.version }),
+    externalRef: `build-approved:${event.projectId}:v${event.version}`,
+  });
 }

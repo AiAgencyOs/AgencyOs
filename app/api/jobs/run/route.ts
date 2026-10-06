@@ -52,6 +52,10 @@ import {
   announcePrototypeChangeRequested,
   announceTask2Complete,
   announceTask3Complete,
+  announcePhaseFiveStarted,
+  announceBuildShared,
+  announceBuildFeedbackReceived,
+  announceBuildApproved,
   announceTask4Complete,
   announceM2PaymentVerified,
   handleRouteLead,
@@ -1047,6 +1051,12 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     'runTask2CompleteAnnouncementJobs',
   );
 
+  // PM5-M01..M04 (Phase 5 PM Agent spec), beside the Task 2 set.
+  const phaseFiveStartedAnnouncements = await runEventJobs(admin, PHASE_FIVE_STARTED_ANNOUNCE_JOB_KIND, announcePhaseFiveStarted, 'runPhaseFiveStartedAnnouncementJobs');
+  const buildSharedAnnouncements = await runEventJobs(admin, BUILD_SHARED_ANNOUNCE_JOB_KIND, announceBuildShared, 'runBuildSharedAnnouncementJobs');
+  const buildFeedbackAnnouncements = await runEventJobs(admin, BUILD_FEEDBACK_ANNOUNCE_JOB_KIND, announceBuildFeedbackReceived, 'runBuildFeedbackAnnouncementJobs');
+  const buildApprovedAnnouncements = await runEventJobs(admin, BUILD_APPROVED_ANNOUNCE_JOB_KIND, announceBuildApproved, 'runBuildApprovedAnnouncementJobs');
+
   // Q-PH56: the PM's Task 3 / Task 4 Complete messages, beside Task 2's.
   const task3CompleteAnnouncements = await runEventJobs(admin, TASK3_COMPLETE_JOB_KIND, announceTask3Complete, 'runTask3CompleteAnnouncementJobs');
   const task4CompleteAnnouncements = await runEventJobs(admin, TASK4_COMPLETE_JOB_KIND, announceTask4Complete, 'runTask4CompleteAnnouncementJobs');
@@ -1322,6 +1332,10 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     prototypeChangeRequestedAnnouncements: prototypeChangeRequestedAnnouncements.results,
     task2CompleteAnnouncements: task2CompleteAnnouncements.results,
     task3CompleteAnnouncements: task3CompleteAnnouncements.results,
+    phaseFiveStartedAnnouncements: phaseFiveStartedAnnouncements.results,
+    buildSharedAnnouncements: buildSharedAnnouncements.results,
+    buildFeedbackAnnouncements: buildFeedbackAnnouncements.results,
+    buildApprovedAnnouncements: buildApprovedAnnouncements.results,
     task4CompleteAnnouncements: task4CompleteAnnouncements.results,
     m2PaymentVerifiedAnnouncements: m2PaymentVerifiedAnnouncements.results,
     dispatches: dispatches.results,
@@ -1483,6 +1497,10 @@ const PROTOTYPE_SUBMITTED_JOB_KIND = HANDLER_JOB_KIND['crm:announcePrototypeSubm
 const PROTOTYPE_CHANGE_REQUESTED_JOB_KIND = HANDLER_JOB_KIND['crm:announcePrototypeChangeRequested'];
 const TASK2_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['crm:announceTask2Complete'];
 const TASK3_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['crm:announceTask3Complete'];
+const PHASE_FIVE_STARTED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announcePhaseFiveStarted'];
+const BUILD_SHARED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceBuildShared'];
+const BUILD_FEEDBACK_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceBuildFeedbackReceived'];
+const BUILD_APPROVED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceBuildApproved'];
 const TASK4_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['crm:announceTask4Complete'];
 const M2_PAYMENT_VERIFIED_JOB_KIND = HANDLER_JOB_KIND['crm:announceM2PaymentVerified'];
 

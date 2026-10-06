@@ -12,9 +12,9 @@
 | M3 invoice, claim ≠ proof ≠ match ≠ Admin verified, Phase 6 financial gate? | YES (gate in `phase_readiness`; Phase 6 workspace not built) |
 | Specialist agents run? | NO (defined, disabled) |
 | Planning engine / Orchestrator routing / build pipeline? | NO |
-| Admin Panel screens for Phase 5? | NO |
-| PM5 client messages? | NO |
+| Admin Panel view for Phase 5? | PARTIAL: read-only overview (not rendered here); no action forms, no plan screen |
+| PM5 messages? | PARTIAL: 4 of 7 (internal channel) |
 | Production deployed? | NO — Phase 7 |
 | Phase 6 Master QA done? | NO — Phase 6 |
 
-P0: none known open in built scope. P1 (mandatory Phase 5 workflow not built): planning engine, specialist execution, build pipeline, Admin screens, PM5 messages. Carried from Phase 4: service-role payment-verification exemption (owner decision pending).
+P0: none known open in built scope. P1 (mandatory Phase 5 workflow not built): planning engine, specialist execution, build pipeline, Admin action forms, three PM5 messages. Carried from Phase 4: service-role payment-verification exemption (owner decision pending).

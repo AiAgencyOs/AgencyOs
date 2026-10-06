@@ -86,6 +86,10 @@ export const HANDLERS = [
   'crm:announcePrototypeChangeRequested',
   'crm:announceTask2Complete',
   'crm:announceTask3Complete',
+  'crm:announcePhaseFiveStarted',
+  'crm:announceBuildShared',
+  'crm:announceBuildFeedbackReceived',
+  'crm:announceBuildApproved',
   'crm:announceTask4Complete',
   'crm:announceM2PaymentVerified',
   'crm:routeLead',
@@ -595,6 +599,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   'project.deliverable_decided': [
     'projects:completePhaseFourOnPrototypeApproval',
     'crm:announcePrototypeChangeRequested',
+    'crm:announceBuildApproved',
     'ui_prototype:reviseBuild',
   ],
   /**
@@ -602,13 +607,17 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * always emitted starting `20260923160000_m2_and_the_gate_it_actually_
    * needs.sql`; the handler filters to `kind = 'prototype'` itself.
    */
-  'project.deliverable_submitted': ['crm:announcePrototypeSubmitted'],
+  'project.deliverable_submitted': ['crm:announcePrototypeSubmitted', 'crm:announceBuildShared'],
   /**
    * Finance §2, §5 — the M2 (20%) invoice, off the fact
    * `projects.complete_phase_four` already emits. PM4-M07 (Task 2 Complete)
    * fans out from the same event, independent of the invoicing chain.
    */
   'project.phase_four_completed': ['finance:generateM2Invoice', 'crm:announceTask2Complete'],
+  /** PM5-M01 (Phase 5 PM Agent spec): Task 3 Start, off the fact `start_phase_five` emits. */
+  'project.phase_five_started': ['crm:announcePhaseFiveStarted'],
+  /** PM5-M03: the client's feedback on a build was recorded and is awaiting classification. */
+  'project.build_feedback_received': ['crm:announceBuildFeedbackReceived'],
   /**
    * Q-PH56 (owner, round 3) — exactly as Phase 4 above: completing Phase 5
    * (development) raises the M3 invoice and the PM's Task 3 message; completing
@@ -717,6 +726,10 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'crm:announcePrototypeChangeRequested': 'prototype_change_requested.announce',
   'crm:announceTask2Complete': 'task2_complete.announce',
   'crm:announceTask3Complete': 'task3_complete.announce',
+  'crm:announcePhaseFiveStarted': 'phase_five_started.announce',
+  'crm:announceBuildShared': 'build_shared.announce',
+  'crm:announceBuildFeedbackReceived': 'build_feedback.announce',
+  'crm:announceBuildApproved': 'build_approved.announce',
   'crm:announceTask4Complete': 'task4_complete.announce',
   'crm:announceM2PaymentVerified': 'm2_payment_verified.announce',
   'crm:routeLead': 'lead.route',

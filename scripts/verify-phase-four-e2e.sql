@@ -444,6 +444,8 @@ set local role authenticated;
 select feedback_id as fid from projects.record_build_feedback(:'BD1_bd', 'The cart page crashes when I tap pay', 'whatsapp:msg-30') \gset FB1_
 select feedback_id as fid from projects.record_build_feedback(:'BD1_bd', 'Please also add a loyalty points programme', 'whatsapp:msg-31') \gset FB2_
 select feedback_id as fid from projects.record_build_feedback(:'BD1_bd', 'Can the header be a bit friendlier?', 'whatsapp:msg-32') \gset FB3_
+select pg_temp.check((select count(*) from core.outbox_events where type = 'project.build_feedback_received' and subject_id in (:'FB1_fid', :'FB2_fid', :'FB3_fid')) = 3, 'each piece of feedback tells the PM (PM5-M03) and the event carries no client words');
+select pg_temp.check(not exists (select 1 from core.outbox_events where type = 'project.build_feedback_received' and payload::text like '%loyalty%'), 'the event never carries the client''s words');
 select pg_temp.check((select outcome from projects.classify_build_feedback(:'FB1_fid', 'bug')) = 'defect_raised', 'a BUG becomes a mandatory defect');
 select pg_temp.check((select count(*) from qa.defects where deliverable_id = :'BD1_bd' and title like 'Client feedback (bug)%' and status = 'open') = 1, 'the defect is open against the exact build');
 select pg_temp.check((select outcome from projects.classify_build_feedback(:'FB2_fid', 'new_feature')) = 'change_request_raised', 'a NEW_FEATURE becomes a Change Request');

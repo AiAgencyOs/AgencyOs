@@ -92,3 +92,51 @@ describe('Phase 5 review, feedback, integrations and handoff', () => {
     assert.equal((specialists.match(/, 'quality_assurance'\)/g) ?? []).length >= 11, true);
   });
 });
+
+describe('Phase 5 Admin Panel overview is reachable and honest about failed reads', () => {
+  const page = read('app/(internal)/projects/[projectId]/page.tsx');
+  const queries = read('src/modules/projects/phase-five-queries.ts');
+  const panel = read('app/(internal)/projects/[projectId]/phase-five-panel.tsx');
+  test('the project page reads the overview and renders the panel', () => {
+    assert.match(page, /readPhaseFiveOverview\(projectId\)/);
+    assert.match(page, /<PhaseFivePanel view=\{phaseFive\} projectId=\{projectId\} \/>/);
+  });
+  test('every read is guarded: a failed read is unreadable, never "nothing yet"', () => {
+    const awaited = (queries.match(/\{ data: [A-Za-z]+, error: [A-Za-z]+ \}/g) ?? []).length;
+    const guards = (queries.match(/if \([A-Za-z]+Error\) unreadable\(/g) ?? []).length + (queries.match(/if \(result\.error\) unreadable\(/g) ?? []).length;
+    assert.ok(awaited >= 11, `only ${awaited} reads found`);
+    assert.ok(guards >= awaited, `${awaited} reads, ${guards} guards`);
+  });
+  test('the panel is read-only and says so', () => {
+    assert.ok(!/<form|action=/.test(panel));
+    assert.match(panel, /Read-only/);
+  });
+  test('the panel shows the gates that matter: baseline, review, QA, M3, the intake', () => {
+    for (const text of ['Locked baseline', 'Review:', 'QA:', 'M3 payment', 'QA intake', 'Can Phase 5 complete?']) assert.ok(panel.includes(text), text);
+  });
+});
+
+describe('PM5 messages are reachable and filtered to their own kind', () => {
+  const handlers = read('src/modules/crm/handlers.ts');
+  test('each PM5 announcer is subscribed through a registered handler and job kind', () => {
+    const wiring: [string, string, string][] = [
+      ['project.phase_five_started', 'crm:announcePhaseFiveStarted', 'phase_five_started.announce'],
+      ['project.deliverable_submitted', 'crm:announceBuildShared', 'build_shared.announce'],
+      ['project.build_feedback_received', 'crm:announceBuildFeedbackReceived', 'build_feedback.announce'],
+      ['project.deliverable_decided', 'crm:announceBuildApproved', 'build_approved.announce'],
+    ];
+    for (const [event, handler, kind] of wiring) {
+      assert.ok(((SUBSCRIPTIONS as Record<string, readonly string[]>)[event] ?? []).includes(handler), `${event} -> ${handler}`);
+      assert.ok((HANDLERS as readonly string[]).includes(handler), handler);
+      assert.equal((HANDLER_JOB_KIND as Record<string, string>)[handler], kind);
+    }
+  });
+  test('the generic deliverable events only announce a development build', () => {
+    assert.match(handlers, /event\.kind !== 'build'/);
+    assert.match(handlers, /event\.kind !== 'build' \|\| event\.status !== 'approved'/);
+  });
+  test('the feedback event carries the project and build, never the client\'s words', () => {
+    const migration = read('supabase/migrations/20261031220000_the_pm_hears_about_build_feedback.sql');
+    assert.match(migration, /jsonb_build_object\('projectId', v_row\.project_id, 'deliverableId', v_row\.id, 'version', v_row\.version\)/);
+  });
+});

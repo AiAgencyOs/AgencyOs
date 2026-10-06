@@ -1847,3 +1847,47 @@ export const stopFollowUpSequenceSchema = z.object({
 export const resumeFollowUpSequenceSchema = z.object({ sequenceId: z.uuid() });
 export type StopFollowUpSequenceInput = z.infer<typeof stopFollowUpSequenceSchema>;
 export type ResumeFollowUpSequenceInput = z.infer<typeof resumeFollowUpSequenceSchema>;
+
+
+/** PM5-M01 - Task 3 Start (Phase 5 PM Agent spec). */
+export const phaseFiveStartedEventSchema = z
+  .object({ projectId: z.uuid() })
+  .strip();
+export function phaseFiveStartedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Task 3 has started: full development.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Development builds against the exact approved UI, prototype and scope that were locked as its baseline.',
+    'Open the project in AgencyOS.',
+  ].join('\n');
+}
+
+/** PM5-M02 - a development build is ready for the client to test. */
+export function buildSharedAnnouncementFor(input: { projectName: string | null; version: number }): string {
+  return [
+    `Development build v${input.version} has passed QA, code review and Admin approval and is ready for the client to test.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Share exactly this build; any feedback will be classified before anything is changed.',
+  ].join('\n');
+}
+
+/** PM5-M03 - the client's feedback on a build has been received. */
+export const buildFeedbackReceivedEventSchema = z
+  .object({ projectId: z.uuid(), deliverableId: z.uuid(), version: z.number() })
+  .strip();
+export function buildFeedbackReceivedAnnouncementFor(input: { projectName: string | null; version: number }): string {
+  return [
+    `Client feedback on development build v${input.version} has been received and is waiting to be classified.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'A bug or missed requirement becomes a defect; a new feature becomes a Change Request, never a free fix.',
+  ].join('\n');
+}
+
+/** PM5-M04 - the client approved the exact final development build. */
+export function buildApprovedAnnouncementFor(input: { projectName: string | null; version: number }): string {
+  return [
+    `The client approved development build v${input.version} as the final build.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Phase 5 can complete once every other condition holds.',
+  ].join('\n');
+}

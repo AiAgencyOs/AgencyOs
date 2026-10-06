@@ -54,7 +54,7 @@ describe('B. idempotency keys are per-milestone and per-version', () => {
 
 describe('C. it is reachable — the defect this repository has found repeatedly', () => {
   test('project.deliverable_submitted now has a subscriber', () => {
-    assert.deepEqual(SUBSCRIPTIONS['project.deliverable_submitted'], ['crm:announcePrototypeSubmitted']);
+    assert.deepEqual(SUBSCRIPTIONS['project.deliverable_submitted'], ['crm:announcePrototypeSubmitted', 'crm:announceBuildShared']);
   });
 
   test('project.deliverable_decided fans out to completion, the PM announcement, AND the reviser', () => {
@@ -62,6 +62,7 @@ describe('C. it is reachable — the defect this repository has found repeatedly
     assert.deepEqual(SUBSCRIPTIONS['project.deliverable_decided'], [
       'projects:completePhaseFourOnPrototypeApproval',
       'crm:announcePrototypeChangeRequested',
+      'crm:announceBuildApproved',
       'ui_prototype:reviseBuild',
     ]);
   });
