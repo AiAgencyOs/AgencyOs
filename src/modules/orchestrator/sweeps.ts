@@ -36,3 +36,22 @@ export async function sweepStaleOrchestratorRecords(admin: Admin): Promise<{ bui
   }
   return { buildRequestsExpired, leasesExpired };
 }
+
+/**
+ * The finance exception sweep (Phase 9): opens overdue and overpayment exceptions idempotently and closes an overdue one whose state changed.
+ * It writes only to the exceptions table (never a payment, invoice or refund) through a runner-only door. Best effort, like the sweeps above.
+ */
+export async function sweepFinanceExceptions(admin: Admin): Promise<{ openedOverdue: number; openedOverpayment: number; resolvedOverdue: number } | null> {
+  try {
+    const { data, error } = await (admin.schema('finance') as unknown as Loose).rpc('sweep_finance_exceptions', { p_limit: 200 });
+    const row = (Array.isArray(data) ? data[0] : data) as { opened_overdue?: number; opened_overpayment?: number; resolved_overdue?: number } | undefined;
+    if (error || !row) {
+      console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `finance exception sweep: ${error ? error.message : 'the door answered nothing'}` }));
+      return null;
+    }
+    return { openedOverdue: Number(row.opened_overdue ?? 0), openedOverpayment: Number(row.opened_overpayment ?? 0), resolvedOverdue: Number(row.resolved_overdue ?? 0) };
+  } catch (e) {
+    console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `finance exception sweep: ${e instanceof Error ? e.message : 'unknown'}` }));
+    return null;
+  }
+}

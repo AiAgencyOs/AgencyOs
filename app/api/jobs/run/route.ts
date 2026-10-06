@@ -102,7 +102,7 @@ import { handleWelcomeClient, handleAskGstDetails, handlePaymentUpdate, handleRe
 import { handleHandoverAcceptedForFinance, handleBillingModeConfirmed, handleInvoiceIssuedForDelivery, handlePhaseFourCompletedForFinance, handlePhaseFiveCompletedForFinance, handlePhaseSixCompletedForFinance } from '@/modules/finance/handlers';
 import { learnFromDecision, learnFromRevision, syncDiscountDecision } from '@/modules/sales/handlers';
 import { handleRouteTask2Design, handleRequestUIVersionAdminReview, handleRouteDevelopmentPlan, handleRouteQaOutcome } from '@/modules/orchestrator/handlers';
-import { sweepStaleOrchestratorRecords } from '@/modules/orchestrator/sweeps';
+import { sweepFinanceExceptions, sweepStaleOrchestratorRecords } from '@/modules/orchestrator/sweeps';
 import { handleReviewUIVersion, handleReviewPrototypeBuild } from '@/modules/qa/handlers';
 
 export const runtime = 'nodejs';
@@ -377,6 +377,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   // Orchestrator housekeeping, behind the same CRON_SECRET check as everything above: a build request nobody reported on for two hours is settled as a
   // failed dispatch, and a lease past its time is expired so a crashed worker does not hold files forever.
   await sweepStaleOrchestratorRecords(admin);
+  await sweepFinanceExceptions(admin);
   // Scheduled social posts that are due: published through the governed door, or surfaced for a person when no publisher exists.
   await runSocialPublishing(admin, SOCIAL_PUBLISHERS);
   // Approved ad changes, pending pauses, emergency stops and campaign health (lead generation, 20261020100000).
