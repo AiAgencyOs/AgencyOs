@@ -4,8 +4,11 @@ import { revalidatePath } from 'next/cache';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { createAdminClient } from '@/lib/db/admin';
 import { createClient } from '@/lib/db/server';
 import type { FormState } from '@/modules/identity/types';
+
+import { runIntegrationCheck, type HttpClient } from './integration-check';
 
 /**
  * Phase 5 Admin actions - one thin server action per database door the Phase 5 overview describes. NOTHING here decides: each action asks a
@@ -52,6 +55,8 @@ const WORDS: Record<string, string> = {
   already_recorded: 'The baseline already has its base commit; it is never replaced.',
   repository_not_on_project: 'That repository is not linked to this project.',
   not_found_or_closed: 'That escalation is not open.',
+  bad_url: 'The check URL must be an https address.',
+  bad_credential_name: 'A secret is named in capitals and underscores (for example STRIPE_TEST_KEY); never paste the value.',
   created: 'Plan created.',
   planned: 'Task planned.',
   approved: 'Plan approved.',
@@ -313,4 +318,62 @@ export async function recordBaselineCommitAction(_prev: FormState, formData: For
 
 export async function resolveEscalationAction(_prev: FormState, formData: FormData): Promise<FormState> {
   return run(text(formData, 'projectId'), 'resolve_escalation', { p_escalation_id: text(formData, 'escalationId'), p_resolution: text(formData, 'resolution') }, ['resolved']);
+}
+
+
+/** Where a check calls, and the NAME of the secret it authenticates with. Changing either drops VERIFIED. */
+export async function setIntegrationCheckTargetAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const ref = text(formData, 'credentialRef');
+  return run(text(formData, 'projectId'), 'set_integration_check_target', {
+    p_connection_id: text(formData, 'connectionId'),
+    p_check_url: text(formData, 'checkUrl'),
+    p_credential_ref: ref === '' ? null : ref,
+  }, ['set']);
+}
+
+const fetchHttp: HttpClient = async ({ url, headers, timeoutMs }) => {
+  const res = await fetch(url, { method: 'GET', headers, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs), cache: 'no-store' });
+  const retryAfter = Number(res.headers.get('retry-after'));
+  return { status: res.status, retryAfterSeconds: Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null };
+};
+
+/**
+ * Run the adapter check for one integration NOW. Only the adapter (this, with the service role) can write VERIFIED, and only on a 2xx from the
+ * declared URL. A missing secret verifies nothing and says which secret name is unset.
+ */
+export async function runIntegrationCheckAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const refused = await gate();
+  if (refused) return refused;
+  const projectId = text(formData, 'projectId');
+  const connectionId = text(formData, 'connectionId');
+  const supabase = await createClient();
+  // read through the caller's own session: a connection of another organization is simply not found
+  const { data: row, error } = await supabase
+    .schema('projects')
+    .from('integration_connections')
+    .select('id, kind, health, is_mock, check_url, credential_ref')
+    .eq('id', connectionId)
+    .eq('project_id', projectId)
+    .maybeSingle();
+  if (error) return { status: 'error', message: 'The integration could not be read; nothing was checked.' };
+  if (!row) return { status: 'error', message: 'That integration was not found.' };
+  const admin = createAdminClient();
+  const outcome = await runIntegrationCheck({
+    connection: { id: row.id, checkUrl: row.check_url, credentialRef: row.credential_ref, isMock: row.is_mock === true, health: row.health, kind: row.kind },
+    adapter: 'http_health',
+    http: fetchHttp,
+    env: process.env,
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    now: () => new Date(),
+    record: async ({ ok, evidence }) => {
+      const { data } = await admin.schema('projects').rpc('record_integration_check', { p_connection_id: connectionId, p_adapter: 'http_health', p_ok: ok, p_evidence: evidence });
+      return String(first(data).outcome ?? 'no answer');
+    },
+    note: async (checkClass) => {
+      await (admin.schema('projects') as unknown as { rpc(name: string, args: unknown): PromiseLike<unknown> }).rpc('note_integration_check', { p_connection_id: connectionId, p_class: checkClass });
+    },
+  });
+  revalidatePath(`/projects/${projectId}`);
+  if (outcome.recorded === 'verified') return { status: 'success', message: `Verified: ${outcome.detail}` };
+  return { status: 'error', message: outcome.recorded === 'degraded' ? `Check failed and the integration is now degraded: ${outcome.detail}` : `Nothing was verified: ${outcome.detail}` };
 }

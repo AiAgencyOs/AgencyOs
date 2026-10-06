@@ -39,7 +39,7 @@ export type PhaseFiveOverview = {
   builds: PhaseFiveBuildRow[];
   defects: { unresolved: number; verified: number; total: number };
   feedback: { id: string; words: string; classification: string | null; state: string; defectId: string | null; changeRequestId: string | null }[];
-  integrations: { id: string; kind: string; name: string; health: string; isMock: boolean }[];
+  integrations: { id: string; kind: string; name: string; health: string; isMock: boolean; checkUrl: string | null; credentialRef: string | null; lastCheckClass: string | null; lastCheckAt: string | null }[];
   agentStates: { agentKey: string; state: string; reason: string | null }[];
   handoff: { id: string; commit: string; createdAt: string } | null;
   plan: {
@@ -112,7 +112,7 @@ export async function readPhaseFiveOverview(projectId: string): Promise<PhaseFiv
     projects.from('deliverables').select('id, version, status, artifact_url').eq('project_id', projectId).eq('kind', 'build').order('version', { ascending: true }),
     supabase.schema('qa').from('defects').select('status').eq('project_id', projectId),
     projects.from('build_feedback').select('id, client_words, classification, state, defect_id, change_request_id').eq('project_id', projectId).order('created_at', { ascending: true }),
-    projects.from('integration_connections').select('id, kind, name, health, is_mock').eq('project_id', projectId).order('kind', { ascending: true }),
+    projects.from('integration_connections').select('id, kind, name, health, is_mock, check_url, credential_ref, last_check_class, last_check_at').eq('project_id', projectId).order('kind', { ascending: true }),
     projects.from('phase_five_handoffs').select('id, final_commit_ref, created_at').eq('project_id', projectId).maybeSingle(),
     projects.from('development_plans').select('id, version, status, summary').eq('project_id', projectId).order('version', { ascending: false }).limit(1),
     (supabase.schema('qa') as unknown as LooseQa).from('flaky_tests').select('id, test_key, status, occurrences, expires_at').eq('project_id', projectId).order('first_seen_at', { ascending: true }),
@@ -289,6 +289,10 @@ export async function readPhaseFiveOverview(projectId: string): Promise<PhaseFiv
       name: String(i.name),
       health: String(i.health),
       isMock: i.is_mock === true,
+      checkUrl: str(i.check_url),
+      credentialRef: str(i.credential_ref),
+      lastCheckClass: str(i.last_check_class),
+      lastCheckAt: str(i.last_check_at),
     })),
     agentStates,
     routing: ((routingRows ?? []) as Row[]).map((r) => {

@@ -18,6 +18,8 @@ import {
   startPhaseFiveAction,
   recordBaselineCommitAction,
   resolveEscalationAction,
+  runIntegrationCheckAction,
+  setIntegrationCheckTargetAction,
   decideBuildAdminAction,
   recordBuildFeedbackAction,
   recordBuildQaAction,
@@ -413,5 +415,31 @@ export function ResolveEscalationForm({ projectId, escalationId }: { projectId: 
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? '…' : 'Close'}</button>
       <Message state={state} />
     </form>
+  );
+}
+
+
+export function IntegrationCheckForm({ projectId, connectionId, checkUrl, credentialRef }: { projectId: string; connectionId: string; checkUrl: string | null; credentialRef: string | null }) {
+  const [targetState, targetAction, targetPending] = useActionState(setIntegrationCheckTargetAction, IDLE_STATE);
+  const [checkState, checkAction, checkPending] = useActionState(runIntegrationCheckAction, IDLE_STATE);
+  return (
+    <div className="flex flex-col gap-2">
+      <form action={targetAction} className="flex flex-wrap items-center gap-2">
+        <input type="hidden" name="projectId" value={projectId} />
+        <input type="hidden" name="connectionId" value={connectionId} />
+        <input aria-label="Check URL" name="checkUrl" required defaultValue={checkUrl ?? ''} placeholder="https://api.provider.example/health" className={`${field} min-w-64`} />
+        <input aria-label="Secret name" name="credentialRef" defaultValue={credentialRef ?? ''} placeholder="SECRET_NAME (not the value)" className={`${field} w-56`} />
+        <button type="submit" disabled={targetPending} className={buttonClass('secondary', 'sm')}>{targetPending ? '…' : 'Set check target'}</button>
+        <Message state={targetState} />
+      </form>
+      {checkUrl ? (
+        <form action={checkAction} className="flex items-center gap-2">
+          <input type="hidden" name="projectId" value={projectId} />
+          <input type="hidden" name="connectionId" value={connectionId} />
+          <button type="submit" disabled={checkPending} className={buttonClass('secondary', 'sm')}>{checkPending ? 'Checking…' : 'Run check now'}</button>
+          <Message state={checkState} />
+        </form>
+      ) : null}
+    </div>
   );
 }

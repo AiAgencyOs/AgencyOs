@@ -10,6 +10,7 @@ import {
   CreatePlanForm,
   DeriveDocumentsForm,
   LinkTestRunForm,
+  IntegrationCheckForm,
   IntegrationStateForm,
   PlanTaskForm,
   RecordDocumentForm,
@@ -261,7 +262,9 @@ export function PhaseFivePanel({ view, projectId, repositories = [] }: { view: P
                 <span>({humanize(i.kind)})</span>
                 <Badge tone={HEALTH_TONE[i.health] ?? 'neutral'}>{humanize(i.health)}</Badge>
                 {i.isMock ? <span>mock only</span> : null}
+                {i.lastCheckClass ? <span>last check: {humanize(i.lastCheckClass)}</span> : null}
                 <IntegrationStateForm projectId={projectId} connectionId={i.id} />
+                {i.isMock ? null : <IntegrationCheckForm projectId={projectId} connectionId={i.id} checkUrl={i.checkUrl} credentialRef={i.credentialRef} />}
               </li>
             ))}
           </ul>

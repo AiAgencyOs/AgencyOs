@@ -1328,6 +1328,35 @@ select pg_temp.check((select outcome from projects.resolve_escalation((select id
 select pg_temp.check((select count(*) from projects.orchestrator_escalations where task_id = current_setting('e2e.t2')::uuid and status = 'open') = 0, 'and it no longer reads open');
 reset role;
 
+
+-- integrations: a check target names the endpoint and the SECRET NAME; changing it drops the proof
+reset role;
+insert into projects.integration_connections (organization_id, project_id, kind, name, health) values (:'ORG', :'P_id', 'payment', 'zz gateway', 'configured') returning id \gset IC_
+select set_config('e2e.ic', :'IC_id', false);
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.set_integration_check_target(:'IC_id', 'http://insecure.example.test/health')) = 'bad_url', 'a check URL must be https');
+select pg_temp.check((select outcome from projects.set_integration_check_target(:'IC_id', 'https://api.example.test/health', 'sk-live-abc123')) = 'bad_credential_name', 'a secret is referenced by NAME in capitals; a pasted value is refused');
+select pg_temp.check((select outcome from projects.set_integration_check_target(:'IC_id', 'https://api.example.test/health', 'GATEWAY_TEST_KEY')) = 'set', 'the target is set');
+reset role;
+select pg_temp.as_service();
+set local role service_role;
+select pg_temp.check((select outcome from projects.record_integration_check(:'IC_id', 'http_health', true, 'HTTP 200 from api.example.test at 2026-10-06T12:00:00Z by adapter http_health')) = 'verified', 'the adapter verifies on evidence');
+select pg_temp.check((select outcome from projects.note_integration_check(:'IC_id', 'ok')) = 'noted', 'the adapter notes what the check found');
+select pg_temp.check((select outcome from projects.note_integration_check(:'IC_id', 'made_up')) = 'bad_class', 'an unknown check class is refused');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+do $$ begin
+  begin perform projects.note_integration_check(current_setting('e2e.ic')::uuid, 'ok'); raise exception 'NOT REFUSED';
+  exception when insufficient_privilege then null; end;
+end $$;
+select pg_temp.check(true, 'a person cannot write a check result');
+select pg_temp.check((select outcome from projects.set_integration_check_target(:'IC_id', 'https://api.example.test/health', 'GATEWAY_TEST_KEY')) = 'set' and (select health from projects.integration_connections where id = :'IC_id') = 'verified', 'setting the SAME target keeps the proof');
+select pg_temp.check((select outcome from projects.set_integration_check_target(:'IC_id', 'https://api.other.example.test/health', 'GATEWAY_TEST_KEY')) = 'set', 'a different target is set');
+select pg_temp.check((select health = 'configured' and verification_evidence is null and verified_at is null and verified_by_adapter is null from projects.integration_connections where id = :'IC_id'), 'and it DROPS the proof: the evidence described a connection that no longer exists');
+reset role;
+
 -- a plan with no baseline to measure against is not coverage
 reset role;
 do $$ declare pl uuid; begin
