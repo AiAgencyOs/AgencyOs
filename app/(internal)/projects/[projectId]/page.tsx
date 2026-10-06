@@ -52,6 +52,7 @@ import { readClientName } from '@/lib/admin/clients';
 
 import { TrailLabel } from '../../trail-label';
 import { can } from '@/lib/authz/permissions';
+import { getTestIntegrationView } from '@/modules/projects/test-integration-queries';
 import {
   listDeliverables,
   listDevelopmentBreakdown,
@@ -138,6 +139,7 @@ import { PhaseFourPanel } from './phase-four-panel';
 import { BuildDepthPanel } from './build-depth-panel';
 import { OrchestratorPanel } from './orchestrator-panel';
 import { PmDepthPanel } from './pm-depth-panel';
+import { TestIntegrationPanel } from './test-integration-panel';
 import { DevClarificationsPanel, EscalationsPanel, PhaseFivePanel, PmMessageHistoryPanel, RecordsPanel, WorkboardPanel } from './phase-five-panel';
 import { PhaseSixPanel } from './phase-six-panel';
 import { PhaseCompletionPanel } from './phase-completion-panel';
@@ -229,6 +231,7 @@ export default async function ProjectPage({
   const repositories = await readProjectRepositories(projectId);
   const escalations = await readOpenEscalations(projectId);
   const pmOverview = await readPmOverview(projectId);
+  const testIntegration = await getTestIntegrationView(projectId);
   const taskBoard = await readTaskBoard(projectId);
   const buildRuns = await readBuildRuns(projectId);
   const buildBlockers = await readBuildBlockers(projectId);
@@ -910,6 +913,8 @@ export default async function ProjectPage({
       <BuildDepthPanel projectId={projectId} canAdmin={can(context, 'project.sign_off')} />
 
       <OrchestratorPanel projectId={projectId} />
+
+      <TestIntegrationPanel projectId={projectId} view={testIntegration} />
 
       <PmDepthPanel projectId={projectId} features={records.features.map((f) => ({ id: f.id, name: f.name }))} />
 
