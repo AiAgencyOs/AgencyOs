@@ -29,6 +29,10 @@ export interface Executor {
   command(): string;
   /** The runtime facts for the fingerprint (never a secret). */
   fingerprint(): Record<string, string>;
+  /** A launch/smoke test of the built artifact, when the executor can run one (a device, an emulator, a headless browser). */
+  smoke?(ctx: { commit: string }): Promise<{ result: 'passed' | 'failed' | 'blocked'; checks: { name: string }[]; deviceTarget?: string; reason?: string; evidenceUrl?: string }>;
+  /** What the build produced beyond its hash. */
+  artifactInfo?(ctx: { commit: string }): Promise<{ type: 'web_bundle' | 'container_image' | 'apk' | 'aab' | 'ipa' | 'archive' | 'other'; platform?: string; storageRef: string; sizeBytes?: number; distributable: boolean; limitation?: string } | null>;
 }
 
 /** What runs when nothing is bound: an honest blocker, never a fabricated result. */
@@ -82,6 +86,10 @@ export type RunPlan = {
     retryOf: string | null;
     idempotencyKey: string;
   }) => Promise<{ outcome: string; runId: string | null }>;
+  /** Records the smoke verdict for the built commit through `record_smoke_check`. A runner with no smoke capability records NOT_TESTED, never a pass. */
+  recordSmoke?: (args: { result: 'passed' | 'failed' | 'blocked' | 'not_tested'; checks: { name: string }[]; deviceTarget: string | null; reason: string | null; evidenceUrl: string | null }) => Promise<void>;
+  /** Records the artifact through `record_build_artifact`, once the run is recorded. */
+  recordArtifact?: (args: { runId: string; type: string; platform: string | null; storageRef: string; sizeBytes: number | null; distributable: boolean; limitation: string | null }) => Promise<void>;
   /** Called on a failure, to record the attempt through `record_execution_failure` (best effort, never blocks the build record). */
   recordFailure?: (args: { attempt: number; failureClass: string; retry: 'safe' | 'never'; escalate: boolean; detail: string }) => Promise<void>;
   maxAttempts?: number;
@@ -139,7 +147,30 @@ export async function runBuild(executor: Executor, plan: RunPlan): Promise<RunRe
     if (recorded.outcome !== 'recorded' && recorded.outcome !== 'already_recorded') {
       return { status: 'blocked', attempts: attempt, failureClass, runId: null, detail: `the door refused the run: ${recorded.outcome}` };
     }
-    if (!failedStage) return { status: 'succeeded', attempts: attempt, failureClass: null, runId: recorded.runId, detail: 'built, artifact verified' };
+    if (!failedStage) {
+      if (plan.recordArtifact && recorded.runId && executor.artifactInfo) {
+        const info = await executor.artifactInfo({ commit: plan.commit });
+        if (info) {
+          await plan.recordArtifact({ runId: recorded.runId, type: info.type, platform: info.platform ?? null, storageRef: info.storageRef, sizeBytes: info.sizeBytes ?? null, distributable: info.distributable, limitation: info.limitation ?? null });
+        }
+      }
+      if (plan.recordSmoke) {
+        if (executor.smoke) {
+          const smoke = await executor.smoke({ commit: plan.commit });
+          const passed = smoke.result === 'passed' && smoke.checks.length > 0 && Boolean(smoke.evidenceUrl);
+          await plan.recordSmoke({
+            result: smoke.result === 'passed' && !passed ? 'blocked' : smoke.result,
+            checks: smoke.checks,
+            deviceTarget: smoke.deviceTarget ?? null,
+            reason: smoke.result === 'passed' && !passed ? 'the smoke test reported a pass without its checks and evidence' : (smoke.reason ?? null),
+            evidenceUrl: smoke.evidenceUrl ?? null,
+          });
+        } else {
+          await plan.recordSmoke({ result: 'not_tested', checks: [], deviceTarget: null, reason: 'this executor has no launch/smoke capability; the artifact was built and verified, not launched', evidenceUrl: null });
+        }
+      }
+      return { status: 'succeeded', attempts: attempt, failureClass: null, runId: recorded.runId, detail: 'built, artifact verified' };
+    }
     const retry = transient && attempt < max;
     await plan.recordFailure?.({
       attempt,

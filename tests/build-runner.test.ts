@@ -146,6 +146,48 @@ describe('the build runner', () => {
   });
 });
 
+describe('smoke and artifact records', () => {
+  test('an executor with no smoke capability records NOT_TESTED with a reason, never a pass', async () => {
+    const { executor } = fake({});
+    const smokes: Parameters<NonNullable<RunPlan['recordSmoke']>>[0][] = [];
+    const { p } = plan({ recordSmoke: async (a) => { smokes.push(a); } });
+    assert.equal((await runBuild(executor, p)).status, 'succeeded');
+    assert.equal(smokes.length, 1);
+    assert.equal(smokes[0]!.result, 'not_tested');
+    assert.match(smokes[0]!.reason ?? '', /no launch\/smoke capability/);
+  });
+  test('a smoke pass without checks and evidence is downgraded to blocked, not accepted', async () => {
+    const { executor } = fake({});
+    executor.smoke = async () => ({ result: 'passed', checks: [] });
+    const smokes: Parameters<NonNullable<RunPlan['recordSmoke']>>[0][] = [];
+    const { p } = plan({ recordSmoke: async (a) => { smokes.push(a); } });
+    await runBuild(executor, p);
+    assert.equal(smokes[0]!.result, 'blocked');
+  });
+  test('a real smoke pass with checks and evidence is recorded as passed', async () => {
+    const { executor } = fake({});
+    executor.smoke = async () => ({ result: 'passed', checks: [{ name: 'launch' }], evidenceUrl: 'https://ci.example.test/smoke/1', deviceTarget: 'chrome' });
+    const smokes: Parameters<NonNullable<RunPlan['recordSmoke']>>[0][] = [];
+    const { p } = plan({ recordSmoke: async (a) => { smokes.push(a); } });
+    await runBuild(executor, p);
+    assert.equal(smokes[0]!.result, 'passed');
+  });
+  test('the artifact is recorded against the recorded run; a failed build records no smoke and no artifact', async () => {
+    const ok = fake({});
+    ok.executor.artifactInfo = async () => ({ type: 'web_bundle', storageRef: 's3://b/app.zip', sizeBytes: 10, distributable: true });
+    const arts: Parameters<NonNullable<RunPlan['recordArtifact']>>[0][] = [];
+    const smokes: unknown[] = [];
+    const a = plan({ recordArtifact: async (x) => { arts.push(x); }, recordSmoke: async (x) => { smokes.push(x); } });
+    await runBuild(ok.executor, a.p);
+    assert.deepEqual(arts.map((x) => [x.runId, x.type, x.distributable]), [['run-1', 'web_bundle', true]]);
+    const bad = fake({ build: [{ status: 'failed' }] });
+    const b = plan({ recordArtifact: async (x) => { arts.push(x); }, recordSmoke: async (x) => { smokes.push(x); } });
+    await runBuild(bad.executor, b.p);
+    assert.equal(arts.length, 1);
+    assert.equal(smokes.length, 1);
+  });
+});
+
 describe('maskSecrets', () => {
   test('masks the shapes that leak', () => {
     const cases = [

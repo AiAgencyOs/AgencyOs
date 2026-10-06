@@ -450,3 +450,27 @@ export async function readTaskBoard(projectId: string): Promise<TaskBoard> {
   }
   return board;
 }
+
+export type BuildBlockerRow = { id: string; type: string; owner: string; resumeCondition: string; buildVersion: number };
+
+/** Open build blockers: why a build cannot proceed, who must act, and what would let it resume. */
+export async function readBuildBlockers(projectId: string): Promise<BuildBlockerRow[]> {
+  const supabase = await createClient();
+  const projects = supabase.schema('projects');
+  const { data, error } = await projects
+    .from('build_blockers' as never)
+    .select('id, deliverable_id, blocker_type, owner, resume_condition')
+    .eq('project_id' as never, projectId as never)
+    .eq('status' as never, 'open' as never)
+    .limit(50);
+  if (error) unreadable('readBuildBlockers', error);
+  const rows = (data ?? []) as unknown as { id: string; deliverable_id: string; blocker_type: string; owner: string; resume_condition: string }[];
+  const ids = [...new Set(rows.map((r) => r.deliverable_id))];
+  const versions = new Map<string, number>();
+  if (ids.length > 0) {
+    const { data: ds, error: dError } = await projects.from('deliverables').select('id, version').in('id', ids);
+    if (dError) unreadable('readBuildBlockers.versions', dError);
+    for (const d of (ds ?? []) as { id: string; version: number }[]) versions.set(d.id, d.version);
+  }
+  return rows.map((r) => ({ id: r.id, type: r.blocker_type, owner: r.owner, resumeCondition: r.resume_condition, buildVersion: versions.get(r.deliverable_id) ?? 0 }));
+}

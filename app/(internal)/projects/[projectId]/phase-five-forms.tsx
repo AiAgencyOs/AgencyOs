@@ -18,6 +18,9 @@ import {
   startPhaseFiveAction,
   recordBaselineCommitAction,
   resolveEscalationAction,
+  recordSmokeAction,
+  rerouteHeldTasksAction,
+  resolveBuildBlockerAction,
   runBuildAction,
   runIntegrationCheckAction,
   setIntegrationCheckTargetAction,
@@ -147,6 +150,7 @@ export function BuildActions({ projectId, deliverableId, status }: { projectId: 
       {open ? (
         <>
           <RunBuildButton projectId={projectId} deliverableId={deliverableId} />
+          <details><summary className="cursor-pointer text-xs underline underline-offset-2">Smoke / launch verdict</summary><SmokeForm projectId={projectId} deliverableId={deliverableId} /></details>
           <details><summary className="cursor-pointer text-xs underline underline-offset-2">QA verdict</summary><QaForm projectId={projectId} deliverableId={deliverableId} /></details>
           <details><summary className="cursor-pointer text-xs underline underline-offset-2">Code review</summary><ReviewForm projectId={projectId} deliverableId={deliverableId} /></details>
           <details><summary className="cursor-pointer text-xs underline underline-offset-2">Admin decision</summary><AdminForm projectId={projectId} deliverableId={deliverableId} /></details>
@@ -454,6 +458,55 @@ function RunBuildButton({ projectId, deliverableId }: { projectId: string; deliv
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="deliverableId" value={deliverableId} />
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Building…' : 'Run the build'}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+
+export function RerouteHeldTasksForm({ projectId }: { projectId: string }) {
+  const [state, action, pending] = useActionState(rerouteHeldTasksAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Routing…' : 'Re-route held tasks'}</button>
+      <span className="text-xs text-muted">Re-checks dependencies, the baseline and the specialists; a task already handed off is left alone.</span>
+      <Message state={state} />
+    </form>
+  );
+}
+
+
+function SmokeForm({ projectId, deliverableId }: { projectId: string; deliverableId: string }) {
+  const [state, action, pending] = useActionState(recordSmokeAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-col gap-2 rounded-md border border-line p-3">
+      <p className="text-[13px] text-muted">Was the built artifact actually launched? A pass names the checks and links its evidence; not tested or blocked says why. Never a guess.</p>
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="deliverableId" value={deliverableId} />
+      <select aria-label="Smoke result" name="result" defaultValue="not_tested" className={field}>
+        <option value="passed">Passed</option>
+        <option value="failed">Failed</option>
+        <option value="blocked">Blocked</option>
+        <option value="not_tested">Not tested</option>
+      </select>
+      <input aria-label="Device or browser" name="deviceTarget" placeholder="Device / browser (optional)" className={field} />
+      <textarea aria-label="Checks that ran" name="checks" rows={2} placeholder="One check per line (for a pass)" className={field} />
+      <input aria-label="Evidence link" name="evidenceUrl" placeholder="https:// evidence (for a pass)" className={field} />
+      <input aria-label="Reason" name="reason" placeholder="Why (for not tested / blocked / failed)" className={field} />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? '…' : 'Record verdict'}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+export function ResolveBuildBlockerForm({ projectId, blockerId }: { projectId: string; blockerId: string }) {
+  const [state, action, pending] = useActionState(resolveBuildBlockerAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex items-center gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="blockerId" value={blockerId} />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? '…' : 'Mark resolved'}</button>
       <Message state={state} />
     </form>
   );

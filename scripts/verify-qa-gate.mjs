@@ -193,6 +193,7 @@ try {
     const n = `${Date.now().toString(36)}-${buildSeq}`;
     await call(ownerToken, 'POST', 'projects', 'rpc/set_deliverable_details', { p_deliverable_id: id, p_platform: 'web', p_commit_ref: `abc${buildSeq}234`, p_build_number: n });
     await call(ownerToken, 'POST', 'projects', 'rpc/record_build_run', { p_deliverable_id: id, p_environment: 'review', p_status: 'succeeded', p_stages: [{ name: 'build', status: 'ok' }, { name: 'artifact_verify', status: 'ok' }], p_evidence_url: 'https://ci.example.test/build', p_artifact_sha256: 'a'.repeat(63) + String(buildSeq % 10), p_fingerprint: { node: '22' } });
+    await call(ownerToken, 'POST', 'projects', 'rpc/record_smoke_check', { p_deliverable_id: id, p_result: 'not_tested', p_reason: 'defect-gate fixture: no launch test is part of this check' });
     await call(ownerToken, 'POST', 'projects', 'rpc/record_code_review', { p_deliverable_id: id, p_verdict: 'passed' });
     await call(ownerToken, 'POST', 'projects', 'rpc/record_build_qa_verdict', { p_deliverable_id: id, p_outcome: 'passed', p_evidence_url: 'https://ci.example.test/qa' });
     await call(ownerToken, 'POST', 'projects', 'rpc/decide_build_admin', { p_deliverable_id: id, p_decision: 'approved' });

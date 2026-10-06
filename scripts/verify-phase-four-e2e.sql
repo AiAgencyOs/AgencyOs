@@ -456,6 +456,7 @@ do $$ begin
   exception when check_violation then raise notice 'ok  an artifact hash must be a real sha256'; end;
 end $$;
 select outcome as o from projects.record_build_run(:'BD1_bd', 'review', 'succeeded', null, '[{"name":"lint","status":"ok"},{"name":"test","status":"ok"},{"name":"build","status":"ok"},{"name":"artifact_verify","status":"ok"}]', '{"os":"linux","node":"22","lockfile":"sha256:abc"}', repeat('a', 64), null, null, 'https://ci.example.test/build/1') \gset BR5_
+select pg_temp.check((select outcome from projects.record_smoke_check(:'BD1_bd', 'not_tested', '[]', null, 'no device lab is bound; a web build with no launch test')) = 'recorded', 'the smoke verdict is recorded honestly as NOT_TESTED with its reason');
 select pg_temp.check(:'BR5_o' = 'recorded', 'the successful run records stages, fingerprint and the artifact hash');
 reset role;
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
@@ -1383,6 +1384,44 @@ select pg_temp.check((select count(*) from qa.test_runs where deliverable_id = :
 select pg_temp.check((select outcome from qa.ingest_test_report(:'BD1_bd', 'smoke', '{"commit":"0000000","tests":[{"name":"smoke.home","status":"passed"}]}', 'https://ci.example.test/smoke/2')) = 'stale_report', 'a report for another commit is refused as stale');
 reset role;
 
+
+-- smoke, blockers, artifacts
+select set_config('e2e.idm1', :'IDM1_r', false);
+select set_config('e2e.bd9', :'BD9_bd', false);
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check(not projects.build_smoke_ready(:'BD9_bd'), 'a build with no smoke verdict is not smoke-ready');
+select pg_temp.check((select outcome from projects.record_smoke_check(:'BD9_bd', 'passed', '[{"name":"launch"}]', null, null, null)) = 'pass_needs_checks_and_evidence', 'a person''s smoke PASS names its checks and evidence');
+select pg_temp.check((select outcome from projects.record_smoke_check(:'BD9_bd', 'not_tested', '[]', null, '  ', null)) = 'reason_required', 'NOT_TESTED says why');
+select outcome as o from projects.record_smoke_check(:'BD9_bd', 'failed', '[]', null, 'crashes on launch', null) \gset SM1_
+select pg_temp.check(:'SM1_o' = 'recorded' and not projects.build_smoke_ready(:'BD9_bd'), 'a failed smoke check is recorded and the build is not ready');
+select outcome as o from projects.record_smoke_check(:'BD9_bd', 'blocked', '[]', 'ios-simulator', 'no macOS runner is bound', null) \gset SM2_
+select pg_temp.check(:'SM2_o' = 'recorded' and not projects.build_smoke_ready(:'BD9_bd'), 'a BLOCKED smoke check is not a pass');
+select outcome as o from projects.record_smoke_check(:'BD9_bd', 'not_tested', '[]', null, 'web build; no device lab', null) \gset SM3_
+select pg_temp.check(:'SM3_o' = 'recorded' and projects.build_smoke_ready(:'BD9_bd'), 'an honest NOT_TESTED with its reason is shareable');
+reset role;
+update projects.deliverable_details set commit_ref = 'ccc3333' where deliverable_id = :'BD9_bd';
+select pg_temp.check(not projects.build_smoke_ready(:'BD9_bd'), 'the smoke verdict belongs to its commit: a new commit needs a new verdict');
+select pg_temp.as_service();
+set local role service_role;
+select pg_temp.check((select outcome from projects.record_build_run(:'BD9_bd', 'review', 'failed', 'environment_missing', '[{"name":"env","status":"failed"}]', '{}', null, null, 'blk-1', null)) = 'recorded', 'a run fails on a missing environment');
+select pg_temp.check((select count(*) from projects.build_blockers where deliverable_id = :'BD9_bd' and blocker_type = 'environment_missing' and status = 'open') = 1, 'and a truthful blocker opened by itself');
+select pg_temp.check((select outcome from projects.record_build_run(:'BD9_bd', 'review', 'failed', 'environment_missing', '[{"name":"env","status":"failed"}]', '{}', null, null, 'blk-2', null)) = 'recorded' and (select count(*) from projects.build_blockers where deliverable_id = :'BD9_bd' and status = 'open') = 1, 'a second identical failure does not open a second blocker');
+select pg_temp.check((select outcome from projects.record_build_artifact(:'IDM1_r'::uuid, 'web_bundle', 's3://bucket/zz/app.zip', 'web', 1234, true, null)) = 'recorded', 'the runner records what the successful run produced');
+select pg_temp.check((select outcome from projects.record_build_artifact(:'IDM1_r'::uuid, 'ipa', 's3://bucket/zz/app.ipa', 'ios', 99, false, null)) in ('recorded', 'bad_input'), 'a second record for the run adds nothing');
+select pg_temp.check((select count(*) from projects.build_artifacts where build_run_id = :'IDM1_r'::uuid) = 1, 'one artifact record per run');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+do $$ begin
+  begin perform projects.record_build_artifact(current_setting('e2e.idm1')::uuid, 'web_bundle', 'x', null, null, true, null); raise exception 'NOT REFUSED';
+  exception when insufficient_privilege then null; end;
+end $$;
+select pg_temp.check(true, 'a person cannot write an artifact record');
+select pg_temp.check((select outcome from projects.resolve_build_blocker((select id from projects.build_blockers where deliverable_id = current_setting('e2e.bd9')::uuid and status = 'open' limit 1))) = 'resolved', 'an Admin resolves the blocker');
+reset role;
+
+select pg_temp.check((select prosrc ~ 'build_smoke_ready\(v_row\.id\)' and prosrc ~ 'no_smoke' from pg_proc where oid = 'projects.submit_deliverable(uuid,uuid,text)'::regprocedure), 'submit_deliverable refuses a build with no smoke verdict (the live definition carries the gate)');
 -- a plan with no baseline to measure against is not coverage
 reset role;
 do $$ declare pl uuid; begin

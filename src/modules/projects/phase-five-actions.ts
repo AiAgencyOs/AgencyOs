@@ -8,6 +8,7 @@ import { createAdminClient } from '@/lib/db/admin';
 import { createClient } from '@/lib/db/server';
 import type { FormState } from '@/modules/identity/types';
 
+import { handleRouteDevelopmentPlan } from '@/modules/orchestrator/handlers';
 import { notConfiguredExecutor, runBuild, type Executor } from './build-runner';
 import { runIntegrationCheck, type HttpClient } from './integration-check';
 
@@ -58,6 +59,8 @@ const WORDS: Record<string, string> = {
   not_found_or_closed: 'That escalation is not open.',
   bad_url: 'The check URL must be an https address.',
   bad_credential_name: 'A secret is named in capitals and underscores (for example STRIPE_TEST_KEY); never paste the value.',
+  pass_needs_checks_and_evidence: 'A smoke PASS names the checks that ran and an https evidence link.',
+  bad_result: 'Choose a smoke result.',
   created: 'Plan created.',
   planned: 'Task planned.',
   approved: 'Plan approved.',
@@ -426,9 +429,65 @@ export async function runBuildAction(_prev: FormState, formData: FormData): Prom
       const row = first(data) as { outcome?: string; run_id?: string };
       return { outcome: String(row.outcome ?? 'no answer'), runId: row.run_id ?? null };
     },
+    recordSmoke: async (a) => {
+      await rpc.rpc('record_smoke_check', { p_deliverable_id: deliverableId, p_result: a.result, p_checks: a.checks, p_device_target: a.deviceTarget, p_reason: a.reason, p_evidence_url: a.evidenceUrl });
+    },
+    recordArtifact: async (a) => {
+      await rpc.rpc('record_build_artifact', { p_build_run_id: a.runId, p_artifact_type: a.type, p_storage_ref: a.storageRef, p_platform: a.platform, p_size_bytes: a.sizeBytes, p_distributable: a.distributable, p_limitation: a.limitation });
+    },
   });
   revalidatePath(`/projects/${projectId}`);
   if (result.status === 'succeeded') return { status: 'success', message: 'Built and the artifact verified; the run is recorded on this exact commit.' };
   if (result.failureClass === 'environment_missing') return { status: 'error', message: 'No build executor is bound to this deployment, so nothing was built. The blocker is recorded; connect a CI worker to build.' };
   return { status: 'error', message: `The build ${result.status}: ${result.detail}` };
+}
+
+
+/**
+ * Route the approved plan's tasks again: a task that was HELD (a dependency was open, the specialist was disabled) is re-evaluated against the
+ * facts as they are now. It is the same handler the plan-approved event runs, so a task already handed off is left alone and nothing is routed twice.
+ */
+export async function rerouteHeldTasksAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const refused = await gate();
+  if (refused) return refused;
+  const projectId = text(formData, 'projectId');
+  const supabase = await createClient();
+  const { data: plan, error } = await supabase
+    .schema('projects')
+    .from('development_plans')
+    .select('id, organization_id')
+    .eq('project_id', projectId)
+    .eq('status', 'approved')
+    .order('version', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) return { status: 'error', message: 'The plan could not be read; nothing was routed.' };
+  if (!plan) return { status: 'error', message: 'There is no approved development plan to route.' };
+  const result = await handleRouteDevelopmentPlan(createAdminClient(), {
+    id: `manual-reroute:${plan.id}`,
+    organization_id: plan.organization_id as string,
+    correlation_id: plan.id as string,
+    payload: { subjectId: plan.id as string } as never,
+  });
+  revalidatePath(`/projects/${projectId}`);
+  if (result.status === 'failed') return { status: 'error', message: `Routing stopped: ${result.detail}` };
+  return { status: 'success', message: result.detail ?? 'Routed.' };
+}
+
+
+/** A smoke/launch verdict for the build's exact commit: passed (with checks and evidence), failed, blocked, or honestly not tested. */
+export async function recordSmokeAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const checks = text(formData, 'checks').split('\n').map((l) => l.trim()).filter(Boolean).map((name) => ({ name }));
+  return run(text(formData, 'projectId'), 'record_smoke_check', {
+    p_deliverable_id: text(formData, 'deliverableId'),
+    p_result: text(formData, 'result'),
+    p_checks: checks,
+    p_device_target: text(formData, 'deviceTarget') || null,
+    p_reason: text(formData, 'reason') || null,
+    p_evidence_url: text(formData, 'evidenceUrl') || null,
+  }, ['recorded']);
+}
+
+export async function resolveBuildBlockerAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  return run(text(formData, 'projectId'), 'resolve_build_blocker', { p_blocker_id: text(formData, 'blockerId') }, ['resolved']);
 }

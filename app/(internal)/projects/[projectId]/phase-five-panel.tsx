@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import type { BuildRunRow, EscalationRow, PhaseFiveOverview, PmMessageRow, PmOverview, TaskBoard } from '@/modules/projects/phase-five-queries';
+import type { BuildBlockerRow, BuildRunRow, EscalationRow, PhaseFiveOverview, PmMessageRow, PmOverview, TaskBoard } from '@/modules/projects/phase-five-queries';
 import { Badge, Card, humanize, type Tone } from '@/ui';
 
 import {
@@ -19,6 +19,8 @@ import {
   ResolveFlakyForm,
   SpecialistStateForm,
   RecordBaselineCommitForm,
+  RerouteHeldTasksForm,
+  ResolveBuildBlockerForm,
   ResolveEscalationForm,
   StartPhaseFiveForm,
 } from './phase-five-forms';
@@ -433,7 +435,7 @@ export function EscalationsPanel({ rows, projectId }: { rows: EscalationRow[]; p
 const BOARD_COLUMNS: [keyof TaskBoard, string][] = [['backlog', 'Backlog'], ['blocked', 'Blocked'], ['in_progress', 'In progress'], ['in_review', 'In review'], ['done', 'Done']];
 
 /** The Phase 5 task board and the build runs behind every build: what is being done, and what actually ran on which exact commit. */
-export function WorkboardPanel({ board, runs }: { board: TaskBoard; runs: BuildRunRow[] }) {
+export function WorkboardPanel({ board, runs, projectId, blockers = [] }: { board: TaskBoard; runs: BuildRunRow[]; projectId: string; blockers?: BuildBlockerRow[] }) {
   return (
     <Card>
       <h3 className="text-[15px] font-semibold">Task board</h3>
@@ -445,6 +447,19 @@ export function WorkboardPanel({ board, runs }: { board: TaskBoard; runs: BuildR
           </div>
         ))}
       </div>
+      <div className="mt-3"><RerouteHeldTasksForm projectId={projectId} /></div>
+      {blockers.length > 0 ? (
+        <div className="mt-3 flex flex-col gap-2 text-[13px]">
+          <h3 className="text-[15px] font-semibold">Build blockers</h3>
+          {blockers.map((b) => (
+            <div key={b.id} className="flex flex-col gap-1">
+              <span><span className="font-medium">v{b.buildVersion}</span> <Badge tone="danger">{humanize(b.type)}</Badge> <span className="text-muted">owner: {b.owner}</span></span>
+              <span className="text-muted">Resumes when: {b.resumeCondition}</span>
+              <ResolveBuildBlockerForm projectId={projectId} blockerId={b.id} />
+            </div>
+          ))}
+        </div>
+      ) : null}
       <h3 className="mt-4 text-[15px] font-semibold">Build runs</h3>
       {runs.length === 0 ? (
         <p className="mt-1 text-[13px] text-muted">No build has been run. Nothing is shown as built until a run is recorded on an exact commit.</p>

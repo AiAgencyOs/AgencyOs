@@ -170,3 +170,18 @@ describe('routing readiness, activation conditions and the explained decision', 
     assert.deepEqual([...good.requiredEvidence].length > 0, true);
   });
 });
+
+describe('held tasks can be routed again', () => {
+  const actions = read('src/modules/projects/phase-five-actions.ts');
+  test('the Admin action runs the SAME handler the plan-approved event runs, for the approved plan only, behind the permission gate', () => {
+    const i = actions.indexOf('export async function rerouteHeldTasksAction');
+    assert.ok(i > 0);
+    const body = actions.slice(i, i + 1400);
+    assert.match(body, /await gate\(\)/);
+    assert.match(body, /\.eq\('status', 'approved'\)/);
+    assert.match(body, /handleRouteDevelopmentPlan\(createAdminClient\(\)/);
+  });
+  test('the handler skips a task that already has a handoff, so a re-route can never route twice', () => {
+    assert.match(read('src/modules/orchestrator/handlers.ts'), /if \(already\.has\(task\.id\)\) continue;/);
+  });
+});
