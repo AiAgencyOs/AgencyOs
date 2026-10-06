@@ -77,12 +77,15 @@ describe('A. what is defined is what exists', () => {
         // layer 6 — QA specialists (ADM-114, Phase 6)
         'functional_test', 'ui_journey_test', 'api_integration_test', 'database_test', 'security_test', 'performance_test',
         'compatibility_test', 'regression_test', 'release_readiness',
+        // layer 7 - finance additions (ADM-115, Phase 9)
+        'finance_reconciliation', 'finance_communication', 'finance_close',
       ],
     );
     assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'foundation').length, 4);
     // six since Phase 2 Planning §1 named the Project Planning Agent separately from the PM
     assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'core').length, 6);
-    assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'operations').length, 4);
+    // seven since ADM-115 added the three Phase 9 finance agents to the operations layer
+    assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'operations').length, 7);
   });
 
   test('and every one of them is installed disabled', () => {

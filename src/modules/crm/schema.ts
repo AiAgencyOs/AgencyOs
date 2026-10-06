@@ -1956,6 +1956,18 @@ export function m4PaymentVerifiedAnnouncementFor(input: { projectName: string | 
 }
 
 
+/** Phase 9: the project's finances were closed (internal). It is NOT project completion. */
+export const financiallyClosedEventSchema = z.object({ projectId: z.uuid(), mode: z.enum(['zero_balance', 'approved_exception']) }).strip();
+export function financiallyClosedAnnouncementFor(input: { projectName: string | null; mode: 'zero_balance' | 'approved_exception' }): string {
+  return [
+    input.mode === 'zero_balance'
+      ? 'Finance closed this project\'s finances at a zero balance.'
+      : 'Finance closed this project\'s finances against an exception an Admin approved for the remaining balance.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'This is the financial close only. QA, production validation, handover and the client\'s acceptance still decide whether the project is complete.',
+  ].join('\n');
+}
+
 /** PM6: testing has begun on a plan an Admin approved. Client-safe: no test internals, tools, agents or providers. */
 export const masterTestPlanApprovedEventSchema = z.object({ projectId: z.uuid(), version: z.number() }).strip();
 export function testingStartedAnnouncementFor(input: { projectName: string | null }): string {
@@ -2062,6 +2074,7 @@ export const PM_TEMPLATES: Readonly<Record<string, { milestone: string; version:
   'qa-defect-progress': { milestone: 'PM6-DEFECT-PROGRESS', version: 1 },
   'release-candidate-approved': { milestone: 'PM6-CANDIDATE-APPROVED', version: 1 },
   'm4-payment-verified': { milestone: 'PM6-M4-VERIFIED', version: 1 },
+  'financially-closed': { milestone: 'PM9-FINANCIALLY-CLOSED', version: 1 },
   'release-candidate-ready': { milestone: 'PM6-A01', version: 1 },
   'release-exception-requested': { milestone: 'PM6-A02', version: 1 },
   'qa-reverification': { milestone: 'PM6-REVERIFICATION', version: 1 },

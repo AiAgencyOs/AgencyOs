@@ -71,6 +71,7 @@ import {
   announceReleaseExceptionRequested,
   announceQaReverification,
   announceM4PaymentVerified,
+  announceFinanciallyClosed,
   announceBuildFeedbackRouted,
   announceTask4Complete,
   announceM2PaymentVerified,
@@ -1303,6 +1304,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const rcExceptionAnnouncements = await runEventJobs(admin, RC_EXCEPTION_ANNOUNCE_JOB_KIND, announceReleaseExceptionRequested, 'runReleaseExceptionAnnouncementJobs');
   const qaReverificationAnnouncements = await runEventJobs(admin, QA_REVERIFICATION_ANNOUNCE_JOB_KIND, announceQaReverification, 'runQaReverificationAnnouncementJobs');
   const m4VerifiedAnnouncements = await runEventJobs(admin, M4_VERIFIED_ANNOUNCE_JOB_KIND, announceM4PaymentVerified, 'runM4VerifiedAnnouncementJobs');
+  // Phase 9: the project's finances were closed.
+  const financiallyClosedAnnouncements = await runEventJobs(admin, FINANCIALLY_CLOSED_ANNOUNCE_JOB_KIND, announceFinanciallyClosed, 'runFinanciallyClosedAnnouncementJobs');
   // PM6-M01 (Phase 6 PM Agent spec): Task 4 start.
   const phaseSixReadyAnnouncements = await runEventJobs(admin, PHASE_SIX_READY_ANNOUNCE_JOB_KIND, announcePhaseSixReady, 'runPhaseSixReadyAnnouncementJobs');
   // PM5-M01..M04 (Phase 5 PM Agent spec), beside the Task 2 set.
@@ -1610,6 +1613,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     rcExceptionAnnouncements: rcExceptionAnnouncements.results,
     qaReverificationAnnouncements: qaReverificationAnnouncements.results,
     m4VerifiedAnnouncements: m4VerifiedAnnouncements.results,
+    financiallyClosedAnnouncements: financiallyClosedAnnouncements.results,
     buildFeedbackRoutedAnnouncements: buildFeedbackRoutedAnnouncements.results,
     task4CompleteAnnouncements: task4CompleteAnnouncements.results,
     m2PaymentVerifiedAnnouncements: m2PaymentVerifiedAnnouncements.results,
@@ -1768,6 +1772,7 @@ const RC_READY_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceReleaseCandidat
 const RC_EXCEPTION_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceReleaseExceptionRequested'];
 const QA_REVERIFICATION_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceQaReverification'];
 const M4_VERIFIED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceM4PaymentVerified'];
+const FINANCIALLY_CLOSED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceFinanciallyClosed'];
 const QA_INTAKE_JOB_KIND = HANDLER_JOB_KIND['projects:validateQaIntake'];
 const PHASE_SIX_READY_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announcePhaseSixReady'];
 const M3_VERIFIED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceM3PaymentVerified'];
