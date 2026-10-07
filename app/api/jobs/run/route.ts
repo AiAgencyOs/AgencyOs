@@ -114,7 +114,7 @@ import {
   type HandlerResult,
   type UnlockJob,
 } from '@/modules/projects/handlers';
-import { handleFillPhaseEightIntake, handleOpenPhaseSeven, handleRoutePhaseSevenTask, handleRunDeployment } from '@/modules/projects/phase-seven-handlers';
+import { handleCreateDraftHandoverPackage, handleFillPhaseEightIntake, handleOpenPhaseSeven, handleOpenSupportTicketFromMessage, handleRoutePhaseSevenTask, handleRunDeployment } from '@/modules/projects/phase-seven-handlers';
 import { runOnboardingFollowUps } from '@/modules/projects/pm-followups';
 import { handleAskClarification, handleReadClarificationAnswer } from '@/modules/projects/pm-clarifications';
 import { handleAnnouncePhaseThree, handleAskFinalConfirmation } from '@/modules/projects/pm-design-comms';
@@ -122,7 +122,7 @@ import { handleWelcomeClient, handleAskGstDetails, handlePaymentUpdate, handleRe
 import { handleHandoverAcceptedForFinance, handleBillingModeConfirmed, handleInvoiceIssuedForDelivery, handlePhaseFourCompletedForFinance, handlePhaseFiveCompletedForFinance, handlePhaseSixCompletedForFinance } from '@/modules/finance/handlers';
 import { learnFromDecision, learnFromRevision, syncDiscountDecision } from '@/modules/sales/handlers';
 import { handleRouteTask2Design, handleRequestUIVersionAdminReview, handleRouteDevelopmentPlan, handleRouteQaOutcome } from '@/modules/orchestrator/handlers';
-import { sweepFinanceExceptions, sweepFinancePhaseNineB, sweepMaintenanceLifecycle, sweepRetentionReviews, sweepStaleOrchestratorRecords } from '@/modules/orchestrator/sweeps';
+import { sweepFinanceExceptions, sweepFinancePhaseNineB, sweepMaintenanceLifecycle, sweepRetentionReviews, sweepStaleOrchestratorRecords, sweepSupportAndHealth } from '@/modules/orchestrator/sweeps';
 import { handleReviewUIVersion, handleReviewPrototypeBuild } from '@/modules/qa/handlers';
 
 export const runtime = 'nodejs';
@@ -400,6 +400,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   await sweepFinanceExceptions(admin);
   await sweepFinancePhaseNineB(admin);
   await sweepMaintenanceLifecycle(admin);
+  // Phase 8A: SLA breaches, scheduled health snapshots, due check-in notices, support messages whose label arrived late, and the draft handover catch-up. Contacts nobody.
+  await sweepSupportAndHealth(admin);
   // Phase 7 retention: a record class past its Admin-set period is marked eligible for a person's review. Deletes nothing.
   await sweepRetentionReviews(admin);
   // Scheduled social posts that are due: published through the governed door, or surfaced for a person when no publisher exists.
@@ -1056,6 +1058,48 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       overdue,
       stamps,
       phaseEightIntake: phaseEightIntake.results,
+      correlationId,
+    });
+  }
+  const supportFromMessage = await runEventJobs(admin, SUPPORT_FROM_MESSAGE_JOB_KIND, handleOpenSupportTicketFromMessage, 'runSupportTicketFromMessageJobs');
+  if (supportFromMessage.claimed > 0) {
+    return NextResponse.json({
+      claimed: supportFromMessage.claimed,
+      kind: SUPPORT_FROM_MESSAGE_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      supportFromMessage: supportFromMessage.results,
+      correlationId,
+    });
+  }
+  const draftHandover = await runEventJobs(admin, DRAFT_HANDOVER_JOB_KIND, handleCreateDraftHandoverPackage, 'runDraftHandoverPackageJobs');
+  if (draftHandover.claimed > 0) {
+    return NextResponse.json({
+      claimed: draftHandover.claimed,
+      kind: DRAFT_HANDOVER_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      draftHandover: draftHandover.results,
       correlationId,
     });
   }
@@ -1953,6 +1997,8 @@ const PHASE_SEVEN_OPEN_JOB_KIND = HANDLER_JOB_KIND['projects:openPhaseSeven'];
 const PHASE_SEVEN_DEPLOY_JOB_KIND = HANDLER_JOB_KIND['projects:runDeployment'];
 const PHASE_SEVEN_ROUTE_JOB_KIND = HANDLER_JOB_KIND['projects:routePhaseSevenTask'];
 const PHASE_EIGHT_INTAKE_JOB_KIND = HANDLER_JOB_KIND['projects:fillPhaseEightIntake'];
+const SUPPORT_FROM_MESSAGE_JOB_KIND = HANDLER_JOB_KIND['projects:openSupportTicketFromMessage'];
+const DRAFT_HANDOVER_JOB_KIND = HANDLER_JOB_KIND['projects:createDraftHandoverPackage'];
 const PHASE_SEVEN_READY_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announcePhaseSevenReady'];
 const DEPLOYMENT_APPROVED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceDeploymentApproved'];
 const PRODUCTION_VALIDATED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceProductionValidated'];

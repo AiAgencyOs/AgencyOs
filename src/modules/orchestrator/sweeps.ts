@@ -111,6 +111,41 @@ export async function sweepMaintenanceLifecycle(admin: Admin): Promise<Record<st
 }
 
 /**
+ * The Phase 8A support and customer-health sweeps, one tick (docs/phase-8a-manual-actions.md M-3, M-5): missed SLA targets are stamped once and escalated to a
+ * person, every ACTIVE workspace gets a scheduled health snapshot (written only when the derived status changed), a check-in that has come due is recorded once
+ * as a notice for Customer Success, a client message whose support label arrived after its event was handled opens its ticket, and a production-validated project
+ * whose contract checklist was recorded late gets its DRAFT handover package. Each is a service-role door that re-checks the caller; none replies to, messages,
+ * bills or contacts a client, and none renews, closes or delivers anything. Best effort: one failing sweep is logged and the rest run.
+ */
+export async function sweepSupportAndHealth(admin: Admin): Promise<Record<string, Record<string, number> | null>> {
+  const projects = admin.schema('projects') as unknown as Loose;
+  const doors: { name: string; args: Record<string, unknown>; fields: string[] }[] = [
+    { name: 'sweep_support_sla', args: {}, fields: ['response_breaches', 'resolution_breaches', 'escalated'] },
+    { name: 'sweep_phase_eight_health', args: { p_limit: 500 }, fields: ['checked', 'recorded', 'unchanged'] },
+    { name: 'sweep_checkins_due', args: { p_limit: 500 }, fields: ['checked', 'noticed'] },
+    { name: 'sweep_message_support_tickets', args: { p_limit: 200 }, fields: ['checked', 'opened'] },
+    { name: 'sweep_draft_handover_packages', args: { p_limit: 100 }, fields: ['checked', 'created'] },
+  ];
+  const out: Record<string, Record<string, number> | null> = {};
+  for (const door of doors) {
+    try {
+      const { data, error } = await projects.rpc(door.name, door.args);
+      const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | undefined;
+      if (error || !row) {
+        console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `${door.name}: ${error ? error.message : 'the door answered nothing'}` }));
+        out[door.name] = null;
+      } else {
+        out[door.name] = Object.fromEntries(door.fields.map((f) => [f, Number(row[f] ?? 0)]));
+      }
+    } catch (e) {
+      console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `${door.name}: ${e instanceof Error ? e.message : 'unknown'}` }));
+      out[door.name] = null;
+    }
+  }
+  return out;
+}
+
+/**
  * The Phase 7 retention sweep (P711 §8): a record class whose Admin-set retention period has passed is marked ELIGIBLE FOR REVIEW. The door is runner-only and
  * DELETES NOTHING, changes no record and decides no disposal: a person reviews what it marks. With no archived project, or no stated period, it marks nothing.
  * Best effort, like the sweeps above; a replay marks nothing twice.

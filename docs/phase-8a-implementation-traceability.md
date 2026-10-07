@@ -22,7 +22,7 @@ controls, each removed from the live definition inside the verifier's own transa
 | 1 | Retention without pressure or fake urgency | EXISTS | recovery plans; commercial outreach suppressed while at risk (V) |
 | 1 | Upsell: evidence-based need to Sales; no fabricated problems or spam | EXISTS | evidence required and checked against this project's records (V, T-wf) |
 | 1 | Finance for maintenance/renewal | MISSING | other Phase 8 part |
-| 1 | Automation with events/jobs/reminders and idempotency | PARTIAL | doors idempotent (V); the sweeps are doors, not yet scheduled (manual action M-3) |
+| 1 | Automation with events/jobs/reminders and idempotency | EXISTS (scheduling) / PARTIAL (reminders) | doors idempotent (V); the SLA sweep, the scheduled health snapshots, the due check-in notices and the late-label ticket sweep run on the cron tick (`sweepSupportAndHealth`, Phase 7c, `20261112000000`; `scripts/verify-phase-seven-c.sql` §1-2). A due check-in is NOTICED for Customer Success and nobody is contacted |
 | 2 | P8-GATE-001 completed state + exact release/build | EXISTS | `projects.p8_build_intake`; build ref from the Admin-approved Phase 6 candidate for pipeline projects (V) |
 | 2 | P8-GATE-002 deployment + live/smoke verification | EXISTS | requires a passed production row in `projects.release_verifications` (V) |
 | 2 | P8-GATE-003 handover and acceptance evidence | EXISTS | an accepted handover (V) |
@@ -42,7 +42,7 @@ controls, each removed from the live definition inside the verifier's own transa
 | 4 | P8-06 cancellation / churn | MISSING | other part |
 | 4 | P8-07 communication and follow-up | PARTIAL | eligibility, check-in records, reply drafts: built. Auto-send, caps, quiet periods, delivery/reply tracking, value reports: MISSING |
 | 4 | P8-08 Customer 360 and Admin dashboard | PARTIAL | per-project panel, organization overview, and (8D) the single-client page `/clients/[id]/customer-360` and the counts-and-ages page `/projects/customer-success/observability`: tables of counts, no charts, no churn reasons or utilization (other part) |
-| 4 | P8-09 orchestration, events, jobs | PARTIAL | typed events and idempotent doors; scheduling not wired |
+| 4 | P8-09 orchestration, events, jobs | EXISTS | typed events and idempotent doors; the 8A sweeps are scheduled on the cron tick (Phase 7c) and `customer.check_in_due` is emitted once per due check-in |
 | 4 | P8-10 security, audit, governance | PARTIAL | RLS, grants, append-only history; denial auditing and retention policy MISSING |
 | 4 | P8-11 360-degree QA | PARTIAL | DB verifier and unit tests; no browser, performance or compatibility run |
 
@@ -70,7 +70,7 @@ controls, each removed from the live definition inside the verifier's own transa
 | 7 | Financial invariant | PARTIAL | nothing in 8A marks anything paid or active; maintenance activation is the other part |
 | 7 | Automation invariant (no duplicate ticket/opportunity/check-in/event) | EXISTS | V: duplicate webhook, retried agent run, retried sweep; invoices and subscriptions are the other part |
 | 8 | Customer Success agent trigger and output | PARTIAL | agenda workflow (draft); health/retention are doors |
-| 8 | Support agent | PARTIAL | classification proposal + reply draft workflow; no inbound client-message ingestion into a ticket (the door exists, nothing calls it) |
+| 8 | Support agent | PARTIAL | classification proposal + reply draft workflow; Phase 7c ingests a client's `support_request` message in an ACTIVE workspace's project conversation into a ticket (`message.received` subscriber, idempotent on the message id, never replies); a post-project account thread and a message with no intent label open nothing |
 | 8 | Upsell agent | EXISTS | opportunity workflow (detected only) |
 | 8 | Sales agent | PARTIAL | the handoff and outcome doors; discovery, quote, negotiation are the existing sales doors; no post-launch Sales workflow, deliberately (quoting authority) |
 | 8 | Orchestrator, Finance, Developer, QA | MISSING | other part / earlier phases |
@@ -81,7 +81,7 @@ controls, each removed from the live definition inside the verifier's own transa
 | 9 | MaintenanceActivationRequested, CancellationRequested | MISSING | other part |
 | 9 | UpsellOpportunityCreated | EXISTS | V |
 | 9 | RetentionRecoveryRequired | EXISTS | V, T-pm |
-| 9 | Daily/weekly/monthly jobs | PARTIAL | doors exist (`sweep_support_sla`, `sweep_maintenance_renewals`, `record_health_snapshot`); not scheduled (M-3) |
+| 9 | Daily/weekly/monthly jobs | EXISTS (hourly tick) / MANUAL (cadence) | `sweep_support_sla` and the scheduled health, check-in and message sweeps run on every cron tick (`sweepSupportAndHealth`); the renewal sweep already ran (`sweepMaintenanceLifecycle`). No daily/weekly/monthly cadence is configured: each door is idempotent, so the tick frequency is the deployment's choice |
 | 10 | P8-ADM-001 Customer 360 | PARTIAL | project panel, and (8D) one client across projects: phase, maintenance plan and renewal dates, tickets with SLA state, health with signals, recovery, check-ins, opportunities, invoices and outstanding on the verified basis for a viewer who may read finance, contact eligibility, caps, quiet periods, ledger and value-report drafts (`tests/customer-360-queries.test.ts`). Change requests are not listed; the page is typechecked and linted, not rendered in a browser |
 | 10 | P8-ADM-002 health explanation | EXISTS | signals with value, level and detail, plus history |
 | 10 | P8-ADM-003 VIP, feedback, approvals, communication history | PARTIAL | opportunities and check-ins shown; communication history (the 8D ledger) shown; VIP absent by design; feedback capture MISSING |
@@ -167,7 +167,7 @@ controls, each removed from the live definition inside the verifier's own transa
 | Section | Requirement | Status | Evidence / reason |
 |---|---|---|---|
 | 1 | Safe routine support, classify against scope/warranty/maintenance, no internal information to clients | EXISTS | V; client function exposes status labels only |
-| 2 | Activation: client request, CS escalation, monitoring alert, client reply | PARTIAL | the open-ticket door takes portal, email, WhatsApp, phone, monitoring, customer-success and internal sources; nothing yet calls it from an inbound message (M-5) |
+| 2 | Activation: client request, CS escalation, monitoring alert, client reply | PARTIAL | the open-ticket door takes portal, email, WhatsApp, phone, monitoring, customer-success and internal sources; an inbound client support message in a project conversation now calls it (Phase 7c). A monitoring alert and a post-project account thread are not wired |
 | 3 | Required context | PARTIAL | project, scope window, warranty, plans, recent tickets; approved knowledge base MISSING (none exists); language/channel preference not recorded |
 | 4 | SUP-AUD-001..005 | PARTIAL | log |
 | 5 | Normalize request; determine the six classes | EXISTS | proposal workflow + classify door (V, T-wf) |

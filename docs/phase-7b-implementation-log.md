@@ -32,4 +32,4 @@ seam: source named · handoff read · money re-read · handoff reference stored 
 - Mounting the staff panel and the portal link on their pages (shared files, not edited): P7-M016. Nothing was rendered in a browser: P7-M017.
 - `project.completed` does not start archiving: archiving needs an Admin and a policy.
 - The Phase 8 start itself stays a person's act (warranty window); the subscriber only fills the intake.
-- ClientActionRequest, a Phase 7 Failure Queue, a client financial statement view and an automatic handover-draft creation remain as listed in the traceability file.
+- ClientActionRequest, a Phase 7 Failure Queue, a client financial statement view and an automatic handover-draft creation were left for Phase 7c and are built there (`docs/phase-7c-implementation-log.md`).
