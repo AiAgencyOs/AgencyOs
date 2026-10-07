@@ -117,6 +117,7 @@ import {
 import { routeSchedulingMessage, reviewQuoteReplyMessage } from '@/modules/crm/p1o-message-handlers';
 import { sweepCoordinationAllOrganizations } from '@/modules/orchestrator/p1o-coordination-sweep';
 import { guardDesignContext } from '@/modules/projects/design-context-guard';
+import { sweepDesignShareRemindersAllOrganizations } from '@/modules/projects/design-share-reminder-sender';
 import { handleP4uiAttachBuild, handleP4uiSyncBuild } from '@/modules/projects/p4ui-handlers';
 import { announceMeetingBooked, announceMeetingCancelled, sendMeetingReminder } from '@/modules/crm/meeting-announcements';
 import { handleCreateDraftHandoverPackage, handleFillPhaseEightIntake, handleOpenPhaseSeven, handleOpenSupportTicketFromMessage, handleRoutePhaseSevenTask, handleRunDeployment } from '@/modules/projects/phase-seven-handlers';
@@ -1720,6 +1721,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const schedulingMessages = idleTick ? await runEventJobs(admin, SCHEDULING_MESSAGE_JOB_KIND, routeSchedulingMessage, 'runSchedulingMessageRoutingJobs') : { claimed: 0, results: [] };
   const quoteReplies = idleTick ? await runEventJobs(admin, QUOTE_REPLY_JOB_KIND, reviewQuoteReplyMessage, 'runQuoteReplyReviewJobs') : { claimed: 0, results: [] };
   const coordination = idleTick ? await sweepCoordinationAllOrganizations(admin) : null;
+  // W10 (P3-PM-030): a design share the client has not answered is chased, at most twice; the sender is the ordinary outbound WhatsApp path.
+  const designShareReminders = idleTick ? await sweepDesignShareRemindersAllOrganizations(admin) : null;
   const designContextGuard = idleTick ? await runEventJobs(admin, DESIGN_CONTEXT_GUARD_JOB_KIND, guardDesignContext, 'runDesignContextGuardJobs') : { claimed: 0, results: [] };
   const p4uiAttach = idleTick ? await runEventJobs(admin, P4UI_ATTACH_JOB_KIND, handleP4uiAttachBuild, 'runP4uiAttachJobs') : { claimed: 0, results: [] };
   const p4uiSync = idleTick ? await runEventJobs(admin, P4UI_SYNC_JOB_KIND, handleP4uiSyncBuild, 'runP4uiSyncJobs') : { claimed: 0, results: [] };
@@ -1736,6 +1739,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     schedulingMessages: schedulingMessages.results,
     quoteReplies: quoteReplies.results,
     coordination,
+    designShareReminders,
     p4uiAttach: p4uiAttach.results,
     p4uiSync: p4uiSync.results,
     meetingBooked: meetingBooked.results,
