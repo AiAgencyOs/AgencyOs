@@ -208,6 +208,13 @@ export async function detailUiVersion(
     }
   }
 
+  // Design QA's token-consistency check (P4-UID-021): every token a screen spec names must exist in the frozen Phase 3 direction, and no raw value may stand in
+  // for one. Each finding becomes a `token` QA defect on the version (idempotent). Deterministic, no model; it decides nothing and approves nothing.
+  const { data: tokenRes, error: tkErr } = await projects.rpc('p4r_check_token_consistency', { p_ui_version_id: input.uiVersionId });
+  if (tkErr) return { status: 'failed', reason: `the token-consistency door did not answer: ${tkErr.message}` };
+  const tokenOutcome = str(firstRow(tokenRes)?.outcome) ?? 'no answer';
+  if (!['consistent', 'inconsistent', 'no_token_source', 'no_specs'].includes(tokenOutcome)) return { status: 'failed', reason: `the token-consistency door answered ${tokenOutcome}` };
+
   // the open design job for this workspace, if one asked for this version
   const { data: jobs, error: jErr } = await projects
     .from('p4ui_design_jobs')
@@ -236,7 +243,7 @@ export async function detailUiVersion(
     // not_a_newer_version: the open job belongs to a later version; this one is not its answer
     if (co !== 'delivered' && co !== 'already_delivered' && co !== 'not_a_newer_version') return { status: 'failed', reason: `the job-completion door answered ${String(co)}` };
   }
-  return { status: 'done', detail: `specs ${specCount}, lineage ${lineageOutcome}`, data: { specs: specCount, lineage: lineageOutcome } };
+  return { status: 'done', detail: `specs ${specCount}, lineage ${lineageOutcome}, tokens ${tokenOutcome}`, data: { specs: specCount, lineage: lineageOutcome, tokens: tokenOutcome } };
 }
 
 // ═══ planPrototypeBuild ════════════════════════════════════════════════════
@@ -329,9 +336,30 @@ export async function attachBuiltPrototype(admin: P4uiAdmin, input: { organizati
     .order('build_number', { ascending: false })
     .limit(1);
   if (bErr) return { status: 'failed', reason: `could not read the builds: ${bErr.message}` };
-  const build = builds?.[0];
+  let build = builds?.[0];
   if (!build) return { status: 'skipped', reason: 'no build was planned for this UI version' };
   if (build.prototype_artifact_id === input.prototypeArtifactId) return { status: 'skipped', reason: 'the artifact is already attached' };
+
+  // A REVISED artifact (revise_prototype_build makes a new artifact for the same locked UI version) finds the latest build already holding the artifact it
+  // revises. The build for the revision is planned HERE, from the build that was sent back, so the revised artifact is attached to a build of its own and the
+  // revision lineage below can fire (the plan at lock time can only ever have planned the first build).
+  if (build.prototype_artifact_id) {
+    const { data: planned, error: planErr } = await projects.rpc('p4r_plan_revision_build', { p_prototype_artifact_id: input.prototypeArtifactId });
+    if (planErr) return { status: 'failed', reason: `the revision-build door did not answer: ${planErr.message}` };
+    const po = firstRow(planned);
+    if (po?.outcome === 'already_attached') return { status: 'skipped', reason: 'the artifact is already attached' };
+    // the prior build is not (yet) in a sent-back state: this is not a revision a person or QA asked for, so nothing is planned or attached
+    if (po?.outcome !== 'planned') return { status: 'skipped', reason: `the artifact revises a build that is ${String(build.status)} (${String(po?.outcome)}): no revision build was planned` };
+    const { data: reloaded, error: rlErr } = await projects
+      .from('p4ui_prototype_builds')
+      .select('id, status, prototype_artifact_id, revision_of_build_id')
+      .eq('id', String(po.ref_id))
+      .eq('organization_id', input.organizationId)
+      .maybeSingle();
+    if (rlErr) return { status: 'failed', reason: `could not read the revision build: ${rlErr.message}` };
+    if (!reloaded) return { status: 'failed', reason: 'the revision build was planned but cannot be read' };
+    build = reloaded;
+  }
   const buildId = String(build.id);
 
   if (build.status === 'planned' || build.status === 'input_validation') {
@@ -361,7 +389,18 @@ export async function attachBuiltPrototype(admin: P4uiAdmin, input: { organizati
     const { data: rec, error: rErr } = await projects.rpc('p4ui_record_build_revision', { p_to_build_id: buildId, p_summary: null });
     lineage = rErr ? `unavailable: ${rErr.message}` : (str(firstRow(rec)?.outcome) ?? 'no answer');
   }
-  return { status: 'done', detail: `build ready, handoff ${String(h?.outcome)}${lineage ? `, revision lineage ${lineage}` : ''}`, data: { buildId, attach: 'build_ready', handoff: h?.outcome ?? null, lineage } };
+  // The state / responsive / validation / deep-link report is a finding for QA and the Admin, never a gate: it is read once the build is ready and reported.
+  let stateGaps: number | null = null;
+  const { data: report, error: repErr } = await projects.rpc('p4r_prototype_state_report', { p_build_id: buildId });
+  if (!repErr) {
+    const r = (Array.isArray(report) ? report[0] : report) as { outcome?: string; missingStates?: number; missingResponsive?: number; inputsWithoutValidation?: number; deepLinkProblems?: unknown[] } | null;
+    if (r?.outcome === 'report') stateGaps = Number(r.missingStates ?? 0) + Number(r.missingResponsive ?? 0) + Number(r.inputsWithoutValidation ?? 0) + (r.deepLinkProblems?.length ?? 0);
+  }
+  return {
+    status: 'done',
+    detail: `build ready, handoff ${String(h?.outcome)}${lineage ? `, revision lineage ${lineage}` : ''}${stateGaps ? `, ${stateGaps} state/validation/deep-link gap(s) reported` : ''}`,
+    data: { buildId, attach: 'build_ready', handoff: h?.outcome ?? null, lineage, stateGaps },
+  };
 }
 
 // ═══ syncBuildForDeliverable (no model): the build reflects the real gates ═══
