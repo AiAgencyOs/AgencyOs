@@ -106,6 +106,10 @@ begin
   end if;
   select outcome into v_o from projects.advance_support_ticket(v_t, 'in_progress');
   if v_o <> 'advanced' then raise exception 'fixture ticket % not started: %', p_ref, v_o; end if;
+  if p_to = 'closed' then
+    select outcome into v_o from projects.advance_support_ticket(v_t, 'closed', 'Explained the export button', 'knowledge: exports-guide v2');
+    if v_o <> 'advanced' then raise exception 'fixture ticket % not closed: %', p_ref, v_o; end if;
+  end if;
   return v_t;
 end $$;
 grant execute on function pg_temp.open_ticket(uuid, text, text, text, text, uuid, uuid, uuid, text) to public;
@@ -255,6 +259,7 @@ reset role;
 select pg_temp.as_user(:'ADMIN', :'ORG', 'ops_admin');
 set local role authenticated;
 select pg_temp.check((select outcome from projects.clear_communication_category_cadence('relationship')) = 'cleared', 'an Admin clears the cadence');
+select pg_temp.check((select outcome from projects.clear_communication_category_cadence('relationship')) = 'not_found', 'clearing it again finds nothing (only an ACTIVE cadence can be cleared)');
 select pg_temp.check((select allowed from projects.can_contact_governed(:'B_id', 'call', 'relationship')), 'and the relationship contact is allowed with no rule');
 select pg_temp.check((select outcome from projects.set_communication_category_cadence('relationship', 7)) = 'set', 'setting it again re-activates the one row');
 reset role;
@@ -272,6 +277,17 @@ select pg_temp.check((select allowed from projects.can_contact_governed(:'C_id',
 select pg_temp.check((select outcome from projects.set_client_contact_preference(:'C_id', 'whatsapp', '{}', 'en')) = 'set', 'the preference is updated to avoid nothing');
 select pg_temp.check((select allowed from projects.can_contact_governed(:'C_id', 'call', 'operational')), 'and the call is allowed again');
 reset role;
+-- an agent's DRAFT is not a contact: it opens no category gap
+select pg_temp.as_service();
+set local role service_role;
+select pg_temp.check((select outcome from projects.record_agent_communication_draft(:'ORG', :'C_id', 'call', 'relationship', 'Draft: ask how the reports are being used', 'customer_success')) = 'drafted', 'fixture: an agent drafts a relationship contact for client C');
+reset role;
+select pg_temp.as_user(:'STAFF', :'ORG', 'member');
+set local role authenticated;
+select pg_temp.check((select allowed from projects.can_contact_governed(:'C_id', 'call', 'relationship')), 'a draft does not count toward the category gap: the relationship call is still allowed');
+select outcome as "S3_out" from projects.record_client_communication(:'C_id', 'meeting', 'operational', 'Met the client about the maintenance window', null, null, now() - interval '1 day', null, 'meet-p8f-op') \gset
+select pg_temp.check(:'S3_out' = 'recorded' and (select allowed from projects.can_contact_governed(:'C_id', 'call', 'relationship')), 'an OPERATIONAL contact yesterday does not close the RELATIONSHIP category (the gap is per category)');
+reset role;
 select pg_temp.as_client(:'CLIENTU', :'ORG', :'A_id');
 set local role authenticated;
 select pg_temp.check((select count(*) from projects.can_contact_governed(:'B_id', 'call', 'relationship')) = 0, 'NEGATIVE: a portal client gets no answer from the governed read');
@@ -287,8 +303,16 @@ select pg_temp.check((select count(*) from projects.can_contact_governed(:'B_id'
 reset role;
 
 -- ═════════ 5. feedback (append-only) and client goals ═════════
+select pg_temp.as_service();
+set local role service_role;
+select outcome as "CIO_out", check_in_id as "CIO_id" from projects.create_check_in(:'PA2_id', 'scheduled', 'sched-p8f-other', current_date + 30, null, null, :'ORG') \gset
+select outcome as "CIM_out", check_in_id as "CIM_id" from projects.create_check_in(:'PA_id', 'scheduled', 'sched-p8f-mine', current_date + 30, null, null, :'ORG') \gset
+reset role;
+select pg_temp.check(:'CIO_out' = 'created' and :'CIM_out' = 'created', 'fixture: a check-in on each of two projects (not yet due)');
 select pg_temp.as_user(:'STAFF', :'ORG', 'member');
 set local role authenticated;
+select pg_temp.check((select outcome from projects.record_client_feedback(:'PA_id', 'call', 'neutral', 'Feedback tied to another project''s check-in', :'CIO_id')) = 'check_in_not_on_this_project', 'NEGATIVE: feedback cannot be tied to another project''s check-in');
+select pg_temp.check((select outcome from projects.record_client_feedback(:'PA_id', 'call', 'positive', 'Feedback tied to this project''s own check-in', :'CIM_id')) = 'recorded', 'but it can be tied to this project''s own check-in');
 select pg_temp.check((select outcome from projects.record_client_feedback(:'PA_id', 'telegram', 'negative', 'The export is slow and confusing')) = 'bad_source', 'feedback comes from a known source');
 select pg_temp.check((select outcome from projects.record_client_feedback(:'PA_id', 'call', 'angry', 'The export is slow and confusing')) = 'bad_sentiment', 'with a stated sentiment (nothing infers one)');
 select pg_temp.check((select outcome from projects.record_client_feedback(:'PA_id', 'call', 'negative', 'bad')) = 'summary_required', 'and a summary of what was said');
@@ -307,6 +331,10 @@ set local role authenticated;
 select pg_temp.check((select outcome from projects.record_client_feedback(:'PA_id', 'portal', 'positive', 'A client trying to record feedback')) in ('not_authorized', 'no_actor'), 'NEGATIVE: a portal client cannot record feedback through the staff door');
 reset role;
 
+select pg_temp.as_client(:'CLIENTU', :'ORG', :'A_id');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.record_client_goal(:'PA_id', 'A goal a portal client tries to record')) in ('not_authorized', 'no_actor'), 'NEGATIVE: a portal client cannot record a goal through the staff door');
+reset role;
 select pg_temp.as_user(:'STAFF', :'ORG', 'member');
 set local role authenticated;
 select pg_temp.check((select outcome from projects.record_client_goal(:'PA_id', 'goal')) = 'goal_required', 'a goal needs words');
@@ -314,6 +342,13 @@ select outcome as "G1_out", goal_id as "G1_id" from projects.record_client_goal(
 select pg_temp.check(:'G1_out' = 'recorded', 'a person records a goal the client stated');
 select pg_temp.check((select outcome from projects.record_client_goal(:'PA_id', '  staff can export the monthly report WITHOUT help ')) = 'duplicate', 'the same goal is not recorded twice');
 select pg_temp.check((select outcome from projects.record_client_goal(:'PX_id', 'A goal on another tenant''s project')) = 'not_found', 'NEGATIVE: another tenant''s project has no goal door for this person');
+reset role;
+select pg_temp.as_client(:'CLIENTU', :'ORG', :'A_id');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.close_client_goal(:'G1_id', 'achieved', 'a portal client tries to close it')) in ('not_authorized', 'no_actor'), 'NEGATIVE: a portal client cannot close a goal');
+reset role;
+select pg_temp.as_user(:'STAFF', :'ORG', 'member');
+set local role authenticated;
 select pg_temp.check((select outcome from projects.close_client_goal(:'G1_id', 'maybe', 'because')) = 'bad_status', 'a goal closes as achieved or dropped');
 select pg_temp.check((select outcome from projects.close_client_goal(:'G1_id', 'achieved', '  ')) = 'note_required', 'and only with a note saying why');
 select pg_temp.check((select outcome from projects.close_client_goal(:'G1_id', 'achieved', 'the client exported it alone on the follow-up call')) = 'closed', 'a person closes it as achieved');
@@ -324,19 +359,25 @@ select pg_temp.check(pg_temp.errs(format('select set_config(%L, %L, true); updat
                      'TABLE: reopening a closed goal without clearing who closed it is refused by the constraint');
 select pg_temp.check(pg_temp.direct(format('update projects.client_goals set goal = %L where id = %L', 'rewritten', :'G1_id'), 'through its door'), 'a direct write to a goal is refused');
 select pg_temp.check(pg_temp.errs(format('delete from projects.client_goals where id = %L', :'G1_id'), 'never deleted'), 'and a goal is never deleted');
-select pg_temp.check((select count(*) from audit.audit_log where organization_id = :'ORG' and action in ('customer_success.feedback_recorded', 'customer_success.goal_recorded', 'customer_success.goal_closed')) = 3, 'feedback and each goal change are audited');
+select pg_temp.check((select count(*) from audit.audit_log where organization_id = :'ORG' and action in ('customer_success.feedback_recorded', 'customer_success.goal_recorded', 'customer_success.goal_closed')) = 4, 'feedback and each goal change are audited (two feedback rows, one goal recorded, one closed)');
 
 -- ═════════ 6. a person asks for a Developer task or a QA verification (SUP spec section 7) ═════════
 select pg_temp.open_ticket(:'PA_id', 'p8f-bug', 'warranty_bug', 'covered_warranty', 'p2') as "TB_id" \gset
 select pg_temp.open_ticket(:'PA_id', 'p8f-howto', 'how_to', 'included_support', 'p4') as "TH_id" \gset
 select pg_temp.open_ticket(:'PA_id', 'p8f-classified', 'warranty_bug', 'covered_warranty', 'p3', null, null, null, 'classified') as "TC_id" \gset
 select pg_temp.open_ticket(:'PA_id', 'p8f-new', 'x', 'x', 'p3', null, null, null, 'new') as "TN_id" \gset
+select pg_temp.open_ticket(:'PA_id', 'p8f-qa', 'warranty_bug', 'covered_warranty', 'p2') as "TQ_id" \gset
+select pg_temp.as_user(:'STAFF', :'ORG', 'member');
+select outcome as "TQ_adv" from projects.advance_support_ticket(:'TQ_id', 'in_qa') \gset
+select pg_temp.check(:'TQ_adv' = 'advanced', 'fixture: a covered warranty bug whose fix is already in QA');
 select pg_temp.as_user(:'STAFF', :'ORG', 'member');
 set local role authenticated;
 select pg_temp.check((select outcome from projects.request_support_followup(:'TB_id', 'designer', 'x')) = 'bad_kind', 'a follow-up is a developer task or a QA verification');
 select pg_temp.check((select outcome from projects.request_support_followup(:'TN_id', 'developer')) = 'not_classified', 'NEGATIVE: an unclassified ticket cannot be sent to a Developer (nobody has decided what it is)');
 select pg_temp.check((select outcome from projects.request_support_followup(:'TH_id', 'developer')) = 'not_a_developer_matter', 'NEGATIVE: a how-to is never a Developer task');
 select pg_temp.check((select outcome from projects.request_support_followup(:'TC_id', 'qa')) = 'wrong_state', 'NEGATIVE: QA cannot be asked to verify a fix that has not started');
+select pg_temp.check((select outcome from projects.request_support_followup(:'TQ_id', 'developer')) = 'wrong_state', 'NEGATIVE: a Developer task is not requested for a fix that is already in QA');
+select pg_temp.check((select outcome from projects.request_support_followup(:'TQ_id', 'qa', 'verify it')) = 'requested', 'but QA can be asked to verify it (in_qa is a valid state for that request)');
 select pg_temp.check((select outcome from projects.request_support_followup(:'TB_id', 'developer', 'the export button does nothing on Safari')) = 'requested', 'a person asks for a Developer task for a covered warranty bug');
 select pg_temp.check((select outcome from projects.request_support_followup(:'TB_id', 'developer', 'again')) = 'already_requested', 'asking twice is the same request (nothing is emitted twice)');
 select pg_temp.check((select outcome from projects.request_support_followup(:'TB_id', 'qa', 'please verify the Safari fix')) = 'requested', 'and asks for a QA verification once the work is in progress');
@@ -455,11 +496,12 @@ select pg_temp.check(pg_temp.errs(format('insert into projects.client_communicat
 -- a workspace and tickets in the OTHER fixture organization, so every count here is scoped to rows this verifier created
 select pg_temp.open_ticket(:'PX_id', 'p8f-x1', 'warranty_bug', 'covered_warranty', 'p2', :'ORGB', :'BSTAFF', :'ORGB') as "TX1_id" \gset
 select pg_temp.open_ticket(:'PX_id', 'p8f-x2', 'how_to', 'included_support', 'p4', :'ORGB', :'BSTAFF', :'ORGB', 'classified') as "TX2_id" \gset
+select pg_temp.open_ticket(:'PX_id', 'p8f-x3', 'how_to', 'included_support', 'p4', :'ORGB', :'BSTAFF', :'ORGB', 'closed') as "TX3_id" \gset
 select pg_temp.as_user(:'BSTAFF', :'ORGB', 'member');
 set local role authenticated;
 select pg_temp.check((select count(*) from projects.reconcile_phase_eight_metrics()) = 10, 'the reconciliation has ten checks: two ticket groupings, the live-account count, five health statuses, recovery plans, opportunities');
 select pg_temp.check((select count(*) from projects.reconcile_phase_eight_metrics() where reconciled) = 10, 'with consistent records, all ten reconcile');
-select pg_temp.check((select observability_value from projects.reconcile_phase_eight_metrics() where check_name = 'open_tickets_state_vs_resolution_sla') = 2, 'and they are counting the two open tickets (not two empty zeros)');
+select pg_temp.check((select observability_value from projects.reconcile_phase_eight_metrics() where check_name = 'open_tickets_state_vs_resolution_sla') = 2, 'and they are counting the two open tickets (the closed one is in neither number)');
 select pg_temp.check((select observability_value = 1 and overview_value = 1 from projects.reconcile_phase_eight_metrics() where check_name = 'live_accounts_health_vs_overview'), 'one live workspace on both sides');
 reset role;
 select pg_temp.as_user(:'STAFF', :'ORG', 'member');
@@ -477,6 +519,7 @@ alter table projects.phase_eight enable trigger user;
 insert into projects.recovery_plans (organization_id, project_id, status) values (:'ORGB', :'PZ_id', 'open');
 select pg_temp.as_user(:'BSTAFF', :'ORGB', 'member');
 set local role authenticated;
+select pg_temp.check((select count(*) from projects.customer_success_next_actions() where project_id = :'PZ_id') = 0, 'a closed workspace has no next actions (its open recovery plan is not queued)');
 select pg_temp.check((select not reconciled and observability_value = 1 and overview_value = 0 from projects.reconcile_phase_eight_metrics() where check_name = 'recovery_plans_vs_overview'),
                      'a recovery plan on a closed workspace is counted by observability and not by the overview: the check returns RECONCILED = false with both numbers and its note');
 select pg_temp.check((select count(*) from projects.reconcile_phase_eight_metrics() where not reconciled) = 1, 'and it is the ONLY disagreement (the others still reconcile)');
