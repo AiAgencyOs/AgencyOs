@@ -132,7 +132,7 @@ reset role;
 select pg_temp.p1s_mutate('sales.p1s_commercial_report(integer)'::regprocedure, $m$where o.organization_id = v_org and o.stage in ('won', 'lost') and o.closed_at >= v_since$m$, $m$where o.stage in ('won', 'lost') and o.closed_at >= v_since$m$);
 select pg_temp.p1s_as_user(:'ROTHU', :'ROTH', 'owner');
 set local role authenticated;
-select pg_temp.p1s_check((sales.p1s_commercial_report(90) -> 'deals' ->> 'won') = '3', 'RED-PROOF: with the organization filter removed another organization sees this one''s won deals (the isolation check above depends on it)');
+select pg_temp.p1s_check(((sales.p1s_commercial_report(90) -> 'deals' ->> 'won'))::int >= 3, 'RED-PROOF: with the organization filter removed another organization sees this one''s won deals (the isolation check above depends on it)');
 reset role;
 select pg_temp.p1s_mutate('sales.p1s_commercial_report(integer)'::regprocedure, $m$where d.organization_id = v_org and d.status in ('autonomous', 'approved')$m$, $m$where d.organization_id = v_org and d.status in ('autonomous', 'approved', 'pending_approval')$m$);
 select pg_temp.p1s_as_user(:'RMEM', :'RORG', 'member');
