@@ -154,6 +154,7 @@ import { PhaseNineLifecycleLine } from './phase-nine-lifecycle-line';
 import { PhaseNinePanel } from './phase-nine-panel';
 import { PhaseSevenBPanel } from './phase-seven-b-panel';
 import { PhaseSevenCPanel } from './phase-seven-c-panel';
+import { MaintenanceSmokePanel } from './maintenance-smoke-panel';
 import { PhaseSevenPanel } from './phase-seven-panel';
 import { QaSpecialistPanel } from './qa-specialist-panel';
 import { ReviewPanel } from './review-panel';
@@ -954,6 +955,7 @@ export default async function ProjectPage({
 
       <PhaseSevenBPanel view={phaseSevenB} projectId={projectId} />
       <PhaseSevenCPanel projectId={projectId} failures={phaseSevenCFailures} actions={phaseSevenCActions} />
+      <MaintenanceSmokePanel projectId={projectId} />
 
       <PhaseEightPanel projectId={projectId} />
 
