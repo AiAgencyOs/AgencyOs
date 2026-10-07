@@ -176,7 +176,8 @@ describe('C. §4.1–§4.3 — mode, date, time, and what is never invented', ()
   test('§4.3: "today" keeps the rest of today rather than resolving into the past', () => {
     // A date-only TODAY begins before `now`. The first draft called that past
     // and threw the date away — the one fact the client gave.
-    const d = decide(base({ startAt: '2026-09-16' }));
+    // The client's words say "aaj" (today): the date cross-check (P1-SCHED-013) agrees with the reading, so the rest of today is kept.
+    const d = decide(base({ startAt: '2026-09-16', evidence: 'aaj 4 baje call kar sakte hain?' }));
     assert.ok(d.act === 'request');
     if (d.act === 'request') {
       assert.equal(d.startAt, NOW.toISOString(), 'clamped to now, not dropped');
@@ -198,8 +199,11 @@ describe('C. §4.1–§4.3 — mode, date, time, and what is never invented', ()
     // declared with sentences so they read as covered.
     const produced = new Set<string>();
     for (const r of [
-      base({ startAt: '2026-09-15T10:00:00Z' }),
+      // words with no relative day ("15 September"): the cross-check has no opinion, so the past hour is what is dropped
+      base({ startAt: '2026-09-15T10:00:00Z', evidence: 'on 15 September at 3:30 pm' }),
       base({ startAt: '2026-09-17T14:30:00Z', windowEnd: '2026-09-17T12:30:00Z' }),
+      // the words say "kal" (tomorrow, the 17th) and the reading chose the 20th: P1-SCHED-013's cross-check drops the time, keeps the request
+      base({ startAt: '2026-09-20T10:30:00Z' }),
       base({ startAt: null, windowEnd: '2026-09-17T14:30:00Z' }),
       base({ startAt: 'tomorrow-ish' }),
     ]) {

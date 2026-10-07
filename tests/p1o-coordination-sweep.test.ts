@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { runCoordinationSweep } from '../src/modules/orchestrator/p1o-coordination-sweep.ts';
+import { runCoordinationSweep, sweepCoordinationAllOrganizations } from '../src/modules/orchestrator/p1o-coordination-sweep.ts';
 
 type Answer = { data: unknown; error: { message: string } | null };
 function fakeAdmin(answers: Record<string, Answer>) {
@@ -76,5 +76,36 @@ describe('the coordination sweep', () => {
     const b = await runCoordinationSweep(admin, { organization_id: ORG });
     assert.ok(a.status === 'succeeded' && a.outcome === 'swept');
     assert.ok(b.status === 'succeeded' && b.outcome === 'nothing_to_sweep');
+  });
+});
+
+describe('the tick entry', () => {
+  function tickAdmin(orgs: string[], failFor: string | null, listError: string | null = null) {
+    const rpcCalls: string[] = [];
+    const admin = {
+      schema: (schema: string) => ({
+        from: () => ({ select: () => Promise.resolve(listError ? { data: null, error: { message: listError } } : { data: orgs.map((id) => ({ id })), error: null }) }),
+        rpc: (fn: string, args: { p_organization_id: string }) => {
+          rpcCalls.push(`${schema}.${fn}:${args.p_organization_id}`);
+          if (args.p_organization_id === failFor && fn === 'p1o_invalidate_stale_handoffs') return Promise.resolve({ data: null, error: { message: 'down' } });
+          return Promise.resolve({ data: fn === 'p1o_invalidate_stale_handoffs' ? [{ withdrawn: 1, blocked: 0 }] : [{ expired: 0 }], error: null });
+        },
+      }),
+    } as never;
+    return { admin, rpcCalls };
+  }
+
+  test('every organisation is swept on its own, and one failure does not stop the rest', async () => {
+    const t = tickAdmin(['o1', 'o2', 'o3'], 'o2');
+    const r = await sweepCoordinationAllOrganizations(t.admin);
+    assert.deepEqual(r, { organizations: 3, swept: 2, failed: 1 });
+    assert.ok(t.rpcCalls.includes('ai.p1o_invalidate_stale_handoffs:o3'));
+  });
+
+  test('an unreadable organisation list is counted as a failure, not as nothing to do', async () => {
+    const t = tickAdmin([], null, 'down');
+    const r = await sweepCoordinationAllOrganizations(t.admin);
+    assert.deepEqual(r, { organizations: 0, swept: 0, failed: 1 });
+    assert.equal(t.rpcCalls.length, 0);
   });
 });

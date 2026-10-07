@@ -37,3 +37,27 @@ export async function runCoordinationSweep(admin: Admin, job: SweepJob): Promise
     detail: `${withdrawn} handoff(s) withdrawn, ${blocked} marked blocked, ${expired} meeting offer(s) expired`,
   };
 }
+
+/**
+ * The tick entry (the same shape as the other sweeps in `sweeps.ts`): every organisation gets its own sweep, best effort, so one organisation's failure never
+ * stops the rest and the queue behind the tick never waits on housekeeping. Returns what was done; a failure is logged and counted, never swallowed silently.
+ */
+export async function sweepCoordinationAllOrganizations(admin: Admin): Promise<{ organizations: number; swept: number; failed: number }> {
+  const { data, error } = await admin.schema('core').from('organizations').select('id');
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `coordination sweep: organisations unreadable: ${error.message}` }));
+    return { organizations: 0, swept: 0, failed: 1 };
+  }
+  let swept = 0;
+  let failed = 0;
+  for (const org of (data ?? []) as Array<{ id: string }>) {
+    const r = await runCoordinationSweep(admin, { organization_id: org.id }).catch((e: unknown) => ({ status: 'failed', permanent: false, detail: e instanceof Error ? e.message : 'unknown' }) as const);
+    if (r.status === 'succeeded') {
+      if (r.outcome === 'swept') swept += 1;
+    } else {
+      failed += 1;
+      console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `coordination sweep for ${org.id}: ${r.detail}` }));
+    }
+  }
+  return { organizations: (data ?? []).length, swept, failed };
+}
