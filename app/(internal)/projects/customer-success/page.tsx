@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
@@ -37,6 +38,7 @@ export default async function CustomerSuccessPage() {
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Customer Success"
+        actions={<Link href="/projects/customer-success/observability" className="text-[13px] underline">Counts and ages</Link>}
         description={
           rows.length === 0
             ? 'No project has started Phase 8 yet.'

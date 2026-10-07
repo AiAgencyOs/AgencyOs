@@ -25,7 +25,7 @@ There is no weighted score: the spec's "configurable weights" were deliberately 
 Phase 8A sends nothing to a client. Before any operational message (ticket received, fix released, renewal reminder) is automated:
 1. decide the message categories and the cadence per category (the spec's section 11);
 2. have the WhatsApp templates for those messages approved by the provider (Meta);
-3. configure quiet periods and message caps (not built: only the minimum gap and consent exist).
+3. decide the caps and quiet periods per client: the mechanism now exists (Phase 8D, M-9) but NO number is set: a client has no cap and no quiet period until an Admin sets one.
 
 ## M-3 Schedule the sweeps (needs a deploy change in the job runner)
 
@@ -64,6 +64,22 @@ When Phase 7 lands its snapshot table: edit only `projects.p8_build_intake` to r
 5. Record an opportunity; confirm it is held while the account needs recovery, qualifies after, and hands a deal to Sales with no value.
 6. Wording: read the five internal-channel announcements (PM8-M01, A01, A02, RECOVERY, RENEWAL-DUE) and approve the copy.
 
+## M-9 Communication governance (Phase 8D): what an Admin sets and what stays a person's
+
+Open a client's Customer 360 page (`/clients/<id>/customer-360`, reachable by URL until the client page links to it) and read "May we contact them now?".
+1. **Caps and quiet periods are yours to set, per client.** None has a default. Set a cap only when you have decided the number (the form refuses nothing beyond 1 to 1000 contacts and 1 to 365 days); add a quiet period with its reason when a client asks for one. Both are Admin-only in the database.
+2. **Consent is recorded for WhatsApp only.** Email and portal have no consent record, so the read refuses them: if you want to contact a client by email through AgencyOS later, the consent model for email must be decided first (ADM-81 allows no exception). Calls and meetings are a person's act: consent does not apply, caps and quiet periods still do.
+3. **Nothing sends.** "Record a contact" is you saying what you did. If you contact someone while the read says no, record it anyway: the entry keeps the answer beside it. Record delivery and replies by hand ("Record" under the ledger); a platform message linked to an entry shows its own delivery state.
+4. **Whatever sends in future must call `projects.can_contact_now` first.** Nothing calls it automatically yet: no sender was changed.
+
+## M-10 Value reports (Phase 8D): wording a person approves
+
+Build a draft from the recorded facts of a period (tickets resolved, changes released, hours logged, production release checks). Read it, edit the wording, approve it (this sends nothing), then send it yourself outside AgencyOS. Review once the sentence template (version 1 in `src/modules/projects/value-report.ts`): changing the wording means a new template version, never an edit. The report states no uptime, score or saving: none is measured. Hours come from manual time logs; if nobody logs time the report has no hours fact.
+
+## M-11 Apply the four 8D migrations
+
+`20261110000000` to `20261110300000` are additive (new tables, functions and five roster pairs). Review, then `npm run db:push`. They use the existing `projects` schema, so no PostgREST schema list change is needed. Run `scripts/verify-phase-eight-d.sql` against the target afterwards (it rolls back).
+
 ## Not built, and who decides
 
-Maintenance plan CRUD and pricing, accepting a plan and its payment gate, the usage ledger, overage, renewal proposals and payment, cancellation and churn reasons, retention reports and value reports, VIP criteria, a service catalog, a knowledge base, client feedback capture, retention/deletion policy and the Admin dashboard charts: not in 8A. The VIP flag and a stored health score are refused on purpose: no criteria or weights have been configured and an agent may not decide them.
+Maintenance plan CRUD and pricing, accepting a plan and its payment gate, the usage ledger, overage, renewal proposals and payment, cancellation and churn reasons, retention reports (value report DRAFTS exist since Phase 8D), VIP criteria, a service catalog, a knowledge base, client feedback capture, retention/deletion policy and the Admin dashboard charts: not in 8A. The VIP flag and a stored health score are refused on purpose: no criteria or weights have been configured and an agent may not decide them.

@@ -10,7 +10,7 @@ stated), **MANUAL_EXTERNAL** (needs an owner, a provider or a deployment: see `p
 
 Evidence key: `V` = `scripts/verify-phase-eight-a.sql` (275+ checks through the real doors on a scratch Postgres), `R` = `scripts/redproof/phase-eight-a.py` (44
 controls, each removed from the live definition inside the verifier's own transaction and confirmed to turn it red), `T-found` = `tests/phase-eight-a-foundation.test.ts`,
-`T-wf` = `tests/phase-eight-cs-workflows.test.ts`, `T-pm` = `tests/phase-eight-pm-templates.test.ts`.
+`T-wf` = `tests/phase-eight-cs-workflows.test.ts`, `T-pm` = `tests/phase-eight-pm-templates.test.ts`, `V8D` = `scripts/verify-phase-eight-d.sql`, `R8D` = `scripts/redproof/phase-eight-d.py` (Phase 8D, section 19).
 
 ## 1. Master plan, sections 1 to 4
 
@@ -41,7 +41,7 @@ controls, each removed from the live definition inside the verifier's own transa
 | 4 | P8-05 upsell and repeat business | EXISTS | V |
 | 4 | P8-06 cancellation / churn | MISSING | other part |
 | 4 | P8-07 communication and follow-up | PARTIAL | eligibility, check-in records, reply drafts: built. Auto-send, caps, quiet periods, delivery/reply tracking, value reports: MISSING |
-| 4 | P8-08 Customer 360 and Admin dashboard | PARTIAL | per-project panel, organization overview; no cross-project single-client page, no charts |
+| 4 | P8-08 Customer 360 and Admin dashboard | PARTIAL | per-project panel, organization overview, and (8D) the single-client page `/clients/[id]/customer-360` and the counts-and-ages page `/projects/customer-success/observability`: tables of counts, no charts, no churn reasons or utilization (other part) |
 | 4 | P8-09 orchestration, events, jobs | PARTIAL | typed events and idempotent doors; scheduling not wired |
 | 4 | P8-10 security, audit, governance | PARTIAL | RLS, grants, append-only history; denial auditing and retention policy MISSING |
 | 4 | P8-11 360-degree QA | PARTIAL | DB verifier and unit tests; no browser, performance or compatibility run |
@@ -60,7 +60,7 @@ controls, each removed from the live definition inside the verifier's own transa
 | 6 | RecoveryPlan | EXISTS | root cause, owner, actions, deadline, outcome, post-intervention health |
 | 6 | CustomerOpportunity | EXISTS | `sales.phase_eight_opportunities` with evidence, plan, outcome, urgency, stakeholders, constraints |
 | 6 | Renewal | PARTIAL | flagged renewal_approaching and expired by the sweep; proposal, acceptance, payment, renewed: MISSING |
-| 6 | CommunicationRecord | PARTIAL | reply drafts + "sent by a person" record, check-ins; delivery/reply state MISSING |
+| 6 | CommunicationRecord | PARTIAL | reply drafts + "sent by a person" record, check-ins, and (8D) an append-only ledger of what a person sent or an agent drafted, with channel, purpose, author and the eligibility read at the time, plus delivery/reply events a person records and the outbound-message log joined read-only (V8D, R8D). Nothing sends; automatic delivery state from the provider is MISSING (no provider callback writes it) |
 | 6 | UsageLedger, CancellationRecord | MISSING | other part |
 | 7 | Maintenance renewal state machine | PARTIAL | ACTIVE to RENEWAL_APPROACHING to EXPIRED automated; the other states exist in the vocabulary but no door sets them (other part) |
 | 7 | Customer health HEALTHY..CRITICAL with contributing signals | EXISTS | `customer_health`, `customer_health_status` (V, R) |
@@ -82,14 +82,14 @@ controls, each removed from the live definition inside the verifier's own transa
 | 9 | UpsellOpportunityCreated | EXISTS | V |
 | 9 | RetentionRecoveryRequired | EXISTS | V, T-pm |
 | 9 | Daily/weekly/monthly jobs | PARTIAL | doors exist (`sweep_support_sla`, `sweep_maintenance_renewals`, `record_health_snapshot`); not scheduled (M-3) |
-| 10 | P8-ADM-001 Customer 360 | PARTIAL | project panel: workspace, health, tickets, check-ins, plans, opportunities. Invoices/payment status and change requests are not shown |
+| 10 | P8-ADM-001 Customer 360 | PARTIAL | project panel, and (8D) one client across projects: phase, maintenance plan and renewal dates, tickets with SLA state, health with signals, recovery, check-ins, opportunities, invoices and outstanding on the verified basis for a viewer who may read finance, contact eligibility, caps, quiet periods, ledger and value-report drafts (`tests/customer-360-queries.test.ts`). Change requests are not listed; the page is typechecked and linted, not rendered in a browser |
 | 10 | P8-ADM-002 health explanation | EXISTS | signals with value, level and detail, plus history |
-| 10 | P8-ADM-003 VIP, feedback, approvals, communication history | PARTIAL | opportunities and check-ins shown; VIP absent by design; feedback capture MISSING |
-| 10 | P8-ADM-004 dashboard | PARTIAL | `/projects/customer-success`: worst-health-first table of tickets, breaches, recovery, check-ins, renewals, opportunities; no distribution chart, churn reasons or utilization (other part) |
+| 10 | P8-ADM-003 VIP, feedback, approvals, communication history | PARTIAL | opportunities and check-ins shown; communication history (the 8D ledger) shown; VIP absent by design; feedback capture MISSING |
+| 10 | P8-ADM-004 dashboard | PARTIAL | `/projects/customer-success`: worst-health-first table; (8D) `/projects/customer-success/observability`: tickets by state and SLA, health distribution, recovery plans, renewals and opportunities by stage, with the age of the oldest (V8D). Tables, not charts; churn reasons and utilization are the other part |
 | 10 | P8-ADM-005 Admin configuration | PARTIAL | thresholds (SLA hours, health, renewal window, check-in gap) and automation pause; plan versioning, pricing, VIP criteria, escalation rules, discounts: MISSING |
 | 10 | P8-ADM-006 role-specific views | PARTIAL | clients and other tenants read nothing (V); every internal role sees all Phase 8 data |
 | 11 | Operational/relationship/commercial policy | PARTIAL | eligibility per category (consent withdrawal, minimum gap, recovery first, open P1/P2); nothing auto-sends |
-| 11 | Anti-spam: gap, caps, cadence, quiet periods, preferences | PARTIAL | minimum gap and consent only |
+| 11 | Anti-spam: gap, caps, cadence, quiet periods, preferences | PARTIAL | minimum gap and consent, and (8D) Admin-set per-client caps and quiet periods (no default number), the ledger, and `projects.can_contact_now(client, channel, purpose, contact)` asking consent, quiet periods, caps and the 8A category rules (V8D, R8D). Cadence per message category and channel/language preferences are NOT built: no document fixes them (manual action M-2) |
 | 11 | No response is not proof of dissatisfaction | EXISTS | engagement recorded; health did not move in V |
 | 12 | P8-SEC-001 organization scoping | EXISTS | RLS, parent-org triggers, freeze triggers, cross-tenant negatives (V) |
 | 12 | P8-SEC-002 least privilege | EXISTS | service-only and person-only doors proved by grants (V, T-found) |
@@ -127,7 +127,7 @@ controls, each removed from the live definition inside the verifier's own transa
 | 3 | Required context | PARTIAL | client, project, scope, warranty, plans, tickets, invoices (health reads overdue count), consent, health history; "language" preference not recorded anywhere |
 | 4 | CUS-AUD-001..005 | PARTIAL | the survey in the log; the registry already defined the agent |
 | 5 | Consume the handoff once | EXISTS | V |
-| 5 | Customer 360 and next-action queue | PARTIAL | panel + overview; no "next action" queue object |
+| 5 | Customer 360 and next-action queue | PARTIAL | panel + overview + (8D) the single-client Customer 360 page; no "next action" queue object |
 | 5 | Check-ins on a configurable cadence | PARTIAL | first check-in and renewal check-ins automatic; adoption/major-release/post-incident are created by a person; cadence settings: first check-in days and minimum gap |
 | 5 | Explainable health | EXISTS | V, R |
 | 5 | Warranty/support vs maintenance, not treating new functionality as a bug | EXISTS | V |
@@ -154,7 +154,7 @@ controls, each removed from the live definition inside the verifier's own transa
 | 12 | CUS-IMP-003 context loading | EXISTS | org-scoped reads, T-wf |
 | 12 | CUS-IMP-004 policy check before governed action | PARTIAL | the doors are the policy; the Admin Approval engine is not consulted (no governed action here) |
 | 12 | CUS-IMP-005..008 rules, events, idempotency, retry | EXISTS / PARTIAL | as above |
-| 12 | CUS-IMP-009 observability | PARTIAL | the runner records runs; no Phase 8 dashboard |
+| 12 | CUS-IMP-009 observability | PARTIAL | the runner records runs; (8D) `/projects/customer-success/observability` counts and ages the Phase 8 records; no alerting and no metrics export |
 | 12 | CUS-IMP-010 RBAC/secrets | EXISTS | V, T-wf (secret refusal) |
 | 12 | CUS-IMP-011 admin visibility | EXISTS | panel + overview |
 | 12 | CUS-IMP-012..015 regression, E2E, manual guide, DoD | PARTIAL | full suite run recorded in the log; manual guide in `phase-8a-manual-actions.md`; DoD not claimed |
@@ -210,7 +210,7 @@ controls, each removed from the live definition inside the verifier's own transa
 | 11 | UPS-TST-004 duplicate signal | EXISTS | V |
 | 11 | UPS-TST-005 structured Sales handoff validation | PARTIAL | the CRM deal is opened in discovery with no value; the structured payload is the opportunity row |
 | 11 | UPS-TST-006 service-catalog/policy boundary | PARTIAL | policy boundary (no price) proved; no catalog |
-| 11 | UPS-TST-007 communication preference / anti-spam | PARTIAL | consent and gap in eligibility; the agent contacts nobody |
+| 11 | UPS-TST-007 communication preference / anti-spam | PARTIAL | consent, gap and (8D) caps and quiet periods in `can_contact_now`; the agent contacts nobody; channel/language preferences are not recorded |
 | 11 | UPS-TST-008 outcome tracking | EXISTS | accepted (naming the change request or project), lost, no action (V) |
 
 ## 6. Sales agent spec (post-launch)
@@ -232,3 +232,23 @@ controls, each removed from the live definition inside the verifier's own transa
 | 11 | SAL-TST-006 change request vs new project | EXISTS | V |
 | 11 | SAL-TST-007 Finance handoff | MISSING | existing finance doors |
 | 11 | SAL-TST-008 lost/no-action and CS return | EXISTS | V |
+
+## 19. Phase 8D: what closed the open gaps (this section only adds; no earlier row was weakened)
+
+Evidence: `V8D` (180+ checks through the real doors, rolls back), `R8D` (every control red-proved: see `phase-8d-implementation-log.md`), `tests/phase-eight-d-foundation.test.ts`, `tests/phase-eight-d-actions.test.ts`,
+`tests/customer-360-queries.test.ts`, `tests/phase-eight-observability.test.ts`, `tests/value-report.test.ts`.
+
+| Gap | Status | Evidence / reason |
+|---|---|---|
+| Handoff edges the specs imply: Support to Customer Success and Sales; Customer Success to Support and Finance; Sales back to Customer Success | EXISTS | literal arrays in `src/modules/agents/registry.ts`, mirrored by migration `20261110000000`; `npm run check:record` section 16 counts both; V8D, R8D (one case per edge), T-found |
+| Customer 360: a single-client page across projects | EXISTS (not rendered in a browser) | `app/(internal)/clients/[clientId]/customer-360/page.tsx`, `src/modules/projects/customer-360-queries.ts`; finance only where `invoice.read`; every read refuses on failure |
+| Communication caps and quiet periods as Admin-set data | EXISTS | `projects.client_communication_caps`, `projects.client_quiet_periods`, doors `set/clear_client_communication_cap` and `add/cancel_client_quiet_period` (Admin only); no default number; V8D, R8D |
+| Communication ledger (what a person sent, what an agent drafted), append-only, with a door to record a send | EXISTS | `projects.client_communication_ledger`, `record_client_communication` (a person), `record_agent_communication_draft` (service role; a draft counts toward nothing); V8D, R8D |
+| Deterministic eligibility `can_contact_now` respecting consent, quiet periods and caps | EXISTS | `projects.can_contact_now`; consent is the existing `crm.communication_consent` (WhatsApp only); email and portal have no consent record so are refused (ADM-81); V8D, R8D |
+| Delivery and reply tracking by a person, or joined from the outbound message log | EXISTS (person-recorded) | `client_communication_events`, `client_communication_history`; the message log is joined read-only; no provider callback writes it (MISSING) |
+| Value reports as drafts of cited facts, versioned templates, a person approves | EXISTS | `projects.value_report_facts`, `value_report_drafts`, store/edit/approve/discard doors, `src/modules/projects/value-report.ts` (template version 1, fingerprint pinned). Facts: tickets resolved, changes released, hours logged, production release checks. There is NO uptime fact because none is measured |
+| Phase 8 observability: counts and ages | EXISTS (tables, not charts) | `projects.phase_eight_observability`, `/projects/customer-success/observability` (the 8A overview did not already show distributions) |
+| Nothing in 8D sends, quotes, prices or discounts | EXISTS | T-found: no migration inserts into crm, finance or sales, calls the network or emits an event; V8D structure checks; an agent draft that names a price is refused at the door and by the CHECK |
+
+Still open after 8D, not claimed: automatic delivery state from the provider, cadence per message category, channel and language preferences, feedback capture, VIP, a next-action queue, charts, and everything the other
+Phase 8 part owns. Phase 8 is NOT claimed complete.
