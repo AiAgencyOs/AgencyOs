@@ -1,6 +1,7 @@
 import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
+import { heldByNotificationRules } from '@/lib/p13/notification-hold';
 import { markInvoiceReminder, scheduleReminderStages } from './p4q-reminders';
 import { verifiedOn } from './verified-basis';
 
@@ -128,6 +129,15 @@ export async function runInvoiceReminders(admin: Admin, limit = 50): Promise<Rem
     if (verifiedError || !verifiedRow) {
       console.error(JSON.stringify({ level: 'error', scope: 'runInvoiceReminders.verified', invoice: row.invoice_id, detail: verifiedError?.message ?? 'no row' }));
       outcome.failed = true;
+      continue;
+    }
+
+    // W8 (P1-BLUEPRINT-032): an automatic past-due reminder is a client-facing send, so the organization's notification rules are asked BEFORE the claim, which
+    // would otherwise use up the interval. A hold leaves no claim and no message; the next sweep asks again. Unreadable rules hold it too (a client is
+    // never messaged on the strength of a rulebook that could not be read).
+    const held = await heldByNotificationRules(admin, { organizationId: row.organization_id, eventClass: 'client_followup', channel: 'whatsapp', clientFacing: true });
+    if (held) {
+      outcome.skipped += 1;
       continue;
     }
 

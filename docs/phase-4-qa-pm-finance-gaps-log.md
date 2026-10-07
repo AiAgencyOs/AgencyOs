@@ -47,6 +47,8 @@ A persisted ExecutionEnvelope (exact references only, "latest" and foreign ids r
 
 ## Wiring still needed (shared files this change was told not to edit)
 
+> **Status 2026-11-30:** W-Q1, W-P1, W-P2, W-P3, W-P4, W-U1, W-O1, W-O2, W-O3 and W-F1 to W-F6 are wired (W-F3 as a drift-visible reader, not a renderer swap; W-Q2 is optional and not done). Proofs: `tests/p4q-revision-wiring.test.ts`, `p4q-escalation-and-clarification-wiring.test.ts`, `p4q-hop-wiring.test.ts`, `p4q-capability-profile-wiring.test.ts`, `p4q-finance-wiring.test.ts`. W-F3 shows what the client was told at issue, with drift, on the invoice page; the PDF, WhatsApp and email renderers still print the current active accounts, on purpose: the snapshot is masked, and printing a deactivated account would send a client to a closed account.
+
 Everything below is a one-line (or small) edit in a file owned by another builder. Until it is made, the door/handler exists and is proven, but nothing in production calls it. Rows depending on it are tagged `[wiring pending: W-..]`.
 
 - **W-Q1** `app/api/jobs/run/route.ts` ~line 826: `import { handleP4qReviewPrototypeBuild } from '@/modules/p4q/qa-handler';` and pass it instead of `handleReviewPrototypeBuild` to `runEventJobs(admin, PROTOTYPE_QA_JOB_KIND, handleP4qReviewPrototypeBuild, 'runPrototypeQaJobs')`. The job kind (`prototype.qa_review`), event and catalog stay unchanged. INVALID_INTAKE is then automatic; BLOCKED_EXTERNAL needs a caller that knows an external dependency is missing (pass `{ reason, owner, resumeCondition }` as the third argument).

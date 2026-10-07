@@ -108,6 +108,16 @@ describe('W8 the follow-up worker (client-facing) asks before it claims, and hol
   });
 });
 
+describe('W8 the automatic invoice reminder (client-facing) asks before it claims', () => {
+  const src = readFileSync(new URL('../src/modules/finance/reminder-worker.ts', import.meta.url), 'utf8');
+  test('asked with clientFacing before the claim RPC', () => {
+    const ask = src.indexOf("eventClass: 'client_followup'");
+    const claim = src.indexOf("rpc('claim_invoice_reminder'");
+    assert.ok(ask > 0 && claim > ask);
+    assert.match(src, /clientFacing: true \}\);\n\s+if \(held\) \{\n\s+outcome\.skipped \+= 1;\n\s+continue;/);
+  });
+});
+
 describe('W7 the approval detail page shows the annotation and offers the two forms', () => {
   const page = readFileSync(new URL('../app/(internal)/approvals/[requestId]/page.tsx', import.meta.url), 'utf8');
   const forms = readFileSync(new URL('../app/(internal)/approvals/[requestId]/approval-execution-forms.tsx', import.meta.url), 'utf8');
