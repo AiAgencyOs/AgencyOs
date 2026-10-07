@@ -51,7 +51,7 @@ export function RouteFeedbackForm({ projectId, subjectId, kind }: { projectId: s
     <form action={action} className="flex flex-col gap-2">
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name={kind === 'ui' ? 'uiVersionId' : 'deliverableId'} value={subjectId} />
-      <select name="classification" required className={FIELD} defaultValue="">
+      <select name="classification" aria-label="Classification of the client feedback" required className={FIELD} defaultValue="">
         <option value="" disabled>Classify the client&apos;s feedback</option>
         {CLASSIFICATIONS.map((c) => (
           <option key={c} value={c}>{c.toLowerCase().replaceAll('_', ' ')}</option>
@@ -70,7 +70,7 @@ export function RequestPostLockForm({ projectId, uiVersionId }: { projectId: str
     <form action={action} className="flex flex-col gap-2">
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="uiVersionId" value={uiVersionId} />
-      <select name="kind" required className={FIELD} defaultValue="redesign">
+      <select name="kind" aria-label="Kind of change" required className={FIELD} defaultValue="redesign">
         <option value="redesign">redesign</option>
         <option value="colour_change">colour change</option>
         <option value="component_change">component change</option>
@@ -105,7 +105,7 @@ export function ConfirmIssueForm({ projectId, issueId }: { projectId: string; is
     <form action={action} className="flex flex-col gap-2">
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="issueId" value={issueId} />
-      <select name="classification" required className={FIELD} defaultValue="code_bug">
+      <select name="classification" aria-label="What the issue is" required className={FIELD} defaultValue="code_bug">
         <option value="code_bug">a prototype code bug (the Designer stays inactive)</option>
         <option value="source_ui_defect">the approved UI itself is defective</option>
       </select>
