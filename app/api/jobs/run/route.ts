@@ -120,6 +120,7 @@ import { guardDesignContext } from '@/modules/projects/design-context-guard';
 import { sweepDesignShareRemindersAllOrganizations } from '@/modules/projects/design-share-reminder-sender';
 import { handleP4uiAttachBuild, handleP4uiSyncBuild } from '@/modules/projects/p4ui-handlers';
 import { handleP4qClarificationAnswered } from '@/modules/p4q/clarification-return';
+import { runPhaseFourHop, runPhaseFourWorkflowHop } from '@/modules/p4q/hop';
 import { announceMeetingBooked, announceMeetingCancelled, sendMeetingReminder } from '@/modules/crm/meeting-announcements';
 import { handleCreateDraftHandoverPackage, handleFillPhaseEightIntake, handleOpenPhaseSeven, handleOpenSupportTicketFromMessage, handleRoutePhaseSevenTask, handleRunDeployment } from '@/modules/projects/phase-seven-handlers';
 import { runOnboardingFollowUps } from '@/modules/projects/pm-followups';
@@ -1903,7 +1904,15 @@ async function runOneAgentJob(
   // AgentPolicyRefusal — recorded and audited there. Caught here, and the
   // job is parked rather than retried: a retry would not change the policy.
   try {
-    const outcome = await workflow.run({ admin, job, agent, correlationId, workClass: workflow.workClass });
+    // W-O2: the same envelope for a Phase 4 hop that calls a model. The outcome is returned unchanged unless the envelope spent its budget (then the job is parked).
+    const outcome = await runPhaseFourWorkflowHop(
+      admin,
+      job,
+      () => workflow.run({ admin, job, agent, correlationId, workClass: workflow.workClass }),
+      async (detail) => {
+        await admin.schema('core').from('jobs').update({ status: 'dead', last_error: detail.slice(0, 1000), locked_at: null, locked_by: null }).eq('id', job.id);
+      },
+    );
     return { jobId: job.id, agent: workflow.agentKey, ...outcome };
   } catch (error) {
     // Stream F-F: the three between-step gates, each settled its own way.
@@ -2120,7 +2129,8 @@ async function runEventJobs(
     // the rest of the batch never ran and the whole tick answered 500.
     let result: HandlerResult;
     try {
-      result = await handler(admin, job);
+      // W-O2: a Phase 4 hop runs inside its persisted ExecutionEnvelope (exact references, retry budget, classed failure, escalation). Any other job runs as it always did.
+      result = await runPhaseFourHop(admin, kind, job, () => handler(admin, job));
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       console.error(
