@@ -26,7 +26,7 @@ const RULES: Array<[QuoteReplyClass, RegExp]> = [
   ['timeline_objection', /\b(deadline|too long|faster|sooner|timeline|how soon|jaldi|kitne din)/i],
   ['trust_objection', /\b(trust|guarantee|reviews?|references?|portfolio|proof|scam|bharosa)/i],
   ['scope_objection', /\b(scope|out of scope|not included|remove (the|this)|drop (the|this) (page|module|feature))/i],
-  ['change_request', /\b(change|modify|add (a|the|one)|include|can you also|aur add)/i],
+  ['change_request', /\b(change|modify|add (a|the|one)|please (include|add)|can you also|aur add)/i],
   ['needs_more_time', /\b(think|let you know|get back|discuss|talk (to|with)|time chahiye|sochna|baad mein bataunga)/i],
   ['clarification', /(\?|\b(what is|what does|does it include|explain|samjha|meaning)\b)/i],
 ];

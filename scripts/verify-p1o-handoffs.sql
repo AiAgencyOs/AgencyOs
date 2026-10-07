@@ -1,7 +1,7 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Phase 1 Orchestrator / Coordination: a handoff is a task with a contract, a board and a way out (migration 20261127000000).
 --   psql ... -v ON_ERROR_STOP=1 -f scripts/verify-p1o-handoffs.sql     Rolls back. Any failed check raises.
--- Runs as a non-superuser-compatible script: no session_replication_role, every count scoped to its own organisation.
+-- Runs as a non-superuser-compatible script: no replication-role switch, every count scoped to its own organisation.
 -- Red-proofs at the end mutate the LIVE function definition; a mutation that changes nothing raises.
 -- ═══════════════════════════════════════════════════════════════════════════
 \set ON_ERROR_STOP on
