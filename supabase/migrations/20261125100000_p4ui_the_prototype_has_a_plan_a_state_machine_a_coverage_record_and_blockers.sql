@@ -763,11 +763,14 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_b projects.p4ui_prototype_builds;
-  r   record;
+  v_b     projects.p4ui_prototype_builds;
+  v_scope text;
+  r       record;
 begin
   select b.* into v_b from projects.p4ui_prototype_builds b where b.id = p_build_id;
   if v_b.id is null then return query select 'unknown_build'::text, null::uuid; return; end if;
+  v_scope := projects.p4ui_caller(v_b.organization_id);
+  if v_scope in ('no_actor', 'forbidden') then return query select v_scope, null::uuid; return; end if;
   if p_kind not in ('production_logic', 'new_feature') then return query select 'bad_kind'::text, null::uuid; return; end if;
   select * into r from projects.p4ui_open_prototype_blocker(v_b.ui_version_id, case when p_kind = 'production_logic' then 'production_logic_request' else 'scope_change' end,
     case when p_kind = 'production_logic' then 'pm' else 'pm' end,
