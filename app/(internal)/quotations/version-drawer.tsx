@@ -73,6 +73,14 @@ export function VersionHistoryButton({
                 </p>
                 <p className="mt-1 text-[11px] text-faint">
                   {previous ? `Supersedes v${previous.version}` : 'First version on this deal'}
+                  {previous ? (
+                    <>
+                      {' · '}
+                      <Link href={`/quotations/compare?a=${previous.id}&b=${v.id}`} className="underline">
+                        Compare with v{previous.version}
+                      </Link>
+                    </>
+                  ) : null}
                 </p>
               </li>
             );
