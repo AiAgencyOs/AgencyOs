@@ -126,6 +126,7 @@ describe('F. it is reachable — the defect this repository has found repeatedly
       'crm:announcePrototypeChangeRequested',
       'crm:announceBuildApproved',
       'ui_prototype:reviseBuild',
+      'project_manager:classifyPrototypeFeedback',
       'projects:syncP4uiBuild',
     ]);
     assert.ok(HANDLERS.includes('ui_prototype:reviseBuild'));

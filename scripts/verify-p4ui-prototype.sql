@@ -191,6 +191,15 @@ select projects.record_prototype_qa_verdict(:'A2_a', 'qa_pass', '[]');
 select pg_temp.check((select outcome from projects.p4ui_sync_build_status(:'B3_b')) = 'synced', 'after Prototype QA passes the artifact, sync follows it');
 select pg_temp.check((select status = 'qa_pass' from projects.p4ui_prototype_builds where id = :'B3_b'), 'the build is qa_pass because QA said so');
 select pg_temp.check((select eligible from projects.p4ui_build_share_eligibility(:'B3_b')), 'and it is share-eligible once nothing else is open');
+
+-- Wiring (migration 20261130000000, P4-PROTO-058): the send gate reads the planned build's share eligibility
+select pg_temp.check((select qa_passed from projects.prototype_send_gate(:'A2_d')), 'send gate: QA passed and the planned build is share-eligible, so qa_passed');
+select outcome as o from projects.p4ui_record_build_artifact(:'B3_b', 'preview_route', '/preview/b3', null, 'failed', 'upload timed out') \gset GF_
+select pg_temp.check(:'GF_o' in ('recorded', 'exists'), 'fixture: a preview artifact upload fails on the planned build');
+select pg_temp.check((select not qa_passed and qa_source like 'the planned build is not share-eligible:%an artifact upload failed or is pending%' from projects.prototype_send_gate(:'A2_d')),
+  'NEGATIVE: a failed upload on the planned build closes the send gate although Prototype QA passed the artifact, and says why');
+select outcome as o from projects.p4ui_record_build_artifact(:'B3_b', 'preview_route', '/preview/b3', null, 'uploaded') \gset GF_
+select pg_temp.check((select qa_passed from projects.prototype_send_gate(:'A2_d')), 'the gate re-opens once the upload is retried');
 reset role;
 select pg_temp.check(pg_temp.fails_with($q$update projects.p4ui_prototype_builds set status = 'locked' where id = '$q$ || :'B3_b' || $q$'$q$, '23514'), 'NEGATIVE: nobody can jump the build to locked');
 select pg_temp.check(pg_temp.fails_with($q$update projects.p4ui_prototype_builds set status = 'admin_approved' where id = '$q$ || :'B3_b' || $q$'$q$, '23514'), 'NEGATIVE: nor to admin_approved before an Admin approved the deliverable');

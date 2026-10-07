@@ -11,6 +11,7 @@ import type {
   ClientProject,
   ClientProjectDetail,
   ClientPrototypeArtifact,
+  ClientPrototypeNotice,
 } from './types';
 
 /**
@@ -174,7 +175,7 @@ export async function readClientPrototypeArtifact(uiVersionId: string): Promise<
   const { data, error } = await supabase
     .schema('projects')
     .from('prototype_artifacts')
-    .select('id, project_id, ui_version_id, screens')
+    .select('id, deliverable_id, project_id, ui_version_id, screens')
     .eq('ui_version_id', uiVersionId)
     .maybeSingle();
 
@@ -183,9 +184,29 @@ export async function readClientPrototypeArtifact(uiVersionId: string): Promise<
   return data
     ? {
         id: data.id,
+        deliverableId: data.deliverable_id,
         projectId: data.project_id,
         uiVersionId: data.ui_version_id,
         screens: (data.screens ?? []) as ClientPrototypeArtifact['screens'],
       }
     : null;
+}
+
+/**
+ * What a client is told about a prototype build: the label that says it is a preview with simulated data, and the build's stated limitations.
+ * `projects.p4ui_prototype_client_notice` is the one place the wording lives; it answers null for a draft, for another client's build and for
+ * another organization's, so a null here is "nothing to show", never a failure to hide.
+ */
+export async function readClientPrototypeNotice(deliverableId: string): Promise<ClientPrototypeNotice | null> {
+  const supabase = await createClient();
+  const { data, error } = await (supabase.schema('projects') as unknown as {
+    rpc(fn: string, args: Record<string, unknown>): PromiseLike<{ data: unknown; error: { message: string } | null }>;
+  }).rpc('p4ui_prototype_client_notice', { p_deliverable_id: deliverableId });
+
+  if (error) unreadable('readClientPrototypeNotice', error);
+
+  const raw = data as { label?: unknown; limitations?: unknown; simulated?: unknown; platform?: unknown } | null;
+  if (!raw || typeof raw.label !== 'string') return null;
+  const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+  return { label: raw.label, limitations: strings(raw.limitations), simulated: strings(raw.simulated), platform: typeof raw.platform === 'string' ? raw.platform : null };
 }

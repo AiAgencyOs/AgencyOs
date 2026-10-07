@@ -29,6 +29,7 @@ export const HANDLERS = [
   'orchestrator:requestUIVersionAdminReview',
   'ui_prototype:build',
   'ui_prototype:reviseBuild',
+  'project_manager:classifyPrototypeFeedback',
   'quality_assurance:reviewPrototypeBuild',
   'projects:completePhaseFourOnPrototypeApproval',
   'projects:startPhaseFive',
@@ -664,6 +665,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
     'crm:announcePrototypeChangeRequested',
     'crm:announceBuildApproved',
     'ui_prototype:reviseBuild',
+    'project_manager:classifyPrototypeFeedback',
     'projects:syncP4uiBuild',
   ],
   /**
@@ -814,6 +816,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'orchestrator:requestUIVersionAdminReview': 'ui_version.request_admin_review',
   'ui_prototype:build': 'prototype.build',
   'ui_prototype:reviseBuild': 'prototype.build_revise',
+  'project_manager:classifyPrototypeFeedback': 'prototype.feedback_classify',
   'quality_assurance:reviewPrototypeBuild': 'prototype.qa_review',
   'projects:completePhaseFourOnPrototypeApproval': 'phase_four.complete',
   'projects:startPhaseFive': 'phase_five.start',
