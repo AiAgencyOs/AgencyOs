@@ -283,7 +283,7 @@ describe('P4-QAP-043: uploaded evidence is stored first and recorded by the door
   test('the new database reads are checked, and the new tables and functions carry the p4s_ prefix', () => {
     const q = read('src/modules/p4q/queries.ts');
     assert.equal((q.match(/if \(error\)/g) ?? []).length, (q.match(/unreadable\(/g) ?? []).length);
-    for (const name of MIGRATION.matchAll(/create (?:or replace function|table(?: if not exists)?) ((?:projects|finance)\.[a-z0-9_]+)/g)) assert.match(name[1]!, /\.p4s_/, name[1]);
+    for (const name of MIGRATION.matchAll(/create (?:or replace function|table(?: if not exists)?) ((?:projects|finance)\.[a-z0-9_]+)/g)) assert.match(name[1]!, /\.p4s_/, String(name[1]));
   });
 });
 

@@ -23,7 +23,7 @@ describe('the round-four migration', () => {
       const ts = Number(n.slice(0, 14));
       assert.ok(ts >= 20261205000000 && ts <= 20261205990000, n);
     }
-    for (const m of code.matchAll(/create or replace function ((?:projects|finance)\.\w+)/g)) assert.match(m[1], /\.p5r_/, m[1]);
+    for (const m of code.matchAll(/create or replace function ((?:projects|finance)\.\w+)/g)) assert.match(m[1]!, /\.p5r_/, String(m[1]));
   });
   test('no function sets the replication role; nothing deletes or drops', () => {
     assert.ok(!/session_replication_role/.test(code));
@@ -57,7 +57,7 @@ describe('the round-four migration', () => {
 
 describe('the round-four connections', () => {
   test('the verifier is in the CI chain beside the 8A verifiers whose fixtures it changed', () => {
-    const chain = (JSON.parse(read('package.json')) as { scripts: Record<string, string> }).scripts['db:verify:phase4'];
+    const chain = (JSON.parse(read('package.json')) as { scripts: Record<string, string> }).scripts['db:verify:phase4'] ?? '';
     assert.ok(chain.includes('-f scripts/verify-p5r-round4.sql'));
     assert.ok(chain.includes('-f scripts/verify-phase-eight-a.sql'));
   });
