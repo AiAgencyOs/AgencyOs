@@ -56,6 +56,7 @@ import { getPhaseSixExtra } from '@/modules/projects/phase-six-extra-queries';
 import { readPhaseEightBView } from '@/modules/projects/phase-eight-b-queries';
 import { readPhaseEightCView } from '@/modules/projects/phase-eight-c-queries';
 import { readPhaseSevenB } from '@/modules/projects/phase-seven-b-queries';
+import { readClientActionRequests, readProjectFailures } from '@/modules/projects/phase-seven-c-queries';
 import { readPhaseSevenOverview } from '@/modules/projects/phase-seven-queries';
 import { readQaSpecialistView } from '@/modules/projects/qa-specialist-queries';
 import { getReviewView } from '@/modules/projects/review-queries';
@@ -152,6 +153,7 @@ import { PhaseEightPanel } from './phase-eight-panel';
 import { PhaseNineLifecycleLine } from './phase-nine-lifecycle-line';
 import { PhaseNinePanel } from './phase-nine-panel';
 import { PhaseSevenBPanel } from './phase-seven-b-panel';
+import { PhaseSevenCPanel } from './phase-seven-c-panel';
 import { PhaseSevenPanel } from './phase-seven-panel';
 import { QaSpecialistPanel } from './qa-specialist-panel';
 import { ReviewPanel } from './review-panel';
@@ -258,6 +260,7 @@ export default async function ProjectPage({
   const phaseEightC = await readPhaseEightCView(projectId);
   const phaseSeven = await readPhaseSevenOverview(projectId);
   const phaseSevenB = await readPhaseSevenB(projectId);
+  const [phaseSevenCFailures, phaseSevenCActions] = await Promise.all([readProjectFailures(projectId), readClientActionRequests(projectId)]);
   const phaseSixExtra = await getPhaseSixExtra(projectId);
   const taskBoard = await readTaskBoard(projectId);
   const buildRuns = await readBuildRuns(projectId);
@@ -950,6 +953,7 @@ export default async function ProjectPage({
       <PhaseSevenPanel view={phaseSeven} projectId={projectId} />
 
       <PhaseSevenBPanel view={phaseSevenB} projectId={projectId} />
+      <PhaseSevenCPanel projectId={projectId} failures={phaseSevenCFailures} actions={phaseSevenCActions} />
 
       <PhaseEightPanel projectId={projectId} />
 
