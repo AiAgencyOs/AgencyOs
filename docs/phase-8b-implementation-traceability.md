@@ -66,8 +66,8 @@ Everything agent-driven is STUB-PROVEN: no real model, repository, deployment or
 | 5 Defect/retest loop | BUILT | A failing result opens a `qa.defects` row on the exact commit; a defect-linked fix needs the defect VERIFIED by `qa.record_retest` (Phase 6 loop reused). |
 | 5 Regression on important changes | BUILT | `regression` QA is a mandatory gate; `security` when the change is marked sensitive. |
 | 6 Critical/high unresolved defect: do not recommend release | BUILT | `no_other_s0_s1` gate reads `qa.unresolved_product_defects`. |
-| 6 Post-deploy smoke failure -> incident/rollback | MISSING | Smoke evidence is recorded by a person; no automated smoke check or rollback trigger. |
-| 7 Events QAHandoffCreated, TestRunCompleted, QAPassed... | PARTIAL | `project.maintenance_qa_failed` only; a pass is the item state `qa_passed`. |
+| 6 Post-deploy smoke failure -> incident/rollback | PARTIAL (improved, gaps log G1) | `projects.report_maintenance_smoke_failure` (delivery staff / Admin, on a RELEASED change only, evidence required, one open per change) and `projects.decide_maintenance_smoke_failure` (Admin, independent of the reporter, in the door and in a table CHECK; rollback_executed / forward_fix / false_alarm with a note). Events `project.maintenance_smoke_failed` / `_decided`. Driven and red-proved in `scripts/verify-phase-eight-b-smoke-and-events.sql`. Still open: AgencyOS runs no smoke check and rolls nothing back (no deployment executor; MANUAL_EXTERNAL). |
+| 7 Events QAHandoffCreated, TestRunCompleted, QAPassed... | EXISTS (gaps log G2) | `project.maintenance_qa_handoff_created`, `project.maintenance_test_run_completed`, `project.maintenance_qa_passed`, emitted by triggers on the rows that change (migration `20261122100000`); verified once-only and red-proved in the same verifier. `project.maintenance_qa_failed` pre-existed. |
 | 11 QA_-TST-001..008 | PARTIAL | UI/accessibility, performance, compatibility and real E2E not covered. |
 | Regression plan agent | BUILT (stub) | `maintenance.regression_test.plan`: a proposal; it records no result. |
 
