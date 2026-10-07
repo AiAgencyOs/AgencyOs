@@ -2,6 +2,7 @@ import { after, NextResponse, type NextRequest } from 'next/server';
 
 import { nudgeRunner } from '@/lib/jobs/nudge';
 import { createAdminClient } from '@/lib/db/admin';
+import { limitPublicRoute } from '@/lib/security/rate-limit';
 import { resolveSecret } from '@/lib/secrets/resolve';
 import { newCorrelationId } from '@/lib/errors';
 import { parseDelivery } from '@/lib/whatsapp/payload';
@@ -162,6 +163,9 @@ export async function GET(request: NextRequest) {
  * carried nothing to store, and `rejected` is content that did not survive.
  */
 export async function POST(request: NextRequest) {
+  // P1-DOD-064: before the body is read. Generous (a provider may redeliver a backlog); it exists to stop a flood, not to shape normal traffic. Fails open.
+  const blocked = await limitPublicRoute(request, createAdminClient(), 'webhook-whatsapp', 1200, 60);
+  if (blocked) return blocked;
   const WHATSAPP_APP_SECRET = (await resolveSecret('WHATSAPP_APP_SECRET')) ?? undefined;
   const correlationId = newCorrelationId();
 

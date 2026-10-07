@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { createAdminClient } from '@/lib/db/admin';
+import { limitPublicRoute } from '@/lib/security/rate-limit';
 import { authorizeEmailSignature } from '@/lib/email-inbound/verify';
 import { serverEnv } from '@/lib/env';
 import { httpStatusFor, newCorrelationId } from '@/lib/errors';
@@ -43,6 +44,9 @@ function firstOf(form: FormData, key: string): string | null {
 }
 
 export async function POST(request: NextRequest) {
+  // P1-DOD-064: before anything is read. Fails open; see src/lib/security/rate-limit.ts.
+  const blocked = await limitPublicRoute(request, createAdminClient(), 'webhook-email', 600, 60);
+  if (blocked) return blocked;
   const { EMAIL_INBOUND_SIGNING_KEY } = serverEnv();
   const correlationId = newCorrelationId();
 

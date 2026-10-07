@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { createAdminClient } from '@/lib/db/admin';
+import { limitPublicRoute } from '@/lib/security/rate-limit';
 import { serverEnv } from '@/lib/env';
 import { httpStatusFor, newCorrelationId } from '@/lib/errors';
 import { fetchLeadgenFields } from '@/lib/facebook/graph';
@@ -102,6 +103,9 @@ export async function GET(request: NextRequest) {
 
 /** POST — one delivery of leadgen change notifications. */
 export async function POST(request: NextRequest) {
+  // P1-DOD-064: before the body is read. Fails open; see src/lib/security/rate-limit.ts.
+  const blocked = await limitPublicRoute(request, createAdminClient(), 'webhook-facebook-leads', 600, 60);
+  if (blocked) return blocked;
   const { FACEBOOK_APP_SECRET } = serverEnv();
   const correlationId = newCorrelationId();
 
