@@ -187,7 +187,7 @@ describe('structure of the new files', () => {
     const exported = [...src.matchAll(/^export (\w+ \w+)/gm)].map((m) => m[1]);
     assert.deepEqual(exported, ['async function']);
     for (const table of [src.slice(src.indexOf('const DOORS'), src.indexOf('const WORDS')), src.slice(src.indexOf('const WORDS'), src.indexOf('export async function'))]) {
-      const keys = [...table.matchAll(/^  ([a-z_]+):/gm)].map((m) => m[1]);
+      const keys = [...table.matchAll(/^ {2}([a-z_]+):/gm)].map((m) => m[1]);
       assert.equal(new Set(keys).size, keys.length, 'no duplicate key');
       assert.ok(keys.length >= 7);
     }
