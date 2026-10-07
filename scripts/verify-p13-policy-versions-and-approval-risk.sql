@@ -62,7 +62,7 @@ select pg_temp.check((select superseded_id from core.p13_activate_policy_version
 select pg_temp.check((select status from core.p13_policy_versions where id = :'v1') = 'superseded' and (select status from core.p13_policy_versions where id = :'v2') = 'active', 'one superseded, one active');
 select pg_temp.check((select count(*) from core.p13_policy_versions where policy_kind = 'approval' and status = 'active') = 1, 'exactly one active per kind');
 select pg_temp.check(core.p13_policy_version_in_force(:'ORG', 'approval') = :'v2', 'the version in force now is version 2');
-select pg_temp.check(core.p13_policy_version_in_force(:'ORG', 'approval', (select activated_at - interval '1 millisecond' from core.p13_policy_versions where id = :'v2')) = :'v1',
+select pg_temp.check(core.p13_policy_version_in_force(:'ORG', 'approval', (select activated_at - interval '1 microsecond' from core.p13_policy_versions where id = :'v2')) = :'v1',
   'a moment before version 2, version 1 was in force (history is answerable)');
 select pg_temp.check(core.p13_policy_version_in_force(:'ORG', 'approval', (select activated_at - interval '1 day' from core.p13_policy_versions where id = :'v1')) is null, 'before any version there was none');
 
