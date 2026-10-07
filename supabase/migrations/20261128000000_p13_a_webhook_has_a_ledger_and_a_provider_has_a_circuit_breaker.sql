@@ -43,6 +43,9 @@ create unique index if not exists p13_webhook_events_original_key
 create index if not exists p13_webhook_events_org_idx on core.p13_webhook_events (organization_id, received_at desc);
 create index if not exists p13_webhook_events_status_idx on core.p13_webhook_events (provider, status, received_at desc);
 
+drop trigger if exists org_match_p13_webhook_duplicate_of on core.p13_webhook_events;
+create trigger org_match_p13_webhook_duplicate_of before insert or update of duplicate_of, organization_id on core.p13_webhook_events
+  for each row execute function core.enforce_parent_org('duplicate_of', 'core.p13_webhook_events');
 drop trigger if exists freeze_org_p13_webhook_events on core.p13_webhook_events;
 create trigger freeze_org_p13_webhook_events before update of organization_id on core.p13_webhook_events
   for each row execute function core.freeze_organization_id();
