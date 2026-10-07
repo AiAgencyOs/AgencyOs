@@ -1,0 +1,170 @@
+import 'server-only';
+
+import { requireInternal } from '@/lib/auth/session';
+import { can } from '@/lib/authz/permissions';
+import { asRows, firstRow, text, userRpc, whole } from '@/lib/db/p1o-rpc';
+import { err, ok, unreadable, type Result } from '@/lib/result';
+
+/**
+ * Quotation Master gap closure, the application side (migration 20261127200000).
+ *
+ * Acceptance as evidence, cancellation, tax from configuration, readiness, the negotiation read and the per-quote timeline. Every refusal word the database
+ * returns is turned into a sentence here; every read that fails is `unreadable`, never an empty list. No door in this file relaxes a human gate: the owner still
+ * approves, a person still sends, and only a person records the client's acceptance.
+ */
+
+const SAY: Record<string, string> = {
+  forbidden: 'Only an administrator of this organisation can do that.',
+  needs_a_person: 'An acceptance is recorded by a person, with evidence; an agent cannot.',
+  not_found: 'That quotation no longer exists.',
+  bad_channel: 'Say where the acceptance came from: WhatsApp, email, a call, a meeting, the portal or other.',
+  evidence_required: 'Evidence is required: the message reference, a recording, a signed reply. Without it the acceptance is only a claim.',
+  client_identity_required: 'Name the client contact who accepted.',
+  not_answerable: 'That quotation is not open with the client (it was not sent, or it is already answered).',
+  version_mismatch: 'The client named a different version than this one. Open the version they named instead.',
+  expired: 'That quotation expired before the client answered; it cannot be accepted. Draft a new version.',
+  missing_reason: 'A reason is required.',
+  already_cancelled: 'It is already cancelled.',
+  not_cancellable: 'Only a draft, in-review, approved or sent quotation can be cancelled.',
+  plan_set_member: 'A quotation inside a plan set is withdrawn by superseding the set.',
+  missing_note: 'A note is required.',
+  already_resolved: 'That is already resolved.',
+  unknown_flag: 'That flag no longer exists.',
+  unknown_clarification: 'That clarification no longer exists.',
+  refused: 'The database refused those values.',
+};
+
+async function who(capability: 'proposal.send' | 'proposal.draft' | 'organization.settings'): Promise<Result<true>> {
+  const context = await requireInternal();
+  if (!can(context, capability)) return err('FORBIDDEN', 'Your role cannot do that.');
+  return ok(true);
+}
+
+export type AcceptanceInput = {
+  proposalId: string;
+  contactId: string;
+  channel: 'whatsapp' | 'email' | 'call' | 'meeting' | 'portal' | 'other';
+  evidenceRef: string;
+  statedVersion?: number | null;
+  messageRef?: string | null;
+  note?: string | null;
+};
+
+export type AcceptanceResult = { kind: 'recorded' } | { kind: 'needs_clarification'; clarificationId: string };
+
+/** The evidenced acceptance. Several open versions and no stated version records a clarification and accepts nothing. */
+export async function recordEvidencedAcceptance(input: AcceptanceInput): Promise<Result<AcceptanceResult>> {
+  const gate = await who('proposal.send');
+  if (!gate.ok) return gate;
+  const rpc = await userRpc('sales');
+  const { data, error } = await rpc('p1o_record_acceptance', {
+    p_proposal_id: input.proposalId,
+    p_contact_id: input.contactId,
+    p_channel: input.channel,
+    p_evidence_ref: input.evidenceRef,
+    p_stated_version: input.statedVersion ?? null,
+    p_message_ref: input.messageRef ?? null,
+    p_note: input.note ?? null,
+  });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'recordEvidencedAcceptance', detail: error.message }));
+    return err('INTERNAL', 'Could not record the acceptance.');
+  }
+  const r = firstRow(data);
+  const outcome = String(r?.outcome ?? '');
+  if (outcome === 'recorded') return ok({ kind: 'recorded' });
+  if (outcome === 'needs_clarification') return ok({ kind: 'needs_clarification', clarificationId: String(r?.clarification_id) });
+  return err(outcome === 'forbidden' ? 'FORBIDDEN' : 'VALIDATION', SAY[outcome] ?? 'The database refused that.');
+}
+
+export async function cancelQuotation(proposalId: string, reason: string): Promise<Result<string>> {
+  const gate = await who('proposal.send');
+  if (!gate.ok) return gate;
+  const rpc = await userRpc('sales');
+  const { data, error } = await rpc('p1o_cancel_proposal', { p_proposal_id: proposalId, p_reason: reason });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'cancelQuotation', detail: error.message }));
+    return err('INTERNAL', 'Could not cancel the quotation.');
+  }
+  const outcome = String(firstRow(data)?.outcome ?? '');
+  return outcome === 'cancelled' ? ok('Cancelled. Any pending approval was withdrawn; the history is kept.') : err(outcome === 'forbidden' ? 'FORBIDDEN' : 'VALIDATION', SAY[outcome] ?? 'The database refused that.');
+}
+
+export type TaxApplication = { state: 'applied'; taxMinor: number; totalMinor: number } | { state: 'tax_uncertain' } | { state: 'not_draft' };
+
+/** Compute the tax of a DRAFT from the configured mode and rate. With no configuration, or GST without a GSTIN, it raises a flag instead of guessing. */
+export async function applyConfiguredTax(proposalId: string): Promise<Result<TaxApplication>> {
+  const gate = await who('proposal.draft');
+  if (!gate.ok) return gate;
+  const rpc = await userRpc('sales');
+  const { data, error } = await rpc('p1o_apply_quote_tax', { p_proposal_id: proposalId });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'applyConfiguredTax', detail: error.message }));
+    return err('INTERNAL', 'Could not apply the tax.');
+  }
+  const r = firstRow(data);
+  switch (String(r?.outcome ?? '')) {
+    case 'applied':
+      return ok({ state: 'applied', taxMinor: whole(r?.tax_minor), totalMinor: whole(r?.total_minor) });
+    case 'tax_uncertain':
+      return ok({ state: 'tax_uncertain' });
+    case 'not_draft':
+      return ok({ state: 'not_draft' });
+    case 'forbidden':
+      return err('FORBIDDEN', SAY.forbidden as string);
+    default:
+      return err('NOT_FOUND', SAY.not_found as string);
+  }
+}
+
+export type ReadinessCheck = { name: string; ok: boolean; detail: string };
+
+export async function readQuoteReadiness(opportunityId: string): Promise<{ ready: boolean; checks: ReadinessCheck[] }> {
+  const rpc = await userRpc('sales');
+  const { data, error } = await rpc('p1o_quote_readiness', { p_opportunity_id: opportunityId });
+  if (error) unreadable('readQuoteReadiness', error);
+  const checks = asRows(data).map((r) => ({ name: String(r.check_name), ok: r.ok === true, detail: String(r.detail) }));
+  return { ready: checks.length > 0 && checks.every((c) => c.ok), checks };
+}
+
+export type NegotiationRound = {
+  round: number; kind: string; concern: string; response: string | null; outcome: string | null; nextAction: string | null; at: string;
+  proposalId: string | null; proposalVersion: number | null; proposalStatus: string | null; totalMinor: number | null; discountMinor: number | null; approvalState: string | null;
+  discountDecisions: Array<{ id: string; discountMinor: number; pct: number; status: string; finalAmountMinor: number | null }>;
+  clientResponses: Array<{ class: string; at: string; note: string | null }>;
+};
+
+export async function readNegotiationRounds(opportunityId: string): Promise<NegotiationRound[]> {
+  const rpc = await userRpc('sales');
+  const { data, error } = await rpc('p1o_negotiation_rounds', { p_opportunity_id: opportunityId });
+  if (error) unreadable('readNegotiationRounds', error);
+  const list = (v: unknown): Array<Record<string, unknown>> => (Array.isArray(v) ? (v as Array<Record<string, unknown>>) : []);
+  return asRows(data).map((r) => ({
+    round: whole(r.round), kind: String(r.kind), concern: String(r.concern), response: text(r.response), outcome: text(r.outcome), nextAction: text(r.next_action), at: String(r.objection_at),
+    proposalId: text(r.proposal_id), proposalVersion: r.proposal_version === null || r.proposal_version === undefined ? null : whole(r.proposal_version), proposalStatus: text(r.proposal_status),
+    totalMinor: r.total_minor === null || r.total_minor === undefined ? null : whole(r.total_minor), discountMinor: r.discount_minor === null || r.discount_minor === undefined ? null : whole(r.discount_minor),
+    approvalState: text(r.approval_state),
+    discountDecisions: list(r.discount_decisions).map((d) => ({ id: String(d.id), discountMinor: whole(d.discountMinor), pct: Number(d.pct), status: String(d.status), finalAmountMinor: d.finalAmountMinor === null || d.finalAmountMinor === undefined ? null : whole(d.finalAmountMinor) })),
+    clientResponses: list(r.client_responses).map((c) => ({ class: String(c.class), at: String(c.at), note: text(c.note) })),
+  }));
+}
+
+export type QuoteTimelineEntry = { at: string; action: string; actorType: string; subjectType: string };
+
+export async function readQuoteTimeline(proposalId: string): Promise<QuoteTimelineEntry[]> {
+  const rpc = await userRpc('sales');
+  const { data, error } = await rpc('p1o_quote_timeline', { p_proposal_id: proposalId });
+  if (error) unreadable('readQuoteTimeline', error);
+  return asRows(data).map((r) => ({ at: String(r.occurred_at), action: String(r.action), actorType: String(r.actor_type), subjectType: String(r.subject_type) }));
+}
+
+export type VersionChange = { field: string; from?: unknown; to?: unknown; change?: string; description?: string };
+
+export async function readVersionChangeSummary(proposalId: string): Promise<{ version: number; previousVersion: number | null; changes: VersionChange[] } | null> {
+  const rpc = await userRpc('sales');
+  const { data, error } = await rpc('p1o_version_change_summary', { p_proposal_id: proposalId });
+  if (error) unreadable('readVersionChangeSummary', error);
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const d = data as Record<string, unknown>;
+  return { version: whole(d.version), previousVersion: d.previousVersion === null ? null : whole(d.previousVersion), changes: Array.isArray(d.changes) ? (d.changes as VersionChange[]) : [] };
+}

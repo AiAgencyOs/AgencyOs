@@ -698,7 +698,7 @@ create or replace function ai.p1o_workflow_task_board(
 )
 returns table (
   handoff_id uuid, board_state text, status text, priority text, from_agent text, to_agent text, objective text, subject_type text, subject_id uuid,
-  project_id uuid, age_minutes int, stale boolean, retry_count int, blocker text, paused boolean, waiting_on int, sla_at timestamptz, correlation_id uuid, created_at timestamptz
+  project_id uuid, age_minutes int, stale boolean, retry_count int, blocker text, paused boolean, side_effect_uncertain boolean, waiting_on int, sla_at timestamptz, correlation_id uuid, created_at timestamptz
 )
 language plpgsql
 stable
@@ -737,7 +737,7 @@ begin
   select s.id, s.bs, s.status, s.priority, s.from_agent, s.to_agent, s.objective, s.subject_type, s.subject_id, s.project_id,
          (extract(epoch from (now() - s.created_at)) / 60)::int,
          (s.bs not in ('closed', 'failed') and (coalesce(s.sla_at < now(), false) or s.created_at < now() - interval '1 day')),
-         s.retry_count, s.blocker, s.paused_at is not null, s.unmet, s.sla_at, s.correlation_id, s.created_at
+         s.retry_count, s.blocker, s.paused_at is not null, s.side_effect_uncertain, s.unmet, s.sla_at, s.correlation_id, s.created_at
     from s
    where (p_state is null or s.bs = p_state)
      and (p_agent is null or s.to_agent = p_agent or s.from_agent = p_agent)

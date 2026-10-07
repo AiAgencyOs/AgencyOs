@@ -344,7 +344,7 @@ create table if not exists crm.p1o_meeting_flags (
   id              uuid primary key default gen_random_uuid(),
   organization_id uuid not null references core.organizations(id) on delete cascade,
   meeting_id      uuid not null references crm.meetings(id) on delete cascade,
-  kind            text not null check (kind in ('reschedule_request', 'cancel_request', 'availability_question', 'reminder_question', 'ambiguous_cancel',
+  kind            text not null check (kind in ('reschedule_request', 'cancel_request', 'availability_question', 'reminder_question', 'ambiguous_cancel', 'ambiguous_reschedule',
                                                 'provider_conflict', 'slot_busy', 'timezone_ambiguous', 'needs_escalation', 'proposal_expired')),
   note            text not null check (length(btrim(note)) between 1 and 1000),
   candidate_meeting_ids uuid[] not null default '{}',
@@ -387,12 +387,12 @@ begin
   if v_m.id is null then return query select 'unknown_meeting'::text, null::uuid; return; end if;
   v_refusal := ai.p1o_door_refusal(v_m.organization_id, false);
   if v_refusal is not null then return query select v_refusal, null::uuid; return; end if;
-  if p_kind is null or p_kind not in ('reschedule_request', 'cancel_request', 'availability_question', 'reminder_question', 'ambiguous_cancel',
+  if p_kind is null or p_kind not in ('reschedule_request', 'cancel_request', 'availability_question', 'reminder_question', 'ambiguous_cancel', 'ambiguous_reschedule',
                                       'provider_conflict', 'slot_busy', 'timezone_ambiguous', 'needs_escalation') then
     return query select 'bad_kind'::text, null::uuid; return;
   end if;
   if p_note is null or length(btrim(p_note)) = 0 then return query select 'missing_note'::text, null::uuid; return; end if;
-  if p_kind = 'ambiguous_cancel' and coalesce(cardinality(p_candidate_meeting_ids), 0) < 2 then return query select 'needs_candidates'::text, null::uuid; return; end if;
+  if p_kind in ('ambiguous_cancel', 'ambiguous_reschedule') and coalesce(cardinality(p_candidate_meeting_ids), 0) < 2 then return query select 'needs_candidates'::text, null::uuid; return; end if;
   if v_m.status in ('completed', 'no_show', 'cancelled') and p_kind in ('reschedule_request', 'cancel_request') then
     return query select 'settled'::text, null::uuid; return;
   end if;
