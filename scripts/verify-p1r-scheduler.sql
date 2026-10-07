@@ -130,7 +130,7 @@ select outcome as o4 from crm.p1r_record_provider_check(:'mp', 'missing') \gset
 select pg_temp.p1r_check(:'o4' = 'conflict_flagged', 'missing at the provider is a conflict');
 select outcome as o5, coalesce(flag_id::text, '') as f5 from crm.p1r_record_provider_check(:'mp', 'unreadable', null, null, 'Google did not answer') \gset
 select pg_temp.p1r_check(:'o5' = 'unreadable' and :'f5' = '', 'an unreadable provider is neither in sync nor a conflict');
-select pg_temp.p1r_check((select result from crm.p1r_provider_checks where meeting_id = :'mp' order by checked_at desc, id limit 1) in ('unreadable', 'conflict'), 'every look is a row');
+select pg_temp.p1r_check((select count(*) from crm.p1r_provider_checks where meeting_id = :'mp') = 5, 'every look is a row (five looks so far)');
 select pg_temp.p1r_check((select outcome from crm.p1r_record_provider_check(:'mreq', 'confirmed', now(), now())) = 'not_checkable', 'a meeting that is not booked with a provider event is not checkable');
 select pg_temp.p1r_check((select outcome from crm.p1r_record_provider_check(:'mp', 'weird')) = 'bad_state', 'an unknown provider state is refused');
 select pg_temp.p1r_check((select outcome from crm.p1r_record_provider_check(:'mp', 'confirmed')) = 'bad_times', 'a confirmed event without times is refused');
