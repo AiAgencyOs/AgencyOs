@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import type { FormState } from '@/modules/identity/types';
-import { cancelQuotation, recordEvidencedAcceptance } from '@/modules/sales/p1o-quotation-service';
+import { applyConfiguredTax, cancelQuotation, recordEvidencedAcceptance, resolveClarification } from '@/modules/sales/p1o-quotation-service';
 
 const CHANNELS = ['whatsapp', 'email', 'call', 'meeting', 'portal', 'other'] as const;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -38,4 +38,20 @@ export async function cancelQuotationAction(_prev: FormState, f: FormData): Prom
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath('/quotations/negotiation');
   return { status: 'success', message: result.data };
+}
+
+export async function resolveClarificationAction(_prev: FormState, f: FormData): Promise<FormState> {
+  const result = await resolveClarification(text(f, 'clarificationId'), text(f, 'note'));
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/quotations/negotiation');
+  return { status: 'success', message: result.data };
+}
+
+export async function applyTaxAction(_prev: FormState, f: FormData): Promise<FormState> {
+  const result = await applyConfiguredTax(text(f, 'proposalId'));
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/quotations/negotiation');
+  if (result.data.state === 'applied') return { status: 'success', message: 'Tax applied from the configuration; the total now includes it.' };
+  if (result.data.state === 'not_draft') return { status: 'error', message: 'Only a draft can have its tax recomputed.' };
+  return { status: 'error', message: 'The tax treatment is uncertain (no configuration, or GST without a GSTIN). It was flagged for an administrator in Quotation policy; it cannot go for approval until that is resolved.' };
 }

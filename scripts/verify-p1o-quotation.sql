@@ -162,6 +162,11 @@ select pg_temp.check(:'amb' = 'needs_clarification' and :'cl' is not null, 'two 
 select pg_temp.check((select status from sales.proposals where id = :'pa') = 'sent' and (select status from sales.proposals where id = :'pb') = 'sent', 'nothing was accepted');
 select pg_temp.check((select count(*) from core.outbox_events where organization_id = :'QORG' and type = 'proposal.acceptance_ambiguous') = 1, 'the ambiguity is an event, so a person is asked to ask');
 select pg_temp.check((select outcome from sales.p1o_record_acceptance(:'pa', :'contact', 'whatsapp', 'wa:msg-1', :vb)) = 'version_mismatch', 'a stated version that is not this one is refused');
+select pg_temp.as_service();
+select pg_temp.check((select outcome from sales.p1o_record_acceptance(:'pa', :'contact', 'whatsapp', 'wa:msg-1', :va)) = 'needs_a_person', 'the service role cannot record an acceptance: it is a person''s act');
+select pg_temp.check((select outcome from sales.p1o_raise_acceptance_clarification(:'opp1', 'wa:msg-2')) = 'already_open', 'but an agent can raise the question, and finds it already open');
+select pg_temp.check((select outcome from sales.p1o_raise_acceptance_clarification(:'opp5', 'wa:msg-3')) = 'not_ambiguous', 'with fewer than two open versions there is nothing to ask');
+select pg_temp.as_user(:'QOWN', :'QORG', 'owner');
 select pg_temp.as_user(:'QMEM', :'QORG', 'member');
 select pg_temp.check((select outcome from sales.p1o_record_acceptance(:'pa', :'contact', 'whatsapp', 'wa:msg-1', :va)) = 'forbidden', 'a plain member cannot record an acceptance');
 select pg_temp.as_user(:'QOWN', :'QORG', 'owner');
@@ -252,6 +257,10 @@ select pg_temp.draft(:'QORG', :'opp3', 'red amb b', 145000, 0, 2) as pr4b \gset
 select pg_temp.sendq(:'pr4b', :'QOWN', :'QORG');
 select pg_temp.as_user(:'QOWN', :'QORG', 'owner');
 select pg_temp.check((select count(*) from sales.proposals where opportunity_id = :'opp3' and status = 'sent') >= 2, 'precondition: two versions are open on the deal');
+select pg_temp.as_service();
+select outcome as raised from sales.p1o_raise_acceptance_clarification(:'opp3', 'wa:red') \gset
+select pg_temp.check(:'raised' = 'raised', 'an agent raises a clarification where two versions are open');
+select pg_temp.as_user(:'QOWN', :'QORG', 'owner');
 select pg_temp.check((select outcome from sales.p1o_record_acceptance(:'pr4', :'contact', 'whatsapp', 'wa:red')) = 'recorded', 'RED-PROOF: without the ambiguity rule an unspecific "okay" accepts one of two versions');
 
 select pg_temp.draft(:'QORG', :'opp6', 'red tax', 110000) as pr5 \gset

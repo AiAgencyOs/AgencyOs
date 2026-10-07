@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { decoderSafeSchema } from '@/lib/ai/schema';
+import { modelDateAgrees } from '@/lib/scheduling/p1o-policy';
 
 /**
  * Reading a client's message for a scheduling request — Scheduler §3.1, §3.3,
@@ -281,7 +282,7 @@ export type SchedulingRefusal =
   | 'no_timezone';
 
 /** Why a time the client named was not stored. The request always survives it. */
-export type SchedulingDrop = 'time_in_the_past' | 'window_before_start' | 'window_without_a_start' | 'unreadable_time';
+export type SchedulingDrop = 'time_in_the_past' | 'window_before_start' | 'window_without_a_start' | 'unreadable_time' | 'date_disagrees';
 
 /** Every refusal, with the sentence a person reads. §3.1 and §4.4 in one table. */
 export const SCHEDULING_REFUSALS: Record<SchedulingRefusal, string> = {
@@ -300,6 +301,7 @@ export const SCHEDULING_DROPS: Record<SchedulingDrop, string> = {
   window_before_start: 'The range the client named ends before it begins, so the request kept only its start.',
   window_without_a_start: 'A range was given with no start, which is not a window, so the request was recorded without either end.',
   unreadable_time: 'The time in the reading could not be resolved, so the request was recorded without one.',
+  date_disagrees: 'The day the reading chose differs from the day the client\'s own words name (today, tomorrow, a weekday), so the request was recorded without a time for a person to confirm.',
 };
 
 /**
@@ -354,6 +356,8 @@ export function decideScheduling(reading: SchedulingRequest, now: Date, timeZone
   }
 
   if (rawStart && start === null) return request(null, null, 'unreadable_time');
+  // P1-SCHED-013: the client's words, read by rules, must name the same local day as the reading. A different day is a guess; no time is better than a wrong one.
+  if (start !== null && modelDateAgrees(reading.evidence, start, now, timeZone) === 'disagrees') return request(null, null, 'date_disagrees');
   // A window with no start is not a window; the door refuses it by name and
   // sending one would be asking for a refusal this rule can already see.
   if (start === null && end !== null) return request(null, null, 'window_without_a_start');

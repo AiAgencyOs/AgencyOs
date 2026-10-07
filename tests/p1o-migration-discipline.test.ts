@@ -181,6 +181,7 @@ describe('server code: reads are never silent, and server-action files export on
     'app/(internal)/meetings/policy/actions.ts',
     'app/(internal)/quotations/negotiation/[opportunityId]/actions.ts',
     'app/(internal)/invoices/credit-notes/actions.ts',
+    'app/(internal)/quotations/policy/actions.ts',
   ];
   for (const f of actionFiles) {
     test(`${f}: 'use server' and only async function exports`, () => {

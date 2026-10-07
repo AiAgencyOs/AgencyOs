@@ -3,6 +3,7 @@ import 'server-only';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { asRows, firstRow, text, userRpc, whole } from '@/lib/db/p1o-rpc';
+import { createClient } from '@/lib/db/server';
 import { err, ok, unreadable, type Result } from '@/lib/result';
 
 /**
@@ -167,4 +168,106 @@ export async function readVersionChangeSummary(proposalId: string): Promise<{ ve
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
   const d = data as Record<string, unknown>;
   return { version: whole(d.version), previousVersion: d.previousVersion === null ? null : whole(d.previousVersion), changes: Array.isArray(d.changes) ? (d.changes as VersionChange[]) : [] };
+}
+
+export type OpenClarification = { id: string; proposalIds: string[]; messageRef: string | null; raisedAt: string };
+
+/** The questions an agent or person raised because a client said yes without saying which version. Resolved by an evidenced acceptance, or by hand with a note. */
+export async function readOpenClarifications(opportunityId: string): Promise<OpenClarification[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('sales')
+    .from('p1o_acceptance_clarifications' as never)
+    .select('id, proposal_ids, message_ref, raised_at')
+    .eq('opportunity_id', opportunityId)
+    .eq('state', 'open');
+  if (error) unreadable('readOpenClarifications', error);
+  return asRows(data).map((r) => ({ id: String(r.id), proposalIds: Array.isArray(r.proposal_ids) ? (r.proposal_ids as string[]) : [], messageRef: text(r.message_ref), raisedAt: String(r.raised_at) }));
+}
+
+export async function resolveClarification(clarificationId: string, note: string): Promise<Result<string>> {
+  const gate = await who('proposal.send');
+  if (!gate.ok) return gate;
+  const rpc = await userRpc('sales');
+  const { data, error } = await rpc('p1o_resolve_acceptance_clarification', { p_clarification_id: clarificationId, p_note: note });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'resolveClarification', detail: error.message }));
+    return err('INTERNAL', 'Could not resolve that.');
+  }
+  const outcome = String(firstRow(data)?.outcome ?? '');
+  return outcome === 'resolved' ? ok('Resolved.') : err(outcome === 'forbidden' ? 'FORBIDDEN' : 'VALIDATION', SAY[outcome] ?? 'The database refused that.');
+}
+
+export type QuotationPolicy = {
+  tax: { mode: 'gst' | 'non_gst'; rateBp: number; updatedAt: string } | null;
+  limits: { maxDiscountMinor: number | null; minAdvancePct: number | null; updatedAt: string } | null;
+  gstRegistered: boolean;
+  approvalPolicies: Array<{ minAmountMinor: number; requiredRole: string; slaHours: number }>;
+  paymentStructures: Array<{ name: string; kind: string | null }>;
+};
+
+/** What a quotation is judged under right now: the same snapshot that is stamped onto a quote when it enters review. */
+export async function readQuotationPolicy(organizationId: string): Promise<QuotationPolicy> {
+  const rpc = await userRpc('sales');
+  const { data, error } = await rpc('p1o_policy_snapshot', { p_organization_id: organizationId });
+  if (error) unreadable('readQuotationPolicy', error);
+  const d = (data && typeof data === 'object' && !Array.isArray(data) ? data : {}) as Record<string, unknown>;
+  const tax = d.tax as { mode?: string; rateBp?: number; updatedAt?: string } | null | undefined;
+  const limits = d.limits as { maxDiscountMinor?: number | null; minAdvancePct?: number | null; updatedAt?: string } | null | undefined;
+  const list = (v: unknown): Array<Record<string, unknown>> => (Array.isArray(v) ? (v as Array<Record<string, unknown>>) : []);
+  return {
+    tax: tax && (tax.mode === 'gst' || tax.mode === 'non_gst') ? { mode: tax.mode, rateBp: whole(tax.rateBp), updatedAt: String(tax.updatedAt) } : null,
+    limits: limits ? { maxDiscountMinor: limits.maxDiscountMinor === null || limits.maxDiscountMinor === undefined ? null : whole(limits.maxDiscountMinor), minAdvancePct: limits.minAdvancePct === null || limits.minAdvancePct === undefined ? null : Number(limits.minAdvancePct), updatedAt: String(limits.updatedAt) } : null,
+    gstRegistered: d.gstRegistered === true,
+    approvalPolicies: list(d.approvalPolicies).map((a) => ({ minAmountMinor: whole(a.minAmountMinor), requiredRole: String(a.requiredRole), slaHours: whole(a.slaHours) })),
+    paymentStructures: list(d.paymentStructures).map((s) => ({ name: String(s.name), kind: text(s.kind) })),
+  };
+}
+
+export async function saveTaxConfig(input: { mode: 'gst' | 'non_gst'; rateBp: number; note: string | null }): Promise<Result<string>> {
+  const context = await requireInternal();
+  if (!can(context, 'organization.settings') || !context.organizationId) return err('FORBIDDEN', 'Only an owner or ops admin can set the quotation tax configuration.');
+  const rpc = await userRpc('sales');
+  const { data, error } = await rpc('p1o_set_quote_tax_config', { p_organization_id: context.organizationId, p_mode: input.mode, p_rate_bp: input.rateBp, p_note: input.note });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'saveTaxConfig', detail: error.message }));
+    return err('INTERNAL', 'Could not save the tax configuration.');
+  }
+  const outcome = String(firstRow(data)?.outcome ?? '');
+  return outcome === 'set' ? ok('Saved. New quotations compute tax from this; existing ones keep the basis they were drafted with.') : err(outcome === 'forbidden' ? 'FORBIDDEN' : 'VALIDATION', outcome === 'refused' ? 'GST needs a rate above zero; no-GST must be zero.' : (SAY[outcome] ?? 'The database refused that.'));
+}
+
+export async function saveNegotiationLimits(input: { maxDiscountMinor: number | null; minAdvancePct: number | null }): Promise<Result<string>> {
+  const context = await requireInternal();
+  if (!can(context, 'organization.settings') || !context.organizationId) return err('FORBIDDEN', 'Only an owner or ops admin can set negotiation limits.');
+  const rpc = await userRpc('sales');
+  const { data, error } = await rpc('p1o_set_negotiation_limits', { p_organization_id: context.organizationId, p_max_discount_minor: input.maxDiscountMinor, p_min_advance_pct: input.minAdvancePct });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'saveNegotiationLimits', detail: error.message }));
+    return err('INTERNAL', 'Could not save the limits.');
+  }
+  const outcome = String(firstRow(data)?.outcome ?? '');
+  return outcome === 'set' ? ok('Saved. A quotation that breaches a limit is still decided by the owner, who is shown the breach.') : err(outcome === 'forbidden' ? 'FORBIDDEN' : 'VALIDATION', SAY[outcome] ?? 'The database refused that.');
+}
+
+export type TaxFlag = { id: string; proposalId: string; note: string; raisedAt: string };
+
+export async function listOpenTaxFlags(): Promise<TaxFlag[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('sales').from('p1o_quote_flags' as never).select('id, proposal_id, note, raised_at').eq('state', 'open').eq('kind', 'tax_uncertain').order('raised_at');
+  if (error) unreadable('listOpenTaxFlags', error);
+  return asRows(data).map((r) => ({ id: String(r.id), proposalId: String(r.proposal_id), note: String(r.note), raisedAt: String(r.raised_at) }));
+}
+
+export async function resolveTaxFlag(flagId: string, note: string): Promise<Result<string>> {
+  const context = await requireInternal();
+  if (!can(context, 'organization.settings')) return err('FORBIDDEN', 'Only an owner or ops admin can resolve a tax question.');
+  const rpc = await userRpc('sales');
+  const { data, error } = await rpc('p1o_resolve_quote_flag', { p_flag_id: flagId, p_note: note });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'resolveTaxFlag', detail: error.message }));
+    return err('INTERNAL', 'Could not resolve that.');
+  }
+  const outcome = String(firstRow(data)?.outcome ?? '');
+  return outcome === 'resolved' ? ok('Resolved. The quotation can go for approval once its tax is applied.') : err(outcome === 'forbidden' ? 'FORBIDDEN' : 'VALIDATION', SAY[outcome] ?? 'The database refused that.');
 }

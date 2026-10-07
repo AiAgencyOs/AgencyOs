@@ -104,7 +104,7 @@ export default async function TaskBoardPage({ searchParams }: { searchParams: Pr
               {tasks.map((t) => (
                 <tr key={t.handoffId} className="border-t border-line align-top">
                   <td className="px-3 py-2"><Badge tone={TONE[t.boardState] ?? 'neutral'} dot>{t.boardState.replace('_', ' ')}</Badge>{t.stale ? <Badge tone="warning" className="ml-1">stale</Badge> : null}</td>
-                  <td className="max-w-xs px-3 py-2"><div className="line-clamp-2">{t.objective}</div><div className="mt-0.5 text-xs text-muted">{t.priority} priority · {t.status.replace('_', ' ')}</div></td>
+                  <td className="max-w-xs px-3 py-2"><Link href={`/operations/task-board/${t.handoffId}`} className="line-clamp-2 underline-offset-2 hover:underline">{t.objective}</Link><div className="mt-0.5 text-xs text-muted">{t.priority} priority · {t.status.replace('_', ' ')}</div></td>
                   <td className="px-3 py-2 text-xs">{t.fromAgent} → {t.toAgent}</td>
                   <td className="px-3 py-2 text-xs">{age(t.ageMinutes)}</td>
                   <td className="px-3 py-2 text-xs">{t.retryCount}</td>

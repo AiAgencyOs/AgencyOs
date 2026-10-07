@@ -6,10 +6,11 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
-import { readNegotiationRounds, readQuoteReadiness, readQuoteTimeline, readVersionChangeSummary } from '@/modules/sales/p1o-quotation-service';
+import { readNegotiationRounds, readOpenClarifications, readQuoteReadiness, readQuoteTimeline, readVersionChangeSummary } from '@/modules/sales/p1o-quotation-service';
+import { clarificationDraft } from '@/modules/sales/p1o-quote-reply';
 import { Badge, Card, CardBody, CardHeader, EmptyState, PageHeader, PermissionDenied, buttonClass, type Tone } from '@/ui';
 
-import { AcceptanceForm, CancelForm } from './quote-forms';
+import { AcceptanceForm, ApplyTaxForm, CancelForm, ResolveClarificationForm } from './quote-forms';
 
 export const metadata: Metadata = { title: 'Negotiation' };
 
@@ -53,7 +54,7 @@ export default async function NegotiationPage({ params }: { params: Promise<{ op
   if (contactQuery.error) unreadable('negotiation.contacts', contactQuery.error);
   const contacts = (contactQuery.data ?? []).map((c) => ({ id: c.id, name: c.full_name }));
 
-  const [rounds, readiness] = await Promise.all([readNegotiationRounds(opportunityId), readQuoteReadiness(opportunityId)]);
+  const [rounds, readiness, clarifications] = await Promise.all([readNegotiationRounds(opportunityId), readQuoteReadiness(opportunityId), readOpenClarifications(opportunityId)]);
   const summaries = await Promise.all(versions.slice(0, 6).map(async (v) => [v.id, await readVersionChangeSummary(v.id)] as const));
   const timelines = await Promise.all(versions.slice(0, 3).map(async (v) => [v.id, await readQuoteTimeline(v.id)] as const));
   const summaryOf = new Map(summaries);
@@ -64,6 +65,26 @@ export default async function NegotiationPage({ params }: { params: Promise<{ op
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title={`Negotiation: ${opp.name}`} description="Every round, the version it was about, and what the client said." actions={<Link href="/quotations" className={buttonClass('secondary', 'sm')}>All quotations</Link>} />
+
+      {clarifications.length > 0 ? (
+        <Card>
+          <CardHeader title="The client said yes without saying which version" description="Nothing was accepted. Ask them which version they mean; a drafted question is below for you to approve and send yourself." />
+          <CardBody>
+            <ul className="flex flex-col gap-3">
+              {clarifications.map((c) => {
+                const open = versions.filter((v) => c.proposalIds.includes(v.id)).map((v) => v.version).sort((a, b) => a - b);
+                return (
+                  <li key={c.id} className="rounded-lg border border-line p-3 text-sm">
+                    <p className="whitespace-pre-wrap rounded bg-surface p-2 text-xs">{clarificationDraft(open)}</p>
+                    <p className="mt-1 text-xs text-muted">Raised {new Date(c.raisedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}{c.messageRef ? ` from message ${c.messageRef.slice(0, 8)}` : ''}. Recording the acceptance below, with the version named, settles it.</p>
+                    {canAct ? <div className="mt-2"><ResolveClarificationForm clarificationId={c.id} /></div> : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </CardBody>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader title="Ready to quote?" description="What a quotation needs before it is drafted. A missing item is named, not guessed." />
@@ -104,6 +125,7 @@ export default async function NegotiationPage({ params }: { params: Promise<{ op
                         <ul className="mt-1 text-xs">{timeline.map((t, i) => <li key={i}>{new Date(t.at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })} · {t.action} · {t.actorType}</li>)}</ul>
                       </details>
                     ) : null}
+                    {canAct && v.status === 'draft' ? <div className="mt-2"><ApplyTaxForm proposalId={v.id} /></div> : null}
                     {canAct && ['draft', 'pending_approval', 'approved', 'sent'].includes(v.status) ? <div className="mt-2"><CancelForm proposalId={v.id} /></div> : null}
                   </li>
                 );

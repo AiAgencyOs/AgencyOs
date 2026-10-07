@@ -165,3 +165,17 @@ export function resolveRelativeDate(text: string, now: Date, timeZone: string): 
 export function proposalExpiry(policy: SchedulingPolicy, madeAt: Date): Date {
   return new Date(madeAt.getTime() + policy.proposalTtlHours * 3_600_000);
 }
+
+/**
+ * A cross-check beside the model's reading of a date (P1-SCHED-013): do the CLIENT'S OWN WORDS, read by rules, name the same local day as the instant the model
+ * produced? `no_opinion` when the words hold no relative date or weekday (the model alone may read "the 14th"); `disagrees` only when the rules read a day and it is
+ * a different one. A disagreement is not resolved here: the caller records the request without a time for a person to confirm, so a wrong guess never becomes a
+ * booking window.
+ */
+export function modelDateAgrees(evidence: string, modelInstant: Date, now: Date, timeZone: string): 'agree' | 'disagrees' | 'no_opinion' {
+  const reading = resolveRelativeDate(evidence, now, timeZone);
+  if (reading.state !== 'date' || reading.basis === 'explicit') return 'no_opinion';
+  const m = localParts(modelInstant, timeZone);
+  if (!m) return 'no_opinion';
+  return isoDate(m.year, m.month, m.day) === reading.date ? 'agree' : 'disagrees';
+}

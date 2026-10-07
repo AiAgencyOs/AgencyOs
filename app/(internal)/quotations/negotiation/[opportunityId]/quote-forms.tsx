@@ -5,7 +5,7 @@ import { useActionState } from 'react';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { FormMessage, buttonClass, inputClass } from '@/ui';
 
-import { cancelQuotationAction, recordAcceptanceAction } from './actions';
+import { applyTaxAction, cancelQuotationAction, recordAcceptanceAction, resolveClarificationAction } from './actions';
 
 export function AcceptanceForm({ proposals, contacts }: { proposals: Array<{ id: string; version: number; label: string }>; contacts: Array<{ id: string; name: string }> }) {
   const [state, action, pending] = useActionState(recordAcceptanceAction, IDLE_STATE);
@@ -45,6 +45,29 @@ export function CancelForm({ proposalId }: { proposalId: string }) {
       <input type="hidden" name="proposalId" value={proposalId} />
       <input name="reason" required maxLength={500} placeholder="why cancel" aria-label="Reason for cancelling" className={`${inputClass} h-7 w-48 text-xs`} />
       <button type="submit" disabled={pending} className={buttonClass('danger', 'sm')}>{pending ? 'Cancelling…' : 'Cancel quotation'}</button>
+      <FormMessage status={state.status} message={state.message} className="text-xs" />
+    </form>
+  );
+}
+
+export function ResolveClarificationForm({ clarificationId }: { clarificationId: string }) {
+  const [state, action, pending] = useActionState(resolveClarificationAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="clarificationId" value={clarificationId} />
+      <input name="note" required maxLength={1000} placeholder="how it was settled" aria-label="How it was settled" className={`${inputClass} h-7 w-56 text-xs`} />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Saving…' : 'Mark settled'}</button>
+      <FormMessage status={state.status} message={state.message} className="text-xs" />
+    </form>
+  );
+}
+
+export function ApplyTaxForm({ proposalId }: { proposalId: string }) {
+  const [state, action, pending] = useActionState(applyTaxAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="proposalId" value={proposalId} />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Computing…' : 'Compute tax from configuration'}</button>
       <FormMessage status={state.status} message={state.message} className="text-xs" />
     </form>
   );

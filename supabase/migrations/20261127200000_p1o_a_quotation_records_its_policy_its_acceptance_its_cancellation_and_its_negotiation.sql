@@ -595,6 +595,42 @@ begin
   return query select 'recorded'::text, 'accepted'::text, r.decided_at, null::uuid;
 end $$;
 
+-- An agent that reads a bare "okay" with several versions open can RAISE the question for a person (it can never accept): this door records it, the person asks the
+-- client which version, and the evidenced acceptance resolves it. The service role may call it; recording an acceptance stays a person's act.
+create or replace function sales.p1o_raise_acceptance_clarification(p_opportunity_id uuid, p_message_ref text default null, p_contact_id uuid default null)
+returns table (outcome text, clarification_id uuid)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  o sales.opportunities;
+  v_refusal text;
+  v_open uuid[];
+  v_id uuid;
+begin
+  select x.* into o from sales.opportunities x where x.id = p_opportunity_id;
+  if o.id is null then return query select 'not_found'::text, null::uuid; return; end if;
+  v_refusal := ai.p1o_door_refusal(o.organization_id, false);
+  if v_refusal is not null then return query select v_refusal, null::uuid; return; end if;
+  select coalesce(array_agg(x.id order by x.version), '{}') into v_open from sales.proposals x where x.opportunity_id = o.id and x.status = 'sent';
+  if cardinality(v_open) < 2 then return query select 'not_ambiguous'::text, null::uuid; return; end if;
+  if p_contact_id is not null and not exists (select 1 from crm.contacts c where c.id = p_contact_id and c.organization_id = o.organization_id) then
+    return query select 'unknown_contact'::text, null::uuid; return;
+  end if;
+  insert into sales.p1o_acceptance_clarifications (organization_id, opportunity_id, proposal_ids, contact_id, message_ref, raised_by)
+  values (o.organization_id, o.id, v_open, p_contact_id, left(nullif(btrim(coalesce(p_message_ref, '')), ''), 200), (select auth.uid()))
+  on conflict (opportunity_id) where state = 'open' do nothing
+  returning id into v_id;
+  if v_id is null then
+    select c.id into v_id from sales.p1o_acceptance_clarifications c where c.opportunity_id = o.id and c.state = 'open';
+    return query select 'already_open'::text, v_id; return;
+  end if;
+  perform core.emit_event(o.organization_id, 'proposal.acceptance_ambiguous', 'proposal', v_open[1],
+    jsonb_build_object('opportunityId', o.id, 'candidateProposalIds', to_jsonb(v_open), 'clarificationId', v_id));
+  return query select 'raised'::text, v_id;
+end $$;
+
 create or replace function sales.p1o_resolve_acceptance_clarification(p_clarification_id uuid, p_note text)
 returns table (outcome text)
 language plpgsql
@@ -794,14 +830,14 @@ revoke all on function
   sales.p1o_policy_snapshot(uuid), sales.p1o_set_quote_tax_config(uuid, text, int, text), sales.p1o_apply_quote_tax(uuid), sales.p1o_resolve_quote_flag(uuid, text),
   sales.p1o_quote_readiness(uuid), sales.p1o_record_acceptance(uuid, uuid, text, text, int, text, text), sales.p1o_resolve_acceptance_clarification(uuid, text),
   sales.p1o_cancel_proposal(uuid, text), sales.p1o_record_quote_response(uuid, text, text, text), sales.p1o_negotiation_rounds(uuid),
-  sales.p1o_version_change_summary(uuid), sales.p1o_quote_timeline(uuid), sales.p1o_quote_trace(uuid)
+  sales.p1o_version_change_summary(uuid), sales.p1o_quote_timeline(uuid), sales.p1o_quote_trace(uuid), sales.p1o_raise_acceptance_clarification(uuid, text, uuid)
   from public, anon;
 grant execute on function
   sales.p1o_set_negotiation_limits(uuid, bigint, numeric), sales.p1o_check_negotiation_limits(uuid),
   sales.p1o_policy_snapshot(uuid), sales.p1o_set_quote_tax_config(uuid, text, int, text), sales.p1o_apply_quote_tax(uuid), sales.p1o_resolve_quote_flag(uuid, text),
   sales.p1o_quote_readiness(uuid), sales.p1o_record_acceptance(uuid, uuid, text, text, int, text, text), sales.p1o_resolve_acceptance_clarification(uuid, text),
   sales.p1o_cancel_proposal(uuid, text), sales.p1o_record_quote_response(uuid, text, text, text), sales.p1o_negotiation_rounds(uuid),
-  sales.p1o_version_change_summary(uuid), sales.p1o_quote_timeline(uuid), sales.p1o_quote_trace(uuid)
+  sales.p1o_version_change_summary(uuid), sales.p1o_quote_timeline(uuid), sales.p1o_quote_trace(uuid), sales.p1o_raise_acceptance_clarification(uuid, text, uuid)
   to authenticated, service_role;
 
 notify pgrst, 'reload schema';
