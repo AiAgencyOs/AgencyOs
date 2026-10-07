@@ -155,6 +155,7 @@ import { PhaseNinePanel } from './phase-nine-panel';
 import { PhaseSevenBPanel } from './phase-seven-b-panel';
 import { PhaseSevenCPanel } from './phase-seven-c-panel';
 import { MaintenanceSmokePanel } from './maintenance-smoke-panel';
+import { PhaseFourPmState } from './phase-four-pm-state';
 import { FunctionalTestPanel } from './functional-test-panel';
 import { PhaseSevenGapsPanel } from './phase-seven-gaps-panel';
 import { loadFunctionalTestView } from '@/modules/projects/functional-test-queries';
@@ -960,6 +961,7 @@ export default async function ProjectPage({
       <PhaseSevenBPanel view={phaseSevenB} projectId={projectId} />
       <PhaseSevenCPanel projectId={projectId} failures={phaseSevenCFailures} actions={phaseSevenCActions} />
       <MaintenanceSmokePanel projectId={projectId} />
+      <PhaseFourPmState projectId={projectId} />
       {phaseSix.plan ? <FunctionalTestPanel view={await loadFunctionalTestView(phaseSix.plan.id)} /> : null}
       <PhaseSevenGapsPanel view={await loadPhaseSevenGaps(projectId)} />
 

@@ -114,6 +114,7 @@ import {
   type HandlerResult,
   type UnlockJob,
 } from '@/modules/projects/handlers';
+import { announceMeetingBooked, announceMeetingCancelled, sendMeetingReminder } from '@/modules/crm/meeting-announcements';
 import { handleCreateDraftHandoverPackage, handleFillPhaseEightIntake, handleOpenPhaseSeven, handleOpenSupportTicketFromMessage, handleRoutePhaseSevenTask, handleRunDeployment } from '@/modules/projects/phase-seven-handlers';
 import { runOnboardingFollowUps } from '@/modules/projects/pm-followups';
 import { handleAskClarification, handleReadClarificationAnswer } from '@/modules/projects/pm-clarifications';
@@ -1710,9 +1711,18 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     ? await runEventJobs(admin, DRAFT_HANDOVER_JOB_KIND, handleCreateDraftHandoverPackage, 'runDraftHandoverPackageJobs')
     : { claimed: 0, results: [] };
 
+  const meetingBooked = idleTick ? await runEventJobs(admin, MEETING_BOOKED_JOB_KIND, announceMeetingBooked, 'runMeetingBookedAnnouncementJobs') : { claimed: 0, results: [] };
+  const meetingCancelled = idleTick ? await runEventJobs(admin, MEETING_CANCELLED_JOB_KIND, announceMeetingCancelled, 'runMeetingCancelledAnnouncementJobs') : { claimed: 0, results: [] };
+  const meetingReminders = idleTick
+    ? await runEventJobs(admin, MEETING_REMINDER_JOB_KIND, (a, job) => sendMeetingReminder(a, job as unknown as Parameters<typeof sendMeetingReminder>[1]), 'runMeetingReminderJobs')
+    : { claimed: 0, results: [] };
+
   return NextResponse.json({
-    claimed: agentRuns.length + supportFromMessage.claimed + draftHandover.claimed,
+    claimed: agentRuns.length + supportFromMessage.claimed + draftHandover.claimed + meetingBooked.claimed + meetingCancelled.claimed + meetingReminders.claimed,
     agentRuns,
+    meetingBooked: meetingBooked.results,
+    meetingCancelled: meetingCancelled.results,
+    meetingReminders: meetingReminders.results,
     supportFromMessage: supportFromMessage.results,
     draftHandover: draftHandover.results,
     reaped,
@@ -1967,6 +1977,9 @@ const PHASE_SEVEN_OPEN_JOB_KIND = HANDLER_JOB_KIND['projects:openPhaseSeven'];
 const PHASE_SEVEN_DEPLOY_JOB_KIND = HANDLER_JOB_KIND['projects:runDeployment'];
 const PHASE_SEVEN_ROUTE_JOB_KIND = HANDLER_JOB_KIND['projects:routePhaseSevenTask'];
 const PHASE_EIGHT_INTAKE_JOB_KIND = HANDLER_JOB_KIND['projects:fillPhaseEightIntake'];
+const MEETING_BOOKED_JOB_KIND = HANDLER_JOB_KIND['crm:announceMeetingBooked'];
+const MEETING_CANCELLED_JOB_KIND = HANDLER_JOB_KIND['crm:announceMeetingCancelled'];
+const MEETING_REMINDER_JOB_KIND = 'meeting.reminder';
 const SUPPORT_FROM_MESSAGE_JOB_KIND = HANDLER_JOB_KIND['projects:openSupportTicketFromMessage'];
 const DRAFT_HANDOVER_JOB_KIND = HANDLER_JOB_KIND['projects:createDraftHandoverPackage'];
 const PHASE_SEVEN_READY_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announcePhaseSevenReady'];

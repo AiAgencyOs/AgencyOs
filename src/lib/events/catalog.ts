@@ -146,6 +146,9 @@ export const HANDLERS = [
   'projects:routePhaseSevenTask',
   // Phase 7c / 8A: a client's support message opens a ticket (it never replies); a validated production gets a DRAFT handover package (it never delivers)
   'projects:openSupportTicketFromMessage',
+  'ui_designer:reviseDesignDirection',
+  'crm:announceMeetingBooked',
+  'crm:announceMeetingCancelled',
   'projects:createDraftHandoverPackage',
 ] as const;
 
@@ -716,6 +719,11 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   'maintenance.renewal_due': ['crm:announceMaintenanceRenewalDue'],
   /** PM8-C01: project.maintenance_work_opened. */
   'project.maintenance_work_opened': ['crm:announceMaintenanceWorkOpened'],
+  'project.admin_design_edit_requested': ['ui_designer:reviseDesignDirection'],
+  'project.internal_design_changes_required': ['ui_designer:reviseDesignDirection'],
+  'project.design_revision_opened': ['ui_designer:reviseDesignDirection'],
+  'meeting.booked': ['crm:announceMeetingBooked'],
+  'meeting.cancelled': ['crm:announceMeetingCancelled'],
   /** PM8-C02: project.maintenance_qa_failed. */
   'project.maintenance_qa_failed': ['crm:announceMaintenanceQaFailed'],
   /** PM8-C03: project.maintenance_release_requested. */
@@ -912,6 +920,9 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:fillPhaseEightIntake': 'phase_eight_intake.fill',
   'projects:routePhaseSevenTask': 'phase_seven.route_task',
   'projects:openSupportTicketFromMessage': 'support_ticket.open_from_message',
+  'ui_designer:reviseDesignDirection': 'design.revise',
+  'crm:announceMeetingBooked': 'meeting_booked.announce',
+  'crm:announceMeetingCancelled': 'meeting_cancelled.announce',
   'projects:createDraftHandoverPackage': 'handover.create_draft',
 };
 
