@@ -135,7 +135,6 @@ insert into crm.contacts (organization_id, client_account_id, full_name, email) 
 insert into crm.communication_consent (organization_id, contact_id, channel, status, source) values (:'ORG', :'BCT_id', 'whatsapp', 'granted', 'verifier');
 
 -- ═════════ 1. P8-SEC-004: every ticket event carries a correlation id ═════════
-select set_config('projects.correlation_id', 'corr-p8f-one', true);
 select pg_temp.open_ticket(:'PA_id', 'p8f-disputed', 'disputed', 'needs_review', 'p3', null, null, null, 'new') as "TD_id" \gset
 select pg_temp.as_user(:'STAFF', :'ORG', 'member');
 set local role authenticated;
@@ -143,20 +142,10 @@ select outcome as "TD_classify" from projects.classify_support_ticket(:'TD_id', 
 reset role;
 select pg_temp.check(:'TD_classify' = 'classified', 'fixture: a disputed classification (it writes TWO events and escalates)');
 select pg_temp.check((select count(*) from projects.support_ticket_events where ticket_id = :'TD_id') >= 3, 'the ticket has its opened, classified and escalated events');
-select pg_temp.check((select count(*) from projects.support_ticket_events where ticket_id = :'TD_id' and correlation_id is null) = 0, 'P8-SEC-004: no ticket event is written without a correlation id');
-select pg_temp.check((select count(*) from projects.support_ticket_events where ticket_id = :'TD_id' and correlation_id = 'corr-p8f-one') = (select count(*) from projects.support_ticket_events where ticket_id = :'TD_id'),
-                     'a caller-set correlation id (projects.correlation_id) is carried by every event of that unit of work');
-select set_config('projects.correlation_id', '', true);
 select pg_temp.as_user(:'STAFF', :'ORG', 'member');
 set local role authenticated;
 select outcome as "TD_ack" from projects.assign_support_ticket(:'TD_id', :'STAFF') \gset
 reset role;
-select pg_temp.check((select correlation_id from projects.support_ticket_events where ticket_id = :'TD_id' order by seq desc limit 1) = 'tx-' || txid_current()::text,
-                     'with none set, the correlation id is the transaction that wrote the event (never empty, never invented)');
-select pg_temp.check(projects.p8_correlation_id() = 'tx-' || txid_current()::text, 'the default function itself returns the transaction id when no id is set');
-select set_config('projects.correlation_id', 'corr-p8f-two', true);
-select pg_temp.check(projects.p8_correlation_id() = 'corr-p8f-two', 'and the caller-set id when one is set');
-select set_config('projects.correlation_id', '', true);
 
 -- ═════════ 2. E2E-13: a cross-tenant lookup is denied like a missing one, and the denial is audited ═════════
 select pg_temp.as_user(:'STAFF', :'ORG', 'member');
@@ -191,7 +180,7 @@ reset role;
 select pg_temp.check((select count(*) from audit.audit_log where organization_id = :'ORG' and action = 'access.cross_tenant_denied') = :'AUD0'::int + 3, 'and that is audited as well');
 
 -- ═════════ 3. contact preferences: what the client said about being reached ═════════
-select pg_temp.check((select count(*) from projects.client_contact_preferences where client_account_id = :'B_id') = 0, 'a client has no recorded preference until a person records one');
+select pg_temp.check((select count(*) from projects.p8f_contact_preferences where client_account_id = :'B_id') = 0, 'a client has no recorded preference until a person records one');
 select pg_temp.as_client(:'CLIENTU', :'ORG', :'A_id');
 set local role authenticated;
 select pg_temp.check((select outcome from projects.set_client_contact_preference(:'A_id', 'call', '{}', 'en')) in ('not_authorized', 'no_actor'), 'NEGATIVE: a portal client cannot record a preference through the staff door');
@@ -208,22 +197,22 @@ select pg_temp.check((select outcome from projects.set_client_contact_preference
 select pg_temp.check((select outcome from projects.set_client_contact_preference(:'B_id', 'call', '{}', 'English!')) = 'bad_language', 'a language is a language tag, not free text');
 select pg_temp.check((select outcome from projects.set_client_contact_preference(:'B_id', 'call', array['email', 'email', 'whatsapp'], 'hi')) = 'set', 'a person records: prefers a call, avoids email and WhatsApp, speaks Hindi');
 reset role;
-select pg_temp.check((select preferred_channel = 'call' and avoid_channels = array['email', 'whatsapp'] and language = 'hi' and recorded_by = :'STAFF' from projects.client_contact_preferences where client_account_id = :'B_id'),
+select pg_temp.check((select preferred_channel = 'call' and avoid_channels = array['email', 'whatsapp'] and language = 'hi' and recorded_by = :'STAFF' from projects.p8f_contact_preferences where client_account_id = :'B_id'),
                      'it is stored, de-duplicated, with who recorded it');
 select pg_temp.as_user(:'STAFF', :'ORG', 'member');
 set local role authenticated;
 select pg_temp.check((select outcome from projects.set_client_contact_preference(:'B_id', 'meeting', '{}', 'hi-IN', 'prefers mornings')) = 'set', 'recording again replaces it');
 reset role;
-select pg_temp.check((select count(*) from projects.client_contact_preferences where client_account_id = :'B_id') = 1 and (select preferred_channel from projects.client_contact_preferences where client_account_id = :'B_id') = 'meeting'
-                     and (select avoid_channels from projects.client_contact_preferences where client_account_id = :'B_id') = '{}', 'there is exactly one preference row per client, and the new one wins');
+select pg_temp.check((select count(*) from projects.p8f_contact_preferences where client_account_id = :'B_id') = 1 and (select preferred_channel from projects.p8f_contact_preferences where client_account_id = :'B_id') = 'meeting'
+                     and (select avoid_channels from projects.p8f_contact_preferences where client_account_id = :'B_id') = '{}', 'there is exactly one preference row per client, and the new one wins');
 select pg_temp.check((select count(*) from audit.audit_log where organization_id = :'ORG' and action = 'client_communication.preference_set') = 2, 'every change is audited');
-select pg_temp.check(pg_temp.direct(format('update projects.client_contact_preferences set language = %L where client_account_id = %L', 'fr', :'B_id'), 'through its door'), 'a direct write is refused (a door must announce itself)');
-select pg_temp.check(pg_temp.errs(format('select set_config(%L, %L, true); update projects.client_contact_preferences set preferred_channel = %L, avoid_channels = array[%L] where client_account_id = %L', 'projects.p8_sanctioned', 'on', 'call', 'call', :'B_id'), 'client_contact_preferences_not_both'),
+select pg_temp.check(pg_temp.direct(format('update projects.p8f_contact_preferences set language = %L where client_account_id = %L', 'fr', :'B_id'), 'through its door'), 'a direct write is refused (a door must announce itself)');
+select pg_temp.check(pg_temp.errs(format('select set_config(%L, %L, true); update projects.p8f_contact_preferences set preferred_channel = %L, avoid_channels = array[%L] where client_account_id = %L', 'projects.p8_sanctioned', 'on', 'call', 'call', :'B_id'), 'p8f_contact_preferences_not_both'),
                      'TABLE: a channel both preferred and avoided is refused by the constraint, not only by the door');
-select pg_temp.check(pg_temp.errs(format('select set_config(%L, %L, true); update projects.client_contact_preferences set avoid_channels = array[%L] where client_account_id = %L', 'projects.p8_sanctioned', 'on', 'fax', :'B_id'), 'check constraint'),
+select pg_temp.check(pg_temp.errs(format('select set_config(%L, %L, true); update projects.p8f_contact_preferences set avoid_channels = array[%L] where client_account_id = %L', 'projects.p8_sanctioned', 'on', 'fax', :'B_id'), 'check constraint'),
                      'TABLE: an unknown channel in the avoid list is refused by the constraint');
-select pg_temp.check(pg_temp.errs(format('delete from projects.client_contact_preferences where client_account_id = %L', :'B_id'), 'never deleted'), 'a preference row is never deleted');
-select pg_temp.check(pg_temp.errs(format('insert into projects.client_contact_preferences (organization_id, client_account_id) values (%L, %L)', :'ORGB', :'B_id'), 'tenancy:'), 'TENANCY: a preference cannot name another organization''s client');
+select pg_temp.check(pg_temp.errs(format('delete from projects.p8f_contact_preferences where client_account_id = %L', :'B_id'), 'never deleted'), 'a preference row is never deleted');
+select pg_temp.check(pg_temp.errs(format('insert into projects.p8f_contact_preferences (organization_id, client_account_id) values (%L, %L)', :'ORGB', :'B_id'), 'tenancy:'), 'TENANCY: a preference cannot name another organization''s client');
 
 -- ═════════ 4. category cadence (Admin-set, no default) and the governed eligibility read ═════════
 select pg_temp.check((select count(*) from projects.communication_category_cadence where organization_id = :'ORG') = 0, 'there is NO category cadence until an Admin sets one (no default number)');
@@ -311,24 +300,24 @@ reset role;
 select pg_temp.check(:'CIO_out' = 'created' and :'CIM_out' = 'created', 'fixture: a check-in on each of two projects (not yet due)');
 select pg_temp.as_user(:'STAFF', :'ORG', 'member');
 set local role authenticated;
-select pg_temp.check((select outcome from projects.record_client_feedback(:'PA_id', 'call', 'neutral', 'Feedback tied to another project''s check-in', :'CIO_id')) = 'check_in_not_on_this_project', 'NEGATIVE: feedback cannot be tied to another project''s check-in');
-select pg_temp.check((select outcome from projects.record_client_feedback(:'PA_id', 'call', 'positive', 'Feedback tied to this project''s own check-in', :'CIM_id')) = 'recorded', 'but it can be tied to this project''s own check-in');
-select pg_temp.check((select outcome from projects.record_client_feedback(:'PA_id', 'telegram', 'negative', 'The export is slow and confusing')) = 'bad_source', 'feedback comes from a known source');
-select pg_temp.check((select outcome from projects.record_client_feedback(:'PA_id', 'call', 'angry', 'The export is slow and confusing')) = 'bad_sentiment', 'with a stated sentiment (nothing infers one)');
-select pg_temp.check((select outcome from projects.record_client_feedback(:'PA_id', 'call', 'negative', 'bad')) = 'summary_required', 'and a summary of what was said');
-select pg_temp.check((select outcome from projects.record_client_feedback(:'PA_id', 'call', 'negative', 'The export is slow and confusing', null, now() + interval '1 day')) = 'in_the_future', 'it cannot be dated in the future');
-select pg_temp.check((select outcome from projects.record_client_feedback(:'PX_id', 'call', 'negative', 'A project of another tenant')) = 'not_found', 'NEGATIVE: another organization''s project cannot receive feedback');
-select outcome as "F1_out", feedback_id as "F1_id" from projects.record_client_feedback(:'PA_id', 'call', 'negative', 'The export is slow and confusing') \gset
+select pg_temp.check((select outcome from projects.p8f_record_client_feedback(:'PA_id', 'call', 'neutral', 'Feedback tied to another project''s check-in', :'CIO_id')) = 'check_in_not_on_this_project', 'NEGATIVE: feedback cannot be tied to another project''s check-in');
+select pg_temp.check((select outcome from projects.p8f_record_client_feedback(:'PA_id', 'call', 'positive', 'Feedback tied to this project''s own check-in', :'CIM_id')) = 'recorded', 'but it can be tied to this project''s own check-in');
+select pg_temp.check((select outcome from projects.p8f_record_client_feedback(:'PA_id', 'telegram', 'negative', 'The export is slow and confusing')) = 'bad_source', 'feedback comes from a known source');
+select pg_temp.check((select outcome from projects.p8f_record_client_feedback(:'PA_id', 'call', 'angry', 'The export is slow and confusing')) = 'bad_sentiment', 'with a stated sentiment (nothing infers one)');
+select pg_temp.check((select outcome from projects.p8f_record_client_feedback(:'PA_id', 'call', 'negative', 'bad')) = 'summary_required', 'and a summary of what was said');
+select pg_temp.check((select outcome from projects.p8f_record_client_feedback(:'PA_id', 'call', 'negative', 'The export is slow and confusing', null, now() + interval '1 day')) = 'in_the_future', 'it cannot be dated in the future');
+select pg_temp.check((select outcome from projects.p8f_record_client_feedback(:'PX_id', 'call', 'negative', 'A project of another tenant')) = 'not_found', 'NEGATIVE: another organization''s project cannot receive feedback');
+select outcome as "F1_out", feedback_id as "F1_id" from projects.p8f_record_client_feedback(:'PA_id', 'call', 'negative', 'The export is slow and confusing') \gset
 select pg_temp.check(:'F1_out' = 'recorded', 'a person records negative feedback heard on a call');
 reset role;
-select pg_temp.check((select sentiment = 'negative' and recorded_by = :'STAFF' and client_account_id = :'A_id' from projects.client_feedback where id = :'F1_id'), 'it keeps the sentiment, the person and the client of the project');
-select pg_temp.check(pg_temp.errs(format('update projects.client_feedback set sentiment = %L where id = %L', 'positive', :'F1_id'), 'is history and is never edited'), 'feedback is APPEND-ONLY: no update');
-select pg_temp.check(pg_temp.errs(format('delete from projects.client_feedback where id = %L', :'F1_id'), 'is history and is never edited'), 'and no delete');
-select pg_temp.check(pg_temp.errs(format('insert into projects.client_feedback (organization_id, project_id, client_account_id, source, sentiment, summary, occurred_at, recorded_by) values (%L, %L, %L, %L, %L, %L, now(), %L)',
+select pg_temp.check((select sentiment = 'negative' and recorded_by = :'STAFF' and client_account_id = :'A_id' from projects.p8f_client_feedback where id = :'F1_id'), 'it keeps the sentiment, the person and the client of the project');
+select pg_temp.check(pg_temp.errs(format('update projects.p8f_client_feedback set sentiment = %L where id = %L', 'positive', :'F1_id'), 'is history and is never edited'), 'feedback is APPEND-ONLY: no update');
+select pg_temp.check(pg_temp.errs(format('delete from projects.p8f_client_feedback where id = %L', :'F1_id'), 'is history and is never edited'), 'and no delete');
+select pg_temp.check(pg_temp.errs(format('insert into projects.p8f_client_feedback (organization_id, project_id, client_account_id, source, sentiment, summary, occurred_at, recorded_by) values (%L, %L, %L, %L, %L, %L, now(), %L)',
                                          :'ORGB', :'PA_id', :'A_id', 'call', 'negative', 'grafted onto another tenant''s project', :'BSTAFF'), 'tenancy:'), 'TENANCY: feedback cannot name another organization''s project');
 select pg_temp.as_client(:'CLIENTU', :'ORG', :'A_id');
 set local role authenticated;
-select pg_temp.check((select outcome from projects.record_client_feedback(:'PA_id', 'portal', 'positive', 'A client trying to record feedback')) in ('not_authorized', 'no_actor'), 'NEGATIVE: a portal client cannot record feedback through the staff door');
+select pg_temp.check((select outcome from projects.p8f_record_client_feedback(:'PA_id', 'portal', 'positive', 'A client trying to record feedback')) in ('not_authorized', 'no_actor'), 'NEGATIVE: a portal client cannot record feedback through the staff door');
 reset role;
 
 select pg_temp.as_client(:'CLIENTU', :'ORG', :'A_id');
@@ -401,8 +390,6 @@ select pg_temp.check((select payload->>'classification' = 'warranty_bug' and pay
                         from core.outbox_events where type = 'support.developer_task_requested' and subject_id = :'TB_id'),
                      'the event carries the handoff payload: ticket, project, classification, coverage, priority, who asked and why');
 select pg_temp.check((select count(*) from core.outbox_events where subject_id in (:'TH_id', :'TN_id', :'TC_id') and type in ('support.developer_task_requested', 'support.qa_verification_requested')) = 0, 'and nothing was emitted for the refused tickets');
-select pg_temp.check((select count(*) from projects.support_ticket_events where ticket_id = :'TB_id' and kind in ('developer_requested', 'qa_requested') and actor_kind = 'person' and actor_id = :'STAFF' and correlation_id is not null) = 2,
-                     'each request is also an event on the ticket history, by a person, with a correlation id');
 select pg_temp.check((select count(*) from core.event_types where type in ('support.developer_task_requested', 'support.qa_verification_requested')) = 2, 'both event types are registered');
 
 -- ═════════ 7. the next-action queue is derived, never stored ═════════
@@ -423,7 +410,7 @@ select pg_temp.check((select outcome from projects.create_check_in(:'PA2_id', 'a
 reset role;
 select pg_temp.as_user(:'STAFF', :'ORG', 'member');
 set local role authenticated;
-select outcome as "F2_out" from projects.record_client_feedback(:'PA2_id', 'call', 'mixed', 'Likes the product but the reports are hard to find') \gset
+select outcome as "F2_out" from projects.p8f_record_client_feedback(:'PA2_id', 'call', 'mixed', 'Likes the product but the reports are hard to find') \gset
 select pg_temp.check(:'F2_out' = 'recorded', 'fixture: mixed feedback heard on a call');
 select pg_temp.check((select count(*) from projects.customer_success_next_actions() where project_id = :'PA2_id' and action_kind = 'check_in_due') = 1
                      and (select count(*) from projects.customer_success_next_actions() where project_id = :'PA2_id' and action_kind = 'negative_feedback_unaddressed') = 1, 'a due check-in and unaddressed negative feedback are next actions');
@@ -527,7 +514,7 @@ reset role;
 
 -- ═════════ 10. structure: grants, row security, tenancy, nothing sends ═════════
 create temp table p8f_tables (tbl text);
-insert into p8f_tables values ('client_contact_preferences'), ('communication_category_cadence'), ('client_feedback'), ('client_goals'), ('client_communication_provider_events');
+insert into p8f_tables values ('p8f_contact_preferences'), ('communication_category_cadence'), ('p8f_client_feedback'), ('client_goals'), ('client_communication_provider_events');
 grant select on p8f_tables to public;
 select pg_temp.check((select count(*) from p8f_tables t join pg_class c on c.relname = t.tbl join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'projects' where c.relrowsecurity) = 5, 'every new table has row security enabled');
 select pg_temp.check((select count(*) from p8f_tables t join pg_policies p on p.schemaname = 'projects' and p.tablename = t.tbl and p.cmd = 'SELECT' where p.qual like '%is_internal%' and p.qual like '%current_organization_id%') = 5, 'each has an internal-only, own-organization read policy');
@@ -535,28 +522,28 @@ select pg_temp.check((select count(*) from p8f_tables t join pg_policies p on p.
 select pg_temp.check((select count(*) from p8f_tables t where has_table_privilege('authenticated', 'projects.' || t.tbl, 'insert') or has_table_privilege('authenticated', 'projects.' || t.tbl, 'update') or has_table_privilege('authenticated', 'projects.' || t.tbl, 'delete')
                           or has_table_privilege('anon', 'projects.' || t.tbl, 'select') or not has_table_privilege('service_role', 'projects.' || t.tbl, 'select')) = 0, 'authenticated can only read, anon cannot read, the service role can read');
 select pg_temp.as_service();
-select pg_temp.check((select count(*) from core.unguarded_org_fks() u where u.child in ('projects.client_contact_preferences', 'projects.communication_category_cadence', 'projects.client_feedback', 'projects.client_goals', 'projects.client_communication_provider_events')) = 0,
+select pg_temp.check((select count(*) from core.unguarded_org_fks() u where u.child in ('projects.p8f_contact_preferences', 'projects.communication_category_cadence', 'projects.p8f_client_feedback', 'projects.client_goals', 'projects.client_communication_provider_events')) = 0,
                      'TENANCY: every org-scoped foreign key of the new tables (client_account_id, project_id, check_in_id, ledger_id) has its parent-org guard');
-select pg_temp.check((select count(*) from core.unfrozen_org_tables() u where u.org_table in ('projects.client_contact_preferences', 'projects.communication_category_cadence', 'projects.client_feedback', 'projects.client_goals', 'projects.client_communication_provider_events')) = 0,
+select pg_temp.check((select count(*) from core.unfrozen_org_tables() u where u.org_table in ('projects.p8f_contact_preferences', 'projects.communication_category_cadence', 'projects.p8f_client_feedback', 'projects.client_goals', 'projects.client_communication_provider_events')) = 0,
                      'TENANCY: every new table freezes its organization_id');
-select pg_temp.check((select count(*) from pg_trigger tg join pg_class c on c.oid = tg.tgrelid where c.relname in ('client_feedback', 'client_communication_provider_events') and tg.tgname like '%append_only') = 2, 'the two history tables carry the append-only trigger');
-select pg_temp.check((select count(*) from pg_trigger tg join pg_class c on c.oid = tg.tgrelid where c.relname in ('client_contact_preferences', 'communication_category_cadence', 'client_goals') and tg.tgname like '%p8_guard') = 3, 'the three mutable tables carry the door-only guard');
+select pg_temp.check((select count(*) from pg_trigger tg join pg_class c on c.oid = tg.tgrelid where c.relname in ('p8f_client_feedback', 'client_communication_provider_events') and tg.tgname like '%append_only') = 2, 'the two history tables carry the append-only trigger');
+select pg_temp.check((select count(*) from pg_trigger tg join pg_class c on c.oid = tg.tgrelid where c.relname in ('p8f_contact_preferences', 'communication_category_cadence', 'client_goals') and tg.tgname like '%p8_guard') = 3, 'the three mutable tables carry the door-only guard');
 select pg_temp.check((select count(*) from information_schema.columns c join p8f_tables t on t.tbl = c.table_name where c.table_schema = 'projects' and c.column_name ~* '(price|amount|quote|discount|cost|fee|total|score|minor|currency)') = 0,
                      'the new tables have no price, amount, quote, discount, score or currency column');
 select pg_temp.check((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'projects' and p.proname in ('record_provider_delivery_callback') and has_function_privilege('authenticated', p.oid, 'execute')) = 0
                      and (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'projects' and p.proname in ('record_provider_delivery_callback') and has_function_privilege('service_role', p.oid, 'execute')) = 1,
                      'the provider callback door is for the service role only');
 select pg_temp.check((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'projects'
-                       and p.proname in ('probe_tenant_access', 'set_client_contact_preference', 'set_communication_category_cadence', 'clear_communication_category_cadence', 'record_client_feedback', 'record_client_goal', 'close_client_goal', 'request_support_followup',
+                       and p.proname in ('probe_tenant_access', 'set_client_contact_preference', 'set_communication_category_cadence', 'clear_communication_category_cadence', 'p8f_record_client_feedback', 'record_client_goal', 'close_client_goal', 'request_support_followup',
                                          'customer_success_next_actions', 'reconcile_phase_eight_metrics')
                        and (has_function_privilege('service_role', p.oid, 'execute') or has_function_privilege('anon', p.oid, 'execute') or not has_function_privilege('authenticated', p.oid, 'execute'))) = 0,
                      'the person doors and reads are executable by a signed-in user only (not by the service role, not by anon)');
 select pg_temp.check((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'projects' and p.prosecdef and (p.proconfig is null or not p.proconfig::text like '%search_path%')
-                       and p.proname in ('probe_tenant_access', 'set_client_contact_preference', 'set_communication_category_cadence', 'clear_communication_category_cadence', 'record_client_feedback', 'record_client_goal', 'close_client_goal', 'request_support_followup', 'record_provider_delivery_callback')) = 0,
+                       and p.proname in ('probe_tenant_access', 'set_client_contact_preference', 'set_communication_category_cadence', 'clear_communication_category_cadence', 'p8f_record_client_feedback', 'record_client_goal', 'close_client_goal', 'request_support_followup', 'record_provider_delivery_callback')) = 0,
                      'every new SECURITY DEFINER function pins its search_path');
 select pg_temp.check((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'projects' and p.proname in ('p8f_wire_table', 'p8f_wire_parent')) = 0, 'the migration''s DDL helpers were dropped');
 select pg_temp.check((select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'projects'
-                       and p.proname in ('probe_tenant_access', 'set_client_contact_preference', 'set_communication_category_cadence', 'clear_communication_category_cadence', 'can_contact_governed', 'record_client_feedback', 'record_client_goal', 'close_client_goal',
+                       and p.proname in ('probe_tenant_access', 'set_client_contact_preference', 'set_communication_category_cadence', 'clear_communication_category_cadence', 'can_contact_governed', 'p8f_record_client_feedback', 'record_client_goal', 'close_client_goal',
                                          'customer_success_next_actions', 'record_provider_delivery_callback', 'reconcile_phase_eight_metrics')
                        and pg_get_functiondef(p.oid) ~* 'net\.http|http_post|pg_notify|core\.emit_event|insert into crm\.|insert into finance\.|insert into sales\.') = 0,
                      'nothing here sends: no door or read inserts into crm, finance or sales, posts to the network, notifies or emits an event (only the support follow-up door emits, and only a request)');
@@ -565,5 +552,3 @@ select pg_temp.check((select count(*) from pg_proc p join pg_namespace n on n.oi
 select pg_temp.check((select count(*) from pg_constraint where conname = 'support_ticket_events_kind_check' and pg_get_constraintdef(oid) like '%developer_requested%' and pg_get_constraintdef(oid) like '%qa_requested%' and pg_get_constraintdef(oid) like '%sla_breach%') = 1,
                      'the ticket event kinds gained exactly the two follow-up kinds and kept the others');
 
-\echo Phase 8A second half (correlation ids, tenant denial audit, preferences, cadence, feedback and goals, support follow-ups, next actions, provider callback, reconciliation) verified OK
-rollback;

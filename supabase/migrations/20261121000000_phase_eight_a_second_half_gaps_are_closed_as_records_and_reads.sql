@@ -6,10 +6,10 @@
 --                                             set projects.correlation_id), so the events of one door call are provably one thing. Old rows stay NULL (honest).
 --   2. projects.probe_tenant_access           E2E-13: a lookup that names a record of ANOTHER tenant answers exactly like a missing one ('not_available') and
 --                                             writes an audit row 'access.cross_tenant_denied' in the CALLER's organization. The denial is now audited.
---   3. client_contact_preferences             preferred channel, channels to avoid and language, recorded by a person (CS spec section 3, UPS-TST-007).
+--   3. p8f_contact_preferences             preferred channel, channels to avoid and language, recorded by a person (CS spec section 3, UPS-TST-007).
 --   4. communication_category_cadence         an Admin-set minimum gap per message category (operational / relationship / commercial). No default number.
 --      projects.can_contact_governed          can_contact_now plus the avoided channels and the category cadence.
---   5. client_feedback, client_goals          feedback a person heard (append-only), and the goals the client stated (CS spec section 5).
+--   5. p8f_client_feedback, client_goals          feedback a person heard (append-only), and the goals the client stated (CS spec section 5).
 --   6. projects.request_support_followup      SUP spec section 7: a person asks for a Developer task or a QA verification; an outbox event carries the payload.
 --                                             No Developer task is created here: the event is the request.
 --   7. projects.customer_success_next_actions the next-action queue, DERIVED on read from the live records (no queue object is stored).
@@ -50,19 +50,7 @@ begin
                  'org_match_' || p_table || '_' || p_col, p_table, p_col, p_parent);
 end $$;
 
--- ── 1. a correlation id on every ticket event ───────────────────────────────
-
-create or replace function projects.p8_correlation_id()
-returns text language sql stable set search_path = '' as $$
-  select coalesce(nullif(current_setting('projects.correlation_id', true), ''), 'tx-' || txid_current()::text)
-$$;
-revoke all on function projects.p8_correlation_id() from public, anon;
-grant execute on function projects.p8_correlation_id() to authenticated, service_role;
-
-alter table projects.support_ticket_events add column if not exists correlation_id text;
-alter table projects.support_ticket_events alter column correlation_id set default projects.p8_correlation_id();
-create index if not exists support_ticket_events_correlation_idx on projects.support_ticket_events (correlation_id) where correlation_id is not null;
-comment on column projects.support_ticket_events.correlation_id is 'The unit of work that wrote the event: projects.correlation_id when the caller set it, else the transaction id. Rows older than this column are NULL (not backfilled with a guess).';
+-- (1. the ticket-event correlation id (P8-SEC-004) is delivered by 20261120000000 as a uuid; this migration does not redefine it)
 
 -- two more event kinds: a person asked for a Developer task or a QA verification
 alter table projects.support_ticket_events drop constraint if exists support_ticket_events_kind_check;
@@ -99,7 +87,7 @@ grant execute on function projects.probe_tenant_access(text, uuid) to authentica
 
 -- ── 3. what the client said about how to be reached ─────────────────────────
 
-create table if not exists projects.client_contact_preferences (
+create table if not exists projects.p8f_contact_preferences (
   id                uuid primary key default gen_random_uuid(),
   organization_id   uuid not null references core.organizations(id) on delete cascade,
   client_account_id uuid not null references core.client_accounts(id) on delete restrict,
@@ -112,9 +100,9 @@ create table if not exists projects.client_contact_preferences (
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now(),
   unique (client_account_id),
-  constraint client_contact_preferences_not_both check (preferred_channel is null or not (preferred_channel = any (avoid_channels)))
+  constraint p8f_contact_preferences_not_both check (preferred_channel is null or not (preferred_channel = any (avoid_channels)))
 );
-comment on table projects.client_contact_preferences is 'What a person recorded the client said about being reached: preferred channel, channels to avoid, language. Avoided channels are enforced by projects.can_contact_governed; the rest is advisory.';
+comment on table projects.p8f_contact_preferences is 'What a person recorded the client said about being reached: preferred channel, channels to avoid, language. Avoided channels are enforced by projects.can_contact_governed; the rest is advisory.';
 
 create table if not exists projects.communication_category_cadence (
   id               uuid primary key default gen_random_uuid(),
@@ -132,7 +120,7 @@ comment on table projects.communication_category_cadence is 'Admin-set minimum d
 
 -- ── 5. feedback and goals ───────────────────────────────────────────────────
 
-create table if not exists projects.client_feedback (
+create table if not exists projects.p8f_client_feedback (
   id                uuid primary key default gen_random_uuid(),
   seq               bigint generated always as identity,
   organization_id   uuid not null references core.organizations(id) on delete cascade,
@@ -146,8 +134,8 @@ create table if not exists projects.client_feedback (
   recorded_by       uuid not null references core.users(id) on delete restrict,
   created_at        timestamptz not null default clock_timestamp()
 );
-create index if not exists client_feedback_project_idx on projects.client_feedback (project_id, occurred_at desc);
-comment on table projects.client_feedback is 'APPEND-ONLY. Feedback a PERSON heard from the client: source, sentiment, what was said. Nothing here is a score and nothing infers sentiment.';
+create index if not exists p8f_client_feedback_project_idx on projects.p8f_client_feedback (project_id, occurred_at desc);
+comment on table projects.p8f_client_feedback is 'APPEND-ONLY. Feedback a PERSON heard from the client: source, sentiment, what was said. Nothing here is a score and nothing infers sentiment.';
 
 create table if not exists projects.client_goals (
   id                uuid primary key default gen_random_uuid(),
@@ -186,19 +174,19 @@ do $$
 declare r record;
 begin
   for r in select * from (values
-    ('client_contact_preferences', 'client_account_id', 'core.client_accounts'),
-    ('client_feedback', 'project_id', 'projects.projects'),
-    ('client_feedback', 'client_account_id', 'core.client_accounts'),
-    ('client_feedback', 'check_in_id', 'projects.cs_check_ins'),
+    ('p8f_contact_preferences', 'client_account_id', 'core.client_accounts'),
+    ('p8f_client_feedback', 'project_id', 'projects.projects'),
+    ('p8f_client_feedback', 'client_account_id', 'core.client_accounts'),
+    ('p8f_client_feedback', 'check_in_id', 'projects.cs_check_ins'),
     ('client_goals', 'project_id', 'projects.projects'),
     ('client_goals', 'client_account_id', 'core.client_accounts'),
     ('client_communication_provider_events', 'ledger_id', 'projects.client_communication_ledger')
   ) as t(tbl, col, parent) loop
     perform projects.p8f_wire_parent(r.tbl, r.col, r.parent);
   end loop;
-  perform projects.p8f_wire_table('client_contact_preferences', true, false);
+  perform projects.p8f_wire_table('p8f_contact_preferences', true, false);
   perform projects.p8f_wire_table('communication_category_cadence', true, false);
-  perform projects.p8f_wire_table('client_feedback', false, true);
+  perform projects.p8f_wire_table('p8f_client_feedback', false, true);
   perform projects.p8f_wire_table('client_goals', true, false);
   perform projects.p8f_wire_table('client_communication_provider_events', false, true);
 end $$;
@@ -225,7 +213,7 @@ begin
   if v_lang is not null and v_lang !~ '^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$' then return query select 'bad_language'::text; return; end if;
   if not exists (select 1 from core.client_accounts a where a.id = p_client_account_id and a.organization_id = v_org) then return query select 'not_found'::text; return; end if;
   perform set_config('projects.p8_sanctioned', 'on', true);
-  insert into projects.client_contact_preferences (organization_id, client_account_id, preferred_channel, avoid_channels, language, note, recorded_by, recorded_at)
+  insert into projects.p8f_contact_preferences (organization_id, client_account_id, preferred_channel, avoid_channels, language, note, recorded_by, recorded_at)
   values (v_org, p_client_account_id, p_preferred_channel, (select coalesce(array_agg(distinct c order by c), '{}') from unnest(v_avoid) c), v_lang, left(v_note, 500), v_actor, clock_timestamp())
   on conflict (client_account_id) do update set preferred_channel = excluded.preferred_channel, avoid_channels = excluded.avoid_channels, language = excluded.language,
     note = excluded.note, recorded_by = excluded.recorded_by, recorded_at = excluded.recorded_at
@@ -287,7 +275,7 @@ begin
   select a.organization_id into v_org from core.client_accounts a where a.id = p_client_account_id;
   if v_org is null then return query select v_ok, v_r; return; end if;
 
-  select p.avoid_channels into v_avoid from projects.client_contact_preferences p where p.client_account_id = p_client_account_id and p.organization_id = v_org;
+  select p.avoid_channels into v_avoid from projects.p8f_contact_preferences p where p.client_account_id = p_client_account_id and p.organization_id = v_org;
   if v_avoid is not null and p_channel = any (v_avoid) then
     v_r := array_append(v_r, 'the client asked not to be contacted on ' || p_channel);
   end if;
@@ -307,7 +295,7 @@ grant execute on function projects.can_contact_governed(uuid, text, text, uuid, 
 
 -- ── 5. feedback and goal doors ──────────────────────────────────────────────
 
-create or replace function projects.record_client_feedback(p_project_id uuid, p_source text, p_sentiment text, p_summary text, p_check_in_id uuid default null, p_occurred_at timestamptz default null)
+create or replace function projects.p8f_record_client_feedback(p_project_id uuid, p_source text, p_sentiment text, p_summary text, p_check_in_id uuid default null, p_occurred_at timestamptz default null)
 returns table (outcome text, feedback_id uuid)
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -325,13 +313,13 @@ begin
   if p_check_in_id is not null and not exists (select 1 from projects.cs_check_ins c where c.id = p_check_in_id and c.project_id = p_project_id and c.organization_id = v_org) then
     return query select 'check_in_not_on_this_project'::text, null::uuid; return;
   end if;
-  insert into projects.client_feedback (organization_id, project_id, client_account_id, source, sentiment, summary, check_in_id, occurred_at, recorded_by)
+  insert into projects.p8f_client_feedback (organization_id, project_id, client_account_id, source, sentiment, summary, check_in_id, occurred_at, recorded_by)
   values (v_org, p_project_id, v_ph.client_account_id, p_source, p_sentiment, left(v_sum, 2000), p_check_in_id, v_when, v_actor) returning id into v_id;
-  perform core.record_audit(v_org, 'customer_success.feedback_recorded', 'client_feedback', v_id, null, jsonb_build_object('projectId', p_project_id, 'sentiment', p_sentiment, 'source', p_source));
+  perform core.record_audit(v_org, 'customer_success.feedback_recorded', 'p8f_client_feedback', v_id, null, jsonb_build_object('projectId', p_project_id, 'sentiment', p_sentiment, 'source', p_source));
   return query select 'recorded'::text, v_id;
 end $$;
-revoke all on function projects.record_client_feedback(uuid, text, text, text, uuid, timestamptz) from public, anon, service_role;
-grant execute on function projects.record_client_feedback(uuid, text, text, text, uuid, timestamptz) to authenticated;
+revoke all on function projects.p8f_record_client_feedback(uuid, text, text, text, uuid, timestamptz) from public, anon, service_role;
+grant execute on function projects.p8f_record_client_feedback(uuid, text, text, text, uuid, timestamptz) to authenticated;
 
 create or replace function projects.record_client_goal(p_project_id uuid, p_goal text)
 returns table (outcome text, goal_id uuid)
@@ -429,7 +417,7 @@ begin
       from projects.support_tickets t where t.organization_id = v_org and t.status not in ('closed', 'cancelled') and t.first_response_at is null and t.response_due_at is not null and t.response_due_at < p_now
     union all
     select 'negative_feedback_unaddressed', f.project_id, f.id, f.occurred_at, 3, 'negative client feedback with no completed check-in since'
-      from projects.client_feedback f
+      from projects.p8f_client_feedback f
      where f.organization_id = v_org and f.sentiment in ('negative', 'mixed') and f.occurred_at > p_now - interval '30 days'
        and not exists (select 1 from projects.cs_check_ins c where c.project_id = f.project_id and c.status = 'completed' and c.completed_at > f.occurred_at)
     union all

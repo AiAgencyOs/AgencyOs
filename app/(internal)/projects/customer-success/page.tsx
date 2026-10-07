@@ -44,6 +44,9 @@ export default async function CustomerSuccessPage() {
             <Link href="/projects/customer-success/next-actions" className="underline">Next actions</Link>
             <Link href="/projects/customer-success/reconciliation" className="underline">Reconciliation</Link>
             <Link href="/projects/customer-success/records" className="underline">Records</Link>
+            <Link href="/projects/customer-success/next-actions/queue" className="underline">Action queue</Link>
+            <Link href="/projects/customer-success/governance" className="underline">Governance</Link>
+            <Link href="/projects/customer-success/knowledge" className="underline">Knowledge</Link>
           </span>
         }
         description={

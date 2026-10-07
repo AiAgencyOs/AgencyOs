@@ -74,6 +74,7 @@ export default async function PortalProjectPage({
           <Link href={`/portal/${projectId}/review-builds`} className="underline underline-offset-2">Builds to review</Link>
           <Link href={`/portal/${projectId}/actions`} className="underline underline-offset-2">Actions for you</Link>
           <Link href={`/portal/${projectId}/statement`} className="underline underline-offset-2">Statement</Link>
+          <Link href={`/portal/${projectId}/feedback`} className="underline underline-offset-2">Feedback</Link>
         </div>
         <div className="mt-1">
           <StatusBadge status={project.status} />

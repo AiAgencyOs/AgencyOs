@@ -87,7 +87,7 @@ describe('the second-half action: what it forwards and how it words the answer',
   });
 
   test('a door answer that is not in the success list is a refusal, even if it looks friendly', async () => {
-    answers.record_client_feedback = { data: [{ outcome: 'something_new' }], error: null };
+    answers.p8f_record_client_feedback = { data: [{ outcome: 'something_new' }], error: null };
     const out = await run({ door: 'record_feedback', projectId: PROJECT, source: 'call', sentiment: 'positive', summary: 'They were pleased' });
     assert.equal(out.status, 'error');
     assert.equal(out.message, 'Refused: something new.');
@@ -96,7 +96,7 @@ describe('the second-half action: what it forwards and how it words the answer',
   test('every door the action names exists as a function in the migration, and none of them is a send', () => {
     const sql = read('supabase/migrations/20261121000000_phase_eight_a_second_half_gaps_are_closed_as_records_and_reads.sql');
     const src = read('src/modules/projects/phase-eight-gaps2-actions.ts');
-    const names = [...src.matchAll(/rpc: '([a-z_]+)'/g)].map((m) => m[1]!);
+    const names = [...src.matchAll(/rpc: '([a-z0-9_]+)'/g)].map((m) => m[1]!);
     assert.equal(names.length, 7);
     for (const n of names) assert.ok(sql.includes(`function projects.${n}(`), `${n} is defined`);
     assert.doesNotMatch(src, /\.from\(|sales\.|finance\.|crm\./, 'the action only calls doors');

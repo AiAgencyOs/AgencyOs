@@ -10,10 +10,10 @@ Migration `supabase/migrations/20261121000000_phase_eight_a_second_half_gaps_are
 |---|---|
 | `support_ticket_events.correlation_id` | default `projects.p8_correlation_id()`: `projects.correlation_id` if the caller set it, else the transaction id. Old rows stay NULL, not backfilled with a guess |
 | `projects.probe_tenant_access` | a lookup naming another tenant's record answers `not_available`, identical to a missing one, and writes `access.cross_tenant_denied` in the CALLER's organization |
-| `client_contact_preferences` + `set_client_contact_preference` | preferred channel, channels to avoid, language, recorded by a person |
+| `p8f_contact_preferences` + `set_client_contact_preference` | preferred channel, channels to avoid, language, recorded by a person |
 | `communication_category_cadence` + set/clear doors (Admin) | minimum gap per category (operational, relationship, commercial); no default number |
 | `projects.can_contact_governed` | `can_contact_now` plus the avoided channels and the category cadence |
-| `client_feedback` (append-only), `client_goals` + record/close doors | what a person heard, what the client stated |
+| `p8f_client_feedback` (append-only), `client_goals` + record/close doors | what a person heard, what the client stated |
 | `projects.request_support_followup` | a person asks for a Developer task or a QA verification: ticket event plus an outbox event; no task is created |
 | `projects.customer_success_next_actions` | the queue, DERIVED on read (INVOKER, internal only); nothing is stored |
 | `client_communication_provider_events` + `record_provider_delivery_callback` (service role only) | delivery facts from a provider callback, matched to a ledger entry a person recorded; `client_communication_history` reads them |

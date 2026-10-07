@@ -37,7 +37,7 @@ const DOORS: Record<string, Door> = {
   set_cadence: { rpc: 'set_communication_category_cadence', args: (fd) => ({ p_purpose: text(fd, 'purpose'), p_min_gap_days: gap(fd) }), ok: ['set'] },
   clear_cadence: { rpc: 'clear_communication_category_cadence', args: (fd) => ({ p_purpose: text(fd, 'purpose') }), ok: ['cleared'] },
   record_feedback: {
-    rpc: 'record_client_feedback',
+    rpc: 'p8f_record_client_feedback',
     args: (fd) => ({ p_project_id: text(fd, 'projectId'), p_source: text(fd, 'source'), p_sentiment: text(fd, 'sentiment'), p_summary: text(fd, 'summary'), p_check_in_id: optional(fd, 'checkInId'), p_occurred_at: utc(optional(fd, 'occurredAt')) }),
     ok: ['recorded'],
   },

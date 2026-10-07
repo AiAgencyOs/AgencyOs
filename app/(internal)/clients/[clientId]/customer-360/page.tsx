@@ -1,3 +1,4 @@
+import { RelationshipPanel } from './relationship-panel';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -319,6 +320,7 @@ export default async function Customer360Page({ params }: { params: Promise<{ cl
           ) : null}
         </div>
       </Card>
+      <RelationshipPanel clientId={clientId} />
     </div>
   );
 }

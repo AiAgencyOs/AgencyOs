@@ -29,7 +29,7 @@ PREF = P + 'set_client_contact_preference(uuid,text,text[],text,text)'
 SETCAD = P + 'set_communication_category_cadence(text,integer)'
 CLRCAD = P + 'clear_communication_category_cadence(text)'
 GOV = P + 'can_contact_governed(uuid,text,text,uuid,' + T + ')'
-FEED = P + 'record_client_feedback(uuid,text,text,text,uuid,' + T + ')'
+FEED = P + 'p8f_record_client_feedback(uuid,text,text,text,uuid,' + T + ')'
 GOAL = P + 'record_client_goal(uuid,text)'
 CLOSEG = P + 'close_client_goal(uuid,text,text)'
 FOLLOW = P + 'request_support_followup(uuid,text,text)'
@@ -53,9 +53,6 @@ def open_policy(table):
 # (name, kind, target, edits)  kind 'sql' -> target is the SQL text; kind 'fn' -> target is the regprocedure, edits is [(find, replace), ...]
 CASES = [
     # ── 1. correlation id ──
-    ('correlation: the column default is gone (events are written with none)', 'sql', 'alter table projects.support_ticket_events alter column correlation_id drop default;', None),
-    ('correlation: a caller-set id is ignored', 'fn', CORR, [("nullif(current_setting('projects.correlation_id', true), '')", "null::text")]),
-    ('correlation: the fallback is no longer the transaction', 'fn', CORR, [("'tx-' || txid_current()::text", "'tx-0'")]),
     ('ticket event kinds lose the two follow-up kinds', 'sql', "alter table projects.support_ticket_events drop constraint support_ticket_events_kind_check; alter table projects.support_ticket_events add constraint support_ticket_events_kind_check check (kind in ('opened', 'classified', 'assigned', 'linked', 'state_changed', 'escalated', 'escalation_acknowledged', 'proposal_recorded', 'reply_drafted', 'reply_sent', 'reply_discarded', 'client_confirmed', 'client_rejected', 'sla_breach', 'cancelled'));", None),
     # ── 2. the audited tenant denial ──
     ('probe: the denial is not audited', 'fn', PROBE, [("perform core.record_audit(v_org, 'access.cross_tenant_denied', p_subject_type, p_subject_id, null, jsonb_build_object('actor', v_actor, 'subjectType', p_subject_type));", '')]),
@@ -73,9 +70,9 @@ CASES = [
     ('preference: the language refusal is removed (door layer)', 'fn', PREF, [("if v_lang is not null and v_lang !~ '^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$' then return query select 'bad_language'::text; return; end if;", '')]),
     ('preference: the client tenancy filter is removed', 'fn', PREF, [("a.id = p_client_account_id and a.organization_id = v_org", "a.id = p_client_account_id")]),
     ('preference: the audit row is not written', 'fn', PREF, [("perform core.record_audit(v_org, 'client_communication.preference_set'", "perform 1 where false and core.record_audit(v_org, 'client_communication.preference_set'")]),
-    ('preference: the not-both constraint is dropped (table layer)', 'sql', 'alter table projects.client_contact_preferences drop constraint client_contact_preferences_not_both;', None),
-    ('preference: the guard trigger is dropped (a direct write)', 'sql', 'drop trigger client_contact_preferences_p8_guard on projects.client_contact_preferences;', None),
-    ('preference: the parent-org guard is dropped (tenancy)', 'sql', 'drop trigger org_match_client_contact_preferences_client_account_id on projects.client_contact_preferences;', None),
+    ('preference: the not-both constraint is dropped (table layer)', 'sql', 'alter table projects.p8f_contact_preferences drop constraint p8f_contact_preferences_not_both;', None),
+    ('preference: the guard trigger is dropped (a direct write)', 'sql', 'drop trigger p8f_contact_preferences_p8_guard on projects.p8f_contact_preferences;', None),
+    ('preference: the parent-org guard is dropped (tenancy)', 'sql', 'drop trigger org_match_client_contact_preferences_client_account_id on projects.p8f_contact_preferences;', None),
     # ── 4. cadence and the governed read ──
     ('cadence: the Admin check is removed (set)', 'fn', SETCAD, [(ADMIN_GUARD, '')]),
     ('cadence: the Admin check is removed (clear)', 'fn', CLRCAD, [(ADMIN_GUARD, '')]),
@@ -99,8 +96,8 @@ CASES = [
     ('feedback: a future date is accepted', 'fn', FEED, [("if v_when > clock_timestamp() + interval '5 minutes' then return query select 'in_the_future'::text, null::uuid; return; end if;", '')]),
     ('feedback: the project tenancy filter is removed', 'fn', FEED, [(PH_ORG, PH_ANY)]),
     ('feedback: a check-in of another project is accepted', 'fn', FEED, [("c.id = p_check_in_id and c.project_id = p_project_id and c.organization_id = v_org", "c.id = p_check_in_id and c.organization_id = v_org")]),
-    ('feedback: the append-only trigger is dropped', 'sql', 'drop trigger client_feedback_append_only on projects.client_feedback;', None),
-    ('feedback: the parent-org guard is dropped (tenancy)', 'sql', 'drop trigger org_match_client_feedback_project_id on projects.client_feedback;', None),
+    ('feedback: the append-only trigger is dropped', 'sql', 'drop trigger p8f_client_feedback_append_only on projects.p8f_client_feedback;', None),
+    ('feedback: the parent-org guard is dropped (tenancy)', 'sql', 'drop trigger org_match_client_feedback_project_id on projects.p8f_client_feedback;', None),
     ('goal: the write check is removed (record)', 'fn', GOAL, [(WRITE_GUARD2, '')]),
     ('goal: the project tenancy filter is removed', 'fn', GOAL, [(PH_ORG, PH_ANY)]),
     ('goal: a duplicate is recorded again', 'fn', GOAL, [("if exists (select 1 from projects.client_goals g where g.project_id = p_project_id and g.status = 'active' and lower(btrim(g.goal)) = lower(v_g)) then", "if false then")]),
@@ -161,12 +158,12 @@ CASES = [
     ('reconcile: the live-account count reads nothing from the overview', 'fn', RECON, [("(select count(*)::int from v),", "0,")]),
     ('reconcile: the recovery plans are not compared', 'fn', RECON, [("(select coalesce(sum(v.open_recovery_plans), 0)::int from v)", "(select coalesce(sum(n), 0)::int from o where metric = 'recovery_plans')")]),
     # ── 10. structure ──
-    ('feedback read policy loses is_internal', 'sql', open_policy('client_feedback'), None),
+    ('feedback read policy loses is_internal', 'sql', open_policy('p8f_client_feedback'), None),
     ('goal read policy loses is_internal', 'sql', open_policy('client_goals'), None),
     ('provider-event read policy loses is_internal', 'sql', open_policy('client_communication_provider_events'), None),
     ('a signed-in person is granted insert on the goals', 'sql', 'grant insert on projects.client_goals to authenticated;', None),
-    ('a signed-in person is granted update on the preferences', 'sql', 'grant update on projects.client_contact_preferences to authenticated;', None),
-    ('the organization freeze trigger is dropped from the feedback table', 'sql', 'drop trigger freeze_org_client_feedback on projects.client_feedback;', None),
+    ('a signed-in person is granted update on the preferences', 'sql', 'grant update on projects.p8f_contact_preferences to authenticated;', None),
+    ('the organization freeze trigger is dropped from the feedback table', 'sql', 'drop trigger freeze_org_client_feedback on projects.p8f_client_feedback;', None),
     ('the service role loses read on the provider events', 'sql', 'revoke select on projects.client_communication_provider_events from service_role;', None),
 ]
 

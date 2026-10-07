@@ -40,7 +40,7 @@ export async function readReconciliation(): Promise<ReconciliationRow[]> {
 
 export async function readProjectFeedback(projectId: string): Promise<FeedbackRow[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase.schema('projects').from('client_feedback' as never).select('id, source, sentiment, summary, occurred_at').eq('project_id' as never, projectId as never).order('occurred_at' as never, { ascending: false }).limit(50);
+  const { data, error } = await supabase.schema('projects').from('p8f_client_feedback' as never).select('id, source, sentiment, summary, occurred_at').eq('project_id' as never, projectId as never).order('occurred_at' as never, { ascending: false }).limit(50);
   if (error) unreadable('readProjectFeedback', error);
   return rows(data).map((r) => ({ id: String(r.id), source: String(r.source), sentiment: String(r.sentiment), summary: String(r.summary), occurredAt: String(r.occurred_at) }));
 }
@@ -54,7 +54,7 @@ export async function readProjectGoals(projectId: string): Promise<GoalRow[]> {
 
 export async function readContactPreference(clientId: string): Promise<ContactPreference | null> {
   const supabase = await createClient();
-  const { data, error } = await supabase.schema('projects').from('client_contact_preferences' as never).select('preferred_channel, avoid_channels, language, note').eq('client_account_id' as never, clientId as never).maybeSingle();
+  const { data, error } = await supabase.schema('projects').from('p8f_contact_preferences' as never).select('preferred_channel, avoid_channels, language, note').eq('client_account_id' as never, clientId as never).maybeSingle();
   if (error) unreadable('readContactPreference', error);
   const r = data as Record<string, unknown> | null;
   if (!r) return null;
