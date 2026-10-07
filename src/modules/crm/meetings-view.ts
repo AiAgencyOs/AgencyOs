@@ -250,8 +250,10 @@ export function pickNewest<T extends { created_at: string }>(jobs: readonly T[])
 
 /**
  * Blueprint A08 "Reminder status", A09 "Reminder jobs". A queued
- * `meeting.reminder` row is a row nothing drains — no sender is registered
- * for the kind — and the sentence says so rather than implying a send. A
+ * `meeting.reminder` row is drained by `sendMeetingReminder` (the runner's
+ * reminder block, wired 2026-11-30), which re-checks the meeting when it fires
+ * and asks the notification rules before it sends. The sentence says when, not
+ * that it has gone. A
  * cancelled, settled or unbooked meeting legitimately has no reminder
  * (`crm.drop_stale_meeting_reminders`); that is not an absence to worry about.
  */
@@ -262,7 +264,7 @@ export function reminderState(job: JobLike | null, m: Pick<MeetingLike, 'status'
   if (!job) return { text: 'No reminder is scheduled.', tone: 'neutral' };
   switch (job.status) {
     case 'queued':
-      return { text: `Queued for ${job.run_at ?? 'an unknown time'} — no sender is registered for this job kind yet, so it will not go out.`, tone: 'warning' };
+      return { text: `Queued for ${job.run_at ?? 'an unknown time'} — the reminder is sent to the internal group then, unless the notification rules hold it or the meeting changes first.`, tone: 'info' };
     case 'running':
       return { text: 'A reminder job is running.', tone: 'info' };
     case 'succeeded':

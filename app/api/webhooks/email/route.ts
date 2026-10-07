@@ -1,9 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { createAdminClient } from '@/lib/db/admin';
+import { limitPublicRoute } from '@/lib/security/rate-limit';
 import { authorizeEmailSignature } from '@/lib/email-inbound/verify';
 import { serverEnv } from '@/lib/env';
 import { httpStatusFor, newCorrelationId } from '@/lib/errors';
+import { admitDelivery, rejectDelivery, settleDelivery } from '@/lib/p13/webhook-guard';
 import { ingestEmailLead } from '@/modules/crm/ingest-email';
 
 /**
@@ -43,6 +45,9 @@ function firstOf(form: FormData, key: string): string | null {
 }
 
 export async function POST(request: NextRequest) {
+  // P1-DOD-064: before anything is read. Fails open; see src/lib/security/rate-limit.ts.
+  const blocked = await limitPublicRoute(request, createAdminClient(), 'webhook-email', 600, 60);
+  if (blocked) return blocked;
   const { EMAIL_INBOUND_SIGNING_KEY } = serverEnv();
   const correlationId = newCorrelationId();
 
@@ -65,6 +70,8 @@ export async function POST(request: NextRequest) {
     EMAIL_INBOUND_SIGNING_KEY,
   );
   if (!auth.ok) {
+    // W5: a rejected signature is on record too (best effort; the answer is unchanged).
+    if (auth.status === 401) await rejectDelivery(createAdminClient(), { provider: 'email', signatureHeader: firstOf(form, 'signature') });
     return NextResponse.json({ error: auth.error, correlationId }, { status: auth.status });
   }
 
@@ -81,7 +88,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: 0, rejected: 1, correlationId });
   }
 
+  // W5 (P1-MP3-030): the delivery is keyed by the message id and recorded before ingest; a replay already processed is answered from the ledger, one
+  // that failed is processed again. The ledger stores a hash of the key fields, never the message.
   const admin = createAdminClient();
+  const gate = await admitDelivery(admin, { provider: 'email', eventKey: messageId, rawBody: `${mailbox}\n${fromEmail}\n${messageId}` });
+  if (!gate.proceed) return NextResponse.json({ received: 0, duplicate: true, correlationId }, { status: gate.status });
+  const response = await ingestAndAnswer(admin, form, { mailbox, fromEmail, messageId }, correlationId);
+  await settleDelivery(admin, gate.eventId, response.status, 'email');
+  return response;
+}
+
+async function ingestAndAnswer(
+  admin: ReturnType<typeof createAdminClient>,
+  form: FormData,
+  m: { mailbox: string; fromEmail: string; messageId: string },
+  correlationId: string,
+): Promise<NextResponse> {
+  const { mailbox, fromEmail, messageId } = m;
   const result = await ingestEmailLead(admin, {
     mailbox,
     fromEmail,

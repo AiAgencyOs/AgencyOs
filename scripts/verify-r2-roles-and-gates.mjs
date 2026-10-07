@@ -134,6 +134,15 @@ try {
 
   // ── D. Start Task is gated ───────────────────────────────────────────────
   section('D. Start Task needs a requirement and every task it depends on done');
+  // The Phase 5 gate: a development task (one on a module or feature) starts only on a verified-paid M2, so the fixture
+  // project gets one - an M1, an M2, and an M2 invoice an Admin has verified in full. (The gate itself is proven in
+  // scripts/verify-phase-five-gate.sql; this script is about the requirement and dependency checks.)
+  await rest('POST', 'projects', 'milestones', { organization_id: ORG, project_id: project.id, name: 'zztest-r2 M1', position: 1, amount_minor: 50000, currency: 'INR' });
+  const gateM2 = one(await rest('POST', 'projects', 'milestones', { organization_id: ORG, project_id: project.id, name: 'zztest-r2 M2', position: 2, amount_minor: 100000, currency: 'INR' }));
+  const gateInv = one(await rest('POST', 'finance', 'invoices', { organization_id: ORG, client_account_id: project.client_account_id, project_id: project.id, milestone_id: gateM2?.id, number: `zztest-r2-M2-${randomUUID().slice(0, 6)}`, kind: 'milestone', status: 'issued', currency: 'INR', subtotal_minor: 100000, total_minor: 100000, issued_at: new Date().toISOString() }));
+  if (!gateM2?.id || !gateInv?.id) k.fail('could not create the fixture M2 milestone and invoice');
+  await rest('PATCH', 'finance', `invoices?id=eq.${gateInv.id}`, { paid_minor: 100000, verified_minor: 100000, status: 'paid', paid_at: new Date().toISOString() });
+
   const bare = await mkTask('no requirement');
   const chk0 = one(await projects('task_start_check', { p_task_id: bare.id }, plain.token));
   check(chk0?.startable === false && chk0?.requirement_ok === false && /Requirement check failed/.test(chk0?.reason ?? ''), 'a task linked to nothing fails the requirement check, with the reason', chk0?.reason?.slice(0, 80));
@@ -190,6 +199,8 @@ try {
 } finally {
   await k.cleanup(async () => {
     for (const id of k.created.projects) {
+      await rest('DELETE', 'finance', `invoices?project_id=eq.${id}`);
+      await rest('DELETE', 'projects', `milestones?project_id=eq.${id}`);
       const plans = await rest('GET', 'projects', `project_plans?project_id=eq.${id}&select=id`);
       for (const pl of Array.isArray(plans.json) ? plans.json : []) {
         await rest('DELETE', 'projects', `plan_dependencies?plan_id=eq.${pl.id}`);

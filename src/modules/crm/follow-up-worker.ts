@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { heldByNotificationRules } from '@/lib/p13/notification-hold';
 import type { createAdminClient } from '@/lib/db/admin';
 import { evaluate, type SuppressionReason } from './follow-up-contract';
 import { outreachWindow, type OutreachWindow } from '@/lib/admin/operational-defaults';
@@ -803,6 +804,16 @@ export async function runFollowUps(admin: Admin, clock: FollowUpClock = {}): Pro
     }
     if (!conversationId) {
       await stop(admin, seq.sequence_id, 'no_conversation');
+      outcome.blocked += 1;
+      continue;
+    }
+
+
+    // W8 (P1-BLUEPRINT-032): this is a client-facing send, so the organization's notification rules are asked BEFORE the claim is made. A hold leaves
+    // no claim row and no message; the next tick asks again (quiet hours end, the class is switched back on). When the rules cannot be read the
+    // send is held too, because an unreadable rulebook must not become a message to a client.
+    const held = await heldByNotificationRules(admin, { organizationId: seq.organization_id, eventClass: 'client_followup', channel: 'whatsapp', clientFacing: true });
+    if (held) {
       outcome.blocked += 1;
       continue;
     }

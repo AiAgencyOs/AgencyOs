@@ -28,7 +28,8 @@ import { checkRunGates, raiseAlert, refuseIfOverBudget, type AgentBudgetRefusal,
 import type { AiMessage, AiToolSpec, AiUsage, StructuredResponse, ToolCallResponse } from '@/lib/ai/types';
 import type { createAdminClient } from '@/lib/db/admin';
 import type { Json } from '@/lib/db/types';
-import { settlementFor } from '@/lib/jobs/retry';
+import { attemptBudgetFor, settlementFor } from '@/lib/jobs/retry';
+import { recordRunUsageCost } from './usage-cost';
 import { err, type Result } from '@/lib/result';
 
 export type Admin = ReturnType<typeof createAdminClient>;
@@ -219,12 +220,25 @@ export async function finishRun(
   status: string,
   error: string,
   stepCount = 0,
+  /**
+   * What the model call already cost. A call whose output was refused by the
+   * schema was still billed; recording it as 0 tokens made the failures the
+   * cheapest-looking rows in the ledger (cost_minor 0 means "no price", not
+   * "free"), and hid the retries that were burning money.
+   */
+  usage?: { inputTokens: number; outputTokens: number; costMinor: number },
 ): Promise<void> {
   if (!runId) return;
   await admin
     .schema('ai')
     .from('agent_runs')
-    .update({ status, error, step_count: stepCount, finished_at: new Date().toISOString() })
+    .update({
+      status,
+      error,
+      step_count: stepCount,
+      finished_at: new Date().toISOString(),
+      ...(usage ? { input_tokens: usage.inputTokens, output_tokens: usage.outputTokens, cost_minor: usage.costMinor } : {}),
+    })
     .eq('id', runId);
 }
 
@@ -323,6 +337,9 @@ export async function recordModelCall(
       error: args.result.ok ? null : args.result.error.message,
     });
 
+  // The project's cost record, whatever became of the trace row: it never throws (see usage-cost.ts).
+  await recordRunUsageCost(admin, { runId: args.runId, providerId: args.providerId, model: args.request.model, usage });
+
   if (error) {
     console.error(
       JSON.stringify({ level: 'error', scope: 'recordModelCall', detail: error.message }),
@@ -356,7 +373,7 @@ export async function failJob(admin: Admin, job: JobRow, reason: string): Promis
   // Every failure reaching here is retryable until the budget runs out; this
   // path has no permanent-refusal concept of its own.
   const settlement = settlementFor(
-    { attemptsMade: job.attempts, maxAttempts: job.max_attempts },
+    { attemptsMade: job.attempts, maxAttempts: attemptBudgetFor(reason, job.max_attempts) },
     false,
     Date.now(),
   );
@@ -516,7 +533,7 @@ async function modelPlanFor(
   });
   if (!loaded) return legacyModelPlan(ctx, options);
 
-  const plan = planRoute({ ...loaded.input, needsTools: options.needsTools, requiredCapabilities: requiredCapabilitiesFor(loaded.category) });
+  const plan = planRoute({ ...loaded.input, needsTools: options.needsTools, requiredCapabilities: requiredCapabilitiesFor(loaded.category, loaded.profileCapabilities) });
   const routing: RoutingContext = { plan, loaded };
   if (plan.blocked) return { ok: false, detail: plan.blocked.reason, routing };
 

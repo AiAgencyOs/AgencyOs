@@ -1,8 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { createAdminClient } from '@/lib/db/admin';
+import { limitPublicRoute } from '@/lib/security/rate-limit';
 import { serverEnv } from '@/lib/env';
 import { httpStatusFor, newCorrelationId } from '@/lib/errors';
+import { admitDelivery, bodyEventKey, rejectDelivery, settleDelivery } from '@/lib/p13/webhook-guard';
 import { fetchLeadgenFields } from '@/lib/facebook/graph';
 import {
   authorizeSignature,
@@ -102,6 +104,9 @@ export async function GET(request: NextRequest) {
 
 /** POST — one delivery of leadgen change notifications. */
 export async function POST(request: NextRequest) {
+  // P1-DOD-064: before the body is read. Fails open; see src/lib/security/rate-limit.ts.
+  const blocked = await limitPublicRoute(request, createAdminClient(), 'webhook-facebook-leads', 600, 60);
+  if (blocked) return blocked;
   const { FACEBOOK_APP_SECRET } = serverEnv();
   const correlationId = newCorrelationId();
 
@@ -113,6 +118,8 @@ export async function POST(request: NextRequest) {
 
   const auth = authorizeSignature(rawBody, request.headers.get(SIGNATURE_HEADER), FACEBOOK_APP_SECRET);
   if (!auth.ok) {
+    // W5: a rejected signature is on record too (best effort; the answer is unchanged).
+    if (auth.status === 401) await rejectDelivery(createAdminClient(), { provider: 'facebook_leads', signatureHeader: request.headers.get(SIGNATURE_HEADER), body: rawBody });
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
@@ -140,7 +147,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: 0, ignored: 1, correlationId });
   }
 
+  // W5 (P1-MP3-030): record the delivery before acting; a replay already processed is answered from the ledger, one that failed is processed again.
   const admin = createAdminClient();
+  const gate = await admitDelivery(admin, { provider: 'facebook_leads', eventKey: bodyEventKey(rawBody), rawBody });
+  if (!gate.proceed) return NextResponse.json({ received: 0, duplicate: true, correlationId }, { status: gate.status });
+  const response = await processLeads(admin, leadgenIds, correlationId);
+  await settleDelivery(admin, gate.eventId, response.status, 'facebook_leads');
+  return response;
+}
+
+async function processLeads(
+  admin: ReturnType<typeof createAdminClient>,
+  leadgenIds: { leadgenId: string; pageId: string }[],
+  correlationId: string,
+): Promise<NextResponse> {
   let ingested = 0;
   let replayed = 0;
   let skipped = 0;

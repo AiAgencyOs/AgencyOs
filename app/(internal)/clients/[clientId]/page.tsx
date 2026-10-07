@@ -361,6 +361,9 @@ export default async function ClientDetailPage({
             <Link href="/clients" className={buttonClass('secondary', 'sm')}>
               All clients
             </Link>
+            <Link href={`/clients/${client.id}/customer-360`} className={buttonClass('secondary', 'sm')}>
+              Customer 360
+            </Link>
             {canWriteNotes ? (
               <Link href={`${base}?tab=notes#notes`} className={buttonClass('secondary', 'sm')}>
                 <IconPlus size={14} />

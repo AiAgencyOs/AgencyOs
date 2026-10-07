@@ -33,7 +33,7 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 | 14 | Client Management | `(internal)/clients` | EXISTS |
 | 15 | Client 360 | `(internal)/clients/[clientId]` | EXISTS |
 | 16 | Client Projects & Commercials | `clients/[clientId]/page.tsx` — projects list, invoices list, financial stats | EXISTS |
-| 17 | Client Communication, Files & Notes | Files (2026-09-22): `getClient()` rolls up `project_files` across every project. Communication (2026-09-22): resolved without the design call the note below expected — `crm.conversations` has a `project_id`-scoped `project_group` kind with no `lead_id` at all (`conversations_kind_shape`), so this is the client's own ongoing channel per project, not a reconstruction through `sales.opportunities`; rendered as a Communication card | PARTIAL — Notes is the one piece left with no existing mechanism to roll up: `core.client_accounts` has no notes column or table anywhere, and inventing one (schema, RLS, audit wiring) is a real data-model decision, not a read to wire up |
+| 17 | Client Communication, Files & Notes | Files (2026-09-22): `getClient()` rolls up `project_files` across every project. Communication (2026-09-22): resolved without the design call the note below expected — `crm.conversations` has a `project_id`-scoped `project_group` kind with no `lead_id` at all (`conversations_kind_shape`), so this is the client's own ongoing channel per project, not a reconstruction through `sales.opportunities`; rendered as a Communication card | EXISTS - re-verified 2026-11-24: Notes is built (`supabase/migrations/20260928120000_a_note_about_a_client.sql`, `core.client_notes`, read by `getClient()` in `src/lib/admin/clients.ts`); files and communication as above |
 | 18 | All Projects | `(internal)/projects` | EXISTS |
 | 19 | Project Overview | `(internal)/projects/[projectId]` | EXISTS |
 | 20 | Project Board | `projects/[projectId]/board`, added 2026-09-22 — tasks grouped by status, read-only (editing stays on `/development`) | EXISTS |
@@ -72,7 +72,7 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 | 53 | Payments | `finance/payments` + `listPayments()`, added 2026-09-22 — org-wide ledger of `finance.payments` (captured/verified record), distinct from #54's `payment_submissions` verification queue | EXISTS |
 | 54 | Payment Verification | `invoices/verify` | EXISTS |
 | 55 | Expenses & Profitability | `finance/expenses` — added a "By project" section, 2026-09-22, placing invoiced/paid/expense totals side by side per project (`listInvoices`/`listExpenses`, both already correct and already shown elsewhere). Margin/profitability itself stays deliberately undecided — a real accounting call (overhead allocation, which costs are shared) this pass does not make unilaterally, kept distinct from the safe part: showing the two real numbers next to each other computes nothing and invents no formula | EXISTS |
-| 56 | GST, Tax & Financial Reports | `finance/tax/page.tsx` — invoice register + tax totals by currency; explicit comment: "No GST filing/return generation: that needs a real GST-portal integration this deployment does not have" | PARTIAL — deliberate, stated scope boundary requiring a genuine external-integration decision, corrected 2026-09-22 |
+| 56 | GST, Tax & Financial Reports | `finance/tax/page.tsx` — invoice register + tax totals by currency; explicit comment: "No GST filing/return generation: that needs a real GST-portal integration this deployment does not have" | EXISTS (export) - re-verified 2026-11-24: GSTR-1/3B export built (`app/api/finance/gst/gstr1/route.ts`, `src/modules/finance/gstr.ts`, `gstr-queries.ts`, export log). Filing in the GST portal is MANUAL_EXTERNAL (needs a real portal integration/credentials; never faked) |
 | 57 | Communication Center | `(internal)/communication` | EXISTS |
 | 58 | WhatsApp / Conversations | `(internal)/communication` lists conversations, linking each to `/leads/[leadId]`, which already renders the full chat-bubble thread via `listMessages()` — corrected 2026-09-22 (an earlier pass here mis-assessed this as missing a thread viewer; it exists, one hop away) | EXISTS |
 | 59 | Templates & Announcements | Templates: `crm.whatsapp_templates` deliberately holds no body text — Meta owns the approved wording, so there is nothing local to edit (stated in test comments); Settings only registers/withdraws which approved template answers which situation, by design, corrected 2026-09-22. Decided 2026-09-22: a client-facing broadcast is declined, not deferred — G-135's consent table found that "transactional", "marketing" and "promotional" appear nowhere in any AgencyOS document and refused to invent the distinction ("a 'transactional' category is the exact shape a broad marketing exception takes on its way in"), and any WhatsApp send still needs a Meta-approved template, which a free-text announcement is not. A new internal-only "team notices" bulletin is also declined: it has no shape anywhere in the PDF or the business docs to build against, and this system's existing "announcement" (the internal approval-request notification into the WhatsApp approval group, `crm/handlers.ts`) already covers the one internal-notification need that is actually specified | EXISTS |
@@ -91,8 +91,8 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 
 ## Summary
 
-- **EXISTS (unverified against spec detail):** 69
-- **PARTIAL (related route/logic exists, scope/UX mismatch):** 2
+- **EXISTS (unverified against spec detail):** 71 (re-verified 2026-11-24: #17 notes and #56 GSTR export are built; GST-portal filing is the only MANUAL_EXTERNAL remainder)
+- **PARTIAL (related route/logic exists, scope/UX mismatch):** 0
 - **MISSING:** 0
 
 **Methodology correction (2026-09-22):** the Stage 0-2 audit inventoried
@@ -114,10 +114,7 @@ and #43 (no repo/build/environment tracking at all — would need new tables).
 
 ## Gaps confirmed at the shared-component level (Section 4 of the spec)
 
-`src/ui/primitives/` currently has: `badge`, `button`, `card`, `empty-state`,
-`field`, `page-header`, `stat`, `table`. The spec's global header, right-side
-drawer, and filter-bar patterns have **no primitive yet** — these block almost
-every module screen and are the Stage 3 foundation work.
+(Updated 2026-11-24.) `src/ui/primitives/` now also has drawer, filter-bar, kanban, gantt and calendar primitives; the earlier "no primitive yet" note is obsolete.
 
 ## Next steps
 

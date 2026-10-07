@@ -104,7 +104,7 @@ describe('D. the guards every table and door in this repository carries', () => 
 
 describe('E. it is reachable — the defect this repository has found repeatedly', () => {
   test('the catalog subscribes it to the event the draft door already emits', () => {
-    assert.deepEqual(SUBSCRIPTIONS['project.ui_version_drafted'], ['quality_assurance:reviewUIVersion']);
+    assert.deepEqual(SUBSCRIPTIONS['project.ui_version_drafted'], ['quality_assurance:reviewUIVersion', 'ui_designer:detailUIVersion']);
     assert.ok(HANDLERS.includes('quality_assurance:reviewUIVersion'));
     assert.equal(HANDLER_JOB_KIND['quality_assurance:reviewUIVersion'], 'ui_version.qa_review');
   });

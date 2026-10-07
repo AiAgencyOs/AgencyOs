@@ -214,7 +214,7 @@ describe('C. one rule, and now one attempt convention', () => {
     // G-082 removed the second convention: both claim through core.claim_jobs,
     // which increments inside the statement that takes the lock.
     const calls = routeSource.match(
-      /settlementFor\(\s*\{ attemptsMade: job\.attempts, maxAttempts: job\.max_attempts \},/g,
+      /settlementFor\(\s*\{ attemptsMade: job\.attempts, maxAttempts: (?:job\.max_attempts|attemptBudgetFor\(reason, job\.max_attempts\)) \},/g,
     ) ?? [];
     assert.equal(calls.length, 2, 'a settle path stopped using the post-claim count');
     assert.doesNotMatch(routeSource, /attemptsMade: job\.attempts \+ 1/);

@@ -49,6 +49,8 @@ export type LinkCommitInput = z.input<typeof linkCommitSchema>;
 export const triggerBuildSchema = z.object({
   projectId: z.uuid(),
   note: z.string().trim().max(500).optional(),
+  /** Workflow inputs for a build of ONE exact commit (the commit, the build request, the deliverable): short strings, never a secret. */
+  inputs: z.record(z.string().regex(/^[a-z_]{1,40}$/), z.string().max(300)).refine((o) => Object.keys(o).length <= 10, 'too many inputs').optional(),
 });
 export type TriggerBuildInput = z.infer<typeof triggerBuildSchema>;
 

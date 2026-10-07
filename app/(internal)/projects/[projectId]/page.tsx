@@ -52,6 +52,16 @@ import { readClientName } from '@/lib/admin/clients';
 
 import { TrailLabel } from '../../trail-label';
 import { can } from '@/lib/authz/permissions';
+import { getPhaseSixExtra } from '@/modules/projects/phase-six-extra-queries';
+import { readPhaseEightBView } from '@/modules/projects/phase-eight-b-queries';
+import { readPhaseEightCView } from '@/modules/projects/phase-eight-c-queries';
+import { readPhaseSevenB } from '@/modules/projects/phase-seven-b-queries';
+import { readClientActionRequests, readProjectFailures } from '@/modules/projects/phase-seven-c-queries';
+import { readPhaseSevenOverview } from '@/modules/projects/phase-seven-queries';
+import { readQaSpecialistView } from '@/modules/projects/qa-specialist-queries';
+import { getReviewView } from '@/modules/projects/review-queries';
+import { getSpecialistView } from '@/modules/projects/specialist-queries';
+import { getTestIntegrationView } from '@/modules/projects/test-integration-queries';
 import {
   listDeliverables,
   listDevelopmentBreakdown,
@@ -84,6 +94,8 @@ import {
   type MilestoneBillingEntry,
 } from '@/modules/finance/schema';
 import { listPhaseFourEscalations, getProject, listPaymentPlan, readGroupSetup, readPhaseTwo, readPhaseFourOverview, readProjectGroupName } from '@/modules/projects/queries';
+import { readBuildBlockers, readBuildRuns, readDevClarifications, readFeedbackSuggestions, readPhaseFiveRecords, readOpenEscalations, readPhaseFiveOverview, readTaskBoard, readPmOverview, readPmMessageHistory, readProjectRepositories } from '@/modules/projects/phase-five-queries';
+import { readPhaseSixOverview } from '@/modules/projects/phase-six-queries';
 import { listApprovalsForSubject } from '@/modules/approvals/queries';
 import { listDefects, readProjectQuality } from '@/modules/qa/queries';
 import { blocksDelivery, type DefectSeverity, type DefectStatus } from '@/modules/qa/schema';
@@ -133,6 +145,31 @@ import { RevealClientSecretForm, RevokeClientSecretForm, StoreClientSecretForm }
 import { CLIENT_SECRET_KIND_LABELS, listClientSecrets } from '@/modules/projects/client-secrets-service';
 import { PhaseTwoPanel } from './phase-two-panel';
 import { PhaseFourPanel } from './phase-four-panel';
+import { BuildDepthPanel } from './build-depth-panel';
+import { PhaseSixExtraPanel } from './phase-six-extra-panel';
+import { PhaseEightBPanel } from './phase-eight-b-panel';
+import { PhaseEightCPanel } from './phase-eight-c-panel';
+import { PhaseEightPanel } from './phase-eight-panel';
+import { PhaseNineLifecycleLine } from './phase-nine-lifecycle-line';
+import { PhaseNinePanel } from './phase-nine-panel';
+import { PhaseSevenBPanel } from './phase-seven-b-panel';
+import { PhaseSevenCPanel } from './phase-seven-c-panel';
+import { MaintenanceSmokePanel } from './maintenance-smoke-panel';
+import { PhaseFourPmState } from './phase-four-pm-state';
+import { P789RoundTwoPanel } from './p789-round2-panel';
+import { FunctionalTestPanel } from './functional-test-panel';
+import { PhaseSevenGapsPanel } from './phase-seven-gaps-panel';
+import { loadFunctionalTestView } from '@/modules/projects/functional-test-queries';
+import { loadPhaseSevenGaps } from '@/modules/projects/phase-seven-gaps-queries';
+import { PhaseSevenPanel } from './phase-seven-panel';
+import { QaSpecialistPanel } from './qa-specialist-panel';
+import { ReviewPanel } from './review-panel';
+import { SpecialistPanel } from './specialist-panel';
+import { OrchestratorPanel } from './orchestrator-panel';
+import { PmDepthPanel } from './pm-depth-panel';
+import { TestIntegrationPanel } from './test-integration-panel';
+import { DevClarificationsPanel, EscalationsPanel, PhaseFivePanel, PmMessageHistoryPanel, RecordsPanel, WorkboardPanel } from './phase-five-panel';
+import { PhaseSixPanel } from './phase-six-panel';
 import { PhaseCompletionPanel } from './phase-completion-panel';
 import { readPhaseCompletions } from '@/modules/projects/phase-completion-queries';
 import { ONBOARDING_MARK, OnboardingItemForm } from './onboarding-panel';
@@ -216,6 +253,28 @@ export default async function ProjectPage({
   const groupCard = await readGroupSetup(projectId);
   const phaseTwo = await readPhaseTwo(projectId);
   const phaseFour = await readPhaseFourOverview(projectId);
+  const phaseFive = await readPhaseFiveOverview(projectId);
+  const phaseSix = await readPhaseSixOverview(projectId);
+  const pmMessages = await readPmMessageHistory(projectId);
+  const repositories = await readProjectRepositories(projectId);
+  const escalations = await readOpenEscalations(projectId);
+  const pmOverview = await readPmOverview(projectId);
+  const testIntegration = await getTestIntegrationView(projectId);
+  const reviewView = await getReviewView(projectId);
+  const specialists = await getSpecialistView(projectId);
+  const qaSpecialist = await readQaSpecialistView(projectId);
+  const phaseEightB = await readPhaseEightBView(projectId);
+  const phaseEightC = await readPhaseEightCView(projectId);
+  const phaseSeven = await readPhaseSevenOverview(projectId);
+  const phaseSevenB = await readPhaseSevenB(projectId);
+  const [phaseSevenCFailures, phaseSevenCActions] = await Promise.all([readProjectFailures(projectId), readClientActionRequests(projectId)]);
+  const phaseSixExtra = await getPhaseSixExtra(projectId);
+  const taskBoard = await readTaskBoard(projectId);
+  const buildRuns = await readBuildRuns(projectId);
+  const buildBlockers = await readBuildBlockers(projectId);
+  const records = await readPhaseFiveRecords(projectId);
+  const feedbackSuggestions = await readFeedbackSuggestions(projectId);
+  const devClarifications = await readDevClarifications(projectId);
   // Q-PH56: where Phase 5 and Phase 6 stand, read from Development and QA data.
   const phaseCompletions = await readPhaseCompletions(projectId);
   /**
@@ -879,6 +938,64 @@ export default async function ProjectPage({
       <PhaseTwoPanel view={phaseTwo} projectId={projectId} />
 
       <PhaseFourPanel view={phaseFour} projectId={projectId} />
+
+      <PhaseFivePanel view={phaseFive} projectId={projectId} repositories={repositories} suggestions={feedbackSuggestions} />
+
+      <PhaseSixPanel view={phaseSix} projectId={projectId} />
+
+      <WorkboardPanel board={taskBoard} runs={buildRuns} projectId={projectId} blockers={buildBlockers} />
+
+      <RecordsPanel view={records} />
+
+      <BuildDepthPanel projectId={projectId} canAdmin={can(context, 'project.sign_off')} />
+
+      <ReviewPanel projectId={projectId} view={reviewView} canWrite={can(context, 'project.write')} isAdmin={can(context, 'project.sign_off')} />
+
+      <PhaseSixExtraPanel extra={phaseSixExtra} />
+
+      <SpecialistPanel projectId={projectId} view={specialists} />
+
+      <QaSpecialistPanel projectId={projectId} view={qaSpecialist} />
+
+      <PhaseSevenPanel view={phaseSeven} projectId={projectId} />
+
+      <PhaseSevenBPanel view={phaseSevenB} projectId={projectId} />
+      <PhaseSevenCPanel projectId={projectId} failures={phaseSevenCFailures} actions={phaseSevenCActions} />
+      <MaintenanceSmokePanel projectId={projectId} />
+      <PhaseFourPmState projectId={projectId} />
+      <P789RoundTwoPanel projectId={projectId} />
+      <p className="text-[13px]"><Link href={`/projects/${projectId}/p4ui`} className="underline">UI Designer and Prototype records</Link></p>
+      <p className="text-[13px] flex flex-wrap gap-3">
+        <Link href={`/projects/${projectId}/p4q`} className="underline">Phase 4 QA, PM and finance records</Link>
+        <Link href={`/projects/${projectId}/design-clarifications`} className="underline">Design clarifications</Link>
+        <Link href="/operations/task-board" className="underline">Handoff board</Link>
+        <Link href="/operations/work-board" className="underline">Work board</Link>
+        <Link href="/operations/phase-blockers" className="underline">Phase blockers</Link>
+      </p>
+      {phaseSix.plan ? <FunctionalTestPanel view={await loadFunctionalTestView(phaseSix.plan.id)} /> : null}
+      <PhaseSevenGapsPanel view={await loadPhaseSevenGaps(projectId)} />
+
+      <PhaseEightPanel projectId={projectId} />
+
+      <PhaseEightBPanel projectId={projectId} view={phaseEightB} />
+
+      <PhaseEightCPanel projectId={projectId} view={phaseEightC} />
+
+      <PhaseNinePanel projectId={projectId} />
+
+      <PhaseNineLifecycleLine projectId={projectId} />
+
+      <OrchestratorPanel projectId={projectId} />
+
+      <TestIntegrationPanel projectId={projectId} view={testIntegration} />
+
+      <PmDepthPanel projectId={projectId} features={records.features.map((f) => ({ id: f.id, name: f.name }))} />
+
+      <DevClarificationsPanel rows={devClarifications} projectId={projectId} />
+
+      <EscalationsPanel rows={escalations} projectId={projectId} />
+
+      <PmMessageHistoryPanel rows={pmMessages} overview={pmOverview} />
 
       <PhaseCompletionPanel
         projectId={projectId}

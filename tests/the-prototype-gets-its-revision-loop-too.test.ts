@@ -88,7 +88,7 @@ describe('D. it reuses add_deliverable and project.prototype_build_ready, no par
   });
 
   test('Prototype QA already subscribes to it', () => {
-    assert.deepEqual(SUBSCRIPTIONS['project.prototype_build_ready'], ['quality_assurance:reviewPrototypeBuild']);
+    assert.deepEqual(SUBSCRIPTIONS['project.prototype_build_ready'], ['quality_assurance:reviewPrototypeBuild', 'projects:attachP4uiBuild']);
   });
 });
 
@@ -98,7 +98,7 @@ describe('E. the workflow filters to a prototype changes_requested decision, and
   });
 
   test('the limit is checked before any model call, to avoid spending one the door would refuse', () => {
-    const limitCheckIndex = WORKFLOW.indexOf('prototype_revision_count >= phaseFour.prototype_revision_limit');
+    const limitCheckIndex = WORKFLOW.indexOf('used >= allowed');
     const modelCallIndex = WORKFLOW.indexOf('callModel(');
     assert.ok(limitCheckIndex > 0, 'limit check not found');
     assert.ok(modelCallIndex > limitCheckIndex, 'the model is called before the limit is checked');
@@ -124,7 +124,10 @@ describe('F. it is reachable — the defect this repository has found repeatedly
     assert.deepEqual(SUBSCRIPTIONS['project.deliverable_decided'], [
       'projects:completePhaseFourOnPrototypeApproval',
       'crm:announcePrototypeChangeRequested',
+      'crm:announceBuildApproved',
       'ui_prototype:reviseBuild',
+      'project_manager:classifyPrototypeFeedback',
+      'projects:syncP4uiBuild',
     ]);
     assert.ok(HANDLERS.includes('ui_prototype:reviseBuild'));
     assert.equal(HANDLER_JOB_KIND['ui_prototype:reviseBuild'], 'prototype.build_revise');

@@ -133,6 +133,20 @@ import { TRANSCRIPTION_MODEL } from '@/lib/ai/openai';
 import { IMAGE_GENERATION_MODEL } from '@/lib/ai/openrouter-image';
 
 import { ACQUISITION_WORKFLOWS } from './acquisition-workflows';
+import { DEVELOPMENT_SPECIALIST_WORKFLOWS } from './development-specialist-workflows';
+import { PHASE_EIGHT_CS_WORKFLOWS } from './phase-eight-cs-workflows';
+import { PHASE_EIGHT_SALES_WORKFLOWS } from './phase-eight-sales-workflows';
+import { DESIGN_REVISION_WORKFLOWS } from './design-revision-workflows';
+import { P789_FEEDBACK_SIGNAL_WORKFLOWS } from './p789-feedback-signal-workflow';
+import { P4UI_WORKFLOWS } from './p4ui-workflows';
+import { PHASE_EIGHT_ENG_WORKFLOWS } from './phase-eight-eng-workflows';
+import { PHASE_NINE_WORKFLOWS } from './phase-nine-workflows';
+import { QA_SPECIALIST_WORKFLOWS } from './qa-specialist-workflows';
+import { DEVELOPMENT_WORKFLOWS } from './development-workflows';
+import { SPECIALIST_WORKFLOWS } from './specialist-workflows';
+import { callDoor } from '@/modules/p4q/door';
+import { activateDesignerForRevision, gatePrototypeRevision } from '@/modules/p4q/revision-activation';
+import { handleP4qClassifyPrototypeFeedback } from '@/modules/p4q/feedback-handler';
 import { dispatchToolUnderPolicy } from '@/modules/agents/policy-enforcement';
 import { dispatchableToolsFor } from '@/modules/agents/tool-dispatch';
 import { toolsFor } from '@/modules/agents/tools';
@@ -286,6 +300,47 @@ const REQUIREMENT_PROMPT = [
   'objectives are the outcomes the client said they want from the project, each in full. userRoles are the kinds of people who will use it. platforms are where it must run. integrations are the systems it must talk to. businessRules are rules the client stated the product must follow. nonFunctionalRequirements are performance, security, availability or compliance needs the client stated. Leave any of these empty when the transcript does not say.',
 ].join(' ');
 
+/** Fewer words than this, with a version already on file, is an acknowledgement and not a requirement. */
+const ACKNOWLEDGEMENT_MAX_WORDS = 3;
+
+/**
+ * Why a requirement re-extraction would add nothing, or null when it should run.
+ * Pure of the model: it reads the newest message and the conversation's own state.
+ */
+async function extractionNotNeeded(
+  admin: AgentContext['admin'],
+  organizationId: string,
+  conversationId: string,
+  rows: ReadonlyArray<{ author_type: string; body: string | null }>,
+): Promise<string | null> {
+  const { data: versions } = await admin
+    .schema('crm')
+    .from('requirement_versions')
+    .select('status')
+    .eq('organization_id', organizationId)
+    .eq('conversation_id', conversationId)
+    .neq('status', 'failed');
+  if (!versions || versions.length === 0) return null;
+
+  const latest = rows[rows.length - 1];
+  const words = (latest?.body ?? '').trim().split(/\s+/).filter(Boolean).length;
+  if (latest?.author_type === 'client' && words > 0 && words <= ACKNOWLEDGEMENT_MAX_WORDS) {
+    return 'client only acknowledged; nothing new to extract';
+  }
+
+  if (versions.some((v) => v.status === 'accepted')) {
+    const { data: conversation } = await admin
+      .schema('crm')
+      .from('conversations')
+      .select('agent_paused_at')
+      .eq('id', conversationId)
+      .eq('organization_id', organizationId)
+      .maybeSingle();
+    if (conversation?.agent_paused_at) return 'a person has the thread and has accepted a version';
+  }
+  return null;
+}
+
 const REQUIREMENT_EXTRACT: AgentWorkflow = {
   jobKind: 'requirement.extract',
   agentKey: 'requirement_collector',
@@ -392,6 +447,18 @@ const REQUIREMENT_EXTRACT: AgentWorkflow = {
       };
     }
 
+    // A re-extraction reads the whole transcript again, so it is the one
+    // call whose price grows with every message. Two cases make it paid-for
+    // nothing, and both are decided from rows rather than asked of a model:
+    // the client only acknowledged ("ok", "haan"), or a person has the thread
+    // and has already accepted a version - then a fresh proposal is a version
+    // nobody asked for. The first extraction of a conversation always runs.
+    const skipped = await extractionNotNeeded(admin, job.organization_id, conversation.id, rows);
+    if (skipped) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: skipped, messageCount };
+    }
+
     const transcript: AiMessage[] = [{ role: 'user', content: document }];
 
     const runId = await openRun(ctx, {
@@ -419,7 +486,7 @@ const REQUIREMENT_EXTRACT: AgentWorkflow = {
     const validated = requirementPayloadSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failExtraction(ctx, conversation.id, runId, detail, messageCount);
       return { status: 'failed', reason: detail, runId };
     }
@@ -631,7 +698,7 @@ const MAINTENANCE_TRIAGE: AgentWorkflow = {
     const validated = maintenanceTriageSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -804,7 +871,7 @@ const PLAN_BREAKDOWN: AgentWorkflow = {
     const validated = breakdownPayloadSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -995,7 +1062,7 @@ const SCREEN_INVENTORY: AgentWorkflow = {
     const validated = screenInventorySchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -1245,7 +1312,7 @@ const UI_VERSION_DRAFT: AgentWorkflow = {
     const validated = uiVersionDraftSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -1353,7 +1420,7 @@ const UI_VERSION_REVISE: AgentWorkflow = {
     // the other.
     const eventType = job.payload?.eventType;
     let phaseFourId: string;
-    let feedbackSource: 'client' | 'admin';
+    let feedbackSource: 'client' | 'admin' | 'qa';
 
     if (eventType === 'project.ui_version_client_decided') {
       const parsed = uiVersionClientDecidedEventSchema.safeParse(job.payload?.event);
@@ -1381,6 +1448,19 @@ const UI_VERSION_REVISE: AgentWorkflow = {
       }
       phaseFourId = parsed.data.phaseFourId;
       feedbackSource = 'admin';
+    } else if (eventType === 'project.ui_version_qa_reviewed') {
+      // Design QA's own defect (qa_changes_required): the Designer fixes it as a NEW version that is reviewed from scratch.
+      const event = (job.payload?.event ?? {}) as { phaseFourId?: unknown; outcome?: unknown };
+      if (typeof event.phaseFourId !== 'string') {
+        await failJob(admin, job, 'malformed project.ui_version_qa_reviewed payload: no workspace named');
+        return { status: 'failed', reason: 'bad payload' };
+      }
+      if (event.outcome !== 'qa_changes_required') {
+        await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+        return { status: 'succeeded', outcome: 'not_mine', reason: `QA outcome ${String(event.outcome)} is not a defect` };
+      }
+      phaseFourId = event.phaseFourId;
+      feedbackSource = 'qa';
     } else {
       await failJob(admin, job, `unrecognised trigger event: ${String(eventType)}`);
       return { status: 'failed', reason: 'bad payload' };
@@ -1394,7 +1474,7 @@ const UI_VERSION_REVISE: AgentWorkflow = {
     const { data: phaseFour } = await admin
       .schema('projects')
       .from('phase_four')
-      .select('id, organization_id, project_id, phase_three_handoff_id, ui_revision_count, ui_revision_limit')
+      .select('id, organization_id, project_id, phase_three_handoff_id, ui_revision_count, ui_revision_limit, ui_qa_fix_count, ui_qa_fix_limit')
       .eq('id', phaseFourId)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
@@ -1404,23 +1484,25 @@ const UI_VERSION_REVISE: AgentWorkflow = {
       return { status: 'succeeded', reason: 'the Phase 4 workspace no longer exists' };
     }
 
-    if (phaseFour.ui_revision_count >= phaseFour.ui_revision_limit) {
+    const used = feedbackSource === 'qa' ? phaseFour.ui_qa_fix_count : phaseFour.ui_revision_count;
+    const allowed = feedbackSource === 'qa' ? phaseFour.ui_qa_fix_limit : phaseFour.ui_revision_limit;
+    if (used >= allowed) {
       // The door itself enforces this and stops the workspace at
       // revision_limit_escalation; checked here first only to avoid an AI
       // call the door would refuse anyway.
       await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
-      return { status: 'succeeded', outcome: 'revision_limit_reached', reason: 'ui_revision_count already at ui_revision_limit' };
+      return { status: 'succeeded', outcome: 'revision_limit_reached', reason: feedbackSource === 'qa' ? 'ui_qa_fix_count already at ui_qa_fix_limit' : 'ui_revision_count already at ui_revision_limit' };
     }
 
     const { data: prior } = await admin
       .schema('projects')
       .from('ui_versions')
-      .select('id, screens, status')
+      .select('id, screens, status, qa_findings')
       .eq('id', priorVersionId)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
 
-    if (!prior || (prior.status !== 'client_change' && prior.status !== 'admin_edit')) {
+    if (!prior || (prior.status !== 'client_change' && prior.status !== 'admin_edit' && prior.status !== 'qa_changes_required')) {
       await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
       return { status: 'succeeded', reason: 'the prior version is no longer awaiting revision' };
     }
@@ -1450,6 +1532,8 @@ const UI_VERSION_REVISE: AgentWorkflow = {
         .order('created_at', { ascending: false })
         .limit(1);
       feedback = decisions?.[0]?.client_words ?? feedback;
+    } else if (feedbackSource === 'qa') {
+      feedback = `Design QA found defects in this version:\n${JSON.stringify(prior.qa_findings ?? [])}`;
     } else {
       const { data: reviewNote } = await admin
         .schema('approvals')
@@ -1461,6 +1545,26 @@ const UI_VERSION_REVISE: AgentWorkflow = {
         .order('decided_at', { ascending: false })
         .limit(1);
       feedback = reviewNote?.[0]?.decision_note ?? feedback;
+    }
+
+    // W-O1 / W-P1 / p4ui: BEFORE any model is asked, the PM's classification must allow a redraft and the p4ui activation record must accept it
+    // (see src/modules/p4q/revision-activation.ts). Waiting for a classification is a retryable failure; a feedback that is not a design revision is
+    // settled for free and the routing of it (change request, clarification, escalation) belongs to the classification.
+    const activation = await activateDesignerForRevision(admin, {
+      organizationId: job.organization_id,
+      phaseFourId: phaseFour.id,
+      priorVersionId,
+      priorStatus: prior.status,
+      source: feedbackSource,
+      feedback,
+    });
+    if (!activation.go) {
+      if (activation.wait) {
+        await failJob(admin, job, activation.reason);
+        return { status: 'failed', reason: activation.reason };
+      }
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', outcome: 'not_mine', reason: activation.reason };
     }
 
     const runId = await openRun(ctx, {
@@ -1475,7 +1579,7 @@ const UI_VERSION_REVISE: AgentWorkflow = {
       [
         {
           role: 'user',
-          content: `Your prior draft:\n\n${JSON.stringify(prior.screens)}\n\nThe ${feedbackSource === 'client' ? "client's" : "Admin's"} feedback:\n\n${feedback}`,
+          content: `Your prior draft:\n\n${JSON.stringify(prior.screens)}\n\nThe ${feedbackSource === 'client' ? "client's" : feedbackSource === 'qa' ? "Design QA's" : "Admin's"} feedback:\n\n${feedback}`,
         },
       ],
       runId,
@@ -1495,7 +1599,7 @@ const UI_VERSION_REVISE: AgentWorkflow = {
     const validated = uiVersionDraftSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -1663,7 +1767,7 @@ const CLASSIFY_CLIENT_FEEDBACK: AgentWorkflow = {
     const validated = clientFeedbackClassificationSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -1691,16 +1795,31 @@ const CLASSIFY_CLIENT_FEEDBACK: AgentWorkflow = {
     }
 
     if (classification === 'CLARIFICATION') {
-      await admin
-        .schema('projects')
-        .from('clarification_requests')
-        .insert({
-          organization_id: decision.organization_id,
-          project_id: decision.project_id,
-          ui_version_id: uiVersionId,
-          question: clarifyingQuestion ?? decision.client_words,
-          raised_by: 'project_manager',
-        });
+      // W-P3: raised through the p4q door, which also queues the question for the PM to relay to the client one at a time (in the client's wording)
+      // and routes the answer back to the agent that asked. The old direct insert remains only as the fallback when the door refuses (for example a
+      // wording the secret scan rejects): a clarification the classification asked for must still exist.
+      const question = (clarifyingQuestion ?? decision.client_words).slice(0, 2000);
+      const raised = await callDoor(admin, 'projects', 'p4q_raise_clarification', {
+        p_project_id: decision.project_id,
+        p_ui_version_id: uiVersionId,
+        p_question: question,
+        p_client_wording: clarifyingQuestion ?? `Could you tell us a little more about this request: ${decision.client_words}`.slice(0, 2000),
+        p_raised_by: 'project_manager',
+      });
+      const raisedOutcome = raised.ok ? (raised.row.outcome ?? 'no answer') : raised.message;
+      if (raisedOutcome !== 'raised' && raisedOutcome !== 'already_open') {
+        console.error(JSON.stringify({ level: 'error', scope: 'classifyClientFeedback', detail: `the clarification door answered ${raisedOutcome}; falling back to a direct request` }));
+        await admin
+          .schema('projects')
+          .from('clarification_requests')
+          .insert({
+            organization_id: decision.organization_id,
+            project_id: decision.project_id,
+            ui_version_id: uiVersionId,
+            question,
+            raised_by: 'project_manager',
+          });
+      }
     } else if (classification === 'POSSIBLE_SCOPE_CHANGE') {
       // Mirrors handlePossibleScopeChangeDetected's own body exactly — same
       // reuse-first reasoning, applied to Phase 4's own feedback source.
@@ -1917,7 +2036,7 @@ const READ_DESIGN_REPLY: AgentWorkflow = {
     const validated = designReplySchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -2118,7 +2237,7 @@ const PROTOTYPE_BUILD: AgentWorkflow = {
     const validated = prototypeBuildSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -2227,30 +2346,64 @@ const PROTOTYPE_BUILD_REVISE: AgentWorkflow = {
 
   async run(ctx) {
     const { admin, job } = ctx;
-    const deliverableId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
-    const parsed = deliverableDecidedEventSchema.safeParse(job.payload?.event);
+    // Two paths back to the Prototype Agent share this workflow: a reviewer's changes_requested on the deliverable (the client/Admin
+    // loop) and Prototype QA's own qa_changes_required on the build (the QA defect loop - FIXED is not VERIFIED, the fix is a new build
+    // that is QA'd from scratch). Each arrives on its own event, told apart by eventType.
+    const subjectId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+    const fromQa = job.payload?.eventType === 'project.prototype_qa_reviewed';
+    const fromAdmin = job.payload?.eventType === 'project.prototype_admin_decided';
+    let deliverableId: string | null = null;
+    let artifactQuery: { column: 'id' | 'deliverable_id'; value: string };
 
-    if (!deliverableId || !parsed.success) {
-      await failJob(
-        admin,
-        job,
-        `malformed project.deliverable_decided payload: ${parsed.success ? 'no deliverable named' : (parsed.error.issues[0]?.message ?? 'unparseable')}`,
-      );
-      return { status: 'failed', reason: 'bad payload' };
-    }
-
-    if (parsed.data.kind !== 'prototype' || parsed.data.status !== 'changes_requested') {
-      // approved closes Task 2 (projects:completePhaseFourOnPrototypeApproval);
-      // every other kind is not this workflow's concern.
-      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
-      return { status: 'succeeded', outcome: 'not_mine', reason: `${parsed.data.kind}/${parsed.data.status} is not a prototype revision` };
+    if (fromQa) {
+      const qaOutcome = (job.payload?.event as { outcome?: unknown } | undefined)?.outcome;
+      if (!subjectId) {
+        await failJob(admin, job, 'malformed project.prototype_qa_reviewed payload: no build named');
+        return { status: 'failed', reason: 'bad payload' };
+      }
+      if (qaOutcome !== 'qa_changes_required') {
+        await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+        return { status: 'succeeded', outcome: 'not_mine', reason: `QA outcome ${String(qaOutcome)} is not a defect` };
+      }
+      artifactQuery = { column: 'id', value: subjectId };
+    } else if (fromAdmin) {
+      // The Admin's own EDIT: ADMIN EDIT -> PROTOTYPE AGENT -> QA -> ADMIN AGAIN, never ADMIN EDIT -> CLIENT. Counted on the revision budget.
+      const adminDecision = (job.payload?.event as { decision?: unknown } | undefined)?.decision;
+      if (!subjectId) {
+        await failJob(admin, job, 'malformed project.prototype_admin_decided payload: no deliverable named');
+        return { status: 'failed', reason: 'bad payload' };
+      }
+      if (adminDecision !== 'changes_required') {
+        await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+        return { status: 'succeeded', outcome: 'not_mine', reason: `Admin decision ${String(adminDecision)} is not an edit` };
+      }
+      deliverableId = subjectId;
+      artifactQuery = { column: 'deliverable_id', value: subjectId };
+    } else {
+      const parsed = deliverableDecidedEventSchema.safeParse(job.payload?.event);
+      if (!subjectId || !parsed.success) {
+        await failJob(
+          admin,
+          job,
+          `malformed project.deliverable_decided payload: ${parsed.success ? 'no deliverable named' : (parsed.error.issues[0]?.message ?? 'unparseable')}`,
+        );
+        return { status: 'failed', reason: 'bad payload' };
+      }
+      if (parsed.data.kind !== 'prototype' || parsed.data.status !== 'changes_requested') {
+        // approved closes Task 2 (projects:completePhaseFourOnPrototypeApproval);
+        // every other kind is not this workflow's concern.
+        await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+        return { status: 'succeeded', outcome: 'not_mine', reason: `${parsed.data.kind}/${parsed.data.status} is not a prototype revision` };
+      }
+      deliverableId = subjectId;
+      artifactQuery = { column: 'deliverable_id', value: subjectId };
     }
 
     const { data: artifact } = await admin
       .schema('projects')
       .from('prototype_artifacts')
-      .select('id, ui_version_id, screens')
-      .eq('deliverable_id', deliverableId)
+      .select('id, ui_version_id, screens, status, qa_findings, deliverable_id')
+      .eq(artifactQuery.column, artifactQuery.value)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
 
@@ -2258,6 +2411,7 @@ const PROTOTYPE_BUILD_REVISE: AgentWorkflow = {
       await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
       return { status: 'succeeded', reason: 'no prototype artifact for that deliverable' };
     }
+    if (fromQa) deliverableId = artifact.deliverable_id;
 
     const { data: version } = await admin
       .schema('projects')
@@ -2275,7 +2429,7 @@ const PROTOTYPE_BUILD_REVISE: AgentWorkflow = {
     const { data: phaseFour } = await admin
       .schema('projects')
       .from('phase_four')
-      .select('id, organization_id, project_id, prototype_revision_count, prototype_revision_limit')
+      .select('id, organization_id, project_id, prototype_revision_count, prototype_revision_limit, prototype_qa_fix_count, prototype_qa_fix_limit')
       .eq('id', version.phase_four_id)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
@@ -2285,12 +2439,14 @@ const PROTOTYPE_BUILD_REVISE: AgentWorkflow = {
       return { status: 'succeeded', reason: 'the Phase 4 workspace no longer exists' };
     }
 
-    if (phaseFour.prototype_revision_count >= phaseFour.prototype_revision_limit) {
+    const used = fromQa ? phaseFour.prototype_qa_fix_count : phaseFour.prototype_revision_count;
+    const allowed = fromQa ? phaseFour.prototype_qa_fix_limit : phaseFour.prototype_revision_limit;
+    if (used >= allowed) {
       // The door itself enforces this and stops the workspace at
       // revision_limit_escalation; checked here first only to avoid an AI
       // call the door would refuse anyway.
       await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
-      return { status: 'succeeded', outcome: 'revision_limit_reached', reason: 'prototype_revision_count already at prototype_revision_limit' };
+      return { status: 'succeeded', outcome: 'revision_limit_reached', reason: fromQa ? 'prototype_qa_fix_count already at prototype_qa_fix_limit' : 'prototype_revision_count already at prototype_revision_limit' };
     }
 
     const designScreens = (version.screens ?? []) as Array<{ screenKey?: string }>;
@@ -2301,12 +2457,43 @@ const PROTOTYPE_BUILD_REVISE: AgentWorkflow = {
       .from('approval_requests')
       .select('decision_note, decided_at')
       .eq('subject_type', 'deliverable')
-      .eq('subject_id', deliverableId)
+      .eq('subject_id', deliverableId ?? '')
       .eq('state', 'changes_requested')
       .order('decided_at', { ascending: false })
       .limit(1);
 
-    const note = reviewNote?.[0]?.decision_note ?? '(no specific note was recorded)';
+    let adminNote: string | null = null;
+    if (fromAdmin) {
+      const { data: details } = await admin
+        .schema('projects')
+        .from('deliverable_details')
+        .select('admin_note')
+        .eq('deliverable_id', deliverableId ?? '')
+        .maybeSingle();
+      adminNote = details?.admin_note ?? null;
+    }
+    const note = fromQa
+      ? `Prototype QA found defects in this build:\n${JSON.stringify(artifact.qa_findings ?? [])}`
+      : fromAdmin
+        ? (adminNote ?? '(the Admin asked for changes without a note)')
+        : (reviewNote?.[0]?.decision_note ?? '(no specific note was recorded)');
+
+    // W-P1: a client round is rebuilt only when the PM classified THIS decision as a correction or an included revision
+    // (projects.p4q_prototype_revision_allowed); unclassified feedback waits (retryable), anything else is routed to a person by its classification.
+    // An Admin edit and a QA defect need no client classification. The p4ui prototype route is recorded as part of the gate.
+    const gate = await gatePrototypeRevision(admin, {
+      organizationId: job.organization_id,
+      deliverableId: deliverableId ?? artifact.deliverable_id,
+      source: fromQa ? 'qa' : fromAdmin ? 'admin' : 'client',
+    });
+    if (!gate.go) {
+      if (gate.wait) {
+        await failJob(admin, job, gate.reason);
+        return { status: 'failed', reason: gate.reason };
+      }
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', outcome: 'not_mine', reason: gate.reason };
+    }
 
     const runId = await openRun(ctx, {
       type: 'projects.ui_version',
@@ -2340,7 +2527,7 @@ const PROTOTYPE_BUILD_REVISE: AgentWorkflow = {
     const validated = prototypeBuildSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -2399,6 +2586,82 @@ const PROTOTYPE_BUILD_REVISE: AgentWorkflow = {
       deliverableId: row?.deliverable_id ?? null,
       screens: validated.data.screens.length,
     };
+  },
+};
+
+const PROTOTYPE_FEEDBACK_CLASSIFY_PROMPT = [
+  'A client reviewed a PROTOTYPE build and asked for a change. You are given their own words, verbatim.',
+  'Classify what they actually mean into exactly one of six categories:',
+  'CORRECTION — a small fix to what was shown (wrong color, typo, misaligned element, a broken link).',
+  'INCLUDED_REVISION — a change already inside the agreed scope for this screen.',
+  'CLARIFICATION — you genuinely cannot tell what they want without asking a specific question back;',
+  'when you choose this, also write that exact question, at most 2000 characters.',
+  'POSSIBLE_SCOPE_CHANGE — a new feature, screen, or capability not in the approved scope.',
+  'DESIGN_DIRECTION_CHANGE — not a fix but a different visual direction than what was approved.',
+  'REJECTED_REQUEST — feedback that asks for something the project has already declined or cannot do.',
+  'Say briefly why, in one sentence, at most 500 characters. Never invent scope you have not been shown.',
+].join(' ');
+
+/**
+ * W-P1 (P4-PM-010/011): `project.deliverable_decided` (prototype, changes_requested) -> the PM classifies the client's words against the exact build, and the
+ * database door routes them (`projects.p4q_classify_prototype_feedback`). This is the model-backed classifier the handler was written for: the model only
+ * returns one of six labels and a reason (the same vocabulary and schema as the UI-version classifier); the words are read from the approval request, never
+ * from the event, and everything that follows from the label (a clarification, a change request, an escalation) is the door's, not the model's.
+ *
+ * It runs beside `ui_prototype:reviseBuild` on the same event. The rebuild WAITS for this row (see `gatePrototypeRevision`), so an unclassified request is
+ * never rebuilt on a guess; and with no funded model this job fails honestly (`environment_missing`), the rebuild never starts, and the failure is visible.
+ */
+const PROTOTYPE_FEEDBACK_CLASSIFY: AgentWorkflow = {
+  jobKind: 'prototype.feedback_classify',
+  agentKey: 'project_manager',
+  systemPrompt: PROTOTYPE_FEEDBACK_CLASSIFY_PROMPT,
+  schemaName: 'ClientFeedbackClassification',
+  jsonSchema: clientFeedbackClassificationJsonSchema,
+  workClass: 'draft',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const deliverableId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+    let runId: string | null = null;
+    let steps = 0;
+    let lastUsage = { inputTokens: 0, outputTokens: 0, costMinor: 0 };
+    let lastJson: unknown = null;
+
+    const result = await handleP4qClassifyPrototypeFeedback(
+      admin,
+      { id: job.id, organization_id: job.organization_id, payload: job.payload as never, correlation_id: job.correlation_id },
+      async (words) => {
+        const { data: d } = await admin.schema('projects').from('deliverables').select('project_id').eq('id', deliverableId ?? '').eq('organization_id', job.organization_id).maybeSingle();
+        runId = await openRun(ctx, {
+          type: 'projects.deliverable',
+          id: deliverableId ?? '',
+          input: { deliverableId, ...(d?.project_id ? { projectId: d.project_id } : {}) } as unknown as Json,
+        });
+        const call = await callModel(ctx, this, [{ role: 'user', content: words }], runId);
+        steps = call.stepCount;
+        if (!call.ok) {
+          if (runId) await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+          throw new Error(call.kind === 'no_provider' ? 'environment_missing: AI_PROVIDER_NOT_CONFIGURED' : call.detail);
+        }
+        lastUsage = call.usage;
+        const validated = clientFeedbackClassificationSchema.safeParse(call.json);
+        if (!validated.success) {
+          const detail = schemaRefusal(validated.error);
+          if (runId) await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
+          throw new Error(detail);
+        }
+        lastJson = validated.data;
+        return { classification: validated.data.classification, reasoning: validated.data.reasoning };
+      },
+    );
+
+    if (result.status === 'succeeded') {
+      if (runId) await succeedRun(admin, runId, lastJson as Json, lastUsage, steps);
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', outcome: result.outcome, reason: result.detail, ...(runId ? { runId } : {}) };
+    }
+    await failJob(admin, job, result.detail);
+    return { status: 'failed', reason: result.detail, ...(runId ? { runId } : {}) };
   },
 };
 
@@ -2573,7 +2836,7 @@ const DESIGN_DIRECTIONS: AgentWorkflow = {
     const validated = designDirectionsSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -2826,7 +3089,7 @@ const MESSAGE_INTENT: AgentWorkflow = {
     const validated = messageIntentSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -3102,7 +3365,7 @@ const MEETING_REQUEST_READ: AgentWorkflow = {
     const validated = schedulingRequestSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -3361,7 +3624,7 @@ const LEAD_OUTCOME_READ: AgentWorkflow = {
     const validated = leadOutcomeReadingSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -3617,7 +3880,7 @@ const QA_TEST_PLAN: AgentWorkflow = {
     const validated = testPlanSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -3814,7 +4077,7 @@ const CHECK_IN_BRIEF: AgentWorkflow = {
     const validated = checkInBriefSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -4024,7 +4287,7 @@ const HANDOVER_PACKAGE: AgentWorkflow = {
     const validated = handoverPackageSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -4251,7 +4514,7 @@ const QUALIFICATION_READ: AgentWorkflow = {
     const validated = qualificationCoverageSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -4510,7 +4773,7 @@ const THREAD_SUMMARY: AgentWorkflow = {
     const validated = conversationSummarySchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -4667,7 +4930,7 @@ const OBJECTION_READ: AgentWorkflow = {
     const validated = objectionReadingSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -4972,7 +5235,7 @@ const FOLLOW_UP_DRAFT: AgentWorkflow = {
       // fails here, fails again at the constraint, and the placeholder goes —
       // three layers, and the client never sees the number.
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -5911,7 +6174,7 @@ const CLIENT_REPLY: AgentWorkflow = {
     const validated = clientReplySchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -6535,7 +6798,7 @@ const MEDIA_READ: AgentWorkflow = {
     const validated = imageReadingSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       if (lastAttempt) {
         await markRead(null);
         await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
@@ -7048,7 +7311,7 @@ const QUOTATION_SCOPE: AgentWorkflow = {
     const validated = quotationScopeSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -8276,7 +8539,7 @@ const QUOTATION_REVISE: AgentWorkflow = {
     const validated = quotationScopeSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -8999,7 +9262,7 @@ const QUOTATION_REWORK: AgentWorkflow = {
     const validated = quotationScopeSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -9507,7 +9770,7 @@ const MEETING_ANALYSIS: AgentWorkflow = {
     const validated = meetingAnalysisSchema.safeParse(call.json);
     if (!validated.success) {
       const detail = schemaRefusal(validated.error);
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
@@ -9864,6 +10127,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   READ_DESIGN_REPLY,
   PROTOTYPE_BUILD,
   PROTOTYPE_BUILD_REVISE,
+  PROTOTYPE_FEEDBACK_CLASSIFY,
   MESSAGE_INTENT,
   QA_TEST_PLAN,
   CHECK_IN_BRIEF,
@@ -9891,7 +10155,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
  * Everything the runner claims: the workflows above plus the acquisition agents' (ADM-112 / ADM-113), kept in their own file and list so the
  * original roster's own pinned shape is not disturbed. Their tools only draft, check and ask a person to approve.
  */
-const RUNNABLE_WORKFLOWS: readonly AgentWorkflow[] = [...AGENT_WORKFLOWS, ...ACQUISITION_WORKFLOWS];
+const RUNNABLE_WORKFLOWS: readonly AgentWorkflow[] = [...AGENT_WORKFLOWS, ...ACQUISITION_WORKFLOWS, ...DEVELOPMENT_WORKFLOWS, ...SPECIALIST_WORKFLOWS, ...DEVELOPMENT_SPECIALIST_WORKFLOWS, ...QA_SPECIALIST_WORKFLOWS, ...PHASE_EIGHT_ENG_WORKFLOWS, ...PHASE_NINE_WORKFLOWS, ...PHASE_EIGHT_CS_WORKFLOWS, ...PHASE_EIGHT_SALES_WORKFLOWS, ...DESIGN_REVISION_WORKFLOWS, ...P789_FEEDBACK_SIGNAL_WORKFLOWS, ...P4UI_WORKFLOWS];
 
 export const AGENT_JOB_KINDS: readonly string[] = RUNNABLE_WORKFLOWS.map((w) => w.jobKind);
 

@@ -62,6 +62,36 @@ export const AGENT_CATEGORY: Readonly<Record<string, RoutingCategory>> = {
   email_outreach: 'client_facing',
   social_media: 'client_facing',
   marketplace_opportunity: 'client_facing',
+  // ADM-113 (Phase 5). Engineering work routes as engineering; the independent reviewer routes as certification, the tightest.
+  frontend_developer: 'engineering',
+  backend_developer: 'engineering',
+  database_developer: 'engineering',
+  mobile_developer: 'engineering',
+  integration: 'engineering',
+  devops_build: 'engineering',
+  test_automation: 'engineering',
+  bug_fix: 'engineering',
+  refactor_performance: 'engineering',
+  documentation: 'engineering',
+  security_review: 'certification',
+  // ADM-114 (Phase 6): QA specialists route as certification, the tightest category.
+  functional_test: 'certification',
+  ui_journey_test: 'certification',
+  api_integration_test: 'certification',
+  database_test: 'certification',
+  security_test: 'certification',
+  performance_test: 'certification',
+  compatibility_test: 'certification',
+  regression_test: 'certification',
+  release_readiness: 'certification',
+  // ADM-115 (Phase 9): finance proposals about money route as money; the reminder DRAFT is what a client will eventually read.
+  finance_reconciliation: 'money',
+  finance_communication: 'client_facing',
+  finance_close: 'money',
+  // Phase 7 (P704-P706): deployment is engineering work, production validation is certification, incident coordination is coordination.
+  deployment_agent: 'engineering',
+  release_qa: 'certification',
+  incident_recovery: 'coordination',
 };
 
 export function categoryForAgent(agentKey: string): RoutingCategory | null {

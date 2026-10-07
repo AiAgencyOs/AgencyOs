@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import { accountsOnInvoice } from '@/modules/finance/p4q-snapshot-accounts';
+import { readInvoicePaymentSnapshot } from '@/modules/finance/p4q-finance-queries';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
@@ -91,7 +93,7 @@ export default async function InvoicePage({
   const invoice = await getInvoice(invoiceId);
   if (!invoice) notFound();
 
-  const [items, payments, receipts, clientName, project, billing, claims, accounts, sends, gstIdentity] = await Promise.all([
+  const [items, payments, receipts, clientName, project, billing, claims, accounts, sends, gstIdentity, issuedAccounts] = await Promise.all([
     listInvoiceItems(invoiceId),
     listInvoicePayments(invoiceId),
     listInvoiceReceipts(invoiceId),
@@ -102,6 +104,7 @@ export default async function InvoicePage({
     listPaymentAccounts(),
     listInvoiceSends(invoiceId),
     readGstIdentity(),
+    readInvoicePaymentSnapshot(invoiceId),
   ]);
   const lastReminderAt = sends.find((s) => s.kind === 'reminder')?.sentAt ?? null;
   const reminderDue = needsReminder(invoice, lastReminderAt, new Date());
@@ -116,7 +119,8 @@ export default async function InvoicePage({
     listInvoiceReminders(invoiceId),
     readInvoiceReminderPolicy(),
   ]);
-  const receivingAccounts = accounts.filter((a) => a.status === 'active');
+  // The accounts this invoice was issued with that are still active; the active ones when it has no snapshot or none of them is active any more.
+  const receivingAccounts = accountsOnInvoice(accounts, issuedAccounts.length > 0 ? issuedAccounts.map((a) => a.accountId) : null);
   // SCR-051: the email transport's own state (configured or the words about
   // what is missing) and the client's billing address as the default recipient.
   const transportState = mayIssueInvoice ? await emailTransportState() : null;
@@ -366,6 +370,38 @@ export default async function InvoicePage({
                 </ul>
               )}
             </div>
+
+            {issuedAccounts.length > 0 ? (
+              // W-F3 (P4-FIN-020/079): what the client was told when this invoice was issued, kept apart from the live accounts above. History is never
+              // rewritten by a later account change; a difference is shown, not hidden.
+              <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4 shadow-xs" aria-label="Payment details when issued">
+                <h3 className="text-[13px] font-semibold tracking-tight">Payment details when issued</h3>
+                <ul className="flex flex-col gap-2">
+                  {issuedAccounts.map((a) => (
+                    <li key={a.accountId} className="rounded-lg border border-line bg-canvas px-3 py-2 text-xs">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold">{a.label}</span>
+                        {a.changedSinceIssue ? <Badge tone="warning">changed since issue</Badge> : null}
+                        {a.noLongerActive ? <Badge tone="danger">no longer active</Badge> : null}
+                      </div>
+                      <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+                        {Object.entries(a.instructions).map(([key, value]) => (
+                          <div key={key} className="contents">
+                            <dt className="text-muted">{key.replaceAll('_', ' ')}</dt>
+                            <dd className="font-mono">{value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </li>
+                  ))}
+                </ul>
+                {issuedAccounts.some((a) => a.changedSinceIssue || a.noLongerActive) ? (
+                  <p className="text-xs text-muted">
+                    A receiving account changed after this invoice was issued. The client was shown the details above; check with them before a payment to any other account is accepted.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </div>
         {invoice.notes ? (

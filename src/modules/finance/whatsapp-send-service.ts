@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { accountsOnInvoice, readSnapshotAccountIds } from './p4q-snapshot-accounts';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
@@ -114,8 +115,7 @@ export async function sendInvoiceWhatsApp(
     dueAt: invoice.due_at,
     timeZone: org.timezone ?? 'UTC',
     projectName: project.data?.name ?? null,
-    receivingAccounts: accounts
-      .filter((a) => a.status === 'active')
+    receivingAccounts: accountsOnInvoice(accounts, await readSnapshotAccountIds(supabase, invoice.id))
       .map((a) => ({
         label: a.label,
         fields: PAYMENT_ACCOUNT_FIELDS[a.kind as PaymentAccountKind]

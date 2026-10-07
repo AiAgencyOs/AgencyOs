@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { openBillingClarification } from './p4q-doors';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import type { createAdminClient } from '@/lib/db/admin';
@@ -628,6 +629,25 @@ export async function generateM2Invoice(
   }
   if (!project) return err('NOT_FOUND', 'Project not found.');
 
+  // P4-FIN-003: the event is a claim, the row is the authority. A forged or
+  // stray `project.phase_four_completed` must not invoice M2 for a project
+  // whose Task 2 workspace is not actually completed (row authority over
+  // event payload).
+  const { data: workspace, error: workspaceError } = await admin
+    .schema('projects')
+    .from('phase_four')
+    .select('state')
+    .eq('project_id', scope.projectId)
+    .eq('organization_id', scope.organizationId)
+    .maybeSingle();
+  if (workspaceError) {
+    console.error(JSON.stringify({ level: 'error', scope: 'generateM2Invoice', detail: workspaceError.message }));
+    return err('INTERNAL', 'Could not read the Task 2 workspace.');
+  }
+  if (!workspace || workspace.state !== 'completed') {
+    return ok({ outcome: 'skipped', reason: 'the Task 2 workspace is not completed, so M2 is not due' });
+  }
+
   // Ordinary idempotency — the same check generateFirstMilestoneInvoice makes.
   const { data: existing, error: existingError } = await admin
     .schema('finance')
@@ -671,10 +691,29 @@ export async function generateM2Invoice(
   // ordinary possibility, not a broken guarantee, so it is reported rather
   // than treated as a defect.
   if (!readiness.complete) {
+    // W-F2: missing or unclear billing data is a clarification a person answers with the client, not only a failed job.
+    await openBillingClarification(admin, scope.projectId, readiness);
     return err(
       'CONFLICT',
       `Phase 4 completed but the billing profile is incomplete (missing: ${readiness.missing.join(', ') || 'unknown'}). The M2 invoice was not raised automatically.`,
     );
+  }
+
+  // P4-FIN-009: an invoice a client cannot pay is not issued. With no active
+  // receiving account there is nowhere to pay, so M2 waits for an Admin to add
+  // one rather than going out with empty payment instructions.
+  const { count: activeAccounts, error: accountsError } = await admin
+    .schema('finance')
+    .from('payment_accounts')
+    .select('id', { count: 'exact', head: true })
+    .eq('organization_id', scope.organizationId)
+    .eq('status', 'active');
+  if (accountsError) {
+    console.error(JSON.stringify({ level: 'error', scope: 'generateM2Invoice', detail: accountsError.message }));
+    return err('INTERNAL', 'Could not read the receiving accounts.');
+  }
+  if (!activeAccounts) {
+    return err('CONFLICT', 'Phase 4 completed but there is no active receiving account to pay into. The M2 invoice was not raised automatically; add an account and retry.');
   }
 
   const taxRateBp = taxRateBpForMode((profile?.mode as 'gst' | 'non_gst' | null) ?? null);
@@ -841,6 +880,8 @@ async function generateLaterMilestoneInvoice(
     gstin: profile?.gstin,
   });
   if (!readiness.complete) {
+    // W-F2: the same clarification for the later milestones.
+    await openBillingClarification(admin, scope.projectId, readiness);
     return err(
       'CONFLICT',
       `Phase ${step.phase} completed but the billing profile is incomplete (missing: ${readiness.missing.join(', ') || 'unknown'}). The ${step.label} invoice was not raised automatically.`,

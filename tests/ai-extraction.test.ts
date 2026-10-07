@@ -479,7 +479,7 @@ describe('D. a provider failure settles the job rather than stranding it', () =>
     // add one. Adding one here now would spend the budget an attempt early.
     assert.match(
       body,
-      /settlementFor\(\s*\{ attemptsMade: job\.attempts, maxAttempts: job\.max_attempts \},/,
+      /settlementFor\(\s*\{ attemptsMade: job\.attempts, maxAttempts: (?:job\.max_attempts|attemptBudgetFor\(reason, job\.max_attempts\)) \},/,
     );
     assert.match(body, /status: settlement\.status/);
     assert.match(body, /locked_at: null,\s*locked_by: null,/);

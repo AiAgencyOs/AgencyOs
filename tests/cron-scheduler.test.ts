@@ -322,7 +322,7 @@ describe('F. /api/jobs/run behaves as it did before the scheduler', () => {
     // runner asks a handler and settles whatever comes back, deciding nothing
     // itself. A second copy of this loop is what the generalisation avoids —
     // D16, where a fix stopped applying to half the surface it was written for.
-    assert.match(routeSource, /result = await handler\(admin, job\)/);
+    assert.match(routeSource, /result = await runPhaseFourHop\(admin, kind, job, \(\) => handler\(admin, job\)\)/);
     assert.match(routeSource, /await settleUnlockJob\(admin, job, result, kind, scope\)/);
     // And the unlock queue is still wired to the unlock handler.
     assert.match(routeSource, /runEventJobs\(\s*admin,\s*UNLOCK_JOB_KIND,\s*handleInvoicePaid,/);

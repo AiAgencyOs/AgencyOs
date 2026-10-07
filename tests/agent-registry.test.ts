@@ -71,12 +71,23 @@ describe('A. what is defined is what exists', () => {
         'finance', 'support', 'customer_success', 'upsell',
         // layer 4 — acquisition (ADM-112)
         'ad_manager', 'email_outreach', 'social_media', 'marketplace_opportunity',
+        // layer 5 — development specialists (ADM-113, Phase 5)
+        'frontend_developer', 'backend_developer', 'database_developer', 'mobile_developer', 'integration',
+        'devops_build', 'test_automation', 'security_review', 'bug_fix', 'refactor_performance', 'documentation',
+        // layer 6 — QA specialists (ADM-114, Phase 6)
+        'functional_test', 'ui_journey_test', 'api_integration_test', 'database_test', 'security_test', 'performance_test',
+        'compatibility_test', 'regression_test', 'release_readiness',
+        // layer 7 - finance additions (ADM-115, Phase 9)
+        'finance_reconciliation', 'finance_communication', 'finance_close',
+        // layer 7 — Phase 7 production launch (P704-P706)
+        'deployment_agent', 'release_qa', 'incident_recovery',
       ],
     );
     assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'foundation').length, 4);
     // six since Phase 2 Planning §1 named the Project Planning Agent separately from the PM
     assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'core').length, 6);
-    assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'operations').length, 4);
+    // nine: four since Phase 1, three Phase 9 finance agents (ADM-115) and the Phase 7 Deployment and Incident/Recovery agents, all installed disabled
+    assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'operations').length, 9);
   });
 
   test('and every one of them is installed disabled', () => {

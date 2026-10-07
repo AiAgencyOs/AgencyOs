@@ -202,7 +202,7 @@ describe('F. it draws nothing, and the palette tokens are named', () => {
 describe('G. it is wired to the moment there is something to draw for', () => {
   test('the trigger is the finalized screen baseline', () => {
     // Phase 3 starting is too early: the baseline does not exist yet.
-    assert.match(CATALOG, /'project\.screen_list_finalized': \['ui_designer:designDirections'\],/);
+    assert.match(CATALOG, /'project\.screen_list_finalized': \['ui_designer:designDirections', 'ui_designer:p13GuardDesignContext'\],/);
     assert.match(CATALOG, /Phase 3 starting is\s*\n\s*\/\/ too early: the baseline does not exist yet\./);
   });
 

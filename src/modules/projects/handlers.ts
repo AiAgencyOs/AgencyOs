@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { openBlockedRequirementEscalation } from '@/modules/p4q/escalation';
+import { bindCommercialBaseline } from '@/modules/finance/p4q-doors';
 import type { createAdminClient } from '@/lib/db/admin';
 import { ok } from '@/lib/result';
 import { nextUnlockedMilestoneForProject } from '@/modules/finance/service';
@@ -478,6 +480,10 @@ export async function handleHandoffBound(admin: Admin, job: UnlockJob): Promise<
       if (!structure.ok) {
         console.error(JSON.stringify({ level: 'error', scope: 'handleHandoffBound.structure', detail: structure.error.message }));
       }
+      // W-F1: each milestone records the scope version and budget it was priced against; with neither, a person is asked (never a guessed baseline).
+      // Only when the plan exists (just installed, or already there): there is nothing to bind otherwise.
+      const baseline = structure.ok ? await bindCommercialBaseline(admin, projectId) : null;
+      const baselineNote = baseline ? ` Commercial baseline: ${baseline}.` : '';
       // PM-04's Admin card, raised the same way and for the same reason: the
       // door is idempotent under the project's lock, so a replay cannot raise
       // a second card, and a card that could not be raised is a named reason
@@ -506,7 +512,7 @@ export async function handleHandoffBound(admin: Admin, job: UnlockJob): Promise<
         detail:
           (outcome === 'started'
             ? 'Phase 2 started; the inherited packet is accepted and nobody has been contacted.'
-            : 'Phase 2 was already running for this project.') + structureNote + cardNote,
+            : 'Phase 2 was already running for this project.') + structureNote + baselineNote + cardNote,
         milestoneId: row?.phase_two_id ?? undefined,
       };
     }
@@ -661,6 +667,7 @@ export async function handlePhaseFourReady(admin: Admin, job: UnlockJob): Promis
   if (!handoff.phase_four_ready) {
     // The row is authoritative, not the event that carried its id — a stale
     // or forged claim of readiness must not reach the door at all.
+    await openBlockedRequirementEscalation(admin, handoff.project_id, 'Task 2 cannot start: the Phase 3 hand-off is not marked ready for Phase 4.');
     return { status: 'failed', permanent: true, detail: 'the handoff row says Phase 4 is not ready' };
   }
 
@@ -693,6 +700,7 @@ export async function handlePhaseFourReady(admin: Admin, job: UnlockJob): Promis
       // The door re-checked and agrees with the early read above — kept
       // permanent for the same reason: retrying cannot make a handoff ready
       // that is not, and a job that keeps trying hides the blocker.
+      await openBlockedRequirementEscalation(admin, handoff.project_id, 'Task 2 cannot start: no ready Phase 3 hand-off exists for this project.');
       return {
         status: 'failed',
         permanent: true,
@@ -918,4 +926,255 @@ export async function handleDeliverableDecided(admin: Admin, job: UnlockJob): Pr
     default:
       return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
   }
+}
+
+
+/**
+ * `invoice.paid` -> start Phase 5 (Task 3) - Phase 5 Master Flow: PHASE 4 COMPLETE + M2 ADMIN VERIFIED -> PHASE 5 READY.
+ *
+ * `invoice.paid` fires for every milestone, so most events are not this handler's; the DOOR decides whether Phase 5 may start
+ * (`start_phase_five` re-checks Phase 4 complete, M2 verified paid in full, the locked UI, the approved prototype and the active
+ * scope). The invoice row is re-read for its project: the payload is a claim about the past, the row is the present.
+ * A refusal other than "this was not the M2 payment" is a normal wait (for instance the prototype is not approved yet), not a failure.
+ */
+export async function handleStartPhaseFive(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const invoiceId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+  if (!invoiceId) {
+    return { status: 'failed', permanent: true, detail: 'the event named no invoice' };
+  }
+
+  const { data: invoice, error: invoiceError } = await admin
+    .schema('finance')
+    .from('invoices')
+    .select('id, project_id')
+    .eq('id', invoiceId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+  if (invoiceError) {
+    return { status: 'failed', permanent: false, detail: `the invoice could not be read: ${invoiceError.message}` };
+  }
+  if (!invoice) {
+    return { status: 'succeeded', outcome: 'gone', detail: 'the invoice no longer exists' };
+  }
+  if (!invoice.project_id) {
+    return { status: 'succeeded', outcome: 'not_mine', detail: 'this invoice belongs to no project' };
+  }
+
+  const { data, error } = await admin.schema('projects').rpc('start_phase_five', { p_project_id: invoice.project_id } as never);
+  if (error) {
+    return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+  const outcome = row?.outcome ?? 'no answer';
+
+  switch (outcome) {
+    case 'started':
+      return { status: 'succeeded', outcome, detail: 'Phase 5 started and its development baseline is locked.' };
+    case 'already_started':
+      return { status: 'succeeded', outcome, detail: 'Phase 5 had already started for this project.' };
+    case 'phase_four_incomplete':
+    case 'm2_not_verified':
+    case 'no_locked_ui':
+    case 'no_approved_prototype':
+    case 'no_active_scope':
+      return { status: 'succeeded', outcome: 'not_ready', detail: `Phase 5 is not ready to start: ${outcome}.` };
+    case 'unknown_project':
+      return { status: 'failed', permanent: true, detail: 'the project no longer exists.' };
+    default:
+      return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
+  }
+}
+
+
+/**
+ * `invoice.paid` -> M3PaymentVerified, once. `invoice.paid` fires for every milestone; the DOOR (`record_m3_verified`) decides whether the
+ * THIRD priced milestone is now verified paid in full, from the rows, and emits `project.m3_payment_verified` exactly once.
+ */
+export async function handleRecordM3Verified(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const invoiceId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+  if (!invoiceId) return { status: 'failed', permanent: true, detail: 'the event named no invoice' };
+
+  const { data: invoice, error: invoiceError } = await admin
+    .schema('finance')
+    .from('invoices')
+    .select('id, project_id')
+    .eq('id', invoiceId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+  if (invoiceError) return { status: 'failed', permanent: false, detail: `the invoice could not be read: ${invoiceError.message}` };
+  if (!invoice) return { status: 'succeeded', outcome: 'gone', detail: 'the invoice no longer exists' };
+  if (!invoice.project_id) return { status: 'succeeded', outcome: 'not_mine', detail: 'this invoice belongs to no project' };
+
+  const { data, error } = await admin.schema('projects').rpc('record_m3_verified', { p_project_id: invoice.project_id } as never);
+  if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+  const outcome = row?.outcome ?? 'no answer';
+  switch (outcome) {
+    case 'recorded':
+      return { status: 'succeeded', outcome, detail: 'M3PaymentVerified recorded; the Phase 6 financial gate is open.' };
+    case 'already_recorded':
+    case 'not_verified':
+      return { status: 'succeeded', outcome: outcome === 'not_verified' ? 'not_mine' : outcome, detail: outcome === 'not_verified' ? 'M3 is not verified paid (this was another milestone, or a partial payment).' : 'M3PaymentVerified was already recorded.' };
+    case 'not_found':
+      return { status: 'failed', permanent: true, detail: 'the project no longer exists.' };
+    default:
+      return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
+  }
+}
+
+
+/**
+ * `project.phase_five_completed` / `project.m3_payment_verified` -> create Phase 6, or make it READY - P601 §3, §39.
+ *
+ * Both events name the project as their subject. The door decides: Phase 6 is created WAITING_M3_VERIFIED when Phase 5 completes, and becomes
+ * READY exactly once when M3 is Admin-verified paid in full. A replay of either event is `already_started`, never a second Phase6Ready.
+ */
+export async function handleStartPhaseSix(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const projectId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+  if (!projectId) return { status: 'failed', permanent: true, detail: 'the event named no project' };
+
+  if (!(await inOrganization(admin, { schema: 'projects', name: 'projects' }, projectId, job.organization_id))) return { status: 'succeeded', outcome: 'gone', detail: 'the project is not in this organization' };
+  const { data, error } = await admin.schema('projects').rpc('start_phase_six', { p_project_id: projectId } as never);
+  if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+  const outcome = row?.outcome ?? 'no answer';
+  switch (outcome) {
+    case 'ready':
+      return { status: 'succeeded', outcome, detail: 'Phase 6 is READY: M3 is verified paid in full.' };
+    case 'waiting_m3_verified':
+      return { status: 'succeeded', outcome, detail: 'Phase 6 exists and is waiting for the M3 payment to be verified.' };
+    case 'already_started':
+      return { status: 'succeeded', outcome, detail: 'Phase 6 had already started for this project.' };
+    case 'phase_five_incomplete':
+      return { status: 'succeeded', outcome: 'not_ready', detail: 'Phase 5 has not completed (no intake exists).' };
+    case 'unknown_project':
+      return { status: 'failed', permanent: true, detail: 'the project no longer exists.' };
+    default:
+      return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
+  }
+}
+
+/** `project.phase_six_ready` -> validate the QA intake against the exact Phase 5 build (P601 §10). A blocked intake is a normal, recorded outcome. */
+export async function handleValidateQaIntake(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const event = (envelope.event ?? {}) as { projectId?: unknown };
+  const projectId = typeof event.projectId === 'string' ? event.projectId : null;
+  if (!projectId) return { status: 'failed', permanent: true, detail: 'the event named no project' };
+
+  if (!(await inOrganization(admin, { schema: 'projects', name: 'projects' }, projectId, job.organization_id))) return { status: 'succeeded', outcome: 'gone', detail: 'the project is not in this organization' };
+  const { data, error } = await admin.schema('projects').rpc('validate_qa_intake', { p_project_id: projectId } as never);
+  if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; status?: string } | undefined;
+  if (row?.outcome === 'validated') {
+    return { status: 'succeeded', outcome: row.status === 'valid' ? 'valid' : 'blocked', detail: `the QA intake is ${row.status}.` };
+  }
+  if (row?.outcome === 'waiting_m3_verified') return { status: 'succeeded', outcome: 'waiting', detail: 'M3 is not verified yet.' };
+  return { status: 'failed', permanent: false, detail: `the door answered ${row?.outcome ?? 'nothing'}` };
+}
+
+
+/**
+ * `invoice.paid` -> M4PaymentVerified, once - P601 §41. `invoice.paid` fires for every milestone; the DOOR (`record_m4_verified`) decides from the
+ * rows whether the FOURTH priced milestone is verified paid in full, and emits `project.m4_payment_verified` exactly once. The Phase 7 financial gate
+ * reads only that fact.
+ */
+export async function handleRecordM4Verified(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const invoiceId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+  if (!invoiceId) return { status: 'failed', permanent: true, detail: 'the event named no invoice' };
+
+  const { data: invoice, error: invoiceError } = await admin
+    .schema('finance')
+    .from('invoices')
+    .select('id, project_id')
+    .eq('id', invoiceId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+  if (invoiceError) return { status: 'failed', permanent: false, detail: `the invoice could not be read: ${invoiceError.message}` };
+  if (!invoice) return { status: 'succeeded', outcome: 'gone', detail: 'the invoice no longer exists' };
+  if (!invoice.project_id) return { status: 'succeeded', outcome: 'not_mine', detail: 'this invoice belongs to no project' };
+
+  const { data, error } = await admin.schema('projects').rpc('record_m4_verified', { p_project_id: invoice.project_id } as never);
+  if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+  const outcome = row?.outcome ?? 'no answer';
+  switch (outcome) {
+    case 'recorded':
+      return { status: 'succeeded', outcome, detail: 'M4PaymentVerified recorded; the Phase 7 financial gate is open.' };
+    case 'already_recorded':
+      return { status: 'succeeded', outcome, detail: 'M4PaymentVerified was already recorded.' };
+    case 'not_verified':
+      return { status: 'succeeded', outcome: 'not_mine', detail: 'M4 is not verified paid (another milestone, or a partial payment).' };
+    case 'not_found':
+      return { status: 'failed', permanent: true, detail: 'the project no longer exists.' };
+    default:
+      return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
+  }
+}
+
+
+/**
+ * `project.master_test_plan_approved` -> the QA Orchestrator schedules the plan's categories to the QA specialists (P601 §55). The door stores every
+ * decision (routed, or HELD with the reason while a specialist is not enabled), applies the safe-parallelism rules, and is idempotent.
+ */
+export async function handleScheduleQaJobs(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const planId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+  if (!planId) return { status: 'failed', permanent: true, detail: 'the event named no test plan' };
+  if (!(await inOrganization(admin, { schema: 'qa', name: 'master_test_plans' }, planId, job.organization_id))) return { status: 'succeeded', outcome: 'gone', detail: 'the plan is not in this organization' };
+  const { data, error } = await admin.schema('qa').rpc('schedule_plan_jobs' as never, { p_plan_id: planId } as never);
+  if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; routed?: number; held?: number } | undefined;
+  switch (row?.outcome) {
+    case 'scheduled':
+      return { status: 'succeeded', outcome: (row.routed ?? 0) > 0 ? 'routed' : 'held', detail: `${row.routed ?? 0} category job(s) routed, ${row.held ?? 0} held (specialist not enabled).` };
+    case 'not_found':
+      return { status: 'succeeded', outcome: 'gone', detail: 'the plan no longer exists' };
+    case 'plan_not_approved':
+      return { status: 'succeeded', outcome: 'not_mine', detail: 'the plan is not approved' };
+    default:
+      return { status: 'failed', permanent: false, detail: `the door answered ${row?.outcome ?? 'nothing'}` };
+  }
+}
+
+/**
+ * `project.deliverable_submitted` (kind = build) -> has the source changed since a release candidate was approved? A new build after approval means the
+ * approval no longer describes what would be deployed. The DOOR compares the rows (`reopen_on_source_change`), so a build that changes nothing is a no-op.
+ */
+export async function handleReopenOnSourceChange(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const event = (envelope.event ?? {}) as { kind?: unknown; projectId?: unknown };
+  if (event.kind !== 'build') return { status: 'succeeded', outcome: 'not_mine', detail: 'only a development build can change what QA approved' };
+  const projectId = typeof event.projectId === 'string' ? event.projectId : null;
+  if (!projectId) return { status: 'failed', permanent: true, detail: 'the event named no project' };
+  if (!(await inOrganization(admin, { schema: 'projects', name: 'projects' }, projectId, job.organization_id))) return { status: 'succeeded', outcome: 'gone', detail: 'the project is not in this organization' };
+  const { data, error } = await admin.schema('qa').rpc('reopen_on_source_change' as never, { p_project_id: projectId } as never);
+  if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+  switch (row?.outcome) {
+    case 'reopened':
+      return { status: 'succeeded', outcome: 'reopened', detail: 'The source changed after approval: the candidate is stale and Phase 6 is blocked.' };
+    case 'source_unchanged':
+    case 'already_stale':
+    case 'no_approved_candidate':
+      return { status: 'succeeded', outcome: row.outcome, detail: 'nothing to reopen.' };
+    case 'not_found':
+      return { status: 'succeeded', outcome: 'gone', detail: 'the project no longer exists' };
+    default:
+      return { status: 'failed', permanent: false, detail: `the door answered ${row?.outcome ?? 'nothing'}` };
+  }
+}
+
+/** A handler that passes an id from an event payload to a service-role door first proves the row is in the job's own organization. */
+async function inOrganization(admin: Admin, table: { schema: 'projects' | 'qa'; name: string }, id: string, organizationId: string): Promise<boolean> {
+  const { data } = await (admin.schema(table.schema) as unknown as { from(t: string): { select(c: string): { eq(c: string, v: string): { eq(c: string, v: string): { maybeSingle(): PromiseLike<{ data: unknown }> } } } } })
+    .from(table.name)
+    .select('id')
+    .eq('id', id)
+    .eq('organization_id', organizationId)
+    .maybeSingle();
+  return Boolean(data);
 }

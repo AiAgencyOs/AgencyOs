@@ -181,10 +181,28 @@ try {
     await rest('POST', 'projects', 'rpc/sync_deliverable_decision', { p_deliverable_id: id });
   }
 
+
+  // A development BUILD reaches the client only with an exact commit, a succeeded build run, an independent passed code review, QA passed and
+  // Admin approved (Phase 5). This verifier tests the DEFECT gate, so it brings each build up to that bar first, through the real doors.
+  let buildSeq = 0;
+  async function addBuild(body) {
+    const res = await rest('POST', 'projects', 'rpc/add_deliverable', { ...body, p_kind: 'build' });
+    const id = one(res)?.deliverable_id;
+    if (!id) return res;
+    buildSeq += 1;
+    const n = `${Date.now().toString(36)}-${buildSeq}`;
+    await call(ownerToken, 'POST', 'projects', 'rpc/set_deliverable_details', { p_deliverable_id: id, p_platform: 'web', p_commit_ref: `abc${buildSeq}234`, p_build_number: n });
+    await call(ownerToken, 'POST', 'projects', 'rpc/record_build_run', { p_deliverable_id: id, p_environment: 'review', p_status: 'succeeded', p_stages: [{ name: 'build', status: 'ok' }, { name: 'artifact_verify', status: 'ok' }], p_evidence_url: 'https://ci.example.test/build', p_artifact_sha256: 'a'.repeat(63) + String(buildSeq % 10), p_fingerprint: { node: '22' } });
+    await call(ownerToken, 'POST', 'projects', 'rpc/record_smoke_check', { p_deliverable_id: id, p_result: 'not_tested', p_reason: 'defect-gate fixture: no launch test is part of this check' });
+    await call(ownerToken, 'POST', 'projects', 'rpc/record_code_review', { p_deliverable_id: id, p_verdict: 'passed' });
+    await call(ownerToken, 'POST', 'projects', 'rpc/record_build_qa_verdict', { p_deliverable_id: id, p_outcome: 'passed', p_evidence_url: 'https://ci.example.test/qa' });
+    await call(ownerToken, 'POST', 'projects', 'rpc/decide_build_admin', { p_deliverable_id: id, p_decision: 'approved' });
+    return res;
+  }
+
   const v1 = one(
-    await rest('POST', 'projects', 'rpc/add_deliverable', {
+    await addBuild({
       p_project_id: created.project,
-      p_kind: 'build',
       p_title: 'Build 1',
     }),
   );
@@ -225,9 +243,8 @@ try {
   console.log('\n2. A blocker on v1 does not stop v2 — v2 is the fix');
   {
     const v2 = one(
-      await rest('POST', 'projects', 'rpc/add_deliverable', {
+      await addBuild({
         p_project_id: created.project,
-        p_kind: 'build',
         p_title: 'Build 2 — fixes the blocker',
       }),
     );
@@ -361,9 +378,8 @@ try {
     // Give it an approved build, and an open blocker, so the two conditions
     // are tested apart rather than together.
     const build = one(
-      await rest('POST', 'projects', 'rpc/add_deliverable', {
+      await addBuild({
         p_project_id: created.project,
-        p_kind: 'build',
         p_title: `${MARKER} build`,
       }),
     );
@@ -486,6 +502,8 @@ try {
   // outbox events and zero jobs. Without this it fails on rows this script
   // left, which is exactly what CI caught.
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.approval_request');
+  // a build whose QA passes tells the Admin it waits (project.build_ready_for_admin, subject = the deliverable); this script created those builds
+  await rest('DELETE', 'core', 'outbox_events?subject_type=eq.deliverable');
   if (created.project) {
     await rest('DELETE', 'qa', `defects?project_id=eq.${created.project}`);
     await rest('DELETE', 'projects', `deliverables?project_id=eq.${created.project}`);

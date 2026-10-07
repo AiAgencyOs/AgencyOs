@@ -4,11 +4,16 @@ import { notFound } from 'next/navigation';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
+import { can } from '@/lib/authz/permissions';
+import { readApprovalAnnotation } from '@/modules/approvals/p13-annotation';
 import { getApproval } from '@/modules/approvals/queries';
 import { isOverdue, type ApprovalState } from '@/modules/approvals/schema';
 import { ApprovalBanner, Badge, Card, DetailList, DetailRow, PageHeader, humanize, type ApprovalBannerState } from '@/ui';
 
 import { ApprovalDecisionForm } from '../approval-decision-form';
+import { ApprovalExecutionForm } from './approval-execution-forms';
+
+const RISK_TONE: Record<string, 'success' | 'danger' | 'warning' | 'neutral'> = { low: 'success', medium: 'warning', high: 'danger', critical: 'danger', unrated: 'neutral' };
 
 export const metadata: Metadata = { title: 'Approval' };
 
@@ -59,11 +64,15 @@ export default async function ApprovalDetailPage({
 }) {
   const { requestId } = await params;
 
-  await requireInternal(`/approvals/${requestId}`);
+  const context = await requireInternal(`/approvals/${requestId}`);
   const clock = await agencyClock();
 
   const request = await getApproval(requestId);
   if (!request) notFound();
+
+  // W7 (P1-API-024): the risk, the policy version in force and the executed / verified stamps.
+  const annotation = await readApprovalAnnotation(requestId);
+  const canRecordExecution = can(context, 'organization.settings');
 
   const overdue = isOverdue({ state: request.state as ApprovalState, slaDueAt: request.sla_due_at });
 
@@ -117,6 +126,22 @@ export default async function ApprovalDetailPage({
             <DetailRow label="Amount" value={MONEY.format(request.amount_minor / 100)} />
           ) : null}
           {request.audience === 'client' ? <DetailRow label="Audience" value="Client" /> : null}
+          {annotation ? (
+            <>
+              <DetailRow
+                label="Risk"
+                value={
+                  <Badge tone={RISK_TONE[annotation.risk_level] ?? 'neutral'} dot>
+                    {humanize(annotation.risk_level)}
+                  </Badge>
+                }
+              />
+              <DetailRow label="Risk set by" value={annotation.risk_source === 'policy' ? 'The approval policy' : annotation.risk_source === 'admin' ? 'An admin' : 'No policy applied'} />
+              {annotation.policy_version_id ? <DetailRow label="Policy version" value={annotation.policy_version_id} /> : null}
+              <DetailRow label="Executed" value={annotation.executed_at ? clock.dateTime(annotation.executed_at) : 'Not yet'} />
+              <DetailRow label="Verified" value={annotation.verified_at ? clock.dateTime(annotation.verified_at) : 'Not yet'} />
+            </>
+          ) : null}
           {request.decided_at ? (
             <>
               <DetailRow label="Decided" value={clock.dateTime(request.decided_at)} />
@@ -137,6 +162,18 @@ export default async function ApprovalDetailPage({
           </a>
         ) : null}
       </Card>
+
+      {request.state === 'approved' && canRecordExecution && !annotation?.executed_at ? (
+        <Card className="p-4 sm:p-5">
+          <ApprovalExecutionForm requestId={request.id} step="execute" />
+        </Card>
+      ) : null}
+
+      {request.state === 'approved' && canRecordExecution && annotation?.executed_at && !annotation.verified_at ? (
+        <Card className="p-4 sm:p-5">
+          <ApprovalExecutionForm requestId={request.id} step="verify" />
+        </Card>
+      ) : null}
 
       {request.state === 'pending' ? (
         <Card className="p-4 sm:p-5">

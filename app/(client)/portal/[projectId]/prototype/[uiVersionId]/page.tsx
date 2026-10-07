@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 
 import { requireClient } from '@/lib/auth/session';
 import { IconArrowLeft } from '@/ui';
-import { readClientProject, readClientPrototypeArtifact } from '@/modules/portal/queries';
+import { readClientProject, readClientPrototypeArtifact, readClientPrototypeNotice } from '@/modules/portal/queries';
 import { PrototypeScreenView } from '@/ui/prototype-screen-view';
 
 export const metadata: Metadata = { title: 'Prototype' };
@@ -38,6 +38,9 @@ export default async function ClientPrototypePreviewPage({
   const artifact = await readClientPrototypeArtifact(uiVersionId);
   if (!artifact || artifact.projectId !== projectId) notFound();
 
+  // P4-PROTO-013/052: what this build is and is not, in the words the database keeps (null: nothing to show).
+  const notice = await readClientPrototypeNotice(artifact.deliverableId);
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
       <div className="flex flex-col gap-1">
@@ -54,6 +57,25 @@ export default async function ClientPrototypePreviewPage({
           what you think; they will record your decision against this exact build.
         </p>
       </div>
+
+      {notice ? (
+        <section aria-label="About this prototype" className="flex flex-col gap-2 rounded-lg border border-border p-3 text-sm">
+          <p className="font-medium">{notice.label}</p>
+          {notice.limitations.length > 0 ? (
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted">Known limitations</p>
+              <ul className="list-disc pl-5 text-muted">
+                {notice.limitations.map((limitation) => (
+                  <li key={limitation}>{limitation}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {notice.simulated.length > 0 ? (
+            <p className="text-muted">Simulated in this preview: {notice.simulated.join(', ')}.</p>
+          ) : null}
+        </section>
+      ) : null}
 
       {artifact.screens.length > 0 ? (
         <PrototypeScreenView screens={artifact.screens} />

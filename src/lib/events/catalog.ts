@@ -23,12 +23,47 @@ export const HANDLERS = [
   'projects:askFinalDesignConfirmation',
   'projects:startPhaseFour',
   'orchestrator:routeTask2Design',
+  'orchestrator:routeDevelopmentPlan',
+  'orchestrator:routeQaOutcome',
   'quality_assurance:reviewUIVersion',
   'orchestrator:requestUIVersionAdminReview',
   'ui_prototype:build',
   'ui_prototype:reviseBuild',
+  'project_manager:classifyPrototypeFeedback',
   'quality_assurance:reviewPrototypeBuild',
   'projects:completePhaseFourOnPrototypeApproval',
+  'projects:startPhaseFive',
+  'projects:recordM3Verified',
+  'projects:startPhaseSix',
+  'projects:scheduleQaJobs',
+  'projects:reopenOnSourceChange',
+  'crm:announceTestingStarted',
+  'crm:announceQaClarification',
+  'crm:announceQaDefectProgress',
+  'projects:recordM4Verified',
+  'crm:announceReleaseCandidateApproved',
+  'crm:announceReleaseCandidateReady',
+  'crm:announceReleaseExceptionRequested',
+  'crm:announcePhaseEightStarted',
+  'crm:announceSupportTicketEscalated',
+  'crm:announceSupportSlaBreached',
+  'crm:announceRetentionRecoveryRequired',
+  'crm:announceMaintenanceRenewalDue',
+  'crm:announceMaintenanceWorkOpened',
+  'crm:announceMaintenanceQaFailed',
+  'crm:announceMaintenanceReleaseRequested',
+  'crm:announceMaintenanceReleaseApproved',
+  'crm:announceMaintenanceReleased',
+  'crm:announceMaintenanceBillingProposed',
+  'crm:announceMaintenanceSlaBreached',
+  'crm:announceMaintenanceWorkStalled',
+  'crm:announceQaReverification',
+  'crm:announceM4PaymentVerified',
+  'crm:announceFinanciallyClosed',
+  'projects:validateQaIntake',
+  'crm:announcePhaseSixReady',
+  'crm:announceM3PaymentVerified',
+  'crm:announceBuildFeedbackRouted',
   'finance:generateM1Invoice',
   'finance:deliverIssuedInvoice',
   'finance:raiseFreeMaintenance',
@@ -54,6 +89,7 @@ export const HANDLERS = [
   'ui_designer:draftUIVersion',
   'ui_designer:reviseUIVersion',
   'project_manager:classifyClientFeedback',
+  'project_manager:suggestBuildFeedbackClass',
   'project_manager:readDesignReply',
   'sales:readIntent',
   'sales:readMeetingRequest',
@@ -85,10 +121,45 @@ export const HANDLERS = [
   'crm:announcePrototypeChangeRequested',
   'crm:announceTask2Complete',
   'crm:announceTask3Complete',
+  'crm:announcePhaseFiveStarted',
+  'crm:announceBuildShared',
+  'crm:announceBuildFeedbackReceived',
+  'crm:announceBuildApproved',
+  'crm:announceBuildReadyForAdmin',
+  'crm:announceDevelopmentEscalated',
+  'crm:announceModuleCompleted',
+  'crm:announceDevClarification',
   'crm:announceTask4Complete',
   'crm:announceM2PaymentVerified',
   'crm:routeLead',
   'crm:classifyLeadIdentity',
+  // Phase 7 (Production Launch & Handover): the entry gate, the deployment runner door, and the PM7 announcers
+  'projects:openPhaseSeven',
+  'projects:runDeployment',
+  'crm:announcePhaseSevenReady',
+  'crm:announceDeploymentApproved',
+  'crm:announceProductionValidated',
+  'crm:announceProductionValidationFailed',
+  'crm:announceHandoverReady',
+  'crm:announceProjectCompleted',
+  // Phase 7b: the Phase 7 -> Phase 8 seam (the intake reads the frozen handoff) and the Orchestrator's recorded Phase 7 routing decision
+  'projects:fillPhaseEightIntake',
+  'projects:routePhaseSevenTask',
+  // Phase 7c / 8A: a client's support message opens a ticket (it never replies); a validated production gets a DRAFT handover package (it never delivers)
+  'projects:openSupportTicketFromMessage',
+  'ui_designer:reviseDesignDirection',
+  'ui_designer:detailUIVersion',
+  'crm:routeSchedulingMessage',
+  'sales:reviewQuoteReply',
+  'ui_designer:p13GuardDesignContext',
+  'ui_prototype:planBuild',
+  'projects:attachP4uiBuild',
+  'projects:syncP4uiBuild',
+  'projects:returnClarificationAnswer',
+  'finance:matchPaymentSubmission',
+  'crm:announceMeetingBooked',
+  'crm:announceMeetingCancelled',
+  'projects:createDraftHandoverPackage',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -111,7 +182,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   // than trusted from the payload, filtered to M2 (position 2) inside the
   // handler — this is not a second gate, only a second listener on one.
   // Phase 2 Planning §2: the advance verified opens planning. The agent itself decides whether this invoice IS the advance.
-  'invoice.paid': ['projects:unlockNextMilestone', 'crm:announceM2PaymentVerified', 'project_planning:draftBlueprint', 'projects:updateClientOnPayment'],
+  'invoice.paid': ['projects:unlockNextMilestone', 'crm:announceM2PaymentVerified', 'projects:startPhaseFive', 'projects:recordM3Verified', 'projects:recordM4Verified', 'project_planning:draftBlueprint', 'projects:updateClientOnPayment'],
   'project.planning_requested': ['project_planning:draftBlueprint'],
   /** Planning §10: the planner's question goes to the client through the PM, one at a time. */
   'project.clarification_required': ['projects:askClarification'],
@@ -149,7 +220,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    */
   'project.billing_mode_confirmed': ['finance:generateM1Invoice', 'projects:askGstDetails'],
   /** Phase 2 PM §6 PM-08: where the client's payment stands, said to the client. */
-  'payment.submitted': ['projects:updateClientOnPayment'],
+  'payment.submitted': ['projects:updateClientOnPayment', 'finance:matchPaymentSubmission'],
   'payment.rejected': ['projects:updateClientOnPayment'],
   'payment.mismatched': ['projects:updateClientOnPayment'],
   /** Phase 2 Finance §4.5 — the issued bill reaches the client's email and the project group. */
@@ -302,7 +373,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   // Master §7.5 — the directions are drawn against the finalized screen list,
   // so this is the moment there is something to draw for. Phase 3 starting is
   // too early: the baseline does not exist yet.
-  'project.screen_list_finalized': ['ui_designer:designDirections'],
+  'project.screen_list_finalized': ['ui_designer:designDirections', 'ui_designer:p13GuardDesignContext'],
   /**
    * Doc 17 §17: *"Day 0: Handover and acceptance."* Accepting a handover was
    * an audit row and nothing else; §18 gives the customer success agent
@@ -358,7 +429,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * the call for a message from staff, a thread with no lead, and a lead that
    * already has a meeting open — which is the lead most likely to write again.
    */
-  'message.received': ['sales:readIntent', 'sales:readQualification', 'sales:summariseThread', 'sales:readMeetingRequest', 'sales:readLeadOutcome', 'projects:readBillingReply', 'projects:readClarificationAnswer', 'project_manager:readDesignReply'],
+  'message.received': ['sales:readIntent', 'sales:readQualification', 'sales:summariseThread', 'sales:readMeetingRequest', 'sales:readLeadOutcome', 'projects:readBillingReply', 'projects:readClarificationAnswer', 'project_manager:readDesignReply', 'projects:openSupportTicketFromMessage', 'crm:routeSchedulingMessage', 'sales:reviewQuoteReply'],
   /**
    * Doc 09 §19, and the reason it is a separate event rather than a third
    * subscriber on `message.received`: four of Doc 08 §12's twenty-two intents
@@ -521,7 +592,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * producer≠verifier contract every other completion in this codebase goes
    * through — rather than a bespoke Design-QA-only rule.
    */
-  'project.ui_version_drafted': ['quality_assurance:reviewUIVersion'],
+  'project.ui_version_drafted': ['quality_assurance:reviewUIVersion', 'ui_designer:detailUIVersion'],
   /**
    * Impl §7.2; Master's locked objective: "QA PASS → ADMIN REVIEW".
    *
@@ -529,13 +600,13 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * own row-authority check (not the payload) is what decides whether review
    * is actually raised — see `handleRequestUIVersionAdminReview`'s docblock.
    */
-  'project.ui_version_qa_reviewed': ['orchestrator:requestUIVersionAdminReview'],
+  'project.ui_version_qa_reviewed': ['orchestrator:requestUIVersionAdminReview', 'ui_designer:reviseUIVersion'],
   /**
    * PROTO §4, §8 — the Prototype Agent's first build, off the fact
    * `20260923140000_the_client_confirms_the_locked_ui.sql`'s `lock_ui_version`
    * already emits.
    */
-  'project.ui_version_locked': ['ui_prototype:build', 'crm:announceUiVersionLocked'],
+  'project.ui_version_locked': ['ui_prototype:build', 'crm:announceUiVersionLocked', 'ui_prototype:planBuild'],
   /**
    * PM4-M02, Impl §8 — `sync_ui_version_decision` has emitted this since
    * `20260923130000_admin_review_reuses_the_engine.sql` and nothing ever
@@ -571,7 +642,17 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * ui_prototype whose build it reviews (ADM-82). Off the fact
    * `record_prototype_build` already emits.
    */
-  'project.prototype_build_ready': ['quality_assurance:reviewPrototypeBuild'],
+  'project.prototype_build_ready': ['quality_assurance:reviewPrototypeBuild', 'projects:attachP4uiBuild'],
+  /**
+   * QAP §Prototype QA defect flow: a build Prototype QA sent back (qa_changes_required) is fixed by the Prototype Agent as a NEW build that
+   * is QA'd from scratch (FIXED is not VERIFIED). The workflow filters to qa_changes_required itself - the event fires for every verdict.
+   */
+  'project.prototype_qa_reviewed': ['ui_prototype:reviseBuild', 'projects:syncP4uiBuild'],
+  /**
+   * Prototype spec, Admin review: ADMIN EDIT -> PROTOTYPE AGENT -> QA -> ADMIN AGAIN (never ADMIN EDIT -> CLIENT). Fires for approved too;
+   * the workflow filters to changes_required itself.
+   */
+  'project.prototype_admin_decided': ['ui_prototype:reviseBuild', 'projects:syncP4uiBuild'],
   /**
    * Impl §7.4; Master steps 39-40 — Task 2 closes on the FINAL prototype's
    * approval. `project.deliverable_decided` (new, `20260923160000_m2_and_
@@ -584,28 +665,121 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   'project.deliverable_decided': [
     'projects:completePhaseFourOnPrototypeApproval',
     'crm:announcePrototypeChangeRequested',
+    'crm:announceBuildApproved',
     'ui_prototype:reviseBuild',
+    'project_manager:classifyPrototypeFeedback',
+    'projects:syncP4uiBuild',
   ],
   /**
    * PM4-M05, Impl §8 — off the same event `submit_deliverable` (any kind)
    * always emitted starting `20260923160000_m2_and_the_gate_it_actually_
    * needs.sql`; the handler filters to `kind = 'prototype'` itself.
    */
-  'project.deliverable_submitted': ['crm:announcePrototypeSubmitted'],
+  /**
+   * W-P3: an answer to a clarification an agent raised through `projects.p4q_raise_clarification` goes back to the agent that asked
+   * (`src/modules/p4q/clarification-return.ts`).
+   */
+  'project.p4q_clarification_answered': ['projects:returnClarificationAnswer'],
+  'project.deliverable_submitted': ['crm:announcePrototypeSubmitted', 'crm:announceBuildShared', 'projects:reopenOnSourceChange', 'projects:syncP4uiBuild'],
   /**
    * Finance §2, §5 — the M2 (20%) invoice, off the fact
    * `projects.complete_phase_four` already emits. PM4-M07 (Task 2 Complete)
    * fans out from the same event, independent of the invoicing chain.
    */
   'project.phase_four_completed': ['finance:generateM2Invoice', 'crm:announceTask2Complete'],
+  /** Phase 5 Orchestrator spec: an Admin-approved plan is routed task by task to the named specialists (held, not faked, while they are disabled). */
+  'project.development_plan_approved': ['orchestrator:routeDevelopmentPlan'],
+  /** Phase 5 Orchestrator spec section 11: QA failed or passed a development task. The handler re-reads the task, its runs and defects and records a routing decision. */
+  'project.dev_task_qa_failed': ['orchestrator:routeQaOutcome'],
+  'project.dev_task_qa_passed': ['orchestrator:routeQaOutcome'],
+  /** PM5-M01 (Phase 5 PM Agent spec): Task 3 Start, off the fact `start_phase_five` emits. */
+  'project.phase_five_started': ['crm:announcePhaseFiveStarted'],
+  /** PM5-M03: the client's feedback on a build was recorded and is awaiting classification. */
+  /** PM5-A01 / A02 / M03 / M02: ready for the Admin, escalated work, module progress, a clarification question. */
+  'project.build_ready_for_admin': ['crm:announceBuildReadyForAdmin'],
+  'project.development_escalated': ['crm:announceDevelopmentEscalated'],
+  'project.module_completed': ['crm:announceModuleCompleted'],
+  'project.dev_clarification_requested': ['crm:announceDevClarification'],
+  'project.build_feedback_received': ['crm:announceBuildFeedbackReceived', 'project_manager:suggestBuildFeedbackClass'],
+  /** PM5: what became of the feedback (defect, change request, revision, clarification). */
+  'project.build_feedback_routed': ['crm:announceBuildFeedbackRouted'],
+  /** Finance spec, Phase 6 gate: M3 verified paid in full, recorded once; the PM tells the team. */
+  'project.m3_payment_verified': ['crm:announceM3PaymentVerified', 'projects:startPhaseSix'],
   /**
    * Q-PH56 (owner, round 3) — exactly as Phase 4 above: completing Phase 5
    * (development) raises the M3 invoice and the PM's Task 3 message; completing
    * Phase 6 (testing) raises M4 and the PM's Task 4 message. Both events come
    * from `projects.complete_phase` (`20261009100000_phase_five_and_six_...`).
    */
-  'project.phase_five_completed': ['finance:generateM3Invoice', 'crm:announceTask3Complete'],
-  'project.phase_six_completed': ['finance:generateM4Invoice', 'crm:announceTask4Complete'],
+  'project.phase_five_completed': ['finance:generateM3Invoice', 'crm:announceTask3Complete', 'projects:startPhaseSix'],
+  /** P601 §55: an approved Master Test Plan is scheduled to the QA specialists (held, not faked, while they are disabled); the PM tells the team testing began. */
+  'project.master_test_plan_approved': ['projects:scheduleQaJobs', 'crm:announceTestingStarted'],
+  /** P601 §38: QA may ask the client ONE genuinely ambiguous question; the PM is told it exists. */
+  'project.qa_clarification_requested': ['crm:announceQaClarification'],
+  /** PM6: a defect found in testing is being corrected (client-safe: severity class only). */
+  'project.qa_defect_handed_off': ['crm:announceQaDefectProgress'],
+  /** PM6: the Admin approved the exact release candidate. */
+  'project.release_candidate_approved': ['crm:announceReleaseCandidateApproved'],
+  /** PM6-A01: a release candidate was frozen; an Admin is asked to review it. */
+  'project.release_candidate_created': ['crm:announceReleaseCandidateReady'],
+  /** PM6-A02: an exception to a release rule waits for the owner. */
+  'project.release_exception_requested': ['crm:announceReleaseExceptionRequested'],
+  /** PM8-M01: Phase 8 (Customer Success) started for a completed project. */
+  'project.phase_eight_started': ['crm:announcePhaseEightStarted'],
+  /** PM8-A01: a support ticket was escalated to a person. */
+  'support.ticket_escalated': ['crm:announceSupportTicketEscalated'],
+  /** PM8-A02: a support ticket missed its response or resolution target. */
+  'support.sla_breached': ['crm:announceSupportSlaBreached'],
+  /** PM8-RECOVERY: an account is at risk and a recovery plan was opened. */
+  'customer.retention_recovery_required': ['crm:announceRetentionRecoveryRequired'],
+  /** PM8-RENEWAL-DUE: a maintenance plan entered its renewal window; a review was opened, nothing was renewed. */
+  'maintenance.renewal_due': ['crm:announceMaintenanceRenewalDue'],
+  /** PM8-C01: project.maintenance_work_opened. */
+  'project.maintenance_work_opened': ['crm:announceMaintenanceWorkOpened'],
+  'project.admin_design_edit_requested': ['ui_designer:reviseDesignDirection'],
+  'project.internal_design_changes_required': ['ui_designer:reviseDesignDirection'],
+  'project.design_revision_opened': ['ui_designer:reviseDesignDirection'],
+  'meeting.booked': ['crm:announceMeetingBooked'],
+  'meeting.cancelled': ['crm:announceMeetingCancelled'],
+  /** PM8-C02: project.maintenance_qa_failed. */
+  'project.maintenance_qa_failed': ['crm:announceMaintenanceQaFailed'],
+  /** PM8-C03: project.maintenance_release_requested. */
+  'project.maintenance_release_requested': ['crm:announceMaintenanceReleaseRequested'],
+  /** PM8-C04: project.maintenance_release_approved. */
+  'project.maintenance_release_approved': ['crm:announceMaintenanceReleaseApproved'],
+  /** PM8-C05: project.maintenance_released. */
+  'project.maintenance_released': ['crm:announceMaintenanceReleased'],
+  /** PM8-C06: finance.maintenance_billing_proposed. */
+  'finance.maintenance_billing_proposed': ['crm:announceMaintenanceBillingProposed'],
+  /** PM8-C07: project.maintenance_sla_breached. */
+  'project.maintenance_sla_breached': ['crm:announceMaintenanceSlaBreached'],
+  /** PM8-C08: project.maintenance_work_stalled. */
+  'project.maintenance_work_stalled': ['crm:announceMaintenanceWorkStalled'],
+  /** PM6: the source changed after approval; testing is repeated. */
+  'project.phase_six_evidence_stale': ['crm:announceQaReverification'],
+  /** P601 §41: M4 verified paid in full, recorded once; the PM tells the team. */
+  'project.m4_payment_verified': ['crm:announceM4PaymentVerified', 'projects:openPhaseSeven'],
+  /** Phase 9: a Finance person or Admin closed the project's finances (NOT project completion); the PM tells the team. */
+  'project.financially_closed': ['crm:announceFinanciallyClosed'],
+  /** P601 §3: Phase 6 READY (once) -> the QA intake is validated and the PM announces Task 4. */
+  'project.phase_six_ready': ['projects:validateQaIntake', 'crm:announcePhaseSixReady'],
+  'project.phase_six_completed': ['finance:generateM4Invoice', 'crm:announceTask4Complete', 'projects:openPhaseSeven'],
+  /** P701 §14 Phase 7: Phase7Ready -> PM7-M01 (Task 5 start). Emitted once by `open_phase_seven`, only after Phase6Completed + the exact candidate + M4 verified. */
+  'project.phase_seven_ready': ['crm:announcePhaseSevenReady'],
+  /** P704: DeploymentApproved -> the runner door records the deployment (the executor is NOT configured: it records a blocker) + the PM tells the team approval is not deployment. */
+  'project.deployment_approved': ['projects:runDeployment', 'crm:announceDeploymentApproved', 'projects:routePhaseSevenTask'],
+  /** P706: after a ROLLBACK recovery is verified and the incident closed, the same approved candidate is redeployed through the same runner door. */
+  'project.deployment_incident_closed': ['projects:runDeployment'],
+  /** P705: ProductionValidated (QA/Release evidence, never a deployment claim) -> PM7 prepares the handover communication. */
+  'project.production_validated': ['crm:announceProductionValidated', 'projects:createDraftHandoverPackage'],
+  /** P705/P706: DeploymentValidationFailed -> a controlled, client-safe status; completion is paused. */
+  'project.production_validation_failed': ['crm:announceProductionValidationFailed', 'projects:routePhaseSevenTask'],
+  /** P707/P708: the Admin-approved package was delivered -> invite the client's formal review. */
+  'project.handover_delivered': ['crm:announceHandoverReady'],
+  /** P701/P708: ProjectCompleted (gate passed, immutable record written) -> completion + support/warranty message and the Customer Success transition. */
+  'project.completed': ['crm:announceProjectCompleted', 'projects:fillPhaseEightIntake'],
+  /** P703: a Phase 7 failure is triaged by the Orchestrator's recorded routing decision (held while the agents are disabled). Completion pause and the incident are the database's. */
+  'project.deployment_failed': ['projects:routePhaseSevenTask'],
   /**
    * Audit 1.2/1.3 (docs/AGENCYOS_BUSINESS_PHASE_1_4_AUDIT.json), Implementation
    * Plan Phase 1 items 1 and 3 — the two gaps the audit named "no
@@ -643,12 +817,47 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:askFinalDesignConfirmation': 'pm.design_final_ask',
   'projects:startPhaseFour': 'phase_four.start',
   'orchestrator:routeTask2Design': 'phase_four.route_task2_design',
+  'orchestrator:routeDevelopmentPlan': 'development.route_plan',
+  'orchestrator:routeQaOutcome': 'development.route_qa_outcome',
   'quality_assurance:reviewUIVersion': 'ui_version.qa_review',
   'orchestrator:requestUIVersionAdminReview': 'ui_version.request_admin_review',
   'ui_prototype:build': 'prototype.build',
   'ui_prototype:reviseBuild': 'prototype.build_revise',
+  'project_manager:classifyPrototypeFeedback': 'prototype.feedback_classify',
   'quality_assurance:reviewPrototypeBuild': 'prototype.qa_review',
   'projects:completePhaseFourOnPrototypeApproval': 'phase_four.complete',
+  'projects:startPhaseFive': 'phase_five.start',
+  'projects:recordM3Verified': 'm3.record_verified',
+  'projects:startPhaseSix': 'phase_six.start',
+  'projects:scheduleQaJobs': 'qa.schedule_jobs',
+  'projects:reopenOnSourceChange': 'qa.reopen_on_source_change',
+  'crm:announceTestingStarted': 'testing_started.announce',
+  'crm:announceQaClarification': 'qa_clarification.announce',
+  'crm:announceQaDefectProgress': 'qa_defect_progress.announce',
+  'projects:recordM4Verified': 'm4.record_verified',
+  'crm:announceReleaseCandidateApproved': 'release_candidate_approved.announce',
+  'crm:announceReleaseCandidateReady': 'release_candidate_ready.announce',
+  'crm:announceReleaseExceptionRequested': 'release_exception_requested.announce',
+  'crm:announcePhaseEightStarted': 'phase_eight_started.announce',
+  'crm:announceSupportTicketEscalated': 'support_ticket_escalated.announce',
+  'crm:announceSupportSlaBreached': 'support_sla_breached.announce',
+  'crm:announceRetentionRecoveryRequired': 'retention_recovery_required.announce',
+  'crm:announceMaintenanceRenewalDue': 'maintenance_renewal_due.announce',
+  'crm:announceMaintenanceWorkOpened': 'maintenance_work_opened.announce',
+  'crm:announceMaintenanceQaFailed': 'maintenance_qa_failed.announce',
+  'crm:announceMaintenanceReleaseRequested': 'maintenance_release_requested.announce',
+  'crm:announceMaintenanceReleaseApproved': 'maintenance_release_approved.announce',
+  'crm:announceMaintenanceReleased': 'maintenance_released.announce',
+  'crm:announceMaintenanceBillingProposed': 'maintenance_billing_proposed.announce',
+  'crm:announceMaintenanceSlaBreached': 'maintenance_sla_breached.announce',
+  'crm:announceMaintenanceWorkStalled': 'maintenance_work_stalled.announce',
+  'crm:announceQaReverification': 'qa_reverification.announce',
+  'crm:announceM4PaymentVerified': 'm4_verified.announce',
+  'crm:announceFinanciallyClosed': 'financially_closed.announce',
+  'projects:validateQaIntake': 'phase_six.validate_intake',
+  'crm:announcePhaseSixReady': 'phase_six_ready.announce',
+  'crm:announceM3PaymentVerified': 'm3_verified.announce',
+  'crm:announceBuildFeedbackRouted': 'build_feedback_routed.announce',
   'finance:generateM1Invoice': 'invoice.generate_m1',
   'finance:deliverIssuedInvoice': 'invoice.deliver',
   'finance:raiseFreeMaintenance': 'invoice.free_maintenance',
@@ -674,6 +883,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'ui_designer:draftUIVersion': 'ui.version_draft',
   'ui_designer:reviseUIVersion': 'ui.version_revise',
   'project_manager:classifyClientFeedback': 'ui_version.classify_client_feedback',
+  'project_manager:suggestBuildFeedbackClass': 'build_feedback.suggest_classification',
   'project_manager:readDesignReply': 'design.read_reply',
   'sales:readIntent': 'message.intent',
   'sales:readMeetingRequest': 'meeting.request_read',
@@ -705,10 +915,42 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'crm:announcePrototypeChangeRequested': 'prototype_change_requested.announce',
   'crm:announceTask2Complete': 'task2_complete.announce',
   'crm:announceTask3Complete': 'task3_complete.announce',
+  'crm:announcePhaseFiveStarted': 'phase_five_started.announce',
+  'crm:announceBuildShared': 'build_shared.announce',
+  'crm:announceBuildFeedbackReceived': 'build_feedback.announce',
+  'crm:announceBuildApproved': 'build_approved.announce',
+  'crm:announceBuildReadyForAdmin': 'build_ready_for_admin.announce',
+  'crm:announceDevelopmentEscalated': 'development_escalated.announce',
+  'crm:announceModuleCompleted': 'module_completed.announce',
+  'crm:announceDevClarification': 'dev_clarification.announce',
   'crm:announceTask4Complete': 'task4_complete.announce',
   'crm:announceM2PaymentVerified': 'm2_payment_verified.announce',
   'crm:routeLead': 'lead.route',
   'crm:classifyLeadIdentity': 'lead.identity_classify',
+  'projects:openPhaseSeven': 'phase_seven.open',
+  'projects:runDeployment': 'phase_seven.run_deployment',
+  'crm:announcePhaseSevenReady': 'phase_seven_ready.announce',
+  'crm:announceDeploymentApproved': 'deployment_approved.announce',
+  'crm:announceProductionValidated': 'production_validated.announce',
+  'crm:announceProductionValidationFailed': 'production_validation_failed.announce',
+  'crm:announceHandoverReady': 'handover_ready.announce',
+  'crm:announceProjectCompleted': 'project_completed.announce',
+  'projects:fillPhaseEightIntake': 'phase_eight_intake.fill',
+  'projects:routePhaseSevenTask': 'phase_seven.route_task',
+  'projects:openSupportTicketFromMessage': 'support_ticket.open_from_message',
+  'ui_designer:reviseDesignDirection': 'design.revise',
+  'ui_designer:detailUIVersion': 'ui.design_detail',
+  'crm:routeSchedulingMessage': 'scheduling_message.route',
+  'sales:reviewQuoteReply': 'quote_reply.review',
+  'ui_designer:p13GuardDesignContext': 'design.context_guard',
+  'ui_prototype:planBuild': 'prototype.plan',
+  'projects:attachP4uiBuild': 'p4ui.attach_build',
+  'projects:syncP4uiBuild': 'p4ui.sync_build',
+  'projects:returnClarificationAnswer': 'p4q.clarification_return',
+  'finance:matchPaymentSubmission': 'payment.p4q_match',
+  'crm:announceMeetingBooked': 'meeting_booked.announce',
+  'crm:announceMeetingCancelled': 'meeting_cancelled.announce',
+  'projects:createDraftHandoverPackage': 'handover.create_draft',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);
@@ -784,6 +1026,11 @@ export type PlannedJob = {
  * own carry. Authority never lives in this filter.
  */
 const HANDLER_RELEVANT: Partial<Record<Handler, (event: OutboxEvent) => boolean>> = {
+  // `project.deliverable_submitted` / `_decided` fire for every deliverable kind: only a development build is these handlers' business. Like the
+  // filters below, this decides only whether to SPEND a job; each handler re-checks the row itself.
+  'projects:reopenOnSourceChange': (event) => (event.payload as { kind?: string } | null)?.kind === 'build',
+  'crm:announceBuildShared': (event) => (event.payload as { kind?: string } | null)?.kind === 'build',
+  'crm:announceBuildApproved': (event) => (event.payload as { kind?: string } | null)?.kind === 'build',
   'crm:dispatchApprovedQuotation': (event) =>
     (event.payload as { subjectType?: string } | null)?.subjectType === 'proposal',
   'sales:reviseQuotation': (event) =>

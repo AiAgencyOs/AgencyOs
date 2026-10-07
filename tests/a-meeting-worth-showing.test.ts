@@ -157,11 +157,12 @@ describe('C. conflicts are AgencyOS bookings that overlap, and nothing else', ()
 });
 
 describe('D. what is said about a reminder', () => {
-  test('a booked meeting with a queued job: queued, and no sender exists', () => {
+  test('a booked meeting with a queued job: queued for its time, and a sender now drains it', () => {
     const said = reminderState(job(), meeting());
     assert.match(said.text, /Queued for 2026-09-13T09:20/);
-    assert.match(said.text, /no sender is registered/);
-    assert.equal(said.tone, 'warning');
+    assert.match(said.text, /sent to the internal group then/);
+    assert.doesNotMatch(said.text, /no sender is registered/);
+    assert.equal(said.tone, 'info');
   });
 
   test('a meeting that is not booked has no reminder, and that is not an absence', () => {

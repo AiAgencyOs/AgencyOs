@@ -225,8 +225,8 @@ describe('G. the guards every table and door in this repository carries', () => 
 
 describe('H. it is reachable — the defect this repository has found repeatedly', () => {
   test('the catalog wires both events to their handlers', () => {
-    assert.deepEqual(SUBSCRIPTIONS['project.ui_version_locked'], ['ui_prototype:build', 'crm:announceUiVersionLocked']);
-    assert.deepEqual(SUBSCRIPTIONS['project.prototype_build_ready'], ['quality_assurance:reviewPrototypeBuild']);
+    assert.deepEqual(SUBSCRIPTIONS['project.ui_version_locked'], ['ui_prototype:build', 'crm:announceUiVersionLocked', 'ui_prototype:planBuild']);
+    assert.deepEqual(SUBSCRIPTIONS['project.prototype_build_ready'], ['quality_assurance:reviewPrototypeBuild', 'projects:attachP4uiBuild']);
     assert.ok(HANDLERS.includes('ui_prototype:build'));
     assert.ok(HANDLERS.includes('quality_assurance:reviewPrototypeBuild'));
     assert.equal(HANDLER_JOB_KIND['ui_prototype:build'], 'prototype.build');
@@ -242,6 +242,6 @@ describe('H. it is reachable — the defect this repository has found repeatedly
 
   test('the runner drains the QA job kind', () => {
     assert.match(RUNNER, /const PROTOTYPE_QA_JOB_KIND = HANDLER_JOB_KIND\['quality_assurance:reviewPrototypeBuild'\]/);
-    assert.match(RUNNER, /handleReviewPrototypeBuild/);
+    assert.match(RUNNER, /handleP4qReviewPrototypeBuild/);
   });
 });

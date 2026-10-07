@@ -72,6 +72,8 @@ export async function startTask(input: TaskIdInput): Promise<Result<{ started: t
       return err('CONFLICT', row.detail || START_REQUIREMENT_MESSAGE);
     case 'dependencies_open':
       return err('CONFLICT', row.detail || START_DEPENDENCY_MESSAGE);
+    case 'm2_not_verified':
+      return err('CONFLICT', row.detail || 'Phase 5 cannot start until the M2 payment is verified paid by an Admin.');
     case 'project_role_observer_read_only':
     case 'project_role_contributor_own_tasks':
       return err('FORBIDDEN', projectRoleDbProblem(row.outcome) ?? 'Your project role does not allow this.');

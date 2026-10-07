@@ -1,3 +1,4 @@
+import { PM4_TEMPLATES } from '@/modules/p4q/pm4-templates';
 import { z } from 'zod';
 
 import { decoderSafeSchema } from '@/lib/ai/schema';
@@ -1847,3 +1848,489 @@ export const stopFollowUpSequenceSchema = z.object({
 export const resumeFollowUpSequenceSchema = z.object({ sequenceId: z.uuid() });
 export type StopFollowUpSequenceInput = z.infer<typeof stopFollowUpSequenceSchema>;
 export type ResumeFollowUpSequenceInput = z.infer<typeof resumeFollowUpSequenceSchema>;
+
+
+/** PM5-M01 - Task 3 Start (Phase 5 PM Agent spec). */
+export const phaseFiveStartedEventSchema = z
+  .object({ projectId: z.uuid() })
+  .strip();
+export function phaseFiveStartedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Task 3 has started: full development.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Development builds against the exact approved UI, prototype and scope that were locked as its baseline.',
+    'Open the project in AgencyOS.',
+  ].join('\n');
+}
+
+/** PM5-M02 - a development build is ready for the client to test. */
+export function buildSharedAnnouncementFor(input: { projectName: string | null; version: number }): string {
+  return [
+    `Development build v${input.version} has passed QA, code review and Admin approval and is ready for the client to test.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Share exactly this build; any feedback will be classified before anything is changed.',
+  ].join('\n');
+}
+
+/** PM5-M03 - the client's feedback on a build has been received. */
+export const buildFeedbackReceivedEventSchema = z
+  .object({ projectId: z.uuid(), deliverableId: z.uuid(), version: z.number() })
+  .strip();
+export function buildFeedbackReceivedAnnouncementFor(input: { projectName: string | null; version: number }): string {
+  return [
+    `Client feedback on development build v${input.version} has been received and is waiting to be classified.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'A bug or missed requirement becomes a defect; a new feature becomes a Change Request, never a free fix.',
+  ].join('\n');
+}
+
+/** PM5-M04 - the client approved the exact final development build. */
+export function buildApprovedAnnouncementFor(input: { projectName: string | null; version: number }): string {
+  return [
+    `The client approved development build v${input.version} as the final build.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Phase 5 can complete once every other condition holds.',
+  ].join('\n');
+}
+
+
+/** PM5: M3 verified - Phase 6's financial gate is open. */
+export const m3PaymentVerifiedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function m3PaymentVerifiedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'M3 (30%) has been verified paid by an Admin. Phase 6 (Master QA) is financially available.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'A claim, a proof or a match would not have opened it; only the verification did.',
+  ].join('\n');
+}
+
+/** PM5: client feedback on a build was classified and routed. The category is named, the client's words are not repeated. */
+export const buildFeedbackRoutedEventSchema = z
+  .object({ projectId: z.uuid(), deliverableId: z.uuid(), classification: z.string() })
+  .strip();
+export function buildFeedbackRoutedAnnouncementFor(input: { projectName: string | null; classification: string }): string {
+  const where: Record<string, string> = {
+    bug: 'a defect to fix and re-verify',
+    missed_requirement: 'a defect to fix and re-verify',
+    ui_mismatch: 'a defect against the approved UI',
+    included_small_revision: 'the controlled revision flow',
+    clarification: 'a question to resolve before anything changes',
+    possible_scope_change: 'a Change Request for evaluation',
+    new_feature: 'a Change Request: it is new work, not a free fix',
+  };
+  return [
+    `Client feedback was classified as ${input.classification.replace(/_/g, ' ')} and routed to ${where[input.classification] ?? 'review'}.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+  ].join('\n');
+}
+
+
+/** PM6-M01 - Task 4 Start (Phase 6 PM Agent spec). Client-safe: no test internals, no agent or provider names. */
+export const phaseSixReadyEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function phaseSixReadyAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Task 4 has started: independent testing and quality assurance of the exact build you approved.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'We will tell you if anything needs your input; otherwise the next update is when testing completes.',
+  ].join('\n');
+}
+
+
+/** PM6: the exact release candidate was approved by an Admin (internal): Phase 6 may complete. */
+export const releaseCandidateApprovedEventSchema = z.object({ projectId: z.uuid(), version: z.number() }).strip();
+export function releaseCandidateApprovedAnnouncementFor(input: { projectName: string | null; version: number }): string {
+  return [
+    `Release candidate v${input.version} was approved by an Admin after independent testing.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'It is exactly the build that was tested; if the source changes, a new candidate and a new approval are needed.',
+  ].join('\n');
+}
+
+/** PM6: M4 verified - the Phase 7 financial gate is open. */
+export const m4PaymentVerifiedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function m4PaymentVerifiedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'M4 (20%) has been verified paid by an Admin. Phase 7 (launch and handover) is financially available.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'A claim, a proof or a match would not have opened it; only the verification did.',
+  ].join('\n');
+}
+
+
+/** Phase 9: the project's finances were closed (internal). It is NOT project completion. */
+export const financiallyClosedEventSchema = z.object({ projectId: z.uuid(), mode: z.enum(['zero_balance', 'approved_exception']) }).strip();
+export function financiallyClosedAnnouncementFor(input: { projectName: string | null; mode: 'zero_balance' | 'approved_exception' }): string {
+  return [
+    input.mode === 'zero_balance'
+      ? 'Finance closed this project\'s finances at a zero balance.'
+      : 'Finance closed this project\'s finances against an exception an Admin approved for the remaining balance.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'This is the financial close only. QA, production validation, handover and the client\'s acceptance still decide whether the project is complete.',
+  ].join('\n');
+}
+
+/** PM6: testing has begun on a plan an Admin approved. Client-safe: no test internals, tools, agents or providers. */
+export const masterTestPlanApprovedEventSchema = z.object({ projectId: z.uuid(), version: z.number() }).strip();
+export function testingStartedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Independent testing of the build you approved has begun against an approved test plan.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'We will contact you only if something genuinely needs your decision; otherwise the next update is when testing completes.',
+  ].join('\n');
+}
+
+
+/** PM6: QA has a genuinely ambiguous expected behaviour to clarify. The PM reads the question from the row; the event carries only that one exists. */
+export const qaClarificationRequestedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function qaClarificationAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Testing found an expected behaviour that is genuinely ambiguous. One question is waiting to be put to the client.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Ask it as written, one question at a time, and record the answer; QA will not guess.',
+  ].join('\n');
+}
+
+/** PM6: a defect found in testing is being corrected. Client-safe: severity class only, never the finding. */
+export const qaDefectHandedOffEventSchema = z.object({ projectId: z.uuid(), sLevel: z.number() }).strip();
+export function qaDefectProgressAnnouncementFor(input: { projectName: string | null; sLevel: number }): string {
+  return [
+    input.sLevel <= 1
+      ? 'Testing found a serious issue. It is being corrected and will be independently retested before anything is approved.'
+      : 'Testing found an issue. It is being corrected and will be independently retested.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'No action is needed from the client.',
+  ].join('\n');
+}
+
+
+/**
+ * The PM5 / PM6 milestone messages and the VERSION of the wording each was built from. Change a template's text and you raise its version here;
+ * `crm.pm_message_log` then says which wording every message that went out used. Keyed by the externalRef prefix the announcer already writes.
+ */
+/** PM5-A01 - a build passed QA on its exact commit and waits for an Admin decision. */
+export const buildReadyForAdminEventSchema = z.object({ projectId: z.uuid(), deliverableId: z.uuid(), version: z.number() }).strip();
+export function buildReadyForAdminAnnouncementFor(input: { projectName: string | null; version: number }): string {
+  return [
+    `Development build v${input.version} passed QA and is waiting for an Admin decision.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Open the build\'s review package, check the exact commit, then approve it or request changes.',
+  ].join('\n');
+}
+
+/** PM5-A02 - work the Orchestrator could not place, or that failed past its rules, waits for a person. */
+export const developmentEscalatedEventSchema = z.object({ projectId: z.uuid(), taskId: z.uuid() }).strip();
+export function developmentEscalatedAnnouncementFor(input: { projectName: string | null; taskTitle: string | null; cause: string }): string {
+  return [
+    `A development task needs a decision: ${input.taskTitle ?? 'a task'}.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    `Why: ${input.cause.replace(/_/g, ' ')}.`,
+    'Open the project: it is listed under "Waiting for a decision" with what was considered.',
+  ].join('\n');
+}
+
+/** PM5-M03 - progress, client-safe: a module is complete. Names the module, never a branch, agent or model. */
+export const moduleCompletedEventSchema = z.object({ projectId: z.uuid(), moduleId: z.uuid() }).strip();
+export function moduleCompletedAnnouncementFor(input: { projectName: string | null; moduleName: string | null }): string {
+  return [
+    `Progress: the ${input.moduleName ?? 'a'} module is complete.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Its tasks are done and tested. The next milestone is a build for you to test.',
+  ].join('\n');
+}
+
+/** PM5-M02 - one question awaits the client before development can continue. The question itself is read from the row. */
+export const devClarificationRequestedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function devClarificationAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Development needs one answer from the client before work can continue.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Put the question to the client as written, one at a time, and record the answer; nothing is built on a guess.',
+  ].join('\n');
+}
+
+/** PM5-M06 - a revised build, after the client's feedback, is ready to test again. */
+export function buildRevisedAnnouncementFor(input: { projectName: string | null; version: number }): string {
+  return [
+    `Revised development build v${input.version} has passed QA, code review and Admin approval and is ready for the client to test again.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Share exactly this build and say which of their feedback it answers.',
+  ].join('\n');
+}
+
+export const PM_TEMPLATES: Readonly<Record<string, { milestone: string; version: number }>> = {
+  ...PM4_TEMPLATES,
+  'phase-five-started': { milestone: 'PM5-M01', version: 1 },
+  'dev-clarification': { milestone: 'PM5-M02', version: 1 },
+  'module-progress': { milestone: 'PM5-M03', version: 1 },
+  'build-revised': { milestone: 'PM5-M06', version: 1 },
+  'build-ready-for-admin': { milestone: 'PM5-A01', version: 1 },
+  'development-escalated': { milestone: 'PM5-A02', version: 1 },
+  'build-shared': { milestone: 'PM5-M04', version: 1 },
+  'build-feedback': { milestone: 'PM5-M05', version: 1 },
+  'build-approved': { milestone: 'PM5-M07', version: 1 },
+  'build-feedback-routed': { milestone: 'PM5-FEEDBACK-ROUTED', version: 1 },
+  'm3-payment-verified': { milestone: 'PM5-M3-VERIFIED', version: 1 },
+  'phase-six-ready': { milestone: 'PM6-M01', version: 1 },
+  'testing-started': { milestone: 'PM6-TESTING-STARTED', version: 1 },
+  'qa-clarification': { milestone: 'PM6-QA-QUESTION', version: 1 },
+  'qa-defect-progress': { milestone: 'PM6-DEFECT-PROGRESS', version: 1 },
+  'release-candidate-approved': { milestone: 'PM6-CANDIDATE-APPROVED', version: 1 },
+  'm4-payment-verified': { milestone: 'PM6-M4-VERIFIED', version: 1 },
+  'financially-closed': { milestone: 'PM9-FINANCIALLY-CLOSED', version: 1 },
+  'release-candidate-ready': { milestone: 'PM6-A01', version: 1 },
+  'release-exception-requested': { milestone: 'PM6-A02', version: 1 },
+  'qa-reverification': { milestone: 'PM6-REVERIFICATION', version: 1 },
+  'phase-seven-ready': { milestone: 'PM7-M01', version: 1 },
+  'deployment-approved': { milestone: 'PM7-DEPLOY-APPROVED', version: 1 },
+  'production-validated': { milestone: 'PM7-VALIDATED', version: 1 },
+  'production-validation-failed': { milestone: 'PM7-INCIDENT', version: 1 },
+  'handover-ready': { milestone: 'PM7-HANDOVER-READY', version: 1 },
+  'project-completed': { milestone: 'PM7-COMPLETE', version: 1 },
+  'task3-complete': { milestone: 'PM5-TASK3-COMPLETE', version: 1 },
+  'task4-complete': { milestone: 'PM6-M07', version: 1 },
+  'phase-eight-started': { milestone: 'PM8-M01', version: 1 },
+  'support-ticket-escalated': { milestone: 'PM8-A01', version: 1 },
+  'support-sla-breached': { milestone: 'PM8-A02', version: 1 },
+  'retention-recovery-required': { milestone: 'PM8-RECOVERY', version: 1 },
+  'maintenance-renewal-due': { milestone: 'PM8-RENEWAL-DUE', version: 1 },
+  'maintenance-work-opened': { milestone: 'PM8-C01', version: 1 },
+  'maintenance-qa-failed': { milestone: 'PM8-C02', version: 1 },
+  'maintenance-release-requested': { milestone: 'PM8-C03', version: 1 },
+  'maintenance-release-approved': { milestone: 'PM8-C04', version: 1 },
+  'maintenance-released': { milestone: 'PM8-C05', version: 1 },
+  'maintenance-billing-proposed': { milestone: 'PM8-C06', version: 1 },
+  'maintenance-sla-breached': { milestone: 'PM8-C07', version: 1 },
+  'maintenance-work-stalled': { milestone: 'PM8-C08', version: 1 },
+};
+
+export function pmTemplateFor(externalRef: string): { milestone: string; version: number } | null {
+  return PM_TEMPLATES[externalRef.split(':')[0] ?? ''] ?? null;
+}
+
+
+/** PM6-A01 - a release candidate (one exact commit and artifact) was frozen: an Admin reviews it. Names the version only, never a finding. */
+export const releaseCandidateCreatedEventSchema = z.object({ projectId: z.uuid(), version: z.number() }).strip();
+export function releaseCandidateReadyAnnouncementFor(input: { projectName: string | null; version: number }): string {
+  return [
+    `Release candidate v${input.version} is ready for the Admin's review.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'It is one exact build. Open the project to see the readiness summary and decide.',
+  ].join('\n');
+}
+
+/** PM6-A02 - a person is asked to decide an exception to a release rule. The rule and the reason are read from the record, never put in the message. */
+export const releaseExceptionRequestedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function releaseExceptionRequestedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'A release exception is waiting for the owner\'s decision.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Open the project: the request, its limits and its expiry are listed under the release candidate. Nothing is released until it is decided.',
+  ].join('\n');
+}
+
+/** PM6 - the source changed after approval: testing is being repeated on the new build. Client-safe: no finding, no commit, no agent. */
+export const phaseSixEvidenceStaleEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function qaReverificationAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'The build changed after it was approved, so testing is being repeated on the new version.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'No action is needed from the client. We will confirm when the new version has been verified.',
+  ].join('\n');
+}
+
+/**
+ * PM7 (Phase 7 PM Agent spec, P702): the PM COMMUNICATES authoritative state and never creates it. Each message below is grounded in a fact the database
+ * already holds (an event emitted by a Phase 7 door), is client-safe (no secret, stack trace, model, provider, commit or agent name) and never claims more than
+ * the fact: approval is not deployment, deployment is not validation, validation is not handover acceptance, acceptance is not completion.
+ */
+export const phaseSevenReadyEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function phaseSevenReadyAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Task 5, Production Launch and Handover, is ready to begin.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'The tested build has been approved and the final payment is verified. Nothing has been deployed yet: a deployment plan comes first, and the Admin decides.',
+  ].join('\n');
+}
+
+export const deploymentApprovedEventSchema = z.object({ projectId: z.uuid(), version: z.number().optional() }).strip();
+export function deploymentApprovedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'The Admin approved deploying the exact approved build.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Approval is not deployment: the release still has to run and then be verified in production. Do not tell the client it is released until that verification is recorded.',
+  ].join('\n');
+}
+
+export const productionValidatedEventSchema = z.object({ projectId: z.uuid(), deploymentId: z.uuid().optional() }).strip();
+export function productionValidatedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'The release was verified in production.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Prepare the handover communication. The project is not complete yet: the handover package must be approved, delivered and formally accepted first.',
+  ].join('\n');
+}
+
+export const productionValidationFailedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function productionValidationFailedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'A check on the release did not pass, so completion is paused while the team resolves it.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Client-safe wording only: we found an issue while verifying the release and are resolving it; we will confirm when it has been verified. Do not describe the cause and do not call the release verified.',
+  ].join('\n');
+}
+
+export const handoverDeliveredEventSchema = z.object({ projectId: z.uuid(), version: z.number() }).strip();
+export function handoverReadyAnnouncementFor(input: { projectName: string | null; version: number }): string {
+  return [
+    `Handover package v${input.version} was approved by the Admin and is ready for the client to review.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Share exactly this version. A casual "looks good" is not acceptance: ask for the formal acceptance and keep the evidence. Credentials are never sent in chat; use the secure transfer.',
+  ].join('\n');
+}
+
+export const projectCompletedEventSchema = z.object({ projectId: z.uuid(), completionRecordId: z.uuid().optional() }).strip();
+export function projectCompletedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'The project is complete: it was verified in production, the handover was accepted and the final payment is cleared.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Send the completion and support/warranty message, then hand over to Customer Success. State only what the completion record says.',
+  ].join('\n');
+}
+
+// ── Phase 8A (Customer Success, Support, Upsell): internal-channel announcements ───────────────────────────────────────────────────────────
+// Every one goes to the INTERNAL channel, names only the project, and points at the record. None carries a ticket's text, a client's words, a health
+// signal, a price or an agent. Nothing here is ever sent to a client.
+
+/** PM8-M01 - Phase 8 started: a person defined the warranty window and the Customer Success owner was set. */
+export const phaseEightStartedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function phaseEightStartedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Phase 8 (Customer Success) has started for a completed project.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'The post-handover check-in is due. Open the project to see the warranty window and the support queue.',
+  ].join('\n');
+}
+
+/** PM8-A01 - a support ticket was escalated to a person. The reason stays on the ticket. */
+export const supportTicketEscalatedEventSchema = z.object({ projectId: z.uuid(), ticketId: z.uuid() }).strip();
+export function supportTicketEscalatedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'A support ticket was escalated and waits for a person.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Open the project: the ticket, the reason and its history are on the record.',
+  ].join('\n');
+}
+
+/** PM8-A02 - a support ticket missed a target. Which target stays on the ticket; the message never says who is late. */
+export const supportSlaBreachedEventSchema = z.object({ projectId: z.uuid(), ticketId: z.uuid(), kind: z.enum(['response', 'resolution']) }).strip();
+export function supportSlaBreachedAnnouncementFor(input: { projectName: string | null; kind: 'response' | 'resolution' }): string {
+  return [
+    `A support ticket missed its ${input.kind} target.`,
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'It has been escalated to a person. Open the project to see the ticket and its clock.',
+  ].join('\n');
+}
+
+/** PM8-RECOVERY - an account is at risk or critical and a recovery plan was opened. The signals are read from the health snapshot, never put in the message. */
+export const retentionRecoveryRequiredEventSchema = z.object({ projectId: z.uuid(), planId: z.uuid(), status: z.enum(['at_risk', 'critical']) }).strip();
+export function retentionRecoveryRequiredAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'An account needs service recovery before any commercial outreach.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'A recovery plan is open and needs an owner, a root cause and a deadline. The contributing signals are on the project.',
+  ].join('\n');
+}
+
+/** PM8-RENEWAL-DUE - a maintenance plan entered its renewal window. A review was opened; nothing was renewed, re-dated or sent. */
+export const maintenanceRenewalDueEventSchema = z.object({ projectId: z.uuid(), planId: z.uuid(), endsOn: z.string().optional() }).strip();
+export function maintenanceRenewalDueAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'A maintenance plan is approaching its renewal date.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'A renewal review is open. Nothing has been renewed or sent: a person proposes the renewal.',
+  ].join('\n');
+}
+
+/**
+ * PM8-C01..C08 - the post-launch maintenance events that were declared and emitted but had no subscriber. Internal channel only; none of them names a
+ * commit, a model, an agent, an amount, a client's words or a person. Each says what happened on the record and what a person does next.
+ */
+const projectLine = (name: string | null) => `Project: ${name ?? 'an unnamed project'}`;
+
+export const maintenanceWorkOpenedEventSchema = z.object({ projectId: z.uuid(), kind: z.enum(['hotfix', 'patch', 'enhancement']).optional(), emergency: z.boolean().optional() }).strip();
+export function maintenanceWorkOpenedAnnouncementFor(input: { projectName: string | null; emergency?: boolean }): string {
+  return [
+    input.emergency ? 'Emergency maintenance work was opened.' : 'Post-launch maintenance work was opened.',
+    projectLine(input.projectName),
+    'It is tied to an approved defect, covered ticket or change request. Nothing has been built or released yet.',
+  ].join('\n');
+}
+
+export const maintenanceQaFailedEventSchema = z.object({ projectId: z.uuid(), category: z.enum(['targeted', 'regression', 'security']).optional() }).strip();
+export function maintenanceQaFailedAnnouncementFor(input: { projectName: string | null; category?: 'targeted' | 'regression' | 'security' }): string {
+  return [
+    `A maintenance change did not pass its ${input.category ?? 'independent'} check.`,
+    projectLine(input.projectName),
+    'It has gone back to the developer and a defect is recorded. It cannot be released until it passes again.',
+  ].join('\n');
+}
+
+export const maintenanceReleaseRequestedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function maintenanceReleaseRequestedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'A maintenance change is waiting for release approval.',
+    projectLine(input.projectName),
+    'An Admin who did not build or request it decides. Nothing is deployed by approving it here.',
+  ].join('\n');
+}
+
+export const maintenanceReleaseApprovedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function maintenanceReleaseApprovedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'A maintenance change was approved for release.',
+    projectLine(input.projectName),
+    'A person deploys it through the normal process and records the deployment and its smoke check.',
+  ].join('\n');
+}
+
+export const maintenanceReleasedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function maintenanceReleasedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'A maintenance change was recorded as released.',
+    projectLine(input.projectName),
+    'The deployment and smoke evidence are on the record. The client has not been told by this message.',
+  ].join('\n');
+}
+
+export const maintenanceBillingProposedEventSchema = z.object({ projectId: z.uuid(), kind: z.enum(['maintenance_invoice', 'change_request_invoice', 'payment_reminder']).optional() }).strip();
+export function maintenanceBillingProposedAnnouncementFor(input: { projectName: string | null; kind?: 'maintenance_invoice' | 'change_request_invoice' | 'payment_reminder' }): string {
+  const what = input.kind === 'payment_reminder' ? 'A payment reminder draft is ready' : input.kind === 'change_request_invoice' ? 'A change request billing draft is ready' : 'A maintenance billing draft is ready';
+  return [
+    `${what} for a person to decide.`,
+    projectLine(input.projectName),
+    'No invoice was created, no reminder was sent and no payment was recorded.',
+  ].join('\n');
+}
+
+export const maintenanceSlaBreachedEventSchema = z.object({ projectId: z.uuid(), workItemId: z.uuid(), priority: z.enum(['p0', 'p1', 'p2', 'p3']).optional() }).strip();
+export function maintenanceSlaBreachedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'A maintenance work item passed its resolution target.',
+    projectLine(input.projectName),
+    'An Admin is asked to acknowledge it and decide what happens next.',
+  ].join('\n');
+}
+
+export const maintenanceWorkStalledEventSchema = z.object({ projectId: z.uuid(), workItemId: z.uuid(), reason: z.enum(['no_independent_approver', 'no_independent_qa', 'authorization_invalid', 'inactive']).optional() }).strip();
+export function maintenanceWorkStalledAnnouncementFor(input: { projectName: string | null; reason?: string }): string {
+  const why =
+    input.reason === 'no_independent_approver' ? 'nobody independent of the author can approve it'
+    : input.reason === 'no_independent_qa' ? 'nobody independent of the author can test it'
+    : input.reason === 'authorization_invalid' ? 'the record that authorized it is no longer valid'
+    : 'it has not moved for as long as the stall setting allows';
+  return [
+    `A maintenance work item cannot move: ${why}.`,
+    projectLine(input.projectName),
+    'Its status is unchanged. A person decides whether to reassign, re-authorize or cancel it.',
+  ].join('\n');
+}

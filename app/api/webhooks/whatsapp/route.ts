@@ -2,8 +2,10 @@ import { after, NextResponse, type NextRequest } from 'next/server';
 
 import { nudgeRunner } from '@/lib/jobs/nudge';
 import { createAdminClient } from '@/lib/db/admin';
+import { limitPublicRoute } from '@/lib/security/rate-limit';
 import { resolveSecret } from '@/lib/secrets/resolve';
 import { newCorrelationId } from '@/lib/errors';
+import { admitDelivery, bodyEventKey, rejectDelivery, settleDelivery } from '@/lib/p13/webhook-guard';
 import { parseDelivery } from '@/lib/whatsapp/payload';
 import {
   authorizeSignature,
@@ -162,6 +164,9 @@ export async function GET(request: NextRequest) {
  * carried nothing to store, and `rejected` is content that did not survive.
  */
 export async function POST(request: NextRequest) {
+  // P1-DOD-064: before the body is read. Generous (a provider may redeliver a backlog); it exists to stop a flood, not to shape normal traffic. Fails open.
+  const blocked = await limitPublicRoute(request, createAdminClient(), 'webhook-whatsapp', 1200, 60);
+  if (blocked) return blocked;
   const WHATSAPP_APP_SECRET = (await resolveSecret('WHATSAPP_APP_SECRET')) ?? undefined;
   const correlationId = newCorrelationId();
 
@@ -181,6 +186,8 @@ export async function POST(request: NextRequest) {
 
   const auth = authorizeSignature(rawBody, request.headers.get(SIGNATURE_HEADER), WHATSAPP_APP_SECRET);
   if (!auth.ok) {
+    // W5: a rejected signature is on record too (best effort; the answer is unchanged).
+    if (auth.status === 401) await rejectDelivery(createAdminClient(), { provider: 'whatsapp', signatureHeader: request.headers.get(SIGNATURE_HEADER), body: rawBody });
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
@@ -191,6 +198,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: MALFORMED, correlationId }, { status: 400 });
   }
 
+  // W5 (P1-MP3-030): the delivery is recorded in the webhook ledger before anything is acted on. A replay of one already processed is answered from the
+  // ledger; a replay of one that failed is processed again (see src/lib/p13/webhook-guard.ts).
+  const admin = createAdminClient();
+  const gate = await admitDelivery(admin, { provider: 'whatsapp', eventKey: bodyEventKey(rawBody), rawBody });
+  if (!gate.proceed) return NextResponse.json({ received: 0, duplicate: true, correlationId }, { status: gate.status });
+  const response = await processDelivery(admin, payload, correlationId);
+  await settleDelivery(admin, gate.eventId, response.status, 'whatsapp');
+  return response;
+}
+
+async function processDelivery(admin: ReturnType<typeof createAdminClient>, payload: unknown, correlationId: string): Promise<NextResponse> {
   const { messages, statuses, ignored } = parseDelivery(payload);
 
   // No message-count ceiling: the 256 KiB body bound already limits how many
@@ -205,8 +223,6 @@ export async function POST(request: NextRequest) {
     // Acknowledged: there is nothing to do and nothing went wrong.
     return NextResponse.json({ received: 0, ignored, correlationId });
   }
-
-  const admin = createAdminClient();
 
   // ── delivery-status receipts (C10) ─────────────────────────────────────────
   // Recorded first, and independently of messages: a delivery is usually pure

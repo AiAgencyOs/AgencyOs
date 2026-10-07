@@ -53,8 +53,47 @@ import {
   announcePrototypeChangeRequested,
   announceTask2Complete,
   announceTask3Complete,
+  announcePhaseFiveStarted,
+  announceBuildShared,
+  announceBuildFeedbackReceived,
+  announceBuildApproved,
+  announceM3PaymentVerified,
+  announcePhaseSixReady,
+  announceTestingStarted,
+  announceQaClarification,
+  announceBuildReadyForAdmin,
+  announceDevelopmentEscalated,
+  announceModuleCompleted,
+  announceDevClarification,
+  announceQaDefectProgress,
+  announceReleaseCandidateApproved,
+  announceReleaseCandidateReady,
+  announceReleaseExceptionRequested,
+  announcePhaseEightStarted,
+  announceSupportTicketEscalated,
+  announceSupportSlaBreached,
+  announceRetentionRecoveryRequired,
+  announceMaintenanceRenewalDue,
+  announceMaintenanceWorkOpened,
+  announceMaintenanceQaFailed,
+  announceMaintenanceReleaseRequested,
+  announceMaintenanceReleaseApproved,
+  announceMaintenanceReleased,
+  announceMaintenanceBillingProposed,
+  announceMaintenanceSlaBreached,
+  announceMaintenanceWorkStalled,
+  announceQaReverification,
+  announceM4PaymentVerified,
+  announceFinanciallyClosed,
+  announceBuildFeedbackRouted,
   announceTask4Complete,
   announceM2PaymentVerified,
+  announcePhaseSevenReady,
+  announceDeploymentApproved,
+  announceProductionValidated,
+  announceProductionValidationFailed,
+  announceHandoverReady,
+  announceProjectCompleted,
   handleRouteLead,
   handleClassifyLeadIdentity,
 } from '@/modules/crm/handlers';
@@ -65,17 +104,36 @@ import {
   handlePhaseFourReady,
   handlePossibleScopeChangeDetected,
   handleDeliverableDecided,
+  handleStartPhaseFive,
+  handleRecordM3Verified,
+  handleStartPhaseSix,
+  handleScheduleQaJobs,
+  handleReopenOnSourceChange,
+  handleRecordM4Verified,
+  handleValidateQaIntake,
   type HandlerResult,
   type UnlockJob,
 } from '@/modules/projects/handlers';
+import { routeSchedulingMessage, reviewQuoteReplyMessage } from '@/modules/crm/p1o-message-handlers';
+import { sweepCoordinationAllOrganizations } from '@/modules/orchestrator/p1o-coordination-sweep';
+import { guardDesignContext } from '@/modules/projects/design-context-guard';
+import { sweepDesignShareRemindersAllOrganizations } from '@/modules/projects/design-share-reminder-sender';
+import { handleP4uiAttachBuild, handleP4uiSyncBuild } from '@/modules/projects/p4ui-handlers';
+import { handleP4qClarificationAnswered } from '@/modules/p4q/clarification-return';
+import { runPhaseFourHop, runPhaseFourWorkflowHop } from '@/modules/p4q/hop';
+import { handleMatchPaymentSubmission } from '@/modules/finance/p4q-payment-match';
+import { announceMeetingBooked, announceMeetingCancelled, sendMeetingReminder } from '@/modules/crm/meeting-announcements';
+import { handleCreateDraftHandoverPackage, handleFillPhaseEightIntake, handleOpenPhaseSeven, handleOpenSupportTicketFromMessage, handleRoutePhaseSevenTask, handleRunDeployment } from '@/modules/projects/phase-seven-handlers';
 import { runOnboardingFollowUps } from '@/modules/projects/pm-followups';
 import { handleAskClarification, handleReadClarificationAnswer } from '@/modules/projects/pm-clarifications';
 import { handleAnnouncePhaseThree, handleAskFinalConfirmation } from '@/modules/projects/pm-design-comms';
 import { handleWelcomeClient, handleAskGstDetails, handlePaymentUpdate, handleReadBillingReply } from '@/modules/projects/pm-client-comms';
 import { handleHandoverAcceptedForFinance, handleBillingModeConfirmed, handleInvoiceIssuedForDelivery, handlePhaseFourCompletedForFinance, handlePhaseFiveCompletedForFinance, handlePhaseSixCompletedForFinance } from '@/modules/finance/handlers';
 import { learnFromDecision, learnFromRevision, syncDiscountDecision } from '@/modules/sales/handlers';
-import { handleRouteTask2Design, handleRequestUIVersionAdminReview } from '@/modules/orchestrator/handlers';
-import { handleReviewUIVersion, handleReviewPrototypeBuild } from '@/modules/qa/handlers';
+import { handleRouteTask2Design, handleRequestUIVersionAdminReview, handleRouteDevelopmentPlan, handleRouteQaOutcome } from '@/modules/orchestrator/handlers';
+import { sweepFinanceExceptions, sweepFinancePhaseNineB, sweepMaintenanceLifecycle, sweepRetentionReviews, sweepStaleOrchestratorRecords, sweepSupportAndHealth, sweepRoundTwoRecords } from '@/modules/orchestrator/sweeps';
+import { handleReviewUIVersion } from '@/modules/qa/handlers';
+import { handleP4qReviewPrototypeBuild } from '@/modules/p4q/qa-handler';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -346,6 +404,17 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   await runInboundEmail(admin);
   // Tracked WhatsApp handoff links that were never used past their expiry (lead generation, 20261015300000).
   await expireHandoffs(admin);
+  // Orchestrator housekeeping, behind the same CRON_SECRET check as everything above: a build request nobody reported on for two hours is settled as a
+  // failed dispatch, and a lease past its time is expired so a crashed worker does not hold files forever.
+  await sweepStaleOrchestratorRecords(admin);
+  await sweepFinanceExceptions(admin);
+  await sweepFinancePhaseNineB(admin);
+  await sweepMaintenanceLifecycle(admin);
+  // Phase 8A: SLA breaches, scheduled health snapshots, due check-in notices, support messages whose label arrived late, and the draft handover catch-up. Contacts nobody.
+  await sweepSupportAndHealth(admin);
+  await sweepRoundTwoRecords(admin);
+  // Phase 7 retention: a record class past its Admin-set period is marked eligible for a person's review. Deletes nothing.
+  await sweepRetentionReviews(admin);
   // Scheduled social posts that are due: published through the governed door, or surfaced for a person when no publisher exists.
   await runSocialPublishing(admin, SOCIAL_PUBLISHERS);
   // Approved ad changes, pending pauses, emergency stops and campaign health (lead generation, 20261020100000).
@@ -605,6 +674,61 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   }
 
   /**
+   * ── Phase 5: an approved development plan is routed to its specialists ───
+   *
+   * Pure database work (registry lookup, a handful of reads and inserts, no model call).
+   */
+  const devPlanRoute = await runEventJobs(admin, DEV_PLAN_ROUTE_JOB_KIND, handleRouteDevelopmentPlan, 'runDevelopmentPlanRouteJobs');
+  if (devPlanRoute.claimed > 0) {
+    return NextResponse.json({
+      claimed: devPlanRoute.claimed,
+      kind: DEV_PLAN_ROUTE_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      devPlanRoute: devPlanRoute.results,
+      correlationId,
+    });
+  }
+
+  /**
+   * ── Phase 5: a QA result on a development task is routed ────────────────
+   *
+   * Pure database work like the plan routing above: the task, its runs and defects are re-read, a decision is recorded, and a refusal is escalated
+   * to a person. No model call.
+   */
+  const qaOutcomeRoute = await runEventJobs(admin, QA_OUTCOME_ROUTE_JOB_KIND, handleRouteQaOutcome, 'runQaOutcomeRouteJobs');
+  if (qaOutcomeRoute.claimed > 0) {
+    return NextResponse.json({
+      claimed: qaOutcomeRoute.claimed,
+      kind: QA_OUTCOME_ROUTE_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      qaOutcomeRoute: qaOutcomeRoute.results,
+      correlationId,
+    });
+  }
+
+  /**
    * ── lead routing + identity classification (Audit 1.2/1.3) ─────────────
    *
    * Same tier as the routing hop above: pure database work — `crm.route_lead`
@@ -708,7 +832,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const prototypeQa = await runEventJobs(
     admin,
     PROTOTYPE_QA_JOB_KIND,
-    handleReviewPrototypeBuild,
+    handleP4qReviewPrototypeBuild,
     'runPrototypeQaJobs',
   );
   if (prototypeQa.claimed > 0) {
@@ -796,6 +920,277 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       overdue,
       stamps,
       phaseFourCompletions: phaseFourCompletions.results,
+      correlationId,
+    });
+  }
+
+  /**
+   * ── M4PaymentVerified (P601 §41) ────────────────────────────────────────
+   *
+   * Pure database work, drained right after the payment that can make it true.
+   */
+  const m4Verified = await runEventJobs(admin, M4_VERIFIED_JOB_KIND, handleRecordM4Verified, 'runM4VerifiedJobs');
+  if (m4Verified.claimed > 0) {
+    return NextResponse.json({
+      claimed: m4Verified.claimed,
+      kind: M4_VERIFIED_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      m4Verified: m4Verified.results,
+      correlationId,
+    });
+  }
+
+  /**
+   * ── Phase 6: create/ready the workspace, then validate the QA intake (P601 §3, §10) ──
+   *
+   * Pure database work, drained right after the facts that open it.
+   */
+  const phaseSixStart = await runEventJobs(admin, PHASE_SIX_START_JOB_KIND, handleStartPhaseSix, 'runPhaseSixStartJobs');
+  if (phaseSixStart.claimed > 0) {
+    return NextResponse.json({
+      claimed: phaseSixStart.claimed,
+      kind: PHASE_SIX_START_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      phaseSixStart: phaseSixStart.results,
+      correlationId,
+    });
+  }
+  /**
+   * ── Phase 7: open the workspace (Phase6Completed / M4PaymentVerified), then record the approved deployment (P701 §2, P704 §13) ──
+   *
+   * Pure database work. The deployment executor is NOT configured: the deploy job records an honest blocker and never a success.
+   */
+  const phaseSevenOpen = await runEventJobs(admin, PHASE_SEVEN_OPEN_JOB_KIND, handleOpenPhaseSeven, 'runPhaseSevenOpenJobs');
+  if (phaseSevenOpen.claimed > 0) {
+    return NextResponse.json({
+      claimed: phaseSevenOpen.claimed,
+      kind: PHASE_SEVEN_OPEN_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      phaseSevenOpen: phaseSevenOpen.results,
+      correlationId,
+    });
+  }
+  const phaseSevenDeploy = await runEventJobs(admin, PHASE_SEVEN_DEPLOY_JOB_KIND, handleRunDeployment, 'runPhaseSevenDeploymentJobs');
+  if (phaseSevenDeploy.claimed > 0) {
+    return NextResponse.json({
+      claimed: phaseSevenDeploy.claimed,
+      kind: PHASE_SEVEN_DEPLOY_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      phaseSevenDeploy: phaseSevenDeploy.results,
+      correlationId,
+    });
+  }
+  /**
+   * ── Phase 7b: the Orchestrator's recorded routing decision for a Phase 7 task (P703), and the Phase 7 -> Phase 8 seam (M-6) ──
+   *
+   * Both are database work behind service-role doors. The routing job records where a Phase 7 task WOULD go (held while the agents are disabled); the intake
+   * job fills Phase 8's intake from the frozen completion handoff. Neither starts, approves or deploys anything.
+   */
+  const phaseSevenRoute = await runEventJobs(admin, PHASE_SEVEN_ROUTE_JOB_KIND, handleRoutePhaseSevenTask, 'runPhaseSevenRouteJobs');
+  if (phaseSevenRoute.claimed > 0) {
+    return NextResponse.json({
+      claimed: phaseSevenRoute.claimed,
+      kind: PHASE_SEVEN_ROUTE_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      phaseSevenRoute: phaseSevenRoute.results,
+      correlationId,
+    });
+  }
+  const phaseEightIntake = await runEventJobs(admin, PHASE_EIGHT_INTAKE_JOB_KIND, handleFillPhaseEightIntake, 'runPhaseEightIntakeJobs');
+  if (phaseEightIntake.claimed > 0) {
+    return NextResponse.json({
+      claimed: phaseEightIntake.claimed,
+      kind: PHASE_EIGHT_INTAKE_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      phaseEightIntake: phaseEightIntake.results,
+      correlationId,
+    });
+  }
+  const qaSchedule = await runEventJobs(admin, QA_SCHEDULE_JOB_KIND, handleScheduleQaJobs, 'runQaScheduleJobs');
+  if (qaSchedule.claimed > 0) {
+    return NextResponse.json({
+      claimed: qaSchedule.claimed,
+      kind: QA_SCHEDULE_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      qaSchedule: qaSchedule.results,
+      correlationId,
+    });
+  }
+  const qaReopen = await runEventJobs(admin, QA_REOPEN_JOB_KIND, handleReopenOnSourceChange, 'runQaReopenJobs');
+  if (qaReopen.claimed > 0) {
+    return NextResponse.json({
+      claimed: qaReopen.claimed,
+      kind: QA_REOPEN_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      qaReopen: qaReopen.results,
+      correlationId,
+    });
+  }
+  const qaIntake = await runEventJobs(admin, QA_INTAKE_JOB_KIND, handleValidateQaIntake, 'runQaIntakeJobs');
+  if (qaIntake.claimed > 0) {
+    return NextResponse.json({
+      claimed: qaIntake.claimed,
+      kind: QA_INTAKE_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      qaIntake: qaIntake.results,
+      correlationId,
+    });
+  }
+
+  /**
+   * ── M3PaymentVerified (Finance spec, Phase 6 gate) ──────────────────────
+   *
+   * Pure database work, drained right after the payment that can make it true.
+   */
+  const m3Verified = await runEventJobs(admin, M3_VERIFIED_JOB_KIND, handleRecordM3Verified, 'runM3VerifiedJobs');
+  if (m3Verified.claimed > 0) {
+    return NextResponse.json({
+      claimed: m3Verified.claimed,
+      kind: M3_VERIFIED_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      m3Verified: m3Verified.results,
+      correlationId,
+    });
+  }
+
+  /**
+   * ── Phase 5 start (Phase 5 Master Flow) ─────────────────────────────────
+   *
+   * Pure database work, drained right after the payment that can open it.
+   */
+  const phaseFiveStarts = await runEventJobs(
+    admin,
+    PHASE_FIVE_START_JOB_KIND,
+    handleStartPhaseFive,
+    'runPhaseFiveStartJobs',
+  );
+  if (phaseFiveStarts.claimed > 0) {
+    return NextResponse.json({
+      claimed: phaseFiveStarts.claimed,
+      kind: PHASE_FIVE_START_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      invoiceReminders,
+      campaigns,
+      emailOutreach,
+      overdue,
+      stamps,
+      phaseFiveStarts: phaseFiveStarts.results,
       correlationId,
     });
   }
@@ -1033,6 +1428,53 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     'runTask2CompleteAnnouncementJobs',
   );
 
+  // PM6 (Phase 6 PM Agent spec): testing started, candidate approved, M4 verified.
+  const testingStartedAnnouncements = await runEventJobs(admin, TESTING_STARTED_ANNOUNCE_JOB_KIND, announceTestingStarted, 'runTestingStartedAnnouncementJobs');
+  const qaClarificationAnnouncements = await runEventJobs(admin, QA_CLARIFICATION_ANNOUNCE_JOB_KIND, announceQaClarification, 'runQaClarificationAnnouncementJobs');
+  const qaDefectProgressAnnouncements = await runEventJobs(admin, QA_DEFECT_PROGRESS_ANNOUNCE_JOB_KIND, announceQaDefectProgress, 'runQaDefectProgressAnnouncementJobs');
+  const rcApprovedAnnouncements = await runEventJobs(admin, RC_APPROVED_ANNOUNCE_JOB_KIND, announceReleaseCandidateApproved, 'runReleaseCandidateApprovedAnnouncementJobs');
+  const rcReadyAnnouncements = await runEventJobs(admin, RC_READY_ANNOUNCE_JOB_KIND, announceReleaseCandidateReady, 'runReleaseCandidateReadyAnnouncementJobs');
+  const rcExceptionAnnouncements = await runEventJobs(admin, RC_EXCEPTION_ANNOUNCE_JOB_KIND, announceReleaseExceptionRequested, 'runReleaseExceptionAnnouncementJobs');
+  // PM8 (Phase 8A): Customer Success / Support announcements, internal channel only.
+  const phaseEightStartedAnnouncements = await runEventJobs(admin, PHASE_EIGHT_STARTED_ANNOUNCE_JOB_KIND, announcePhaseEightStarted, 'runPhaseEightStartedAnnouncementJobs');
+  const supportEscalatedAnnouncements = await runEventJobs(admin, SUPPORT_ESCALATED_ANNOUNCE_JOB_KIND, announceSupportTicketEscalated, 'runSupportTicketEscalatedAnnouncementJobs');
+  const supportSlaBreachedAnnouncements = await runEventJobs(admin, SUPPORT_SLA_BREACHED_ANNOUNCE_JOB_KIND, announceSupportSlaBreached, 'runSupportSlaBreachedAnnouncementJobs');
+  const retentionRecoveryAnnouncements = await runEventJobs(admin, RETENTION_RECOVERY_ANNOUNCE_JOB_KIND, announceRetentionRecoveryRequired, 'runRetentionRecoveryAnnouncementJobs');
+  const maintenanceRenewalDueAnnouncements = await runEventJobs(admin, MAINTENANCE_RENEWAL_DUE_ANNOUNCE_JOB_KIND, announceMaintenanceRenewalDue, 'runMaintenanceRenewalDueAnnouncementJobs');
+  // PM8-C (Phase 8C): the post-launch maintenance events (work, QA, release, billing draft, SLA breach, stall). Internal channel only.
+  const maintenanceWorkOpenedAnnouncements = await runEventJobs(admin, MAINTENANCE_WORK_OPENED_ANNOUNCE_JOB_KIND, announceMaintenanceWorkOpened, 'runMaintenanceWorkOpenedAnnouncementJobs');
+  const maintenanceQaFailedAnnouncements = await runEventJobs(admin, MAINTENANCE_QA_FAILED_ANNOUNCE_JOB_KIND, announceMaintenanceQaFailed, 'runMaintenanceQaFailedAnnouncementJobs');
+  const maintenanceReleaseRequestedAnnouncements = await runEventJobs(admin, MAINTENANCE_RELEASE_REQUESTED_ANNOUNCE_JOB_KIND, announceMaintenanceReleaseRequested, 'runMaintenanceReleaseRequestedAnnouncementJobs');
+  const maintenanceReleaseApprovedAnnouncements = await runEventJobs(admin, MAINTENANCE_RELEASE_APPROVED_ANNOUNCE_JOB_KIND, announceMaintenanceReleaseApproved, 'runMaintenanceReleaseApprovedAnnouncementJobs');
+  const maintenanceReleasedAnnouncements = await runEventJobs(admin, MAINTENANCE_RELEASED_ANNOUNCE_JOB_KIND, announceMaintenanceReleased, 'runMaintenanceReleasedAnnouncementJobs');
+  const maintenanceBillingProposedAnnouncements = await runEventJobs(admin, MAINTENANCE_BILLING_PROPOSED_ANNOUNCE_JOB_KIND, announceMaintenanceBillingProposed, 'runMaintenanceBillingProposedAnnouncementJobs');
+  const maintenanceSlaBreachedAnnouncements = await runEventJobs(admin, MAINTENANCE_SLA_BREACHED_ANNOUNCE_JOB_KIND, announceMaintenanceSlaBreached, 'runMaintenanceSlaBreachedAnnouncementJobs');
+  const maintenanceWorkStalledAnnouncements = await runEventJobs(admin, MAINTENANCE_WORK_STALLED_ANNOUNCE_JOB_KIND, announceMaintenanceWorkStalled, 'runMaintenanceWorkStalledAnnouncementJobs');
+  const qaReverificationAnnouncements = await runEventJobs(admin, QA_REVERIFICATION_ANNOUNCE_JOB_KIND, announceQaReverification, 'runQaReverificationAnnouncementJobs');
+  const m4VerifiedAnnouncements = await runEventJobs(admin, M4_VERIFIED_ANNOUNCE_JOB_KIND, announceM4PaymentVerified, 'runM4VerifiedAnnouncementJobs');
+  // Phase 9: the project's finances were closed.
+  const financiallyClosedAnnouncements = await runEventJobs(admin, FINANCIALLY_CLOSED_ANNOUNCE_JOB_KIND, announceFinanciallyClosed, 'runFinanciallyClosedAnnouncementJobs');
+  // PM6-M01 (Phase 6 PM Agent spec): Task 4 start.
+  const phaseSixReadyAnnouncements = await runEventJobs(admin, PHASE_SIX_READY_ANNOUNCE_JOB_KIND, announcePhaseSixReady, 'runPhaseSixReadyAnnouncementJobs');
+  // PM7 (Phase 7 PM Agent spec): Task 5 start, deployment approved, production validated / failed, handover ready, project completed.
+  const phaseSevenReadyAnnouncements = await runEventJobs(admin, PHASE_SEVEN_READY_ANNOUNCE_JOB_KIND, announcePhaseSevenReady, 'runPhaseSevenReadyAnnouncementJobs');
+  const deploymentApprovedAnnouncements = await runEventJobs(admin, DEPLOYMENT_APPROVED_ANNOUNCE_JOB_KIND, announceDeploymentApproved, 'runDeploymentApprovedAnnouncementJobs');
+  const productionValidatedAnnouncements = await runEventJobs(admin, PRODUCTION_VALIDATED_ANNOUNCE_JOB_KIND, announceProductionValidated, 'runProductionValidatedAnnouncementJobs');
+  const productionValidationFailedAnnouncements = await runEventJobs(admin, PRODUCTION_VALIDATION_FAILED_ANNOUNCE_JOB_KIND, announceProductionValidationFailed, 'runProductionValidationFailedAnnouncementJobs');
+  const handoverReadyAnnouncements = await runEventJobs(admin, HANDOVER_READY_ANNOUNCE_JOB_KIND, announceHandoverReady, 'runHandoverReadyAnnouncementJobs');
+  const projectCompletedAnnouncements = await runEventJobs(admin, PROJECT_COMPLETED_ANNOUNCE_JOB_KIND, announceProjectCompleted, 'runProjectCompletedAnnouncementJobs');
+  // PM5-M01..M04 (Phase 5 PM Agent spec), beside the Task 2 set.
+  const m3VerifiedAnnouncements = await runEventJobs(admin, M3_VERIFIED_ANNOUNCE_JOB_KIND, announceM3PaymentVerified, 'runM3VerifiedAnnouncementJobs');
+  const buildFeedbackRoutedAnnouncements = await runEventJobs(admin, BUILD_FEEDBACK_ROUTED_ANNOUNCE_JOB_KIND, announceBuildFeedbackRouted, 'runBuildFeedbackRoutedAnnouncementJobs');
+  const phaseFiveStartedAnnouncements = await runEventJobs(admin, PHASE_FIVE_STARTED_ANNOUNCE_JOB_KIND, announcePhaseFiveStarted, 'runPhaseFiveStartedAnnouncementJobs');
+  const buildSharedAnnouncements = await runEventJobs(admin, BUILD_SHARED_ANNOUNCE_JOB_KIND, announceBuildShared, 'runBuildSharedAnnouncementJobs');
+  const buildFeedbackAnnouncements = await runEventJobs(admin, BUILD_FEEDBACK_ANNOUNCE_JOB_KIND, announceBuildFeedbackReceived, 'runBuildFeedbackAnnouncementJobs');
+  const buildReadyForAdminAnnouncements = await runEventJobs(admin, BUILD_READY_FOR_ADMIN_ANNOUNCE_JOB_KIND, announceBuildReadyForAdmin, 'runBuildReadyForAdminAnnouncementJobs');
+  const developmentEscalatedAnnouncements = await runEventJobs(admin, DEVELOPMENT_ESCALATED_ANNOUNCE_JOB_KIND, announceDevelopmentEscalated, 'runDevelopmentEscalatedAnnouncementJobs');
+  const moduleCompletedAnnouncements = await runEventJobs(admin, MODULE_COMPLETED_ANNOUNCE_JOB_KIND, announceModuleCompleted, 'runModuleCompletedAnnouncementJobs');
+  const devClarificationAnnouncements = await runEventJobs(admin, DEV_CLARIFICATION_ANNOUNCE_JOB_KIND, announceDevClarification, 'runDevClarificationAnnouncementJobs');
+  const buildApprovedAnnouncements = await runEventJobs(admin, BUILD_APPROVED_ANNOUNCE_JOB_KIND, announceBuildApproved, 'runBuildApprovedAnnouncementJobs');
+
   // Q-PH56: the PM's Task 3 / Task 4 Complete messages, beside Task 2's.
   const task3CompleteAnnouncements = await runEventJobs(admin, TASK3_COMPLETE_JOB_KIND, announceTask3Complete, 'runTask3CompleteAnnouncementJobs');
   const task4CompleteAnnouncements = await runEventJobs(admin, TASK4_COMPLETE_JOB_KIND, announceTask4Complete, 'runTask4CompleteAnnouncementJobs');
@@ -1269,9 +1711,49 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     return NextResponse.json({ error: 'could not claim a job' }, { status: 503 });
   }
 
+  // After the agent drain, not before: a block above that claims returns at once and would starve `requirement.extract` (see the note above). These two
+  // follow-ups are not urgent, so they run only on a tick that had no agent job to do.
+  const idleTick = agentRuns.length === 0;
+  const supportFromMessage = idleTick
+    ? await runEventJobs(admin, SUPPORT_FROM_MESSAGE_JOB_KIND, handleOpenSupportTicketFromMessage, 'runSupportTicketFromMessageJobs')
+    : { claimed: 0, results: [] };
+  const draftHandover = idleTick
+    ? await runEventJobs(admin, DRAFT_HANDOVER_JOB_KIND, handleCreateDraftHandoverPackage, 'runDraftHandoverPackageJobs')
+    : { claimed: 0, results: [] };
+
+  const schedulingMessages = idleTick ? await runEventJobs(admin, SCHEDULING_MESSAGE_JOB_KIND, routeSchedulingMessage, 'runSchedulingMessageRoutingJobs') : { claimed: 0, results: [] };
+  const quoteReplies = idleTick ? await runEventJobs(admin, QUOTE_REPLY_JOB_KIND, reviewQuoteReplyMessage, 'runQuoteReplyReviewJobs') : { claimed: 0, results: [] };
+  const coordination = idleTick ? await sweepCoordinationAllOrganizations(admin) : null;
+  // W10 (P3-PM-030): a design share the client has not answered is chased, at most twice; the sender is the ordinary outbound WhatsApp path.
+  const designShareReminders = idleTick ? await sweepDesignShareRemindersAllOrganizations(admin) : null;
+  const designContextGuard = idleTick ? await runEventJobs(admin, DESIGN_CONTEXT_GUARD_JOB_KIND, guardDesignContext, 'runDesignContextGuardJobs') : { claimed: 0, results: [] };
+  const p4uiAttach = idleTick ? await runEventJobs(admin, P4UI_ATTACH_JOB_KIND, handleP4uiAttachBuild, 'runP4uiAttachJobs') : { claimed: 0, results: [] };
+  const p4uiSync = idleTick ? await runEventJobs(admin, P4UI_SYNC_JOB_KIND, handleP4uiSyncBuild, 'runP4uiSyncJobs') : { claimed: 0, results: [] };
+  const paymentMatches = idleTick ? await runEventJobs(admin, PAYMENT_MATCH_JOB_KIND, handleMatchPaymentSubmission, 'runPaymentMatchJobs') : { claimed: 0, results: [] };
+  const p4qClarificationReturns = idleTick ? await runEventJobs(admin, P4Q_CLARIFICATION_RETURN_JOB_KIND, handleP4qClarificationAnswered, 'runP4qClarificationReturnJobs') : { claimed: 0, results: [] };
+  const meetingBooked = idleTick ? await runEventJobs(admin, MEETING_BOOKED_JOB_KIND, announceMeetingBooked, 'runMeetingBookedAnnouncementJobs') : { claimed: 0, results: [] };
+  const meetingCancelled = idleTick ? await runEventJobs(admin, MEETING_CANCELLED_JOB_KIND, announceMeetingCancelled, 'runMeetingCancelledAnnouncementJobs') : { claimed: 0, results: [] };
+  const meetingReminders = idleTick
+    ? await runEventJobs(admin, MEETING_REMINDER_JOB_KIND, (a, job) => sendMeetingReminder(a, job as unknown as Parameters<typeof sendMeetingReminder>[1]), 'runMeetingReminderJobs')
+    : { claimed: 0, results: [] };
+
   return NextResponse.json({
-    claimed: agentRuns.length,
+    claimed: agentRuns.length + supportFromMessage.claimed + draftHandover.claimed + meetingBooked.claimed + meetingCancelled.claimed + meetingReminders.claimed + p4uiAttach.claimed + p4uiSync.claimed + p4qClarificationReturns.claimed + paymentMatches.claimed + designContextGuard.claimed + schedulingMessages.claimed + quoteReplies.claimed,
     agentRuns,
+    designContextGuard: designContextGuard.results,
+    schedulingMessages: schedulingMessages.results,
+    quoteReplies: quoteReplies.results,
+    coordination,
+    designShareReminders,
+    p4uiAttach: p4uiAttach.results,
+    p4uiSync: p4uiSync.results,
+    p4qClarificationReturns: p4qClarificationReturns.results,
+    paymentMatches: paymentMatches.results,
+    meetingBooked: meetingBooked.results,
+    meetingCancelled: meetingCancelled.results,
+    meetingReminders: meetingReminders.results,
+    supportFromMessage: supportFromMessage.results,
+    draftHandover: draftHandover.results,
     reaped,
     dispatched,
     followUps,
@@ -1308,6 +1790,45 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     prototypeChangeRequestedAnnouncements: prototypeChangeRequestedAnnouncements.results,
     task2CompleteAnnouncements: task2CompleteAnnouncements.results,
     task3CompleteAnnouncements: task3CompleteAnnouncements.results,
+    phaseFiveStartedAnnouncements: phaseFiveStartedAnnouncements.results,
+    buildSharedAnnouncements: buildSharedAnnouncements.results,
+    buildFeedbackAnnouncements: buildFeedbackAnnouncements.results,
+    buildApprovedAnnouncements: buildApprovedAnnouncements.results,
+    buildReadyForAdminAnnouncements: buildReadyForAdminAnnouncements.results,
+    developmentEscalatedAnnouncements: developmentEscalatedAnnouncements.results,
+    moduleCompletedAnnouncements: moduleCompletedAnnouncements.results,
+    devClarificationAnnouncements: devClarificationAnnouncements.results,
+    m3VerifiedAnnouncements: m3VerifiedAnnouncements.results,
+    phaseSixReadyAnnouncements: phaseSixReadyAnnouncements.results,
+    phaseSevenReadyAnnouncements: phaseSevenReadyAnnouncements.results,
+    deploymentApprovedAnnouncements: deploymentApprovedAnnouncements.results,
+    productionValidatedAnnouncements: productionValidatedAnnouncements.results,
+    productionValidationFailedAnnouncements: productionValidationFailedAnnouncements.results,
+    handoverReadyAnnouncements: handoverReadyAnnouncements.results,
+    projectCompletedAnnouncements: projectCompletedAnnouncements.results,
+    testingStartedAnnouncements: testingStartedAnnouncements.results,
+    qaClarificationAnnouncements: qaClarificationAnnouncements.results,
+    qaDefectProgressAnnouncements: qaDefectProgressAnnouncements.results,
+    rcApprovedAnnouncements: rcApprovedAnnouncements.results,
+    rcReadyAnnouncements: rcReadyAnnouncements.results,
+    rcExceptionAnnouncements: rcExceptionAnnouncements.results,
+    phaseEightStartedAnnouncements: phaseEightStartedAnnouncements.results,
+    supportEscalatedAnnouncements: supportEscalatedAnnouncements.results,
+    supportSlaBreachedAnnouncements: supportSlaBreachedAnnouncements.results,
+    retentionRecoveryAnnouncements: retentionRecoveryAnnouncements.results,
+    maintenanceRenewalDueAnnouncements: maintenanceRenewalDueAnnouncements.results,
+    maintenanceWorkOpenedAnnouncements: maintenanceWorkOpenedAnnouncements.results,
+    maintenanceQaFailedAnnouncements: maintenanceQaFailedAnnouncements.results,
+    maintenanceReleaseRequestedAnnouncements: maintenanceReleaseRequestedAnnouncements.results,
+    maintenanceReleaseApprovedAnnouncements: maintenanceReleaseApprovedAnnouncements.results,
+    maintenanceReleasedAnnouncements: maintenanceReleasedAnnouncements.results,
+    maintenanceBillingProposedAnnouncements: maintenanceBillingProposedAnnouncements.results,
+    maintenanceSlaBreachedAnnouncements: maintenanceSlaBreachedAnnouncements.results,
+    maintenanceWorkStalledAnnouncements: maintenanceWorkStalledAnnouncements.results,
+    qaReverificationAnnouncements: qaReverificationAnnouncements.results,
+    m4VerifiedAnnouncements: m4VerifiedAnnouncements.results,
+    financiallyClosedAnnouncements: financiallyClosedAnnouncements.results,
+    buildFeedbackRoutedAnnouncements: buildFeedbackRoutedAnnouncements.results,
     task4CompleteAnnouncements: task4CompleteAnnouncements.results,
     m2PaymentVerifiedAnnouncements: m2PaymentVerifiedAnnouncements.results,
     dispatches: dispatches.results,
@@ -1386,7 +1907,19 @@ async function runOneAgentJob(
   // AgentPolicyRefusal — recorded and audited there. Caught here, and the
   // job is parked rather than retried: a retry would not change the policy.
   try {
-    const outcome = await workflow.run({ admin, job, agent, correlationId, workClass: workflow.workClass });
+    // W-O2: the same envelope for a Phase 4 hop that calls a model. The outcome is returned unchanged unless the envelope spent its budget (then the job is parked).
+    const outcome = await runPhaseFourWorkflowHop(
+      admin,
+      job,
+      () => workflow.run({ admin, job, agent, correlationId, workClass: workflow.workClass }),
+      async (detail) => {
+        await admin.schema('core').from('jobs').update({ status: 'dead', last_error: detail.slice(0, 1000), locked_at: null, locked_by: null }).eq('id', job.id);
+      },
+      async () => {
+        // a disabled specialist: held, not dead (nothing ran; the escalation is on the record)
+        await admin.schema('core').from('jobs').update({ status: 'succeeded', last_error: null, locked_at: null, locked_by: null }).eq('id', job.id);
+      },
+    );
     return { jobId: job.id, agent: workflow.agentKey, ...outcome };
   } catch (error) {
     // Stream F-F: the three between-step gates, each settled its own way.
@@ -1428,6 +1961,8 @@ const PHASE_TWO_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseTwo'];
 const PHASE_THREE_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseThree'];
 const PHASE_FOUR_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseFour'];
 const TASK2_ROUTE_JOB_KIND = HANDLER_JOB_KIND['orchestrator:routeTask2Design'];
+const DEV_PLAN_ROUTE_JOB_KIND = HANDLER_JOB_KIND['orchestrator:routeDevelopmentPlan'];
+const QA_OUTCOME_ROUTE_JOB_KIND = HANDLER_JOB_KIND['orchestrator:routeQaOutcome'];
 const LEAD_ROUTE_JOB_KIND = HANDLER_JOB_KIND['crm:routeLead'];
 const LEAD_IDENTITY_JOB_KIND = HANDLER_JOB_KIND['crm:classifyLeadIdentity'];
 const UI_VERSION_QA_JOB_KIND = HANDLER_JOB_KIND['quality_assurance:reviewUIVersion'];
@@ -1445,6 +1980,64 @@ const PM_BILLING_REPLY_JOB_KIND = HANDLER_JOB_KIND['projects:readBillingReply'];
 const PM_CLARIFY_JOB_KIND = HANDLER_JOB_KIND['projects:askClarification'];
 const PM_CLARIFICATION_ANSWER_JOB_KIND = HANDLER_JOB_KIND['projects:readClarificationAnswer'];
 const PHASE_FOUR_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['projects:completePhaseFourOnPrototypeApproval'];
+const PHASE_FIVE_START_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseFive'];
+const M3_VERIFIED_JOB_KIND = HANDLER_JOB_KIND['projects:recordM3Verified'];
+const PHASE_SIX_START_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseSix'];
+const QA_SCHEDULE_JOB_KIND = HANDLER_JOB_KIND['projects:scheduleQaJobs'];
+const QA_REOPEN_JOB_KIND = HANDLER_JOB_KIND['projects:reopenOnSourceChange'];
+const TESTING_STARTED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceTestingStarted'];
+const QA_CLARIFICATION_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceQaClarification'];
+const BUILD_READY_FOR_ADMIN_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceBuildReadyForAdmin'];
+const DEVELOPMENT_ESCALATED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceDevelopmentEscalated'];
+const MODULE_COMPLETED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceModuleCompleted'];
+const DEV_CLARIFICATION_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceDevClarification'];
+const QA_DEFECT_PROGRESS_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceQaDefectProgress'];
+const M4_VERIFIED_JOB_KIND = HANDLER_JOB_KIND['projects:recordM4Verified'];
+const RC_APPROVED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceReleaseCandidateApproved'];
+const RC_READY_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceReleaseCandidateReady'];
+const RC_EXCEPTION_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceReleaseExceptionRequested'];
+const PHASE_EIGHT_STARTED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announcePhaseEightStarted'];
+const SUPPORT_ESCALATED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceSupportTicketEscalated'];
+const SUPPORT_SLA_BREACHED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceSupportSlaBreached'];
+const RETENTION_RECOVERY_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceRetentionRecoveryRequired'];
+const MAINTENANCE_RENEWAL_DUE_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceRenewalDue'];
+const MAINTENANCE_WORK_OPENED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceWorkOpened'];
+const MAINTENANCE_QA_FAILED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceQaFailed'];
+const MAINTENANCE_RELEASE_REQUESTED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceReleaseRequested'];
+const MAINTENANCE_RELEASE_APPROVED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceReleaseApproved'];
+const MAINTENANCE_RELEASED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceReleased'];
+const MAINTENANCE_BILLING_PROPOSED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceBillingProposed'];
+const MAINTENANCE_SLA_BREACHED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceSlaBreached'];
+const MAINTENANCE_WORK_STALLED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceWorkStalled'];
+const QA_REVERIFICATION_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceQaReverification'];
+const M4_VERIFIED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceM4PaymentVerified'];
+const FINANCIALLY_CLOSED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceFinanciallyClosed'];
+const QA_INTAKE_JOB_KIND = HANDLER_JOB_KIND['projects:validateQaIntake'];
+const PHASE_SIX_READY_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announcePhaseSixReady'];
+const PHASE_SEVEN_OPEN_JOB_KIND = HANDLER_JOB_KIND['projects:openPhaseSeven'];
+const PHASE_SEVEN_DEPLOY_JOB_KIND = HANDLER_JOB_KIND['projects:runDeployment'];
+const PHASE_SEVEN_ROUTE_JOB_KIND = HANDLER_JOB_KIND['projects:routePhaseSevenTask'];
+const PHASE_EIGHT_INTAKE_JOB_KIND = HANDLER_JOB_KIND['projects:fillPhaseEightIntake'];
+const SCHEDULING_MESSAGE_JOB_KIND = HANDLER_JOB_KIND['crm:routeSchedulingMessage'];
+const QUOTE_REPLY_JOB_KIND = HANDLER_JOB_KIND['sales:reviewQuoteReply'];
+const DESIGN_CONTEXT_GUARD_JOB_KIND = HANDLER_JOB_KIND['ui_designer:p13GuardDesignContext'];
+const P4Q_CLARIFICATION_RETURN_JOB_KIND = HANDLER_JOB_KIND['projects:returnClarificationAnswer'];
+const PAYMENT_MATCH_JOB_KIND = HANDLER_JOB_KIND['finance:matchPaymentSubmission'];
+const P4UI_ATTACH_JOB_KIND = HANDLER_JOB_KIND['projects:attachP4uiBuild'];
+const P4UI_SYNC_JOB_KIND = HANDLER_JOB_KIND['projects:syncP4uiBuild'];
+const MEETING_BOOKED_JOB_KIND = HANDLER_JOB_KIND['crm:announceMeetingBooked'];
+const MEETING_CANCELLED_JOB_KIND = HANDLER_JOB_KIND['crm:announceMeetingCancelled'];
+const MEETING_REMINDER_JOB_KIND = 'meeting.reminder';
+const SUPPORT_FROM_MESSAGE_JOB_KIND = HANDLER_JOB_KIND['projects:openSupportTicketFromMessage'];
+const DRAFT_HANDOVER_JOB_KIND = HANDLER_JOB_KIND['projects:createDraftHandoverPackage'];
+const PHASE_SEVEN_READY_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announcePhaseSevenReady'];
+const DEPLOYMENT_APPROVED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceDeploymentApproved'];
+const PRODUCTION_VALIDATED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceProductionValidated'];
+const PRODUCTION_VALIDATION_FAILED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceProductionValidationFailed'];
+const HANDOVER_READY_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceHandoverReady'];
+const PROJECT_COMPLETED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceProjectCompleted'];
+const M3_VERIFIED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceM3PaymentVerified'];
+const BUILD_FEEDBACK_ROUTED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceBuildFeedbackRouted'];
 const M2_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM2Invoice'];
 const M3_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM3Invoice'];
 const M4_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM4Invoice'];
@@ -1468,6 +2061,10 @@ const PROTOTYPE_SUBMITTED_JOB_KIND = HANDLER_JOB_KIND['crm:announcePrototypeSubm
 const PROTOTYPE_CHANGE_REQUESTED_JOB_KIND = HANDLER_JOB_KIND['crm:announcePrototypeChangeRequested'];
 const TASK2_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['crm:announceTask2Complete'];
 const TASK3_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['crm:announceTask3Complete'];
+const PHASE_FIVE_STARTED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announcePhaseFiveStarted'];
+const BUILD_SHARED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceBuildShared'];
+const BUILD_FEEDBACK_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceBuildFeedbackReceived'];
+const BUILD_APPROVED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceBuildApproved'];
 const TASK4_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['crm:announceTask4Complete'];
 const M2_PAYMENT_VERIFIED_JOB_KIND = HANDLER_JOB_KIND['crm:announceM2PaymentVerified'];
 
@@ -1540,7 +2137,8 @@ async function runEventJobs(
     // the rest of the batch never ran and the whole tick answered 500.
     let result: HandlerResult;
     try {
-      result = await handler(admin, job);
+      // W-O2: a Phase 4 hop runs inside its persisted ExecutionEnvelope (exact references, retry budget, classed failure, escalation). Any other job runs as it always did.
+      result = await runPhaseFourHop(admin, kind, job, () => handler(admin, job));
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       console.error(
