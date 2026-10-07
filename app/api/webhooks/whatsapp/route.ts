@@ -13,6 +13,7 @@ import {
   SIGNATURE_HEADER,
 } from '@/lib/whatsapp/verify';
 import { ingestGroupMessage, ingestInboundMessage, recordDeliveryReceipt } from '@/modules/crm/ingest';
+import { routeError, codeForStatus } from '@/lib/route-errors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -180,7 +181,7 @@ export async function POST(request: NextRequest) {
   // re-serialised — that would reorder keys and the digest would never match.
   const read = await readBoundedBody(request, MAX_BODY_BYTES);
   if (read.tooLarge) {
-    return NextResponse.json({ error: 'payload too large', correlationId }, { status: 413 });
+    return routeError('VALIDATION', 'payload too large', { status: 413, correlationId });
   }
   const rawBody = read.text;
 
@@ -188,14 +189,14 @@ export async function POST(request: NextRequest) {
   if (!auth.ok) {
     // W5: a rejected signature is on record too (best effort; the answer is unchanged).
     if (auth.status === 401) await rejectDelivery(createAdminClient(), { provider: 'whatsapp', signatureHeader: request.headers.get(SIGNATURE_HEADER), body: rawBody });
-    return NextResponse.json({ error: auth.error }, { status: auth.status });
+    return routeError(codeForStatus(auth.status), auth.error, { status: auth.status });
   }
 
   let payload: unknown;
   try {
     payload = JSON.parse(rawBody);
   } catch {
-    return NextResponse.json({ error: MALFORMED, correlationId }, { status: 400 });
+    return routeError('VALIDATION', MALFORMED, { status: 400, correlationId });
   }
 
   // W5 (P1-MP3-030): the delivery is recorded in the webhook ledger before anything is acted on. A replay of one already processed is answered from the
@@ -357,10 +358,7 @@ async function processDelivery(admin: ReturnType<typeof createAdminClient>, payl
         correlationId,
       }),
     );
-    return NextResponse.json(
-      { error: 'ingest failed', ingested, replayed, skipped, rejected, correlationId },
-      { status: 500 },
-    );
+    return routeError('INTERNAL', 'ingest failed', { status: 500, correlationId, extra: { ingested, replayed, skipped, rejected } });
   }
 
   /**

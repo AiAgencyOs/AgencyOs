@@ -1,3 +1,5 @@
+> **Superseded (2026-12-04).** This matrix was written on the first audit and is no longer maintained: it lists work as missing that has since been built. The maintained Phase 2 rows, with their evidence and what is still open, are in [`docs/phase-1-3-implementation-traceability.md`](../phase-1-3-implementation-traceability.md). Read this file for the requirement extraction only.
+
 # AgencyOS Phase 2 — requirement traceability and gap matrix
 
 > **Sources, in precedence order.** The four locked Phase 2 PDFs in `phase 2 documents/`:

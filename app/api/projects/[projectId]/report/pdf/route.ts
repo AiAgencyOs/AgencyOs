@@ -15,6 +15,7 @@ import { projectHealth } from '@/modules/projects/project-health';
 import { getProject, listDevelopmentBreakdown, listInternalRoster, listPaymentPlan, listPhaseFourEscalations, readProjectSpend } from '@/modules/projects/queries';
 import { listDefects } from '@/modules/qa/queries';
 import { blocksDelivery, type DefectSeverity, type DefectStatus } from '@/modules/qa/schema';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * SCR-026 "Export PDF" — the project report as a document, behind
@@ -33,11 +34,11 @@ const money = (minor: number, currency: string) => new Intl.NumberFormat('en-IN'
 export async function GET(request: Request, { params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
   const context = await getAuthContext();
-  if (!context) return NextResponse.json({ error: 'Sign in to export a report.' }, { status: 401 });
-  if (!can(context, 'project.read')) return NextResponse.json({ error: 'You do not have permission to read this project.' }, { status: 403 });
+  if (!context) return routeError('UNAUTHORIZED', 'Sign in to export a report.');
+  if (!can(context, 'project.read')) return routeError('FORBIDDEN', 'You do not have permission to read this project.');
 
   const project = await getProject(projectId);
-  if (!project) return NextResponse.json({ error: 'Project not found.' }, { status: 404 });
+  if (!project) return routeError('NOT_FOUND', 'Project not found.');
 
   const mayReadMoney = can(context, 'invoice.read');
   const clock = await agencyClock();

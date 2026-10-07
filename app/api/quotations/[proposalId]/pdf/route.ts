@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { httpStatusFor } from '@/lib/errors';
 import { quotationPdfForProposal } from '@/modules/sales/service';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * The quotation as a document, for whoever is looking at it in AgencyOS —
@@ -36,7 +37,7 @@ export async function GET(
 
   if (!result.ok) {
     const status = httpStatusFor(result.error.code);
-    return NextResponse.json({ error: result.error.message }, { status });
+    return routeError(result.error.code, result.error.message, { status });
   }
 
   return new NextResponse(Buffer.from(result.data.bytes), {

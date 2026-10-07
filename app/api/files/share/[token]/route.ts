@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { createAdminClient } from '@/lib/db/admin';
 import { filesBucket, SIGNED_URL_SECONDS } from '@/lib/files/storage';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * A share link — decision 5 of 2026-09-29. Public: whoever holds the token
@@ -29,7 +30,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
   const { data, error } = await admin.schema('projects').rpc('resolve_file_share', { p_token: token });
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'files.share.resolve', detail: error.message }));
-    return NextResponse.json({ error: 'The link could not be checked right now.' }, { status: 503 });
+    return routeError('INTERNAL', 'The link could not be checked right now.', { status: 503 });
   }
   const share = data?.[0];
   if (!share) return notFound();
@@ -39,12 +40,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
   });
   if (signError || !signed?.signedUrl) {
     console.error(JSON.stringify({ level: 'error', scope: 'files.share.sign', detail: signError?.message ?? 'no url' }));
-    return NextResponse.json({ error: 'Storage is not reachable, so the file cannot be fetched right now.' }, { status: 503 });
+    return routeError('INTERNAL', 'Storage is not reachable, so the file cannot be fetched right now.', { status: 503 });
   }
 
   return NextResponse.redirect(signed.signedUrl, { status: 302, headers: { 'Cache-Control': 'no-store' } });
 }
 
 function notFound() {
-  return NextResponse.json({ error: 'This link is not valid. It may have expired or been revoked.' }, { status: 404, headers: { 'Cache-Control': 'no-store' } });
+  return routeError('NOT_FOUND', 'This link is not valid. It may have expired or been revoked.', { headers: { 'Cache-Control': 'no-store' } });
 }

@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { listClients } from '@/lib/admin/clients';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * The client list as CSV — SCR-014's "export". The same reader and the same
@@ -19,7 +20,7 @@ function cell(v: string | number | null | undefined): string {
 export async function GET(request: Request) {
   const context = await requireInternal('/clients');
   if (!can(context, 'project.read')) {
-    return NextResponse.json({ error: 'You do not have permission to read clients.' }, { status: 403 });
+    return routeError('FORBIDDEN', 'You do not have permission to read clients.');
   }
 
   const params = new URL(request.url).searchParams;

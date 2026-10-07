@@ -13,6 +13,7 @@ import { listLeadsForTable } from '@/modules/crm/queries';
 import { listMyTasks } from '@/modules/projects/queries';
 import { isOpenOpportunity, LOST_CATEGORY_LABELS, OPPORTUNITY_STAGES, type OpportunityStage } from '@/modules/sales/schema';
 import { listPipelineOpportunities } from '@/modules/sales/pipeline-queries';
+import { readCommercialReport } from '@/modules/sales/p1s-commercial-queries';
 import { listInternalRoster } from '@/modules/projects/queries';
 import { can } from '@/lib/authz/permissions';
 import Link from 'next/link';
@@ -21,6 +22,7 @@ import { SalesTabs } from '../sales-tabs';
 import { Avatar, BarChart, buttonClass, Card, CardHeader, DonutChart, EmptyState, FilterChips, humanize, IconCheck, IconDownload, ViewAll, IconRupee, IconTarget, IconTrendUp, IconUsers, PageHeader, Stat, StatGrid, statusTone, type KanbanColumn, PermissionDenied } from '@/ui';
 
 import { TodayCard } from '../today-card';
+import { CommercialReport } from './commercial-report';
 import { PipelineBoard, type PipelineCard } from './pipeline-board';
 import { SalesActions } from './sales-actions';
 
@@ -99,6 +101,7 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
   const { counts, steps, biggestDrop, outOfOrder, lostReasons, minLeadsToNameLeak } = await getSalesFunnel(days);
   const reflex = await getPricingReflex(days);
   const leadSources = await getLeadSourceBreakdown(days);
+  const commercial = await readCommercialReport(days);
   const widest = Math.max(...steps.map((s) => s.count), 1);
 
   // SCR-005 — source and owner filters. They apply to the pipeline board
@@ -547,11 +550,13 @@ export default async function SalesFunnelPage({ searchParams }: { searchParams: 
               {counts.lost} lead{counts.lost === 1 ? '' : 's'} recorded as lost.{' '}
               {counts.budgetKnown} have a budget on file — kept beside the funnel rather than in
               it, because plenty of leads are quoted without one and counting it as a step would
-              invent a loss. Deal values, discount impact and lead-source ROI are not here:
-              nothing records enough of them yet to average, and an average of nulls is not a
-              number.
+              invent a loss. The funnel itself carries no money. Deal values, discount impact and
+              conversion by source are in Commercial results below, and a group with no closed
+              deal there reads &quot;no deals&quot;, because an average of nulls is not a
+              number. Lead-source ROI is not shown: nothing records what a source costs.
             </p>
           </section>
+          <CommercialReport report={commercial} />
         </>
       )}
     </div>

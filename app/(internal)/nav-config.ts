@@ -57,6 +57,7 @@ export const NAV_MODULES: readonly NavModule[] = [
       { href: '/leads', label: 'Leads', capability: 'lead.read', screens: ['SCR-006', 'SCR-007', 'SCR-008', 'SCR-009', 'SCR-012'] },
       { href: '/sales-funnel', label: 'Pipeline', capability: 'lead.read', screens: ['SCR-005'] },
       { href: '/quotations', label: 'Quotations', capability: 'lead.read', screens: ['SCR-011'] },
+      { href: '/quotations/negotiation', label: 'Negotiations', capability: 'lead.read', screens: ['A15'] },
       { href: '/quotations/policy', label: 'Quotation policy', capability: 'lead.read' },
       { href: '/meetings', label: 'Meetings', capability: 'lead.read', screens: ['SCR-010'] },
       { href: '/meetings/attention', label: 'Meetings needing a person', capability: 'lead.read' },
@@ -166,6 +167,7 @@ export const NAV_MODULES: readonly NavModule[] = [
     items: [
       { href: '/operations', label: 'Jobs & system health', capability: 'audit.read', screens: ['SCR-060', 'SCR-066', 'SCR-067'] },
       { href: '/operations/task-board', label: 'Workflow task board', capability: 'audit.read', screens: ['A16', 'A17'] },
+      { href: '/operations/incidents', label: 'Incidents & recovery', capability: 'audit.read', screens: ['A29'] },
     ],
   },
   {

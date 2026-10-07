@@ -4,6 +4,7 @@ import { csvHeaders, toCsv } from '@/lib/admin/csv';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * The cost ledger, row by row — SCR-065's "export cost ledger". One line per
@@ -20,7 +21,7 @@ const CAP = 10_000;
 export async function GET() {
   const context = await requireInternal('/usage');
   if (!can(context, 'audit.read')) {
-    return NextResponse.json({ error: 'You do not have permission to read usage.' }, { status: 403 });
+    return routeError('FORBIDDEN', 'You do not have permission to read usage.');
   }
 
   const supabase = await createClient();
@@ -33,7 +34,7 @@ export async function GET() {
     .limit(CAP);
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'usage/ledger', detail: error.message }));
-    return NextResponse.json({ error: 'The cost ledger could not be read.' }, { status: 503 });
+    return routeError('INTERNAL', 'The cost ledger could not be read.', { status: 503 });
   }
 
   const rows = data ?? [];

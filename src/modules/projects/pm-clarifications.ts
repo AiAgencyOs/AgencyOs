@@ -5,6 +5,7 @@ import { sendSystemText } from '@/modules/crm/system-message';
 
 import type { HandlerResult } from './handlers';
 import { isSafeClientQuestion, pmClarificationAsk } from './pm-messages';
+import { resolvePmText } from './pm-template-resolve';
 import { loadContext, projectForConversation, settle, type PmCommsJob } from './pm-client-comms';
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -96,7 +97,13 @@ export async function handleAskClarification(admin: Admin, job: PmCommsJob): Pro
   const sent = await sendSystemText(admin as never, {
     organizationId: job.organization_id,
     conversationId: ctx.conversationId,
-    body: pmClarificationAsk(ctx.language, next.question),
+    body: await resolvePmText(admin, {
+      organizationId: job.organization_id,
+      key: 'clarification_ask',
+      language: ctx.language,
+      vars: { question: next.question.trim() },
+      fallback: pmClarificationAsk(ctx.language, next.question),
+    }),
     ref,
   });
   const result = settle([{ label: 'planning question', result: sent }]);

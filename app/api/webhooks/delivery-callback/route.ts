@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { createAdminClient } from '@/lib/db/admin';
 import { DELIVERY_CALLBACK_SIGNATURE_HEADER, handleDeliveryCallback } from '@/modules/projects/provider-delivery-callback';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * /api/webhooks/delivery-callback: a signed, normalised delivery fact for a message a person recorded (see provider-delivery-callback.ts).
@@ -15,7 +16,7 @@ const MAX_BODY_CHARS = 64 * 1024;
 
 export async function POST(request: NextRequest) {
   const raw = await request.text();
-  if (raw.length > MAX_BODY_CHARS) return NextResponse.json({ error: 'payload too large' }, { status: 413 });
+  if (raw.length > MAX_BODY_CHARS) return routeError('VALIDATION', 'payload too large', { status: 413 });
   const result = await handleDeliveryCallback(raw, request.headers.get(DELIVERY_CALLBACK_SIGNATURE_HEADER), {
     secret: process.env.COMMUNICATION_CALLBACK_SECRET,
     organizationId: process.env.COMMUNICATION_CALLBACK_ORGANIZATION_ID,

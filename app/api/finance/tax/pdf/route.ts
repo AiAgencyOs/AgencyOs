@@ -9,6 +9,7 @@ import { logReportExport } from '@/modules/finance/export-log';
 import { readGstIdentity } from '@/modules/finance/gstr-queries';
 import { listExpenses, listPayments, listTaxReportInvoices } from '@/modules/finance/queries';
 import { expensesInPeriod, invoicesInPeriod, profitAndLoss, resolveTaxPeriod, splitByMode, verifiedReceivedInPeriod } from '@/modules/finance/tax-report';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * The GST & tax report as a PDF — SCR-056 "Export PDF". Same readers, same
@@ -22,7 +23,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   const context = await requireInternal('/finance/tax');
   if (!can(context, 'invoice.read')) {
-    return NextResponse.json({ error: 'You do not have permission to read invoices.' }, { status: 403 });
+    return routeError('FORBIDDEN', 'You do not have permission to read invoices.');
   }
 
   const url = new URL(request.url);
@@ -38,7 +39,7 @@ export async function GET(request: Request) {
     supabase.schema('core').from('organizations').select('name').limit(1).maybeSingle(),
   ]);
   if (orgRes.error) {
-    return NextResponse.json({ error: 'The organization could not be read.' }, { status: 500 });
+    return routeError('INTERNAL', 'The organization could not be read.');
   }
 
   const periodInvoices = invoicesInPeriod(invoices, period);
@@ -79,6 +80,6 @@ export async function GET(request: Request) {
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : 'unknown render failure';
     console.error(JSON.stringify({ level: 'error', scope: 'taxReportPdf', detail }));
-    return NextResponse.json({ error: 'The tax report could not be rendered.' }, { status: 500 });
+    return routeError('INTERNAL', 'The tax report could not be rendered.');
   }
 }

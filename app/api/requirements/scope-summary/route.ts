@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { getAuthContext } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { readRequirementsOverview } from '@/modules/projects/queries';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * SCR-028 "Export scope summary" — the Requirements dashboard's table as
@@ -21,8 +22,8 @@ function cell(value: string | number | null): string {
 
 export async function GET() {
   const context = await getAuthContext();
-  if (!context) return NextResponse.json({ error: 'Sign in to export the scope summary.' }, { status: 401 });
-  if (!can(context, 'lead.read')) return NextResponse.json({ error: 'You do not have permission to read requirements.' }, { status: 403 });
+  if (!context) return routeError('UNAUTHORIZED', 'Sign in to export the scope summary.');
+  if (!can(context, 'lead.read')) return routeError('FORBIDDEN', 'You do not have permission to read requirements.');
 
   const overview = await readRequirementsOverview();
   const lines = [['project_id', 'project', 'scope_version', 'scope_status', 'open_change_requests', 'open_clarifications', 'per_project_export'].join(',')];

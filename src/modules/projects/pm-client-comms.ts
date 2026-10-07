@@ -16,6 +16,7 @@ import {
   pmWelcome,
   type PmLanguage,
 } from './pm-messages';
+import { resolvePmText } from './pm-template-resolve';
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -187,7 +188,13 @@ export async function handleWelcomeClient(admin: Admin, job: PmCommsJob): Promis
     result: await sendSystemText(admin as never, {
       organizationId: job.organization_id,
       conversationId: ctx.conversationId,
-      body: pmWelcome({ language: ctx.language, agencyName: ctx.agencyName, projectName: ctx.projectName }),
+      body: await resolvePmText(admin, {
+        organizationId: job.organization_id,
+        key: 'welcome',
+        language: ctx.language,
+        vars: { agencyName: ctx.agencyName, projectName: ctx.projectName },
+        fallback: pmWelcome({ language: ctx.language, agencyName: ctx.agencyName, projectName: ctx.projectName }),
+      }),
       ref: `pm:welcome:${projectId}`,
     }),
   });
@@ -209,7 +216,7 @@ export async function handleWelcomeClient(admin: Admin, job: PmCommsJob): Promis
       result: await sendSystemText(admin as never, {
         organizationId: job.organization_id,
         conversationId: ctx.conversationId,
-        body: pmBillingQuestion(ctx.language),
+        body: await resolvePmText(admin, { organizationId: job.organization_id, key: 'billing_question', language: ctx.language, vars: {}, fallback: pmBillingQuestion(ctx.language) }),
         ref: `pm:billing-question:${projectId}`,
       }),
     });
@@ -250,7 +257,7 @@ export async function handleAskGstDetails(admin: Admin, job: PmCommsJob): Promis
       result: await sendSystemText(admin as never, {
         organizationId: job.organization_id,
         conversationId: ctx.conversationId,
-        body: pmGstDetailsRequest(ctx.language),
+        body: await resolvePmText(admin, { organizationId: job.organization_id, key: 'gst_details_request', language: ctx.language, vars: {}, fallback: pmGstDetailsRequest(ctx.language) }),
         ref: `pm:gst-details:${projectId}:${profile.version}`,
       }),
     },
@@ -334,14 +341,21 @@ export async function handlePaymentUpdate(admin: Admin, job: PmCommsJob): Promis
   if (ctx === 'gone') return { status: 'succeeded', outcome: 'gone', detail: 'the project no longer exists' };
   if (!ctx.conversationId) return noThread(admin, ctx, 'Payment update not sent');
 
-  const body =
+  const paymentTemplate =
     eventType === 'payment.submitted'
-      ? pmPaymentReceived(ctx.language)
+      ? ({ key: 'payment_received', fallback: pmPaymentReceived(ctx.language) } as const)
       : eventType === 'invoice.paid'
         ? isAdvance
-          ? pmAdvanceVerified(ctx.language)
-          : pmPaymentVerified(ctx.language, invoice.number)
-        : pmPaymentNeedsAttention(ctx.language, invoice.number);
+          ? ({ key: 'advance_verified', fallback: pmAdvanceVerified(ctx.language) } as const)
+          : ({ key: 'payment_verified', fallback: pmPaymentVerified(ctx.language, invoice.number) } as const)
+        : ({ key: 'payment_needs_attention', fallback: pmPaymentNeedsAttention(ctx.language, invoice.number) } as const);
+  const body = await resolvePmText(admin, {
+    organizationId: job.organization_id,
+    key: paymentTemplate.key,
+    language: ctx.language,
+    vars: { invoiceNumber: invoice.number },
+    fallback: paymentTemplate.fallback,
+  });
 
   const sent = await sendSystemText(admin as never, {
     organizationId: job.organization_id,
