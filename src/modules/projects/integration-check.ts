@@ -10,6 +10,29 @@
  * provider is a scripted fake (429, 5xx, 401, timeout). Only the REAL provider is unproven; the decisions are not.
  */
 
+/** A check may authenticate only with a secret created FOR integrations, named INTEGRATION_...: never an arbitrary server variable (a service key, the cron or report secret, the git token). */
+export const INTEGRATION_SECRET_NAME = /^INTEGRATION_[A-Z0-9_]{2,50}$/;
+
+/**
+ * The URL a check may call: https, no embedded credentials, and not a loopback, private, link-local or internal address. A person who can set a
+ * target must not be able to aim the server at its own network (SSRF). A hostname that only RESOLVES to a private address is outside what a
+ * string check can see: a deployment egress policy is the second layer (docs/phase-5-github-actions-build.md lists it as an owner step).
+ */
+export function isSafeCheckUrl(raw: string): boolean {
+  let u: URL;
+  try { u = new URL(raw); } catch { return false; }
+  if (u.protocol !== 'https:' || u.username || u.password) return false;
+  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (!h || h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal') || h.endsWith('.lan') || !h.includes('.') && !h.includes(':')) return false;
+  const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    if (a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224) return false;
+  }
+  if (h.includes(':') && (h === '::1' || h === '::' || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80') || h.startsWith('::ffff:'))) return false;
+  return true;
+}
+
 export type CheckClass = 'ok' | 'unauthorized' | 'not_found' | 'rate_limited' | 'server_error' | 'timeout' | 'network' | 'credential_missing' | 'no_target';
 
 export type HttpResult = { status: number; retryAfterSeconds?: number | null };
@@ -69,6 +92,14 @@ export async function runIntegrationCheck(input: {
   if (!c.checkUrl) {
     await report({ checkClass: 'no_target', httpStatus: null, latencyMs: null });
     return { recorded: 'nothing', checkClass: 'no_target', attempts: 0, detail: 'no check URL is set for this integration' };
+  }
+  if (!isSafeCheckUrl(c.checkUrl)) {
+    await report({ checkClass: 'no_target', httpStatus: null, latencyMs: null });
+    return { recorded: 'nothing', checkClass: 'no_target', attempts: 0, detail: 'the check URL is not an allowed address (https only, no credentials in the URL, no loopback, private or internal host); nothing was called' };
+  }
+  if (c.credentialRef && !INTEGRATION_SECRET_NAME.test(c.credentialRef)) {
+    await report({ checkClass: 'credential_missing', httpStatus: null, latencyMs: null });
+    return { recorded: 'nothing', checkClass: 'credential_missing', attempts: 0, detail: 'a check authenticates only with a secret named INTEGRATION_... ; this name is not one, so nothing was sent' };
   }
   const headers: Record<string, string> = { accept: 'application/json' };
   if (c.credentialRef) {

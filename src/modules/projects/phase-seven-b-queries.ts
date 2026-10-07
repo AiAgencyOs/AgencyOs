@@ -16,6 +16,7 @@ type Loose = {
   from(table: string): {
     select(columns: string): {
       eq(column: string, value: string): Res & { order(column: string, options: { ascending: boolean }): Res & { limit(n: number): Res } };
+      in(column: string, values: string[]): Res & { order(column: string, options: { ascending: boolean }): Res & { limit(n: number): Res } };
     };
   };
 };
@@ -38,7 +39,7 @@ export async function readPhaseSevenB(projectId: string): Promise<PhaseSevenBVie
 
   const requestsRes = await projects.from('p7b_portal_requests').select('id, kind, package_version, note, requested_name, requested_at').eq('project_id', projectId).order('requested_at', { ascending: false }).limit(50);
   if (requestsRes.error) unreadable('readPhaseSevenB.requests', requestsRes.error);
-  const settlementsRes = await projects.from('p7b_portal_request_settlements').select('request_id, decision, note, decided_at, organization_id').eq('organization_id', await organizationOf(projects, projectId)).order('decided_at', { ascending: false }).limit(200);
+  const settlementsRes = await projects.from('p7b_portal_request_settlements').select('request_id, decision, note, decided_at, organization_id').in('request_id', rows(requestsRes.data).map((r) => String(r.id))).order('decided_at', { ascending: false }).limit(200);
   if (settlementsRes.error) unreadable('readPhaseSevenB.settlements', settlementsRes.error);
   const settled = new Map(rows(settlementsRes.data).map((s) => [String(s.request_id), { decision: String(s.decision), note: str(s.note), decidedAt: String(s.decided_at) }]));
 

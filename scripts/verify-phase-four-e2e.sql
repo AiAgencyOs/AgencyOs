@@ -1338,7 +1338,7 @@ select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
 set local role authenticated;
 select pg_temp.check((select outcome from projects.set_integration_check_target(:'IC_id', 'http://insecure.example.test/health')) = 'bad_url', 'a check URL must be https');
 select pg_temp.check((select outcome from projects.set_integration_check_target(:'IC_id', 'https://api.example.test/health', 'sk-live-abc123')) = 'bad_credential_name', 'a secret is referenced by NAME in capitals; a pasted value is refused');
-select pg_temp.check((select outcome from projects.set_integration_check_target(:'IC_id', 'https://api.example.test/health', 'GATEWAY_TEST_KEY')) = 'set', 'the target is set');
+select pg_temp.check((select outcome from projects.set_integration_check_target(:'IC_id', 'https://api.example.test/health', 'INTEGRATION_GATEWAY_TEST_KEY')) = 'set', 'the target is set');
 reset role;
 select pg_temp.as_service();
 set local role service_role;
@@ -1353,8 +1353,8 @@ do $$ begin
   exception when insufficient_privilege then null; end;
 end $$;
 select pg_temp.check(true, 'a person cannot write a check result');
-select pg_temp.check((select outcome from projects.set_integration_check_target(:'IC_id', 'https://api.example.test/health', 'GATEWAY_TEST_KEY')) = 'set' and (select health from projects.integration_connections where id = :'IC_id') = 'verified', 'setting the SAME target keeps the proof');
-select pg_temp.check((select outcome from projects.set_integration_check_target(:'IC_id', 'https://api.other.example.test/health', 'GATEWAY_TEST_KEY')) = 'set', 'a different target is set');
+select pg_temp.check((select outcome from projects.set_integration_check_target(:'IC_id', 'https://api.example.test/health', 'INTEGRATION_GATEWAY_TEST_KEY')) = 'set' and (select health from projects.integration_connections where id = :'IC_id') = 'verified', 'setting the SAME target keeps the proof');
+select pg_temp.check((select outcome from projects.set_integration_check_target(:'IC_id', 'https://api.other.example.test/health', 'INTEGRATION_GATEWAY_TEST_KEY')) = 'set', 'a different target is set');
 select pg_temp.check((select health = 'configured' and verification_evidence is null and verified_at is null and verified_by_adapter is null from projects.integration_connections where id = :'IC_id'), 'and it DROPS the proof: the evidence described a connection that no longer exists');
 reset role;
 

@@ -1,17 +1,17 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { backoffMs, classifyStatus, isRetryable, runIntegrationCheck, type CheckClass, type HttpClient } from '../src/modules/projects/integration-check.ts';
+import { backoffMs, classifyStatus, INTEGRATION_SECRET_NAME, isRetryable, isSafeCheckUrl, runIntegrationCheck, type CheckClass, type HttpClient } from '../src/modules/projects/integration-check.ts';
 
 /**
  * The adapter's DECISIONS are proven here against a scripted fake provider (200, 401, 404, 429, 5xx, timeout, network). The REAL provider is the
  * one thing this cannot prove: that needs the provider's sandbox credentials, which only the owner has.
  */
 const conn = (over: Partial<{ checkUrl: string | null; credentialRef: string | null; isMock: boolean }> = {}) => ({
-  id: 'c1', kind: 'payment', health: 'configured', isMock: false, checkUrl: 'https://api.example.test/health', credentialRef: 'PROVIDER_TEST_KEY', ...over,
+  id: 'c1', kind: 'payment', health: 'configured', isMock: false, checkUrl: 'https://api.example.test/health', credentialRef: 'INTEGRATION_PROVIDER_TEST_KEY', ...over,
 });
 
-function harness(script: (Awaited<ReturnType<HttpClient>> | Error)[], env: Record<string, string> = { PROVIDER_TEST_KEY: 'sk-test-SECRET-VALUE-123456' }) {
+function harness(script: (Awaited<ReturnType<HttpClient>> | Error)[], env: Record<string, string> = { INTEGRATION_PROVIDER_TEST_KEY: 'sk-test-SECRET-VALUE-123456' }) {
   const calls: { url: string; headers: Record<string, string> }[] = [];
   const sleeps: number[] = [];
   const recorded: { ok: boolean; evidence: string }[] = [];
@@ -87,7 +87,7 @@ describe('runIntegrationCheck', () => {
     const out = await h.run();
     assert.equal(out.checkClass, 'credential_missing');
     assert.equal(out.recorded, 'nothing');
-    assert.match(out.detail, /PROVIDER_TEST_KEY/);
+    assert.match(out.detail, /INTEGRATION_PROVIDER_TEST_KEY/);
     assert.equal(h.calls.length, 0);
     assert.equal(h.recorded.length, 0);
   });
@@ -124,11 +124,34 @@ describe('runIntegrationCheck', () => {
   test('the door refusing the write is reported, not claimed as verified', async () => {
     const h = harness([{ status: 200 }]);
     const out = await runIntegrationCheck({
-      connection: conn(), adapter: 'http_health', http: async () => ({ status: 200 }), env: { PROVIDER_TEST_KEY: 'x' }, sleep: async () => {}, now: () => new Date(),
+      connection: conn(), adapter: 'http_health', http: async () => ({ status: 200 }), env: { INTEGRATION_PROVIDER_TEST_KEY: 'x' }, sleep: async () => {}, now: () => new Date(),
       record: async () => 'mock_cannot_verify', note: async () => {},
     });
     assert.equal(out.recorded, 'nothing');
     assert.match(out.detail, /mock_cannot_verify/);
     void h;
+  });
+});
+
+
+describe('a check cannot be aimed at the server\'s own secrets or network', () => {
+  test('only INTEGRATION_ secrets may authenticate a check', async () => {
+    assert.ok(INTEGRATION_SECRET_NAME.test('INTEGRATION_STRIPE_TEST'));
+    for (const bad of ['SUPABASE_SERVICE_ROLE_KEY', 'BUILD_REPORT_SECRET', 'CRON_SECRET', 'GITHUB_TOKEN', 'integration_x', 'INTEGRATION_']) assert.equal(INTEGRATION_SECRET_NAME.test(bad), false, bad);
+    const h = harness([{ status: 200 }], { SUPABASE_SERVICE_ROLE_KEY: 'service-key-value-0123456789' });
+    const out = await h.run(conn({ credentialRef: 'SUPABASE_SERVICE_ROLE_KEY' }));
+    assert.equal(out.recorded, 'nothing');
+    assert.equal(h.calls.length, 0, 'nothing was sent anywhere');
+    assert.equal(h.recorded.length, 0);
+  });
+  test('unsafe URLs are refused and nothing is called', async () => {
+    for (const url of ['http://api.example.test/h', 'https://localhost/h', 'https://127.0.0.1/h', 'https://10.0.0.5/h', 'https://192.168.1.2/h', 'https://172.20.1.1/h', 'https://169.254.169.254/latest', 'https://[::1]/h', 'https://user:pw@api.example.test/h', 'https://intranet/h', 'https://db.internal/h', 'https://printer.local/h']) {
+      assert.equal(isSafeCheckUrl(url), false, url);
+      const h = harness([{ status: 200 }]);
+      const out = await h.run(conn({ checkUrl: url }));
+      assert.equal(out.checkClass, 'no_target', url);
+      assert.equal(h.calls.length, 0, url);
+    }
+    for (const url of ['https://api.example.test/health', 'https://api.stripe.com/v1/ping', 'https://8.8.8.8/x']) assert.equal(isSafeCheckUrl(url), true, url);
   });
 });

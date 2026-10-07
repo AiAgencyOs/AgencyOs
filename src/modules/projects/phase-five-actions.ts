@@ -60,7 +60,7 @@ const WORDS: Record<string, string> = {
   repository_not_on_project: 'That repository is not linked to this project.',
   not_found_or_closed: 'That escalation is not open.',
   bad_url: 'The check URL must be an https address.',
-  bad_credential_name: 'A secret is named in capitals and underscores (for example STRIPE_TEST_KEY); never paste the value.',
+  bad_credential_name: 'A secret reference is named INTEGRATION_ followed by capitals and underscores (for example INTEGRATION_STRIPE_TEST_KEY); never paste the value.',
   pass_needs_checks_and_evidence: 'A smoke PASS names the checks that ran and an https evidence link.',
   bad_result: 'Choose a smoke result.',
   asked: 'Question recorded; the PM is told it awaits the client.',

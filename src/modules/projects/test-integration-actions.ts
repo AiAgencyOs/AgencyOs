@@ -35,7 +35,9 @@ async function enqueue(kind: string, subject: { table: 'projects' | 'tasks'; id:
   if ('status' in g) return g;
   if (!UUID.test(subject.id)) return { status: 'error', message: 'That record was not found.' };
   const supabase = await createClient();
-  const { data, error } = await supabase.schema('projects').from(subject.table).select('id').eq('id', subject.id).maybeSingle();
+  // the row must belong to the project the form named (a task of another project is not found)
+  const base = supabase.schema('projects').from(subject.table).select('id').eq('id', subject.id);
+  const { data, error } = await (subject.table === 'tasks' ? base.eq('project_id', subject.projectId) : base).maybeSingle();
   if (error) return { status: 'error', message: 'The record could not be read; nothing was queued.' };
   if (!data) return { status: 'error', message: 'That record was not found.' };
   const admin = createAdminClient();

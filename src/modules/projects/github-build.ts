@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { z } from 'zod';
 
-import type { Executor, StageResult, BuildStage } from './build-runner';
+import { maskSecrets, type Executor, type StageResult, type BuildStage } from './build-runner';
 
 /**
  * Builds on GitHub Actions - DevOps/Build spec. AgencyOS does not run a toolchain: it REQUESTS a workflow run on the exact commit through the
@@ -57,7 +57,8 @@ export const buildReportSchema = z
       .strict()
       .nullable(),
     smoke: z.object({ result: z.enum(['passed', 'failed', 'blocked']), checks: z.array(z.object({ name: z.string().min(1).max(200) }).strict()).max(50), deviceTarget: z.string().max(80).optional(), reason: z.string().max(300).optional(), evidenceUrl: z.string().url().optional() }).strict().nullable(),
-    fingerprint: z.record(z.string(), z.string().max(200)),
+    // a bounded fingerprint: few keys, short names, short values (an unbounded record is a place to hide a token or a megabyte)
+    fingerprint: z.record(z.string().regex(/^[A-Za-z0-9_.-]{1,40}$/), z.string().max(200)).refine((o) => Object.keys(o).length <= 20, 'a fingerprint has at most 20 entries'),
     command: z.string().max(300),
     runUrl: z.string().url(),
   })
@@ -85,5 +86,28 @@ export function reportExecutor(report: BuildReport): Executor {
       const a = report.artifact;
       return a ? { type: a.type, platform: a.platform, storageRef: a.storageRef, sizeBytes: a.sizeBytes, distributable: a.distributable, limitation: a.limitation } : null;
     },
+  };
+}
+
+
+/** Every free-text field of a verified report passed through the secret masker before anything is recorded or shown (the worker is trusted only as far as it is signed). */
+export function maskReport(report: BuildReport): BuildReport {
+  const m = maskSecrets;
+  return {
+    ...report,
+    command: m(report.command),
+    runUrl: m(report.runUrl),
+    fingerprint: Object.fromEntries(Object.entries(report.fingerprint).map(([k, v]) => [k, m(v)])),
+    stages: report.stages.map((s) => ({ ...s, log: s.log === undefined ? undefined : m(s.log) })),
+    artifact: report.artifact ? { ...report.artifact, storageRef: m(report.artifact.storageRef), limitation: report.artifact.limitation === undefined ? undefined : m(report.artifact.limitation) } : null,
+    smoke: report.smoke
+      ? {
+          ...report.smoke,
+          checks: report.smoke.checks.map((c) => ({ name: m(c.name) })),
+          deviceTarget: report.smoke.deviceTarget === undefined ? undefined : m(report.smoke.deviceTarget),
+          reason: report.smoke.reason === undefined ? undefined : m(report.smoke.reason),
+          evidenceUrl: report.smoke.evidenceUrl === undefined ? undefined : m(report.smoke.evidenceUrl),
+        }
+      : null,
   };
 }

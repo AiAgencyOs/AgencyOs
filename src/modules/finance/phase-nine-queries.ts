@@ -95,12 +95,14 @@ export async function listProjectCloses(limit = 100): Promise<ProjectCloseRow[]>
 export type ExceptionRowView = { id: string; kind: string; blocking: boolean; state: string; reason: string; projectId: string | null; invoiceId: string | null; invoiceNumber: string | null; openedAt: string; openedBySystem: boolean; resolutionNote: string | null; resolvedAt: string | null };
 
 /** The exception queue, open first, then newest, with the resolution trail on the resolved ones. */
-export async function listFinanceExceptions(opts: { projectId?: string; limit?: number } = {}): Promise<ExceptionRowView[]> {
+export async function listFinanceExceptions(opts: { projectId?: string; limit?: number; state?: 'open' | 'resolved' | 'dismissed' } = {}): Promise<ExceptionRowView[]> {
   const supabase = await createClient();
   let q = supabase.schema('finance').from('finance_exceptions' as never)
     .select('id, kind, blocking, state, reason, project_id, invoice_id, opened_at, opened_by_system, resolution_note, resolved_at')
     .order('state', { ascending: true }).order('opened_at', { ascending: false }).limit(opts.limit ?? 200);
   if (opts.projectId) q = q.eq('project_id', opts.projectId);
+  // the page that wants the OPEN ones asks for them: sorting by state would put 'dismissed' ahead of 'open' and a long dismissed tail could hide them
+  if (opts.state) q = q.eq('state', opts.state);
   const { data, error } = await q;
   if (error) unreadable('listFinanceExceptions', error);
   const list = rows(data);

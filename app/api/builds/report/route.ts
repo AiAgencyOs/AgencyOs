@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { createAdminClient } from '@/lib/db/admin';
 import { recordBuildReport } from '@/modules/projects/build-report-service';
-import { buildReportSchema, verifyBuildReport } from '@/modules/projects/github-build';
+import { buildReportSchema, maskReport, verifyBuildReport } from '@/modules/projects/github-build';
 
 /**
  * The build worker's signed report (GitHub Actions). Nothing unsigned, stale or malformed is accepted, and a report is only ever recorded for a
@@ -14,6 +14,9 @@ export async function POST(request: Request) {
   const secret = process.env.BUILD_REPORT_SECRET;
   if (!secret) return NextResponse.json({ error: 'build reports are not configured on this deployment' }, { status: 503 });
 
+  // refuse an oversized body BEFORE reading it (the declared length), and again on what was actually read
+  const declared = Number(request.headers.get('content-length') ?? '0');
+  if (Number.isFinite(declared) && declared > 200_000) return NextResponse.json({ error: 'report too large' }, { status: 413 });
   const rawBody = await request.text();
   if (rawBody.length > 200_000) return NextResponse.json({ error: 'report too large' }, { status: 413 });
 
@@ -35,7 +38,7 @@ export async function POST(request: Request) {
   const parsed = buildReportSchema.safeParse(json);
   if (!parsed.success) return NextResponse.json({ error: `report is malformed: ${parsed.error.issues[0]?.message ?? 'unparseable'}` }, { status: 400 });
 
-  const outcome = await recordBuildReport(createAdminClient(), parsed.data);
+  const outcome = await recordBuildReport(createAdminClient(), maskReport(parsed.data));
   if (outcome.status === 'refused') return NextResponse.json({ error: outcome.detail, reason: outcome.reason }, { status: outcome.reason === 'no_open_request' ? 409 : 422 });
   return NextResponse.json({ recorded: true, build: outcome.build, detail: outcome.detail });
 }

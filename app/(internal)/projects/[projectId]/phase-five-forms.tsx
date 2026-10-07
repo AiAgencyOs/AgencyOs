@@ -436,7 +436,7 @@ export function IntegrationCheckForm({ projectId, connectionId, checkUrl, creden
         <input type="hidden" name="projectId" value={projectId} />
         <input type="hidden" name="connectionId" value={connectionId} />
         <input aria-label="Check URL" name="checkUrl" required defaultValue={checkUrl ?? ''} placeholder="https://api.provider.example/health" className={`${field} min-w-64`} />
-        <input aria-label="Secret name" name="credentialRef" defaultValue={credentialRef ?? ''} placeholder="SECRET_NAME (not the value)" className={`${field} w-56`} />
+        <input aria-label="Secret name" name="credentialRef" defaultValue={credentialRef ?? ''} placeholder="INTEGRATION_SECRET_NAME (not the value)" className={`${field} w-56`} />
         <button type="submit" disabled={targetPending} className={buttonClass('secondary', 'sm')}>{targetPending ? '…' : 'Set check target'}</button>
         <Message state={targetState} />
       </form>

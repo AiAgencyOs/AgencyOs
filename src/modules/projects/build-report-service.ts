@@ -30,6 +30,8 @@ export async function recordBuildReport(admin: Admin, report: BuildReport): Prom
   const environment = (['dev', 'review', 'staging', 'client_test'] as const).find((e) => e === request.environment) ?? 'review';
 
   let doorRefusal: string | null = null;
+  let transient = false;
+  const secondary: string[] = [];
   const plan: RunPlan = {
     deliverableId: report.deliverableId,
     commit: report.commit,
@@ -40,7 +42,10 @@ export async function recordBuildReport(admin: Admin, report: BuildReport): Prom
         p_deliverable_id: report.deliverableId, p_environment: environment, p_status: a.status, p_failure_class: a.failureClass, p_stages: a.stages,
         p_fingerprint: a.fingerprint, p_artifact_sha256: a.artifactSha256, p_retry_of: a.retryOf, p_idempotency_key: `${a.idempotencyKey}:${report.requestId}`,
       });
-      if (e) return { outcome: `error: ${e.message}`, runId: null };
+      if (e) {
+        transient = true;
+        return { outcome: `error: ${e.message}`, runId: null };
+      }
       const row = first(data);
       const runId = (row.run_id as string | undefined) ?? null;
       // the worker's own stage logs are kept, masked in the runner AND again in the database; a log that cannot be stored never blocks the record
@@ -50,15 +55,21 @@ export async function recordBuildReport(admin: Admin, report: BuildReport): Prom
       return { outcome: String(row.outcome ?? 'no answer'), runId };
     },
     recordSmoke: async (a) => {
-      await rpc.rpc('record_smoke_check', { p_deliverable_id: report.deliverableId, p_result: a.result, p_checks: a.checks, p_device_target: a.deviceTarget, p_reason: a.reason, p_evidence_url: a.evidenceUrl });
+      const { data } = await rpc.rpc('record_smoke_check', { p_deliverable_id: report.deliverableId, p_result: a.result, p_checks: a.checks, p_device_target: a.deviceTarget, p_reason: a.reason, p_evidence_url: a.evidenceUrl });
+      const outcome = String(first(data).outcome ?? 'no answer');
+      if (outcome !== 'recorded') secondary.push(`smoke verdict: ${outcome}`);
     },
     recordArtifact: async (a) => {
-      await rpc.rpc('record_build_artifact', { p_build_run_id: a.runId, p_artifact_type: a.type, p_storage_ref: a.storageRef, p_platform: a.platform, p_size_bytes: a.sizeBytes, p_distributable: a.distributable, p_limitation: a.limitation });
+      const { data } = await rpc.rpc('record_build_artifact', { p_build_run_id: a.runId, p_artifact_type: a.type, p_storage_ref: a.storageRef, p_platform: a.platform, p_size_bytes: a.sizeBytes, p_distributable: a.distributable, p_limitation: a.limitation });
+      const outcome = String(first(data).outcome ?? 'no answer');
+      if (outcome !== 'recorded') secondary.push(`artifact record: ${outcome}`);
     },
   };
   const result = await runBuild(reportExecutor(report), plan);
   if (result.status === 'blocked') doorRefusal = result.detail;
+  // a transient database error must not consume the request: the worker can send the same report again
+  if (transient) return { status: 'refused', reason: 'unreadable', detail: 'the run could not be recorded just now; send the same report again' };
   await rpc.rpc('settle_build_request', { p_request_id: report.requestId, p_status: 'reported', p_detail: doorRefusal ?? `${result.status}: ${report.runUrl}` });
   if (doorRefusal) return { status: 'refused', reason: 'door_refused', detail: doorRefusal };
-  return { status: 'recorded', build: result.status === 'succeeded' ? 'succeeded' : 'failed', detail: result.detail };
+  return { status: 'recorded', build: result.status === 'succeeded' ? 'succeeded' : 'failed', detail: secondary.length > 0 ? `${result.detail} (not stored: ${secondary.join('; ')})` : result.detail };
 }

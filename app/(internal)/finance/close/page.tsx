@@ -27,7 +27,7 @@ export default async function FinanceCloseIndexPage({ searchParams }: { searchPa
 
   const [projects, exceptions, waivers, periods, preview] = await Promise.all([
     listProjectCloses(),
-    listFinanceExceptions({ limit: 100 }),
+    listFinanceExceptions({ limit: 200, state: 'open' }),
     listWaivers(),
     listPeriodCloses(),
     from && to && to > from ? previewPeriod(from, to) : Promise.resolve(null),

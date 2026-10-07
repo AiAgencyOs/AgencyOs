@@ -58,7 +58,7 @@ export async function readVerificationPacket(submissionId: string): Promise<Veri
 
   const checkRow = check.data as Row | null;
   const accountCheck: PacketAccountCheck = checkRow
-    ? { outcome: (['payer_differs', 'account_not_active', 'both'].includes(String(checkRow.outcome)) ? String(checkRow.outcome) : 'consistent') as 'consistent' | 'payer_differs' | 'account_not_active' | 'both', clientName: String(checkRow.client_name ?? '') }
+    ? { outcome: (['consistent', 'payer_differs', 'account_not_active', 'both'].includes(String(checkRow.outcome)) ? String(checkRow.outcome) : 'both') as 'consistent' | 'payer_differs' | 'account_not_active' | 'both', clientName: String(checkRow.client_name ?? '') }
     : null;
   const openExceptions: PacketException[] = ((exceptions.data ?? []) as Row[]).map((e) => ({ id: String(e.id), kind: String(e.kind), blocking: e.blocking === true, reason: String(e.reason ?? '') }));
   const bankLines = lines.map((l) => ({ id: l.id, statementDate: l.statementDate, description: l.description, reference: l.reference, amountMinor: l.amountMinor, status: l.status }));
