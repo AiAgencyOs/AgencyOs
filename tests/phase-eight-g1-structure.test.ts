@@ -91,7 +91,7 @@ describe('the TypeScript', () => {
     const src = code('src/modules/projects/phase-eight-g1-actions.ts');
     for (const block of src.split(/const (?:STAFF|PORTAL)_DOORS/).slice(1)) {
       const body = block.slice(0, block.indexOf('\n};'));
-      const keys = [...body.matchAll(/^  ([a-z_]+): \{/gm)].map((m) => m[1]!);
+      const keys = [...body.matchAll(/^ {2}([a-z_]+): \{/gm)].map((m) => m[1]!);
       assert.ok(keys.length >= 2);
       assert.equal(new Set(keys).size, keys.length);
     }
