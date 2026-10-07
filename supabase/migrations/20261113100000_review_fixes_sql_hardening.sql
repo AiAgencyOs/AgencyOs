@@ -8,7 +8,7 @@ declare
   v_new_mask text := $re$[a-z0-9_.-]*(api[_-]?key|secret|token|password|passwd|authtoken)[a-z0-9_.-]*["']?[[:space:]]*[=:][[:space:]]*["']?[^[:space:]"']{6,}$re$;
   v_fn text;
   v_guard_old text := ' is distinct from (select core.current_organization_id()) then';
-  v_guard_new text := ' is distinct from (select core.current_organization_id()) or not core.is_internal() then';
+  v_guard_new text := ' is distinct from (select core.current_organization_id()) or not coalesce(core.is_internal(), false) then';
   r record;
 begin
   -- 1. mask_secrets

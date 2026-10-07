@@ -1061,48 +1061,6 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       correlationId,
     });
   }
-  const supportFromMessage = await runEventJobs(admin, SUPPORT_FROM_MESSAGE_JOB_KIND, handleOpenSupportTicketFromMessage, 'runSupportTicketFromMessageJobs');
-  if (supportFromMessage.claimed > 0) {
-    return NextResponse.json({
-      claimed: supportFromMessage.claimed,
-      kind: SUPPORT_FROM_MESSAGE_JOB_KIND,
-      dispatched,
-      reaped,
-      alerted,
-      expired,
-      lapsed,
-      upsell,
-      followUps,
-      invoiceReminders,
-      campaigns,
-      emailOutreach,
-      overdue,
-      stamps,
-      supportFromMessage: supportFromMessage.results,
-      correlationId,
-    });
-  }
-  const draftHandover = await runEventJobs(admin, DRAFT_HANDOVER_JOB_KIND, handleCreateDraftHandoverPackage, 'runDraftHandoverPackageJobs');
-  if (draftHandover.claimed > 0) {
-    return NextResponse.json({
-      claimed: draftHandover.claimed,
-      kind: DRAFT_HANDOVER_JOB_KIND,
-      dispatched,
-      reaped,
-      alerted,
-      expired,
-      lapsed,
-      upsell,
-      followUps,
-      invoiceReminders,
-      campaigns,
-      emailOutreach,
-      overdue,
-      stamps,
-      draftHandover: draftHandover.results,
-      correlationId,
-    });
-  }
   const qaSchedule = await runEventJobs(admin, QA_SCHEDULE_JOB_KIND, handleScheduleQaJobs, 'runQaScheduleJobs');
   if (qaSchedule.claimed > 0) {
     return NextResponse.json({
@@ -1742,9 +1700,21 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     return NextResponse.json({ error: 'could not claim a job' }, { status: 503 });
   }
 
+  // After the agent drain, not before: a block above that claims returns at once and would starve `requirement.extract` (see the note above). These two
+  // follow-ups are not urgent, so they run only on a tick that had no agent job to do.
+  const idleTick = agentRuns.length === 0;
+  const supportFromMessage = idleTick
+    ? await runEventJobs(admin, SUPPORT_FROM_MESSAGE_JOB_KIND, handleOpenSupportTicketFromMessage, 'runSupportTicketFromMessageJobs')
+    : { claimed: 0, results: [] };
+  const draftHandover = idleTick
+    ? await runEventJobs(admin, DRAFT_HANDOVER_JOB_KIND, handleCreateDraftHandoverPackage, 'runDraftHandoverPackageJobs')
+    : { claimed: 0, results: [] };
+
   return NextResponse.json({
-    claimed: agentRuns.length,
+    claimed: agentRuns.length + supportFromMessage.claimed + draftHandover.claimed,
     agentRuns,
+    supportFromMessage: supportFromMessage.results,
+    draftHandover: draftHandover.results,
     reaped,
     dispatched,
     followUps,
