@@ -4,6 +4,7 @@ import type { createAdminClient } from '@/lib/db/admin';
 import type { HandlerResult } from '@/modules/projects/handlers';
 
 import { callDoor } from './door';
+import { considerFallbackForDisabledSpecialist } from './fallback-consideration';
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -60,6 +61,8 @@ export async function runWithEnvelope(
   const outcome = opened.row.outcome ?? 'no answer';
   const envelopeId = typeof opened.row.envelope_id === 'string' ? opened.row.envelope_id : null;
   if (outcome === 'agent_disabled') {
+    // P4-ORCH-026: the agent-level fallback is considered and RECORDED (never run): a person routes the work. Best effort; it cannot change what the hop does.
+    await considerFallbackForDisabledSpecialist(admin, { projectId: input.projectId, taskType: input.taskType });
     // The work never runs for a disabled specialist. A live dispatcher (`run_unwrapped`) SETTLES the job as held, as every hop did before envelopes (a disabled
     // agent is the installed default, not a failure: no job dies for it); the escalation the door opened stays on the record. Called without that option it is a
     // permanent failure.

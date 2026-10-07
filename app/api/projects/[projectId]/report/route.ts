@@ -7,6 +7,7 @@ import { can } from '@/lib/authz/permissions';
 import { readProjectMargin } from '@/modules/finance/margin-queries';
 import { getProject, listDevelopmentBreakdown, listInternalRoster } from '@/modules/projects/queries';
 import { listReportTasks } from '@/modules/projects/report-queries';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * SCR-026 — the project report as CSV, behind `project.read`.
@@ -30,13 +31,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
   const { projectId } = await params;
 
   const context = await getAuthContext();
-  if (!context) return NextResponse.json({ error: 'Sign in to export a report.' }, { status: 401 });
+  if (!context) return routeError('UNAUTHORIZED', 'Sign in to export a report.');
   if (!can(context, 'project.read')) {
-    return NextResponse.json({ error: 'You do not have permission to read this project.' }, { status: 403 });
+    return routeError('FORBIDDEN', 'You do not have permission to read this project.');
   }
 
   const project = await getProject(projectId);
-  if (!project) return NextResponse.json({ error: 'Project not found.' }, { status: 404 });
+  if (!project) return routeError('NOT_FOUND', 'Project not found.');
 
   const clock = await agencyClock();
   const url = new URL(request.url);

@@ -74,6 +74,7 @@ import {
  */
 import { quotationValidityDays } from '@/lib/admin/operational-defaults';
 import { clausesForProposal } from './quotation-clauses';
+import { readQuoteTax } from './p1r-quote-tax';
 import { quotationSectionsFor } from './quotation-standards';
 
 export { quotationMessage } from './schema';
@@ -1552,9 +1553,12 @@ export async function quotationPdfForProposal(
     // owner's own words.
     const clauses = await clausesForProposal(supabase, proposal.id);
     if (!clauses.ok) throw new SurroundingsUnreadable(clauses.error.message);
+    // P1-QUOTE-024: the GST sentence names the rate the agency configured, never a literal. A failed read blocks the render like the clauses do.
+    const tax = await readQuoteTax(supabase).catch((e: unknown) => { throw new SurroundingsUnreadable(e instanceof Error ? e.message : 'the tax configuration could not be read'); });
     const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems, {
       validityDays: surroundings.validityDays,
       clauses: clauses.data,
+      tax,
     });
     const rendered = await renderQuotationPdf({
       ...surroundings,
@@ -1776,9 +1780,12 @@ export async function sendProposal(
     // owner's own words.
     const clauses = await clausesForProposal(supabase, proposal.id);
     if (!clauses.ok) throw new SurroundingsUnreadable(clauses.error.message);
+    // P1-QUOTE-024: the GST sentence names the rate the agency configured, never a literal. A failed read blocks the render like the clauses do.
+    const tax = await readQuoteTax(supabase).catch((e: unknown) => { throw new SurroundingsUnreadable(e instanceof Error ? e.message : 'the tax configuration could not be read'); });
     const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems, {
       validityDays: surroundings.validityDays,
       clauses: clauses.data,
+      tax,
     });
     const rendered = await renderQuotationPdf({
       ...surroundings,

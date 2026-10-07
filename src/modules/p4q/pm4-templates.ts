@@ -13,6 +13,7 @@ export const PM4_TEMPLATES: Readonly<Record<string, { milestone: string; version
   'prototype-change-requested': { milestone: 'PM4-M06', version: 1 },
   'task2-complete': { milestone: 'PM4-M07', version: 1 },
   'm2-payment-verified': { milestone: 'PM4-M08', version: 1 },
+  'prototype-qa-blocked': { milestone: 'PM4-QA-BLOCKED', version: 1 },
 };
 
 /** Words that must never appear in a client-facing or team-facing PM message: provider and model details (PM spec section 6). */

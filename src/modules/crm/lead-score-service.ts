@@ -8,6 +8,7 @@ import { err, ok, type Result } from '@/lib/result';
 
 import { scoreLead, type LeadScore, type LeadScoreInputs } from './lead-score';
 import { rescoreLeadSchema, type RescoreLeadInput } from './lead-score-schema';
+import { readLeadScoreWeights } from './lead-score-weights';
 import { leadQualificationSchema } from './schema';
 
 /**
@@ -79,12 +80,13 @@ async function gatherInputs(
   });
 }
 
-async function storeScore(supabase: Db, leadId: string, computed: LeadScore): Promise<Result<{ score: number }>> {
+async function storeScore(supabase: Db, leadId: string, computed: LeadScore, weightsVersion: number): Promise<Result<{ score: number }>> {
   const { data, error } = await supabase.schema('crm').rpc('set_lead_score', {
     p_lead_id: leadId,
     p_score: computed.score,
     p_reasons: computed.reasons as unknown as Json,
-    p_inputs: computed.inputs as unknown as Json,
+    // P1-CRM-020: the version of the weights that produced this number, so a stored score can be traced (0 = the defaults in code)
+    p_inputs: { ...computed.inputs, weightsVersion } as unknown as Json,
   });
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'setLeadScore', detail: error.message }));
@@ -128,7 +130,8 @@ export async function rescoreLead(input: RescoreLeadInput): Promise<Result<{ sco
   const inputs = await gatherInputs(supabase, lead, new Date().toISOString());
   if (!inputs.ok) return inputs;
 
-  return storeScore(supabase, lead.id, scoreLead(inputs.data));
+  const inForce = await readLeadScoreWeights(supabase);
+  return storeScore(supabase, lead.id, scoreLead(inputs.data, inForce.weights), inForce.version);
 }
 
 /**
@@ -152,6 +155,7 @@ export async function rescoreAllLeads(): Promise<Result<{ scored: number; refuse
   if (error) return err('INTERNAL', 'Could not read the leads.');
 
   const asOf = new Date().toISOString();
+  const inForce = await readLeadScoreWeights(supabase);
   let scored = 0;
   let refused = 0;
   for (const lead of leads ?? []) {
@@ -160,7 +164,7 @@ export async function rescoreAllLeads(): Promise<Result<{ scored: number; refuse
       refused += 1;
       continue;
     }
-    const stored = await storeScore(supabase, lead.id, scoreLead(inputs.data));
+    const stored = await storeScore(supabase, lead.id, scoreLead(inputs.data, inForce.weights), inForce.version);
     if (stored.ok) scored += 1;
     else refused += 1;
   }

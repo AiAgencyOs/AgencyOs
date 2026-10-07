@@ -10,6 +10,7 @@ import { listPaymentAccounts } from './queries';
 import { PAYMENT_ACCOUNT_FIELDS, type PaymentAccountKind } from './schema';
 import { verifiedOn } from './verified-basis';
 import { freeMaintenanceMessage, invoiceMessage } from './whatsapp-send-schema';
+import { deliveryStatusOf } from '@/lib/whatsapp/delivery-status';
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -334,7 +335,7 @@ async function deliverOnWhatsApp(admin: Admin, invoice: InvoiceRow): Promise<Cha
       : uploaded;
     await admin.schema('crm').rpc('mark_outbound_delivery', {
       p_message_id: queuedDoc.message_id!,
-      p_status: sent.ok ? 'sent' : 'failed',
+      p_status: deliveryStatusOf(sent),
       ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
     });
     if (!sent.ok) return fail(`the document did not go: ${sent.message}`);

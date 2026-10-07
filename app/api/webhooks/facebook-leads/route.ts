@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createAdminClient } from '@/lib/db/admin';
 import { limitPublicRoute } from '@/lib/security/rate-limit';
 import { serverEnv } from '@/lib/env';
-import { httpStatusFor, newCorrelationId } from '@/lib/errors';
+import { newCorrelationId } from '@/lib/errors';
 import { admitDelivery, bodyEventKey, rejectDelivery, settleDelivery } from '@/lib/p13/webhook-guard';
 import { fetchLeadgenFields } from '@/lib/facebook/graph';
 import {
@@ -12,6 +12,7 @@ import {
   SIGNATURE_HEADER,
 } from '@/lib/whatsapp/verify';
 import { ingestFacebookLead } from '@/modules/crm/ingest-facebook';
+import { routeError, codeForStatus } from '@/lib/route-errors';
 
 /**
  * /api/webhooks/facebook-leads — inbound Facebook/Instagram Lead Ads —
@@ -112,7 +113,7 @@ export async function POST(request: NextRequest) {
 
   const read = await readBoundedBody(request, MAX_BODY_BYTES);
   if (read.tooLarge) {
-    return NextResponse.json({ error: 'payload too large', correlationId }, { status: 413 });
+    return routeError('VALIDATION', 'payload too large', { status: 413, correlationId });
   }
   const rawBody = read.text;
 
@@ -120,14 +121,14 @@ export async function POST(request: NextRequest) {
   if (!auth.ok) {
     // W5: a rejected signature is on record too (best effort; the answer is unchanged).
     if (auth.status === 401) await rejectDelivery(createAdminClient(), { provider: 'facebook_leads', signatureHeader: request.headers.get(SIGNATURE_HEADER), body: rawBody });
-    return NextResponse.json({ error: auth.error }, { status: auth.status });
+    return routeError(codeForStatus(auth.status), auth.error, { status: auth.status });
   }
 
   let payload: unknown;
   try {
     payload = JSON.parse(rawBody);
   } catch {
-    return NextResponse.json({ error: 'malformed payload', correlationId }, { status: 400 });
+    return routeError('VALIDATION', 'malformed payload', { status: 400, correlationId });
   }
 
   const entries = Array.isArray((payload as { entry?: unknown }).entry)
@@ -179,10 +180,7 @@ async function processLeads(
         rejected += 1;
         continue;
       }
-      return NextResponse.json(
-        { error: 'graph fetch failed', ingested, replayed, skipped, rejected, correlationId },
-        { status: 500 },
-      );
+      return routeError('INTERNAL', 'graph fetch failed', { correlationId, extra: { ingested, replayed, skipped, rejected } });
     }
 
     const result = await ingestFacebookLead(admin, {
@@ -223,10 +221,7 @@ async function processLeads(
     console.error(
       JSON.stringify({ level: 'error', scope: 'facebook-leads.webhook', detail: result.error.code, leadgenId, correlationId }),
     );
-    return NextResponse.json(
-      { error: 'ingest failed', ingested, replayed, skipped, rejected, correlationId },
-      { status: httpStatusFor(result.error.code) },
-    );
+    return routeError(result.error.code, 'ingest failed', { correlationId, extra: { ingested, replayed, skipped, rejected } });
   }
 
   return NextResponse.json({ received: leadgenIds.length, ingested, replayed, skipped, rejected, correlationId });

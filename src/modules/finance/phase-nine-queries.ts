@@ -180,6 +180,28 @@ export async function listFinanceProposals(opts: { projectId?: string; limit?: n
   });
 }
 
+export type AgentRunReportView = { requestId: string; agentKey: string; requestedAt: string; state: 'no_output' | 'awaiting_decision' | 'decided'; proposalCount: number; blockers: string[]; handoff: string };
+
+/** The completion report (P9-AG-09) of the most recent finance agent runs for one project: derived by the database, nothing stored. */
+export async function listFinanceAgentRunReports(projectId: string, limit = 8): Promise<AgentRunReportView[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('finance').from('finance_agent_requests' as never).select('id').eq('project_id', projectId).order('created_at', { ascending: false }).limit(limit);
+  if (error) unreadable('listFinanceAgentRunReports', error);
+  const reports = await Promise.all(rows(data).map(async (r) => {
+    const res = await supabase.schema('finance').rpc('p5r_finance_agent_completion_report' as never, { p_request_id: String(r.id) } as never);
+    if (res.error) unreadable('listFinanceAgentRunReports.report', res.error);
+    return res.data as unknown as Row | null;
+  }));
+  const out: AgentRunReportView[] = [];
+  for (const rep of reports) {
+    if (!rep) continue;
+    const state = rep.state === 'no_output' || rep.state === 'awaiting_decision' || rep.state === 'decided' ? rep.state : 'awaiting_decision';
+    out.push({ requestId: String(rep.requestId), agentKey: String(rep.agentKey), requestedAt: String(rep.requestedAt), state, proposalCount: num(rep.proposalCount),
+      blockers: Array.isArray(rep.blockers) ? (rep.blockers as unknown[]).map(String) : [], handoff: String(rep.handoff ?? '') });
+  }
+  return out;
+}
+
 export type PeriodCloseView = { id: string; periodStart: string; periodEnd: string; label: string; collectedMinor: number; refundedMinor: number; waivedMinor: number; expensedMinor: number; netMinor: number; exceptionCount: number; acknowledgement: string | null; closedAt: string };
 
 export async function listPeriodCloses(): Promise<PeriodCloseView[]> {

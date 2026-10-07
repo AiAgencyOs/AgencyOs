@@ -27,7 +27,7 @@ export type PaymentDetail = {
   capturedAt: string | null;
   verifiedAt: string | null;
   verifiedByName: string | null;
-  receipt: { number: string; issuedAt: string } | null;
+  receipt: { id: string; number: string; issuedAt: string } | null;
   /** The claims that became or describe this payment: by `payment_id`, or by the same reference on the same invoice. */
   claims: {
     id: string;
@@ -76,7 +76,7 @@ export async function getPaymentDetail(paymentId: string): Promise<PaymentDetail
       ? supabase.schema('core').from('users').select('full_name, email').eq('id', p.verified_by).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     // `finance.receipts` postdates the generated types (see queries.ts listReceipts), hence the casts.
-    supabase.schema('finance').from('receipts' as never).select('number, issued_at').eq('payment_id' as never, p.id).maybeSingle(),
+    supabase.schema('finance').from('receipts' as never).select('id, number, issued_at').eq('payment_id' as never, p.id).maybeSingle(),
     supabase
       .schema('finance')
       .from('payment_submissions')
@@ -96,7 +96,7 @@ export async function getPaymentDetail(paymentId: string): Promise<PaymentDetail
   if (claimsRes.error) unreadable('getPaymentDetail.claims', claimsRes.error);
   if (itemsRes.error) unreadable('getPaymentDetail.reconciliation', itemsRes.error);
 
-  const receipt = receiptRes.data as { number: string; issued_at: string } | null;
+  const receipt = receiptRes.data as { id: string; number: string; issued_at: string } | null;
   const reference = p.provider_payment_id.includes(':') ? p.provider_payment_id.slice(p.provider_payment_id.indexOf(':') + 1) : p.provider_payment_id;
   const claims = (claimsRes.data ?? []).filter(
     (c) => c.payment_id === p.id || (c.reference !== null && c.reference.trim().toUpperCase() === reference.trim().toUpperCase()),
@@ -129,7 +129,7 @@ export async function getPaymentDetail(paymentId: string): Promise<PaymentDetail
     capturedAt: p.captured_at,
     verifiedAt: p.verified_at,
     verifiedByName: verifierRes.data ? (verifierRes.data.full_name || verifierRes.data.email) : null,
-    receipt: receipt ? { number: receipt.number, issuedAt: receipt.issued_at } : null,
+    receipt: receipt ? { id: receipt.id, number: receipt.number, issuedAt: receipt.issued_at } : null,
     claims: claims.map((c) => ({
       id: c.id,
       status: c.status,

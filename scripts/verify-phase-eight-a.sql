@@ -18,6 +18,21 @@ begin
 end $$;
 grant execute on function pg_temp.check(boolean, text) to public;
 
+-- round 4: a how-to closes only on a citation of an APPROVED article, so a fixture cites one (written as the table owner, like the other fixtures)
+create or replace function pg_temp.p5r_cite_approved(p_ticket uuid) returns void language plpgsql security definer as $$
+declare v_org uuid; v_art uuid; v_u uuid; v_r text;
+begin
+  select t.organization_id into v_org from projects.support_tickets t where t.id = p_ticket;
+  select u.id into v_u from core.users u order by u.id limit 1;
+  if v_org is null or v_u is null then raise exception 'p5r fixture: no ticket or no user'; end if;
+  insert into projects.support_knowledge_articles (organization_id, article_key, version, title, body, status, proposed_by_agent, approved_by, approved_at)
+  values (v_org, 'p5r-' || replace(gen_random_uuid()::text, '-', ''), 1, 'Exporting your data', 'Open Settings, choose Export, pick a format and press the Export button.', 'approved', 'support', v_u, now())
+  returning id into v_art;
+  v_r := projects.p8g_cite(v_org, null, 'support', p_ticket, v_art);
+  if v_r <> 'cited' then raise exception 'p5r fixture: cite returned %', v_r; end if;
+end $$;
+grant execute on function pg_temp.p5r_cite_approved(uuid) to public;
+
 create or replace function pg_temp.as_user(p_sub uuid, p_org uuid, p_role text) returns void language plpgsql as $$
 begin
   perform set_config('request.jwt.claims', jsonb_build_object('sub', p_sub, 'role', 'authenticated',
@@ -256,8 +271,14 @@ select pg_temp.check((select outcome from projects.assign_support_ticket(:'THOW_
 select pg_temp.check((select outcome from projects.assign_support_ticket(:'THOW_id', :'STAFF2')) = 'assigned', 'assigned to a person');
 select pg_temp.check((select outcome from projects.advance_support_ticket(:'THOW_id', 'in_progress')) = 'advanced', 'a how-to needs no root cause to be worked');
 select pg_temp.check((select outcome from projects.advance_support_ticket(:'THOW_id', 'in_qa')) = 'no_qa_for_this_class', 'a how-to does not go to QA');
-select pg_temp.check((select outcome from projects.advance_support_ticket(:'THOW_id', 'closed', 'Explained the export button')) = 'answer_and_source_required', 'a how-to closes only with the answer AND the approved knowledge it came from');
-select pg_temp.check((select outcome from projects.advance_support_ticket(:'THOW_id', 'closed', 'Explained the export button', 'knowledge: exports-guide v2')) = 'advanced', 'a how-to is closed answered');
+select pg_temp.check((select outcome from projects.advance_support_ticket(:'THOW_id', 'closed')) = 'answer_and_source_required', 'a how-to closes only with the answer given');
+select pg_temp.check((select outcome from projects.advance_support_ticket(:'THOW_id', 'closed', 'Explained the export button')) = 'approved_knowledge_citation_required', 'NEGATIVE: a how-to cannot close without a cited approved article');
+select pg_temp.check((select outcome from projects.advance_support_ticket(:'THOW_id', 'closed', 'Explained the export button', 'knowledge: exports-guide v2')) = 'approved_knowledge_citation_required', 'NEGATIVE: free-text "evidence" no longer stands in for the citation');
+reset role;
+select pg_temp.p5r_cite_approved(:'THOW_id');
+select pg_temp.as_user(:'STAFF', :'ORG', 'member');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.advance_support_ticket(:'THOW_id', 'closed', 'Explained the export button')) = 'advanced', 'a how-to is closed answered once an approved article is cited');
 reset role;
 select pg_temp.check((select status = 'closed' and close_reason = 'answered' and defect_id is null and classification = 'how_to' from projects.support_tickets where id = :'THOW_id'), 'the how-to ended as answered, with no defect behind it');
 select pg_temp.check(pg_temp.errs(format('update projects.support_tickets set resolution_note = %L where id = %L', 'rewrite', :'THOW_id'), 'history'), 'a closed ticket is history');

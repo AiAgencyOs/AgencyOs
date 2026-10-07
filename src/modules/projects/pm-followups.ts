@@ -7,6 +7,7 @@ import { sendSystemText } from '@/modules/crm/system-message';
 
 import { loadContext } from './pm-client-comms';
 import { pmFollowUp } from './pm-messages';
+import { resolvePmText } from './pm-template-resolve';
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -188,7 +189,13 @@ async function followUpOne(
   const sent = await sendSystemText(admin as never, {
     organizationId,
     conversationId: ctx.conversationId,
-    body: pmFollowUp(ctx.language, what),
+    body: await resolvePmText(admin, {
+      organizationId,
+      key: what === 'billing' ? 'follow_up_billing' : 'follow_up_gst_details',
+      language: ctx.language,
+      vars: {},
+      fallback: pmFollowUp(ctx.language, what),
+    }),
     ref: `pm:followup:${projectId}:${decision.reminderNumber}`,
   });
   if (sent.kind === 'sent') return 'sent';

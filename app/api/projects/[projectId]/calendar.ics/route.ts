@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/db/admin';
 import { clientEnv } from '@/lib/env';
 import { renderCalendarFeed, type CalendarFeedEntry } from '@/modules/projects/calendar-feed-schema';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * SCR-022 "Sync supported calendars" — the project's ICS feed
@@ -22,7 +23,7 @@ export const dynamic = 'force-dynamic';
 const TOKEN = /^[A-Za-z0-9_-]{32,128}$/;
 
 function notFound() {
-  return NextResponse.json({ error: 'This feed is not valid. It may have been revoked.' }, { status: 404, headers: { 'Cache-Control': 'no-store' } });
+  return routeError('NOT_FOUND', 'This feed is not valid. It may have been revoked.', { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function GET(request: Request, { params }: { params: Promise<{ projectId: string }> }) {
@@ -34,7 +35,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
   const { data, error } = await admin.schema('projects').rpc('resolve_calendar_feed', { p_token: token });
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'calendar.feed.resolve', detail: error.message }));
-    return NextResponse.json({ error: 'The feed could not be checked right now.' }, { status: 503 });
+    return routeError('INTERNAL', 'The feed could not be checked right now.', { status: 503 });
   }
   const feed = data?.[0];
   if (!feed || feed.project_id !== projectId) return notFound();
@@ -46,7 +47,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
   ]);
   if (tasks.error || milestones.error || project.error) {
     console.error(JSON.stringify({ level: 'error', scope: 'calendar.feed.read', detail: tasks.error?.message ?? milestones.error?.message ?? project.error?.message }));
-    return NextResponse.json({ error: 'The project calendar could not be read right now.' }, { status: 503 });
+    return routeError('INTERNAL', 'The project calendar could not be read right now.', { status: 503 });
   }
 
   const meetings = project.data?.opportunity_id
@@ -59,7 +60,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
     : { data: [], error: null };
   if (meetings.error) {
     console.error(JSON.stringify({ level: 'error', scope: 'calendar.feed.meetings', detail: meetings.error.message }));
-    return NextResponse.json({ error: 'The project calendar could not be read right now.' }, { status: 503 });
+    return routeError('INTERNAL', 'The project calendar could not be read right now.', { status: 503 });
   }
 
   const base = `${clientEnv.NEXT_PUBLIC_APP_URL}/projects/${feed.project_id}`;

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { createAdminClient } from '@/lib/db/admin';
-import { authorise, preflight, reply } from '@/modules/projects/figma-route';
+import { authorise, preflight, reply, replyError } from '@/modules/projects/figma-route';
 
 export const OPTIONS = preflight;
 
@@ -30,15 +30,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
   if ('response' in auth) return auth.response;
 
   const text = await request.text();
-  if (text.length > 200_000) return reply(413, { error: 'That report is too large.' });
+  if (text.length > 200_000) return replyError('VALIDATION', 'That report is too large.', 413);
   let json: unknown;
   try {
     json = JSON.parse(text);
   } catch {
-    return reply(400, { error: 'The report is not valid JSON.' });
+    return replyError('VALIDATION', 'The report is not valid JSON.', 400);
   }
   const parsed = reportSchema.safeParse(json);
-  if (!parsed.success) return reply(400, { error: 'The report does not have the expected shape.' });
+  if (!parsed.success) return replyError('VALIDATION', 'The report does not have the expected shape.', 400);
 
   const { data, error } = await createAdminClient().schema('projects').rpc('record_figma_import', {
     p_organization_id: auth.claim.organizationId,
@@ -48,8 +48,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     p_page_name: (parsed.data.pageName ?? null) as unknown as string,
     p_frames: parsed.data.frames as unknown as never,
   });
-  if (error) return reply(500, { error: 'The report could not be recorded.' });
+  if (error) return replyError('INTERNAL', 'The report could not be recorded.');
   const row = Array.isArray(data) ? data[0] : data;
-  if (row?.outcome !== 'recorded') return reply(404, { error: 'That project was not found.' });
+  if (row?.outcome !== 'recorded') return replyError('NOT_FOUND', 'That project was not found.');
   return reply(200, { ok: true, importId: row.import_id });
 }

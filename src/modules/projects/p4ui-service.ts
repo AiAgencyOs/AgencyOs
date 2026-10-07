@@ -35,6 +35,9 @@ const MESSAGES: Record<string, string> = {
   would_replace: 'A different Figma file is already linked; state why it is being replaced.',
   unknown_screen: 'That screen is not part of this UI version.',
   needs_file_ref: 'A Figma file reference is required.',
+  unknown_workspace: 'That project has no Phase 4 workspace yet.',
+  bad_brand_assets: 'Every brand asset needs a name (at most 30 assets).',
+  bad_inputs: 'An accessibility target or device is not one the Designer works with.',
 };
 
 async function walk(label: string, fn: string, args: Record<string, unknown>, okOutcomes: readonly string[], capability: 'project.write'): Promise<Result<{ outcome: string; refId: string | null }>> {
@@ -77,3 +80,20 @@ export const confirmPrototypeDesignIssue = (issueId: string, isSourceUiDefect: b
 
 export const recordFigmaRefs = (uiVersionId: string, fileRef: string, pageRef: string | null, replaceReason: string | null) =>
   walk('recordFigmaRefs', 'p4ui_record_figma_refs', { p_ui_version_id: uiVersionId, p_file_ref: fileRef, p_page_ref: pageRef, p_node_refs: {}, p_replace_reason: replaceReason }, ['recorded'], 'project.write');
+
+export type DesignInputs = { brandAssets: Array<{ name: string; placeholderApproved: boolean }>; accessibilityTargets: string[]; deviceTargets: string[]; planningNote: string | null };
+
+export const recordDesignInputs = (phaseFourId: string, inputs: DesignInputs) =>
+  walk(
+    'recordDesignInputs',
+    'p4r_record_design_inputs',
+    {
+      p_phase_four_id: phaseFourId,
+      p_brand_assets: inputs.brandAssets.map((a) => (a.placeholderApproved ? { name: a.name, placeholderApproved: true } : { name: a.name })),
+      p_accessibility: inputs.accessibilityTargets,
+      p_devices: inputs.deviceTargets,
+      p_planning_note: inputs.planningNote,
+    },
+    ['recorded'],
+    'project.write',
+  );

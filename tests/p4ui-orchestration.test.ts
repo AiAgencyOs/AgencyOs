@@ -16,13 +16,18 @@ import {
 type Rows = Record<string, Record<string, unknown>[]>;
 type Call = { kind: 'read' | 'rpc'; what: string; filters?: Record<string, unknown>; args?: Record<string, unknown> };
 
-function fake(rows: Rows, rpc: Record<string, unknown> = {}) {
+function fake(rows: Rows, rpc: Record<string, unknown> = {}, seq: Rows[] = []) {
   const calls: Call[] = [];
   const admin: P4uiAdmin = {
     schema: () => ({
       from(table: string) {
         const filters: Record<string, unknown> = {};
-        const list = () => rows[table] ?? [];
+        // each successive read of a table can answer differently: `seq` entries are consumed in order, one per read of the table they name
+        const list = () => {
+          const i = seq.findIndex((e) => table in e);
+          if (i >= 0) return (seq.splice(i, 1)[0] as Rows)[table] ?? [];
+          return rows[table] ?? [];
+        };
         const q = {
           select: () => q,
           eq: (c: string, v: unknown) => {
@@ -70,7 +75,7 @@ const GOOD = { specs: [{ screenKey: 'home', ...SPEC }, { screenKey: 'checkout', 
 test('detailUiVersion: reads for the job organization, asks once, writes specs and lineage through the doors, completes the open job', async () => {
   const { admin, calls } = fake(
     { ui_versions: [VERSION], p4ui_screen_specs: [], p4ui_design_jobs: [{ id: 'j1', source_ui_version_id: null, status: 'requested' }] },
-    { p4ui_requirement_trace: { orphanScreens: [] }, p4ui_derive_version_meta: [{ outcome: 'recorded' }], p4ui_complete_design_job: [{ outcome: 'delivered' }] },
+    { p4ui_requirement_trace: { orphanScreens: [] }, p4ui_derive_version_meta: [{ outcome: 'recorded' }], p4ui_complete_design_job: [{ outcome: 'delivered' }], p4r_check_token_consistency: [{ outcome: 'inconsistent', detail: '1' }] },
   );
   let asked = 0;
   const out = await detailUiVersion(admin, { organizationId: 'org1', uiVersionId: 'v1' }, async (prompt) => {
@@ -81,7 +86,9 @@ test('detailUiVersion: reads for the job organization, asks once, writes specs a
   });
   assert.equal(out.status, 'done');
   assert.equal(asked, 1);
-  assert.deepEqual(rpcs(calls), ['p4ui_requirement_trace', 'p4ui_record_screen_spec', 'p4ui_record_screen_spec', 'p4ui_derive_version_meta', 'p4ui_complete_design_job']);
+  assert.deepEqual(rpcs(calls), ['p4ui_requirement_trace', 'p4ui_record_screen_spec', 'p4ui_record_screen_spec', 'p4r_check_token_consistency', 'p4ui_derive_version_meta', 'p4ui_complete_design_job']);
+  assert.equal(calls.find((c) => c.what === 'p4r_check_token_consistency')?.args?.p_ui_version_id, 'v1', 'Design QA\'s token check runs on the specified version');
+  assert.equal(out.status === 'done' ? out.data?.tokens : null, 'inconsistent');
   assert.equal(calls.find((c) => c.what === 'ui_versions')?.filters?.organization_id, 'org1');
   assert.equal(calls.find((c) => c.what === 'p4ui_design_jobs')?.filters?.organization_id, 'org1');
   const derive = calls.find((c) => c.what === 'p4ui_derive_version_meta');
@@ -128,7 +135,7 @@ test('detailUiVersion: a version past draft or already specified asks no model a
     [{ ...VERSION, status: 'qa_pass' }, []],
     [VERSION, [{ screen_key: 'home' }, { screen_key: 'checkout' }]],
   ] as const) {
-    const { admin, calls } = fake({ ui_versions: [version], p4ui_screen_specs: [...specs], p4ui_design_jobs: [] }, { p4ui_derive_version_meta: [{ outcome: 'exists' }] });
+    const { admin, calls } = fake({ ui_versions: [version], p4ui_screen_specs: [...specs], p4ui_design_jobs: [] }, { p4ui_derive_version_meta: [{ outcome: 'exists' }], p4r_check_token_consistency: [{ outcome: 'consistent', detail: '0' }] });
     let asked = 0;
     const out = await detailUiVersion(admin, { organizationId: 'org1', uiVersionId: 'v1' }, async () => {
       asked += 1;
@@ -136,8 +143,16 @@ test('detailUiVersion: a version past draft or already specified asks no model a
     });
     assert.equal(out.status, 'done');
     assert.equal(asked, 0);
-    assert.deepEqual(rpcs(calls), ['p4ui_derive_version_meta']);
+    assert.deepEqual(rpcs(calls), ['p4r_check_token_consistency', 'p4ui_derive_version_meta']);
   }
+});
+
+test('detailUiVersion: a token-consistency door that does not answer with a known outcome stops the run before the lineage is derived', async () => {
+  const { admin, calls } = fake({ ui_versions: [{ ...VERSION, status: 'qa_pass' }], p4ui_screen_specs: [], p4ui_design_jobs: [] }, { p4r_check_token_consistency: [{ outcome: 'forbidden' }] });
+  const out = await detailUiVersion(admin, { organizationId: 'org1', uiVersionId: 'v1' }, async () => ({ ok: true, json: GOOD }));
+  assert.equal(out.status, 'failed');
+  assert.match(out.status === 'failed' ? out.reason : '', /token-consistency door answered forbidden/);
+  assert.equal(rpcs(calls).includes('p4ui_derive_version_meta'), false);
 });
 
 test('detailUiVersion: a vanished version is skipped, not failed', async () => {
@@ -248,8 +263,42 @@ test('attachBuiltPrototype: a building build gets the artifact, then its QA hand
   );
   const out = await attachBuiltPrototype(admin, { organizationId: 'org1', prototypeArtifactId: 'a1' });
   assert.equal(out.status, 'done');
-  assert.deepEqual(rpcs(calls), ['p4ui_attach_build_artifact', 'p4ui_assemble_qa_handoff']);
+  assert.deepEqual(rpcs(calls), ['p4ui_attach_build_artifact', 'p4ui_assemble_qa_handoff', 'p4r_prototype_state_report']);
   assert.equal(calls.find((c) => c.what === 'prototype_artifacts')?.filters?.organization_id, 'org1');
+});
+
+// ── the revised-prototype gap: a revised artifact is attached to a build of its own, planned from the build that was sent back ──
+test('attachBuiltPrototype: a REVISED artifact gets a revision build planned, is attached to it, and its revision lineage is recorded', async () => {
+  // reads of the builds table, in order: the latest build (it holds the artifact it revises, a0), then the revision build the door planned
+  const { admin, calls } = fake(
+    { prototype_artifacts: [ARTIFACT] },
+    { p4r_plan_revision_build: [{ outcome: 'planned', ref_id: 'b2', detail: '2' }], p4ui_attach_build_artifact: [{ outcome: 'build_ready' }], p4ui_assemble_qa_handoff: [{ outcome: 'assembled' }], p4ui_record_build_revision: [{ outcome: 'recorded' }] },
+    [
+      { p4ui_prototype_builds: [{ id: 'b1', status: 'qa_changes_required', prototype_artifact_id: 'a0', revision_of_build_id: null }] },
+      { p4ui_prototype_builds: [{ id: 'b2', status: 'building', prototype_artifact_id: null, revision_of_build_id: 'b1' }] },
+    ],
+  );
+  const out = await attachBuiltPrototype(admin, { organizationId: 'org1', prototypeArtifactId: 'a1' });
+  assert.equal(out.status, 'done');
+  assert.deepEqual(rpcs(calls), ['p4r_plan_revision_build', 'p4ui_attach_build_artifact', 'p4ui_assemble_qa_handoff', 'p4ui_record_build_revision', 'p4r_prototype_state_report']);
+  assert.equal(calls.find((c) => c.what === 'p4ui_attach_build_artifact')?.args?.p_build_id, 'b2', 'the revised artifact is attached to the NEW build, not the one it revises');
+  assert.equal(calls.find((c) => c.what === 'p4ui_record_build_revision')?.args?.p_to_build_id, 'b2');
+  assert.equal(out.status === 'done' ? out.data?.lineage : null, 'recorded');
+});
+
+test('attachBuiltPrototype: the revision build is read for the job organization', async () => {
+  const { admin, calls } = fake(
+    { prototype_artifacts: [ARTIFACT] },
+    { p4r_plan_revision_build: [{ outcome: 'planned', ref_id: 'b2' }], p4ui_attach_build_artifact: [{ outcome: 'build_ready' }], p4ui_assemble_qa_handoff: [{ outcome: 'assembled' }] },
+    [
+      { p4ui_prototype_builds: [{ id: 'b1', status: 'failed', prototype_artifact_id: 'a0' }] },
+      { p4ui_prototype_builds: [{ id: 'b2', status: 'building', prototype_artifact_id: null, revision_of_build_id: 'b1' }] },
+    ],
+  );
+  await attachBuiltPrototype(admin, { organizationId: 'org1', prototypeArtifactId: 'a1' });
+  const reads = calls.filter((c) => c.kind === 'read' && c.what === 'p4ui_prototype_builds');
+  assert.equal(reads.length, 2);
+  assert.ok(reads.every((r) => r.filters?.organization_id === 'org1'));
 });
 
 test('attachBuiltPrototype: a self-check failure is reported as failed and NO handoff is assembled', async () => {
@@ -274,11 +323,16 @@ test('attachBuiltPrototype: a blocked build is validated first and nothing is at
 });
 
 test('attachBuiltPrototype: nothing planned, already attached, or past building means no call to the attach door', async () => {
-  for (const builds of [[], [{ id: 'b1', status: 'building', prototype_artifact_id: 'a1' }], [{ id: 'b1', status: 'qa_pass', prototype_artifact_id: 'a0' }]]) {
+  for (const builds of [[], [{ id: 'b1', status: 'building', prototype_artifact_id: 'a1' }]]) {
     const { admin, calls } = fake({ prototype_artifacts: [ARTIFACT], p4ui_prototype_builds: builds });
     assert.equal((await attachBuiltPrototype(admin, { organizationId: 'org1', prototypeArtifactId: 'a1' })).status, 'skipped');
     assert.equal(rpcs(calls).length, 0);
   }
+  // a build that holds ANOTHER artifact and was not sent back: the revision door is asked, refuses, and nothing is attached
+  const refused = fake({ prototype_artifacts: [ARTIFACT], p4ui_prototype_builds: [{ id: 'b1', status: 'qa_pass', prototype_artifact_id: 'a0' }] }, { p4r_plan_revision_build: [{ outcome: 'prior_build_not_sent_back', detail: 'qa_pass' }] });
+  const out = await attachBuiltPrototype(refused.admin, { organizationId: 'org1', prototypeArtifactId: 'a1' });
+  assert.equal(out.status, 'skipped');
+  assert.deepEqual(rpcs(refused.calls), ['p4r_plan_revision_build']);
 });
 
 test('syncBuildForDeliverable: only the sync door is called, and only for a deliverable that has a planned build', async () => {

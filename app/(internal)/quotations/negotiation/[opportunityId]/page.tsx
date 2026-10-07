@@ -8,9 +8,10 @@ import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 import { readNegotiationRounds, readOpenClarifications, readQuoteReadiness, readQuoteTimeline, readVersionChangeSummary } from '@/modules/sales/p1o-quotation-service';
 import { clarificationDraft } from '@/modules/sales/p1o-quote-reply';
+import { readInvoicesForProposal, readQuoteDelivery, readQuoteLines, readTimelineObjections } from '@/modules/sales/p1r-quotation-service';
 import { Badge, Card, CardBody, CardHeader, EmptyState, PageHeader, PermissionDenied, buttonClass, type Tone } from '@/ui';
 
-import { AcceptanceForm, ApplyTaxForm, CancelForm, ResolveClarificationForm } from './quote-forms';
+import { AcceptanceForm, ApplyTaxForm, CancelForm, LinePricingForm, ResolveClarificationForm, TimelineRecalcForm } from './quote-forms';
 
 export const metadata: Metadata = { title: 'Negotiation' };
 
@@ -57,6 +58,12 @@ export default async function NegotiationPage({ params }: { params: Promise<{ op
   const [rounds, readiness, clarifications] = await Promise.all([readNegotiationRounds(opportunityId), readQuoteReadiness(opportunityId), readOpenClarifications(opportunityId)]);
   const summaries = await Promise.all(versions.slice(0, 6).map(async (v) => [v.id, await readVersionChangeSummary(v.id)] as const));
   const timelines = await Promise.all(versions.slice(0, 3).map(async (v) => [v.id, await readQuoteTimeline(v.id)] as const));
+  // Round 4: each version's lines as priced, its delivery record, the invoices that bill it, and the deal's timeline objections.
+  const priced = await Promise.all(versions.slice(0, 6).map(async (v) => [v.id, { lines: await readQuoteLines(v.id), delivery: await readQuoteDelivery(v.id) }] as const));
+  const pricedOf = new Map(priced);
+  const showInvoices = can(context, 'invoice.read');
+  const billed = showInvoices ? new Map(await Promise.all(versions.filter((v) => v.status === 'accepted').map(async (v) => [v.id, await readInvoicesForProposal(v.id)] as const))) : new Map<string, Awaited<ReturnType<typeof readInvoicesForProposal>>>();
+  const timelineObjections = await readTimelineObjections(opportunityId);
   const summaryOf = new Map(summaries);
   const timelineOf = new Map(timelines);
   const answerable = versions.filter((v) => v.status === 'sent' || v.status === 'lapsed');
@@ -125,6 +132,26 @@ export default async function NegotiationPage({ params }: { params: Promise<{ op
                         <ul className="mt-1 text-xs">{timeline.map((t, i) => <li key={i}>{new Date(t.at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })} · {t.action} · {t.actorType}</li>)}</ul>
                       </details>
                     ) : null}
+                    {pricedOf.get(v.id)?.delivery ? (
+                      <p className="mt-1 text-xs text-muted">
+                        {pricedOf.get(v.id)?.delivery?.failedAt ? `The message failed on the wire (${new Date(pricedOf.get(v.id)!.delivery!.failedAt!).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}): resend it. ` : ''}
+                        {pricedOf.get(v.id)?.delivery?.deliveredAt ? `Delivered ${new Date(pricedOf.get(v.id)!.delivery!.deliveredAt!).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}. ` : ''}
+                        {pricedOf.get(v.id)?.delivery?.viewedAt ? `Seen ${new Date(pricedOf.get(v.id)!.delivery!.viewedAt!).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}.` : 'No read receipt (the client may have them switched off).'}
+                      </p>
+                    ) : v.status === 'sent' ? <p className="mt-1 text-xs text-muted">No delivery receipt has arrived yet.</p> : null}
+                    {(pricedOf.get(v.id)?.lines.length ?? 0) > 0 ? (
+                      <details className="mt-2 text-sm"><summary className="cursor-pointer">Lines and pricing ({pricedOf.get(v.id)?.lines.length})</summary>
+                        <ul className="mt-1 flex flex-col gap-2 text-xs">
+                          {pricedOf.get(v.id)?.lines.map((l) => (
+                            <li key={l.lineId} className="rounded border border-line p-2">
+                              <div>{l.description}: {money(l.grossMinor, v.currency)}{l.lineDiscountMinor > 0 ? ` less ${money(l.lineDiscountMinor, v.currency)} = ${money(l.netMinor, v.currency)} (${l.lineDiscountReason ?? ''})` : ''}{l.sourceKind || l.catalogueRef ? ` · from ${(l.sourceKind ?? 'unspecified').replace(/_/g, ' ')}${l.catalogueRef ? ` ${l.catalogueRef}` : ''}` : ''}</div>
+                              {can(context, 'organization.settings') && v.status === 'draft' ? <div className="mt-1"><LinePricingForm lineId={l.lineId} discountRupees={l.lineDiscountMinor / 100} sourceKind={l.sourceKind} catalogueRef={l.catalogueRef} /></div> : null}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    ) : null}
+                    {(billed.get(v.id)?.length ?? 0) > 0 ? <p className="mt-1 text-xs">Billed on: {billed.get(v.id)?.map((i) => <Link key={i.invoiceId} href={`/invoices/${i.invoiceId}`} className="mr-2 underline">{i.number} ({i.status.replace('_', ' ')}, {money(i.totalMinor, v.currency)})</Link>)}</p> : null}
                     {canAct && v.status === 'draft' ? <div className="mt-2"><ApplyTaxForm proposalId={v.id} /></div> : null}
                     {canAct && ['draft', 'pending_approval', 'approved', 'sent'].includes(v.status) ? <div className="mt-2"><CancelForm proposalId={v.id} /></div> : null}
                   </li>
@@ -154,6 +181,28 @@ export default async function NegotiationPage({ params }: { params: Promise<{ op
           )}
         </CardBody>
       </Card>
+
+      {timelineObjections.length > 0 ? (
+        <Card>
+          <CardHeader title="Timeline objections" description="The client pushed back on how long it takes. Recalculated against the estimate the quotation carries; it changes no price and no quotation, and any faster delivery is the owner's decision." />
+          <CardBody>
+            <ul className="flex flex-col gap-3">
+              {timelineObjections.map((t) => (
+                <li key={t.objectionId} className="rounded-lg border border-line p-3 text-sm">
+                  <p>Round {t.round}: “{t.concern}”</p>
+                  {t.recalc ? (
+                    <div className="mt-2">
+                      <div className="flex flex-wrap items-center gap-2"><Badge tone={t.recalc.verdict === 'fits' ? 'success' : t.recalc.verdict === 'tight' ? 'warning' : 'danger'} dot>{t.recalc.verdict.replace('_', ' ')}</Badge><span className="text-xs text-muted">asked {t.recalc.askedWeeks} weeks · estimate {t.recalc.estimateMin}-{t.recalc.estimateMax} weeks</span></div>
+                      <ul className="mt-1 list-disc pl-5 text-xs">{t.recalc.options.map((o, i) => <li key={i}>{o}</li>)}</ul>
+                    </div>
+                  ) : null}
+                  {canAct ? <div className="mt-2"><TimelineRecalcForm objectionId={t.objectionId} /></div> : null}
+                </li>
+              ))}
+            </ul>
+          </CardBody>
+        </Card>
+      ) : null}
 
       {canAct && answerable.length > 0 && contacts.length > 0 ? (
         <Card>

@@ -139,6 +139,8 @@ import { PHASE_EIGHT_SALES_WORKFLOWS } from './phase-eight-sales-workflows';
 import { DESIGN_REVISION_WORKFLOWS } from './design-revision-workflows';
 import { P789_FEEDBACK_SIGNAL_WORKFLOWS } from './p789-feedback-signal-workflow';
 import { P4UI_WORKFLOWS } from './p4ui-workflows';
+import { designInputsLine } from '@/modules/projects/p4r-inputs';
+import type { P4uiAdmin } from '@/modules/projects/p4ui';
 import { PHASE_EIGHT_ENG_WORKFLOWS } from './phase-eight-eng-workflows';
 import { PHASE_NINE_WORKFLOWS } from './phase-nine-workflows';
 import { QA_SPECIALIST_WORKFLOWS } from './qa-specialist-workflows';
@@ -163,6 +165,7 @@ import {
   type Admin as AdminClient,
   type AgentContext,
 } from './agent-run';
+import { deliveryStatusOf } from '@/lib/whatsapp/delivery-status';
 
 /**
  * What one message says, for a workflow that reads a single one rather than a
@@ -1285,6 +1288,14 @@ const UI_VERSION_DRAFT: AgentWorkflow = {
 
     const known = new Set(screens.map((raw) => (raw as { screenKey?: string }).screenKey).filter(Boolean));
 
+    // P4-UID-015/016: the planning and brand inputs a person recorded for this workspace are part of what the Designer is given. An unreadable record stops
+    // the draft (a retryable failure) rather than drafting without the brief.
+    const inputs = await designInputsLine(admin as unknown as P4uiAdmin, { organizationId: job.organization_id, phaseFourId: phaseFour.id });
+    if (!inputs.ok) {
+      await failJob(admin, job, inputs.detail);
+      return { status: 'failed', reason: inputs.detail };
+    }
+
     const runId = await openRun(ctx, {
       type: 'projects.phase_four',
       id: phaseFour.id,
@@ -1294,7 +1305,7 @@ const UI_VERSION_DRAFT: AgentWorkflow = {
     const call = await callModel(
       ctx,
       this,
-      [{ role: 'user', content: `The locked screens:\n\n${screenLines}${tokenLine}` }],
+      [{ role: 'user', content: `The locked screens:\n\n${screenLines}${tokenLine}${inputs.line}` }],
       runId,
     );
 
@@ -1632,7 +1643,9 @@ const UI_VERSION_REVISE: AgentWorkflow = {
     const outcome = row?.outcome ?? 'no answer';
 
     if (outcome !== 'revised' && outcome !== 'already_revised' && outcome !== 'revision_limit_reached') {
-      const detail = `the door answered ${outcome}`;
+      // P4-UID-054: `no_content_change` means the model returned the screens it was given. No version and no round was made; the job is retried like any answer
+      // that did not do the work, and a person sees it dead if the model keeps returning the same screens.
+      const detail = outcome === 'no_content_change' ? 'the revision changes no screen: no new version was made (no_content_change)' : `the door answered ${outcome}`;
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
@@ -2115,6 +2128,10 @@ const PROTOTYPE_BUILD_PROMPT = [
   'pick one representative example of each distinct state (loading/empty/error/success) and the',
   'handful of elements that most demonstrate the screen\'s purpose, and drop the rest rather than',
   'go over 24.',
+  'For each screen also list, in "states", the states of the locked design it demonstrates (default, empty, loading,',
+  'error, success, validation_error, offline, permission_denied and so on), in "responsiveVariants" the device sizes it',
+  'adapts to, and give every input a short "validation" rule (what it accepts). Never claim a state or a size the',
+  'locked design does not have.',
 ].join(' ');
 
 /**
@@ -2318,6 +2335,7 @@ const PROTOTYPE_BUILD_REVISE_PROMPT = [
   'A screen may have AT MOST 24 elements — this is a hard limit, not a suggestion. If a screen has',
   'more to show than that, pick one representative example of each distinct state and the handful',
   'of elements that most demonstrate the screen\'s purpose, and drop the rest rather than go over 24.',
+  'Keep each screen\'s "states", "responsiveVariants" and each input\'s "validation" rule from your prior build unless the note asks to change them.',
 ].join(' ');
 
 /**
@@ -6336,7 +6354,7 @@ const CLIENT_REPLY: AgentWorkflow = {
 
     await admin.schema('crm').rpc('mark_outbound_delivery', {
       p_message_id: outboundId,
-      p_status: sent.ok ? 'sent' : 'failed',
+      p_status: deliveryStatusOf(sent),
       ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
     });
 

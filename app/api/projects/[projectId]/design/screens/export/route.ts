@@ -4,6 +4,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject } from '@/modules/projects/queries';
 import { listScreenInventory } from '@/modules/projects/design-export-queries';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * The screen inventory as a CSV — SCR-034's export.
@@ -54,11 +55,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
 
   const context = await requireInternal(`/projects/${projectId}/design`);
   if (!can(context, 'project.read')) {
-    return NextResponse.json({ error: 'You do not have permission to read this project.' }, { status: 403 });
+    return routeError('FORBIDDEN', 'You do not have permission to read this project.');
   }
 
   const project = await getProject(projectId);
-  if (!project) return NextResponse.json({ error: 'Project not found.' }, { status: 404 });
+  if (!project) return routeError('NOT_FOUND', 'Project not found.');
 
   const screens = await listScreenInventory(projectId);
 

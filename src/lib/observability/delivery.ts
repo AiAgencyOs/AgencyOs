@@ -41,6 +41,8 @@ export type FailedDeliveryView = {
   /** Meta's message id if present — a public reference, never a secret. */
   providerRef: string | null;
   occurredAt: string;
+  /** `unknown`: the provider did not answer, so the message may have gone out (P4-PM-036). The operator checks before sending again. */
+  state: 'failed' | 'unknown';
 };
 
 const PREVIEW_MAX = 140;
@@ -72,5 +74,6 @@ export function viewFailedDelivery(row: FailedDeliveryRow): FailedDeliveryView {
     preview: previewOf(row.body),
     providerRef: str(meta.provider_ref),
     occurredAt: row.occurredAt,
+    state: meta.delivery === 'unknown' ? 'unknown' : 'failed',
   };
 }

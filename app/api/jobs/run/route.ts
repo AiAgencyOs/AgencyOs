@@ -76,6 +76,7 @@ import {
   announceMaintenanceRenewalDue,
   announceMaintenanceWorkOpened,
   announceMaintenanceQaFailed,
+  announcePrototypeQaBlocked,
   announceMaintenanceReleaseRequested,
   announceMaintenanceReleaseApproved,
   announceMaintenanceReleased,
@@ -120,6 +121,7 @@ import { guardDesignContext } from '@/modules/projects/design-context-guard';
 import { sweepDesignShareRemindersAllOrganizations } from '@/modules/projects/design-share-reminder-sender';
 import { handleP4uiAttachBuild, handleP4uiSyncBuild } from '@/modules/projects/p4ui-handlers';
 import { handleP4qClarificationAnswered } from '@/modules/p4q/clarification-return';
+import { handleRequestDefectRetest } from '@/modules/p4q/retest-request';
 import { runPhaseFourHop, runPhaseFourWorkflowHop } from '@/modules/p4q/hop';
 import { handleMatchPaymentSubmission } from '@/modules/finance/p4q-payment-match';
 import { announceMeetingBooked, announceMeetingCancelled, sendMeetingReminder } from '@/modules/crm/meeting-announcements';
@@ -1441,6 +1443,9 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const supportSlaBreachedAnnouncements = await runEventJobs(admin, SUPPORT_SLA_BREACHED_ANNOUNCE_JOB_KIND, announceSupportSlaBreached, 'runSupportSlaBreachedAnnouncementJobs');
   const retentionRecoveryAnnouncements = await runEventJobs(admin, RETENTION_RECOVERY_ANNOUNCE_JOB_KIND, announceRetentionRecoveryRequired, 'runRetentionRecoveryAnnouncementJobs');
   const maintenanceRenewalDueAnnouncements = await runEventJobs(admin, MAINTENANCE_RENEWAL_DUE_ANNOUNCE_JOB_KIND, announceMaintenanceRenewalDue, 'runMaintenanceRenewalDueAnnouncementJobs');
+  // Phase 4 round 4: Prototype QA that could not reach a verdict (internal channel only) and a claimed fix that puts its defect into QA_RETEST.
+  const prototypeQaBlockedAnnouncements = await runEventJobs(admin, PROTOTYPE_QA_BLOCKED_ANNOUNCE_JOB_KIND, announcePrototypeQaBlocked, 'runPrototypeQaBlockedAnnouncementJobs');
+  const defectRetestRequests = await runEventJobs(admin, DEFECT_RETEST_REQUEST_JOB_KIND, handleRequestDefectRetest, 'runDefectRetestRequestJobs');
   // PM8-C (Phase 8C): the post-launch maintenance events (work, QA, release, billing draft, SLA breach, stall). Internal channel only.
   const maintenanceWorkOpenedAnnouncements = await runEventJobs(admin, MAINTENANCE_WORK_OPENED_ANNOUNCE_JOB_KIND, announceMaintenanceWorkOpened, 'runMaintenanceWorkOpenedAnnouncementJobs');
   const maintenanceQaFailedAnnouncements = await runEventJobs(admin, MAINTENANCE_QA_FAILED_ANNOUNCE_JOB_KIND, announceMaintenanceQaFailed, 'runMaintenanceQaFailedAnnouncementJobs');
@@ -1819,6 +1824,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     maintenanceRenewalDueAnnouncements: maintenanceRenewalDueAnnouncements.results,
     maintenanceWorkOpenedAnnouncements: maintenanceWorkOpenedAnnouncements.results,
     maintenanceQaFailedAnnouncements: maintenanceQaFailedAnnouncements.results,
+    prototypeQaBlockedAnnouncements: prototypeQaBlockedAnnouncements.results,
+    defectRetestRequests: defectRetestRequests.results,
     maintenanceReleaseRequestedAnnouncements: maintenanceReleaseRequestedAnnouncements.results,
     maintenanceReleaseApprovedAnnouncements: maintenanceReleaseApprovedAnnouncements.results,
     maintenanceReleasedAnnouncements: maintenanceReleasedAnnouncements.results,
@@ -2003,6 +2010,8 @@ const RETENTION_RECOVERY_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceReten
 const MAINTENANCE_RENEWAL_DUE_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceRenewalDue'];
 const MAINTENANCE_WORK_OPENED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceWorkOpened'];
 const MAINTENANCE_QA_FAILED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceQaFailed'];
+const PROTOTYPE_QA_BLOCKED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announcePrototypeQaBlocked'];
+const DEFECT_RETEST_REQUEST_JOB_KIND = HANDLER_JOB_KIND['projects:requestDefectRetest'];
 const MAINTENANCE_RELEASE_REQUESTED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceReleaseRequested'];
 const MAINTENANCE_RELEASE_APPROVED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceReleaseApproved'];
 const MAINTENANCE_RELEASED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceReleased'];

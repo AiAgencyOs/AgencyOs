@@ -60,3 +60,48 @@ export async function markShareDeliveryAction(formData: FormData): Promise<void>
   const r = await callDoor(await createClient(), 'projects', 'p4q_mark_share_delivery', { p_share_id: parsed.data.shareId, p_state: parsed.data.state, p_evidence: parsed.data.evidence || null });
   back(parsed.data.projectId, r.ok ? `Delivery: ${r.row.outcome}` : 'Delivery: could not be saved');
 }
+
+/** QAP-043: attach an uploaded file (screenshot, recording, log, report) to a QA run. The file is stored first, then the door records it. */
+export async function attachQaEvidenceAction(formData: FormData): Promise<void> {
+  const parsed = ids
+    .extend({
+      runId: z.uuid(),
+      kind: z.enum(['screenshot', 'recording', 'log', 'report', 'other']),
+      checkKey: z.string().trim().max(200).optional(),
+      note: z.string().trim().max(500).optional(),
+    })
+    .safeParse(Object.fromEntries(formData));
+  const file = formData.get('file');
+  if (!parsed.success) redirect('/projects');
+  if (!(file instanceof File) || file.size === 0) back(parsed.data.projectId, 'Evidence: choose a file to upload');
+  const { attachQaEvidence } = await import('./evidence-service');
+  const result = await attachQaEvidence({ projectId: parsed.data.projectId, runId: parsed.data.runId, kind: parsed.data.kind, file: file as File, checkKey: parsed.data.checkKey || null, note: parsed.data.note || null });
+  back(parsed.data.projectId, result.ok ? 'Evidence: attached' : `Evidence: ${result.error.message}`);
+}
+
+/** QAP-019: QA is owed a retest of the exact fix build (FIX_READY -> QA_RETEST). */
+export async function requestDefectRetestAction(formData: FormData): Promise<void> {
+  const parsed = ids.extend({ defectId: z.uuid() }).safeParse(Object.fromEntries(formData));
+  if (!parsed.success) redirect('/projects');
+  const r = await callDoor(await createClient(), 'projects', 'p4s_request_defect_retest', { p_defect_id: parsed.data.defectId });
+  back(parsed.data.projectId, r.ok ? `Retest: ${r.row.outcome}` : 'Retest: could not be saved');
+}
+
+/** QAP-019: an Admin defers a defect, with a reason. The database refuses anyone else. */
+export async function deferDefectAction(formData: FormData): Promise<void> {
+  const parsed = ids
+    .extend({ defectId: z.uuid(), reason: z.string().trim().min(10).max(1000), until: z.string().trim().optional() })
+    .safeParse(Object.fromEntries(formData));
+  if (!parsed.success) redirect('/projects');
+  const until = parsed.data.until && /^\d{4}-\d{2}-\d{2}$/.test(parsed.data.until) ? parsed.data.until : null;
+  const r = await callDoor(await createClient(), 'projects', 'p4s_defer_defect', { p_defect_id: parsed.data.defectId, p_reason: parsed.data.reason, p_until: until });
+  back(parsed.data.projectId, r.ok ? `Deferral: ${r.row.outcome}` : 'Deferral: could not be saved');
+}
+
+/** QAP-019: an Admin brings a deferred defect back. */
+export async function undeferDefectAction(formData: FormData): Promise<void> {
+  const parsed = ids.extend({ defectId: z.uuid() }).safeParse(Object.fromEntries(formData));
+  if (!parsed.success) redirect('/projects');
+  const r = await callDoor(await createClient(), 'projects', 'p4s_undefer_defect', { p_defect_id: parsed.data.defectId });
+  back(parsed.data.projectId, r.ok ? `Deferral: ${r.row.outcome}` : 'Deferral: could not be saved');
+}

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import type { FormState } from '@/modules/identity/types';
 import { applyConfiguredTax, cancelQuotation, recordEvidencedAcceptance, resolveClarification } from '@/modules/sales/p1o-quotation-service';
+import { recalculateTimelineObjection, setLinePricing } from '@/modules/sales/p1r-quotation-service';
 
 const CHANNELS = ['whatsapp', 'email', 'call', 'meeting', 'portal', 'other'] as const;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -54,4 +55,24 @@ export async function applyTaxAction(_prev: FormState, f: FormData): Promise<For
   if (result.data.state === 'applied') return { status: 'success', message: 'Tax applied from the configuration; the total now includes it.' };
   if (result.data.state === 'not_draft') return { status: 'error', message: 'Only a draft can have its tax recomputed.' };
   return { status: 'error', message: 'The tax treatment is uncertain (no configuration, or GST without a GSTIN). It was flagged for an administrator in Quotation policy; it cannot go for approval until that is resolved.' };
+}
+
+/** P1-QUOTE-014/070: a line's own discount and where its price came from. An administrator, on a draft, with a reason for any discount. */
+export async function setLinePricingAction(_prev: FormState, f: FormData): Promise<FormState> {
+  const rupees = Number(text(f, 'discountRupees') || '0');
+  if (!Number.isFinite(rupees) || rupees < 0) return { status: 'error', message: 'The discount is a number of rupees, zero or more.' };
+  const result = await setLinePricing({
+    lineId: text(f, 'lineId'), discountMinor: Math.round(rupees * 100), sourceKind: text(f, 'sourceKind') || null, catalogueRef: text(f, 'catalogueRef') || null, reason: text(f, 'reason') || null,
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/quotations/negotiation');
+  return { status: 'success', message: result.data };
+}
+
+/** P1-QUOTE-057: recalculate the timeline for the weeks the client asked. Records it for the owner; changes no price and no quotation. */
+export async function recalculateTimelineAction(_prev: FormState, f: FormData): Promise<FormState> {
+  const result = await recalculateTimelineObjection(text(f, 'objectionId'), Number(text(f, 'askedWeeks')));
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/quotations/negotiation');
+  return { status: 'success', message: result.data };
 }

@@ -156,6 +156,8 @@ export const HANDLERS = [
   'projects:attachP4uiBuild',
   'projects:syncP4uiBuild',
   'projects:returnClarificationAnswer',
+  'crm:announcePrototypeQaBlocked',
+  'projects:requestDefectRetest',
   'finance:matchPaymentSubmission',
   'crm:announceMeetingBooked',
   'crm:announceMeetingCancelled',
@@ -680,6 +682,12 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * (`src/modules/p4q/clarification-return.ts`).
    */
   'project.p4q_clarification_answered': ['projects:returnClarificationAnswer'],
+  /**
+   * W-Q2 (P4-QAP-046): Prototype QA that could not reach a verdict is announced to the internal channel (never to a client); a fix a build claims puts the defect
+   * into QA_RETEST (a state on the record: it runs no model and decides nothing). QAStarted is not an event: a QA run is one atomic record.
+   */
+  'project.p4q_prototype_qa_blocked': ['crm:announcePrototypeQaBlocked'],
+  'project.p4q_prototype_fix_ready': ['projects:requestDefectRetest'],
   'project.deliverable_submitted': ['crm:announcePrototypeSubmitted', 'crm:announceBuildShared', 'projects:reopenOnSourceChange', 'projects:syncP4uiBuild'],
   /**
    * Finance §2, §5 — the M2 (20%) invoice, off the fact
@@ -947,6 +955,8 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:attachP4uiBuild': 'p4ui.attach_build',
   'projects:syncP4uiBuild': 'p4ui.sync_build',
   'projects:returnClarificationAnswer': 'p4q.clarification_return',
+  'crm:announcePrototypeQaBlocked': 'prototype_qa_blocked.announce',
+  'projects:requestDefectRetest': 'p4s.defect_retest_request',
   'finance:matchPaymentSubmission': 'payment.p4q_match',
   'crm:announceMeetingBooked': 'meeting_booked.announce',
   'crm:announceMeetingCancelled': 'meeting_cancelled.announce',

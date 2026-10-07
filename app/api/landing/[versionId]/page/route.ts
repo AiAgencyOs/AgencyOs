@@ -4,6 +4,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createAdminClient } from '@/lib/db/admin';
 import { renderApprovedPage } from '@/modules/acquisition/landing';
+import { routeError } from '@/lib/route-errors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,12 +18,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function GET(_request: Request, { params }: { params: Promise<{ versionId: string }> }) {
   const context = await requireInternal('/lead-generation/google');
   if (!can(context, 'acquisition.manage') || !context.organizationId) {
-    return NextResponse.json({ error: 'You do not have permission to manage lead generation.' }, { status: 403 });
+    return routeError('FORBIDDEN', 'You do not have permission to manage lead generation.');
   }
   const { versionId } = await params;
-  if (!UUID.test(versionId)) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+  if (!UUID.test(versionId)) return routeError('NOT_FOUND', 'Not found.');
   const page = await renderApprovedPage(createAdminClient(), context.organizationId, versionId);
-  if (!page) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+  if (!page) return routeError('NOT_FOUND', 'Not found.');
   return new NextResponse(page.html, {
     status: 200,
     headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Disposition': `attachment; filename="${page.slug}.html"`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },

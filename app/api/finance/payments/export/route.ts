@@ -7,6 +7,7 @@ import { normaliseSearch } from '@/lib/db/search';
 import { logReportExport } from '@/modules/finance/export-log';
 import { filterPayments, paymentCsvRows, paymentFilterLabel, parsePaymentFilter, PAYMENT_CSV_HEADER } from '@/modules/finance/payment-filters';
 import { listPayments } from '@/modules/finance/queries';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * The payments register as a file — SCR-053 "export". The same reader and the
@@ -20,7 +21,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   const context = await requireInternal('/finance/payments');
   if (!can(context, 'invoice.read')) {
-    return NextResponse.json({ error: 'You do not have permission to read payments.' }, { status: 403 });
+    return routeError('FORBIDDEN', 'You do not have permission to read payments.');
   }
 
   const url = new URL(request.url);

@@ -4,6 +4,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject } from '@/modules/projects/queries';
 import { readQaEvidence } from '@/modules/qa/dashboard-queries';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * The QA evidence summary — SCR-044's export. One CSV with two sections:
@@ -26,11 +27,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
 
   const context = await requireInternal(`/projects/${projectId}/qa`);
   if (!can(context, 'project.read')) {
-    return NextResponse.json({ error: 'You do not have permission to read this project.' }, { status: 403 });
+    return routeError('FORBIDDEN', 'You do not have permission to read this project.');
   }
 
   const project = await getProject(projectId);
-  if (!project) return NextResponse.json({ error: 'Project not found.' }, { status: 404 });
+  if (!project) return routeError('NOT_FOUND', 'Project not found.');
 
   const evidence = await readQaEvidence(projectId);
 

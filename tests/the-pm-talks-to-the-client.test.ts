@@ -77,7 +77,11 @@ describe('what the client is told about money', () => {
 
   test('the advance is the first priced milestone, and anything else is an ordinary verified payment', () => {
     assert.match(handler, /isAdvanceMilestone\(admin,/);
-    assert.match(handler, /isAdvance\s*\n?\s*\? pmAdvanceVerified\(ctx\.language\)\s*\n?\s*: pmPaymentVerified\(ctx\.language, invoice\.number\)/);
+    // P2-PM-006: the same choice, now made as the template the resolver looks up (an approved override) with the code wording as its fallback.
+    assert.match(
+      handler,
+      /isAdvance\s*\n?\s*\? \(\{ key: 'advance_verified', fallback: pmAdvanceVerified\(ctx\.language\) \} as const\)\s*\n?\s*: \(\{ key: 'payment_verified', fallback: pmPaymentVerified\(ctx\.language, invoice\.number\) \} as const\)/,
+    );
   });
 });
 

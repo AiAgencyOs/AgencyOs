@@ -4,6 +4,7 @@ import { getAuthContext } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject, listScopeItemsForVersion, listScopeVersionHistory, readChangeRequests } from '@/modules/projects/queries';
 import { readScopeApprovals } from '@/modules/projects/scope-approval-queries';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * SCR-028 "Export scope summary" — one project's scope as CSV: every
@@ -25,11 +26,11 @@ function cell(value: string | number | null | undefined): string {
 export async function GET(_request: Request, { params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
   const context = await getAuthContext();
-  if (!context) return NextResponse.json({ error: 'Sign in to export the scope.' }, { status: 401 });
-  if (!can(context, 'project.read')) return NextResponse.json({ error: 'You do not have permission to read this project.' }, { status: 403 });
+  if (!context) return routeError('UNAUTHORIZED', 'Sign in to export the scope.');
+  if (!can(context, 'project.read')) return routeError('FORBIDDEN', 'You do not have permission to read this project.');
 
   const project = await getProject(projectId);
-  if (!project) return NextResponse.json({ error: 'Project not found.' }, { status: 404 });
+  if (!project) return routeError('NOT_FOUND', 'Project not found.');
 
   const [versions, changeRequests, approvals] = await Promise.all([listScopeVersionHistory(projectId), readChangeRequests(projectId), readScopeApprovals(projectId)]);
   const items = await Promise.all(versions.map((v) => listScopeItemsForVersion(v.id)));

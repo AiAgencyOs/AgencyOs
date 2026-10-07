@@ -5,6 +5,7 @@ import { readAuditPage } from '@/lib/audit/queries';
 import { normaliseSearch } from '@/lib/db/search';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * The audit log as CSV, under the same filters as the page (owner decision 11,
@@ -23,7 +24,7 @@ function cell(v: string | number | null | undefined): string {
 export async function GET(request: Request) {
   const context = await requireInternal('/audit');
   if (!can(context, 'audit.export')) {
-    return NextResponse.json({ error: 'Only the owner and the ops admin may export the audit log.' }, { status: 403 });
+    return routeError('FORBIDDEN', 'Only the owner and the ops admin may export the audit log.');
   }
 
   const p = new URL(request.url).searchParams;
@@ -48,7 +49,7 @@ export async function GET(request: Request) {
 
   // Logged first. A failed log refuses the export: no file leaves unrecorded.
   if (!(await logAuditExport(auditExportFilters(p, capped), entries.length))) {
-    return NextResponse.json({ error: 'The export could not be recorded in the audit log, so no file was produced. Try again.' }, { status: 500 });
+    return routeError('INTERNAL', 'The export could not be recorded in the audit log, so no file was produced. Try again.');
   }
 
   const header = ['Id', 'At', 'Action', 'Subject type', 'Subject id', 'Actor type', 'Actor id', 'Correlation', 'Before', 'After'];

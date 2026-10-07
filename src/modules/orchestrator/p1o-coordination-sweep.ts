@@ -1,6 +1,10 @@
 import type { createAdminClient } from '@/lib/db/admin';
 import type { HandlerResult } from '@/modules/crm/handlers';
 
+import { reconcileProviderEvents, reconcileResult, type EventReader } from '@/modules/crm/p1r-provider-reconcile';
+
+import { sweepHandoffEscalations } from './p1r-escalation-sweep';
+
 /**
  * The Coordination sweep (P1-COORD-018/027, P1-SCHED-026): one job per organisation that
  *   * withdraws handoffs tied to a quotation version that is no longer live and marks work behind a dead prerequisite as blocked
@@ -42,7 +46,11 @@ export async function runCoordinationSweep(admin: Admin, job: SweepJob): Promise
  * The tick entry (the same shape as the other sweeps in `sweeps.ts`): every organisation gets its own sweep, best effort, so one organisation's failure never
  * stops the rest and the queue behind the tick never waits on housekeeping. Returns what was done; a failure is logged and counted, never swallowed silently.
  */
-export async function sweepCoordinationAllOrganizations(admin: Admin): Promise<{ organizations: number; swept: number; failed: number }> {
+export async function sweepCoordinationAllOrganizations(
+  admin: Admin,
+  deps: { calendar?: () => Promise<EventReader | null> } = {},
+): Promise<{ organizations: number; swept: number; failed: number }> {
+  const resolveCalendar = deps.calendar ?? defaultCalendar;
   const { data, error } = await admin.schema('core').from('organizations').select('id');
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `coordination sweep: organisations unreadable: ${error.message}` }));
@@ -58,6 +66,25 @@ export async function sweepCoordinationAllOrganizations(admin: Admin): Promise<{
       failed += 1;
       console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `coordination sweep for ${org.id}: ${r.detail}` }));
     }
+    // P1-COORD-020: the timeout and permission-conflict escalations ride the same tick, per organisation, best effort. A failure is counted, never swallowed.
+    const e = await sweepHandoffEscalations(admin, org.id).catch((x: unknown) => ({ status: 'failed', permanent: false, detail: x instanceof Error ? x.message : 'unknown' }) as const);
+    if (e.status !== 'succeeded') {
+      failed += 1;
+      console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `handoff escalation sweep for ${org.id}: ${e.detail}` }));
+    }
+    // P1-SCHED-041: the calendar is compared with AgencyOS for the meetings due a look. A conflict is a flag for a person; no calendar is an honest no-op.
+    const c = reconcileResult(await reconcileProviderEvents(admin, org.id, resolveCalendar).catch((x: unknown) => ({ status: 'failed', detail: x instanceof Error ? x.message : 'unknown' }) as const));
+    if (c.status === 'failed') {
+      failed += 1;
+      console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `provider reconcile for ${org.id}: ${c.detail}` }));
+    }
   }
   return { organizations: (data ?? []).length, swept, failed };
+}
+
+/** The configured Google calendar, or null. Imported on use so nothing loads the provider code (or reads its credentials) unless a meeting is due a comparison. */
+async function defaultCalendar(): Promise<EventReader | null> {
+  const { resolveGoogleCalendar } = await import('@/lib/scheduling/google');
+  const calendar = await resolveGoogleCalendar();
+  return calendar?.getEvent ? { getEvent: (id) => calendar.getEvent!(id) } : null;
 }

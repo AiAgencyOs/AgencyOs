@@ -26,6 +26,8 @@ import {
   maintenanceWorkOpenedEventSchema,
   maintenanceWorkOpenedAnnouncementFor,
   maintenanceQaFailedEventSchema,
+  prototypeQaBlockedEventSchema,
+  prototypeQaBlockedAnnouncementFor,
   maintenanceQaFailedAnnouncementFor,
   maintenanceReleaseRequestedEventSchema,
   maintenanceReleaseRequestedAnnouncementFor,
@@ -118,6 +120,7 @@ import {
   projectCompletedAnnouncementFor,
   projectCompletedEventSchema,
 } from './schema';
+import { deliveryStatusOf } from '@/lib/whatsapp/delivery-status';
 
 /**
  * Job handlers for the crm module — G-110.
@@ -693,7 +696,7 @@ export async function handleApprovalRequested(
 
   const settled = await admin.schema('crm').rpc('mark_outbound_delivery', {
     p_message_id: queued.message_id!,
-    p_status: sent.ok ? 'sent' : 'failed',
+    p_status: deliveryStatusOf(sent),
     ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
   });
 
@@ -871,9 +874,18 @@ async function renderQuotationDocument(
   if (!clauses.ok) {
     return { ok: false, kind: 'unreadable', detail: `could not read the quotation's clauses: ${clauses.error.message}` };
   }
+  // P1-QUOTE-024: the GST sentence names the rate the agency configured, never a literal. An unreadable configuration is retryable, not a PDF with a guess on it.
+  const { readQuoteTax } = await import('@/modules/sales/p1r-quote-tax');
+  let tax;
+  try {
+    tax = await readQuoteTax(admin, organizationId);
+  } catch (e) {
+    return { ok: false, kind: 'unreadable', detail: e instanceof Error ? e.message : 'could not read the tax configuration' };
+  }
   const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems, {
     validityDays: quotationValidityDays(org.settings as Record<string, unknown> | null),
     clauses: clauses.data,
+    tax,
   });
 
   try {
@@ -1068,7 +1080,7 @@ async function announceQuotationPdf(
 
   const settled = await admin.schema('crm').rpc('mark_outbound_delivery', {
     p_message_id: queued.message_id!,
-    p_status: sent.ok ? 'sent' : 'failed',
+    p_status: deliveryStatusOf(sent),
     ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
   });
 
@@ -1279,7 +1291,7 @@ export async function deliverFollowUp(admin: Admin, job: AnnounceJob): Promise<H
 
   const settled = await admin.schema('crm').rpc('mark_outbound_delivery', {
     p_message_id: queued.message_id,
-    p_status: sent.ok ? 'sent' : 'failed',
+    p_status: deliveryStatusOf(sent),
     ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
   });
 
@@ -1512,7 +1524,7 @@ export async function handleConversationEscalated(
 
   const settled = await admin.schema('crm').rpc('mark_outbound_delivery', {
     p_message_id: queued.message_id!,
-    p_status: sent.ok ? 'sent' : 'failed',
+    p_status: deliveryStatusOf(sent),
     ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
   });
 
@@ -1804,7 +1816,7 @@ export async function handleRevisionLimitEscalated(
 
   const settled = await admin.schema('crm').rpc('mark_outbound_delivery', {
     p_message_id: queued.message_id!,
-    p_status: sent.ok ? 'sent' : 'failed',
+    p_status: deliveryStatusOf(sent),
     ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
   });
 
@@ -1968,7 +1980,7 @@ export async function handlePhaseThreeCompleted(
 
   const settled = await admin.schema('crm').rpc('mark_outbound_delivery', {
     p_message_id: queued.message_id!,
-    p_status: sent.ok ? 'sent' : 'failed',
+    p_status: deliveryStatusOf(sent),
     ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
   });
 
@@ -2097,7 +2109,7 @@ export async function announceToInternalChannel(
 
   const settled = await admin.schema('crm').rpc('mark_outbound_delivery', {
     p_message_id: queued.message_id!,
-    p_status: sent.ok ? 'sent' : 'failed',
+    p_status: deliveryStatusOf(sent),
     ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
   });
 
@@ -2800,7 +2812,7 @@ export async function dispatchApprovedQuotation(
 
     const settled = await admin.schema('crm').rpc('mark_outbound_delivery', {
       p_message_id: queued.message_id!,
-      p_status: sent.ok ? 'sent' : 'failed',
+      p_status: deliveryStatusOf(sent),
       ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
     });
 
@@ -3160,7 +3172,7 @@ export async function announceOfferApplied(admin: Admin, job: AnnounceJob): Prom
 
   await admin.schema('crm').rpc('mark_outbound_delivery', {
     p_message_id: queued.message_id,
-    p_status: sent.ok ? 'sent' : 'failed',
+    p_status: deliveryStatusOf(sent),
     ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
   });
 
@@ -3706,6 +3718,23 @@ export async function announceProjectCompleted(admin: Admin, job: AnnounceJob): 
   return announceToInternalChannel(admin, job, {
     body: projectCompletedAnnouncementFor({ projectName }),
     externalRef: `project-completed:${parsed.data.projectId}`,
+    projectId: parsed.data.projectId,
+  });
+}
+
+// ── Phase 4 round 4 (PM4-QA-BLOCKED): Prototype QA could not reach a verdict. Internal channel only, once per QA run ───────────────────────
+
+/** `project.p4q_prototype_qa_blocked` -> see PM4_TEMPLATES. Internal channel only; keyed by the QA run the blocker was recorded on. Wording pending owner approval. */
+export async function announcePrototypeQaBlocked(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = prototypeQaBlockedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.p4q_prototype_qa_blocked payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: prototypeQaBlockedAnnouncementFor({ projectName, kind: parsed.data.kind }),
+    externalRef: `prototype-qa-blocked:${envelope.subjectId ?? parsed.data.projectId}:${envelope.eventId ?? 'e'}`,
     projectId: parsed.data.projectId,
   });
 }

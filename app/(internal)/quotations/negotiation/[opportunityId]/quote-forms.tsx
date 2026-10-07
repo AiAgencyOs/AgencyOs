@@ -5,7 +5,7 @@ import { useActionState } from 'react';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { FormMessage, buttonClass, inputClass } from '@/ui';
 
-import { applyTaxAction, cancelQuotationAction, recordAcceptanceAction, resolveClarificationAction } from './actions';
+import { applyTaxAction, cancelQuotationAction, recalculateTimelineAction, recordAcceptanceAction, resolveClarificationAction, setLinePricingAction } from './actions';
 
 export function AcceptanceForm({ proposals, contacts }: { proposals: Array<{ id: string; version: number; label: string }>; contacts: Array<{ id: string; name: string }> }) {
   const [state, action, pending] = useActionState(recordAcceptanceAction, IDLE_STATE);
@@ -68,6 +68,38 @@ export function ApplyTaxForm({ proposalId }: { proposalId: string }) {
     <form action={action} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="proposalId" value={proposalId} />
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Computing…' : 'Compute tax from configuration'}</button>
+      <FormMessage status={state.status} message={state.message} className="text-xs" />
+    </form>
+  );
+}
+
+const SOURCES = [['manual', 'Typed by hand'], ['pricing_reference', 'Pricing reference'], ['approved_offer', 'Approved offer'], ['catalogue', 'Price list / catalogue'], ['plan_slot', 'Plan slot']] as const;
+
+export function LinePricingForm({ lineId, discountRupees, sourceKind, catalogueRef }: { lineId: string; discountRupees: number; sourceKind: string | null; catalogueRef: string | null }) {
+  const [state, action, pending] = useActionState(setLinePricingAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="lineId" value={lineId} />
+      <input name="discountRupees" type="number" min="0" step="0.01" defaultValue={discountRupees || ''} placeholder="line discount (₹)" aria-label="Discount on this line in rupees" className={`${inputClass} h-7 w-32 text-xs`} />
+      <select name="sourceKind" defaultValue={sourceKind ?? ''} aria-label="Where the price came from" className={`${inputClass} h-7 text-xs`}>
+        <option value="">source: not said</option>
+        {SOURCES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+      </select>
+      <input name="catalogueRef" maxLength={200} defaultValue={catalogueRef ?? ''} placeholder="reference key" aria-label="Catalogue or reference key" className={`${inputClass} h-7 w-40 text-xs`} />
+      <input name="reason" maxLength={500} placeholder="reason (needed for a discount)" aria-label="Reason for the discount" className={`${inputClass} h-7 w-48 text-xs`} />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Saving…' : 'Save line'}</button>
+      <FormMessage status={state.status} message={state.message} className="text-xs" />
+    </form>
+  );
+}
+
+export function TimelineRecalcForm({ objectionId }: { objectionId: string }) {
+  const [state, action, pending] = useActionState(recalculateTimelineAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="objectionId" value={objectionId} />
+      <input name="askedWeeks" type="number" min="1" max="104" required placeholder="weeks the client asked for" aria-label="Weeks the client asked for" className={`${inputClass} h-7 w-44 text-xs`} />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Working…' : 'Recalculate the timeline'}</button>
       <FormMessage status={state.status} message={state.message} className="text-xs" />
     </form>
   );

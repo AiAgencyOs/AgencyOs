@@ -3,16 +3,24 @@ import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { createClient } from '@/lib/db/server';
 import {
+  attachQaEvidenceAction,
+  deferDefectAction,
   markShareDeliveryAction,
   recordClientReviewShareAction,
+  requestDefectRetestAction,
   resolveEscalationAction,
   resolveQaBlockerAction,
+  undeferDefectAction,
   verifyRetestedDefectAction,
 } from '@/modules/p4q/actions';
 import {
   readClientReviewShares,
   readDefectsAwaitingVerification,
+  readPrototypeDefectBoard,
+  readPrototypeTraceability,
+  readQaEvidence,
   readPrototypeAdminHandoff,
   readUiVersionsForShare,
   readValidationMatrix,
@@ -54,7 +62,7 @@ export default async function PhaseFourRecordsPage({ params, searchParams }: { p
   if (!project) notFound();
 
   const uiShares = await readUiVersionsForShare(projectId);
-  const [qa, awaiting, revisions, shares, escalations, failures, m2, reminders, trace] = await Promise.all([
+  const [qa, awaiting, revisions, shares, escalations, failures, m2, reminders, trace, defectBoard] = await Promise.all([
     readPrototypeQaOverview(projectId),
     readDefectsAwaitingVerification(projectId),
     readRevisionRecords(projectId),
@@ -64,11 +72,23 @@ export default async function PhaseFourRecordsPage({ params, searchParams }: { p
     readM2Overview(projectId),
     readReminderOverview(projectId),
     readPhaseFourTrace(projectId),
+    readPrototypeDefectBoard(projectId),
   ]);
 
   const latest = qa.find((r) => r.latest_run_id) ?? null;
   const handoff = latest ? await readPrototypeAdminHandoff(latest.artifact_id) : null;
   const matrix = latest?.latest_run_id ? await readValidationMatrix(latest.latest_run_id) : [];
+  const traceability = latest ? await readPrototypeTraceability(latest.artifact_id) : [];
+  const evidence = latest?.latest_run_id ? await readQaEvidence(latest.latest_run_id) : [];
+  const evidenceLinks = new Map<string, string>();
+  if (evidence.length > 0) {
+    const { signAttachment } = await import('@/modules/projects/attachment-store');
+    const supabase = await createClient();
+    for (const e of evidence) {
+      const signed = await signAttachment(supabase, e.storage_path);
+      if (signed.ok) evidenceLinks.set(e.id, signed.data.url);
+    }
+  }
   const list = (key: string): Array<Record<string, unknown>> => (Array.isArray(handoff?.[key]) ? (handoff?.[key] as Array<Record<string, unknown>>) : []);
 
   return (
@@ -155,6 +175,110 @@ export default async function PhaseFourRecordsPage({ params, searchParams }: { p
               ))}
             </tbody>
           </table>
+        </Card>
+      ) : null}
+
+      {traceability.length > 0 ? (
+        <Card className="p-4">
+          <h2 className="text-sm font-semibold">Requirement to prototype traceability</h2>
+          <p className="mt-1 text-xs text-muted">Each active scope item, the feature and screens that cover it, the states designed for the screen, whether this build shows it, and what QA found. A gap is named, never left blank.</p>
+          <table className="mt-2 w-full text-left text-xs">
+            <thead><tr><th>Requirement</th><th>Feature</th><th>Screen</th><th>Designed states</th><th>Built</th><th>QA</th><th>Gap</th></tr></thead>
+            <tbody>
+              {traceability.map((t, i) => (
+                <tr key={`${t.scope_item_id}-${t.screen_key ?? i}`}>
+                  <td>{t.requirement}</td>
+                  <td>{t.feature ?? '-'}</td>
+                  <td>{t.screen_key ?? '-'}</td>
+                  <td>{t.designed_states?.join(', ') || '-'}</td>
+                  <td>{t.screen_built === null ? '-' : t.screen_built ? `Yes (${t.built_elements ?? 0} elements)` : 'No'}</td>
+                  <td>{t.qa_result ? <Badge tone={t.qa_result === 'pass' ? 'success' : t.qa_result === 'fail' ? 'danger' : 'warning'} dot>{humanize(t.qa_result)}</Badge> : '-'}</td>
+                  <td className="text-muted">{t.gap ?? ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      ) : null}
+
+      <Card className="p-4">
+        <h2 className="text-sm font-semibold">Prototype defects</h2>
+        {defectBoard.length === 0 ? (
+          <p className="mt-2 text-sm text-muted">None recorded.</p>
+        ) : (
+          <table className="mt-2 w-full text-left text-xs">
+            <thead><tr><th>Defect</th><th>Priority</th><th>State</th><th>Next</th></tr></thead>
+            <tbody>
+              {defectBoard.map((d) => (
+                <tr key={d.defect_id}>
+                  <td>{d.title}<span className="block text-muted">{d.check_key}</span></td>
+                  <td>{d.priority}</td>
+                  <td>
+                    <Badge tone={d.lifecycle === 'verified' ? 'success' : d.lifecycle === 'open' ? 'danger' : 'warning'} dot>{humanize(d.lifecycle)}</Badge>
+                    {d.deferral_reason ? <span className="block text-muted">{d.deferral_reason}{d.deferred_until ? ` (until ${d.deferred_until})` : ''}</span> : null}
+                  </td>
+                  <td>
+                    {d.lifecycle === 'fix_ready' ? (
+                      <form action={requestDefectRetestAction}>
+                        <input type="hidden" name="projectId" value={projectId} />
+                        <input type="hidden" name="defectId" value={d.defect_id} />
+                        <button type="submit" className="rounded border border-line px-2">Ask QA to retest the fix build</button>
+                      </form>
+                    ) : null}
+                    {d.lifecycle === 'open' ? (
+                      <form action={deferDefectAction} className="flex flex-wrap gap-1">
+                        <input type="hidden" name="projectId" value={projectId} />
+                        <input type="hidden" name="defectId" value={d.defect_id} />
+                        <input name="reason" required minLength={10} placeholder="Why this is deferred (an Admin decides)" className="min-w-56 rounded border border-line p-1" />
+                        <input name="until" type="date" aria-label="Defer until" className="rounded border border-line p-1" />
+                        <button type="submit" className="rounded border border-line px-2">Defer</button>
+                      </form>
+                    ) : null}
+                    {d.lifecycle === 'deferred' ? (
+                      <form action={undeferDefectAction}>
+                        <input type="hidden" name="projectId" value={projectId} />
+                        <input type="hidden" name="defectId" value={d.defect_id} />
+                        <button type="submit" className="rounded border border-line px-2">Bring back</button>
+                      </form>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <p className="mt-2 text-xs text-muted">Deferring a defect does not change the QA verdict: a build QA did not pass is still not a passed build.</p>
+      </Card>
+
+      {latest?.latest_run_id ? (
+        <Card className="p-4">
+          <h2 className="text-sm font-semibold">Evidence files for the latest QA run</h2>
+          {evidence.length === 0 ? (
+            <p className="mt-2 text-sm text-muted">No file has been attached to this run.</p>
+          ) : (
+            <ul className="mt-2 space-y-1 text-sm">
+              {evidence.map((e) => (
+                <li key={e.id}>
+                  {evidenceLinks.get(e.id) ? <a href={evidenceLinks.get(e.id)} target="_blank" rel="noreferrer" className="text-brand hover:underline">{e.file_name}</a> : e.file_name}{' '}
+                  <span className="text-muted">({humanize(e.kind)}{e.check_key ? `, check ${e.check_key}` : ''}{e.note ? `, ${e.note}` : ''})</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <form action={attachQaEvidenceAction} className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+            <input type="hidden" name="projectId" value={projectId} />
+            <input type="hidden" name="runId" value={latest.latest_run_id} />
+            <select name="kind" aria-label="Kind of evidence" className="rounded border border-line p-1" defaultValue="screenshot">
+              {['screenshot', 'recording', 'log', 'report', 'other'].map((k) => <option key={k} value={k}>{humanize(k)}</option>)}
+            </select>
+            <select name="checkKey" aria-label="The check this shows" className="max-w-56 rounded border border-line p-1" defaultValue="">
+              <option value="">Whole run</option>
+              {matrix.map((c) => <option key={c.check_key} value={c.check_key}>{c.check_key}</option>)}
+            </select>
+            <input name="note" maxLength={500} placeholder="Note (optional)" className="min-w-40 rounded border border-line p-1" />
+            <input name="file" type="file" required className="text-xs" />
+            <button type="submit" className="rounded border border-line px-2">Attach</button>
+          </form>
         </Card>
       ) : null}
 

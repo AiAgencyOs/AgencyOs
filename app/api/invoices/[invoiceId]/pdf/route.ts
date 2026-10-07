@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { httpStatusFor } from '@/lib/errors';
 import { invoicePdfForInvoice } from '@/modules/finance/pdf-service';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * The invoice as a document — SCR-051, the twin of
@@ -22,7 +23,7 @@ export async function GET(
 
   if (!result.ok) {
     const status = httpStatusFor(result.error.code);
-    return NextResponse.json({ error: result.error.message }, { status });
+    return routeError(result.error.code, result.error.message, { status });
   }
 
   return new NextResponse(Buffer.from(result.data.bytes), {

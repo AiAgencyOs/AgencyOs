@@ -5,7 +5,10 @@ import { can } from '@/lib/authz/permissions';
 import { asRows, firstRow, text, userRpc, whole } from '@/lib/db/p1o-rpc';
 import { err, ok, unreadable, type Result } from '@/lib/result';
 
+import { createClient } from '@/lib/db/server';
+
 import { isBoardState, type BoardState } from './p1o-envelope';
+import { parseResultEnvelope, type ResultEnvelope } from './p1r-task-state';
 
 /**
  * The workflow task board and its controls (Admin Panel A16/A17, P1-BLUEPRINT-022, P1-COORD-025/026).
@@ -106,7 +109,42 @@ export async function readHandoffPacket(handoffId: string): Promise<Record<strin
   return data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : null;
 }
 
+/** P1-COORD-017: where a task has been, in order, and who moved it. An unreadable history is an error, never "no history". */
+export type TaskMove = { from: string | null; to: string; actorKind: 'person' | 'system'; source: string; note: string | null; at: string };
+export async function readTaskHistory(handoffId: string): Promise<TaskMove[]> {
+  const rpc = await userRpc('ai');
+  const { data, error } = await rpc('p1r_handoff_history', { p_handoff_id: handoffId });
+  if (error) unreadable('readTaskHistory', error);
+  return asRows(data).map((r) => ({
+    from: text(r.from_state), to: String(r.to_state), actorKind: r.actor_kind === 'person' ? 'person' : 'system', source: String(r.source), note: text(r.note), at: String(r.at),
+  }));
+}
+
+/** P1-HANDOFF-012: the unified result envelope of the most recent runs that served a task. Each is parsed against the agreed shape; one that is not is dropped and said so. */
+export async function readTaskRunEnvelopes(correlationId: string, toAgent: string, limit = 5): Promise<{ envelopes: ResultEnvelope[]; malformed: number }> {
+  const supabase = await createClient();
+  const { data: runs, error } = await supabase.schema('ai').from('agent_runs').select('id').eq('correlation_id', correlationId).eq('agent_key', toAgent).order('created_at', { ascending: false }).limit(limit);
+  if (error) unreadable('readTaskRunEnvelopes', error);
+  const rpc = await userRpc('ai');
+  const envelopes: ResultEnvelope[] = [];
+  let malformed = 0;
+  for (const run of runs ?? []) {
+    const { data, error: envError } = await rpc('p1r_run_result_envelope', { p_run_id: run.id });
+    if (envError) unreadable('readTaskRunEnvelopes.envelope', envError);
+    const parsed = parseResultEnvelope(data);
+    if (parsed.ok) envelopes.push(parsed.envelope);
+    else malformed += 1;
+  }
+  return { envelopes, malformed };
+}
+
 const REFUSAL: Record<string, string> = {
+  not_a_door_state: 'That is not a step a person or worker can record.',
+  not_the_next_step: 'A task moves one step at a time. Record the next step on the line, not a later one.',
+  status_disagrees: 'The task\'s own status does not allow that step yet.',
+  person_required: 'Verifying and closing are a signed-in administrator\'s decision.',
+  not_on_the_main_line: 'This task is in an exception state. Resolve that first.',
+  no_acceptance_criteria: 'A task with no acceptance criteria cannot be marked ready.',
   no_actor: 'This needs a signed-in person.',
   forbidden: 'Only an administrator of this organisation can do that.',
   unknown_handoff: 'That task no longer exists.',
@@ -157,3 +195,6 @@ export const reconcileTask = (handoffId: string, effect: 'happened' | 'did_not_h
 export const resolveEscalation = (escalationId: string, note: string) => door('p1o_resolve_handoff_escalation', { p_escalation_id: escalationId, p_note: note }, { resolved: 'Resolved.' });
 export const escalateTask = (handoffId: string, recommendation: string) =>
   door('p1o_escalate_handoff', { p_handoff_id: handoffId, p_cause: 'manual', p_recommendation: recommendation, p_attempted_routes: [] }, { escalated: 'Escalated.', already_open: 'It was already escalated for that reason.' });
+
+export const advanceTask = (handoffId: string, toState: string, note: string) =>
+  door('p1r_advance_handoff', { p_handoff_id: handoffId, p_to_state: toState, p_note: note || null }, { advanced: 'Recorded. The step is in the task\'s history.' });

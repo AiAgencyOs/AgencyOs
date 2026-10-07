@@ -6,7 +6,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
-import { listCloseExceptions, listFinanceExceptions, listFinanceProposals, listWaivers, readClosePosition } from '@/modules/finance/phase-nine-queries';
+import { listCloseExceptions, listFinanceAgentRunReports, listFinanceExceptions, listFinanceProposals, listWaivers, readClosePosition } from '@/modules/finance/phase-nine-queries';
 import { AGENT_LABEL, PROPOSAL_KIND_LABEL, blockerTitle, closeModeLabel, formatMinor, resultLabel, resultTone } from '@/modules/finance/phase-nine-view';
 import { Badge, buttonClass, Callout, Card, CardHeader, EmptyState, humanize, PageHeader, PermissionDenied } from '@/ui';
 
@@ -37,11 +37,12 @@ export default async function FinanceClosePage({ params }: { params: Promise<{ p
   if (!position) return <PermissionDenied description="This project is not visible to your role, or it does not exist." />;
 
   const supabase = await createClient();
-  const [exceptions, waivers, closeExceptions, proposals, closeRow, invoices] = await Promise.all([
+  const [exceptions, waivers, closeExceptions, proposals, runReports, closeRow, invoices] = await Promise.all([
     listFinanceExceptions({ projectId }),
     listWaivers({ projectId }),
     listCloseExceptions(projectId),
     listFinanceProposals({ projectId }),
+    listFinanceAgentRunReports(projectId),
     supabase.schema('finance').from('project_financial_closes' as never).select('mode, closed_at').eq('project_id', projectId).limit(1),
     supabase.schema('finance').from('invoices').select('id, number, status, total_minor').eq('project_id', projectId).in('status', ['issued', 'partially_paid', 'overdue']).order('created_at', { ascending: true }),
   ]);
@@ -224,6 +225,18 @@ export default async function FinanceClosePage({ params }: { params: Promise<{ p
             <PhaseNineForm door="request_agent_run" hidden={{ projectId, agentKey: 'finance_communication' }} fields={[{ kind: 'select', name: 'invoiceId', label: 'Invoice to draft a reminder for', options: invoiceOptions }]} submit="Ask for a reminder draft" />
           ) : null}
         </div>
+        {runReports.length ? (
+          <ul className="flex flex-col gap-1 text-[13px]" aria-label="Agent run completion reports">
+            {runReports.map((r) => (
+              <li key={r.requestId} className="flex flex-wrap items-center gap-2 rounded-md border border-line p-2">
+                <span className="text-muted">{AGENT_LABEL[r.agentKey] ?? r.agentKey}</span>
+                <Badge tone={r.state === 'decided' ? 'success' : r.state === 'awaiting_decision' ? 'warning' : 'neutral'}>{humanize(r.state)}</Badge>
+                <span className="text-muted">{r.proposalCount} proposal(s)</span>
+                <span className="text-muted">{r.blockers.length ? r.blockers.join('; ') : r.handoff}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {proposals.length === 0 ? <p className="text-[13px] text-muted">No proposals yet.</p> : (
           <ul className="flex flex-col gap-2 text-[13px]">
             {proposals.map((p) => (

@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/db/admin';
 import { buildFigmaExport } from '@/modules/projects/figma-export';
-import { authorise, preflight, reply } from '@/modules/projects/figma-route';
+import { authorise, preflight, reply, replyError } from '@/modules/projects/figma-route';
 
 export const OPTIONS = preflight;
 
@@ -10,6 +10,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
   const auth = authorise(request, projectId);
   if ('response' in auth) return auth.response;
   const payload = await buildFigmaExport(createAdminClient(), { organizationId: auth.claim.organizationId, projectId });
-  if (!payload) return reply(404, { error: 'That project was not found.' });
+  if (!payload) return replyError('NOT_FOUND', 'That project was not found.');
   return reply(200, payload);
 }

@@ -1,6 +1,7 @@
 import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
+import { heldByNotificationRules } from '@/lib/p13/notification-hold';
 
 import type { CampaignRefusalReason } from './campaign-types';
 import { outreachAllowance } from './outbound-window';
@@ -118,6 +119,15 @@ export async function runCampaigns(admin: Admin, limit = 25): Promise<CampaignOu
     if (!template || template.status !== 'approved' || !template.active) {
       await record(row.recipient_id, 'refused', 'template_not_approved');
       continue;
+    }
+
+    // P1-BLUEPRINT-032: a campaign message is a client-facing send, so the organisation's notification rules are asked BEFORE it goes. A hold (quiet hours,
+    // the class switched off, too soon, or rules that cannot be read) leaves the recipient pending for a later tick; the rules are the organisation's, not this
+    // recipient's, so the rest of the batch waits with it.
+    const heldByRules = await heldByNotificationRules(admin, { organizationId: row.organization_id, eventClass: 'sales', channel: 'whatsapp', clientFacing: true });
+    if (heldByRules) {
+      outcome.held += 1;
+      break;
     }
 
     const allowance = await outreachAllowance(admin, row.conversation_id);

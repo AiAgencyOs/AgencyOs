@@ -3,6 +3,8 @@ import 'server-only';
 import { NextResponse } from 'next/server';
 
 import { serverEnv } from '@/lib/env';
+import type { ErrorCode } from '@/lib/errors';
+import { routeError } from '@/lib/route-errors';
 
 import { verifyFigmaCode, type FigmaExportClaim } from './figma-export-token';
 
@@ -23,6 +25,10 @@ export const preflight = () => new NextResponse(null, { status: 204, headers: CO
 
 export const reply = (status: number, body: unknown) => NextResponse.json(body, { status, headers: { ...CORS, 'Cache-Control': 'no-store' } });
 
+/** A failure, in the one shape every route answers failures in (`src/lib/route-errors.ts`), with the plugin's CORS headers. */
+export const replyError = (code: ErrorCode, message: string, status?: number) =>
+  routeError(code, message, { ...(status === undefined ? {} : { status }), headers: { ...CORS, 'Cache-Control': 'no-store' } });
+
 /** The key plugin codes are signed with: the vault key, else the cron secret (both are server-only and already protect other signed things). */
 export function figmaSigningKey(): string {
   const env = serverEnv();
@@ -35,7 +41,7 @@ export function authorise(request: Request, projectId: string): { claim: FigmaEx
   const header = request.headers.get('authorization') ?? '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
   const claim = verifyFigmaCode(token, key, Math.floor(Date.now() / 1000));
-  if (!claim) return { response: reply(401, { error: 'That plugin code is not valid, or it has expired. Create a new one in AgencyOS.' }) };
-  if (claim.projectId !== projectId) return { response: reply(403, { error: 'That plugin code is for a different project.' }) };
+  if (!claim) return { response: replyError('UNAUTHORIZED', 'That plugin code is not valid, or it has expired. Create a new one in AgencyOS.') };
+  if (claim.projectId !== projectId) return { response: replyError('FORBIDDEN', 'That plugin code is for a different project.') };
   return { claim };
 }
