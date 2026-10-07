@@ -24,6 +24,7 @@ import { categoryForAgent } from '@/lib/ai/model-choice';
 import { runWithFallback, type Candidate } from '@/lib/ai/fallback';
 import { decideProjectAction, projectIdOf } from '@/lib/ai/policy-decision';
 import { resolveProvider } from '@/lib/ai/router';
+import { callThroughCircuit } from '@/lib/p13/model-circuit';
 import { checkRunGates, raiseAlert, refuseIfOverBudget, type AgentBudgetRefusal, type AgentsPaused, type JobCancelled } from '@/lib/ai/run-gates';
 import type { AiMessage, AiToolSpec, AiUsage, StructuredResponse, ToolCallResponse } from '@/lib/ai/types';
 import type { createAdminClient } from '@/lib/db/admin';
@@ -476,7 +477,7 @@ export async function callModel(
       };
 
       const started = Date.now();
-      const raw = await provider.data.generateStructured(request);
+      const raw = await callThroughCircuit(ctx.admin, ctx.job.organization_id, candidate.providerId, () => provider.data.generateStructured(request));
       const latencyMs = Date.now() - started;
       // Cost only from a price the Admin recorded for this model; an adapter reports 0 and nothing is ever estimated.
       const response: Result<StructuredResponse> = raw.ok
@@ -839,7 +840,8 @@ export async function callModelWithTools(
         };
 
         const started = Date.now();
-        const rawAttempt = await provider.data.generateWithTools(request);
+        const generateWithTools = provider.data.generateWithTools.bind(provider.data);
+        const rawAttempt = await callThroughCircuit(ctx.admin, ctx.job.organization_id, candidate.providerId, () => generateWithTools(request));
         const latencyMs = Date.now() - started;
         // Cost only from a price the Admin recorded for this model; an adapter reports 0 and nothing is ever estimated.
         const attempted = rawAttempt.ok
