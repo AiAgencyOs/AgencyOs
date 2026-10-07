@@ -61,6 +61,24 @@ begin
   return query select 'set'::text;
 end $$;
 
+-- what the screen shows: the rule in force for the caller's organisation (configured = false means nobody has decided, and the guard is off)
+create or replace function crm.p1r_overlap_rule_for()
+returns table (prevent_overlap boolean, reason text, set_at timestamptz, configured boolean)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_org uuid := (select core.current_organization_id());
+begin
+  if (select auth.uid()) is null or not coalesce((select core.is_internal()), false) or v_org is null then return; end if;
+  return query
+  select r.prevent_overlap, r.reason, r.set_at, true from crm.p1r_overlap_rule r where r.organization_id = v_org
+  union all
+  select false, null::text, null::timestamptz, false where not exists (select 1 from crm.p1r_overlap_rule r where r.organization_id = v_org);
+end $$;
+
 create or replace function crm.p1r_enforce_no_overlap()
 returns trigger
 language plpgsql
@@ -256,7 +274,7 @@ create table if not exists crm.p1r_scheduling_drafts (
   organization_id uuid not null references core.organizations(id) on delete cascade,
   meeting_id      uuid not null references crm.meetings(id) on delete cascade,
   kind            text not null check (kind in ('proposal', 'confirmation', 'no_availability', 'clarification')),
-  language        text not null check (language in ('en', 'hinglish')),
+  language        text not null check (language in ('en', 'hinglish', 'hindi')),
   body            text not null check (length(btrim(body)) between 1 and 1500),
   status          text not null default 'draft' check (status in ('draft', 'sent', 'discarded')),
   flag_id         uuid references crm.p1o_meeting_flags(id) on delete set null,
@@ -311,7 +329,7 @@ begin
   v_refusal := ai.p1o_door_refusal(v_m.organization_id, false);
   if v_refusal is not null then return query select v_refusal, null::uuid; return; end if;
   if p_kind is null or p_kind not in ('proposal', 'confirmation', 'no_availability', 'clarification') then return query select 'bad_kind'::text, null::uuid; return; end if;
-  if p_language is null or p_language not in ('en', 'hinglish') then return query select 'bad_language'::text, null::uuid; return; end if;
+  if p_language is null or p_language not in ('en', 'hinglish', 'hindi') then return query select 'bad_language'::text, null::uuid; return; end if;
   if v_body is null or length(v_body) > 1500 then return query select 'bad_body'::text, null::uuid; return; end if;
   -- a message about a meeting that is in a state it does not fit would mislead the client
   if (p_kind = 'proposal' and v_m.status <> 'proposed')
@@ -441,10 +459,10 @@ begin
 end $$;
 
 -- ── grants ─────────────────────────────────────────────────────────────────
-revoke all on function crm.p1r_set_overlap_rule(uuid, boolean, text), crm.p1r_meeting_overlaps(timestamptz, timestamptz, uuid), crm.p1r_provider_check_summary(int),
+revoke all on function crm.p1r_overlap_rule_for(), crm.p1r_set_overlap_rule(uuid, boolean, text), crm.p1r_meeting_overlaps(timestamptz, timestamptz, uuid), crm.p1r_provider_check_summary(int),
   crm.p1r_save_scheduling_draft(uuid, text, text, text, uuid), crm.p1r_record_scheduling_draft_sent(uuid, uuid), crm.p1r_discard_scheduling_draft(uuid, text),
   crm.p1r_open_scheduling_drafts(int), crm.p1r_reminder_metrics(timestamptz, timestamptz) from public, anon;
-grant execute on function crm.p1r_set_overlap_rule(uuid, boolean, text), crm.p1r_meeting_overlaps(timestamptz, timestamptz, uuid), crm.p1r_provider_check_summary(int),
+grant execute on function crm.p1r_overlap_rule_for(), crm.p1r_set_overlap_rule(uuid, boolean, text), crm.p1r_meeting_overlaps(timestamptz, timestamptz, uuid), crm.p1r_provider_check_summary(int),
   crm.p1r_save_scheduling_draft(uuid, text, text, text, uuid), crm.p1r_record_scheduling_draft_sent(uuid, uuid), crm.p1r_discard_scheduling_draft(uuid, text),
   crm.p1r_open_scheduling_drafts(int), crm.p1r_reminder_metrics(timestamptz, timestamptz) to authenticated, service_role;
 revoke all on function crm.p1r_meetings_to_reconcile(uuid, int, interval, interval), crm.p1r_record_provider_check(uuid, text, timestamptz, timestamptz, text) from public, anon, authenticated;

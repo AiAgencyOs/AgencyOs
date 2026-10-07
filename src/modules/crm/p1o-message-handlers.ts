@@ -4,7 +4,9 @@ import type { createAdminClient } from '@/lib/db/admin';
 import { reviewQuoteReply, type QuoteReplyClass, type ReplyClassifier } from '@/modules/sales/p1o-quote-reply';
 
 import type { HandlerResult } from './handlers';
-import { routeMeetingIntent, type FlagKind, type IntentClassifier } from './p1o-meeting-intent';
+import { keywordIntentClassifier, routeMeetingIntent, type FlagKind, type IntentClassifier, type IntentReading } from './p1o-meeting-intent';
+import { saveSchedulingDraftAsService } from './p1r-draft-store';
+import { composeClarification, type CandidateMeeting, type ClarificationIntent, type DraftLanguage, type MeetingMode } from '@/lib/scheduling/p1r-messages';
 
 /**
  * Two readers of a client's message (subscribers to `message.received`), both of which only ever hand work to a PERSON:
@@ -57,17 +59,20 @@ export async function routeSchedulingMessage(admin: Admin, job: MessageJob, deps
   const meetings = await admin
     .schema('crm')
     .from('meetings')
-    .select('id, status, confirmed_start_at')
+    .select('id, status, confirmed_start_at, timezone, booked_mode, requested_mode')
     .eq('organization_id', job.organization_id)
     .eq('lead_id', read.value.leadId)
     .in('status', ['requested', 'proposed', 'booked']);
   if (meetings.error) return { status: 'failed', permanent: false, detail: `could not read the lead's meetings: ${meetings.error.message}` };
 
   const flags = rpc(admin, 'crm');
+  // the reading is kept so the clarification below can say whether the client's words pulled both ways
+  let reading: IntentReading | null = null;
+  const classify: IntentClassifier = async (t) => (reading = await (deps.classify ?? keywordIntentClassifier)(t));
   const routed = await routeMeetingIntent(
     { text: read.value.body, meetings: ((meetings.data ?? []) as Array<{ id: string; status: string; confirmed_start_at: string | null }>).map((m) => ({ id: m.id, status: m.status, confirmedStartAt: m.confirmed_start_at })) },
     {
-      classify: deps.classify,
+      classify,
       flag: async (a) => {
         const { data, error } = await flags('p1o_flag_meeting', { p_meeting_id: a.meetingId, p_kind: a.kind satisfies FlagKind, p_note: a.note, p_candidate_meeting_ids: a.candidateMeetingIds });
         if (error) throw new Error(error.message);
@@ -78,7 +83,30 @@ export async function routeSchedulingMessage(admin: Admin, job: MessageJob, deps
 
   if ('failed' in routed) return { status: 'failed', permanent: false, detail: routed.failed };
   if (!routed.routed) return notMine(routed.reason);
-  return { status: 'succeeded', outcome: routed.outcome === 'already_open' ? 'already_flagged' : 'flagged', detail: `${routed.kind} flagged for a person on meeting ${routed.meetingId}` };
+
+  // Round 4 (P1-SCHED-011): when the message could mean more than one meeting, or pulls both ways, the question to ask the client is DRAFTED for a person to send.
+  // Nothing is sent. A draft that cannot be kept does not undo the flag: the flag is what a person acts on, and the detail says so.
+  let drafted = '';
+  if (routed.kind === 'ambiguous_cancel' || routed.kind === 'ambiguous_reschedule' || routed.kind === 'needs_escalation') {
+    const rows = (meetings.data ?? []) as Array<{ id: string; status: string; confirmed_start_at: string | null; timezone: string | null; booked_mode: string | null; requested_mode: string | null }>;
+    const ids = routed.candidates.length > 0 ? routed.candidates : [routed.meetingId];
+    const candidates: CandidateMeeting[] = ids.map((id) => {
+      const m = rows.find((r) => r.id === id);
+      const mode = m?.booked_mode ?? m?.requested_mode ?? null;
+      return { startAt: m?.confirmed_start_at ?? null, timezone: m?.timezone ?? null, mode: (mode as MeetingMode | null) };
+    });
+    const intent: ClarificationIntent = (reading as IntentReading | null)?.intent === 'ambiguous' ? 'unclear' : routed.kind === 'ambiguous_reschedule' ? 'reschedule' : routed.kind === 'ambiguous_cancel' ? 'cancel' : 'unclear';
+    try {
+      const language: DraftLanguage = /[\u0900-\u097F]/.test(read.value.body) ? 'hindi' : read.value.language === 'hinglish' ? 'hinglish' : 'en';
+      const saved = await saveSchedulingDraftAsService(admin, {
+        meetingId: routed.meetingId, kind: 'clarification', language, body: composeClarification({ intent, candidates, language, fallbackTimezone: 'Asia/Kolkata' }),
+      });
+      drafted = saved.ok ? '; a clarification question was drafted for a person to send' : `; the clarification draft could not be kept (${saved.reason})`;
+    } catch (e) {
+      drafted = `; the clarification draft could not be composed (${e instanceof Error ? e.message : 'unknown'})`;
+    }
+  }
+  return { status: 'succeeded', outcome: routed.outcome === 'already_open' ? 'already_flagged' : 'flagged', detail: `${routed.kind} flagged for a person on meeting ${routed.meetingId}${drafted}` };
 }
 
 export async function reviewQuoteReplyMessage(admin: Admin, job: MessageJob, deps: { classify?: ReplyClassifier } = {}): Promise<HandlerResult> {

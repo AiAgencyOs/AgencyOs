@@ -11,6 +11,7 @@ import { createClient } from '@/lib/db/server';
 import type { Json } from '@/lib/db/types';
 import { err, ok, type Result } from '@/lib/result';
 import { interpretBook, interpretPropose } from '@/lib/scheduler/meeting-commands-eval';
+import { draftConfirmation, draftNoAvailability, draftProposal } from '@/modules/crm/p1r-scheduling-compose';
 
 import { bufferedSlot, offerableSlots, proposalWindow, readAvailabilityFrom, sliceWindows, slotStillFree, type Slot } from './availability';
 import { resolveGoogleCalendar } from './google';
@@ -152,7 +153,15 @@ export async function proposeSlots(id: string, durationMinutes: number): Promise
   if (error) return err('INTERNAL', `Could not record the proposal: ${error.message}`);
   const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; lead_id?: string | null } | undefined;
   const decision = interpretPropose(row?.outcome, slots.length);
+  // Round 4 (P1-SCHED-024/025): the words to the client are DRAFTED here, never sent. A draft that cannot be kept never changes what this step answers.
+  const draftContact = one(meeting.data.contacts);
+  if (row?.outcome === 'nothing_to_offer') {
+    await draftNoAvailability({ meetingId: parsed.data.id, leadId: meeting.data.lead_id, clientName: draftContact?.full_name ?? null });
+  }
   if (decision.kind === 'error') return err(decision.code, decision.message);
+  await draftProposal({
+    meetingId: parsed.data.id, leadId: meeting.data.lead_id, slots, timezone: meeting.data.timezone ?? (await getAgencyTimeZone()), mode: meeting.data.requested_mode, clientName: draftContact?.full_name ?? null,
+  });
   return ok({
     message: window.fellBack ? `${decision.message} (The time the lead named has passed, so the next ${horizonDays} days were read instead.)` : decision.message,
     leadId: row?.lead_id ?? null,
@@ -285,6 +294,8 @@ export async function bookProposedSlot(id: string, startAt: string, mode: string
   }
   const decision = interpretBook(outcome, event.meetUrl);
   if (decision.kind === 'error') return err(decision.code, decision.message);
+  // Round 4 (P1-SCHED-029): the confirmation is drafted AFTER the booking stood, with the exact time, zone, type and link; a person sends it.
+  await draftConfirmation({ meetingId: parsed.data.id, leadId: meeting.data.lead_id, slot: chosen, timezone: zone, mode: parsed.data.mode, meetUrl: event.meetUrl, clientName: contact?.full_name ?? null });
   const withMeetNote = event.meet === 'unavailable' && parsed.data.mode === 'video_meeting'
     ? `${decision.message} This calendar cannot create a Meet link (a shared Gmail calendar, no Workspace user) — send the client your own video link with the confirmation.`
     : decision.message;

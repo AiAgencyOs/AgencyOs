@@ -67,6 +67,9 @@ select pg_temp.p1r_book(:'SORG', :'lead', timestamptz '2026-12-08 05:00+00', 30)
 select pg_temp.p1r_check((select pg_temp.p1r_book(:'SORG', :'lead', timestamptz '2026-12-08 05:10+00', 30)) is not null, 'with no rule set, two meetings may overlap: nothing changed for an organisation that has not decided');
 select pg_temp.p1r_as_user(:'SOWN', :'SORG', 'owner');
 select pg_temp.p1r_check((select outcome from crm.p1r_set_overlap_rule(:'SORG', true, 'the agency has one booking calendar')) = 'set', 'an administrator switches the guard on');
+select pg_temp.p1r_check((select prevent_overlap and configured and reason like 'the agency has one%' from crm.p1r_overlap_rule_for()), 'the screen reads the rule in force and who gave the reason');
+select pg_temp.p1r_as_user(:'SOTHU', :'SOTH', 'owner');
+select pg_temp.p1r_check((select not prevent_overlap and not configured from crm.p1r_overlap_rule_for()), 'an organisation nobody has decided for reads as undecided, guard off');
 select pg_temp.p1r_as_service();
 select pg_temp.p1r_book(:'SORG', :'lead', timestamptz '2026-12-09 05:00+00', 30) as ma \gset
 select pg_temp.p1r_check(pg_temp.p1r_fails_with(format($f$select pg_temp.p1r_book(%L, %L, timestamptz '2026-12-09 05:15+00', 30)$f$, :'SORG', :'lead'), '23514'), 'a booking that overlaps another booked meeting is refused');

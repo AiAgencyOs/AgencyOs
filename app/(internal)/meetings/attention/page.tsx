@@ -4,8 +4,10 @@ import Link from 'next/link';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listOpenMeetingFlags, readSchedulerMetrics } from '@/modules/crm/p1o-scheduling-service';
+import { listOpenSchedulingDrafts, readProviderCheckSummary, readReminderMetrics } from '@/modules/crm/p1r-scheduling-drafts';
 import { Badge, Card, CardBody, CardHeader, EmptyState, PageHeader, PermissionDenied, buttonClass, type Tone } from '@/ui';
 
+import { SchedulingDraftForm } from './draft-form';
 import { HandleFlagForm } from './flag-form';
 
 export const metadata: Metadata = { title: 'Meetings that need a person' };
@@ -25,6 +27,8 @@ const LABEL: Record<string, string> = {
 };
 const TONE: Record<string, Tone> = { provider_conflict: 'danger', slot_busy: 'danger', needs_escalation: 'danger', proposal_expired: 'warning' };
 
+const DRAFT_LABEL: Record<string, string> = { proposal: 'Times to offer', confirmation: 'Confirmation', no_availability: 'Nothing is free', clarification: 'Which meeting?' };
+
 const pct = (v: number | null) => (v === null ? 'n/a' : `${Math.round(v * 100)}%`);
 
 /**
@@ -34,7 +38,7 @@ const pct = (v: number | null) => (v === null ? 'n/a' : `${Math.round(v * 100)}%
 export default async function MeetingAttentionPage() {
   const context = await requireInternal('/meetings/attention');
   if (!can(context, 'lead.read')) return <PermissionDenied />;
-  const [flags, metrics] = await Promise.all([listOpenMeetingFlags(), readSchedulerMetrics()]);
+  const [flags, metrics, drafts, reminders, providerChecks] = await Promise.all([listOpenMeetingFlags(), readSchedulerMetrics(), listOpenSchedulingDrafts(), readReminderMetrics(), readProviderCheckSummary()]);
   const canHandle = can(context, 'lead.write');
 
   return (
@@ -64,10 +68,45 @@ export default async function MeetingAttentionPage() {
               <div><dt className="text-muted">Offers that expired</dt><dd className="font-semibold">{metrics.proposalsExpired}</dd></div>
               <div><dt className="text-muted">Flags open / handled</dt><dd className="font-semibold">{metrics.flagsOpen} / {metrics.flagsHandled}</dd></div>
             </dl>
-            <p className="mt-3 text-xs text-muted">Reminder delivery, provider failures and calendar sync conflicts are not measured here: delivery receipts of reminders and a sync-back job are not built.</p>
+            {reminders ? (
+              <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-line pt-3 text-sm sm:grid-cols-4">
+                <div><dt className="text-muted">Reminder jobs</dt><dd className="font-semibold">{reminders.jobs} ({reminders.jobsDone} done, {reminders.jobsQueued} waiting, {reminders.jobsFailed + reminders.jobsDead} failed)</dd></div>
+                <div><dt className="text-muted">Reminders handed to the provider</dt><dd className="font-semibold">{reminders.handedOff} of {reminders.messages}</dd></div>
+                <div><dt className="text-muted">Delivered / read</dt><dd className="font-semibold">{reminders.delivered} / {reminders.read} ({pct(reminders.deliveryRate)})</dd></div>
+                <div><dt className="text-muted">Failed (send or wire)</dt><dd className="font-semibold">{reminders.sendFailed + reminders.wireFailed} ({pct(reminders.failureRate)}); {reminders.awaitingReceipt} awaiting a receipt</dd></div>
+              </dl>
+            ) : null}
+            {providerChecks ? (
+              <p className="mt-3 text-xs text-muted">
+                Calendar compared with AgencyOS: {providerChecks.checked} looks, {providerChecks.inSync} in sync, {providerChecks.conflicts} flagged for a person, {providerChecks.unreadable} when the calendar could not be read
+                {providerChecks.lastCheckedAt ? ` (last ${new Date(providerChecks.lastCheckedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })})` : '. No comparison has run yet: it needs a configured calendar'}.
+              </p>
+            ) : null}
+            <p className="mt-2 text-xs text-muted">Provider failures at booking time are refused and shown to the person booking; they are not counted here.</p>
           </CardBody>
         </Card>
       ) : null}
+
+      <Card>
+        <CardHeader title="Messages drafted for the client" description="The proposal of times, the confirmation, a 'nothing is free' note and a clarifying question are written here for you to read, edit and send. Nothing is sent until you press the button." />
+        <CardBody>
+          {drafts.length === 0 ? <p className="text-sm text-muted">No draft is waiting.</p> : (
+            <ul className="flex flex-col gap-4">
+              {drafts.map((d) => (
+                <li key={d.draftId} className="rounded-lg border border-line p-3">
+                  <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted">
+                    <Badge dot>{DRAFT_LABEL[d.kind] ?? d.kind}</Badge>
+                    <span>{d.language}</span>
+                    <Link href={`/meetings/${d.meetingId}`} className="underline">Open the meeting</Link>
+                    {d.conversationId ? null : <span>no conversation is linked, so copy the words to the lead's chat</span>}
+                  </div>
+                  <SchedulingDraftForm draftId={d.draftId} body={d.body} canSend={canHandle && d.conversationId !== null} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardBody>
+      </Card>
 
       {flags.length === 0 ? (
         <EmptyState title="Nothing needs a person" description="No request is waiting for an answer." />

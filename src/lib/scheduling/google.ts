@@ -100,7 +100,17 @@ export type CalendarAdapter = {
   readAvailability(window: { from: string; to: string }): Promise<AvailabilityAnswer>;
   createEvent(request: CreateEventRequest): Promise<CreateEventResult>;
   cancelEvent(eventId: string): Promise<{ ok: true; outcome: 'cancelled' | 'already_gone' } | { ok: false; permanent: boolean; message: string }>;
+  /**
+   * What the provider says about one event (P1-SCHED-041, the reconcile): confirmed with its times, cancelled, or no longer there. A read that failed is
+   * `ok: false`, never "missing": an unreachable provider must not look like a deleted event.
+   */
+  getEvent?(eventId: string): Promise<ProviderEventAnswer>;
 };
+
+export type ProviderEventAnswer =
+  | { ok: true; state: 'confirmed'; startAt: string; endAt: string }
+  | { ok: true; state: 'cancelled' | 'missing' }
+  | { ok: false; permanent: boolean; message: string };
 
 function trimmed(value: string | undefined): string | undefined {
   const v = value?.trim();
@@ -270,6 +280,24 @@ export function createGoogleCalendar(config: GoogleCalendarConfig | null): Calen
         : requested === 'pending' ? 'pending'
         : 'failed';
       return { ok: true, eventId: event.id, meetUrl, meet, htmlLink: typeof event.htmlLink === 'string' ? event.htmlLink : null };
+    },
+
+    async getEvent(eventId) {
+      const token = await accessToken(config);
+      if (!token.ok) return { ok: false, permanent: token.permanent, message: token.message };
+      const answer = await call(config, token.value, 'GET', `/calendars/${encodeURIComponent(config.calendarId)}/events/${encodeURIComponent(eventId)}`);
+      if (!answer.ok) {
+        if (answer.status === 404 || answer.status === 410) return { ok: true, state: 'missing' };
+        return { ok: false, permanent: answer.permanent, message: answer.message };
+      }
+      const event = answer.json as { status?: unknown; start?: { dateTime?: unknown }; end?: { dateTime?: unknown } } | null;
+      if (event?.status === 'cancelled') return { ok: true, state: 'cancelled' };
+      const instant = (v: unknown): string | null => (typeof v === 'string' && Number.isFinite(Date.parse(v)) ? new Date(v).toISOString() : null);
+      const startAt = instant(event?.start?.dateTime);
+      const endAt = instant(event?.end?.dateTime);
+      // An all-day event, or an answer with no times, cannot be compared with a booking: that is a failed read, not a match and not a conflict.
+      if (!startAt || !endAt) return { ok: false, permanent: false, message: 'Google answered, but the event has no start and end time to compare.' };
+      return { ok: true, state: 'confirmed', startAt, endAt };
     },
 
     async cancelEvent(eventId) {
