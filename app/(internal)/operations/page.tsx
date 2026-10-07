@@ -178,6 +178,16 @@ export default async function OperationsPage({
         }
       />
 
+      {/* W6: the two work-in-flight boards that sit beside the jobs list. */}
+      <p className="flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
+        <Link href="/operations/task-board" className="text-brand hover:underline">
+          Workflow task board
+        </Link>
+        <Link href="/operations/phase-blockers" className="text-brand hover:underline">
+          What is blocked across every project
+        </Link>
+      </p>
+
       {/* SCR-066: the lists below can grow, so they can be searched. It narrows what is drawn, never a count. */}
       <div className="flex flex-col gap-2">
         <div className="max-w-md">
