@@ -29,20 +29,22 @@ A persisted ExecutionEnvelope (exact references only, "latest" and foreign ids r
 
 ## What stays open, and why
 
+> **Status 2026-12-02 (round 4, `docs/phase-4-qa-pm-finance-round4-log.md`):** closed since this table was written: P4-QAP-004 (traceability read), 019 (QA_RETEST and DEFERRED), 043 (uploaded evidence), 046 (subscribers: blocked-QA announcement, QA_RETEST), P4-PM-036 (unknown delivery state), P4-FIN-042 / 057 (receipt page with delivery state), P4-FIN-079 (renderers read the issued snapshot, wired 2026-11-30), P4-ORCH-026 (fallback considered and recorded) and P4-ORCH-T11 (agent logs masked). P4-FIN-020 stays PARTIAL on an owner decision (the snapshot is masked by design). The rows below that name these ids are historical.
+
 | Row(s) | Why it stays open |
 |---|---|
 | P4-QAP-010, 011, 078 | Visual fidelity and rendered layout need a headless browser run or a funded vision model. They are recorded `not_verifiable` (never a pass): MANUAL_EXTERNAL / environment_missing. A structural overflow proxy exists. |
 | P4-QAP-012 | The prototype build vocabulary has no role variants; needs a schema extension first. Recorded `not_verifiable`. |
-| P4-QAP-004 | The Requirement -> Feature -> Screen -> State -> Prototype matrix has no upstream record to read. |
-| P4-QAP-023 (render smoke), 019 (DEFERRED / QA_RETEST states), 043 (uploaded evidence), 046 (QAStarted, no subscribers) | Need the app running / owner decision on states / not modelled. |
+| P4-QAP-004 | CLOSED 2026-12-02: the matrix is read from the upstream records that do exist (scope items, features, screens, designed states). |
+| P4-QAP-023 (render smoke) | Needs the app running. 019, 043 and 046 were CLOSED 2026-12-02 (QAStarted is deliberately not an event). |
 | P4-PM-010 / ORCH real classification | A model-backed classifier needs a funded model: `handleP4qClassifyPrototypeFeedback` fails as `environment_missing` with no classifier; the keyword stub is only the stub-model proof. |
 | P4-PM-005 direct client send | WhatsApp credentials and an owner decision: MANUAL_EXTERNAL. |
-| P4-PM-036 | `crm.conversation_messages` has no `unknown` delivery state; shares and receipts do. |
+| P4-PM-036 | CLOSED 2026-12-02: `crm.conversation_messages` has an `unknown` delivery state. |
 | P4-FIN-019 (tax rate constant), 021 (credit notes), 049 (gateway), 072 (credentials) | Owner decisions / provider accounts. |
-| P4-FIN-020 / 079 | The snapshot exists; the PDF, WhatsApp and email renderers still read current accounts. |
-| P4-FIN-042 / 057 | The receipt document is data (no rendered page); receipt delivery state has no screen. |
-| P4-ORCH-026 | Agent-level fallback (`recordFallback`) still has no caller. |
-| P4-ORCH-T11 | `ai.agent_runs` model/tool logs are not scrubbed (failure details are). |
+| P4-FIN-020 / 079 | 079 CLOSED (renderers read the issued snapshot, W-F3). 020 stays PARTIAL: the snapshot is masked, so the exact unmasked instructions at issue are not reproducible; storing them is an owner decision. |
+| P4-FIN-042 / 057 | CLOSED 2026-12-02: `/finance/receipts/[receiptId]` renders the document and the delivery state. |
+| P4-ORCH-026 | CLOSED 2026-12-02: the fallback for a disabled specialist is considered and recorded (never run) through `p4s_record_agent_fallback`. |
+| P4-ORCH-T11 | CLOSED 2026-12-02: `ai.agent_runs` / `ai.agent_steps` are masked by trigger, per string leaf. |
 | P4-ORCH-047 | A PostgREST + Next + stub-model E2E needs infrastructure this change did not stand up. |
 
 ## Wiring still needed (shared files this change was told not to edit)
@@ -52,7 +54,7 @@ A persisted ExecutionEnvelope (exact references only, "latest" and foreign ids r
 Everything below is a one-line (or small) edit in a file owned by another builder. Until it is made, the door/handler exists and is proven, but nothing in production calls it. Rows depending on it are tagged `[wiring pending: W-..]`.
 
 - **W-Q1** `app/api/jobs/run/route.ts` ~line 826: `import { handleP4qReviewPrototypeBuild } from '@/modules/p4q/qa-handler';` and pass it instead of `handleReviewPrototypeBuild` to `runEventJobs(admin, PROTOTYPE_QA_JOB_KIND, handleP4qReviewPrototypeBuild, 'runPrototypeQaJobs')`. The job kind (`prototype.qa_review`), event and catalog stay unchanged. INVALID_INTAKE is then automatic; BLOCKED_EXTERNAL needs a caller that knows an external dependency is missing (pass `{ reason, owner, resumeCondition }` as the third argument).
-- **W-Q2** `src/lib/events/catalog.ts`: optional subscribers for `project.p4q_prototype_qa_blocked`, `project.p4q_prototype_fix_ready`, `project.p4q_prototype_defect_verified` (the PM announcement for a blocked build).
+- **W-Q2** (wired 2026-12-02 for `project.p4q_prototype_qa_blocked` and `project.p4q_prototype_fix_ready`; `defect_verified` has no subscriber because nothing reacts to it) `src/lib/events/catalog.ts`: optional subscribers for `project.p4q_prototype_qa_blocked`, `project.p4q_prototype_fix_ready`, `project.p4q_prototype_defect_verified` (the PM announcement for a blocked build).
 - **W-P1** `src/lib/events/catalog.ts`: add `'project_manager:classifyPrototypeFeedback'` to `HANDLERS`, `'project_manager:classifyPrototypeFeedback': 'prototype.feedback_classify'` to `HANDLER_JOB_KIND`, and append it to `SUBSCRIPTIONS['project.deliverable_decided']`. `app/api/jobs/run/route.ts`: a `runEventJobs` block calling `handleP4qClassifyPrototypeFeedback(admin, job, classifier)` (classifier = the model-backed one; `keywordFeedbackClassifier` only in a stub environment). `app/api/jobs/run/workflows.ts` `PROTOTYPE_BUILD_REVISE`, deliverable_decided branch (~line 2345): before the model call, `select projects.p4q_prototype_revision_allowed(deliverableId, approval_request_id)` and settle `not_mine` with the routed outcome when false.
 - **W-P2** `src/modules/crm/schema.ts`: `...PM4_TEMPLATES,` inside `PM_TEMPLATES` (import from `@/modules/p4q/pm4-templates`); the existing `crm.pm_message_log` writer then records PM4 versions.
 - **W-P3** `src/lib/events/catalog.ts`: subscribe a handler to `project.p4q_clarification_answered` that re-runs the work item of the agent named in `payload.raisedBy`; Phase 4 agents call `projects.p4q_raise_clarification` instead of inserting `clarification_requests`.
