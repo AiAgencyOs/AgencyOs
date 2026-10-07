@@ -38,6 +38,11 @@ const { PHASE_NINE_WORKFLOWS } = await import('../app/api/jobs/run/phase-nine-wo
 const { definitionFor } = await import('../src/modules/agents/registry.ts');
 
 const INV = '00000000-0000-4000-8000-0000000000a1';
+const ORG_ID = '00000000-0000-4000-8000-0000000000e1';
+const PROJECT_ID = '00000000-0000-4000-8000-0000000000f1';
+const REQ_ID = '00000000-0000-4000-8000-000000000091';
+const REQUESTER = '00000000-0000-4000-8000-0000000000b1';
+const CLIENT_ID = '00000000-0000-4000-8000-0000000000c9';
 const PAY = '00000000-0000-4000-8000-0000000000c1';
 
 function makeAdmin() {
@@ -65,7 +70,7 @@ function makeAdmin() {
   };
 }
 const ctxFor = (agentKey: string, payload: Record<string, unknown>) =>
-  ({ admin: makeAdmin(), job: { id: 'job-1', organization_id: 'org-1', payload, correlation_id: 'c', attempts: 0, max_attempts: 5 }, agent: { key: agentKey, autonomy_level: 'L1', default_model: 'm' }, correlationId: 'c', workClass: 'draft' }) as never;
+  ({ admin: makeAdmin(), job: { id: 'job-1', organization_id: ORG_ID, payload, correlation_id: 'c', attempts: 0, max_attempts: 5 }, agent: { key: agentKey, autonomy_level: 'L1', default_model: 'm' }, correlationId: 'c', workClass: 'draft' }) as never;
 const usage = { inputTokens: 1, outputTokens: 1, costMinor: 0 };
 const answer = (json: unknown) => { modelResult = { ok: true, json, usage, stepCount: 1 }; };
 const wf = (kind: string) => PHASE_NINE_WORKFLOWS.find((w: { jobKind: string }) => w.jobKind === kind)!;
@@ -80,8 +85,8 @@ const POSITION = {
 const reset = (agent = 'finance_reconciliation', invoiceId: string | null = null) => {
   events.length = 0; rpcCalls = []; readFilters = []; rpcAnswer = {}; modelResult = null; jobUpdates = []; lastPrompt = '';
   tables = {
-    'finance.finance_agent_requests': [{ id: 'rq-1', agent_key: agent, project_id: 'p-1', invoice_id: invoiceId }],
-    'projects.projects': [{ id: 'p-1', name: 'Acme web', currency: 'INR' }],
+    'finance.finance_agent_requests': [{ id: REQ_ID, agent_key: agent, project_id: PROJECT_ID, invoice_id: invoiceId, requested_by: REQUESTER }],
+    'projects.projects': [{ id: PROJECT_ID, name: 'Acme web', currency: 'INR', client_account_id: CLIENT_ID }],
     'finance.invoices': [{ id: INV, number: 'INV-1', status: 'overdue', total_minor: 30000, due_at: '2026-09-01T00:00:00Z' }],
     'finance.payment_submissions': [{ id: 's-1', invoice_id: INV, status: 'pending_verification', amount_minor: 12000, reference: 'UTR1' }],
     'finance.payments': [{ id: PAY, invoice_id: INV, amount_minor: 12000, status: 'captured', verified_at: null }],
@@ -115,7 +120,7 @@ describe('the three workflows come from one factory', () => {
   test('the source writes ONLY through the proposal door and never touches money, an invoice, a message or a close', () => {
     const src = code('app/api/jobs/run/phase-nine-workflows.ts');
     const rpcs = [...src.matchAll(/\.rpc\('([a-z_]+)'/g)].map((m) => m[1]);
-    assert.deepEqual(rpcs, ['project_close_position', 'invoice_outstanding_minor', 'record_finance_proposal']);
+    assert.deepEqual(rpcs, ['finance_automation_is_paused', 'project_close_position', 'invoice_outstanding_minor', 'record_finance_proposal']);
     for (const forbidden of ['verify_payment', 'record_manual_payment', 'record_refund', 'request_refund', 'decide_waiver', 'request_waiver', 'close_project_finances', 'close_period', 'issue_invoice', 'void_invoice',
       'accept_finance_proposal', 'sendClientMessage', '.insert(', '.upsert(', '.delete(']) {
       assert.ok(!src.includes(forbidden), `the workflow must not use ${forbidden}`);
@@ -128,14 +133,14 @@ describe('order and reads: read, model, validate, write', () => {
   test('a valid flag is written through the one door, after the model and never before', async () => {
     reset();
     answer({ proposals: [flag()] });
-    const r = await wf('finance.finance_reconciliation.propose').run(ctxFor('finance_reconciliation', { requestId: 'rq-1' }));
+    const r = await wf('finance.finance_reconciliation.propose').run(ctxFor('finance_reconciliation', { requestId: REQ_ID }));
     assert.equal(r.status, 'succeeded');
     const interesting = events.filter((e) => e.startsWith('rpc:finance.record') || ['openRun', 'model', 'succeedRun'].includes(e));
     assert.deepEqual(interesting, ['openRun', 'model', 'rpc:finance.record_finance_proposal', 'succeedRun']);
     const writes = rpcCalls.filter((c) => c.fn === 'record_finance_proposal');
     assert.equal(writes.length, 1);
-    assert.equal(writes[0]!.args.p_request_id, 'rq-1');
-    assert.equal(writes[0]!.args.p_organization_id, 'org-1');
+    assert.equal(writes[0]!.args.p_request_id, REQ_ID);
+    assert.equal(writes[0]!.args.p_organization_id, ORG_ID);
     assert.equal(writes[0]!.args.p_agent_key, 'finance_reconciliation');
     assert.equal(writes[0]!.args.p_kind, 'anomaly_flag');
     assert.equal(jobUpdates.length, 1);
@@ -143,16 +148,16 @@ describe('order and reads: read, model, validate, write', () => {
   test('every read is scoped to the JOB\'s organization, never one the payload names', async () => {
     reset();
     answer({ proposals: [flag()] });
-    await wf('finance.finance_reconciliation.propose').run(ctxFor('finance_reconciliation', { requestId: 'rq-1', organizationId: 'org-ATTACKER' }));
+    await wf('finance.finance_reconciliation.propose').run(ctxFor('finance_reconciliation', { requestId: REQ_ID, organizationId: 'org-ATTACKER' }));
     assert.ok(readFilters.length >= 6);
-    for (const f of readFilters.filter((x) => x.column === 'organization_id')) assert.equal(f.value, 'org-1');
+    for (const f of readFilters.filter((x) => x.column === 'organization_id')) assert.equal(f.value, ORG_ID);
     assert.ok(!readFilters.some((f) => f.value === 'org-ATTACKER'));
     assert.ok(readFilters.some((f) => f.table === 'finance.finance_agent_requests' && f.column === 'organization_id'));
   });
   test('the model is shown the database\'s position and balance, not a figure the workflow computed', async () => {
     reset('finance_communication', INV);
     answer({ proposals: [{ kind: 'reminder_draft', summary: 'Reminder', detail: null, evidenceRefs: [], submissionId: null, draftBody: 'Invoice INV-1 is past due. Please pay the balance of INR 120.00.', amountMinor: 12000, exceptionKind: null }] });
-    const r = await wf('finance.finance_communication.propose').run(ctxFor('finance_communication', { requestId: 'rq-1' }));
+    const r = await wf('finance.finance_communication.propose').run(ctxFor('finance_communication', { requestId: REQ_ID }));
     assert.equal(r.status, 'succeeded');
     assert.match(lastPrompt, /Position result: blocked/);
     assert.match(lastPrompt, /outstanding balance is 12000 minor units/);
@@ -162,7 +167,7 @@ describe('order and reads: read, model, validate, write', () => {
     reset();
     answer({ proposals: [flag()] });
     rpcAnswer.record_finance_proposal = [{ outcome: 'already_proposed' }];
-    const r = await wf('finance.finance_reconciliation.propose').run(ctxFor('finance_reconciliation', { requestId: 'rq-1' }));
+    const r = await wf('finance.finance_reconciliation.propose').run(ctxFor('finance_reconciliation', { requestId: REQ_ID }));
     assert.equal(r.status, 'succeeded');
     assert.equal(r.alreadyProposed, 1);
   });
@@ -172,13 +177,13 @@ describe('what is refused before anything is written', () => {
   const run = async (agent: string, proposals: unknown[], invoiceId: string | null = null) => {
     reset(agent, invoiceId);
     answer({ proposals });
-    const r = await wf(`finance.${agent}.propose`).run(ctxFor(agent, { requestId: 'rq-1' }));
+    const r = await wf(`finance.${agent}.propose`).run(ctxFor(agent, { requestId: REQ_ID }));
     return { r, wrote: rpcCalls.filter((c) => c.fn === 'record_finance_proposal').length };
   };
   test('a shape that is not the schema', async () => {
     reset();
     answer({ proposals: [{ ...flag(), verified: true }] });
-    const r = await wf('finance.finance_reconciliation.propose').run(ctxFor('finance_reconciliation', { requestId: 'rq-1' }));
+    const r = await wf('finance.finance_reconciliation.propose').run(ctxFor('finance_reconciliation', { requestId: REQ_ID }));
     assert.equal(r.status, 'failed');
     assert.equal(rpcCalls.filter((c) => c.fn === 'record_finance_proposal').length, 0);
   });
@@ -220,7 +225,7 @@ describe('what is refused before anything is written', () => {
     reset();
     answer({ proposals: [flag()] });
     rpcAnswer.record_finance_proposal = [{ outcome: 'wrong_organization' }];
-    const r = await wf('finance.finance_reconciliation.propose').run(ctxFor('finance_reconciliation', { requestId: 'rq-1' }));
+    const r = await wf('finance.finance_reconciliation.propose').run(ctxFor('finance_reconciliation', { requestId: REQ_ID }));
     assert.equal(r.status, 'failed');
     assert.match(String(r.reason), /wrong_organization/);
     assert.ok(!events.includes('succeedRun'));
@@ -228,7 +233,7 @@ describe('what is refused before anything is written', () => {
   test('a provider outage corrupts nothing: the job fails and no door is called', async () => {
     reset();
     modelResult = { ok: false, kind: 'no_provider', detail: 'no provider', stepCount: 0 };
-    const r = await wf('finance.finance_reconciliation.propose').run(ctxFor('finance_reconciliation', { requestId: 'rq-1' }));
+    const r = await wf('finance.finance_reconciliation.propose').run(ctxFor('finance_reconciliation', { requestId: REQ_ID }));
     assert.equal(r.status, 'failed');
     assert.equal(r.reason, 'AI_PROVIDER_NOT_CONFIGURED');
     assert.equal(rpcCalls.filter((c) => c.fn === 'record_finance_proposal').length, 0);
@@ -236,11 +241,11 @@ describe('what is refused before anything is written', () => {
   test('a request for another agent, a missing request and a missing payload', async () => {
     reset('finance_close');
     answer({ proposals: [flag()] });
-    const wrong = await wf('finance.finance_reconciliation.propose').run(ctxFor('finance_reconciliation', { requestId: 'rq-1' }));
+    const wrong = await wf('finance.finance_reconciliation.propose').run(ctxFor('finance_reconciliation', { requestId: REQ_ID }));
     assert.equal(wrong.status, 'failed');
     reset();
     tables['finance.finance_agent_requests'] = [];
-    const gone = await wf('finance.finance_reconciliation.propose').run(ctxFor('finance_reconciliation', { requestId: 'rq-1' }));
+    const gone = await wf('finance.finance_reconciliation.propose').run(ctxFor('finance_reconciliation', { requestId: REQ_ID }));
     assert.equal(gone.status, 'succeeded');
     assert.equal(gone.outcome, 'gone');
     const bad = await wf('finance.finance_reconciliation.propose').run(ctxFor('finance_reconciliation', {}));

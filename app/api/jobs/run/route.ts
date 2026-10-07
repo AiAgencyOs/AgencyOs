@@ -114,7 +114,7 @@ import { handleWelcomeClient, handleAskGstDetails, handlePaymentUpdate, handleRe
 import { handleHandoverAcceptedForFinance, handleBillingModeConfirmed, handleInvoiceIssuedForDelivery, handlePhaseFourCompletedForFinance, handlePhaseFiveCompletedForFinance, handlePhaseSixCompletedForFinance } from '@/modules/finance/handlers';
 import { learnFromDecision, learnFromRevision, syncDiscountDecision } from '@/modules/sales/handlers';
 import { handleRouteTask2Design, handleRequestUIVersionAdminReview, handleRouteDevelopmentPlan, handleRouteQaOutcome } from '@/modules/orchestrator/handlers';
-import { sweepFinanceExceptions, sweepStaleOrchestratorRecords } from '@/modules/orchestrator/sweeps';
+import { sweepFinanceExceptions, sweepFinancePhaseNineB, sweepStaleOrchestratorRecords } from '@/modules/orchestrator/sweeps';
 import { handleReviewUIVersion, handleReviewPrototypeBuild } from '@/modules/qa/handlers';
 
 export const runtime = 'nodejs';
@@ -390,6 +390,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   // failed dispatch, and a lease past its time is expired so a crashed worker does not hold files forever.
   await sweepStaleOrchestratorRecords(admin);
   await sweepFinanceExceptions(admin);
+  await sweepFinancePhaseNineB(admin);
   // Scheduled social posts that are due: published through the governed door, or surfaced for a person when no publisher exists.
   await runSocialPublishing(admin, SOCIAL_PUBLISHERS);
   // Approved ad changes, pending pauses, emergency stops and campaign health (lead generation, 20261020100000).

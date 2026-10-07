@@ -55,3 +55,24 @@ export async function sweepFinanceExceptions(admin: Admin): Promise<{ openedOver
     return null;
   }
 }
+
+/**
+ * The two Phase 9B finance sweeps: ReconciliationDue (open the reconciliation period an Admin scheduled, once, never closing it) and the recorded
+ * wrong-account check of unresolved payment submissions (a difference opens a finance exception; nothing about the payment changes). Both are
+ * runner-only, idempotent doors; the first honours the cadence an Admin set and does nothing for an organization that never set one. Best effort.
+ */
+export async function sweepFinancePhaseNineB(admin: Admin): Promise<{ reconciliationOpened: number; submissionsChecked: number; submissionsFlagged: number } | null> {
+  try {
+    const fin = admin.schema('finance') as unknown as Loose;
+    const [due, checks] = await Promise.all([fin.rpc('sweep_reconciliation_due', { p_limit: 100 }), fin.rpc('sweep_payment_account_checks', { p_limit: 200 })]);
+    const dueRow = (Array.isArray(due.data) ? due.data[0] : due.data) as { opened?: number } | undefined;
+    const checkRow = (Array.isArray(checks.data) ? checks.data[0] : checks.data) as { checked?: number; flagged?: number } | undefined;
+    if (due.error || !dueRow) console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `reconciliation due sweep: ${due.error ? due.error.message : 'the door answered nothing'}` }));
+    if (checks.error || !checkRow) console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `payment account check sweep: ${checks.error ? checks.error.message : 'the door answered nothing'}` }));
+    if (!dueRow && !checkRow) return null;
+    return { reconciliationOpened: Number(dueRow?.opened ?? 0), submissionsChecked: Number(checkRow?.checked ?? 0), submissionsFlagged: Number(checkRow?.flagged ?? 0) };
+  } catch (e) {
+    console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `finance phase 9B sweeps: ${e instanceof Error ? e.message : 'unknown'}` }));
+    return null;
+  }
+}

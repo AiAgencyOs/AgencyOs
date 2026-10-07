@@ -1,4 +1,6 @@
+import { AgentsPaused } from '@/lib/ai/run-gates';
 import type { Json } from '@/lib/db/types';
+import { buildFinanceHandoff } from '@/modules/finance/phase-nine-handoff';
 import {
   FINANCE_AGENTS,
   FINANCE_PROFILES,
@@ -73,18 +75,22 @@ function buildWorkflow(agent: FinanceAgent): AgentWorkflow {
       const fail = async (reason: string) => { await failJob(admin, job, reason); return { status: 'failed' as const, reason }; };
 
       // every read below is for THIS job's organization; the payload names a request, never a tenant
-      const request = await fin.from('finance_agent_requests').select('id, agent_key, project_id, invoice_id').eq('id', requestId).eq('organization_id', org).maybeSingle();
+      const request = await fin.from('finance_agent_requests').select('id, agent_key, project_id, invoice_id, requested_by').eq('id', requestId).eq('organization_id', org).maybeSingle();
       if (request.error) return fail(`could not read the request: ${request.error.message}`);
       if (!request.data) {
         await settle();
         return { status: 'succeeded', outcome: 'gone', reason: 'the request no longer exists' };
       }
       if (request.data.agent_key !== agent) return fail('the request was made for a different finance agent');
+      // an Admin may pause finance automation per organization: a paused agent does no work and its job goes back to the queue (an unreadable pause fails closed)
+      const pause = await fin.rpc('finance_automation_is_paused', { p_organization_id: org, p_agent_key: agent });
+      if (pause.error) return fail(`could not read the finance automation pause: ${pause.error.message}`);
+      if (pause.data === true) throw new AgentsPaused({ jobId: job.id, runId: null, reason: 'finance automation is paused by an Admin' });
       const projectId = str(request.data.project_id);
       const invoiceId = str(request.data.invoice_id);
       if (!projectId) return fail('the request names no project');
 
-      const project = await projects.from('projects').select('id, name, currency').eq('id', projectId).eq('organization_id', org).maybeSingle();
+      const project = await projects.from('projects').select('id, name, currency, client_account_id').eq('id', projectId).eq('organization_id', org).maybeSingle();
       if (project.error) return fail(`could not read the project: ${project.error.message}`);
       if (!project.data) {
         await settle();
@@ -183,16 +189,35 @@ function buildWorkflow(agent: FinanceAgent): AgentWorkflow {
       }
       if (!checked || !checked.ok) return { status: 'failed', reason: 'unchecked', runId };
 
+      // one structured handoff payload per proposal, validated here and again by the door against the rows
+      const requestedBy = str(request.data.requested_by);
+      const handoffs = [];
+      for (const p of checked.proposals) {
+        const built = buildFinanceHandoff({
+          organizationId: org, clientAccountId: str(project.data.client_account_id), projectId, requestId, requestedBy: requestedBy ?? '', proposal: p, agent,
+          invoice: invoiceFact ? { id: invoiceFact.id, outstandingMinor: invoiceFact.outstandingMinor } : null, currency: facts.currency, financialState: facts.position.result,
+          blockers: facts.position.blockers.map((b) => ({ code: b.code, ref: b.ref })), correlationId: job.correlation_id ?? null, attempt: job.attempts, maxAttempts: job.max_attempts,
+        });
+        if (!built.ok) {
+          await finishRun(admin, runId, 'failed', built.reason, call.stepCount, call.usage);
+          await failJob(admin, job, built.reason);
+          return { status: 'failed', reason: built.reason, runId };
+        }
+        handoffs.push(built.handoff);
+      }
+
       let proposed = 0;
       let already = 0;
-      for (const p of checked.proposals) {
-        const { data, error } = await fin.rpc('record_finance_proposal', { p_request_id: requestId, p_organization_id: org, p_agent_key: agent, ...doorArgsFor(p) });
+      for (const [i, p] of checked.proposals.entries()) {
+        const { data, error } = await fin.rpc('record_finance_proposal', { p_request_id: requestId, p_organization_id: org, p_agent_key: agent, ...doorArgsFor(p), p_handoff: handoffs[i] as unknown as Json });
         if (error) {
           await finishRun(admin, runId, 'failed', error.message, call.stepCount);
           await failJob(admin, job, `the door did not answer: ${error.message}`);
           return { status: 'failed', reason: error.message, runId };
         }
         const outcome = door(data);
+        // an Admin paused this agent while the run was in flight: nothing more is written, and the job returns to the queue
+        if (outcome === 'automation_paused') throw new AgentsPaused({ jobId: job.id, runId, reason: 'finance automation was paused by an Admin while this ran' });
         if (!GOOD_PROPOSAL_OUTCOMES.has(outcome)) {
           await finishRun(admin, runId, 'failed', `the door answered ${outcome}`, call.stepCount);
           await failJob(admin, job, `the door answered ${outcome}`);
