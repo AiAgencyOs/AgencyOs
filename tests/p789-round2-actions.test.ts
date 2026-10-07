@@ -170,7 +170,7 @@ describe('structure', () => {
     assert.equal(new Set(rpcs).size, rpcs.length, 'no door is listed twice');
   });
   test('no object in the door table repeats a key', () => {
-    const keys = [...code('src/modules/projects/p789-round2-actions.ts').matchAll(/^  ([a-z_]+): \{/gm)].map((m) => m[1]!);
+    const keys = [...code('src/modules/projects/p789-round2-actions.ts').matchAll(/^ {2}([a-z_]+): \{/gm)].map((m) => m[1]!);
     assert.equal(new Set(keys).size, keys.length);
   });
   test('every database door the form reaches is a person door in the migrations (no service-role grant)', () => {
