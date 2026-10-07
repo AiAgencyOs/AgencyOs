@@ -204,8 +204,10 @@ export function planRoute(input: RouteInput): RoutePlan {
     if (!mv.ok) return mv.why;
     if (input.needsTools && m.toolCalling === false) return `model ${m.modelId} does not support tool calling`;
     // A capability nobody recorded never excludes a model; one that was recorded and lacks the need does.
-    if (input.requiredCapabilities.length > 0 && m.capabilities.length > 0 && !input.requiredCapabilities.every((c) => m.capabilities.includes(c))) {
-      return `model ${m.modelId} lacks ${input.requiredCapabilities.filter((c) => !m.capabilities.includes(c)).join(', ')}`;
+    const has = (c: string): boolean =>
+      m.capabilities.includes(c) || (c === 'structured_output' && m.structuredOutput === true) || (c === 'tool_calling' && m.toolCalling === true);
+    if (input.requiredCapabilities.length > 0 && m.capabilities.length > 0 && !input.requiredCapabilities.every(has)) {
+      return `model ${m.modelId} lacks ${input.requiredCapabilities.filter((c) => !has(c)).join(', ')}`;
     }
     return null;
   };

@@ -534,7 +534,7 @@ async function modelPlanFor(
   });
   if (!loaded) return legacyModelPlan(ctx, options);
 
-  const plan = planRoute({ ...loaded.input, needsTools: options.needsTools, requiredCapabilities: requiredCapabilitiesFor(loaded.category) });
+  const plan = planRoute({ ...loaded.input, needsTools: options.needsTools, requiredCapabilities: requiredCapabilitiesFor(loaded.category, loaded.profileCapabilities) });
   const routing: RoutingContext = { plan, loaded };
   if (plan.blocked) return { ok: false, detail: plan.blocked.reason, routing };
 
