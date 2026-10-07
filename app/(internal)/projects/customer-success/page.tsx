@@ -38,26 +38,24 @@ export default async function CustomerSuccessPage() {
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Customer Success"
-        actions={
-          <span className="flex flex-wrap gap-3 text-[13px]">
-            <Link href="/projects/customer-success/observability" className="underline">Counts and ages</Link>
-            <Link href="/projects/customer-success/next-actions" className="underline">Next actions</Link>
-            <Link href="/projects/customer-success/reconciliation" className="underline">Reconciliation</Link>
-            <Link href="/projects/customer-success/records" className="underline">Records</Link>
-            <Link href="/projects/customer-success/next-actions/queue" className="underline">Action queue</Link>
-            <Link href="/projects/customer-success/governance" className="underline">Governance</Link>
-            <Link href="/projects/customer-success/knowledge" className="underline">Knowledge</Link>
-            <Link href="/projects/customer-success/p789-governance" className="underline">Retention and alerts</Link>
-            <Link href="/projects/customer-success/p789-charts" className="underline">Charts</Link>
-            <Link href="/projects/p789-operations" className="underline">Phase 7 operations</Link>
-          </span>
-        }
         description={
           rows.length === 0
             ? 'No project has started Phase 8 yet.'
             : `${rows.length} live account${rows.length === 1 ? '' : 's'}${needing > 0 ? `, ${needing} needing recovery before any commercial outreach` : ''}.`
         }
       />
+      <nav aria-label="Customer Success sections" className="flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
+        <Link href="/projects/customer-success/observability" className="underline">Counts and ages</Link>
+        <Link href="/projects/customer-success/next-actions" className="underline">Next actions</Link>
+        <Link href="/projects/customer-success/reconciliation" className="underline">Reconciliation</Link>
+        <Link href="/projects/customer-success/records" className="underline">Records</Link>
+        <Link href="/projects/customer-success/next-actions/queue" className="underline">Action queue</Link>
+        <Link href="/projects/customer-success/governance" className="underline">Governance</Link>
+        <Link href="/projects/customer-success/knowledge" className="underline">Knowledge</Link>
+        <Link href="/projects/customer-success/p789-governance" className="underline">Retention and alerts</Link>
+        <Link href="/projects/customer-success/p789-charts" className="underline">Charts</Link>
+        <Link href="/projects/p789-operations" className="underline">Phase 7 operations</Link>
+      </nav>
       {rows.length > 0 ? (
         <DataTable rows={rows} columns={columns} getKey={(r) => r.projectId} href={(r) => `/projects/${r.projectId}`} />
       ) : (
