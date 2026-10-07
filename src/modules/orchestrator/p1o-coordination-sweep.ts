@@ -1,6 +1,8 @@
 import type { createAdminClient } from '@/lib/db/admin';
 import type { HandlerResult } from '@/modules/crm/handlers';
 
+import { sweepHandoffEscalations } from './p1r-escalation-sweep';
+
 /**
  * The Coordination sweep (P1-COORD-018/027, P1-SCHED-026): one job per organisation that
  *   * withdraws handoffs tied to a quotation version that is no longer live and marks work behind a dead prerequisite as blocked
@@ -57,6 +59,12 @@ export async function sweepCoordinationAllOrganizations(admin: Admin): Promise<{
     } else {
       failed += 1;
       console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `coordination sweep for ${org.id}: ${r.detail}` }));
+    }
+    // P1-COORD-020: the timeout and permission-conflict escalations ride the same tick, per organisation, best effort. A failure is counted, never swallowed.
+    const e = await sweepHandoffEscalations(admin, org.id).catch((x: unknown) => ({ status: 'failed', permanent: false, detail: x instanceof Error ? x.message : 'unknown' }) as const);
+    if (e.status !== 'succeeded') {
+      failed += 1;
+      console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `handoff escalation sweep for ${org.id}: ${e.detail}` }));
     }
   }
   return { organizations: (data ?? []).length, swept, failed };
