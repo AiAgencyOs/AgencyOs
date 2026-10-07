@@ -1915,6 +1915,10 @@ async function runOneAgentJob(
       async (detail) => {
         await admin.schema('core').from('jobs').update({ status: 'dead', last_error: detail.slice(0, 1000), locked_at: null, locked_by: null }).eq('id', job.id);
       },
+      async () => {
+        // a disabled specialist: held, not dead (nothing ran; the escalation is on the record)
+        await admin.schema('core').from('jobs').update({ status: 'succeeded', last_error: null, locked_at: null, locked_by: null }).eq('id', job.id);
+      },
     );
     return { jobId: job.id, agent: workflow.agentKey, ...outcome };
   } catch (error) {

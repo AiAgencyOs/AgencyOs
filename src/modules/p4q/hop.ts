@@ -95,7 +95,8 @@ export async function runPhaseFourWorkflowHop<T extends WorkflowOutcome>(
   job: HopJob & { kind: string },
   run: () => Promise<T>,
   park: (detail: string) => Promise<void>,
-): Promise<T | { status: 'failed'; reason: string; detail: string }> {
+  settle: (detail: string) => Promise<void> = park,
+): Promise<T | { status: 'failed'; reason: string; detail: string } | { status: 'succeeded'; reason: string; detail: string }> {
   const taskType = taskTypeForJobKind(job.kind);
   const input = taskType ? envelopeInputFor(job, taskType) : null;
   if (!input) return run();
@@ -116,6 +117,10 @@ export async function runPhaseFourWorkflowHop<T extends WorkflowOutcome>(
   const raw = held.raw;
   if (raw === null) {
     // The work never ran: the specialist is disabled (an escalation is open). Settle the job instead of leaving it claimed.
+    if (wrapped.status === 'succeeded') {
+      await settle(wrapped.detail);
+      return { status: 'succeeded', reason: 'specialist disabled', detail: wrapped.detail };
+    }
     const detail = wrapped.status === 'failed' ? wrapped.detail : 'the envelope stopped the hop';
     await park(detail);
     return { status: 'failed', reason: 'specialist disabled', detail };

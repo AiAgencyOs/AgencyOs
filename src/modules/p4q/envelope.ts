@@ -16,6 +16,8 @@ export function failureClassFor(result: Extract<HandlerResult, { status: 'failed
   if (d.includes('no capable') || d.includes('no enabled agent')) return 'no_capable_agent';
   if (d.includes('may have') || d.includes('uncertain')) return 'uncertain_side_effect';
   if (d.includes('refused') || d.includes('forbidden') || d.includes('not_authorized')) return 'policy_denied';
+  // a model's answer that failed its schema is retried like any transient failure (the next answer can differ); only a bad INPUT is a validation failure
+  if (d.includes('model output')) return 'transient';
   if (d.includes('malformed') || d.includes('invalid')) return 'validation';
   return result.permanent ? 'permanent' : 'transient';
 }
@@ -57,7 +59,13 @@ export async function runWithEnvelope(
   }
   const outcome = opened.row.outcome ?? 'no answer';
   const envelopeId = typeof opened.row.envelope_id === 'string' ? opened.row.envelope_id : null;
-  if (outcome === 'agent_disabled') return { status: 'failed', permanent: true, detail: 'the specialist for this task is disabled; an escalation was opened for a person' };
+  if (outcome === 'agent_disabled') {
+    // The work never runs for a disabled specialist. A live dispatcher (`run_unwrapped`) SETTLES the job as held, as every hop did before envelopes (a disabled
+    // agent is the installed default, not a failure: no job dies for it); the escalation the door opened stays on the record. Called without that option it is a
+    // permanent failure.
+    if (options.onUnopenable === 'run_unwrapped') return { status: 'succeeded', outcome: 'held_specialist_disabled', detail: 'the specialist for this task is disabled: nothing was run, and an escalation was opened for a person' };
+    return { status: 'failed', permanent: true, detail: 'the specialist for this task is disabled; an escalation was opened for a person' };
+  }
   if (outcome !== 'opened' && outcome !== 'already_open') {
     // `run_unwrapped` is for a live dispatcher whose references come from an event rather than from a person: if the door cannot take them (a stale or
     // unknown reference) the hop still runs exactly as it did before envelopes existed, and the refusal is logged. `agent_disabled` is never bypassed.

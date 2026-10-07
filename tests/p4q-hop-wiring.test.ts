@@ -86,12 +86,14 @@ describe('an event job runs inside its envelope', () => {
     assert.deepEqual(calls.map((c) => c.fn), ['p4q_open_envelope', 'p4q_record_failure']);
   });
 
-  test('a disabled specialist is never bypassed: the work does not run', async () => {
+  test('a disabled specialist is never bypassed: the work does not run and the job is held', async () => {
     const { admin } = doors({ p4q_open_envelope: () => [{ outcome: 'agent_disabled', envelope_id: null }] });
     let ran = 0;
     const r = await runPhaseFourHop(admin, reviewKind, uiJob, async () => (ran += 1, { status: 'succeeded', outcome: 'ok', detail: '' }));
     assert.equal(ran, 0);
-    assert.equal(r.status === 'failed' && r.permanent, true);
+    // held, not dead: a disabled specialist is the installed default and no job dies for it; the escalation is on the record
+    assert.equal(r.status, 'succeeded');
+    assert.equal(r.status === 'succeeded' && r.outcome, 'held_specialist_disabled');
   });
 
   test('an envelope the door cannot take (stale reference, door missing) lets the hop run exactly as before', async () => {
@@ -135,14 +137,24 @@ describe('a workflow job runs inside its envelope', () => {
     assert.match(parked, /escalated to a person/);
   });
 
-  test('a disabled specialist: the workflow does not run and the job is parked', async () => {
+  test('a disabled specialist: the workflow does not run and the job is held, not parked', async () => {
     const { admin } = doors({ p4q_open_envelope: () => [{ outcome: 'agent_disabled', envelope_id: null }] });
     let ran = 0;
     let parked = '';
-    const out = await runPhaseFourWorkflowHop(admin, job, async () => (ran += 1, { status: 'succeeded', reason: 'x' }), async (d) => void (parked = d));
+    let settled = '';
+    const out = await runPhaseFourWorkflowHop(admin, job, async () => (ran += 1, { status: 'succeeded', reason: 'x' }), async (d) => void (parked = d), async (d) => void (settled = d));
     assert.equal(ran, 0);
-    assert.match(parked, /disabled/);
-    assert.equal(out.status, 'failed');
+    assert.equal(parked, '');
+    assert.match(settled, /disabled/);
+    assert.equal(out.status, 'succeeded');
+  });
+});
+
+describe('a model answer that fails its schema is retried, not escalated', () => {
+  test('failureClassFor treats it as transient, and still calls a bad input a validation failure', async () => {
+    const { failureClassFor } = await import('../src/modules/p4q/envelope.ts');
+    assert.equal(failureClassFor({ status: 'failed', permanent: false, detail: 'model output failed schema validation - screens: Invalid input' }), 'transient');
+    assert.equal(failureClassFor({ status: 'failed', permanent: false, detail: 'the payload is malformed' }), 'validation');
   });
 });
 
