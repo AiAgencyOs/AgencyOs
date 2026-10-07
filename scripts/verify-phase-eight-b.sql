@@ -263,7 +263,7 @@ update projects.maintenance_plans set status = 'active' where id = :'PL_id';
 select pg_temp.check((select status from projects.maintenance_plans where id = :'PL_id') = 'active', 'with an approved exception the plan activates');
 set local session_replication_role = replica;
 insert into projects.maintenance_plans (organization_id, client_account_id, project_id, name, billing_model, status, accepted_proposal_id, accepted_at) values (:'ORG', :'A_id', :'P_id', 'AMC unverified', 'annual', 'pending_client', :'SP_id', now()) returning id \gset PL3_
-insert into finance.invoices (organization_id, client_account_id, project_id, number, status, total_minor, subtotal_minor, tax_minor, kind, issued_at, paid_minor, paid_at) values (:'ORG', :'A_id', :'P_id', 'P8B-INV-3', 'paid', 7000, 7000, 0, 'service', now(), 7000, now()) returning id \gset INV3_
+insert into finance.invoices (organization_id, client_account_id, project_id, number, status, total_minor, subtotal_minor, tax_minor, kind, issued_at, paid_minor, paid_at) values (:'ORG', :'A_id', :'P_id', 'P8B-INV-3', 'paid', 118000, 100000, 18000, 'service', now(), 118000, now()) returning id \gset INV3_
 set local session_replication_role = origin;
 select pg_temp.as_user(:'ADM', :'ORG', 'ops_admin');
 set local role authenticated;

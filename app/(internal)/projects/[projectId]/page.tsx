@@ -155,6 +155,10 @@ import { PhaseNinePanel } from './phase-nine-panel';
 import { PhaseSevenBPanel } from './phase-seven-b-panel';
 import { PhaseSevenCPanel } from './phase-seven-c-panel';
 import { MaintenanceSmokePanel } from './maintenance-smoke-panel';
+import { FunctionalTestPanel } from './functional-test-panel';
+import { PhaseSevenGapsPanel } from './phase-seven-gaps-panel';
+import { loadFunctionalTestView } from '@/modules/projects/functional-test-queries';
+import { loadPhaseSevenGaps } from '@/modules/projects/phase-seven-gaps-queries';
 import { PhaseSevenPanel } from './phase-seven-panel';
 import { QaSpecialistPanel } from './qa-specialist-panel';
 import { ReviewPanel } from './review-panel';
@@ -956,6 +960,8 @@ export default async function ProjectPage({
       <PhaseSevenBPanel view={phaseSevenB} projectId={projectId} />
       <PhaseSevenCPanel projectId={projectId} failures={phaseSevenCFailures} actions={phaseSevenCActions} />
       <MaintenanceSmokePanel projectId={projectId} />
+      {phaseSix.plan ? <FunctionalTestPanel view={await loadFunctionalTestView(phaseSix.plan.id)} /> : null}
+      <PhaseSevenGapsPanel view={await loadPhaseSevenGaps(projectId)} />
 
       <PhaseEightPanel projectId={projectId} />
 

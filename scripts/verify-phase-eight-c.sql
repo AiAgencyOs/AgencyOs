@@ -84,7 +84,7 @@ insert into projects.change_requests (organization_id, project_id, scope_version
 -- invoices: INV1 activation (A), INV2 renewal (A), INV3 exception plan (B)
 insert into finance.invoices (organization_id, client_account_id, project_id, number, status, total_minor, subtotal_minor, tax_minor, kind, issued_at) values (:'ORG', :'A_id', :'P1_id', 'P8C-INV-1', 'issued', 118000, 100000, 18000, 'service', now()) returning id \gset INV1_
 insert into finance.invoices (organization_id, client_account_id, project_id, number, status, total_minor, subtotal_minor, tax_minor, kind, issued_at) values (:'ORG', :'A_id', :'P1_id', 'P8C-INV-2', 'issued', 118000, 100000, 18000, 'service', now()) returning id \gset INV2_
-insert into finance.invoices (organization_id, client_account_id, project_id, number, status, total_minor, subtotal_minor, tax_minor, kind, issued_at) values (:'ORG', :'A_id', :'P2_id', 'P8C-INV-3', 'issued', 50000, 50000, 0, 'service', now()) returning id \gset INV3_
+insert into finance.invoices (organization_id, client_account_id, project_id, number, status, total_minor, subtotal_minor, tax_minor, kind, issued_at) values (:'ORG', :'A_id', :'P2_id', 'P8C-INV-3', 'issued', 118000, 100000, 18000, 'service', now()) returning id \gset INV3_
 set local session_replication_role = origin;
 select count(*) as "INV_BEFORE" from finance.invoices where organization_id = :'ORG' \gset
 
@@ -368,7 +368,7 @@ set local role authenticated;
 select pg_temp.check((select outcome from projects.reinstate_maintenance_plan(:'PB_id')) = 'cycle_not_paid', 'reinstatement needs the cycle paid or excepted again');
 reset role;
 set local session_replication_role = replica;
-insert into finance.payments (organization_id, invoice_id, provider_payment_id, amount_minor, status, verified_at, verified_by) values (:'ORG', :'INV3_id', 'p8c-pay-3', 50000, 'captured', now(), :'OWNER');
+insert into finance.payments (organization_id, invoice_id, provider_payment_id, amount_minor, status, verified_at, verified_by) values (:'ORG', :'INV3_id', 'p8c-pay-3', 118000, 'captured', now(), :'OWNER');
 update finance.invoices set status = 'paid', paid_minor = total_minor, paid_at = now() where id = :'INV3_id';
 set local session_replication_role = origin;
 select pg_temp.as_user(:'ADM', :'ORG', 'ops_admin');
@@ -505,8 +505,8 @@ select outcome, plan_id as id from projects.open_maintenance_plan(:'P3_id', :'CA
 select pg_temp.check((select outcome from projects.record_maintenance_plan_acceptance(:'PD_id', 'accepted', :'SPA_id', 'email', 'mail-30', 'Client Contact')) = 'accepted', 'plan D is accepted');
 reset role;
 set local session_replication_role = replica;
-insert into finance.invoices (organization_id, client_account_id, project_id, number, status, total_minor, subtotal_minor, tax_minor, kind, issued_at, paid_minor, paid_at) values (:'ORG', :'A_id', :'P3_id', 'P8C-INV-4', 'paid', 9000, 9000, 0, 'service', now(), 9000, now()) returning id \gset INV4_
-insert into finance.payments (organization_id, invoice_id, provider_payment_id, amount_minor, status, verified_at, verified_by) values (:'ORG', :'INV4_id', 'p8c-pay-4', 9000, 'captured', now(), :'OWNER');
+insert into finance.invoices (organization_id, client_account_id, project_id, number, status, total_minor, subtotal_minor, tax_minor, kind, issued_at, paid_minor, paid_at) values (:'ORG', :'A_id', :'P3_id', 'P8C-INV-4', 'paid', 118000, 100000, 18000, 'service', now(), 118000, now()) returning id \gset INV4_
+insert into finance.payments (organization_id, invoice_id, provider_payment_id, amount_minor, status, verified_at, verified_by) values (:'ORG', :'INV4_id', 'p8c-pay-4', 118000, 'captured', now(), :'OWNER');
 insert into projects.phase_eight_intake (organization_id, project_id, client_account_id, status) values (:'ORG', :'P3_id', :'A_id', 'ready') returning id \gset INT_
 insert into projects.phase_eight (organization_id, project_id, client_account_id, intake_id, state, no_warranty_reason) values (:'ORG', :'P3_id', :'A_id', :'INT_id', 'active', 'fixture');
 set local session_replication_role = origin;
