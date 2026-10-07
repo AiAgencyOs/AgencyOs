@@ -144,6 +144,9 @@ import { PHASE_NINE_WORKFLOWS } from './phase-nine-workflows';
 import { QA_SPECIALIST_WORKFLOWS } from './qa-specialist-workflows';
 import { DEVELOPMENT_WORKFLOWS } from './development-workflows';
 import { SPECIALIST_WORKFLOWS } from './specialist-workflows';
+import { callDoor } from '@/modules/p4q/door';
+import { activateDesignerForRevision, gatePrototypeRevision } from '@/modules/p4q/revision-activation';
+import { handleP4qClassifyPrototypeFeedback } from '@/modules/p4q/feedback-handler';
 import { dispatchToolUnderPolicy } from '@/modules/agents/policy-enforcement';
 import { dispatchableToolsFor } from '@/modules/agents/tool-dispatch';
 import { toolsFor } from '@/modules/agents/tools';
@@ -1544,6 +1547,26 @@ const UI_VERSION_REVISE: AgentWorkflow = {
       feedback = reviewNote?.[0]?.decision_note ?? feedback;
     }
 
+    // W-O1 / W-P1 / p4ui: BEFORE any model is asked, the PM's classification must allow a redraft and the p4ui activation record must accept it
+    // (see src/modules/p4q/revision-activation.ts). Waiting for a classification is a retryable failure; a feedback that is not a design revision is
+    // settled for free and the routing of it (change request, clarification, escalation) belongs to the classification.
+    const activation = await activateDesignerForRevision(admin, {
+      organizationId: job.organization_id,
+      phaseFourId: phaseFour.id,
+      priorVersionId,
+      priorStatus: prior.status,
+      source: feedbackSource,
+      feedback,
+    });
+    if (!activation.go) {
+      if (activation.wait) {
+        await failJob(admin, job, activation.reason);
+        return { status: 'failed', reason: activation.reason };
+      }
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', outcome: 'not_mine', reason: activation.reason };
+    }
+
     const runId = await openRun(ctx, {
       type: 'projects.phase_four',
       id: phaseFour.id,
@@ -1772,16 +1795,31 @@ const CLASSIFY_CLIENT_FEEDBACK: AgentWorkflow = {
     }
 
     if (classification === 'CLARIFICATION') {
-      await admin
-        .schema('projects')
-        .from('clarification_requests')
-        .insert({
-          organization_id: decision.organization_id,
-          project_id: decision.project_id,
-          ui_version_id: uiVersionId,
-          question: clarifyingQuestion ?? decision.client_words,
-          raised_by: 'project_manager',
-        });
+      // W-P3: raised through the p4q door, which also queues the question for the PM to relay to the client one at a time (in the client's wording)
+      // and routes the answer back to the agent that asked. The old direct insert remains only as the fallback when the door refuses (for example a
+      // wording the secret scan rejects): a clarification the classification asked for must still exist.
+      const question = (clarifyingQuestion ?? decision.client_words).slice(0, 2000);
+      const raised = await callDoor(admin, 'projects', 'p4q_raise_clarification', {
+        p_project_id: decision.project_id,
+        p_ui_version_id: uiVersionId,
+        p_question: question,
+        p_client_wording: clarifyingQuestion ?? `Could you tell us a little more about this request: ${decision.client_words}`.slice(0, 2000),
+        p_raised_by: 'project_manager',
+      });
+      const raisedOutcome = raised.ok ? (raised.row.outcome ?? 'no answer') : raised.message;
+      if (raisedOutcome !== 'raised' && raisedOutcome !== 'already_open') {
+        console.error(JSON.stringify({ level: 'error', scope: 'classifyClientFeedback', detail: `the clarification door answered ${raisedOutcome}; falling back to a direct request` }));
+        await admin
+          .schema('projects')
+          .from('clarification_requests')
+          .insert({
+            organization_id: decision.organization_id,
+            project_id: decision.project_id,
+            ui_version_id: uiVersionId,
+            question,
+            raised_by: 'project_manager',
+          });
+      }
     } else if (classification === 'POSSIBLE_SCOPE_CHANGE') {
       // Mirrors handlePossibleScopeChangeDetected's own body exactly — same
       // reuse-first reasoning, applied to Phase 4's own feedback source.
@@ -2440,6 +2478,23 @@ const PROTOTYPE_BUILD_REVISE: AgentWorkflow = {
         ? (adminNote ?? '(the Admin asked for changes without a note)')
         : (reviewNote?.[0]?.decision_note ?? '(no specific note was recorded)');
 
+    // W-P1: a client round is rebuilt only when the PM classified THIS decision as a correction or an included revision
+    // (projects.p4q_prototype_revision_allowed); unclassified feedback waits (retryable), anything else is routed to a person by its classification.
+    // An Admin edit and a QA defect need no client classification. The p4ui prototype route is recorded as part of the gate.
+    const gate = await gatePrototypeRevision(admin, {
+      organizationId: job.organization_id,
+      deliverableId: deliverableId ?? artifact.deliverable_id,
+      source: fromQa ? 'qa' : fromAdmin ? 'admin' : 'client',
+    });
+    if (!gate.go) {
+      if (gate.wait) {
+        await failJob(admin, job, gate.reason);
+        return { status: 'failed', reason: gate.reason };
+      }
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', outcome: 'not_mine', reason: gate.reason };
+    }
+
     const runId = await openRun(ctx, {
       type: 'projects.ui_version',
       id: version.id,
@@ -2531,6 +2586,82 @@ const PROTOTYPE_BUILD_REVISE: AgentWorkflow = {
       deliverableId: row?.deliverable_id ?? null,
       screens: validated.data.screens.length,
     };
+  },
+};
+
+const PROTOTYPE_FEEDBACK_CLASSIFY_PROMPT = [
+  'A client reviewed a PROTOTYPE build and asked for a change. You are given their own words, verbatim.',
+  'Classify what they actually mean into exactly one of six categories:',
+  'CORRECTION — a small fix to what was shown (wrong color, typo, misaligned element, a broken link).',
+  'INCLUDED_REVISION — a change already inside the agreed scope for this screen.',
+  'CLARIFICATION — you genuinely cannot tell what they want without asking a specific question back;',
+  'when you choose this, also write that exact question, at most 2000 characters.',
+  'POSSIBLE_SCOPE_CHANGE — a new feature, screen, or capability not in the approved scope.',
+  'DESIGN_DIRECTION_CHANGE — not a fix but a different visual direction than what was approved.',
+  'REJECTED_REQUEST — feedback that asks for something the project has already declined or cannot do.',
+  'Say briefly why, in one sentence, at most 500 characters. Never invent scope you have not been shown.',
+].join(' ');
+
+/**
+ * W-P1 (P4-PM-010/011): `project.deliverable_decided` (prototype, changes_requested) -> the PM classifies the client's words against the exact build, and the
+ * database door routes them (`projects.p4q_classify_prototype_feedback`). This is the model-backed classifier the handler was written for: the model only
+ * returns one of six labels and a reason (the same vocabulary and schema as the UI-version classifier); the words are read from the approval request, never
+ * from the event, and everything that follows from the label (a clarification, a change request, an escalation) is the door's, not the model's.
+ *
+ * It runs beside `ui_prototype:reviseBuild` on the same event. The rebuild WAITS for this row (see `gatePrototypeRevision`), so an unclassified request is
+ * never rebuilt on a guess; and with no funded model this job fails honestly (`environment_missing`), the rebuild never starts, and the failure is visible.
+ */
+const PROTOTYPE_FEEDBACK_CLASSIFY: AgentWorkflow = {
+  jobKind: 'prototype.feedback_classify',
+  agentKey: 'project_manager',
+  systemPrompt: PROTOTYPE_FEEDBACK_CLASSIFY_PROMPT,
+  schemaName: 'ClientFeedbackClassification',
+  jsonSchema: clientFeedbackClassificationJsonSchema,
+  workClass: 'draft',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const deliverableId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+    let runId: string | null = null;
+    let steps = 0;
+    let lastUsage = { inputTokens: 0, outputTokens: 0, costMinor: 0 };
+    let lastJson: unknown = null;
+
+    const result = await handleP4qClassifyPrototypeFeedback(
+      admin,
+      { id: job.id, organization_id: job.organization_id, payload: job.payload as never, correlation_id: job.correlation_id },
+      async (words) => {
+        const { data: d } = await admin.schema('projects').from('deliverables').select('project_id').eq('id', deliverableId ?? '').eq('organization_id', job.organization_id).maybeSingle();
+        runId = await openRun(ctx, {
+          type: 'projects.deliverable',
+          id: deliverableId ?? '',
+          input: { deliverableId, ...(d?.project_id ? { projectId: d.project_id } : {}) } as unknown as Json,
+        });
+        const call = await callModel(ctx, this, [{ role: 'user', content: words }], runId);
+        steps = call.stepCount;
+        if (!call.ok) {
+          if (runId) await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+          throw new Error(call.kind === 'no_provider' ? 'environment_missing: AI_PROVIDER_NOT_CONFIGURED' : call.detail);
+        }
+        lastUsage = call.usage;
+        const validated = clientFeedbackClassificationSchema.safeParse(call.json);
+        if (!validated.success) {
+          const detail = schemaRefusal(validated.error);
+          if (runId) await finishRun(admin, runId, 'failed', detail, call.stepCount, call.usage);
+          throw new Error(detail);
+        }
+        lastJson = validated.data;
+        return { classification: validated.data.classification, reasoning: validated.data.reasoning };
+      },
+    );
+
+    if (result.status === 'succeeded') {
+      if (runId) await succeedRun(admin, runId, lastJson as Json, lastUsage, steps);
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', outcome: result.outcome, reason: result.detail, ...(runId ? { runId } : {}) };
+    }
+    await failJob(admin, job, result.detail);
+    return { status: 'failed', reason: result.detail, ...(runId ? { runId } : {}) };
   },
 };
 
@@ -9996,6 +10127,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   READ_DESIGN_REPLY,
   PROTOTYPE_BUILD,
   PROTOTYPE_BUILD_REVISE,
+  PROTOTYPE_FEEDBACK_CLASSIFY,
   MESSAGE_INTENT,
   QA_TEST_PLAN,
   CHECK_IN_BRIEF,

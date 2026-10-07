@@ -50,6 +50,8 @@ The audit suspected, from reading, that an owner approving an **escalated** appr
 
 ## Wiring the lead must add (shared files this change did not edit)
 
+> **Status 2026-11-30:** W-P1O-1 (navigation, negotiation link), W-P1O-2 (runner and events) and W-P1O-3 (staff acceptance) are wired, and `daypartWindow` / `p1o_meeting_timezone` are now called by the booking path under a saved policy. Proof: `tests/p1o-wiring.test.ts`. Not done: the model-backed scheduling classifier still needs a funded model.
+
 **W-P1O-1 navigation** (`app/(internal)/nav-config.ts`, add under the existing groups):
 
 - operations: `{ href: '/operations/task-board', label: 'Workflow task board', capability: 'audit.read', screens: ['A16', 'A17'] }`

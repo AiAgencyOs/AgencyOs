@@ -12,7 +12,7 @@ export type DoorRow = Record<string, unknown> & { outcome?: string };
 
 export type DoorResult = { ok: true; row: DoorRow; rows: DoorRow[] } | { ok: false; message: string };
 
-export async function callDoor(client: unknown, schema: 'projects' | 'finance', fn: string, args: Record<string, unknown>): Promise<DoorResult> {
+export async function callDoor(client: unknown, schema: 'projects' | 'finance' | 'core', fn: string, args: Record<string, unknown>): Promise<DoorResult> {
   const { data, error } = await (client as DoorClient).schema(schema).rpc(fn, args);
   if (error) return { ok: false, message: error.message };
   const rows = (Array.isArray(data) ? data : data === null || data === undefined ? [] : [data]) as DoorRow[];

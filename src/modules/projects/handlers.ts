@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { openBlockedRequirementEscalation } from '@/modules/p4q/escalation';
+import { bindCommercialBaseline } from '@/modules/finance/p4q-doors';
 import type { createAdminClient } from '@/lib/db/admin';
 import { ok } from '@/lib/result';
 import { nextUnlockedMilestoneForProject } from '@/modules/finance/service';
@@ -478,6 +480,10 @@ export async function handleHandoffBound(admin: Admin, job: UnlockJob): Promise<
       if (!structure.ok) {
         console.error(JSON.stringify({ level: 'error', scope: 'handleHandoffBound.structure', detail: structure.error.message }));
       }
+      // W-F1: each milestone records the scope version and budget it was priced against; with neither, a person is asked (never a guessed baseline).
+      // Only when the plan exists (just installed, or already there): there is nothing to bind otherwise.
+      const baseline = structure.ok ? await bindCommercialBaseline(admin, projectId) : null;
+      const baselineNote = baseline ? ` Commercial baseline: ${baseline}.` : '';
       // PM-04's Admin card, raised the same way and for the same reason: the
       // door is idempotent under the project's lock, so a replay cannot raise
       // a second card, and a card that could not be raised is a named reason
@@ -506,7 +512,7 @@ export async function handleHandoffBound(admin: Admin, job: UnlockJob): Promise<
         detail:
           (outcome === 'started'
             ? 'Phase 2 started; the inherited packet is accepted and nobody has been contacted.'
-            : 'Phase 2 was already running for this project.') + structureNote + cardNote,
+            : 'Phase 2 was already running for this project.') + structureNote + baselineNote + cardNote,
         milestoneId: row?.phase_two_id ?? undefined,
       };
     }
@@ -661,6 +667,7 @@ export async function handlePhaseFourReady(admin: Admin, job: UnlockJob): Promis
   if (!handoff.phase_four_ready) {
     // The row is authoritative, not the event that carried its id — a stale
     // or forged claim of readiness must not reach the door at all.
+    await openBlockedRequirementEscalation(admin, handoff.project_id, 'Task 2 cannot start: the Phase 3 hand-off is not marked ready for Phase 4.');
     return { status: 'failed', permanent: true, detail: 'the handoff row says Phase 4 is not ready' };
   }
 
@@ -693,6 +700,7 @@ export async function handlePhaseFourReady(admin: Admin, job: UnlockJob): Promis
       // The door re-checked and agrees with the early read above — kept
       // permanent for the same reason: retrying cannot make a handoff ready
       // that is not, and a job that keeps trying hides the blocker.
+      await openBlockedRequirementEscalation(admin, handoff.project_id, 'Task 2 cannot start: no ready Phase 3 hand-off exists for this project.');
       return {
         status: 'failed',
         permanent: true,

@@ -35,7 +35,12 @@ export type EnvelopeInput = {
  * version; a failure is CLASSED and counted; when the budget is spent, the failure is permanent, no agent is capable or the specialist is disabled, a project-scoped
  * escalation is opened for a person and the job is parked. A success closes the envelope. The work itself, and every authority check inside it, is unchanged.
  */
-export async function runWithEnvelope(admin: Admin, input: EnvelopeInput, work: () => Promise<HandlerResult>): Promise<HandlerResult> {
+export async function runWithEnvelope(
+  admin: Admin,
+  input: EnvelopeInput,
+  work: () => Promise<HandlerResult>,
+  options: { onUnopenable?: 'fail' | 'run_unwrapped' } = {},
+): Promise<HandlerResult> {
   const opened = await callDoor(admin, 'projects', 'p4q_open_envelope', {
     p_project_id: input.projectId,
     p_task_type: input.taskType,
@@ -43,11 +48,25 @@ export async function runWithEnvelope(admin: Admin, input: EnvelopeInput, work: 
     p_idempotency_key: input.idempotencyKey,
     p_retry_budget: input.retryBudget ?? 3,
   });
-  if (!opened.ok) return { status: 'failed', permanent: false, detail: `the envelope door did not answer: ${opened.message}` };
+  if (!opened.ok) {
+    if (options.onUnopenable === 'run_unwrapped') {
+      console.error(JSON.stringify({ level: 'error', scope: 'p4q.envelope', taskType: input.taskType, detail: `the envelope door did not answer (${opened.message}); the hop runs without one` }));
+      return work();
+    }
+    return { status: 'failed', permanent: false, detail: `the envelope door did not answer: ${opened.message}` };
+  }
   const outcome = opened.row.outcome ?? 'no answer';
   const envelopeId = typeof opened.row.envelope_id === 'string' ? opened.row.envelope_id : null;
   if (outcome === 'agent_disabled') return { status: 'failed', permanent: true, detail: 'the specialist for this task is disabled; an escalation was opened for a person' };
-  if (outcome !== 'opened' && outcome !== 'already_open') return { status: 'failed', permanent: true, detail: `the envelope was refused: ${outcome}` };
+  if (outcome !== 'opened' && outcome !== 'already_open') {
+    // `run_unwrapped` is for a live dispatcher whose references come from an event rather than from a person: if the door cannot take them (a stale or
+    // unknown reference) the hop still runs exactly as it did before envelopes existed, and the refusal is logged. `agent_disabled` is never bypassed.
+    if (options.onUnopenable === 'run_unwrapped') {
+      console.error(JSON.stringify({ level: 'error', scope: 'p4q.envelope', taskType: input.taskType, detail: `the envelope was refused (${outcome}); the hop runs without one` }));
+      return work();
+    }
+    return { status: 'failed', permanent: true, detail: `the envelope was refused: ${outcome}` };
+  }
   if (!envelopeId) return { status: 'failed', permanent: true, detail: 'the envelope door returned no envelope' };
 
   const result = await work();

@@ -117,7 +117,11 @@ import {
 import { routeSchedulingMessage, reviewQuoteReplyMessage } from '@/modules/crm/p1o-message-handlers';
 import { sweepCoordinationAllOrganizations } from '@/modules/orchestrator/p1o-coordination-sweep';
 import { guardDesignContext } from '@/modules/projects/design-context-guard';
+import { sweepDesignShareRemindersAllOrganizations } from '@/modules/projects/design-share-reminder-sender';
 import { handleP4uiAttachBuild, handleP4uiSyncBuild } from '@/modules/projects/p4ui-handlers';
+import { handleP4qClarificationAnswered } from '@/modules/p4q/clarification-return';
+import { runPhaseFourHop, runPhaseFourWorkflowHop } from '@/modules/p4q/hop';
+import { handleMatchPaymentSubmission } from '@/modules/finance/p4q-payment-match';
 import { announceMeetingBooked, announceMeetingCancelled, sendMeetingReminder } from '@/modules/crm/meeting-announcements';
 import { handleCreateDraftHandoverPackage, handleFillPhaseEightIntake, handleOpenPhaseSeven, handleOpenSupportTicketFromMessage, handleRoutePhaseSevenTask, handleRunDeployment } from '@/modules/projects/phase-seven-handlers';
 import { runOnboardingFollowUps } from '@/modules/projects/pm-followups';
@@ -1720,9 +1724,13 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const schedulingMessages = idleTick ? await runEventJobs(admin, SCHEDULING_MESSAGE_JOB_KIND, routeSchedulingMessage, 'runSchedulingMessageRoutingJobs') : { claimed: 0, results: [] };
   const quoteReplies = idleTick ? await runEventJobs(admin, QUOTE_REPLY_JOB_KIND, reviewQuoteReplyMessage, 'runQuoteReplyReviewJobs') : { claimed: 0, results: [] };
   const coordination = idleTick ? await sweepCoordinationAllOrganizations(admin) : null;
+  // W10 (P3-PM-030): a design share the client has not answered is chased, at most twice; the sender is the ordinary outbound WhatsApp path.
+  const designShareReminders = idleTick ? await sweepDesignShareRemindersAllOrganizations(admin) : null;
   const designContextGuard = idleTick ? await runEventJobs(admin, DESIGN_CONTEXT_GUARD_JOB_KIND, guardDesignContext, 'runDesignContextGuardJobs') : { claimed: 0, results: [] };
   const p4uiAttach = idleTick ? await runEventJobs(admin, P4UI_ATTACH_JOB_KIND, handleP4uiAttachBuild, 'runP4uiAttachJobs') : { claimed: 0, results: [] };
   const p4uiSync = idleTick ? await runEventJobs(admin, P4UI_SYNC_JOB_KIND, handleP4uiSyncBuild, 'runP4uiSyncJobs') : { claimed: 0, results: [] };
+  const paymentMatches = idleTick ? await runEventJobs(admin, PAYMENT_MATCH_JOB_KIND, handleMatchPaymentSubmission, 'runPaymentMatchJobs') : { claimed: 0, results: [] };
+  const p4qClarificationReturns = idleTick ? await runEventJobs(admin, P4Q_CLARIFICATION_RETURN_JOB_KIND, handleP4qClarificationAnswered, 'runP4qClarificationReturnJobs') : { claimed: 0, results: [] };
   const meetingBooked = idleTick ? await runEventJobs(admin, MEETING_BOOKED_JOB_KIND, announceMeetingBooked, 'runMeetingBookedAnnouncementJobs') : { claimed: 0, results: [] };
   const meetingCancelled = idleTick ? await runEventJobs(admin, MEETING_CANCELLED_JOB_KIND, announceMeetingCancelled, 'runMeetingCancelledAnnouncementJobs') : { claimed: 0, results: [] };
   const meetingReminders = idleTick
@@ -1730,14 +1738,17 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     : { claimed: 0, results: [] };
 
   return NextResponse.json({
-    claimed: agentRuns.length + supportFromMessage.claimed + draftHandover.claimed + meetingBooked.claimed + meetingCancelled.claimed + meetingReminders.claimed + p4uiAttach.claimed + p4uiSync.claimed + designContextGuard.claimed + schedulingMessages.claimed + quoteReplies.claimed,
+    claimed: agentRuns.length + supportFromMessage.claimed + draftHandover.claimed + meetingBooked.claimed + meetingCancelled.claimed + meetingReminders.claimed + p4uiAttach.claimed + p4uiSync.claimed + p4qClarificationReturns.claimed + paymentMatches.claimed + designContextGuard.claimed + schedulingMessages.claimed + quoteReplies.claimed,
     agentRuns,
     designContextGuard: designContextGuard.results,
     schedulingMessages: schedulingMessages.results,
     quoteReplies: quoteReplies.results,
     coordination,
+    designShareReminders,
     p4uiAttach: p4uiAttach.results,
     p4uiSync: p4uiSync.results,
+    p4qClarificationReturns: p4qClarificationReturns.results,
+    paymentMatches: paymentMatches.results,
     meetingBooked: meetingBooked.results,
     meetingCancelled: meetingCancelled.results,
     meetingReminders: meetingReminders.results,
@@ -1896,7 +1907,15 @@ async function runOneAgentJob(
   // AgentPolicyRefusal — recorded and audited there. Caught here, and the
   // job is parked rather than retried: a retry would not change the policy.
   try {
-    const outcome = await workflow.run({ admin, job, agent, correlationId, workClass: workflow.workClass });
+    // W-O2: the same envelope for a Phase 4 hop that calls a model. The outcome is returned unchanged unless the envelope spent its budget (then the job is parked).
+    const outcome = await runPhaseFourWorkflowHop(
+      admin,
+      job,
+      () => workflow.run({ admin, job, agent, correlationId, workClass: workflow.workClass }),
+      async (detail) => {
+        await admin.schema('core').from('jobs').update({ status: 'dead', last_error: detail.slice(0, 1000), locked_at: null, locked_by: null }).eq('id', job.id);
+      },
+    );
     return { jobId: job.id, agent: workflow.agentKey, ...outcome };
   } catch (error) {
     // Stream F-F: the three between-step gates, each settled its own way.
@@ -1998,6 +2017,8 @@ const PHASE_EIGHT_INTAKE_JOB_KIND = HANDLER_JOB_KIND['projects:fillPhaseEightInt
 const SCHEDULING_MESSAGE_JOB_KIND = HANDLER_JOB_KIND['crm:routeSchedulingMessage'];
 const QUOTE_REPLY_JOB_KIND = HANDLER_JOB_KIND['sales:reviewQuoteReply'];
 const DESIGN_CONTEXT_GUARD_JOB_KIND = HANDLER_JOB_KIND['ui_designer:p13GuardDesignContext'];
+const P4Q_CLARIFICATION_RETURN_JOB_KIND = HANDLER_JOB_KIND['projects:returnClarificationAnswer'];
+const PAYMENT_MATCH_JOB_KIND = HANDLER_JOB_KIND['finance:matchPaymentSubmission'];
 const P4UI_ATTACH_JOB_KIND = HANDLER_JOB_KIND['projects:attachP4uiBuild'];
 const P4UI_SYNC_JOB_KIND = HANDLER_JOB_KIND['projects:syncP4uiBuild'];
 const MEETING_BOOKED_JOB_KIND = HANDLER_JOB_KIND['crm:announceMeetingBooked'];
@@ -2112,7 +2133,8 @@ async function runEventJobs(
     // the rest of the batch never ran and the whole tick answered 500.
     let result: HandlerResult;
     try {
-      result = await handler(admin, job);
+      // W-O2: a Phase 4 hop runs inside its persisted ExecutionEnvelope (exact references, retry budget, classed failure, escalation). Any other job runs as it always did.
+      result = await runPhaseFourHop(admin, kind, job, () => handler(admin, job));
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       console.error(

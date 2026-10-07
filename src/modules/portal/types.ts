@@ -67,8 +67,17 @@ type ClientPrototypeElement = {
   navigatesTo?: string;
 };
 
+/** The client-safe notice for a prototype (`projects.p4ui_prototype_client_notice`): what it is, what it is not, and what is simulated. No internals. */
+export type ClientPrototypeNotice = {
+  label: string;
+  limitations: string[];
+  simulated: string[];
+  platform: string | null;
+};
+
 export type ClientPrototypeArtifact = {
   id: string;
+  deliverableId: string;
   projectId: string;
   uiVersionId: string;
   screens: Array<{ screenKey: string; elements: ClientPrototypeElement[] }>;

@@ -14,8 +14,8 @@ import { interpretBook, interpretPropose } from '@/lib/scheduler/meeting-command
 
 import { bufferedSlot, offerableSlots, proposalWindow, readAvailabilityFrom, sliceWindows, slotStillFree, type Slot } from './availability';
 import { resolveGoogleCalendar } from './google';
-import { constraintsOf, currentSchedulingPolicy, durationAllowed } from './p1o-booking-policy';
-import { applyWorkingHours } from './p1o-policy';
+import { constraintsOf, currentSchedulingPolicy, durationAllowed, readMeetingZone } from './p1o-booking-policy';
+import { applyDaypart, applyWorkingHours, daypartInText } from './p1o-policy';
 
 /**
  * Proposing and booking a slot from the meeting page — G-243, §5 and §6.
@@ -57,6 +57,7 @@ type MeetingRow = {
   requested_start_at: string | null;
   requested_window_end: string | null;
   timezone: string | null;
+  requested_message_id: string | null;
   proposed_slots: unknown;
   contact_id: string | null;
   leads: { title: string } | { title: string }[] | null;
@@ -68,7 +69,7 @@ async function readMeeting(id: string): Promise<Result<MeetingRow>> {
   const { data, error } = await supabase
     .schema('crm')
     .from('meetings')
-    .select('id, lead_id, status, requested_mode, requested_start_at, requested_window_end, timezone, proposed_slots, contact_id, leads(title), contacts(email, full_name)')
+    .select('id, lead_id, status, requested_mode, requested_start_at, requested_window_end, timezone, requested_message_id, proposed_slots, contact_id, leads(title), contacts(email, full_name)')
     .eq('id', id)
     .maybeSingle();
   if (error) return err('INTERNAL', `Could not read the meeting: ${error.message}`);
@@ -77,6 +78,17 @@ async function readMeeting(id: string): Promise<Result<MeetingRow>> {
 }
 
 const one = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? v[0] ?? null : v);
+
+/** The daypart the client's own request message names, or null. A message that cannot be read narrows nothing (and says so in the log): the offer is wider, never wrong. */
+async function readRequestedDaypart(messageId: string) {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').from('conversation_messages').select('body').eq('id', messageId).maybeSingle();
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'readRequestedDaypart', detail: error.message }));
+    return null;
+  }
+  return typeof data?.body === 'string' ? daypartInText(data.body) : null;
+}
 
 /**
  * §5 up to PROPOSE. The window is the one the lead named, widened to a day
@@ -123,7 +135,11 @@ export async function proposeSlots(id: string, durationMinutes: number): Promise
     now.toISOString(),
   );
   // Working hours only ever shorten what the calendar answered; with none configured the list is returned whole.
-  const slots = offer.ok ? applyWorkingHours(policy, [...offer.slots]) : [];
+  const withinHours = offer.ok ? applyWorkingHours(policy, [...offer.slots]) : [];
+  // The part of the day the client named ("shaam", "in the morning"), in the agency's own definition of it. Only when the agency has saved a policy (an
+  // organisation that saved none keeps exactly what the calendar offered); it only ever shortens the list and never to nothing.
+  const asked = policy.configured && meeting.data.requested_message_id ? await readRequestedDaypart(meeting.data.requested_message_id) : null;
+  const slots = applyDaypart(policy, asked, withinHours);
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('crm').rpc('propose_meeting_slots', {
@@ -213,7 +229,10 @@ export async function bookProposedSlot(id: string, startAt: string, mode: string
   const lead = one(meeting.data.leads);
   const contact = one(meeting.data.contacts);
   // The meeting's own zone, else the agency's — never a constant (review).
-  const zone = meeting.data.timezone ?? (await getAgencyTimeZone());
+  // With a saved policy the zone follows the rule the owner configured (P1-SCHED-014): the contact's verified zone, then a stored one, then the meeting's own. The
+  // agency's default comes back marked "ask" because it is a guess: the booking is the same instant either way, so it stands in that zone and says so.
+  const zoneRead = policyRead.data.configured ? await readMeetingZone(parsed.data.id) : null;
+  const zone = zoneRead && !zoneRead.mustAsk ? zoneRead.timezone : (meeting.data.timezone ?? (await getAgencyTimeZone()));
   const event = await calendar.createEvent({
     summary: `${lead?.title ?? 'Meeting'}${contact?.full_name ? ` — ${contact.full_name}` : ''}`,
     description: `Booked from AgencyOS (meeting ${parsed.data.id}).`,
@@ -266,9 +285,10 @@ export async function bookProposedSlot(id: string, startAt: string, mode: string
   }
   const decision = interpretBook(outcome, event.meetUrl);
   if (decision.kind === 'error') return err(decision.code, decision.message);
-  const message = event.meet === 'unavailable' && parsed.data.mode === 'video_meeting'
+  const withMeetNote = event.meet === 'unavailable' && parsed.data.mode === 'video_meeting'
     ? `${decision.message} This calendar cannot create a Meet link (a shared Gmail calendar, no Workspace user) — send the client your own video link with the confirmation.`
     : decision.message;
+  const message = zoneRead?.mustAsk ? `${withMeetNote} The client's time zone is not confirmed, so it was booked in ${zone}: confirm the time with them.` : withMeetNote;
   return ok({ message, leadId: meeting.data.lead_id, meetUrl: event.meetUrl });
 }
 

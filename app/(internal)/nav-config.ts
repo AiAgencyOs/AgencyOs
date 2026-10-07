@@ -57,7 +57,10 @@ export const NAV_MODULES: readonly NavModule[] = [
       { href: '/leads', label: 'Leads', capability: 'lead.read', screens: ['SCR-006', 'SCR-007', 'SCR-008', 'SCR-009', 'SCR-012'] },
       { href: '/sales-funnel', label: 'Pipeline', capability: 'lead.read', screens: ['SCR-005'] },
       { href: '/quotations', label: 'Quotations', capability: 'lead.read', screens: ['SCR-011'] },
+      { href: '/quotations/policy', label: 'Quotation policy', capability: 'lead.read' },
       { href: '/meetings', label: 'Meetings', capability: 'lead.read', screens: ['SCR-010'] },
+      { href: '/meetings/attention', label: 'Meetings needing a person', capability: 'lead.read' },
+      { href: '/meetings/policy', label: 'Scheduling policy', capability: 'lead.read' },
       { href: '/follow-ups', label: 'Follow-ups', capability: 'lead.read', screens: ['SCR-013'] },
       { href: '/contracts', label: 'Contracts', capability: 'lead.read', screens: ['SCR-072'] },
     ],
@@ -114,6 +117,7 @@ export const NAV_MODULES: readonly NavModule[] = [
       { href: '/finance', label: 'Finance overview', capability: 'invoice.read', screens: ['SCR-050'] },
       { href: '/invoices', label: 'Invoices', capability: 'invoice.read', screens: ['SCR-051', 'SCR-052'] },
       { href: '/invoices/verify', label: 'Payment verification', capability: 'invoice.issue', screens: ['SCR-054'] },
+      { href: '/invoices/credit-notes', label: 'Credit notes', capability: 'invoice.read' },
       { href: '/finance/payments', label: 'Payments', capability: 'invoice.read', screens: ['SCR-053'] },
       { href: '/finance/expenses', label: 'Expenses', capability: 'invoice.read', screens: ['SCR-055'] },
       { href: '/finance/tax', label: 'GST & tax', capability: 'invoice.read', screens: ['SCR-056'] },
@@ -161,6 +165,7 @@ export const NAV_MODULES: readonly NavModule[] = [
     title: 'Operations',
     items: [
       { href: '/operations', label: 'Jobs & system health', capability: 'audit.read', screens: ['SCR-060', 'SCR-066', 'SCR-067'] },
+      { href: '/operations/task-board', label: 'Workflow task board', capability: 'audit.read', screens: ['A16', 'A17'] },
     ],
   },
   {

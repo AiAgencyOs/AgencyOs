@@ -1152,6 +1152,7 @@ export default async function LeadConversationPage({
                 <QuotationResponseForm
                   leadId={leadId}
                   proposalId={liveProposal.id}
+                  opportunityId={opportunity?.id ?? null}
                   lapsed={hasLapsed(liveProposal.valid_until)}
                 />
               </div>
@@ -1415,6 +1416,15 @@ export default async function LeadConversationPage({
                               {parsed.data.openQuestions.length === 1 ? '' : 's'}
                             </p>
                           ) : null}
+                          {(() => {
+                            // W6 (A07): two versions of one conversation's requirements, side by side, with what the difference means for the quotation.
+                            const previous = versions.filter((p) => p.version < v.version).sort((x, y) => y.version - x.version)[0];
+                            return conversation && previous ? (
+                              <Link href={`/requirements/compare?conversation=${conversation.id}&a=${previous.version}&b=${v.version}`} className="w-fit text-xs font-medium text-brand hover:underline">
+                                Compare with v{previous.version}
+                              </Link>
+                            ) : null;
+                          })()}
                           {(() => {
                             const set = requirementSets.get(v.id);
                             return set ? (

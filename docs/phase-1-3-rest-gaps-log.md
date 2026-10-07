@@ -35,6 +35,8 @@ All new objects are prefixed `p13_`. No shared wiring file was edited (`app/api/
 
 ## Wiring the lead must add
 
+> **Status 2026-11-30:** W5 (webhook ledger on the three inbound routes, circuit breaker on the model call), W6 (links), W7 (approval detail), W8 (notification gate in the internal announcers and the follow-up worker) and W10 (design-share reminders on the cron tick) are wired; W9 was wired earlier. Proofs: `tests/p13-webhook-wiring.test.ts`, `p13-model-circuit-wiring.test.ts`, `p13-notification-and-approval-wiring.test.ts`, `p13-design-share-reminder-wiring.test.ts`, `p13-links-wiring.test.ts`. Not done: the ledger is fail-open by decision (an unreachable ledger never stops a customer message), and the deployment-wide backlog alert (`alertOnBacklog`) has no organization, so no per-organization notification rule applies to it.
+
 **W5 - webhook ledger, circuit breaker, canonical errors** (`app/api/webhooks/{whatsapp,email,facebook-leads}/route.ts` and the adapters; not edited here)
 
 ```ts

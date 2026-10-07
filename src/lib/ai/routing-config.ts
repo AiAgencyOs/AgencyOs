@@ -2,6 +2,7 @@ import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
 import { serverEnv } from '@/lib/env';
+import { looseSchema } from '@/lib/p13/loose-client';
 
 import { categoryForAgent } from './model-choice';
 import { keyEligibility, modelMatches, type HealthState } from './provider-match';
@@ -33,6 +34,11 @@ export const priceKey = (provider: string, model: string): string => `${provider
 export type LoadedRouting = {
   readonly input: Omit<RouteInput, 'needsTools' | 'requiredCapabilities'>;
   readonly category: string | null;
+  /**
+   * W-O3: what Phase 4's capability profile (`projects.p4q_agent_capability_profiles`) says this agent needs of a model. Empty for an agent with no profile
+   * and when the profile cannot be read (routing must not stop on reference data).
+   */
+  readonly profileCapabilities: readonly string[];
   /** Prices the Admin recorded, in minor units per million tokens. A model with no price is not costed (cost is never invented). */
   readonly prices: ReadonlyMap<string, { readonly input: number; readonly output: number }>;
 };
@@ -104,6 +110,17 @@ export async function loadRouting(
       }
     }
 
+    // W-O3: reference data, select-only, one row per Phase 4 agent. An unreadable profile is an empty one: it can only ever NARROW the auto-ranked extras.
+    let profileCapabilities: string[] = [];
+    try {
+      const profile = await looseSchema(admin as never, 'projects').from('p4q_agent_capability_profiles').select('required_model_capabilities').eq('agent_key', args.agentKey).maybeSingle();
+      const caps = (profile.data as { required_model_capabilities?: unknown } | null)?.required_model_capabilities;
+      if (profile.error) console.error(JSON.stringify({ level: 'warn', scope: 'loadRouting', agentKey: args.agentKey, detail: `capability profile unreadable: ${profile.error.message}` }));
+      else if (Array.isArray(caps)) profileCapabilities = caps.filter((c): c is string => typeof c === 'string');
+    } catch (error) {
+      console.error(JSON.stringify({ level: 'warn', scope: 'loadRouting', agentKey: args.agentKey, detail: `capability profile unreadable: ${error instanceof Error ? error.message : String(error)}` }));
+    }
+
     const a = assignment.data;
     const assignmentSnapshot: AssignmentSnapshot | null = a
       ? {
@@ -116,6 +133,7 @@ export async function loadRouting(
     const optimise = policy.data?.optimise_for;
     return {
       category,
+      profileCapabilities,
       prices,
       input: {
         mode: (settings.data?.mode === 'manual' ? 'manual' : 'auto') as RoutingMode,
@@ -146,6 +164,6 @@ export function costMinorFor(price: { input: number; output: number } | undefine
 }
 
 /** What a category needs of a model beyond what every model must do. Only what the Admin has actually recorded can exclude a model. */
-export function requiredCapabilitiesFor(category: string | null): string[] {
-  return category === 'engineering' ? ['coding'] : [];
+export function requiredCapabilitiesFor(category: string | null, profile: readonly string[] = []): string[] {
+  return [...new Set([...(category === 'engineering' ? ['coding'] : []), ...profile])];
 }

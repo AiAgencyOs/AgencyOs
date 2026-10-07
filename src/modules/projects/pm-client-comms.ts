@@ -2,6 +2,7 @@ import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
 import { sendSystemText, type SystemTextResult } from '@/modules/crm/system-message';
+import { recordReceiptAcknowledgements } from '@/modules/finance/p4q-doors';
 
 import { isAdvanceMilestone } from './advance-milestone';
 import type { HandlerResult } from './handlers';
@@ -342,17 +343,20 @@ export async function handlePaymentUpdate(admin: Admin, job: PmCommsJob): Promis
           : pmPaymentVerified(ctx.language, invoice.number)
         : pmPaymentNeedsAttention(ctx.language, invoice.number);
 
-  return settle([
-    {
-      label: eventType!.replace(/^(payment|invoice)\./, '$1 '),
-      result: await sendSystemText(admin as never, {
-        organizationId: job.organization_id,
-        conversationId: ctx.conversationId,
-        body,
-        ref: `pm:payment:${eventType}:${subjectId}`,
-      }),
-    },
-  ]);
+  const sent = await sendSystemText(admin as never, {
+    organizationId: job.organization_id,
+    conversationId: ctx.conversationId,
+    body,
+    ref: `pm:payment:${eventType}:${subjectId}`,
+  });
+
+  // W-F5: once the client has been told a payment is verified, each receipt of that invoice records that acknowledgement as its own delivery (with the
+  // evidence), apart from the payment. Best effort: the settled result below is the message's, not the bookkeeping's.
+  if (eventType === 'invoice.paid' && (sent.kind === 'sent' || sent.kind === 'already_sent')) {
+    await recordReceiptAcknowledgements(admin, { organizationId: job.organization_id, invoiceId: invoice.id, messageId: sent.kind === 'sent' ? sent.messageId : null });
+  }
+
+  return settle([{ label: eventType!.replace(/^(payment|invoice)\./, '$1 '), result: sent }]);
 }
 
 /**

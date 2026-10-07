@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { openBillingClarification } from './p4q-doors';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import type { createAdminClient } from '@/lib/db/admin';
@@ -690,6 +691,8 @@ export async function generateM2Invoice(
   // ordinary possibility, not a broken guarantee, so it is reported rather
   // than treated as a defect.
   if (!readiness.complete) {
+    // W-F2: missing or unclear billing data is a clarification a person answers with the client, not only a failed job.
+    await openBillingClarification(admin, scope.projectId, readiness);
     return err(
       'CONFLICT',
       `Phase 4 completed but the billing profile is incomplete (missing: ${readiness.missing.join(', ') || 'unknown'}). The M2 invoice was not raised automatically.`,
@@ -877,6 +880,8 @@ async function generateLaterMilestoneInvoice(
     gstin: profile?.gstin,
   });
   if (!readiness.complete) {
+    // W-F2: the same clarification for the later milestones.
+    await openBillingClarification(admin, scope.projectId, readiness);
     return err(
       'CONFLICT',
       `Phase ${step.phase} completed but the billing profile is incomplete (missing: ${readiness.missing.join(', ') || 'unknown'}). The ${step.label} invoice was not raised automatically.`,

@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { accountsOnInvoice, readSnapshotAccountIds } from './p4q-snapshot-accounts';
 import { z } from 'zod';
 
 import { requireInternal } from '@/lib/auth/session';
@@ -140,9 +141,8 @@ export async function renderInvoiceDocument(
       createdAt: invoice.created_at,
       // The invoice's own notes, then the owner's terms note (Settings › Finance) — printed on every invoice.
       notes: [invoice.notes, numberingFrom(org.settings as Record<string, unknown> | null).termsNote].filter((t): t is string => Boolean(t)).join('\n\n') || null,
-      // Exactly the accounts the invoice page's "Pay into" card shows.
-      receivingAccounts: accounts
-        .filter((a) => a.status === 'active')
+      // Exactly the accounts the invoice page's "Pay into" card shows: the ones the invoice was issued with that are still active (`accountsOnInvoice`).
+      receivingAccounts: accountsOnInvoice(accounts, await readSnapshotAccountIds(supabase, invoice.id))
         .map((a) => ({
           label: a.label,
           kindLabel: PAYMENT_ACCOUNT_KIND_LABEL[a.kind as PaymentAccountKind] ?? a.kind,

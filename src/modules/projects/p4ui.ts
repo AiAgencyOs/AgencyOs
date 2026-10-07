@@ -323,7 +323,7 @@ export async function attachBuiltPrototype(admin: P4uiAdmin, input: { organizati
 
   const { data: builds, error: bErr } = await projects
     .from('p4ui_prototype_builds')
-    .select('id, status, prototype_artifact_id')
+    .select('id, status, prototype_artifact_id, revision_of_build_id')
     .eq('ui_version_id', String(artifact.ui_version_id))
     .eq('organization_id', input.organizationId)
     .order('build_number', { ascending: false })
@@ -352,7 +352,16 @@ export async function attachBuiltPrototype(admin: P4uiAdmin, input: { organizati
   const { data: handoff, error: hErr } = await projects.rpc('p4ui_assemble_qa_handoff', { p_build_id: buildId });
   if (hErr) return { status: 'failed', reason: `the handoff door did not answer: ${hErr.message}` };
   const h = firstRow(handoff);
-  return { status: 'done', detail: `build ready, handoff ${String(h?.outcome)}`, data: { buildId, attach: 'build_ready', handoff: h?.outcome ?? null } };
+
+  // A build that revises an earlier one leaves its lineage (origin, evidence, summary), derived from the rows by the door. Best effort and idempotent: a
+  // client round still waiting for a person's classification answers `classification_required`, which is reported, never a reason to fail an attach that
+  // already happened.
+  let lineage: string | null = null;
+  if (build.revision_of_build_id) {
+    const { data: rec, error: rErr } = await projects.rpc('p4ui_record_build_revision', { p_to_build_id: buildId, p_summary: null });
+    lineage = rErr ? `unavailable: ${rErr.message}` : (str(firstRow(rec)?.outcome) ?? 'no answer');
+  }
+  return { status: 'done', detail: `build ready, handoff ${String(h?.outcome)}${lineage ? `, revision lineage ${lineage}` : ''}`, data: { buildId, attach: 'build_ready', handoff: h?.outcome ?? null, lineage } };
 }
 
 // ═══ syncBuildForDeliverable (no model): the build reflects the real gates ═══

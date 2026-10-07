@@ -73,7 +73,8 @@ describe('A. a handler that throws', () => {
     // The handler is a parameter since the loop was generalised over the kind
     // (G-110), so what is pinned is that whatever handler it was given is the
     // thing wrapped — for every queue, not just the unlock one.
-    assert.match(loop, /try \{\s*result = await handler\(admin, job\);\s*\} catch/);
+    // W-O2: the handler call is wrapped in the Phase 4 envelope hop (which runs it unchanged for any other job), still inside the try.
+    assert.match(loop, /try \{[^}]*?result = await runPhaseFourHop\(admin, kind, job, \(\) => handler\(admin, job\)\);\s*\} catch/);
   });
 
   test('and becomes a retryable failure, not a permanent one', () => {

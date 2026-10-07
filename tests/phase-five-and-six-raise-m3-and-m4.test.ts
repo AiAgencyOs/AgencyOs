@@ -161,7 +161,8 @@ describe('M3 and M4 are raised from the third and fourth priced milestone, by or
     const result = await generateM3Invoice(admin, scope);
     assert.equal(result.ok, false);
     assert.match(!result.ok ? result.error.message : '', /Phase 5 completed but the billing profile is incomplete/);
-    assert.equal(seen.rpcs.length, 0);
+    // W-F2: the only database call is the billing clarification a person answers; no invoice door is touched.
+    assert.deepEqual(seen.rpcs.map((r) => r.fn), ['p4q_open_billing_clarification']);
   });
 });
 

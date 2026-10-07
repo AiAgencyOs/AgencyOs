@@ -87,6 +87,15 @@ export default async function PortalStatementPage({ params }: { params: Promise<
               <li key={p.paymentId} className="rounded-lg border border-line bg-surface px-4 py-2 text-sm">
                 {formatMinor(p.amountMinor, p.currency)} on {clock.date(p.verifiedAt)} for {p.invoiceNumber}
                 {p.receiptNumber ? ` · receipt ${p.receiptNumber}` : ''}
+                {p.receiptNumber ? (
+                  <>
+                    {' · '}
+                    {/* P7-FIN-05/06: the receipt of a verified payment, as a download behind your session. */}
+                    <a href={`/api/p789/receipt/${p.paymentId}`} className="font-medium text-brand hover:underline">
+                      Download the receipt
+                    </a>
+                  </>
+                ) : null}
               </li>
             ))}
           </ul>

@@ -35,6 +35,8 @@ Human gates are untouched and never bypassed: Design QA, Admin review, client sh
 
 ## Wiring lines for the lead (shared files this pass did not edit)
 
+> **Status 2026-11-30:** items 1 to 7 are wired (item 3's gates are in `src/modules/p4q/revision-activation.ts`; item 7's send gate is migration `20261130000000`). Proofs: `tests/p4q-revision-wiring.test.ts`, `tests/p4ui-wiring.test.ts` and the send-gate assertions in `scripts/verify-p4ui-prototype.sql` (red-proved by restoring the previous gate).
+
 1. `package.json`, `db:verify:phase4`: append `-f scripts/verify-p4ui-ui-designer.sql -f scripts/verify-p4ui-prototype.sql` after the last `-f`.
 2. `app/api/jobs/run/workflows.ts`: `import { P4UI_WORKFLOWS } from './p4ui-workflows';` and append `...P4UI_WORKFLOWS` to `RUNNABLE_WORKFLOWS`.
 3. `src/lib/events/catalog.ts`:

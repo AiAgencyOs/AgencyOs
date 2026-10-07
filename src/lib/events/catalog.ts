@@ -29,6 +29,7 @@ export const HANDLERS = [
   'orchestrator:requestUIVersionAdminReview',
   'ui_prototype:build',
   'ui_prototype:reviseBuild',
+  'project_manager:classifyPrototypeFeedback',
   'quality_assurance:reviewPrototypeBuild',
   'projects:completePhaseFourOnPrototypeApproval',
   'projects:startPhaseFive',
@@ -154,6 +155,8 @@ export const HANDLERS = [
   'ui_prototype:planBuild',
   'projects:attachP4uiBuild',
   'projects:syncP4uiBuild',
+  'projects:returnClarificationAnswer',
+  'finance:matchPaymentSubmission',
   'crm:announceMeetingBooked',
   'crm:announceMeetingCancelled',
   'projects:createDraftHandoverPackage',
@@ -217,7 +220,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    */
   'project.billing_mode_confirmed': ['finance:generateM1Invoice', 'projects:askGstDetails'],
   /** Phase 2 PM §6 PM-08: where the client's payment stands, said to the client. */
-  'payment.submitted': ['projects:updateClientOnPayment'],
+  'payment.submitted': ['projects:updateClientOnPayment', 'finance:matchPaymentSubmission'],
   'payment.rejected': ['projects:updateClientOnPayment'],
   'payment.mismatched': ['projects:updateClientOnPayment'],
   /** Phase 2 Finance §4.5 — the issued bill reaches the client's email and the project group. */
@@ -664,6 +667,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
     'crm:announcePrototypeChangeRequested',
     'crm:announceBuildApproved',
     'ui_prototype:reviseBuild',
+    'project_manager:classifyPrototypeFeedback',
     'projects:syncP4uiBuild',
   ],
   /**
@@ -671,6 +675,11 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * always emitted starting `20260923160000_m2_and_the_gate_it_actually_
    * needs.sql`; the handler filters to `kind = 'prototype'` itself.
    */
+  /**
+   * W-P3: an answer to a clarification an agent raised through `projects.p4q_raise_clarification` goes back to the agent that asked
+   * (`src/modules/p4q/clarification-return.ts`).
+   */
+  'project.p4q_clarification_answered': ['projects:returnClarificationAnswer'],
   'project.deliverable_submitted': ['crm:announcePrototypeSubmitted', 'crm:announceBuildShared', 'projects:reopenOnSourceChange', 'projects:syncP4uiBuild'],
   /**
    * Finance §2, §5 — the M2 (20%) invoice, off the fact
@@ -814,6 +823,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'orchestrator:requestUIVersionAdminReview': 'ui_version.request_admin_review',
   'ui_prototype:build': 'prototype.build',
   'ui_prototype:reviseBuild': 'prototype.build_revise',
+  'project_manager:classifyPrototypeFeedback': 'prototype.feedback_classify',
   'quality_assurance:reviewPrototypeBuild': 'prototype.qa_review',
   'projects:completePhaseFourOnPrototypeApproval': 'phase_four.complete',
   'projects:startPhaseFive': 'phase_five.start',
@@ -936,6 +946,8 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'ui_prototype:planBuild': 'prototype.plan',
   'projects:attachP4uiBuild': 'p4ui.attach_build',
   'projects:syncP4uiBuild': 'p4ui.sync_build',
+  'projects:returnClarificationAnswer': 'p4q.clarification_return',
+  'finance:matchPaymentSubmission': 'payment.p4q_match',
   'crm:announceMeetingBooked': 'meeting_booked.announce',
   'crm:announceMeetingCancelled': 'meeting_cancelled.announce',
   'projects:createDraftHandoverPackage': 'handover.create_draft',

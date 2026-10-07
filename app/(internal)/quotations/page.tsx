@@ -391,11 +391,13 @@ export default async function QuotationsPage({
             href={(p) => `/leads/${p.leadId}`}
             rowActions={(p) => [
               { key: 'open', label: 'Open the lead', href: `/leads/${p.leadId}#quotations` },
+              // W-P1O-1: the deal's negotiation record (what was asked, what was conceded, the evidence of acceptance) lives beside its quotations.
+              { key: 'negotiation', label: 'Open the negotiation record', href: `/quotations/negotiation/${p.opportunity_id}` },
               { key: 'pdf', label: 'Open the PDF', href: `/api/quotations/${p.id}/pdf` },
               {
                 key: 'manage',
                 label: 'Submit, send or record an answer',
-                node: <QuotationManageButton leadId={p.leadId} proposalId={p.id} title={`${p.title} v${p.version}`} status={p.status} lapsed={isExpired(p)} inPlanSet={p.plan_set_id !== null} mayDraft={mayDraft} maySend={maySend} />,
+                node: <QuotationManageButton leadId={p.leadId} proposalId={p.id} opportunityId={p.opportunity_id} title={`${p.title} v${p.version}`} status={p.status} lapsed={isExpired(p)} inPlanSet={p.plan_set_id !== null} mayDraft={mayDraft} maySend={maySend} />,
               },
             ]}
             sort={{

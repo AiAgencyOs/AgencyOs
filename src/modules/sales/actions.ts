@@ -305,6 +305,11 @@ export async function recordProposalResponseAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  // W-P1O-3: a staff-recorded ACCEPTANCE goes through the evidenced door (`recordEvidencedAcceptance`, on the deal's negotiation page), which asks who
+  // accepted, on which channel, the message and the version. The older door took an acceptance without any of it.
+  if (String(formData.get('response') ?? '') === 'accepted') {
+    return { status: 'error', message: 'An acceptance is recorded with its evidence on the deal\u2019s negotiation page (Quotations › Open the negotiation record).' };
+  }
   const result = await recordProposalResponse({
     proposalId: String(formData.get('proposalId') ?? ''),
     response: String(formData.get('response') ?? '') as never,

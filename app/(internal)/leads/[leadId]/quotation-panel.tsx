@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState, useState } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
@@ -333,11 +334,13 @@ export function SendQuotationForm({
 export function QuotationResponseForm({
   leadId,
   proposalId,
+  opportunityId,
   lapsed,
 }: {
   leadId: string;
   proposalId: string;
-  /** Past its validity date — acceptance will be refused (§15). */
+  /** The deal; an acceptance is recorded with its evidence on the deal's negotiation page (W-P1O-3). */
+  opportunityId: string | null;
   lapsed: boolean;
 }) {
   const [state, action, pending] = useActionState(recordProposalResponseAction, IDLE_STATE);
@@ -347,13 +350,20 @@ export function QuotationResponseForm({
       <input type="hidden" name="leadId" value={leadId} />
       <input type="hidden" name="proposalId" value={proposalId} />
 
-      <label className={label} htmlFor="quotation-response">
-        What the client said
-      </label>
-      <select id="quotation-response" name="response" className={input} defaultValue="accepted">
-        <option value="accepted">Accepted</option>
-        <option value="rejected">Rejected</option>
-      </select>
+      {/* W-P1O-3: an ACCEPTANCE is a commercial fact and is recorded with its evidence (who, on which channel, which message, which version). It has its own
+          form on the deal's negotiation page; this one records a rejection only. */}
+      <input type="hidden" name="response" value="rejected" />
+      <p className="text-sm text-muted">
+        Did the client accept?{' '}
+        {opportunityId ? (
+          <Link href={`/quotations/negotiation/${opportunityId}`} className="font-medium text-brand hover:underline">
+            Record the acceptance with its evidence
+          </Link>
+        ) : (
+          'Open the deal to record the acceptance with its evidence.'
+        )}{' '}
+        This form records a rejection.
+      </p>
 
       <label className={label} htmlFor="quotation-note">
         Where they said it
@@ -374,7 +384,7 @@ export function QuotationResponseForm({
       ) : null}
 
       <button type="submit" disabled={pending} className={button}>
-        Record the response
+        Record the rejection
       </button>
       <p className="text-xs text-muted">
         Delivering a quotation is not the same as the client accepting it.
