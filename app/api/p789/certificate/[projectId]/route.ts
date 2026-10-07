@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+import { appError, httpStatusFor } from '@/lib/errors';
+
 import { getAuthContext } from '@/lib/auth/session';
 import { documentHeaders } from '@/modules/projects/p789-document-http';
 import { readCertificateDocument } from '@/modules/projects/p789-round2-queries';
@@ -16,9 +18,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function GET(_request: Request, { params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
-  if (!(await getAuthContext())) return NextResponse.json({ error: 'Sign in to download a file.' }, { status: 401 });
-  if (!UUID.test(projectId)) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+  if (!(await getAuthContext())) return NextResponse.json(appError('UNAUTHORIZED', 'Sign in to download a file.'), { status: httpStatusFor('UNAUTHORIZED') });
+  if (!UUID.test(projectId)) return NextResponse.json(appError('NOT_FOUND', 'Not found.'), { status: httpStatusFor('NOT_FOUND') });
   const doc = await readCertificateDocument(projectId);
-  if (!doc) return NextResponse.json({ error: 'No certificate has been rendered for this project.' }, { status: 404, headers: { 'Cache-Control': 'no-store' } });
+  if (!doc) return NextResponse.json(appError('NOT_FOUND', 'No certificate has been rendered for this project.'), { status: httpStatusFor('NOT_FOUND'), headers: { 'Cache-Control': 'no-store' } });
   return new Response(doc.html, { status: 200, headers: documentHeaders(`certificate-${doc.number}`, doc.sha256) });
 }

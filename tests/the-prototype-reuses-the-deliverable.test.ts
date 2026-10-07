@@ -242,6 +242,6 @@ describe('H. it is reachable — the defect this repository has found repeatedly
 
   test('the runner drains the QA job kind', () => {
     assert.match(RUNNER, /const PROTOTYPE_QA_JOB_KIND = HANDLER_JOB_KIND\['quality_assurance:reviewPrototypeBuild'\]/);
-    assert.match(RUNNER, /handleReviewPrototypeBuild/);
+    assert.match(RUNNER, /handleP4qReviewPrototypeBuild/);
   });
 });

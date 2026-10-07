@@ -965,6 +965,12 @@ export default async function ProjectPage({
       <PhaseFourPmState projectId={projectId} />
       <P789RoundTwoPanel projectId={projectId} />
       <p className="text-[13px]"><Link href={`/projects/${projectId}/p4ui`} className="underline">UI Designer and Prototype records</Link></p>
+      <p className="text-[13px] flex flex-wrap gap-3">
+        <Link href={`/projects/${projectId}/p4q`} className="underline">Phase 4 QA, PM and finance records</Link>
+        <Link href={`/projects/${projectId}/design-clarifications`} className="underline">Design clarifications</Link>
+        <Link href="/operations/task-board" className="underline">Task board</Link>
+        <Link href="/operations/phase-blockers" className="underline">Phase blockers</Link>
+      </p>
       {phaseSix.plan ? <FunctionalTestPanel view={await loadFunctionalTestView(phaseSix.plan.id)} /> : null}
       <PhaseSevenGapsPanel view={await loadPhaseSevenGaps(projectId)} />
 

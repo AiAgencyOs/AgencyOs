@@ -148,6 +148,7 @@ export const HANDLERS = [
   'projects:openSupportTicketFromMessage',
   'ui_designer:reviseDesignDirection',
   'ui_designer:detailUIVersion',
+  'ui_designer:p13GuardDesignContext',
   'ui_prototype:planBuild',
   'projects:attachP4uiBuild',
   'projects:syncP4uiBuild',
@@ -367,7 +368,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   // Master §7.5 — the directions are drawn against the finalized screen list,
   // so this is the moment there is something to draw for. Phase 3 starting is
   // too early: the baseline does not exist yet.
-  'project.screen_list_finalized': ['ui_designer:designDirections'],
+  'project.screen_list_finalized': ['ui_designer:designDirections', 'ui_designer:p13GuardDesignContext'],
   /**
    * Doc 17 §17: *"Day 0: Handover and acceptance."* Accepting a handover was
    * an audit row and nothing else; §18 gives the customer success agent
@@ -927,6 +928,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:openSupportTicketFromMessage': 'support_ticket.open_from_message',
   'ui_designer:reviseDesignDirection': 'design.revise',
   'ui_designer:detailUIVersion': 'ui.design_detail',
+  'ui_designer:p13GuardDesignContext': 'design.context_guard',
   'ui_prototype:planBuild': 'prototype.plan',
   'projects:attachP4uiBuild': 'p4ui.attach_build',
   'projects:syncP4uiBuild': 'p4ui.sync_build',

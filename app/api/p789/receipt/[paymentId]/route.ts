@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+import { appError, httpStatusFor } from '@/lib/errors';
+
 import { getAuthContext } from '@/lib/auth/session';
 import { documentHeaders } from '@/modules/projects/p789-document-http';
 import { readClientReceiptDocument, readStaffReceiptDocument } from '@/modules/projects/p789-round2-queries';
@@ -16,9 +18,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function GET(_request: Request, { params }: { params: Promise<{ paymentId: string }> }) {
   const { paymentId } = await params;
-  if (!(await getAuthContext())) return NextResponse.json({ error: 'Sign in to download a file.' }, { status: 401 });
-  if (!UUID.test(paymentId)) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+  if (!(await getAuthContext())) return NextResponse.json(appError('UNAUTHORIZED', 'Sign in to download a file.'), { status: httpStatusFor('UNAUTHORIZED') });
+  if (!UUID.test(paymentId)) return NextResponse.json(appError('NOT_FOUND', 'Not found.'), { status: httpStatusFor('NOT_FOUND') });
   const doc = (await readClientReceiptDocument(paymentId)) ?? (await readStaffReceiptDocument(paymentId));
-  if (!doc) return NextResponse.json({ error: 'No receipt document is available for this payment.' }, { status: 404, headers: { 'Cache-Control': 'no-store' } });
+  if (!doc) return NextResponse.json(appError('NOT_FOUND', 'No receipt document is available for this payment.'), { status: httpStatusFor('NOT_FOUND'), headers: { 'Cache-Control': 'no-store' } });
   return new Response(doc.html, { status: 200, headers: documentHeaders(`receipt-${doc.number}`, doc.sha256) });
 }

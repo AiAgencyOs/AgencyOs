@@ -210,9 +210,9 @@ describe('how a stored document is served', () => {
     for (const rel of ['app/api/p789/certificate/[projectId]/route.ts', 'app/api/p789/receipt/[paymentId]/route.ts']) {
       const src = read(rel);
       assert.match(src, /getAuthContext\(\)/);
-      assert.match(src, /status: 401/);
-      assert.match(src, /status: 404/);
-      assert.ok(!/status: 403/.test(src));
+      assert.match(src, /httpStatusFor\('UNAUTHORIZED'\)/);
+      assert.match(src, /httpStatusFor\('NOT_FOUND'\)/);
+      assert.ok(!/FORBIDDEN/.test(src));
       assert.match(src, /documentHeaders\(/);
     }
   });

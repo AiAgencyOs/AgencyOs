@@ -20,6 +20,8 @@ const TABS = [
   { href: '/settings/templates', label: 'Templates' },
   { href: '/settings/project-defaults', label: 'Project defaults' },
   { href: '/settings/budget-bands', label: 'Budget bands' },
+  { href: '/settings/policy-versions', label: 'Policy versions' },
+  { href: '/settings/notification-rules', label: 'Notification rules' },
 ] as const;
 
 /**

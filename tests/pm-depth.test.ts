@@ -4,6 +4,7 @@ import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { HANDLER_JOB_KIND, HANDLERS, SUBSCRIPTIONS } from '../src/lib/events/catalog.ts';
+import { PM4_TEMPLATES } from '../src/modules/p4q/pm4-templates.ts';
 import * as schema from '../src/modules/crm/schema.ts';
 
 /**
@@ -89,7 +90,7 @@ describe('every PM5/PM6 message is free of leaks', () => {
   });
   test('the sweep covers every PM5/PM6 template in the table', () => {
     // each versioned milestone has a rendering above (the two PM6 payment/phase entries share a message each)
-    assert.ok(Object.keys(RENDERED).length >= Object.keys(PM_TEMPLATES).length, 'a template was added without a rendering in this sweep');
+    assert.ok(Object.keys(RENDERED).length >= Object.keys(PM_TEMPLATES).filter((k) => !(k in PM4_TEMPLATES)).length, 'a template was added without a rendering in this sweep');
   });
 });
 

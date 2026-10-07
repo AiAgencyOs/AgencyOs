@@ -1,3 +1,4 @@
+import { PM4_TEMPLATES } from '@/modules/p4q/pm4-templates';
 import { z } from 'zod';
 
 import { decoderSafeSchema } from '@/lib/ai/schema';
@@ -2057,6 +2058,7 @@ export function buildRevisedAnnouncementFor(input: { projectName: string | null;
 }
 
 export const PM_TEMPLATES: Readonly<Record<string, { milestone: string; version: number }>> = {
+  ...PM4_TEMPLATES,
   'phase-five-started': { milestone: 'PM5-M01', version: 1 },
   'dev-clarification': { milestone: 'PM5-M02', version: 1 },
   'module-progress': { milestone: 'PM5-M03', version: 1 },

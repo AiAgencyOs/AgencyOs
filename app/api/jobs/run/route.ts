@@ -114,6 +114,7 @@ import {
   type HandlerResult,
   type UnlockJob,
 } from '@/modules/projects/handlers';
+import { guardDesignContext } from '@/modules/projects/design-context-guard';
 import { handleP4uiAttachBuild, handleP4uiSyncBuild } from '@/modules/projects/p4ui-handlers';
 import { announceMeetingBooked, announceMeetingCancelled, sendMeetingReminder } from '@/modules/crm/meeting-announcements';
 import { handleCreateDraftHandoverPackage, handleFillPhaseEightIntake, handleOpenPhaseSeven, handleOpenSupportTicketFromMessage, handleRoutePhaseSevenTask, handleRunDeployment } from '@/modules/projects/phase-seven-handlers';
@@ -125,7 +126,8 @@ import { handleHandoverAcceptedForFinance, handleBillingModeConfirmed, handleInv
 import { learnFromDecision, learnFromRevision, syncDiscountDecision } from '@/modules/sales/handlers';
 import { handleRouteTask2Design, handleRequestUIVersionAdminReview, handleRouteDevelopmentPlan, handleRouteQaOutcome } from '@/modules/orchestrator/handlers';
 import { sweepFinanceExceptions, sweepFinancePhaseNineB, sweepMaintenanceLifecycle, sweepRetentionReviews, sweepStaleOrchestratorRecords, sweepSupportAndHealth, sweepRoundTwoRecords } from '@/modules/orchestrator/sweeps';
-import { handleReviewUIVersion, handleReviewPrototypeBuild } from '@/modules/qa/handlers';
+import { handleReviewUIVersion } from '@/modules/qa/handlers';
+import { handleP4qReviewPrototypeBuild } from '@/modules/p4q/qa-handler';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -824,7 +826,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const prototypeQa = await runEventJobs(
     admin,
     PROTOTYPE_QA_JOB_KIND,
-    handleReviewPrototypeBuild,
+    handleP4qReviewPrototypeBuild,
     'runPrototypeQaJobs',
   );
   if (prototypeQa.claimed > 0) {
@@ -1713,6 +1715,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     ? await runEventJobs(admin, DRAFT_HANDOVER_JOB_KIND, handleCreateDraftHandoverPackage, 'runDraftHandoverPackageJobs')
     : { claimed: 0, results: [] };
 
+  const designContextGuard = idleTick ? await runEventJobs(admin, DESIGN_CONTEXT_GUARD_JOB_KIND, guardDesignContext, 'runDesignContextGuardJobs') : { claimed: 0, results: [] };
   const p4uiAttach = idleTick ? await runEventJobs(admin, P4UI_ATTACH_JOB_KIND, handleP4uiAttachBuild, 'runP4uiAttachJobs') : { claimed: 0, results: [] };
   const p4uiSync = idleTick ? await runEventJobs(admin, P4UI_SYNC_JOB_KIND, handleP4uiSyncBuild, 'runP4uiSyncJobs') : { claimed: 0, results: [] };
   const meetingBooked = idleTick ? await runEventJobs(admin, MEETING_BOOKED_JOB_KIND, announceMeetingBooked, 'runMeetingBookedAnnouncementJobs') : { claimed: 0, results: [] };
@@ -1722,8 +1725,9 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     : { claimed: 0, results: [] };
 
   return NextResponse.json({
-    claimed: agentRuns.length + supportFromMessage.claimed + draftHandover.claimed + meetingBooked.claimed + meetingCancelled.claimed + meetingReminders.claimed + p4uiAttach.claimed + p4uiSync.claimed,
+    claimed: agentRuns.length + supportFromMessage.claimed + draftHandover.claimed + meetingBooked.claimed + meetingCancelled.claimed + meetingReminders.claimed + p4uiAttach.claimed + p4uiSync.claimed + designContextGuard.claimed,
     agentRuns,
+    designContextGuard: designContextGuard.results,
     p4uiAttach: p4uiAttach.results,
     p4uiSync: p4uiSync.results,
     meetingBooked: meetingBooked.results,
@@ -1983,6 +1987,7 @@ const PHASE_SEVEN_OPEN_JOB_KIND = HANDLER_JOB_KIND['projects:openPhaseSeven'];
 const PHASE_SEVEN_DEPLOY_JOB_KIND = HANDLER_JOB_KIND['projects:runDeployment'];
 const PHASE_SEVEN_ROUTE_JOB_KIND = HANDLER_JOB_KIND['projects:routePhaseSevenTask'];
 const PHASE_EIGHT_INTAKE_JOB_KIND = HANDLER_JOB_KIND['projects:fillPhaseEightIntake'];
+const DESIGN_CONTEXT_GUARD_JOB_KIND = HANDLER_JOB_KIND['ui_designer:p13GuardDesignContext'];
 const P4UI_ATTACH_JOB_KIND = HANDLER_JOB_KIND['projects:attachP4uiBuild'];
 const P4UI_SYNC_JOB_KIND = HANDLER_JOB_KIND['projects:syncP4uiBuild'];
 const MEETING_BOOKED_JOB_KIND = HANDLER_JOB_KIND['crm:announceMeetingBooked'];
