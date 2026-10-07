@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-// @ts-expect-error plain ESM script without types
 import { classify, parseMatrix, verdict } from '../scripts/phase1-verdict.mjs';
 
 const doc = (rows: string[]) => ['## Section A', '| ID | Source | Requirement | Status | Evidence |', '|---|---|---|---|---|', ...rows].join('\n');
@@ -27,7 +26,7 @@ test('a PARTIAL row that waits only on EXTERNAL(...) does not block, but one tha
 
 test('a row with a status the script does not know BLOCKS, and an empty matrix is never COMPLETE', () => {
   const rows = parseMatrix(doc(['| P1-AAA-006 | s | req | DONE-ISH | trust me |']));
-  assert.equal(rows[0].status, 'UNKNOWN');
+  assert.equal(rows[0]?.status, 'UNKNOWN');
   assert.equal(verdict(rows).verdict, 'BLOCKED');
   assert.equal(verdict([]).verdict, 'BLOCKED');
 });
