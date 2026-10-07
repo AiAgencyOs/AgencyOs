@@ -2,7 +2,7 @@
 
 | # | Item | Why manual | Unblocks |
 |---|---|---|---|
-| P6-M001 | **Supply `P604_Functional_Test_Agent.pdf`** | the file was not in the set provided; Functional requirements were taken from the prompt and P601 only | confirming the Functional agent's contract |
+| P6-M001 | ~~Supply `P604_Functional_Test_Agent.pdf`~~ **Supplied 2026-10-07 and reconciled** | the Functional agent's prompt now carries the P604 rules; see `docs/phase-6-implementation-traceability.md` (P6-P604-*) | nothing |
 | P6-M002 | A funded model key and an isolated QA tenant/data for the nine QA specialists | provider billing and test-data authority are the owner's | any specialist running |
 | P6-M003 | Browser/device access (real devices for "device" claims), load environment, security tooling | third-party/physical resources | UI/E2E, compatibility, performance, security evidence beyond manual entry |
 | P6-M004 | Provider sandboxes/credentials for each integration | third-party accounts | API/integration tests that are not BLOCKED |

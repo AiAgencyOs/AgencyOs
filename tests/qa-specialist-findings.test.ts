@@ -136,7 +136,14 @@ describe('the rules every specialist shares', () => {
   });
 });
 
-describe('functional_test (built from its registry purpose and the Phase 6 docs: the P604 PDF is not in the repository)', () => {
+describe('functional_test (the P604 contract)', () => {
+  test('the prompt carries the P604 rules that keep a functional verdict honest', () => {
+    const prompt = AGENT_PROFILES.functional_test.prompt;
+    for (const rule of [/APPROVED baseline/, /not_tested/, /blocked with the reason/, /never a pass/, /the wrong role is denied/, /payment claim/, /does? not declare the product production-ready|do not declare the product production-ready/, /Master QA/]) {
+      assert.match(prompt, rule);
+    }
+    assert.match(prompt, /never act as an Admin or client approver/);
+  });
   test('proposes case results and observations only', () => {
     accepted('functional_test', baseFacts('functional_test'), proposal(), proposal({ kind: 'category_observation', caseId: null, result: 'not_tested', evidenceRefs: [], reason: 'two cases were out of scope' }));
     assert.match(refused('functional_test', baseFacts('functional_test'), proposal({ kind: 'gate_summary', caseId: null, result: null, evidenceRefs: [], reason: 'gates fine' })), /may not propose/);

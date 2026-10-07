@@ -1,6 +1,6 @@
 # Phase 6 implementation traceability
 
-Source: the Phase 6 PDFs P601–P603 and P605–P614 (read from `~/Downloads`, not committed). **P604 (Functional Test Agent) was not supplied;** its requirements were taken from the master prompt (§17) and P601 §15 only. Status: EXISTS · PARTIAL · MISSING · MANUAL_EXTERNAL. Evidence is a migration/script that was run (`scripts/verify-phase-four-e2e.sql` is the whole Phase 4→5→6 journey on a real Postgres; each control was removed, watched to fail, and restored).
+Source: the Phase 6 PDFs P601–P603 and P605–P614 (read from `~/Downloads`, not committed). **P604 (Functional Test Agent) was supplied on 2026-10-07** and is reconciled in the P6-P604 rows below. Status: EXISTS · PARTIAL · MISSING · MANUAL_EXTERNAL. Evidence is a migration/script that was run (`scripts/verify-phase-four-e2e.sql` is the whole Phase 4→5→6 journey on a real Postgres; each control was removed, watched to fail, and restored).
 
 | REQ | Spec | Requirement | Status | Evidence |
 |---|---|---|---|---|
@@ -35,3 +35,16 @@ Source: the Phase 6 PDFs P601–P603 and P605–P614 (read from `~/Downloads`, n
 | P6-STALE-02 | 01 §45 | Re-verification after source change post-completion | EXISTS | `qa.reopen_on_source_change`: candidate STALE, Phase 6 blocked, evidence invalidated, `phase_seven_candidate_current` false; run on every new build submission; E2E, red-proven |
 | P6-E2E-01 | 01 §56 | 87-step Phase 6 scenario | PARTIAL | core steps run in SQL: gate, intake (incl. wrong-build), plan, risk, results, defects (fail → reopen → verified), candidate, 90+ score blocked, exceptions, review loop, completion, M4, stale. Agent-executed testing is not runnable here |
 | P6-CLAR-01 | 01 §38 | Client asked one genuinely ambiguous question, never guessed | EXISTS | `qa.ask_clarification` / `answer_clarification`: one open question per case, asked once and answered once, event carries no question text; E2E, red-proven |
+
+## P604 Functional Test Agent (reconciled 2026-10-07)
+
+| ID | P604 § | Requirement | Status | Evidence / note |
+|---|---|---|---|---|
+| P6-P604-01 | 1, 19, 21 | Independent verifier; reports to Master QA; never declares production readiness, never approves its own failed build | EXISTS | `functional_test` is `qaSpecialist` with `verifiedBy: quality_assurance`; findings are proposals an independent person decides (`20261103400000`); the prompt forbids a production-ready claim |
+| P6-P604-02 | 2, 3 | Start conditions and mandatory inputs (exact build, approved scope, UI, criteria, roles, known limitations) | EXISTS | the job's facts are built from the plan, the exact commit and the approved baseline (`renderQaFacts`); a held job runs nothing |
+| P6-P604-03 | 4–7 | Test every feature/rule/state/role; positive, negative, boundary, empty/error, duplicate, stale, wrong-role, retry, regression | PARTIAL | now stated in the agent's contract (prompt). Executing these cases needs a funded model and an isolated QA tenant (P6-M002); proven only with the stub model |
+| P6-P604-04 | 6, 18 | Case record: linked requirement, build, environment, role, steps, expected/actual, PASS/FAIL/BLOCKED/NOT_APPLICABLE, evidence, defect | PARTIAL | cases carry build/commit, result, evidence refs and a defect link. NOT_APPLICABLE is expressed as a `category_observation` with the reason, not as a fifth case result (a deliberate fit to the existing four-state `qa` check constraint) |
+| P6-P604-05 | 8, 15, 17 | Real-user rule, evidence per verdict, failure classification, no fabricated success, no secrets in evidence | EXISTS | skipped = not_tested, unreachable = blocked (a pass needs evidence refs); secrets are refused and masked; the agent states the failure class in `reason` |
+| P6-P604-06 | 9–12 | Defect for each reproducible failure, severity by configured policy, fix → retest on a new build → targeted regression | EXISTS | `qa.defects` + the retest/regression loop and the fix-loop verifier; an agent never closes a defect |
+| P6-P604-07 | 13, 14 | Admin/client/payment boundaries; role isolation; direct-API bypass and replay produce no duplicate outcomes | EXISTS | enforced by the database, not by the agent: the doors, RLS and the payment verification path; the agent cannot act as an approver |
+| P6-P604-08 | 16, 20 | Autonomy and definition of done | PARTIAL | the agent runs without asking within a job, and a plan cannot pass with skipped or blocked cases visible. Real autonomy awaits a funded model |
