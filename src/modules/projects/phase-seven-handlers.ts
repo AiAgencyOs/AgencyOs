@@ -235,6 +235,72 @@ export async function handleRoutePhaseSevenTask(admin: Admin, job: UnlockJob): P
   return { status: 'failed', permanent: true, detail: `the database refused the decision (${outcome}): the rule and the door disagree` };
 }
 
+/**
+ * `message.received` -> open a support ticket from a client's support message (Phase 8A, docs/phase-8a-manual-actions.md M-5).
+ *
+ * The door is `projects.open_support_ticket_from_message` (service role): it RE-READS the message row under the JOB's organization (the event payload is only a
+ * subject id) and opens a ticket only for a client's message in a PROJECT conversation of a project whose Phase 8 workspace is ACTIVE, labelled
+ * `support_request`. Anything else opens nothing and says why. This handler never replies, sends or classifies: it opens a ticket a person triages.
+ * An intent label that has not arrived yet is not a failure: the cron sweep (`sweep_message_support_tickets`) opens the ticket if the label arrives within three days.
+ */
+export async function handleOpenSupportTicketFromMessage(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const messageId = job.payload?.subjectId ?? null;
+  if (!messageId) return { status: 'failed', permanent: true, detail: 'the event named no message' };
+  const projects = admin.schema('projects') as unknown as Loose;
+  const { data, error } = await projects.rpc('open_support_ticket_from_message', { p_organization_id: job.organization_id, p_message_id: messageId });
+  if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  const outcome = str(firstRow(data)?.outcome) ?? 'no answer';
+  switch (outcome) {
+    case 'opened':
+      return { status: 'succeeded', outcome, detail: 'a support ticket was opened from the client message; a person classifies it. Nothing was sent.' };
+    case 'duplicate':
+      return { status: 'succeeded', outcome, detail: 'the message already has its ticket: nothing new was opened' };
+    case 'intent_pending':
+      return { status: 'succeeded', outcome, detail: 'the message has no intent label yet: nothing was opened (the sweep opens a ticket if a support_request label arrives)' };
+    case 'no_intent_label':
+    case 'not_a_support_request':
+    case 'not_a_client_message':
+    case 'not_a_project_conversation':
+    case 'no_phase_eight':
+    case 'workspace_not_active':
+    case 'not_found':
+      return { status: 'succeeded', outcome, detail: `no ticket was opened (${outcome.replaceAll('_', ' ')})` };
+    default:
+      return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
+  }
+}
+
+/**
+ * `project.production_validated` -> create the DRAFT handover package from the contract checklist when none exists (P707 §13).
+ *
+ * The door is `projects.create_draft_handover_package_for_validated` (service role): the workspace is read by id under the JOB's organization, production
+ * validation is re-read from the evidence, and a package is born a draft (version 1, one item per contract deliverable). It never submits, approves or delivers.
+ * Without a contract checklist it creates nothing (the catch-up sweep creates the draft once a person has recorded one).
+ */
+export async function handleCreateDraftHandoverPackage(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const phaseSevenId = job.payload?.subjectId ?? null;
+  if (!phaseSevenId) return { status: 'failed', permanent: true, detail: 'the event named no workspace' };
+  const projects = admin.schema('projects') as unknown as Loose;
+  const { data, error } = await projects.rpc('create_draft_handover_package_for_validated', { p_organization_id: job.organization_id, p_phase_seven_id: phaseSevenId });
+  if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  const outcome = str(firstRow(data)?.outcome) ?? 'no answer';
+  switch (outcome) {
+    case 'created':
+      return { status: 'succeeded', outcome, detail: 'a DRAFT handover package was created from the contract checklist; a person completes, submits and delivers it.' };
+    case 'already_exists':
+      return { status: 'succeeded', outcome, detail: 'a handover package already exists: nothing new was created' };
+    case 'contract_deliverables_missing':
+      return { status: 'succeeded', outcome, detail: 'no contract checklist is recorded: no draft was created (a person records the deliverables; the sweep then creates it)' };
+    case 'production_not_validated':
+    case 'm4_not_verified':
+      return { status: 'succeeded', outcome, detail: `no draft was created (${outcome.replaceAll('_', ' ')})` };
+    case 'not_found':
+      return { status: 'succeeded', outcome: 'gone', detail: 'the workspace is not in this organization' };
+    default:
+      return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
+  }
+}
+
 /** The plan whose approval still holds for the current candidate (the door answers; a failed answer is thrown, so the runner retries rather than concluding "none"). */
 async function liveApprovedPlan(projects: Loose, planIds: string[]): Promise<string | null> {
   for (const id of planIds) {

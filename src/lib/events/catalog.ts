@@ -144,6 +144,9 @@ export const HANDLERS = [
   // Phase 7b: the Phase 7 -> Phase 8 seam (the intake reads the frozen handoff) and the Orchestrator's recorded Phase 7 routing decision
   'projects:fillPhaseEightIntake',
   'projects:routePhaseSevenTask',
+  // Phase 7c / 8A: a client's support message opens a ticket (it never replies); a validated production gets a DRAFT handover package (it never delivers)
+  'projects:openSupportTicketFromMessage',
+  'projects:createDraftHandoverPackage',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -413,7 +416,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * the call for a message from staff, a thread with no lead, and a lead that
    * already has a meeting open — which is the lead most likely to write again.
    */
-  'message.received': ['sales:readIntent', 'sales:readQualification', 'sales:summariseThread', 'sales:readMeetingRequest', 'sales:readLeadOutcome', 'projects:readBillingReply', 'projects:readClarificationAnswer', 'project_manager:readDesignReply'],
+  'message.received': ['sales:readIntent', 'sales:readQualification', 'sales:summariseThread', 'sales:readMeetingRequest', 'sales:readLeadOutcome', 'projects:readBillingReply', 'projects:readClarificationAnswer', 'project_manager:readDesignReply', 'projects:openSupportTicketFromMessage'],
   /**
    * Doc 09 §19, and the reason it is a separate event rather than a third
    * subscriber on `message.received`: four of Doc 08 §12's twenty-two intents
@@ -743,7 +746,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   /** P706: after a ROLLBACK recovery is verified and the incident closed, the same approved candidate is redeployed through the same runner door. */
   'project.deployment_incident_closed': ['projects:runDeployment'],
   /** P705: ProductionValidated (QA/Release evidence, never a deployment claim) -> PM7 prepares the handover communication. */
-  'project.production_validated': ['crm:announceProductionValidated'],
+  'project.production_validated': ['crm:announceProductionValidated', 'projects:createDraftHandoverPackage'],
   /** P705/P706: DeploymentValidationFailed -> a controlled, client-safe status; completion is paused. */
   'project.production_validation_failed': ['crm:announceProductionValidationFailed', 'projects:routePhaseSevenTask'],
   /** P707/P708: the Admin-approved package was delivered -> invite the client's formal review. */
@@ -908,6 +911,8 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'crm:announceProjectCompleted': 'project_completed.announce',
   'projects:fillPhaseEightIntake': 'phase_eight_intake.fill',
   'projects:routePhaseSevenTask': 'phase_seven.route_task',
+  'projects:openSupportTicketFromMessage': 'support_ticket.open_from_message',
+  'projects:createDraftHandoverPackage': 'handover.create_draft',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);

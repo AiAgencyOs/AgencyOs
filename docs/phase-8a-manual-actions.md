@@ -27,9 +27,9 @@ Phase 8A sends nothing to a client. Before any operational message (ticket recei
 2. have the WhatsApp templates for those messages approved by the provider (Meta);
 3. decide the caps and quiet periods per client: the mechanism now exists (Phase 8D, M-9) but NO number is set: a client has no cap and no quiet period until an Admin sets one.
 
-## M-3 Schedule the sweeps (needs a deploy change in the job runner)
+## M-3 The sweeps are scheduled; you choose the tick frequency
 
-The doors exist and are idempotent; nothing calls them on a schedule yet. As the service role:
+DONE in code (Phase 7c): `sweepSupportAndHealth` in `src/modules/orchestrator/sweeps.ts` runs on every tick of `app/api/jobs/run` and calls `sweep_support_sla`, `sweep_phase_eight_health` (every ACTIVE workspace, through `record_health_snapshot`), `sweep_checkins_due` (a due check-in is recorded ONCE as a notice for Customer Success in `projects.cs_check_in_due_notices`; nobody is contacted), `sweep_message_support_tickets` and `sweep_draft_handover_packages`. The renewal sweep was already on the tick (`sweepMaintenanceLifecycle`). What remains is yours: how often the tick runs in your deployment (every door is idempotent, so a faster tick costs only reads), and who watches the notices (a check-in notice is an item for the Customer Success owner; there is no page for it yet, read `projects.cs_check_in_due_notices`). The calls, for a rehearsal as the service role:
 
 ```
 select * from projects.sweep_support_sla();                 -- stamps missed SLA targets once, escalates to ops_admin, emits SLA events
@@ -43,9 +43,9 @@ Suggested cadence: SLA hourly, renewals and health daily. Add them to the cron h
 
 `20261105000000` to `20261105300000` are additive: new tables, new functions, one added column constraint on `projects.support_tickets` (which they create). They use the existing `projects` and `sales` schemas, so no PostgREST schema list change is needed. Review, then `npm run db:push`. Run `scripts/verify-phase-eight-a.sql` against a scratch copy first (see the log). Production code that is already deployed is unaffected.
 
-## M-5 Feed client messages into tickets
+## M-5 Client messages become tickets (built; two things stay yours)
 
-`projects.open_support_ticket(p_organization_id, p_project_id, p_title, p_description, p_source, p_source_ref)` is the door; a repeated delivery with the same `p_source_ref` (the provider message id) returns `duplicate`. Nothing calls it from the inbound WhatsApp/email handlers yet. Wire the existing inbound handler for a project conversation to call it as the service role, only for a project whose Phase 8 has started.
+DONE in code (Phase 7c): the `message.received` subscriber `projects:openSupportTicketFromMessage` calls the service-role door `projects.open_support_ticket_from_message`, which opens a ticket (idempotent on the message id) ONLY for a client's message in a PROJECT conversation of a project in an ACTIVE Phase 8 workspace whose intent label is `support_request`. It never replies. Two things are not decided by the build: (1) the intent label is written by the Sales agent's intent reader, which is asynchronous and may never label a project-group message: an unlabelled message opens nothing (the sweep opens it if a label arrives within three days), so check in a real run that project-group messages actually receive `support_request` labels; (2) a client writing in the post-project ACCOUNT thread (not a project conversation) opens nothing: wiring that thread to a workspace would need a rule for which project it means, and none was invented.
 
 ## M-6 Swap in Phase 7's frozen completion handoff
 

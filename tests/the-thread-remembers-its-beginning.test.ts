@@ -118,6 +118,8 @@ describe('C. the summariser costs nothing when there is nothing to do', () => {
       'projects:readClarificationAnswer',
       // and the eighth reads a client's reply to the design options (Phase 3 PM §4.5), settling before any model call
       'project_manager:readDesignReply',
+      // and the ninth opens a support ticket from a client's support message in an active Phase 8 project conversation (Phase 8A; never replies)
+      'projects:openSupportTicketFromMessage',
     ]);
     assert.equal(HANDLER_JOB_KIND['sales:summariseThread'], 'conversation.summarise');
   });
