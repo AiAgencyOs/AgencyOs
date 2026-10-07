@@ -98,6 +98,8 @@ select pg_temp.p4r_check((select outcome from projects.p4ui_record_screen_spec(p
   '{"purpose":"Pay","tokensUsed":["spacing.base","radius.card","typography.body","Color.Accent"],"validationRules":["card number is 16 digits"]}')) in ('recorded', 'updated'), 'fixture: the checkout spec');
 select outcome as o, detail as d from projects.p4r_check_token_consistency(pg_temp.p4r_ver(:'F_id', 1)) \gset TK_
 select pg_temp.p4r_check(:'TK_o' = 'inconsistent' and :'TK_d' = '4', 'four inconsistent tokens are found: an undefined colour, a raw hex, an unknown token and a primitive the direction does not define');
+select pg_temp.p4r_check(exists (select 1 from projects.p4ui_qa_defects where ui_version_id = pg_temp.p4r_ver(:'F_id', 1) and description like '%#FF0000%raw value, not a token%')
+  and exists (select 1 from projects.p4ui_qa_defects where ui_version_id = pg_temp.p4r_ver(:'F_id', 1) and description like '%gradient.fancy%is not a token of the locked direction%'), 'a raw hex is called a raw value (a second design system) and an invented name is called not a token');
 select pg_temp.p4r_check((select count(*) = 4 and bool_and(category = 'token' and status = 'open') from projects.p4ui_qa_defects where ui_version_id = pg_temp.p4r_ver(:'F_id', 1)), 'each is a token QA defect on the version');
 select pg_temp.p4r_check((select string_agg(screen_key, ',' order by screen_key) from projects.p4ui_qa_defects where ui_version_id = pg_temp.p4r_ver(:'F_id', 1)) = 'checkout,home,home,home', 'on the right screens (home x3, checkout x1)');
 select pg_temp.p4r_check(not exists (select 1 from projects.p4ui_qa_defects where ui_version_id = pg_temp.p4r_ver(:'F_id', 1) and (description like '%color.primary%' or description like '%spacing.base%' or description like '%radius.card%' or description like '%Color.Accent%')),
@@ -200,6 +202,13 @@ select pg_temp.p4r_check((select string_agg(status, ',' order by build_number) f
 select pg_temp.p4r_check((select outcome from projects.p4ui_attach_build_artifact(:'R3_b', :'A3_a')) = 'build_ready' and (select outcome from projects.p4ui_record_build_revision(:'R3_b')) = 'recorded', 'it attaches and its revision is recorded');
 select pg_temp.p4r_check((select r.origin = 'qa_defect' and r.from_build_id = :'R2_b' from projects.p4ui_prototype_revisions r where r.to_build_id = :'R3_b'), 'from the build that was sent back');
 select pg_temp.p4r_check((select outcome from projects.p4ui_assemble_qa_handoff(:'R3_b')) in ('assembled', 'exists'), 'handoff assembled');
+-- a build that was NOT sent back is never superseded by a stray artifact (the artifact is made inside a savepoint and rolled back)
+savepoint p4r_stray;
+select deliverable_id as xd from projects.add_deliverable(:'P_id', 'prototype', 'Prototype build', '/projects/x/prototype/preview/x', null, null, null) \gset X_
+insert into projects.prototype_artifacts (organization_id, project_id, ui_version_id, deliverable_id, screens) values (:'ORG', :'P_id', :'UV_id', :'X_xd', '[{"screenKey":"home","elements":[{"type":"text","label":"x"}]}]') returning id as xa \gset X_
+select pg_temp.p4r_check((select outcome from projects.p4r_plan_revision_build(:'X_xa')) = 'prior_build_not_sent_back' and (select count(*) = 3 from projects.p4ui_prototype_builds where ui_version_id = :'UV_id'),
+  'NEGATIVE: an artifact that follows a build which was not sent back plans nothing and supersedes nothing');
+rollback to savepoint p4r_stray;
 select projects.record_prototype_qa_verdict(:'A3_a', 'qa_pass', '[]');
 reset role;
 
