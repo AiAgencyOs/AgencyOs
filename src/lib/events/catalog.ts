@@ -147,6 +147,10 @@ export const HANDLERS = [
   // Phase 7c / 8A: a client's support message opens a ticket (it never replies); a validated production gets a DRAFT handover package (it never delivers)
   'projects:openSupportTicketFromMessage',
   'ui_designer:reviseDesignDirection',
+  'ui_designer:detailUIVersion',
+  'ui_prototype:planBuild',
+  'projects:attachP4uiBuild',
+  'projects:syncP4uiBuild',
   'crm:announceMeetingBooked',
   'crm:announceMeetingCancelled',
   'projects:createDraftHandoverPackage',
@@ -582,7 +586,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * producer≠verifier contract every other completion in this codebase goes
    * through — rather than a bespoke Design-QA-only rule.
    */
-  'project.ui_version_drafted': ['quality_assurance:reviewUIVersion'],
+  'project.ui_version_drafted': ['quality_assurance:reviewUIVersion', 'ui_designer:detailUIVersion'],
   /**
    * Impl §7.2; Master's locked objective: "QA PASS → ADMIN REVIEW".
    *
@@ -596,7 +600,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * `20260923140000_the_client_confirms_the_locked_ui.sql`'s `lock_ui_version`
    * already emits.
    */
-  'project.ui_version_locked': ['ui_prototype:build', 'crm:announceUiVersionLocked'],
+  'project.ui_version_locked': ['ui_prototype:build', 'crm:announceUiVersionLocked', 'ui_prototype:planBuild'],
   /**
    * PM4-M02, Impl §8 — `sync_ui_version_decision` has emitted this since
    * `20260923130000_admin_review_reuses_the_engine.sql` and nothing ever
@@ -632,17 +636,17 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * ui_prototype whose build it reviews (ADM-82). Off the fact
    * `record_prototype_build` already emits.
    */
-  'project.prototype_build_ready': ['quality_assurance:reviewPrototypeBuild'],
+  'project.prototype_build_ready': ['quality_assurance:reviewPrototypeBuild', 'projects:attachP4uiBuild'],
   /**
    * QAP §Prototype QA defect flow: a build Prototype QA sent back (qa_changes_required) is fixed by the Prototype Agent as a NEW build that
    * is QA'd from scratch (FIXED is not VERIFIED). The workflow filters to qa_changes_required itself - the event fires for every verdict.
    */
-  'project.prototype_qa_reviewed': ['ui_prototype:reviseBuild'],
+  'project.prototype_qa_reviewed': ['ui_prototype:reviseBuild', 'projects:syncP4uiBuild'],
   /**
    * Prototype spec, Admin review: ADMIN EDIT -> PROTOTYPE AGENT -> QA -> ADMIN AGAIN (never ADMIN EDIT -> CLIENT). Fires for approved too;
    * the workflow filters to changes_required itself.
    */
-  'project.prototype_admin_decided': ['ui_prototype:reviseBuild'],
+  'project.prototype_admin_decided': ['ui_prototype:reviseBuild', 'projects:syncP4uiBuild'],
   /**
    * Impl §7.4; Master steps 39-40 — Task 2 closes on the FINAL prototype's
    * approval. `project.deliverable_decided` (new, `20260923160000_m2_and_
@@ -657,13 +661,14 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
     'crm:announcePrototypeChangeRequested',
     'crm:announceBuildApproved',
     'ui_prototype:reviseBuild',
+    'projects:syncP4uiBuild',
   ],
   /**
    * PM4-M05, Impl §8 — off the same event `submit_deliverable` (any kind)
    * always emitted starting `20260923160000_m2_and_the_gate_it_actually_
    * needs.sql`; the handler filters to `kind = 'prototype'` itself.
    */
-  'project.deliverable_submitted': ['crm:announcePrototypeSubmitted', 'crm:announceBuildShared', 'projects:reopenOnSourceChange'],
+  'project.deliverable_submitted': ['crm:announcePrototypeSubmitted', 'crm:announceBuildShared', 'projects:reopenOnSourceChange', 'projects:syncP4uiBuild'],
   /**
    * Finance §2, §5 — the M2 (20%) invoice, off the fact
    * `projects.complete_phase_four` already emits. PM4-M07 (Task 2 Complete)
@@ -921,6 +926,10 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:routePhaseSevenTask': 'phase_seven.route_task',
   'projects:openSupportTicketFromMessage': 'support_ticket.open_from_message',
   'ui_designer:reviseDesignDirection': 'design.revise',
+  'ui_designer:detailUIVersion': 'ui.design_detail',
+  'ui_prototype:planBuild': 'prototype.plan',
+  'projects:attachP4uiBuild': 'p4ui.attach_build',
+  'projects:syncP4uiBuild': 'p4ui.sync_build',
   'crm:announceMeetingBooked': 'meeting_booked.announce',
   'crm:announceMeetingCancelled': 'meeting_cancelled.announce',
   'projects:createDraftHandoverPackage': 'handover.create_draft',

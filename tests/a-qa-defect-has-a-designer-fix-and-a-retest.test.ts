@@ -17,7 +17,7 @@ const workflows = read('app/api/jobs/run/workflows.ts');
 describe('a QA defect has a fix and a retest', () => {
   test('both QA verdict events reach the fixing agent', () => {
     assert.ok(SUBSCRIPTIONS['project.ui_version_qa_reviewed']?.includes('ui_designer:reviseUIVersion'));
-    assert.deepEqual(SUBSCRIPTIONS['project.prototype_qa_reviewed'], ['ui_prototype:reviseBuild']);
+    assert.deepEqual(SUBSCRIPTIONS['project.prototype_qa_reviewed'], ['ui_prototype:reviseBuild', 'projects:syncP4uiBuild']);
   });
 
   test('both revise doors accept a QA-failed row, and count it on its own counter', () => {

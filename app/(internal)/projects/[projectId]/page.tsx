@@ -964,6 +964,7 @@ export default async function ProjectPage({
       <MaintenanceSmokePanel projectId={projectId} />
       <PhaseFourPmState projectId={projectId} />
       <P789RoundTwoPanel projectId={projectId} />
+      <p className="text-[13px]"><Link href={`/projects/${projectId}/p4ui`} className="underline">UI Designer and Prototype records</Link></p>
       {phaseSix.plan ? <FunctionalTestPanel view={await loadFunctionalTestView(phaseSix.plan.id)} /> : null}
       <PhaseSevenGapsPanel view={await loadPhaseSevenGaps(projectId)} />
 

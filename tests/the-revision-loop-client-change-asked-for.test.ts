@@ -89,7 +89,7 @@ describe('D. reuses the existing draft event, no new subscription needed for QA'
   });
 
   test('Design QA already subscribes to it', () => {
-    assert.deepEqual(SUBSCRIPTIONS['project.ui_version_drafted'], ['quality_assurance:reviewUIVersion']);
+    assert.deepEqual(SUBSCRIPTIONS['project.ui_version_drafted'], ['quality_assurance:reviewUIVersion', 'ui_designer:detailUIVersion']);
   });
 });
 

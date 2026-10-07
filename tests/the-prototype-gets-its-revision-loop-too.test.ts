@@ -88,7 +88,7 @@ describe('D. it reuses add_deliverable and project.prototype_build_ready, no par
   });
 
   test('Prototype QA already subscribes to it', () => {
-    assert.deepEqual(SUBSCRIPTIONS['project.prototype_build_ready'], ['quality_assurance:reviewPrototypeBuild']);
+    assert.deepEqual(SUBSCRIPTIONS['project.prototype_build_ready'], ['quality_assurance:reviewPrototypeBuild', 'projects:attachP4uiBuild']);
   });
 });
 
@@ -126,6 +126,7 @@ describe('F. it is reachable — the defect this repository has found repeatedly
       'crm:announcePrototypeChangeRequested',
       'crm:announceBuildApproved',
       'ui_prototype:reviseBuild',
+      'projects:syncP4uiBuild',
     ]);
     assert.ok(HANDLERS.includes('ui_prototype:reviseBuild'));
     assert.equal(HANDLER_JOB_KIND['ui_prototype:reviseBuild'], 'prototype.build_revise');

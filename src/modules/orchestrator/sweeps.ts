@@ -119,21 +119,17 @@ export async function sweepMaintenanceLifecycle(admin: Admin): Promise<Record<st
  */
 export async function sweepSupportAndHealth(admin: Admin): Promise<Record<string, Record<string, number> | null>> {
   const projects = admin.schema('projects') as unknown as Loose;
-  const finance = admin.schema('finance') as unknown as Loose;
-  const doors: { name: string; args: Record<string, unknown>; fields: string[]; schema?: 'finance' }[] = [
+  const doors: { name: string; args: Record<string, unknown>; fields: string[] }[] = [
     { name: 'sweep_support_sla', args: {}, fields: ['response_breaches', 'resolution_breaches', 'escalated'] },
     { name: 'sweep_phase_eight_health', args: { p_limit: 500 }, fields: ['checked', 'recorded', 'unchanged'] },
     { name: 'sweep_checkins_due', args: { p_limit: 500 }, fields: ['checked', 'noticed'] },
     { name: 'sweep_message_support_tickets', args: { p_limit: 200 }, fields: ['checked', 'opened'] },
     { name: 'sweep_draft_handover_packages', args: { p_limit: 100 }, fields: ['checked', 'created'] },
-    { name: 'p789_sweep_client_action_reminders', args: {}, fields: ['scheduled'] },
-    { name: 'p789_sweep_alerts', args: {}, fields: ['raised', 'cleared'] },
-    { name: 'p789_render_receipt_documents', args: {}, fields: ['rendered'], schema: 'finance' },
   ];
   const out: Record<string, Record<string, number> | null> = {};
   for (const door of doors) {
     try {
-      const { data, error } = await (door.schema === 'finance' ? finance : projects).rpc(door.name, door.args);
+      const { data, error } = await projects.rpc(door.name, door.args);
       const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | undefined;
       if (error || !row) {
         console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `${door.name}: ${error ? error.message : 'the door answered nothing'}` }));
@@ -167,4 +163,33 @@ export async function sweepRetentionReviews(admin: Admin): Promise<{ marked: num
     console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `retention sweep: ${e instanceof Error ? e.message : 'unknown'}` }));
     return null;
   }
+}
+
+/**
+ * Phase 7/8 round two: client-action reminders, alert rules and receipt rendering. Every door is idempotent and sends nothing: a reminder is a row a person
+ * acts on, an alert is a record, a receipt is a rendered document. Best effort, like the sweeps above.
+ */
+export async function sweepRoundTwoRecords(admin: Admin): Promise<Record<string, Record<string, number> | null>> {
+  const doors: { schema: 'projects' | 'finance'; name: string; fields: string[] }[] = [
+    { schema: 'projects', name: 'p789_sweep_client_action_reminders', fields: ['scheduled'] },
+    { schema: 'projects', name: 'p789_sweep_alerts', fields: ['raised', 'cleared'] },
+    { schema: 'finance', name: 'p789_render_receipt_documents', fields: ['rendered'] },
+  ];
+  const out: Record<string, Record<string, number> | null> = {};
+  for (const door of doors) {
+    try {
+      const { data, error } = await (admin.schema(door.schema) as unknown as Loose).rpc(door.name, {});
+      const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | undefined;
+      if (error || !row) {
+        console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `${door.name}: ${error ? error.message : 'the door answered nothing'}` }));
+        out[door.name] = null;
+      } else {
+        out[door.name] = Object.fromEntries(door.fields.map((f) => [f, Number(row[f] ?? 0)]));
+      }
+    } catch (e) {
+      console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `${door.name}: ${e instanceof Error ? e.message : 'unknown'}` }));
+      out[door.name] = null;
+    }
+  }
+  return out;
 }

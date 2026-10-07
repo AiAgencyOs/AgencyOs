@@ -142,11 +142,12 @@ describe('the TypeScript side', () => {
     const reads = (code.match(/\.(from|rpc)\(/g) ?? []).length;
     assert.equal(calls, reads, `${reads} reads, ${calls} checks`);
   });
-  test('the workflows are drafting work and are not wired into the shared lists by this change', () => {
+  test('the workflows are drafting work and the lead wired them into the shared lists', () => {
     const wf = read('app/api/jobs/run/p4ui-workflows.ts');
     assert.equal((wf.match(/workClass: 'draft'/g) ?? []).length, 1);
     assert.doesNotMatch(wf, /\bapprove|verdict|lock_ui_version|decide_/);
-    assert.doesNotMatch(read('app/api/jobs/run/workflows.ts'), /P4UI_WORKFLOWS/);
-    assert.doesNotMatch(read('src/lib/events/catalog.ts'), /p4ui|P4ui/);
+    assert.match(read('app/api/jobs/run/workflows.ts'), /\.\.\.P4UI_WORKFLOWS/);
+    assert.match(read('src/lib/events/catalog.ts'), /'projects:attachP4uiBuild': 'p4ui\.attach_build'/);
+    assert.match(read('src/lib/events/catalog.ts'), /'ui_prototype:planBuild': 'prototype\.plan'/);
   });
 });
