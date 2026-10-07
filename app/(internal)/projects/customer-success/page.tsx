@@ -38,7 +38,14 @@ export default async function CustomerSuccessPage() {
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Customer Success"
-        actions={<Link href="/projects/customer-success/observability" className="text-[13px] underline">Counts and ages</Link>}
+        actions={
+          <span className="flex flex-wrap gap-3 text-[13px]">
+            <Link href="/projects/customer-success/observability" className="underline">Counts and ages</Link>
+            <Link href="/projects/customer-success/next-actions" className="underline">Next actions</Link>
+            <Link href="/projects/customer-success/reconciliation" className="underline">Reconciliation</Link>
+            <Link href="/projects/customer-success/records" className="underline">Records</Link>
+          </span>
+        }
         description={
           rows.length === 0
             ? 'No project has started Phase 8 yet.'
