@@ -14,6 +14,7 @@ import { normaliseSearch } from '@/lib/db/search';
 import { Badge, buttonClass, Card, CardHeader, DomainSearch, EmptyState, FilterBar, FilterChips, humanize, IconInvoices, PageHeader, PermissionDenied, Stat, StatGrid, StatusBadge } from '@/ui';
 
 import { ClaimDecision } from './claim-decision';
+import { VerificationPacket } from './verification-packet';
 
 export const metadata: Metadata = { title: 'Payment verification' };
 
@@ -202,6 +203,7 @@ export default async function PaymentVerificationPage({
                     {crossCheckSentence(crossCheckClaim({ reference: c.reference, amountMinor: c.amount_minor }, bankLines.filter((l) => l.status !== 'ignored')))}
                   </p>
                 </div>
+                <VerificationPacket submissionId={c.id} />
                 {can(context, 'payment.verify') ? (
                   <ClaimDecision claimId={c.id} invoiceId={c.invoice_id} projectId={c.projectId} />
                 ) : (

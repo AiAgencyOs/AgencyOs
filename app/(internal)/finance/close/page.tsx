@@ -8,6 +8,7 @@ import { closeModeLabel, formatMinor, resultLabel, resultTone } from '@/modules/
 import { Badge, buttonClass, Callout, Card, CardHeader, EmptyState, humanize, inputClass, labelClass, PageHeader, PermissionDenied } from '@/ui';
 
 import { PhaseNineForm } from './phase-nine-forms';
+import { PhaseNineBPanels } from './phase-nine-b-panels';
 
 export const metadata: Metadata = { title: 'Financial close' };
 
@@ -41,6 +42,8 @@ export default async function FinanceCloseIndexPage({ searchParams }: { searchPa
       <Callout tone="info">
         Closing the finances is not completing the project. Nothing here verifies a payment, edits an invoice or an amount, records a refund or messages a client.
       </Callout>
+
+      <PhaseNineBPanels />
 
       <Card className="flex flex-col gap-2 p-4">
         <CardHeader title="Projects" description="Open one to see its position, blockers and actions." />
