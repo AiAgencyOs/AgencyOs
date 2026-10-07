@@ -9,6 +9,8 @@ Branch `worktree-p8b9-gaps`. Migration `20261122100000_a_failed_smoke_check_is_r
 | G1 | 8B QA 6, post-deploy smoke failure | PARTIAL (improved). A person records the failure with evidence; an independent Admin records the decision. No automated smoke check and no rollback executor exist; that stays MANUAL_EXTERNAL. |
 | G2 | 8B QA 7 events; P9-EV-10 | EXISTS. QAHandoffCreated, TestRunCompleted, QAPassed and FinancialExceptionCreated are emitted by triggers on the rows that change, so no existing door was edited. |
 | G3 | P9-ACT-04 | EXISTS. The row was stale: Phase 7's gate already reads the Phase 9 close (migration 20261108020000). Corrected with evidence. |
+| G4 | P9-EV-05 | EXISTS. `finance.payment_overdue` emitted once when the sweep opens an overdue exception (migration 20261122200000, verifier `scripts/verify-phase-nine-overdue-event.sql`, red-proved on the overdue-only branch and the event type). |
+| G5 | P9-EV-09, P9-P8-01, P9-E2E-15 | EXISTS. Re-verified against the 8A/8B/8C verifiers; rows rewritten with line evidence. |
 
 ## Verification (scratch Postgres 16, port 55443)
 
