@@ -159,7 +159,7 @@ select pg_temp.check(position('INR 1,180.00' in (select body_html from finance.p
    and position('<Acme' in (select body_html from finance.p789_receipt_documents where receipt_id = :'R1_id')) = 0, 'the document states the amount, number and escaped client name from the rows');
 select pg_temp.as_service();
 select pg_temp.check((select rendered from finance.p789_render_receipt_documents(null)) = 2, 'the service-role sweep renders the rest (the two verified ones), not the unverified one');
-select pg_temp.check((select count(*) from finance.p789_receipt_documents) = 3, 'three documents exist');
+select pg_temp.check((select count(*) from finance.p789_receipt_documents where organization_id = :'ORG') = 3, 'three documents exist');
 select pg_temp.as_user(:'UB', :'ORGB', 'owner');
 select pg_temp.check((select outcome from finance.p789_render_receipt_documents(:'R1_id')) = 'nothing_to_render', 'another organization''s Admin renders none of this organization''s receipts');
 set local role authenticated;
