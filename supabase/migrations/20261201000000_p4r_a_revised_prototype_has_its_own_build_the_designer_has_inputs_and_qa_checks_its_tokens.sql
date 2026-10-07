@@ -58,7 +58,8 @@ begin
   select b.* into v_prev from projects.p4ui_prototype_builds b where b.id = v_prev.id;
 
   if v_prev.prototype_artifact_id is null then return query select 'prior_build_has_no_artifact'::text, v_prev.id, v_prev.status; return; end if;
-  if v_prev.status not in ('qa_changes_required', 'changes_requested', 'superseded') then
+  -- sent back by QA / a reviewer, already superseded, or a build whose artifact failed its own coverage self-check (`failed` with an artifact attached)
+  if v_prev.status not in ('qa_changes_required', 'changes_requested', 'superseded', 'failed') then
     return query select 'prior_build_not_sent_back'::text, v_prev.id, v_prev.status; return;
   end if;
   select pa.* into v_pa from projects.prototype_artifacts pa where pa.id = v_prev.prototype_artifact_id;
@@ -535,3 +536,88 @@ grant execute on function projects.p4ui_start_governed_revision(uuid, jsonb) to 
 
 revoke all on function projects.revise_ui_version(uuid, jsonb) from public, anon;
 grant execute on function projects.revise_ui_version(uuid, jsonb) to authenticated, service_role;
+
+-- ═══ the build reflects a QA send-back even when the corrected round has already superseded its deliverable ═══
+create or replace function projects.p4ui_sync_build_status(p_build_id uuid)
+returns table (outcome text, ref_id uuid, detail text)
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v_b      projects.p4ui_prototype_builds;
+  v_a      projects.prototype_artifacts;
+  v_del    projects.deliverables;
+  v_admin  text;
+  v_target text;
+  v_path   text[] := array['build_ready', 'qa_review', 'qa_pass', 'admin_approved', 'client_review', 'locked'];
+  v_i      int;
+  v_j      int;
+  v_scope  text;
+begin
+  select b.* into v_b from projects.p4ui_prototype_builds b where b.id = p_build_id for update;
+  if v_b.id is null then return query select 'unknown_build'::text, null::uuid, null::text; return; end if;
+  v_scope := projects.p4ui_caller(v_b.organization_id);
+  if v_scope in ('no_actor', 'forbidden') then return query select v_scope, null::uuid, null::text; return; end if;
+  if v_b.prototype_artifact_id is null or v_b.status in ('planned', 'input_validation', 'blocked', 'building', 'failed', 'superseded', 'locked') then
+    return query select 'nothing_to_sync'::text, v_b.id, v_b.status; return;
+  end if;
+  select a.* into v_a from projects.prototype_artifacts a where a.id = v_b.prototype_artifact_id;
+  select d.* into v_del from projects.deliverables d where d.id = v_a.deliverable_id;
+  select dd.admin_status into v_admin from projects.deliverable_details dd where dd.deliverable_id = v_a.deliverable_id;
+
+  v_target := case
+    -- A QA verdict that sent the build back is reflected BEFORE the deliverable it belonged to is superseded by the corrected round: the machine has no edge
+    -- from qa_review to superseded, so reading "superseded" first left the build stuck in qa_review (and the sync failing on every retry).
+    when v_a.status = 'qa_changes_required' and v_b.status in ('build_ready', 'qa_review') then 'qa_changes_required'
+    when v_del.status = 'approved' then 'locked'
+    when v_del.status = 'superseded' then 'superseded'
+    when v_del.status = 'changes_requested' or v_admin = 'changes_required' then 'changes_requested'
+    when v_del.status = 'in_review' then 'client_review'
+    when v_admin = 'approved' and v_a.status = 'qa_pass' then 'admin_approved'
+    when v_a.status = 'qa_pass' then 'qa_pass'
+    when v_a.status = 'qa_changes_required' then 'qa_changes_required'
+    else v_b.status end;
+  if v_target = v_b.status then return query select 'unchanged'::text, v_b.id, v_b.status; return; end if;
+
+  v_i := array_position(v_path, v_b.status);
+  if v_target in ('qa_changes_required', 'changes_requested', 'superseded') then
+    -- walk forward only as far as the real rows support (each step is a gate the trigger re-checks), then take the sideways edge
+    for k in (coalesce(v_i, 0) + 1)..array_length(v_path, 1) loop
+      exit when v_path[k] in ('client_review', 'locked');
+      exit when v_path[k] = 'qa_pass' and v_a.status is distinct from 'qa_pass';
+      exit when v_path[k] = 'admin_approved' and v_admin is distinct from 'approved';
+      exit when v_target = 'qa_changes_required' and v_path[k] = 'qa_pass';
+      exit when v_target = 'superseded' and v_path[k] = 'qa_review';
+      update projects.p4ui_prototype_builds set status = v_path[k] where id = v_b.id;
+    end loop;
+    update projects.p4ui_prototype_builds set status = v_target where id = v_b.id;
+  else
+    v_j := array_position(v_path, v_target);
+    if v_i is null or v_j is null or v_j <= v_i then return query select 'unchanged'::text, v_b.id, v_b.status; return; end if;
+    for k in (v_i + 1)..v_j loop
+      update projects.p4ui_prototype_builds set status = v_path[k] where id = v_b.id;
+    end loop;
+  end if;
+  return query select 'synced'::text, v_b.id, v_target;
+end $$;
+revoke all on function projects.p4ui_sync_build_status(uuid) from public, anon;
+grant execute on function projects.p4ui_sync_build_status(uuid) to authenticated, service_role;
+
+-- ═══ P4-PROTO-088: an approved prototype''s content is frozen, to the service role too ═══
+-- The deliverable row was already immutable once approved (deliverables_guard) and its status moves only through the engine, but the ARTIFACT row (the screens the
+-- client actually saw) had no write policy for end users while the service role, which bypasses RLS and holds the table''s default grants, could still rewrite
+-- its screens. Nothing writes those columns after insert (a correction is a NEW artifact through revise_prototype_build), so they are frozen outright.
+create or replace function projects.p4r_prototype_artifact_content_frozen()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  raise exception 'a prototype artifact''s screens and lineage are frozen; a correction is a new artifact (revise_prototype_build)' using errcode = 'restrict_violation';
+end $$;
+revoke all on function projects.p4r_prototype_artifact_content_frozen() from public, anon;
+create trigger p4r_prototype_artifact_content_frozen before update of screens, ui_version_id, deliverable_id on projects.prototype_artifacts
+  for each row when (old.screens is distinct from new.screens or old.ui_version_id is distinct from new.ui_version_id or old.deliverable_id is distinct from new.deliverable_id)
+  execute function projects.p4r_prototype_artifact_content_frozen();
