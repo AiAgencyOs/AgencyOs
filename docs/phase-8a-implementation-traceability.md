@@ -252,3 +252,7 @@ Evidence: `V8D` (180+ checks through the real doors, rolls back), `R8D` (every c
 
 Still open after 8D, not claimed: automatic delivery state from the provider, cadence per message category, channel and language preferences, feedback capture, VIP, a next-action queue, charts, and everything the other
 Phase 8 part owns. Phase 8 is NOT claimed complete.
+
+## Closed by Phase 8 part C (the maintenance plan lifecycle)
+
+Rows above marked "other part" for the maintenance plan lifecycle are now built (see `docs/phase-8c-implementation-log.md`): plan CRUD/Admin UI (catalog, open plan, acceptance), usage ledger and overage draft, renewal proposal/payment (`MaintenanceActivationRequested` is the plan's `draft` with a recorded acceptance; nothing is auto-requested), cancellation with a required reason (churn reasons are queryable), Finance for maintenance through `finance.maintenance_financial_gate`, ClientMaintenanceSubscription as `projects.maintenance_plan_lifecycle`, and the 8A renewal sweep is now called from the cron tick (closing M-3 for renewals). Support SLA, health snapshots and check-ins are still not scheduled by this change.

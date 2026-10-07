@@ -48,6 +48,14 @@ export const HANDLERS = [
   'crm:announceSupportSlaBreached',
   'crm:announceRetentionRecoveryRequired',
   'crm:announceMaintenanceRenewalDue',
+  'crm:announceMaintenanceWorkOpened',
+  'crm:announceMaintenanceQaFailed',
+  'crm:announceMaintenanceReleaseRequested',
+  'crm:announceMaintenanceReleaseApproved',
+  'crm:announceMaintenanceReleased',
+  'crm:announceMaintenanceBillingProposed',
+  'crm:announceMaintenanceSlaBreached',
+  'crm:announceMaintenanceWorkStalled',
   'crm:announceQaReverification',
   'crm:announceM4PaymentVerified',
   'crm:announceFinanciallyClosed',
@@ -700,6 +708,22 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   'customer.retention_recovery_required': ['crm:announceRetentionRecoveryRequired'],
   /** PM8-RENEWAL-DUE: a maintenance plan entered its renewal window; a review was opened, nothing was renewed. */
   'maintenance.renewal_due': ['crm:announceMaintenanceRenewalDue'],
+  /** PM8-C01: project.maintenance_work_opened. */
+  'project.maintenance_work_opened': ['crm:announceMaintenanceWorkOpened'],
+  /** PM8-C02: project.maintenance_qa_failed. */
+  'project.maintenance_qa_failed': ['crm:announceMaintenanceQaFailed'],
+  /** PM8-C03: project.maintenance_release_requested. */
+  'project.maintenance_release_requested': ['crm:announceMaintenanceReleaseRequested'],
+  /** PM8-C04: project.maintenance_release_approved. */
+  'project.maintenance_release_approved': ['crm:announceMaintenanceReleaseApproved'],
+  /** PM8-C05: project.maintenance_released. */
+  'project.maintenance_released': ['crm:announceMaintenanceReleased'],
+  /** PM8-C06: finance.maintenance_billing_proposed. */
+  'finance.maintenance_billing_proposed': ['crm:announceMaintenanceBillingProposed'],
+  /** PM8-C07: project.maintenance_sla_breached. */
+  'project.maintenance_sla_breached': ['crm:announceMaintenanceSlaBreached'],
+  /** PM8-C08: project.maintenance_work_stalled. */
+  'project.maintenance_work_stalled': ['crm:announceMaintenanceWorkStalled'],
   /** PM6: the source changed after approval; testing is repeated. */
   'project.phase_six_evidence_stale': ['crm:announceQaReverification'],
   /** P601 §41: M4 verified paid in full, recorded once; the PM tells the team. */
@@ -785,6 +809,14 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'crm:announceSupportSlaBreached': 'support_sla_breached.announce',
   'crm:announceRetentionRecoveryRequired': 'retention_recovery_required.announce',
   'crm:announceMaintenanceRenewalDue': 'maintenance_renewal_due.announce',
+  'crm:announceMaintenanceWorkOpened': 'maintenance_work_opened.announce',
+  'crm:announceMaintenanceQaFailed': 'maintenance_qa_failed.announce',
+  'crm:announceMaintenanceReleaseRequested': 'maintenance_release_requested.announce',
+  'crm:announceMaintenanceReleaseApproved': 'maintenance_release_approved.announce',
+  'crm:announceMaintenanceReleased': 'maintenance_released.announce',
+  'crm:announceMaintenanceBillingProposed': 'maintenance_billing_proposed.announce',
+  'crm:announceMaintenanceSlaBreached': 'maintenance_sla_breached.announce',
+  'crm:announceMaintenanceWorkStalled': 'maintenance_work_stalled.announce',
   'crm:announceQaReverification': 'qa_reverification.announce',
   'crm:announceM4PaymentVerified': 'm4_verified.announce',
   'crm:announceFinanciallyClosed': 'financially_closed.announce',

@@ -68,6 +68,11 @@ export default async function PortalProjectPage({
           Your projects
         </Link>
         <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{project.name}</h1>
+        <div className="flex flex-wrap gap-3 text-[13px]">
+          <Link href={`/portal/${projectId}/handover`} className="underline underline-offset-2">Handover</Link>
+          <Link href={`/portal/${projectId}/maintenance`} className="underline underline-offset-2">Maintenance plan</Link>
+          <Link href={`/portal/${projectId}/review-builds`} className="underline underline-offset-2">Builds to review</Link>
+        </div>
         <div className="mt-1">
           <StatusBadge status={project.status} />
         </div>

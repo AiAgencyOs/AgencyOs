@@ -54,6 +54,7 @@ import { TrailLabel } from '../../trail-label';
 import { can } from '@/lib/authz/permissions';
 import { getPhaseSixExtra } from '@/modules/projects/phase-six-extra-queries';
 import { readPhaseEightBView } from '@/modules/projects/phase-eight-b-queries';
+import { readPhaseEightCView } from '@/modules/projects/phase-eight-c-queries';
 import { readPhaseSevenOverview } from '@/modules/projects/phase-seven-queries';
 import { readQaSpecialistView } from '@/modules/projects/qa-specialist-queries';
 import { getReviewView } from '@/modules/projects/review-queries';
@@ -145,6 +146,7 @@ import { PhaseFourPanel } from './phase-four-panel';
 import { BuildDepthPanel } from './build-depth-panel';
 import { PhaseSixExtraPanel } from './phase-six-extra-panel';
 import { PhaseEightBPanel } from './phase-eight-b-panel';
+import { PhaseEightCPanel } from './phase-eight-c-panel';
 import { PhaseEightPanel } from './phase-eight-panel';
 import { PhaseNineLifecycleLine } from './phase-nine-lifecycle-line';
 import { PhaseNinePanel } from './phase-nine-panel';
@@ -251,6 +253,7 @@ export default async function ProjectPage({
   const specialists = await getSpecialistView(projectId);
   const qaSpecialist = await readQaSpecialistView(projectId);
   const phaseEightB = await readPhaseEightBView(projectId);
+  const phaseEightC = await readPhaseEightCView(projectId);
   const phaseSeven = await readPhaseSevenOverview(projectId);
   const phaseSixExtra = await getPhaseSixExtra(projectId);
   const taskBoard = await readTaskBoard(projectId);
@@ -946,6 +949,8 @@ export default async function ProjectPage({
       <PhaseEightPanel projectId={projectId} />
 
       <PhaseEightBPanel projectId={projectId} view={phaseEightB} />
+
+      <PhaseEightCPanel projectId={projectId} view={phaseEightC} />
 
       <PhaseNinePanel projectId={projectId} />
 

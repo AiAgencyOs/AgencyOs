@@ -78,7 +78,10 @@ describe('every PM8 announcer has a versioned template, and is wired end to end'
   test('every announcer goes to the internal channel only', () => {
     const start = HANDLERS_TS.indexOf('// ── Phase 8A announcers');
     assert.ok(start > 0);
-    const block = HANDLERS_TS.slice(start);
+    // bounded at the next section: Phase 8C appends its own announcers (and has its own test) after this block
+    const end = HANDLERS_TS.indexOf('// ── Phase 8C announcers', start);
+    assert.ok(end > start);
+    const block = HANDLERS_TS.slice(start, end);
     assert.equal([...block.matchAll(/announceToInternalChannel\(/g)].length, 5);
     for (const forbidden of ['deliverQueuedText', 'send_outbound_message', 'sendClientMessage', 'planOutbound']) assert.ok(!block.includes(forbidden), forbidden);
   });
