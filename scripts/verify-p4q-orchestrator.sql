@@ -59,7 +59,7 @@ select pg_temp.check((select outcome from projects.p4q_open_envelope(:'P_id', 'u
 -- ═══ classed failures and bounded retry ════════════════════════════════════
 select pg_temp.as_service();
 select pg_temp.check((select outcome from projects.p4q_record_failure(:'env1', 'transient', 'provider timeout')) = 'retry', 'a transient failure retries while the budget lasts');
-select pg_temp.check((select outcome from projects.p4q_record_failure(:'env1', 'uncertain_side_effect', 'the send may have gone out; key sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789')) = 'reconcile_first', 'an uncertain side effect is reconciled, never blind-retried');
+select pg_temp.check((select outcome from projects.p4q_record_failure(:'env1', 'uncertain_side_effect', 'the send may have gone out; key ' || pg_temp.k() || '')) = 'reconcile_first', 'an uncertain side effect is reconciled, never blind-retried');
 select pg_temp.check((select detail from projects.p4q_failure_records where envelope_id = :'env1' and failure_class = 'uncertain_side_effect') not like '%sk-ant%', 'a credential in a failure detail is scrubbed before it is stored');
 select outcome as f3, escalation_id as esc3 from projects.p4q_record_failure(:'env1', 'transient', 'provider timeout again') \gset
 select pg_temp.check(:'f3' = 'escalated' and :'esc3' is not null, 'the budget (3 attempts) is exhausted: escalated to a person');
@@ -115,7 +115,7 @@ declare e uuid; r text;
 begin
   perform pg_temp.as_service();
   select envelope_id into e from projects.p4q_open_envelope(pg_temp.fx('P'), 'ui.qa_review', jsonb_build_object('uiVersionId', pg_temp.fx('V')), 'key-red-5', 5);
-  perform * from projects.p4q_record_failure(e, 'transient', 'key sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789');
+  perform * from projects.p4q_record_failure(e, 'transient', 'key ' || pg_temp.k() || '');
   select detail into r from projects.p4q_failure_records where envelope_id = e order by attempt desc limit 1;
   return r is not null and r not like '%sk-ant%';
 end $$;

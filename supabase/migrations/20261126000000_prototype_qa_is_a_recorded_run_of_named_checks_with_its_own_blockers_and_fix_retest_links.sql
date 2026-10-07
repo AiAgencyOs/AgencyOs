@@ -869,7 +869,7 @@ revoke all on function projects.p4q_prototype_admin_handoff(uuid) from public, a
 grant execute on function projects.p4q_prototype_admin_handoff(uuid) to authenticated;
 
 create or replace function projects.p4q_prototype_qa_overview(p_project_id uuid)
-returns table (artifact_id uuid, deliverable_id uuid, ui_version integer, built_at timestamptz, qa_state text, owner text, blocker text, latest_run_id uuid, latest_run_at timestamptz, checks_failed integer, why text)
+returns table (artifact_id uuid, deliverable_id uuid, ui_version integer, built_at timestamptz, qa_state text, owner text, blocker text, blocker_id uuid, latest_run_id uuid, latest_run_at timestamptz, checks_failed integer, why text)
 language plpgsql stable security definer set search_path = '' as $$
 declare v_org uuid := (select core.current_organization_id());
 begin
@@ -878,7 +878,7 @@ begin
   select a.id, a.deliverable_id, u.version, a.created_at,
          case when b.id is not null then b.kind when r.outcome is not null then r.outcome else 'not_run' end,
          case when b.id is not null then b.owner when r.outcome is null then 'quality_assurance' when r.outcome = 'qa_changes_required' then 'ui_prototype' else 'admin' end,
-         b.reason, r.id, r.started_at, r.checks_failed,
+         b.reason, b.id, r.id, r.started_at, r.checks_failed,
          (select string_agg(c.check_key, ', ' order by c.check_key) from projects.p4q_prototype_qa_checks c where c.run_id = r.id and c.result = 'fail' and c.severity in ('P0', 'P1'))
     from projects.prototype_artifacts a
     join projects.ui_versions u on u.id = a.ui_version_id
@@ -889,5 +889,19 @@ begin
 end $$;
 revoke all on function projects.p4q_prototype_qa_overview(uuid) from public, anon, service_role;
 grant execute on function projects.p4q_prototype_qa_overview(uuid) to authenticated;
+
+-- fixes whose exact build passed the retest and which wait for a person to verify them
+create or replace function projects.p4q_defects_awaiting_verification(p_project_id uuid)
+returns table (defect_id uuid, title text, check_key text, fix_artifact_id uuid, retest_run_id uuid)
+language plpgsql stable security definer set search_path = '' as $$
+declare v_org uuid := (select core.current_organization_id());
+begin
+  if v_org is null or not coalesce((select core.is_internal()), false) then return; end if;
+  return query select pd.defect_id, d.title, pd.check_key, pd.fix_artifact_id, pd.retest_run_id
+    from projects.p4q_prototype_defects pd join qa.defects d on d.id = pd.defect_id
+   where pd.project_id = p_project_id and pd.organization_id = v_org and pd.retest_result = 'pass' and d.status = 'fixed' order by d.created_at;
+end $$;
+revoke all on function projects.p4q_defects_awaiting_verification(uuid) from public, anon, service_role;
+grant execute on function projects.p4q_defects_awaiting_verification(uuid) to authenticated;
 
 notify pgrst, 'reload schema';

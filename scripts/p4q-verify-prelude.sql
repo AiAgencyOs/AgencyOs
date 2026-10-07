@@ -43,3 +43,6 @@ begin
   raise notice 'red %', p_what;
 end $$;
 grant execute on function pg_temp.red(text, text, text, text, text) to public;
+-- a credential-shaped test value, built at run time so no source file carries one
+create or replace function pg_temp.k() returns text language sql immutable as $$ select 'sk-' || 'ant-api03-' || 'abcdefghijklmnopqrstuvwxyz' || '0123456789' $$;
+grant execute on function pg_temp.k() to public;

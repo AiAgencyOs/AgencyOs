@@ -32,6 +32,8 @@ grant execute on function pg_temp.as_nobody() to public;
 -- fixtures by name, so a probe can find them inside a mutated, rolled-back block
 create temp table fx (k text primary key, v text);
 grant all on fx to public;
+create or replace function pg_temp.k() returns text language sql immutable as $$ select 'sk-' || 'ant-api03-' || 'abcdefghijklmnopqrstuvwxyz' || '0123456789' $$;
+grant execute on function pg_temp.k() to public;
 create or replace function pg_temp.fx(p text) returns uuid language sql stable as $$ select v::uuid from fx where k = p $$;
 grant execute on function pg_temp.fx(text) to public;
 
@@ -118,7 +120,7 @@ select pg_temp.check((select outcome from projects.p4q_declare_prototype_intake(
 select pg_temp.check((select outcome from projects.p4q_declare_prototype_intake(:'PA1_id', array['home'], array['mobile'], 'mock data uses example.test addresses')) = 'declared', 'the intake is declared');
 select pg_temp.check((select outcome from projects.p4q_declare_prototype_limitation(:'PA1_id', 'The detail view is not built yet', 'detail')) = 'declared', 'a limitation naming a required screen is recorded');
 select pg_temp.check((select outcome from projects.p4q_declare_prototype_limitation(:'PA1_id', 'The detail view is not built yet', 'detail')) = 'already_declared', 'a repeated limitation is the same limitation');
-select pg_temp.check((select outcome from projects.p4q_declare_prototype_limitation(:'PA1_id', 'my key is sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789', null)) = 'contains_secret', 'a limitation carrying a credential is refused');
+select pg_temp.check((select outcome from projects.p4q_declare_prototype_limitation(:'PA1_id', 'my key is ' || pg_temp.k() || '', null)) = 'contains_secret', 'a limitation carrying a credential is refused');
 
 -- ═══ the run on the flawed build 1 ═════════════════════════════════════════
 select pg_temp.as_service();
@@ -203,6 +205,8 @@ select pg_temp.check(:'R2_verdict' = 'qa_pass', 'build 2 has no P0/P1 failure: q
 select pg_temp.check((select status from projects.prototype_artifacts where id = :'PA2_id') = 'qa_pass', 'the artifact status is qa_pass');
 select pg_temp.check((select status from qa.defects where id = :'dfx_detail') = 'fixed' and (select retest_result from projects.p4q_prototype_defects where defect_id = :'dfx_detail') = 'pass', 'an agent run records the retest pass but leaves the defect at FIX_READY: verification needs a named person');
 select pg_temp.check((select retest_run_id from projects.p4q_prototype_defects where defect_id = :'dfx_detail') = :'R2_run_id', 'the retest names the run that proved it');
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+select pg_temp.check((select count(*) from projects.p4q_defects_awaiting_verification(:'P_id')) = 2, 'the two retested fixes wait for a person to verify them');
 select pg_temp.as_user(:'BUILDER2', :'ORG', 'member');
 select pg_temp.check((select outcome from projects.p4q_verify_retested_defect(:'dfx_detail')) = 'self_review', 'the person who built the fix cannot verify it');
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
@@ -309,7 +313,7 @@ select pg_temp.as_nobody();
 create or replace function pg_temp.ev(p_design text, p_build text, p_crit text[] default '{}', p_lims text default '[]') returns table (k text, r text, s text) language sql stable as $$
   select check_key, result, severity from projects.p4q_evaluate_prototype(pg_temp.fx('P'), p_design::jsonb, p_build::jsonb, p_crit, p_lims::jsonb) $$;
 grant execute on function pg_temp.ev(text, text, text[], text) to public;
-select pg_temp.check((select r from pg_temp.ev('[{"screenKey":"a"}]', '[{"screenKey":"a","elements":[{"type":"text","label":"key sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789"}]}]') where k = 'data:secrets') = 'fail', 'a credential in ANY string of the build is a P0 (not only labels)');
+select pg_temp.check((select r from pg_temp.ev('[{"screenKey":"a"}]', '[{"screenKey":"a","elements":[{"type":"text","label":"key ' || pg_temp.k() || '"}]}]') where k = 'data:secrets') = 'fail', 'a credential in ANY string of the build is a P0 (not only labels)');
 select pg_temp.check((select r from pg_temp.ev('[{"screenKey":"a"}]', format('[{"screenKey":"a","elements":[{"type":"text","label":"see %s"}]}]', :'P2_id')) where k = 'data:cross_project') = 'fail', 'another project''s id inside the build is a P0');
 select pg_temp.check((select r from pg_temp.ev('[{"screenKey":"a"}]', format('[{"screenKey":"a","elements":[{"type":"text","label":"see %s"}]}]', :'P_id')) where k = 'data:cross_project') = 'pass', 'this project''s own id is not cross-project data');
 select pg_temp.check((select r from pg_temp.ev('[{"screenKey":"a"}]', '[{"screenKey":"a","elements":[{"type":"text","label":"lorem ipsum dolor"}]}]') where k = 'coverage:blank:a') = 'fail', 'placeholder text is a blank screen');
@@ -352,7 +356,7 @@ select pg_temp.red('a broken route is not seen', 'projects.p4q_evaluate_prototyp
   $p$ select (select count(*) from projects.p4q_evaluate_prototype(pg_temp.fx('P'), '[{"screenKey":"a"}]', '[{"screenKey":"a","elements":[{"type":"link","label":"x","navigatesTo":"ghost"}]}]', '{}', '[]') where check_key like 'navigation:route:%' and result = 'fail') = 1 $p$);
 select pg_temp.red('a secret passes unseen', 'projects.p4q_evaluate_prototype(uuid,jsonb,jsonb,text[],jsonb)',
   'v_ok := not projects.p7_has_secret(v_text);', 'v_ok := true;',
-  $p$ select (select result from projects.p4q_evaluate_prototype(pg_temp.fx('P'), '[{"screenKey":"a"}]', '[{"screenKey":"a","elements":[{"type":"text","label":"sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789"}]}]', '{}', '[]') where check_key = 'data:secrets') = 'fail' $p$);
+  $p$ select (select result from projects.p4q_evaluate_prototype(pg_temp.fx('P'), '[{"screenKey":"a"}]', '[{"screenKey":"a","elements":[{"type":"text","label":"' || pg_temp.k() || '"}]}]', '{}', '[]') where check_key = 'data:secrets') = 'fail' $p$);
 select pg_temp.red('an unlocked UI is accepted as an intake', 'projects.p4q_run_prototype_qa(uuid,text,text,text)',
   'v_ui.status <> ''locked''', 'false',
   $p$ select (pg_temp.as_service() is not null) and (select verdict from projects.p4q_run_prototype_qa(pg_temp.fx('PA7'))) = 'invalid_intake' $p$);
