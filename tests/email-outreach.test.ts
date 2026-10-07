@@ -238,12 +238,13 @@ describe('the sweep, end to end against a fake mailbox', () => {
     },
   });
 
-  function fakeAdmin(claims: Record<string, unknown>[], org = { timezone: 'Asia/Kolkata', settings: { outreach_window_start_hour: 0, outreach_window_end_hour: 23 } }) {
+  function fakeAdmin(claims: Record<string, unknown>[], org = { timezone: 'Asia/Kolkata', settings: { outreach_window_start_hour: 0, outreach_window_end_hour: 23 } }, rules: { allowed: boolean; reason: string } | 'unreadable' = { allowed: true, reason: 'ok' }) {
     const results: { send: string; outcome: string; error: string }[] = [];
     const admin = {
       schema: (s: string) => ({
         rpc: async (fn: string, args: Record<string, unknown>) => {
           if (fn === 'orgs_with_running_email_campaigns') return { data: [{ organization_id: 'org-1' }], error: null };
+          if (fn === 'p13_notification_decision') return rules === 'unreadable' ? { data: null, error: { message: 'rules unreadable' } } : { data: [rules], error: null };
           if (fn === 'claim_outreach_sends') return { data: claims, error: null };
           if (fn === 'record_outreach_result') { results.push({ send: String(args.p_send_id), outcome: String(args.p_outcome), error: String(args.p_error) }); return { data: [{ outcome: 'recorded' }], error: null }; }
           return { data: null, error: { message: `unexpected rpc ${s}.${fn}` } };
@@ -287,6 +288,26 @@ describe('the sweep, end to end against a fake mailbox', () => {
       assert.match(body, /https:\/\/app\.example\/unsubscribe\//);
     } finally {
       fake.server.close();
+    }
+  });
+
+  test('P1R: the notification rules hold the sweep BEFORE the claim reserves anything (quiet hours, switched off, or unreadable)', async () => {
+    for (const rules of [{ allowed: false, reason: 'quiet_hours' }, { allowed: false, reason: 'disabled' }, 'unreadable'] as const) {
+      const fake = await fakeSmtp();
+      try {
+        for (const k of Object.keys(env)) delete env[k];
+        Object.assign(env, { SMTP_HOST: '127.0.0.1', SMTP_PORT: fake.port, SMTP_SECURE: 'false', SMTP_OUTREACH_USER: 'info@sonushah.com', EMAIL_OUTREACH_FROM: 'info@sonushah.com', VAULT_ENCRYPTION_KEY: 'k'.repeat(32) });
+        secrets.SMTP_OUTREACH_PASS = 'info-pass';
+        const { runOutreach } = await import('../src/modules/crm/outreach/worker.ts');
+        const { admin, results } = fakeAdmin([claim(1, 'asha@example.com')], undefined, rules);
+        const sweep = await runOutreach(admin as never, { now: new Date('2026-10-05T06:00:00Z') });
+        assert.equal(sweep.claimed, 0, 'nothing was reserved');
+        assert.match(sweep.skipped.join(), /held by the notification rules/);
+        assert.equal(fake.seen.rcpt.length, 0);
+        assert.equal(results.length, 0);
+      } finally {
+        fake.server.close();
+      }
     }
   });
 
