@@ -607,8 +607,8 @@ async function main() {
       JSON.stringify(ambiguous),
     );
     check(
-      (await messageState(s4.conversation)).find((m) => m.external_ref.startsWith('followup:'))?.metadata.delivery === 'failed',
-      'and the ambiguous attempt is recorded as failed, not sent',
+      (await messageState(s4.conversation)).find((m) => m.external_ref.startsWith('followup:'))?.metadata.delivery === 'unknown',
+      'and the ambiguous attempt is recorded as UNKNOWN (the request may have gone out), never as sent',
     );
   }
 
