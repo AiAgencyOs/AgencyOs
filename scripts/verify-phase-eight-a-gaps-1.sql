@@ -50,6 +50,21 @@ create or replace function pg_temp.sanctioned(stmt text, needle text) returns bo
 begin perform set_config('projects.p8_sanctioned', 'on', true); return pg_temp.errs(stmt, needle); end $$;
 grant execute on function pg_temp.sanctioned(text, text) to public;
 -- a new request: the correlation id restarts
+-- round 4: a how-to closes only on a citation of an APPROVED article, so a fixture cites one (written as the table owner, like the other fixtures)
+create or replace function pg_temp.p5r_cite_approved(p_ticket uuid) returns void language plpgsql security definer as $$
+declare v_org uuid; v_art uuid; v_u uuid; v_r text;
+begin
+  select t.organization_id into v_org from projects.support_tickets t where t.id = p_ticket;
+  select u.id into v_u from core.users u order by u.id limit 1;
+  if v_org is null or v_u is null then raise exception 'p5r fixture: no ticket or no user'; end if;
+  insert into projects.support_knowledge_articles (organization_id, article_key, version, title, body, status, proposed_by_agent, approved_by, approved_at)
+  values (v_org, 'p5r-' || replace(gen_random_uuid()::text, '-', ''), 1, 'Exporting your data', 'Open Settings, choose Export, pick a format and press the Export button.', 'approved', 'support', v_u, now())
+  returning id into v_art;
+  v_r := projects.p8g_cite(v_org, null, 'support', p_ticket, v_art);
+  if v_r <> 'cited' then raise exception 'p5r fixture: cite returned %', v_r; end if;
+end $$;
+grant execute on function pg_temp.p5r_cite_approved(uuid) to public;
+
 create or replace function pg_temp.new_request() returns void language plpgsql as $$
 begin perform set_config('projects.p8_correlation', '', true); end $$;
 grant execute on function pg_temp.new_request() to public;
@@ -552,7 +567,8 @@ set local role authenticated;
 select outcome as "T5_c" from projects.classify_support_ticket(:'T5_id', 'how_to', 'included_support', 'a how-to question about exports', 'p4', null) \gset
 select outcome as "T5_a" from projects.assign_support_ticket(:'T5_id', :'STAFF') \gset
 select outcome as "T5_p" from projects.advance_support_ticket(:'T5_id', 'in_progress') \gset
-select outcome as "T5_x" from projects.advance_support_ticket(:'T5_id', 'closed', 'Explained the export button', 'knowledge: exports-guide v2') \gset
+select pg_temp.p5r_cite_approved(:'T5_id');
+select outcome as "T5_x" from projects.advance_support_ticket(:'T5_id', 'closed', 'Explained the export button') \gset
 select pg_temp.check(:'T5_c' = 'classified' and :'T5_a' = 'assigned' and :'T5_p' = 'advanced' and :'T5_x' = 'advanced', 'fixture: T5 is a closed how-to');
 select pg_temp.check((select outcome from projects.request_ticket_handoff(:'T5_id', 'quality_assurance', 'Please verify the answer on a closed ticket')) = 'ticket_is_finished', 'a finished ticket is not handed to anyone');
 reset role;
