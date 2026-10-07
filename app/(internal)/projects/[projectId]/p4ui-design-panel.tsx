@@ -1,7 +1,7 @@
 import type { P4uiDesignView } from '@/modules/projects/p4ui-queries';
 import { Badge, Card, humanize } from '@/ui';
 
-import { ConfirmIssueForm, DecidePostLockForm, FigmaRefsForm, RequestPostLockForm, ResolveBlockerForm, RouteFeedbackForm } from './p4ui-forms';
+import { ConfirmIssueForm, DecidePostLockForm, DesignInputsForm, FigmaRefsForm, RequestPostLockForm, ResolveBlockerForm, RouteFeedbackForm } from './p4ui-forms';
 
 /**
  * UID section 18, the Admin surfaces the single overview panel did not cover: overview with the activation reason and the next gate, the Phase 3 baseline
@@ -10,12 +10,22 @@ import { ConfirmIssueForm, DecidePostLockForm, FigmaRefsForm, RequestPostLockFor
  */
 export function P4uiDesignPanel({ projectId, view }: { projectId: string; view: P4uiDesignView }) {
   const { current } = view;
+  const inputsCard = view.phaseFourId ? (
+    <Card className="p-4">
+      <h2 className="text-sm font-semibold">Design inputs{view.designInputs ? ` (revision ${view.designInputs.revision})` : ''}</h2>
+      <p className="mt-1 text-sm text-muted">Brand assets, accessibility and device targets and a planning note, given to the Designer.</p>
+      <div className="mt-2 max-w-xl"><DesignInputsForm projectId={projectId} phaseFourId={view.phaseFourId} current={view.designInputs} /></div>
+    </Card>
+  ) : null;
   if (!current) {
     return (
-      <Card className="p-4">
-        <h2 className="text-sm font-semibold">UI design</h2>
-        <p className="mt-2 text-sm text-muted">No UI version has been drafted for this project yet.</p>
-      </Card>
+      <div className="flex flex-col gap-4">
+        <Card className="p-4">
+          <h2 className="text-sm font-semibold">UI design</h2>
+          <p className="mt-2 text-sm text-muted">No UI version has been drafted for this project yet.</p>
+        </Card>
+        {inputsCard}
+      </div>
     );
   }
   const clientChange = current.status === 'client_change' && !view.feedbackRoutes.some((r) => r.uiVersionId === current.id);
@@ -36,6 +46,8 @@ export function P4uiDesignPanel({ projectId, view }: { projectId: string; view: 
         </dl>
         {view.blockers.length > 0 ? <p className="mt-2 text-sm text-danger">{view.blockers.length} open blocker(s) below.</p> : null}
       </Card>
+
+      {inputsCard}
 
       <Card className="p-4">
         <h2 className="text-sm font-semibold">Phase 3 baseline reused</h2>

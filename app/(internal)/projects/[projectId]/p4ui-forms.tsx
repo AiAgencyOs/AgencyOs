@@ -6,6 +6,7 @@ import { IDLE_STATE } from '@/modules/identity/types';
 import {
   confirmPrototypeDesignIssueAction,
   decidePostLockRevisionAction,
+  recordDesignInputsAction,
   recordFigmaRefsAction,
   requestPostLockRevisionAction,
   resolveDesignBlockerAction,
@@ -127,6 +128,37 @@ export function FigmaRefsForm({ projectId, uiVersionId }: { projectId: string; u
       <input name="pageRef" className={FIELD} placeholder="Page (optional)" />
       <input name="replaceReason" className={FIELD} placeholder="Only if replacing a different file: why" />
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Saving…' : 'Record references'}</button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+export function DesignInputsForm({
+  projectId,
+  phaseFourId,
+  current,
+}: {
+  projectId: string;
+  phaseFourId: string;
+  current: { brandAssets: Array<{ name: string; placeholderApproved: boolean }>; accessibilityTargets: string[]; deviceTargets: string[]; planningNote: string | null } | null;
+}) {
+  const [state, action, pending] = useActionState(recordDesignInputsAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <p className="text-[13px] text-muted">What the Designer is told. A brand asset that is neither stored nor marked as an approved placeholder becomes an open blocker.</p>
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="phaseFourId" value={phaseFourId} />
+      <textarea
+        name="brandAssets"
+        rows={3}
+        className={FIELD}
+        placeholder={'One brand asset per line, e.g.\nClient logo (SVG)\nBrand pattern | placeholder'}
+        defaultValue={current?.brandAssets.map((a) => (a.placeholderApproved ? `${a.name} | placeholder` : a.name)).join('\n') ?? ''}
+      />
+      <input name="accessibility" className={FIELD} placeholder="Accessibility targets, comma-separated (wcag_aa, keyboard_only, screen_reader…)" defaultValue={current?.accessibilityTargets.join(', ') ?? ''} />
+      <input name="devices" className={FIELD} placeholder="Devices, comma-separated (mobile, tablet, desktop, ios, android)" defaultValue={current?.deviceTargets.join(', ') ?? ''} />
+      <textarea name="planningNote" rows={2} className={FIELD} placeholder="Planning note for the Designer (optional)" defaultValue={current?.planningNote ?? ''} />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>{pending ? 'Saving…' : 'Record design inputs'}</button>
       <Message state={state} />
     </form>
   );

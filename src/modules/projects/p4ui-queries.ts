@@ -59,6 +59,10 @@ export type P4uiDesignView = {
   postLockRequests: Array<{ id: string; kind: string; reason: string; status: string }>;
   prototypeIssues: Array<{ id: string; screenKey: string | null; description: string; classification: string; status: string }>;
   feedbackRoutes: Array<{ id: string; uiVersionId: string; classification: string; route: string; reasoning: string }>;
+  /** The Phase 4 workspace, so the Designer's inputs can be recorded before any version exists. */
+  phaseFourId: string | null;
+  /** The planning and brand inputs the Designer is given (P4-UID-015/016); null until a person records them. */
+  designInputs: { brandAssets: Array<{ name: string; placeholderApproved: boolean }>; accessibilityTargets: string[]; deviceTargets: string[]; planningNote: string | null; revision: number } | null;
 };
 
 export async function loadP4uiDesignView(projectId: string): Promise<P4uiDesignView> {
@@ -154,6 +158,29 @@ export async function loadP4uiDesignView(projectId: string): Promise<P4uiDesignV
   const { data: routeRows, error: rErr } = await db.from('p4ui_feedback_routes').select('id, ui_version_id, classification, route, reasoning').eq('project_id', projectId).order('created_at', { ascending: false });
   if (rErr) unreadable('loadP4uiDesignView.routes', rErr);
 
+  const { data: workspace, error: wErr } = await db.from('phase_four').select('id').eq('project_id', projectId).maybeSingle();
+  if (wErr) unreadable('loadP4uiDesignView.workspace', wErr);
+  const phaseFourId = workspace ? String(workspace.id) : null;
+  let designInputs: P4uiDesignView['designInputs'] = null;
+  if (phaseFourId) {
+    const { data: inputRow, error: inErr } = await db
+      .from('p4r_design_inputs')
+      .select('brand_assets, accessibility_targets, device_targets, planning_note, revision')
+      .eq('phase_four_id', phaseFourId)
+      .maybeSingle();
+    if (inErr) unreadable('loadP4uiDesignView.designInputs', inErr);
+    if (inputRow) {
+      const assets = Array.isArray(inputRow.brand_assets) ? (inputRow.brand_assets as Array<Record<string, unknown>>) : [];
+      designInputs = {
+        brandAssets: assets.map((a) => ({ name: String(a.name ?? ''), placeholderApproved: a.placeholderApproved === true })),
+        accessibilityTargets: arr(inputRow.accessibility_targets),
+        deviceTargets: arr(inputRow.device_targets),
+        planningNote: s(inputRow.planning_note),
+        revision: Number(inputRow.revision),
+      };
+    }
+  }
+
   let completeness: P4uiDesignView['completeness'] = null;
   let trace: P4uiDesignView['trace'] = null;
   let coverageGaps: P4uiDesignView['coverageGaps'] = null;
@@ -191,6 +218,8 @@ export async function loadP4uiDesignView(projectId: string): Promise<P4uiDesignV
     postLockRequests: (plRows ?? []).map((p) => ({ id: String(p.id), kind: String(p.kind), reason: String(p.reason), status: String(p.status) })),
     prototypeIssues: (issueRows ?? []).map((i) => ({ id: String(i.id), screenKey: s(i.screen_key), description: String(i.description), classification: String(i.classification), status: String(i.status) })),
     feedbackRoutes: (routeRows ?? []).map((r) => ({ id: String(r.id), uiVersionId: String(r.ui_version_id), classification: String(r.classification), route: String(r.route), reasoning: String(r.reasoning) })),
+    phaseFourId,
+    designInputs,
   };
 }
 
