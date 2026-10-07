@@ -22,6 +22,7 @@ const TABS = [
   { href: '/settings/budget-bands', label: 'Budget bands' },
   { href: '/settings/policy-versions', label: 'Policy versions' },
   { href: '/settings/notification-rules', label: 'Notification rules' },
+  { href: '/settings/lead-scoring', label: 'Lead scoring' },
 ] as const;
 
 /**
