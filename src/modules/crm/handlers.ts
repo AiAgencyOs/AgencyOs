@@ -2104,6 +2104,16 @@ async function projectNameFor(admin: Admin, organizationId: string, projectId: s
 }
 
 /**
+ * P4-PM-018: a UI revision round is a different `ui_version` row (the event's
+ * subject), so the announcement key must include it. Keyed by the workspace
+ * alone, round two's "revised UI ready" and every later change-request
+ * message collapsed into round one's idempotency key and was never sent.
+ */
+export function roundKeyFor(envelope: JobEnvelope): string {
+  return envelope.subjectId ?? (envelope.eventId !== undefined ? `e${envelope.eventId}` : 'round-unknown');
+}
+
+/**
  * `project.phase_four_started` → PM4-M01, Task 1 Complete / Task 2 Start —
  * Impl §8; PM §5. See the module-level comment above these Task 2 handlers
  * for why this announces to the internal group rather than sending the
@@ -2146,7 +2156,7 @@ export async function announceUiVersionAdminReviewed(admin: Admin, job: Announce
 
   return announceToInternalChannel(admin, job, {
     body: uiVersionAdminApprovedAnnouncementFor({ projectName }),
-    externalRef: `ui-version-admin-approved:${event.phaseFourId}`,
+    externalRef: `ui-version-admin-approved:${event.phaseFourId}:${roundKeyFor(envelope)}`,
   });
 }
 
@@ -2173,7 +2183,7 @@ export async function announceUiVersionChangeRequested(admin: Admin, job: Announ
 
   return announceToInternalChannel(admin, job, {
     body: uiVersionChangeRequestedAnnouncementFor({ projectName }),
-    externalRef: `ui-version-change-requested:${event.phaseFourId}`,
+    externalRef: `ui-version-change-requested:${event.phaseFourId}:${roundKeyFor(envelope)}`,
   });
 }
 

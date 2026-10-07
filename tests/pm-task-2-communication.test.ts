@@ -63,8 +63,8 @@ describe('B. each milestone filters to its own moment, not every state change', 
 describe('C. idempotency keys are per-milestone, not shared', () => {
   test('four distinct externalRef prefixes', () => {
     assert.match(handlerFor('announcePhaseFourStarted'), /externalRef: `phase-four-started:\$\{event\.projectId\}`/);
-    assert.match(handlerFor('announceUiVersionAdminReviewed'), /externalRef: `ui-version-admin-approved:\$\{event\.phaseFourId\}`/);
-    assert.match(handlerFor('announceUiVersionChangeRequested'), /externalRef: `ui-version-change-requested:\$\{event\.phaseFourId\}`/);
+    assert.match(handlerFor('announceUiVersionAdminReviewed'), /externalRef: `ui-version-admin-approved:\$\{event\.phaseFourId\}:\$\{roundKeyFor\(envelope\)\}`/);
+    assert.match(handlerFor('announceUiVersionChangeRequested'), /externalRef: `ui-version-change-requested:\$\{event\.phaseFourId\}:\$\{roundKeyFor\(envelope\)\}`/);
     assert.match(handlerFor('announceUiVersionLocked'), /externalRef: `ui-version-locked:\$\{event\.phaseFourId\}`/);
   });
 });
