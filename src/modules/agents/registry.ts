@@ -554,7 +554,7 @@ const SALES: AgentDefinition = {
   // Not 'proposes_for_approval'. ADM-22 permits no agent pricing at any level,
   // and approval does not make it permissible (business rules 08 §5.1).
   moneyAuthority: 'none',
-  handoffTargets: ['project_manager', 'quality_assurance'],
+  handoffTargets: ['project_manager', 'quality_assurance', 'customer_success'],
   mayVerify: false,
   verification: {
     selfAssertionAllowed: false,
@@ -732,7 +732,7 @@ const SUPPORT: AgentDefinition = {
   tools: ['crm.readConversation', 'memory.recall', 'qa.raiseDefect', 'crm.sendClientMessage'],
   clientFacing: true,
   moneyAuthority: 'none',
-  handoffTargets: ['developer', 'quality_assurance'],
+  handoffTargets: ['developer', 'quality_assurance', 'customer_success', 'sales'],
   mayVerify: false,
   verification: {
     selfAssertionAllowed: false,
@@ -756,7 +756,7 @@ const CUSTOMER_SUCCESS: AgentDefinition = {
   tools: ['memory.recall', 'memory.remember', 'crm.addLeadNote', 'crm.sendClientMessage'],
   clientFacing: true,
   moneyAuthority: 'none',
-  handoffTargets: ['sales'],
+  handoffTargets: ['sales', 'support', 'finance'],
   mayVerify: false,
   verification: {
     selfAssertionAllowed: false,
