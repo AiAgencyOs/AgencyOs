@@ -149,7 +149,7 @@ select pg_temp.check(pg_temp.refused(format($$update projects.maintenance_plans 
 select pg_temp.check(pg_temp.refused(format($$update projects.maintenance_plans set ends_on = current_date + 400 where id = %L$$, :'PA_id'), 'moves through its doors'), 'nor given a period by an edit');
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
 set local role authenticated;
-select pg_temp.check(pg_temp.refused(format($$update projects.maintenance_plans set status = 'renewed' where id = %L$$, :'PA_id'), 'moves through its doors'), 'the existing owner write policy no longer moves a lifecycle plan');
+select pg_temp.check(pg_temp.denied(format($$update projects.maintenance_plans set status = 'renewed' where id = %L$$, :'PA_id')), 'a signed-in owner has no raw write on a plan at all: the grant is gone (the lifecycle guard above is the second layer)');
 reset role;
 
 -- ═════════ the client's acceptance, recorded by staff with evidence ═════════

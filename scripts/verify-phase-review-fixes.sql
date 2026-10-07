@@ -28,4 +28,16 @@ select pg_temp.check((select bool_and(pg_get_functiondef(f::regprocedure) like '
   ('projects.build_config_current_version(uuid)'), ('projects.build_run_config_stale(uuid)'), ('projects.p8_setting(uuid,text)')) t(f)),
   'build-config and settings helpers check the caller organisation');
 
+
+select pg_temp.check(not has_table_privilege('authenticated', 'projects.maintenance_plans', 'insert')
+  and not has_table_privilege('authenticated', 'projects.maintenance_plans', 'update')
+  and not has_table_privilege('authenticated', 'projects.maintenance_plans', 'delete'), 'a signed-in session has no raw write on a maintenance plan');
+select pg_temp.check((select count(*) = 5 and bool_and(pg_get_expr(polqual, polrelid) like '%is_finance%') from pg_policy
+  where polrelid in ('finance.maintenance_billing_requests'::regclass, 'finance.maintenance_billing_proposals'::regclass, 'finance.maintenance_billing_decisions'::regclass,
+                     'finance.maintenance_billing_links'::regclass, 'finance.maintenance_gate_exceptions'::regclass) and polcmd = 'r'),
+  'maintenance billing records are readable by owner, ops_admin and finance only');
+
+select pg_temp.check(projects.proposal_forbidden_path(' .env', 'x') = 'secrets', 'a leading space does not hide .env');
+select pg_temp.check(projects.proposal_forbidden_path('app/ .env.local', 'x') = 'secrets', 'a space after a separator does not hide .env');
+select pg_temp.check(projects.proposal_forbidden_path('supabase' || chr(92) || 'migrations' || chr(92) || '1.sql', 'x') = 'migrations' and projects.proposal_forbidden_path('src/app.ts', 'x') is null, 'migrations stay agent-gated and ordinary files pass');
 rollback;
