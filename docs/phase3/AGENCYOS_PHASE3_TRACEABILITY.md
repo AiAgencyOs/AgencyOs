@@ -1,3 +1,5 @@
+> **Superseded (2026-12-04).** This matrix was written on the first audit and is no longer maintained: it lists work as missing that has since been built. The maintained Phase 3 rows, with their evidence and what is still open, are in [`docs/phase-1-3-implementation-traceability.md`](../phase-1-3-implementation-traceability.md). Read this file for the requirement extraction only.
+
 # Phase 3 — requirement traceability and gap matrix
 
 **UI Theme + Color Combination Finalization.** Written from reading the three
