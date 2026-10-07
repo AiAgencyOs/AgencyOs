@@ -64,9 +64,11 @@ test('the kinds the screen offers are the kinds the database accepts', () => {
 });
 
 test('the server files keep their discipline: actions export only async functions, every read checks its error, the page guards and shows no editing to a reader', () => {
-  const actions = readFileSync(new URL('../src/modules/approvals/p13-policy-actions.ts', import.meta.url), 'utf8');
-  assert.match(actions, /^'use server';/);
-  assert.equal([...actions.matchAll(/^export (?!async function)/gm)].length, 0);
+  for (const f of ['p13-policy-actions.ts', 'p13-annotation-actions.ts']) {
+    const actions = readFileSync(new URL(`../src/modules/approvals/${f}`, import.meta.url), 'utf8');
+    assert.match(actions, /^'use server';/);
+    assert.equal([...actions.matchAll(/^export (?!async function)/gm)].length, 0, f);
+  }
   const queries = readFileSync(new URL('../src/modules/approvals/p13-policy-queries.ts', import.meta.url), 'utf8');
   assert.equal([...queries.matchAll(/if \(error\)/g)].length, [...queries.matchAll(/unreadable\(/g)].length);
   const page = readFileSync(new URL('../app/(internal)/settings/policy-versions/page.tsx', import.meta.url), 'utf8');
