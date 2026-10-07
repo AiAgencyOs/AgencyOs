@@ -63,13 +63,14 @@ grant execute on function pg_temp.new_request() to public;
 \set CLIENTU '00000000-0000-4000-8000-00000000fe05'
 \set CLIENTBU '00000000-0000-4000-8000-00000000fe06'
 \set BSTAFF '00000000-0000-4000-8000-00000000fe07'
+\set BADMIN '00000000-0000-4000-8000-00000000fe08'
 
 insert into core.organizations (id, name, slug) values (:'ORGB', 'Other Agency (8a-g1)', 'other-agency-8a-g1') on conflict (id) do nothing;
 insert into auth.users (id, email) values (:'OWNER', 'g1-owner@example.test'), (:'ADMIN', 'g1-admin@example.test'), (:'STAFF', 'g1-staff@example.test'), (:'STAFF2', 'g1-staff2@example.test'),
-  (:'CLIENTU', 'g1-client@example.test'), (:'CLIENTBU', 'g1-clientb@example.test'), (:'BSTAFF', 'g1-bstaff@example.test') on conflict do nothing;
+  (:'CLIENTU', 'g1-client@example.test'), (:'CLIENTBU', 'g1-clientb@example.test'), (:'BSTAFF', 'g1-bstaff@example.test'), (:'BADMIN', 'g1-badmin@example.test') on conflict do nothing;
 insert into core.users (id, email, full_name) values (:'OWNER', 'g1-owner@example.test', 'G1 Owner'), (:'ADMIN', 'g1-admin@example.test', 'G1 Admin'), (:'STAFF', 'g1-staff@example.test', 'G1 Staff'),
-  (:'STAFF2', 'g1-staff2@example.test', 'G1 Staff Two'), (:'CLIENTU', 'g1-client@example.test', 'G1 Client'), (:'CLIENTBU', 'g1-clientb@example.test', 'G1 Client B'), (:'BSTAFF', 'g1-bstaff@example.test', 'G1 Other Staff') on conflict do nothing;
-insert into core.memberships (organization_id, user_id, role) values (:'ORG', :'OWNER', 'owner'), (:'ORG', :'ADMIN', 'ops_admin'), (:'ORG', :'STAFF', 'member'), (:'ORG', :'STAFF2', 'member'), (:'ORGB', :'BSTAFF', 'member')
+  (:'STAFF2', 'g1-staff2@example.test', 'G1 Staff Two'), (:'CLIENTU', 'g1-client@example.test', 'G1 Client'), (:'CLIENTBU', 'g1-clientb@example.test', 'G1 Client B'), (:'BSTAFF', 'g1-bstaff@example.test', 'G1 Other Staff'), (:'BADMIN', 'g1-badmin@example.test', 'G1 Other Admin') on conflict do nothing;
+insert into core.memberships (organization_id, user_id, role) values (:'ORG', :'OWNER', 'owner'), (:'ORG', :'ADMIN', 'ops_admin'), (:'ORG', :'STAFF', 'member'), (:'ORG', :'STAFF2', 'member'), (:'ORGB', :'BSTAFF', 'member'), (:'ORGB', :'BADMIN', 'ops_admin')
   on conflict do nothing;
 select set_config('p8.org', :'ORG', true);
 select set_config('p8.staff', :'STAFF', true);
@@ -337,6 +338,7 @@ set local role authenticated;
 select pg_temp.check((select outcome from projects.set_communication_cadence_rule('relationship', null, 7)) = 'not_authorized', 'NEGATIVE: a member cannot set a cadence');
 select pg_temp.check((select outcome from projects.record_client_communication(:'B_id', 'call', 'relationship', 'Rang the client about the new feature', null, null, now() - interval '3 days')) = 'recorded', 'fixture: a relationship call three days ago');
 select pg_temp.check((select allowed from projects.can_contact_now_with_preferences(:'B_id', 'call', 'relationship', :'BCT_id')), 'with no cadence rule there is no cadence (no default number)');
+select pg_temp.check((select outcome from projects.record_client_communication(:'B_id', 'call', 'commercial', 'Rang the client about an extra module', null, null, now() - interval '1 day')) = 'recorded', 'fixture: a commercial call yesterday');
 reset role;
 select pg_temp.as_user(:'ADMIN', :'ORG', 'ops_admin');
 set local role authenticated;
@@ -358,10 +360,17 @@ select pg_temp.check(:'DR_out' = 'drafted', 'fixture: an agent drafts a contact'
 select pg_temp.as_user(:'ADMIN', :'ORG', 'ops_admin');
 set local role authenticated;
 select pg_temp.check((select outcome from projects.set_communication_cadence_rule('relationship', null, 1)) = 'set', 'rule back on');
-select pg_temp.check((select allowed from projects.can_contact_now_with_preferences(:'A2_id', 'call', 'relationship')), 'a client with no person-sent contact is not held by it (and an agent draft is not a contact)');
+select pg_temp.check((select allowed from projects.can_contact_now_with_preferences(:'A2_id', 'call', 'relationship')), 'a client with no person-sent contact is not held by a cadence');
+select pg_temp.check((select allowed from projects.can_contact_now_with_preferences(:'B_id', 'call', 'relationship', :'BCT_id')), 'and an agent DRAFT is not a contact: the only recent entry for this client is a draft, so the one-day gap does not hold');
 reset role;
 select pg_temp.check(pg_temp.direct(format('update projects.communication_cadence_rules set min_gap_days = 99 where organization_id = %L', :'ORG'), 'through its door'), 'a direct write to a cadence rule is refused');
 select pg_temp.check(not has_function_privilege('service_role', 'projects.set_communication_cadence_rule(text,text,integer)', 'execute'), 'the service role has no cadence door');
+select pg_temp.as_user(:'STAFF', :'ORG', 'member');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.clear_communication_cadence_rule('relationship', null)) = 'not_authorized', 'NEGATIVE: a member cannot clear a cadence');
+select pg_temp.check((select outcome from projects.end_client_designation(:'A_id', 'strategic', 'Trying to end it as a member')) = 'not_authorized', 'NEGATIVE: a member cannot end a designation');
+reset role;
+select pg_temp.check(pg_temp.errs(format('insert into projects.client_strategic_designations (organization_id, client_account_id, designation, criteria, reason, set_by) values (%L, %L, ''strategic'', ''a criteria text'', ''a reason that is long'', %L)', :'ORG', :'A_id', :'ADMIN'), 'client_strategic_designations_one_live'), 'UNIQUE: one live designation per kind (table layer)');
 
 -- ═════════ 8. the approved knowledge base ═════════
 select pg_temp.as_user(:'ADMIN', :'ORG', 'ops_admin');
@@ -409,6 +418,10 @@ select pg_temp.check(:'KA3_out' = 'proposed' and (select proposed_by_agent = 'su
 select pg_temp.check((select outcome from projects.propose_knowledge_article_as_agent(:'ORG', 'customer_success', 'reset-two', 'Another one', 'Choose Forgot password on the sign in page and follow the email link we send you.')) = 'not_the_support_agent', 'no other agent proposes knowledge');
 select pg_temp.check((select outcome from projects.propose_knowledge_article_as_agent(gen_random_uuid(), 'support', 'reset-three', 'Another one', 'Choose Forgot password on the sign in page and follow the email link we send you.')) = 'not_found', 'an unknown organization');
 select pg_temp.check((select status from projects.support_knowledge_articles where id = :'KA3_id') = 'draft', 'an agent''s draft is not approved by being written');
+select pg_temp.as_user(:'BADMIN', :'ORGB', 'ops_admin');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.approve_knowledge_article(:'KA3_id')) = 'not_found', 'an Admin of ANOTHER organization cannot approve this draft');
+reset role;
 select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
 set local role authenticated;
 select pg_temp.check((select outcome from projects.approve_knowledge_article(:'KA3_id')) = 'approved', 'an Admin approves the agent''s draft');
@@ -533,6 +546,16 @@ select outcome as "T3_adv" from projects.advance_support_ticket(:'T3_id', 'in_pr
 select pg_temp.check(:'T3_asg' = 'assigned' and :'T3_adv' = 'advanced', 'fixture: T3 is in progress');
 select pg_temp.check((select outcome from projects.request_ticket_handoff(:'T3_id', 'quality_assurance', 'Please verify the answer given on this ticket')) = 'requested', 'once in progress, QA can be asked');
 reset role;
+select pg_temp.ticket(:'PA_id', 'G1-T5') as "T5_id" \gset
+select pg_temp.as_user(:'STAFF', :'ORG', 'member');
+set local role authenticated;
+select outcome as "T5_c" from projects.classify_support_ticket(:'T5_id', 'how_to', 'included_support', 'a how-to question about exports', 'p4', null) \gset
+select outcome as "T5_a" from projects.assign_support_ticket(:'T5_id', :'STAFF') \gset
+select outcome as "T5_p" from projects.advance_support_ticket(:'T5_id', 'in_progress') \gset
+select outcome as "T5_x" from projects.advance_support_ticket(:'T5_id', 'closed', 'Explained the export button', 'knowledge: exports-guide v2') \gset
+select pg_temp.check(:'T5_c' = 'classified' and :'T5_a' = 'assigned' and :'T5_p' = 'advanced' and :'T5_x' = 'advanced', 'fixture: T5 is a closed how-to');
+select pg_temp.check((select outcome from projects.request_ticket_handoff(:'T5_id', 'quality_assurance', 'Please verify the answer on a closed ticket')) = 'ticket_is_finished', 'a finished ticket is not handed to anyone');
+reset role;
 select pg_temp.as_service();
 select pg_temp.check((select outcome from projects.request_ticket_handoff_as_agent(:'ORG', 'support', :'T3_id', 'developer', 'A how-to question is not a developer task')) = 'classification_does_not_need_a_developer', 'and the agent door says the same');
 select pg_temp.as_user(:'STAFF', :'ORG', 'member');
@@ -568,7 +591,8 @@ select pg_temp.check((select count(*) from projects.cs_next_actions() where subj
 select pg_temp.check((select count(*) from projects.cs_next_actions() where action_kind = 'scope_reference_to_confirm') = 0, 'a confirmed scope reference is not a next action');
 reset role;
 select pg_temp.as_service();
-select pg_temp.check((select outcome from projects.propose_ticket_scope_reference_as_agent(:'ORG', 'support', :'T3_id', 'outside_scope', null, 'The how-to question mentions a feature the scope does not name')) = 'proposed', 'fixture: an unconfirmed proposal');
+select outcome as "SR2_out", reference_id as "SR2_id" from projects.propose_ticket_scope_reference_as_agent(:'ORG', 'support', :'T3_id', 'outside_scope', null, 'The how-to question mentions a feature the scope does not name') \gset
+select pg_temp.check(:'SR2_out' = 'proposed', 'fixture: an unconfirmed proposal');
 select outcome as "CI_out" from projects.create_check_in(:'PA_id', 'adoption', 'g1-adoption', current_date, null, null, :'ORG') \gset
 select pg_temp.check(:'CI_out' = 'created', 'fixture: a check-in due today');
 select response_breaches as "SW_resp" from projects.sweep_support_sla(:'ORG', now() + interval '400 hours') \gset
@@ -640,7 +664,7 @@ reset role;
 select pg_temp.check((select count(*) from sales.opportunities where organization_id = :'ORG') = :'SALES_deals_before'::bigint, 'no deal was opened or changed by the brief doors');
 select pg_temp.check(pg_temp.direct(format('update projects.sales_discovery_briefs set summary = %L where id = %L', 'A summary rewritten by hand with enough length', :'B2_id'), 'through its door'), 'no direct write to a brief');
 select pg_temp.check(pg_temp.errs(format('insert into projects.sales_discovery_briefs (organization_id, opportunity_id, version, summary, questions, context_refs, drafted_by_agent) values (%L, %L, 9, ''We can give them a discount on it, say twenty percent'', ''["What reports do you need each month?"]'', ''{}'', ''sales'')', :'ORG', :'OP_id'), 'discovery_brief_names_no_price'), 'CHECK: no price in a brief (table layer)');
-select pg_temp.check(pg_temp.errs(format('insert into projects.sales_discovery_briefs (organization_id, opportunity_id, version, summary, questions, context_refs, drafted_by_agent, status) values (%L, %L, 10, ''A summary that is certainly long enough'', ''["What reports do you need each month?"]'', ''{}'', ''sales'', ''reviewed'')', :'ORG', :'OP_id'), 'discovery_brief_reviewed_is_a_person'), 'CHECK: reviewed means a person reviewed (table layer)');
+select pg_temp.check(pg_temp.errs(format('insert into projects.sales_discovery_briefs (organization_id, opportunity_id, version, summary, questions, context_refs, drafted_by_agent, status) values (%L, %L, 20, ''A summary that is certainly long enough'', ''["What reports do you need each month?"]'', ''{}'', ''sales'', ''reviewed'')', :'ORG', :'OP_id'), 'discovery_brief_reviewed_is_a_person'), 'CHECK: reviewed means a person reviewed (table layer)');
 
 -- ═════════ 13. E2E-14: the metrics reconcile ═════════
 select pg_temp.as_user(:'ADMIN', :'ORG', 'ops_admin');
@@ -660,6 +684,31 @@ select pg_temp.check((select count(*) from projects.customer_success_overview())
 select pg_temp.check((select coalesce(sum(n), 0) from projects.phase_eight_observability() where metric = 'opportunities_by_stage' and bucket = 'qualified')
                      = (select count(*) from projects.cs_next_actions() where action_kind = 'opportunity_to_hand_off'), 'RECONCILE: qualified opportunities agree between observability and the queue');
 reset role;
+
+-- ═════════ 13b. every door refuses the wrong caller (called with a CLIENT's identity and, for agent doors, a signed-in person's) ═════════
+select pg_temp.as_client(:'CLIENTU', :'ORG', :'A_id');
+select pg_temp.check((select outcome from projects.acknowledge_client_feedback(:'CF1_id', 'trying to acknowledge as a client')) = 'not_authorized', 'a client cannot acknowledge feedback');
+select pg_temp.check((select outcome from projects.set_client_contact_preferences(:'B_id', 'whatsapp', 'hi')) = 'not_authorized', 'a client cannot set another client''s preferences');
+select pg_temp.check((select outcome from projects.propose_knowledge_article('client-written', 'Written by a client', 'A body that is long enough to pass every length check')) = 'not_authorized', 'a client cannot propose knowledge');
+select pg_temp.check((select outcome from projects.cite_knowledge_for_ticket(:'T3_id', :'KA2_id')) = 'not_authorized', 'a client cannot cite knowledge');
+select pg_temp.check((select outcome from projects.record_ticket_scope_reference(:'T3_id', 'unclear', null, 'A client trying to write a scope reference')) = 'not_authorized', 'a client cannot record a scope reference');
+select pg_temp.check((select outcome from projects.confirm_ticket_scope_reference(:'SR2_id')) = 'not_authorized', 'a client cannot confirm a scope reference');
+select pg_temp.check((select outcome from projects.request_ticket_handoff(:'T3_id', 'developer', 'A client trying to ask for a developer')) = 'not_authorized', 'a client cannot request a handoff');
+select pg_temp.check((select outcome from projects.settle_ticket_handoff(:'H1_id', 'acknowledged')) = 'not_authorized', 'a client cannot settle a handoff');
+select pg_temp.check((select outcome from projects.review_discovery_brief(:'B2_id')) = 'not_authorized', 'a client cannot review a brief');
+select pg_temp.check((select count(*) from projects.cs_next_actions()) = 0, 'a client gets no next actions even where row security would not stop it');
+select pg_temp.as_user(:'STAFF', :'ORG', 'member');
+select pg_temp.check((select outcome from projects.propose_knowledge_article_as_agent(:'ORG', 'support', 'person-written', 'Written by a person', 'A body that is long enough to pass every length check')) = 'not_service', 'a signed-in person is refused by the agent knowledge door itself');
+select pg_temp.check((select outcome from projects.cite_knowledge_for_ticket_as_agent(:'ORG', 'support', :'T3_id', :'KA2_id')) = 'not_service', 'and by the agent citation door');
+select pg_temp.check((select outcome from projects.propose_ticket_scope_reference_as_agent(:'ORG', 'support', :'T3_id', 'unclear', null, 'A person using the agent door')) = 'not_service', 'and by the agent scope door');
+select pg_temp.check((select outcome from projects.request_ticket_handoff_as_agent(:'ORG', 'support', :'T3_id', 'quality_assurance', 'A person using the agent door')) = 'not_service', 'and by the agent handoff door');
+select pg_temp.check((select outcome from projects.record_discovery_brief_draft(:'ORG', :'OP_id', 'sales', 'A person using the agent door to write a brief', '["What reports do you need each month?"]', '{}')) = 'not_service', 'and by the discovery brief door');
+select pg_temp.as_user(:'BSTAFF', :'ORGB', 'member');
+select pg_temp.check((select outcome from projects.review_discovery_brief(:'B2_id')) = 'not_found', 'another organization cannot review this brief');
+reset role;
+select pg_temp.check(pg_temp.errs(format('insert into projects.support_handoff_requests (organization_id, ticket_id, target, reason, payload, requested_by) values (%L, %L, ''developer'', ''a reason that is long enough'', ''{}'', %L)', :'ORG', :'T1_id', :'STAFF'), 'support_handoff_requests_one_live'), 'UNIQUE: one live request per ticket and target (table layer)');
+insert into projects.sales_discovery_briefs (organization_id, opportunity_id, version, summary, questions, context_refs, drafted_by_agent) values (:'ORG', :'OP_id', 10, 'A first live draft for the same opportunity', '["What reports do you need each month?"]', '{}', 'sales');
+select pg_temp.check(pg_temp.errs(format('insert into projects.sales_discovery_briefs (organization_id, opportunity_id, version, summary, questions, context_refs, drafted_by_agent) values (%L, %L, 11, ''A second live draft for the same opportunity'', ''["What reports do you need each month?"]'', ''{}'', ''sales'')', :'ORG', :'OP_id'), 'sales_discovery_briefs_one_draft'), 'UNIQUE: one live draft per opportunity (table layer)');
 
 -- ═════════ 14. structure, grants and tenancy ═════════
 create temp table g1_tables (tbl text);
