@@ -160,3 +160,60 @@ export async function readUiVersionsForShare(projectId: string): Promise<UiVersi
   if (error) unreadable('readUiVersionsForShare', error);
   return ((data ?? []) as UiVersionForShare[]).filter((v) => v.status === 'admin_approved' || v.status === 'client_review');
 }
+
+// ── Phase 4 round 4 (migration 20261202000000) ──────────────────────────────────────────────────────────────────────────────────────────────
+
+export type DefectBoardRow = {
+  defect_id: string;
+  title: string;
+  priority: string;
+  check_key: string;
+  screen_key: string | null;
+  lifecycle: string;
+  artifact_id: string;
+  fix_artifact_id: string | null;
+  deferral_reason: string | null;
+  deferred_until: string | null;
+};
+
+/** QAP-019: every prototype defect of the project with its lifecycle state (open, fix_ready, qa_retest, retest_passed, verified, deferred, wont_fix). */
+export async function readPrototypeDefectBoard(projectId: string): Promise<DefectBoardRow[]> {
+  const { data, error } = await (await client()).schema('projects').rpc('p4s_prototype_defect_board', { p_project_id: projectId });
+  if (error) unreadable('readPrototypeDefectBoard', error);
+  return (data ?? []) as DefectBoardRow[];
+}
+
+export type QaEvidenceRow = { id: string; kind: string; file_name: string; storage_path: string; size_bytes: number; check_key: string | null; defect_id: string | null; note: string | null; created_at: string };
+
+/** QAP-043: the uploaded files that belong to one QA run. */
+export async function readQaEvidence(runId: string): Promise<QaEvidenceRow[]> {
+  const { data, error } = await (await client())
+    .schema('projects')
+    .from('p4s_prototype_qa_evidence')
+    .select('id, kind, file_name, storage_path, size_bytes, check_key, defect_id, note, created_at')
+    .eq('run_id', runId)
+    .order('created_at', { ascending: true });
+  if (error) unreadable('readQaEvidence', error);
+  return (data ?? []) as QaEvidenceRow[];
+}
+
+export type TraceabilityRow = {
+  scope_item_id: string;
+  requirement: string;
+  feature_id: string | null;
+  feature: string | null;
+  screen_key: string | null;
+  screen_designed: boolean | null;
+  designed_states: string[] | null;
+  screen_built: boolean | null;
+  built_elements: number | null;
+  qa_result: string | null;
+  gap: string | null;
+};
+
+/** QAP-004: Requirement -> Feature -> Screen -> designed states -> built screen -> the QA check on that screen, with the gaps named. */
+export async function readPrototypeTraceability(artifactId: string): Promise<TraceabilityRow[]> {
+  const { data, error } = await (await client()).schema('projects').rpc('p4s_prototype_traceability', { p_artifact_id: artifactId });
+  if (error) unreadable('readPrototypeTraceability', error);
+  return (data ?? []) as TraceabilityRow[];
+}

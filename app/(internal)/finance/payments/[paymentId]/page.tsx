@@ -72,7 +72,7 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
             { label: 'Reference', value: <span className="font-mono text-xs">{payment.reference}</span> },
             { label: 'Captured', value: payment.capturedAt ? clock.dateTime(payment.capturedAt) : '—' },
             { label: 'Verified', value: payment.verifiedAt ? `${clock.dateTime(payment.verifiedAt)}${payment.verifiedByName ? ` by ${payment.verifiedByName}` : ''}` : 'Not yet' },
-            { label: 'Receipt', value: payment.receipt ? <span className="font-mono text-xs">{payment.receipt.number} · {clock.date(payment.receipt.issuedAt)}</span> : 'None until verified' },
+            { label: 'Receipt', value: payment.receipt ? <Link href={`/finance/receipts/${payment.receipt.id}`} className="font-mono text-xs text-brand hover:underline">{payment.receipt.number} · {clock.date(payment.receipt.issuedAt)}</Link> : 'None until verified' },
           ]}
         />
         <DetailPanel

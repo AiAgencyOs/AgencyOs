@@ -211,10 +211,10 @@ describe('E. PM4 templates: versioned, matched to the announcers, free of provid
     task2CompleteAnnouncementFor({ projectName: 'Acme' }),
     m2PaymentVerifiedAnnouncementFor({ projectName: 'Acme' }),
   ];
-  test('eight templates, each a positive version', () => {
-    assert.equal(Object.keys(PM4_TEMPLATES).length, 8);
+  test('nine templates (eight milestones plus PM4-QA-BLOCKED), each a positive version', () => {
+    assert.equal(Object.keys(PM4_TEMPLATES).length, 9);
     for (const t of Object.values(PM4_TEMPLATES)) assert.ok(t.version >= 1);
-    assert.deepEqual(Object.values(PM4_TEMPLATES).map((t) => t.milestone).sort(), ['PM4-M01', 'PM4-M02', 'PM4-M03', 'PM4-M04', 'PM4-M05', 'PM4-M06', 'PM4-M07', 'PM4-M08']);
+    assert.deepEqual(Object.values(PM4_TEMPLATES).map((t) => t.milestone).sort(), ['PM4-M01', 'PM4-M02', 'PM4-M03', 'PM4-M04', 'PM4-M05', 'PM4-M06', 'PM4-M07', 'PM4-M08', 'PM4-QA-BLOCKED']);
   });
   test('every key is the externalRef prefix an announcer really writes', () => {
     const handlers = read('src/modules/crm/handlers.ts');

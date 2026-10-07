@@ -43,7 +43,7 @@ export type SentMessage = { providerRef: string };
  */
 export type SendResult =
   | { ok: true; providerRef: string }
-  | { ok: false; permanent: boolean; message: string };
+  | { ok: false; permanent: boolean; message: string; uncertain?: boolean };
 
 /**
  * Send one text message.
@@ -117,7 +117,7 @@ export async function sendWhatsAppText(input: {
     // written first.
     const detail = cause instanceof Error ? cause.message : 'unknown';
     console.error(JSON.stringify({ level: 'error', scope: 'sendWhatsAppText', detail }));
-    return { ok: false, permanent: false, message: 'WhatsApp could not be reached.' };
+    return { ok: false, permanent: false, uncertain: true, message: 'WhatsApp could not be reached.' };
   }
 
   const text = await response.text();
@@ -158,7 +158,7 @@ export async function sendWhatsAppText(input: {
         detail: `accepted with no message id: ${text.slice(0, 200)}`,
       }),
     );
-    return { ok: false, permanent: false, message: 'WhatsApp accepted the message without identifying it.' };
+    return { ok: false, permanent: false, uncertain: true, message: 'WhatsApp accepted the message without identifying it.' };
   }
 
   return { ok: true, providerRef };
@@ -323,7 +323,7 @@ export async function sendWhatsAppDocument(input: {
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : 'unknown';
     console.error(JSON.stringify({ level: 'error', scope: 'sendWhatsAppDocument', detail }));
-    return { ok: false, permanent: false, message: 'WhatsApp could not be reached.' };
+    return { ok: false, permanent: false, uncertain: true, message: 'WhatsApp could not be reached.' };
   }
 
   const text = await response.text();
@@ -357,7 +357,7 @@ export async function sendWhatsAppDocument(input: {
         detail: `accepted with no message id: ${text.slice(0, 200)}`,
       }),
     );
-    return { ok: false, permanent: false, message: 'WhatsApp accepted the document without identifying it.' };
+    return { ok: false, permanent: false, uncertain: true, message: 'WhatsApp accepted the document without identifying it.' };
   }
 
   return { ok: true, providerRef };
@@ -450,7 +450,7 @@ export async function sendWhatsAppTemplate(input: {
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : 'unknown';
     console.error(JSON.stringify({ level: 'error', scope: 'sendWhatsAppTemplate', detail }));
-    return { ok: false, permanent: false, message: 'WhatsApp could not be reached.' };
+    return { ok: false, permanent: false, uncertain: true, message: 'WhatsApp could not be reached.' };
   }
 
   const text = await response.text();
@@ -491,7 +491,7 @@ export async function sendWhatsAppTemplate(input: {
         detail: `accepted with no message id: ${text.slice(0, 200)}`,
       }),
     );
-    return { ok: false, permanent: false, message: 'WhatsApp accepted the template without identifying it.' };
+    return { ok: false, permanent: false, uncertain: true, message: 'WhatsApp accepted the template without identifying it.' };
   }
 
   return { ok: true, providerRef };

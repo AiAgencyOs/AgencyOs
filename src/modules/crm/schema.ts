@@ -2057,6 +2057,22 @@ export function buildRevisedAnnouncementFor(input: { projectName: string | null;
   ].join('\n');
 }
 
+/**
+ * PM4-QA-BLOCKED - Prototype QA could not reach a verdict. Internal channel only. The wording is neutral and states only what the record holds: that QA did not
+ * reach a verdict, which of the two causes it was, and that the build is neither approved nor shown to the client. WORDING PENDING OWNER APPROVAL
+ * (docs/phase-4-manual-actions.md); change the text and raise the PM4 template version in `src/modules/p4q/pm4-templates.ts` together.
+ */
+export const prototypeQaBlockedEventSchema = z.object({ projectId: z.uuid(), kind: z.enum(['blocked_external', 'invalid_intake']) }).strip();
+export function prototypeQaBlockedAnnouncementFor(input: { projectName: string | null; kind: 'blocked_external' | 'invalid_intake' }): string {
+  return [
+    input.kind === 'invalid_intake'
+      ? 'Prototype QA did not reach a verdict: the build has no locked UI version to be checked against.'
+      : 'Prototype QA did not reach a verdict: something outside the build was not available.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'The build is not approved and has not been shown to the client. A blocker with an owner is recorded; QA runs again once a person records it as resolved.',
+  ].join('\n');
+}
+
 export const PM_TEMPLATES: Readonly<Record<string, { milestone: string; version: number }>> = {
   ...PM4_TEMPLATES,
   'phase-five-started': { milestone: 'PM5-M01', version: 1 },

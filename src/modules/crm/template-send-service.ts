@@ -11,6 +11,7 @@ import type { CampaignRefusalReason } from './campaign-types';
 import { markAsOutreach, outreachAllowance, readWindowState } from './outbound-window';
 import { resolveTemplateParameters, type ParameterSubject } from './template-parameters';
 import { describeTemplateSend, sendTemplateMessageSchema, type SendTemplateMessageInput } from './template-send-schema';
+import { deliveryStatusOf } from '@/lib/whatsapp/delivery-status';
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -188,7 +189,7 @@ export async function sendTemplateToConversation(
 
   const settled = await client.schema('crm').rpc('mark_outbound_delivery', {
     p_message_id: messageId,
-    p_status: sent.ok ? 'sent' : 'failed',
+    p_status: deliveryStatusOf(sent),
     ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
   });
   if (settled.error) {

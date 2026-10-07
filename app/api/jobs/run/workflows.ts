@@ -163,6 +163,7 @@ import {
   type Admin as AdminClient,
   type AgentContext,
 } from './agent-run';
+import { deliveryStatusOf } from '@/lib/whatsapp/delivery-status';
 
 /**
  * What one message says, for a workflow that reads a single one rather than a
@@ -6336,7 +6337,7 @@ const CLIENT_REPLY: AgentWorkflow = {
 
     await admin.schema('crm').rpc('mark_outbound_delivery', {
       p_message_id: outboundId,
-      p_status: sent.ok ? 'sent' : 'failed',
+      p_status: deliveryStatusOf(sent),
       ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
     });
 
