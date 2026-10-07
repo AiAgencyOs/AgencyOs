@@ -203,6 +203,9 @@ select pg_temp.check(:'SY_o' = 'synced' and (select status from projects.p4ui_pr
 select pg_temp.check((select outcome from projects.send_prototype_for_client_review(:'A2_d', null, 'build 3')) = 'submitted', 'the PM shares the exact build (existing door)');
 select outcome as o from projects.p4ui_sync_build_status(:'B3_b') \gset SY_
 select pg_temp.check(:'SY_o' = 'synced' and (select status from projects.p4ui_prototype_builds where id = :'B3_b') = 'client_review', 'the build reflects client_review');
+reset role;
+select pg_temp.check(pg_temp.fails_with($q$update projects.p4ui_prototype_builds set status = 'locked' where id = '$q$ || :'B3_b' || $q$'$q$, '23514'), 'NEGATIVE: a build in client review cannot be locked until the client''s approval exists (the gate, not just the edge)');
+set local role authenticated;
 select projects.p4ui_prototype_client_notice(:'A2_d') as notice \gset
 select pg_temp.check((select (:'notice'::jsonb ->> 'label') like '%simulated data and a simulated sign-in%' and (:'notice'::jsonb -> 'limitations') @> '["sign-in is simulated"]'::jsonb), 'the client view carries the simulated/not-production label and the limitations');
 select id as "RB_id" from approvals.approval_requests where subject_type = 'deliverable' and subject_id = :'A2_d' \gset
