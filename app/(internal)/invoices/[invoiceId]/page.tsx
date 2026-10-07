@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { accountsOnInvoice } from '@/modules/finance/p4q-snapshot-accounts';
 import { readInvoicePaymentSnapshot } from '@/modules/finance/p4q-finance-queries';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -118,7 +119,8 @@ export default async function InvoicePage({
     listInvoiceReminders(invoiceId),
     readInvoiceReminderPolicy(),
   ]);
-  const receivingAccounts = accounts.filter((a) => a.status === 'active');
+  // The accounts this invoice was issued with that are still active; the active ones when it has no snapshot or none of them is active any more.
+  const receivingAccounts = accountsOnInvoice(accounts, issuedAccounts.length > 0 ? issuedAccounts.map((a) => a.accountId) : null);
   // SCR-051: the email transport's own state (configured or the words about
   // what is missing) and the client's billing address as the default recipient.
   const transportState = mayIssueInvoice ? await emailTransportState() : null;

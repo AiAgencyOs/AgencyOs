@@ -149,8 +149,45 @@ describe('W-F6 reminders are scheduled by stage and marked after each settled cl
   test('the worker schedules first and marks on all five outcomes (sent, no thread, send error, refused, emit error)', () => {
     const src = read('src/modules/finance/reminder-worker.ts');
     const body = region(src, 'export async function runInvoiceReminders');
-    assert.ok(body.indexOf('await scheduleReminderStages(admin)') < body.indexOf("rpc('observe_invoice_reminder_candidates'"));
+    const scheduled = body.indexOf('await scheduleReminderStages(admin)');
+    assert.ok(scheduled >= 0 && scheduled < body.indexOf("rpc('observe_invoice_reminder_candidates'"));
     assert.equal(body.match(/await markInvoiceReminder\(admin, row\.invoice_id, 'failed'/g)?.length, 4);
     assert.equal(body.match(/await markInvoiceReminder\(admin, row\.invoice_id, 'sent'\)/g)?.length, 1);
+  });
+});
+
+// ── W-F3: the documents show the accounts the invoice was issued with ────────────────────────────────────────────────────────────────────────────
+import { accountsOnInvoice, readSnapshotAccountIds } from '../src/modules/finance/p4q-snapshot-accounts.ts';
+
+describe('W-F3 the receiving accounts an invoice document prints', () => {
+  const acct = (id: string, status = 'active') => ({ id, status });
+  const [a, b, c] = [acct('a'), acct('b'), acct('c', 'archived')];
+
+  test('the snapshot’s accounts that are still active; one added after issue is not printed', () => {
+    assert.deepEqual(accountsOnInvoice([a, b], ['a']), [a]);
+  });
+
+  test('an account that closed since issue is not printed; if none is left the active ones are (a client is never sent nowhere)', () => {
+    assert.deepEqual(accountsOnInvoice([a, b, c], ['a', 'c']), [a]);
+    assert.deepEqual(accountsOnInvoice([a, b, c], ['c']), [a, b]);
+  });
+
+  test('no snapshot (draft, old invoice, or a reader the row security does not admit) prints the active accounts exactly as before', () => {
+    assert.deepEqual(accountsOnInvoice([a, b, c], null), [a, b]);
+    assert.deepEqual(accountsOnInvoice([a, b, c], []), [a, b]);
+  });
+
+  test('the snapshot is read by invoice and an unreadable one is "no snapshot"', async () => {
+    const ok = fake({ 'finance.p4q_payment_instruction_snapshots': [{ invoice_id: 'inv', accounts: [{ accountId: 'a' }, { accountId: 'b' }] }] }, {});
+    assert.deepEqual(await readSnapshotAccountIds(ok.admin, 'inv'), ['a', 'b']);
+    assert.equal(await readSnapshotAccountIds(ok.admin, 'other'), null);
+    assert.equal(await readSnapshotAccountIds({}, 'inv'), null);
+  });
+
+  test('the PDF, the WhatsApp message, the delivery job and the invoice page all use it', () => {
+    assert.match(read('src/modules/finance/pdf-service.ts'), /receivingAccounts: accountsOnInvoice\(accounts, await readSnapshotAccountIds\(supabase, invoice\.id\)\)/);
+    assert.match(read('src/modules/finance/whatsapp-send-service.ts'), /receivingAccounts: accountsOnInvoice\(accounts, await readSnapshotAccountIds\(supabase, invoice\.id\)\)/);
+    assert.match(read('src/modules/finance/invoice-delivery.ts'), /receivingAccounts: accountsOnInvoice\(accounts, await readSnapshotAccountIds\(admin, invoice\.id\)\)/);
+    assert.match(read('app/(internal)/invoices/[invoiceId]/page.tsx'), /const receivingAccounts = accountsOnInvoice\(accounts, issuedAccounts\.length > 0 \? issuedAccounts\.map\(\(a\) => a\.accountId\) : null\);/);
   });
 });

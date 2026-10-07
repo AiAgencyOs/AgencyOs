@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { accountsOnInvoice, readSnapshotAccountIds } from './p4q-snapshot-accounts';
 import type { createAdminClient } from '@/lib/db/admin';
 import { emailTransportState, sendEmail } from '@/lib/email/transport';
 import { OUTBOUND_PAUSED } from '@/modules/crm/kill-switch';
@@ -224,8 +225,7 @@ async function deliverOnWhatsApp(admin: Admin, invoice: InvoiceRow): Promise<Cha
     dueAt: invoice.due_at,
     timeZone: org.timezone ?? 'UTC',
     projectName: project.data?.name ?? null,
-    receivingAccounts: accounts
-      .filter((a) => a.status === 'active')
+    receivingAccounts: accountsOnInvoice(accounts, await readSnapshotAccountIds(admin, invoice.id))
       .map((a) => ({
         label: a.label,
         fields: PAYMENT_ACCOUNT_FIELDS[a.kind as PaymentAccountKind]
