@@ -10,7 +10,7 @@ stated), **MANUAL_EXTERNAL** (needs an owner, a provider or a deployment: see `p
 
 Evidence key: `V` = `scripts/verify-phase-eight-a.sql` (275+ checks through the real doors on a scratch Postgres), `R` = `scripts/redproof/phase-eight-a.py` (44
 controls, each removed from the live definition inside the verifier's own transaction and confirmed to turn it red), `T-found` = `tests/phase-eight-a-foundation.test.ts`,
-`T-wf` = `tests/phase-eight-cs-workflows.test.ts`, `T-pm` = `tests/phase-eight-pm-templates.test.ts`, `V8D` = `scripts/verify-phase-eight-d.sql`, `R8D` = `scripts/redproof/phase-eight-d.py` (Phase 8D, section 19).
+`T-wf` = `tests/phase-eight-cs-workflows.test.ts`, `T-pm` = `tests/phase-eight-pm-templates.test.ts`, `V8D` = `scripts/verify-phase-eight-d.sql`, `R8D` = `scripts/redproof/phase-eight-d.py` (Phase 8D, section 19), `G2` = `scripts/verify-phase-eight-a-gaps2.sql` (177 checks, Phase 8A second half, section 20), `GR2` = `scripts/redproof/phase-eight-a-gaps2.py` (106 controls), `T-g2` = `tests/phase-eight-a-gaps2.test.ts`.
 
 ## 1. Master plan, sections 1 to 4
 
@@ -110,9 +110,9 @@ controls, each removed from the live definition inside the verifier's own transa
 | 14 | E2E-10 repeated need to separate change request/new project | PARTIAL | detected, qualified, handed to Sales, accepted as a separate change request; the quote step is the existing sales doors, not driven here |
 | 14 | E2E-11 opt-out | EXISTS | commercial and relationship held, operational continues (V); nothing sends |
 | 14 | E2E-12 duplicate events | EXISTS | for tickets, opportunities, check-ins, events, sweeps |
-| 14 | E2E-13 cross-tenant | PARTIAL | denied (V); the denial itself is not audited |
-| 14 | E2E-14 metrics reconcile | PARTIAL | overview and per-project health come from the same functions (V); no metric reconciliation suite |
-| 14 | E2E-15 worker/provider failure | PARTIAL | agent workflows fail honestly and never write on a bad answer (T-wf); the runner owns retry/DLQ |
+| 14 | E2E-13 cross-tenant | EXISTS | denied (V) and now audited: `projects.probe_tenant_access` answers a record of another tenant exactly like a missing one and writes `access.cross_tenant_denied` in the caller's organization (G2, GR2) |
+| 14 | E2E-14 metrics reconcile | EXISTS | `projects.reconcile_phase_eight_metrics` counts ten figures two ways (observability and overview) and returns every disagreement; `/projects/customer-success/reconciliation` shows it with charts (G2, GR2). Not rendered in a browser |
+| 14 | E2E-15 worker/provider failure | PARTIAL | agent workflows fail honestly (T-wf); the runner owns retry/DLQ; a signed provider delivery callback handler and door exist (`provider-delivery-callback.ts`, G2, T-g2: bad signature 401, unconfigured 503, database failure 502 so the provider retries). A real provider adapter and secret: MANUAL_EXTERNAL |
 | 15 | P8-IMP-001..026 | see rows above | 003, 005, 006, 011, 012, 014, 015, 021 EXISTS; 002, 004, 010, 016, 017, 018, 019, 020, 022 PARTIAL; 007, 008, 009, 013 MISSING (other part); 023, 024, 025 MANUAL_EXTERNAL; 026 MISSING: Phase 8 is NOT claimed complete |
 | 16 | Evidence package | PARTIAL | this matrix, the log, the verifier and harness; no deploy/smoke evidence |
 | 17 | P8-DOD-001..015 | PARTIAL | 001 PARTIAL, 002 PARTIAL (the maintenance/change-request/new-project split is enforced; maintenance plans are the other part), 005 EXISTS, 006 PARTIAL (recovery yes, cancellation other part), 007 EXISTS, 008 PARTIAL, 009 PARTIAL, 010 PARTIAL, 011 PARTIAL, 013 EXISTS (nothing fakes a provider, payment, client or admin success), 003/004/012/014/015 not satisfied |
@@ -123,18 +123,18 @@ controls, each removed from the live definition inside the verifier's own transa
 | Section | Requirement | Status | Evidence / reason |
 |---|---|---|---|
 | 1 | Mission, no unauthorized commercial commitment | EXISTS | no door the agent can run quotes, discounts or sends |
-| 2 | Activation points | PARTIAL | check-ins, renewal, at-risk signal, handoff exist as records/events; client feedback and major-release triggers MISSING |
-| 3 | Required context | PARTIAL | client, project, scope, warranty, plans, tickets, invoices (health reads overdue count), consent, health history; "language" preference not recorded anywhere |
+| 2 | Activation points | PARTIAL | check-ins, renewal, at-risk signal, handoff exist as records/events; client feedback now raises a next action when negative; a major-release trigger is MISSING (no release-note source) |
+| 3 | Required context | EXISTS | client, project, scope, warranty, plans, tickets, invoices (health reads overdue count), consent, health history, and now the preferred channel, channels to avoid and language a person recorded (`client_contact_preferences`, G2) |
 | 4 | CUS-AUD-001..005 | PARTIAL | the survey in the log; the registry already defined the agent |
 | 5 | Consume the handoff once | EXISTS | V |
-| 5 | Customer 360 and next-action queue | PARTIAL | panel + overview + (8D) the single-client Customer 360 page; no "next action" queue object |
+| 5 | Customer 360 and next-action queue | EXISTS | panel + overview + the single-client Customer 360 page, and `projects.customer_success_next_actions` (derived on read, nothing stored) at `/projects/customer-success/next-actions` (G2, GR2) |
 | 5 | Check-ins on a configurable cadence | PARTIAL | first check-in and renewal check-ins automatic; adoption/major-release/post-incident are created by a person; cadence settings: first check-in days and minimum gap |
 | 5 | Explainable health | EXISTS | V, R |
 | 5 | Warranty/support vs maintenance, not treating new functionality as a bug | EXISTS | V |
 | 5 | Maintenance eligibility, usage, renewal timing | PARTIAL | renewal timing; eligibility and usage other part |
 | 5 | Recovery plans and re-evaluation | EXISTS | V |
 | 5 | Expansion signals to Upsell/Sales | EXISTS | V |
-| 5 | Record outcomes and feedback | PARTIAL | check-in outcome/engagement; feedback and client goals: MISSING |
+| 5 | Record outcomes and feedback | EXISTS | check-in outcome/engagement; `client_feedback` (append-only, a person records what was heard) and `client_goals` (stated, then achieved or dropped with a note) through doors; negative feedback with no completed check-in since appears in the next-action queue (G2, GR2). Nothing infers sentiment |
 | 5 | Escalate ambiguity to Admin | EXISTS | disputed tickets escalate automatically (V) |
 | 6 | Decision rules (how-to, warranty, maintenance, change request, new project, at risk) | EXISTS | V |
 | 7 | Structured handoff contract and events | PARTIAL | project/client scope, ids, evidence, state in door arguments and event payloads; "retry history" and "policy refs" not carried |
@@ -144,7 +144,7 @@ controls, each removed from the live definition inside the verifier's own transa
 | 11 | CUS-TST-001 idempotent handoff | EXISTS | V |
 | 11 | CUS-TST-002 explainable health with history | EXISTS | V |
 | 11 | CUS-TST-003 at risk, recovery, re-evaluation | EXISTS | V |
-| 11 | CUS-TST-004 eligibility with an open critical issue and preferences | EXISTS | V (consent only; no other preference exists) |
+| 11 | CUS-TST-004 eligibility with an open critical issue and preferences | EXISTS | V; channel and language preferences are now recorded and enforced by `can_contact_governed` (G2, GR2) |
 | 11 | CUS-TST-005 renewal without silently renewing | EXISTS | V, R |
 | 11 | CUS-TST-006 opportunity only from evidence | EXISTS | V, T-wf |
 | 11 | CUS-TST-007 role/tenant isolation on Customer 360 | EXISTS | V |
@@ -168,7 +168,7 @@ controls, each removed from the live definition inside the verifier's own transa
 |---|---|---|---|
 | 1 | Safe routine support, classify against scope/warranty/maintenance, no internal information to clients | EXISTS | V; client function exposes status labels only |
 | 2 | Activation: client request, CS escalation, monitoring alert, client reply | PARTIAL | the open-ticket door takes portal, email, WhatsApp, phone, monitoring, customer-success and internal sources; an inbound client support message in a project conversation now calls it (Phase 7c). A monitoring alert and a post-project account thread are not wired |
-| 3 | Required context | PARTIAL | project, scope window, warranty, plans, recent tickets; approved knowledge base MISSING (none exists); language/channel preference not recorded |
+| 3 | Required context | PARTIAL | project, scope window, warranty, plans, recent tickets, and (G2) channel and language preference; approved knowledge base MISSING (none exists) |
 | 4 | SUP-AUD-001..005 | PARTIAL | log |
 | 5 | Normalize request; determine the six classes | EXISTS | proposal workflow + classify door (V, T-wf) |
 | 5 | Compare expected vs actual against scope/version | PARTIAL | the agent sees the warranty window and plans; scope item comparison MISSING |
@@ -178,7 +178,7 @@ controls, each removed from the live definition inside the verifier's own transa
 | 5 | Client-safe status updates | EXISTS | `projects.client_support_tickets` (V) |
 | 5 | QA/release/client confirmation before close | EXISTS | V, R (both the door and the CHECK) |
 | 6 | Decision rules | EXISTS | V |
-| 7 | Events: SupportTicketCreated/Classified, DeveloperTaskRequested, QAVerificationRequested | PARTIAL | created and escalated emitted; classified is an event row on the ticket, not an outbox event; Developer/QA requests are not emitted |
+| 7 | Events: SupportTicketCreated/Classified, DeveloperTaskRequested, QAVerificationRequested | PARTIAL | created and escalated emitted; `projects.request_support_followup` emits `support.developer_task_requested` and `support.qa_verification_requested` when a person asks, with the ticket payload (G2, GR2); classified is still an event row on the ticket, not an outbox event; no consumer creates a Developer task |
 | 8 | Evidence and memory | EXISTS | ticket events are append-only history |
 | 9 | Forbidden: label a bug as paid, hide coverage, expose internals, close before QA, invent root cause | EXISTS | CHECKs and doors (V, R); root cause must be a linked record |
 | 10 | Failure/retry | PARTIAL | as above |
@@ -187,7 +187,7 @@ controls, each removed from the live definition inside the verifier's own transa
 | 11 | SUP-TST-003 duplicate-message idempotency | EXISTS | V, R |
 | 11 | SUP-TST-004 severity/priority/SLA | EXISTS | V, R |
 | 11 | SUP-TST-005 known-answer vs escalation | PARTIAL | how-to needs a knowledge reference; disputed escalates |
-| 11 | SUP-TST-006 Developer/QA handoff payload | PARTIAL | root-cause link, no Developer task payload |
+| 11 | SUP-TST-006 Developer/QA handoff payload | EXISTS | the request event carries project, ticket, classification, coverage, priority, linked defect/maintenance item and requester; refused for an unclassified ticket, a non-developer matter or the wrong state (G2). The downstream Developer task is the Developer agent's |
 | 11 | SUP-TST-007 client-safe redaction | EXISTS | client function; reply drafts refuse price/commitment/secret (T-wf) |
 | 11 | SUP-TST-008 tenant isolation | EXISTS | V |
 | 12-13 | SUP-IMP / SUP-DOD | PARTIAL | as the Customer Success rows |
@@ -210,7 +210,7 @@ controls, each removed from the live definition inside the verifier's own transa
 | 11 | UPS-TST-004 duplicate signal | EXISTS | V |
 | 11 | UPS-TST-005 structured Sales handoff validation | PARTIAL | the CRM deal is opened in discovery with no value; the structured payload is the opportunity row |
 | 11 | UPS-TST-006 service-catalog/policy boundary | PARTIAL | policy boundary (no price) proved; no catalog |
-| 11 | UPS-TST-007 communication preference / anti-spam | PARTIAL | consent, gap and (8D) caps and quiet periods in `can_contact_now`; the agent contacts nobody; channel/language preferences are not recorded |
+| 11 | UPS-TST-007 communication preference / anti-spam | EXISTS | consent, gap, caps, quiet periods (8D), and now avoided channels and an Admin-set minimum gap per message category in `can_contact_governed`; the agent contacts nobody (G2, GR2) |
 | 11 | UPS-TST-008 outcome tracking | EXISTS | accepted (naming the change request or project), lost, no action (V) |
 
 ## 6. Sales agent spec (post-launch)
@@ -256,3 +256,21 @@ Phase 8 part owns. Phase 8 is NOT claimed complete.
 ## Closed by Phase 8 part C (the maintenance plan lifecycle)
 
 Rows above marked "other part" for the maintenance plan lifecycle are now built (see `docs/phase-8c-implementation-log.md`): plan CRUD/Admin UI (catalog, open plan, acceptance), usage ledger and overage draft, renewal proposal/payment (`MaintenanceActivationRequested` is the plan's `draft` with a recorded acceptance; nothing is auto-requested), cancellation with a required reason (churn reasons are queryable), Finance for maintenance through `finance.maintenance_financial_gate`, ClientMaintenanceSubscription as `projects.maintenance_plan_lifecycle`, and the 8A renewal sweep is now called from the cron tick (closing M-3 for renewals). Support SLA, health snapshots and check-ins are still not scheduled by this change.
+
+## 20. Phase 8A second half (migration `20261121000000`): what closed, what stays open
+
+Evidence: `G2` (177 checks on a scratch Postgres 16, rolls back), `GR2` (106 controls, each removed from the live definition and confirmed red), `T-g2` (action whitelist, provider callback handler, structure), details in `docs/phase-8a-gaps-log-2.md`.
+
+| Gap | Status | Evidence / reason |
+|---|---|---|
+| Audited cross-tenant denial (E2E-13) | EXISTS | `projects.probe_tenant_access` |
+| Metric reconciliation and charts (E2E-14) | EXISTS (not rendered in a browser) | `reconcile_phase_eight_metrics`, `/projects/customer-success/reconciliation` |
+| Next-action queue | EXISTS | derived on read; `/projects/customer-success/next-actions` |
+| Channel and language preferences | EXISTS | `client_contact_preferences`, `set_client_contact_preference`, `/projects/customer-success/records` |
+| Cadence per message category | EXISTS | Admin-set `communication_category_cadence`; no default number; `can_contact_governed` |
+| Client feedback and goals | EXISTS | append-only feedback, goals with a closing note; records page |
+| Developer / QA follow-up request | EXISTS (event only) | `request_support_followup`; no Developer task is created |
+| Automatic delivery state from a provider | PARTIAL | door and verified handler built and proved with a test secret; `COMMUNICATION_CALLBACK_SECRET` and `COMMUNICATION_CALLBACK_ORGANIZATION_ID` unset, and no real provider adapter: MANUAL_EXTERNAL |
+| Ticket events carry a correlation id (P8-SEC-004) | EXISTS (first-half row, not edited here) | `support_ticket_events.correlation_id`; old rows stay NULL |
+
+Still open and not claimed: VIP, approved knowledge base, scope-item comparison, major-release trigger, retention policy (P8-SEC-006), alerting and metrics export, browser/load/device runs. Phase 8 is NOT claimed complete.
