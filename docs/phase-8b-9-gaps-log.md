@@ -13,6 +13,7 @@ Branch `worktree-p8b9-gaps`. Migration `20261122100000_a_failed_smoke_check_is_r
 | G5 | P9-EV-09, P9-P8-01, P9-E2E-15 | EXISTS. Re-verified against the 8A/8B/8C verifiers; rows rewritten with line evidence. |
 | G6 | 8B Developer 7 handoff events | PARTIAL (improved). BuildCreated and MigrationPrepared are recorded by a person against the exact commit (migration 20261122300000, verifier `scripts/verify-phase-eight-b-build-records.sql`, red-proved). |
 | G7 | smoke failure UI | Server actions, guarded read and a project panel (new files, `maintenance-smoke-*`); the project page must render it (wiring below). |
+| G8 | P9-UI-02 | EXISTS. OPEN_EXCEPTION form added to the claims drawer (the one existing file edited). Text-pinned; not exercised in a browser. |
 
 ## Verification (scratch Postgres 16, port 55443)
 

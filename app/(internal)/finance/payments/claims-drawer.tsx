@@ -6,6 +6,13 @@ import { useState } from 'react';
 import { isClaimAwaiting } from '@/modules/finance/schema';
 import { Badge, DetailList, DetailRow, Drawer, StatusBadge, buttonClass, humanize } from '@/ui';
 
+import { PhaseNineForm } from '../close/phase-nine-forms';
+
+/** The kinds of exception a person can open from a claim. Opening one blocks a project close until a person resolves it; it verifies and rejects nothing. */
+const CLAIM_EXCEPTION_KINDS: [string, string][] = [
+  ['wrong_amount', 'Wrong amount'], ['wrong_account', 'Wrong account'], ['unclear_proof', 'Unclear proof'], ['gateway_mismatch', 'Gateway mismatch'], ['duplicate_payment', 'Duplicate payment'], ['other', 'Other'],
+];
+
 export type ClaimView = {
   id: string;
   invoiceId: string;
@@ -140,6 +147,20 @@ export function ClaimsDrawerList({ claims }: { claims: ClaimView[] }) {
               ) : (
                 <p className="text-[13px] text-muted">Not decided yet.</p>
               )}
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted">Open an exception</p>
+              <PhaseNineForm
+                door="open_exception"
+                hidden={{ submissionId: open.id }}
+                fields={[
+                  { kind: 'select', name: 'kind', label: 'Kind', options: CLAIM_EXCEPTION_KINDS },
+                  { kind: 'textarea', name: 'reason', label: 'What is wrong with this claim', required: true },
+                ]}
+                submit="Open an exception"
+                intro="Records the problem against this claim and blocks a project close until a person resolves it. It does not verify or reject the claim."
+              />
             </div>
           </div>
         ) : null}

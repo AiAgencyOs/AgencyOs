@@ -32,4 +32,12 @@ describe('smoke failure surface', () => {
     assert.match(panel, /f\.reportedBy !== view\.viewerId/);
     assert.match(panel, /rolls nothing back/);
   });
+
+  test('the claims drawer opens a finance exception for the claim through the whitelisted door, and offers no verify or reject', () => {
+    const drawer = read('app/(internal)/finance/payments/claims-drawer.tsx');
+    assert.match(drawer, /door="open_exception"/);
+    assert.match(drawer, /hidden=\{\{ submissionId: open\.id \}\}/);
+    assert.doesNotMatch(drawer, /door="(verify|reject)/);
+    assert.doesNotMatch(drawer, /verify_payment|createAdminClient/);
+  });
 });
