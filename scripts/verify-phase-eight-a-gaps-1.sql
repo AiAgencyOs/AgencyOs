@@ -75,7 +75,7 @@ insert into core.memberships (organization_id, user_id, role) values (:'ORG', :'
 select set_config('p8.org', :'ORG', true);
 select set_config('p8.staff', :'STAFF', true);
 
-create or replace function pg_temp.mk(p_code text, p_org uuid default null)
+create or replace function pg_temp.g1_mk(p_code text, p_org uuid default null)
 returns table (client uuid, project uuid, sv uuid)
 language plpgsql as $$
 declare v_org uuid := coalesce(p_org, current_setting('p8.org')::uuid); v_a uuid; v_p uuid; v_sv uuid;
@@ -94,7 +94,7 @@ begin
   alter table projects.completion_records enable trigger user;
   return query select v_a, v_p, v_sv;
 end $$;
-grant execute on function pg_temp.mk(text, uuid) to public;
+grant execute on function pg_temp.g1_mk(text, uuid) to public;
 
 -- a live Phase 8 workspace for a fixture project
 create or replace function pg_temp.live(p_project uuid) returns void language plpgsql as $$
@@ -121,9 +121,9 @@ end $$;
 grant execute on function pg_temp.ticket(uuid, text) to public;
 
 -- ═════════ 0. fixtures ═════════
-select client as "A_id", project as "PA_id", sv as "SVA_id" from pg_temp.mk('G1-A') \gset
-select client as "A2_id", project as "PA2_id", sv as "SVA2_id" from pg_temp.mk('G1-A2') \gset
-select client as "X_id", project as "PX_id", sv as "SVX_id" from pg_temp.mk('G1-X', :'ORGB') \gset
+select client as "A_id", project as "PA_id", sv as "SVA_id" from pg_temp.g1_mk('G1-A') \gset
+select client as "A2_id", project as "PA2_id", sv as "SVA2_id" from pg_temp.g1_mk('G1-A2') \gset
+select client as "X_id", project as "PX_id", sv as "SVX_id" from pg_temp.g1_mk('G1-X', :'ORGB') \gset
 insert into core.client_accounts (organization_id, name) values (:'ORG', 'zztest g1 plain client B') returning id as "B_id" \gset
 insert into crm.contacts (organization_id, client_account_id, full_name, email) values (:'ORG', :'B_id', 'Contact B', 'gb@client.example.test') returning id as "BCT_id" \gset
 select id as "ACT_id" from crm.contacts where client_account_id = :'A_id' \gset

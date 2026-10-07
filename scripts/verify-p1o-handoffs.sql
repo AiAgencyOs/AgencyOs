@@ -27,14 +27,14 @@ begin execute stmt; return false;
 exception when others then return sqlstate = code; end $$;
 grant execute on function pg_temp.fails_with(text, text) to public;
 -- mutate the live definition of a function; raise when the mutation changed nothing (a no-op red-proof proves nothing)
-create or replace function pg_temp.mutate(fn regprocedure, from_text text, to_text text) returns void language plpgsql as $$
+create or replace function pg_temp.p1o_mutate(fn regprocedure, from_text text, to_text text) returns void language plpgsql as $$
 declare d text := pg_get_functiondef(fn); n text;
 begin
   n := replace(d, from_text, to_text);
   if n = d then raise exception 'RED-PROOF MUTATION CHANGED NOTHING: % / %', fn, from_text; end if;
   execute n;
 end $$;
-grant execute on function pg_temp.mutate(regprocedure, text, text) to public;
+grant execute on function pg_temp.p1o_mutate(regprocedure, text, text) to public;
 
 \set PORG '00000000-0000-4000-8000-0000000a0100'
 \set POWN '00000000-0000-4000-8000-0000000a0101'
@@ -182,27 +182,27 @@ select pg_temp.check(not has_function_privilege('anon', 'ai.p1o_pause_handoff(uu
 -- ═══ red-proofs: each control, removed from the LIVE definition, makes its check fail ═══
 select pg_temp.as_service();
 -- 1. the dependency gate
-select pg_temp.mutate('ai.p1o_handoff_dispatch_guard()', 'if v_open > 0 then', 'if false then');
+select pg_temp.p1o_mutate('ai.p1o_handoff_dispatch_guard()', 'if v_open > 0 then', 'if false then');
 select handoff_id as r1 from ai.p1o_create_handoff(:'PORG', 'sales', 'project_manager', 'red 1', gen_random_uuid(), 'p1o:r1', '["x"]'::jsonb, 'normal', null, null, null, array[:'C_cid'::uuid]) \gset R1_
 select pg_temp.check(not pg_temp.fails_with(format($f$update ai.handoffs set status = 'accepted' where id = %L$f$, :'R1_r1'), '23514'), 'RED-PROOF: without the prerequisite gate an unmet prerequisite no longer blocks');
 -- 2. the uncertain-effect gate
-select pg_temp.mutate('ai.p1o_handoff_dispatch_guard()', 'and new.side_effect_uncertain then', 'and false then');
-select pg_temp.mutate('ai.p1o_handoff_dispatch_guard()', 'if v_dead > 0 then', 'if false then');
+select pg_temp.p1o_mutate('ai.p1o_handoff_dispatch_guard()', 'and new.side_effect_uncertain then', 'and false then');
+select pg_temp.p1o_mutate('ai.p1o_handoff_dispatch_guard()', 'if v_dead > 0 then', 'if false then');
 select handoff_id as r2 from ai.p1o_create_handoff(:'PORG', 'sales', 'quality_assurance', 'red 2', gen_random_uuid(), 'p1o:r2', '["x"]'::jsonb) \gset R2_
 update ai.handoffs set status = 'accepted' where id = :'R2_r2';
 update ai.handoffs set status = 'running' where id = :'R2_r2';
 select outcome from ai.p1o_record_handoff_failure(:'R2_r2', 'red failure', true, true) \gset RF_
 select pg_temp.check(pg_temp.fails_with(format($f$update ai.handoffs set status = 'running' where id = %L$f$, :'R2_r2'), '23514') is false, 'RED-PROOF: without the uncertain-effect gate a blind retry runs');
 -- 3. the cycle check
-select pg_temp.mutate('ai.p1o_handoff_dependency_guard()', 'if v_cycle then', 'if false then');
+select pg_temp.p1o_mutate('ai.p1o_handoff_dependency_guard()', 'if v_cycle then', 'if false then');
 select pg_temp.check(not pg_temp.fails_with(format($f$update ai.handoffs set dependency_ids = array[%L::uuid] where id = %L$f$, :'B_bid', :'A_hid'), '23514'), 'RED-PROOF: without the cycle check a deadlock is accepted');
 -- 4. the admin-only rule on pause
-select pg_temp.mutate('ai.p1o_door_refusal(uuid,boolean)', 'if p_admin_only then', 'if false then');
+select pg_temp.p1o_mutate('ai.p1o_door_refusal(uuid,boolean)', 'if p_admin_only then', 'if false then');
 select pg_temp.as_user(:'PMEM', :'PORG', 'member');
 select pg_temp.check((select outcome from ai.p1o_reassign_handoff(:'R2_r2', 'quality_assurance', 'x')) <> 'forbidden', 'RED-PROOF: without the admin-only rule a plain member reaches the reassign logic');
 -- 5. bounded retries
 select pg_temp.as_service();
-select pg_temp.mutate('ai.p1o_record_handoff_failure(uuid,text,boolean,boolean)', 'c_max_retries constant int := 3;', 'c_max_retries constant int := 99;');
+select pg_temp.p1o_mutate('ai.p1o_record_handoff_failure(uuid,text,boolean,boolean)', 'c_max_retries constant int := 3;', 'c_max_retries constant int := 99;');
 select handoff_id as r5 from ai.p1o_create_handoff(:'PORG', 'sales', 'quality_assurance', 'red 5', gen_random_uuid(), 'p1o:r5', '["x"]'::jsonb) \gset R5_
 update ai.handoffs set status = 'accepted' where id = :'R5_r5';
 update ai.handoffs set status = 'running', retry_count = 2 where id = :'R5_r5';

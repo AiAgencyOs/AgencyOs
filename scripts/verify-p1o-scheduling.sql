@@ -24,14 +24,14 @@ create or replace function pg_temp.fails_with(stmt text, code text) returns bool
 begin execute stmt; return false;
 exception when others then return sqlstate = code; end $$;
 grant execute on function pg_temp.fails_with(text, text) to public;
-create or replace function pg_temp.mutate(fn regprocedure, from_text text, to_text text) returns void language plpgsql as $$
+create or replace function pg_temp.p1o_mutate(fn regprocedure, from_text text, to_text text) returns void language plpgsql as $$
 declare d text := pg_get_functiondef(fn); n text;
 begin
   n := replace(d, from_text, to_text);
   if n = d then raise exception 'RED-PROOF MUTATION CHANGED NOTHING: % / %', fn, from_text; end if;
   execute n;
 end $$;
-grant execute on function pg_temp.mutate(regprocedure, text, text) to public;
+grant execute on function pg_temp.p1o_mutate(regprocedure, text, text) to public;
 
 \set SORG '00000000-0000-4000-8000-0000000a0200'
 \set SOWN '00000000-0000-4000-8000-0000000a0201'
@@ -135,15 +135,15 @@ select pg_temp.check((select cancelled from crm.p1o_scheduler_metrics()) = 1 and
 
 -- ═══ red-proofs ═══
 select pg_temp.as_service();
-select pg_temp.mutate('crm.p1o_enforce_working_hours()', 'if coalesce(v_enforce, false) and', 'if false and');
+select pg_temp.p1o_mutate('crm.p1o_enforce_working_hours()', 'if coalesce(v_enforce, false) and', 'if false and');
 insert into crm.meetings (organization_id, lead_id, requested_mode, status) values (:'SORG', :'lead', 'call', 'requested') returning id as m9 \gset
 select pg_temp.check(not pg_temp.fails_with(format($f$update crm.meetings set status = 'booked', booked_mode = 'call', confirmed_start_at = timestamptz '2026-12-06 05:00+00', confirmed_end_at = timestamptz '2026-12-06 05:30+00', timezone = 'Asia/Kolkata', availability_source = 'v', availability_read_at = now() where id = %L$f$, :'m9'), '23514'), 'RED-PROOF: without the enforcement a Sunday booking goes through');
-select pg_temp.mutate('crm.p1o_stamp_proposal_expiry()', 'and old.proposal_expires_at is not null and old.proposal_expires_at < now() then', 'and false then');
+select pg_temp.p1o_mutate('crm.p1o_stamp_proposal_expiry()', 'and old.proposal_expires_at is not null and old.proposal_expires_at < now() then', 'and false then');
 insert into crm.meetings (organization_id, lead_id, requested_mode, status) values (:'SORG', :'lead', 'call', 'requested') returning id as m10 \gset
 update crm.meetings set status = 'proposed', proposed_slots = '[{"startAt":"2026-12-03T05:00:00Z","endAt":"2026-12-03T05:30:00Z"}]'::jsonb, availability_source = 'v', availability_read_at = now(), duration_minutes = 30 where id = :'m10';
 update crm.meetings set proposal_expires_at = now() - interval '1 hour' where id = :'m10';
 select pg_temp.check(not pg_temp.fails_with(format($f$update crm.meetings set status = 'booked', booked_mode = 'call', confirmed_start_at = timestamptz '2026-12-02 06:00+00', confirmed_end_at = timestamptz '2026-12-02 06:30+00', timezone = 'Asia/Kolkata' where id = %L$f$, :'m10'), '23514'), 'RED-PROOF: without the expiry check an expired offer is booked');
-select pg_temp.mutate('ai.p1o_door_refusal(uuid,boolean)', 'if p_admin_only then', 'if false then');
+select pg_temp.p1o_mutate('ai.p1o_door_refusal(uuid,boolean)', 'if p_admin_only then', 'if false then');
 select pg_temp.as_user(:'SMEM', :'SORG', 'member');
 select pg_temp.check((select outcome from crm.p1o_set_scheduling_policy(:'SORG', '{"min_notice_minutes":5}')) = 'set', 'RED-PROOF: without the admin-only rule a plain member rewrites the policy');
 

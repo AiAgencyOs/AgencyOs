@@ -24,14 +24,14 @@ create or replace function pg_temp.fails_with(stmt text, code text) returns bool
 begin execute stmt; return false;
 exception when others then return sqlstate = code; end $$;
 grant execute on function pg_temp.fails_with(text, text) to public;
-create or replace function pg_temp.mutate(fn regprocedure, from_text text, to_text text) returns void language plpgsql as $$
+create or replace function pg_temp.p1o_mutate(fn regprocedure, from_text text, to_text text) returns void language plpgsql as $$
 declare d text := pg_get_functiondef(fn); n text;
 begin
   n := replace(d, from_text, to_text);
   if n = d then raise exception 'RED-PROOF MUTATION CHANGED NOTHING: % / %', fn, from_text; end if;
   execute n;
 end $$;
-grant execute on function pg_temp.mutate(regprocedure, text, text) to public;
+grant execute on function pg_temp.p1o_mutate(regprocedure, text, text) to public;
 
 \set CORG '00000000-0000-4000-8000-0000000a0400'
 \set COWN '00000000-0000-4000-8000-0000000a0401'
@@ -129,12 +129,12 @@ select pg_temp.check((select outcome from finance.p1o_link_replacement_invoice(:
 select pg_temp.check((select outcome from finance.p1o_link_replacement_invoice(:'cn', :'draft')) = 'already_linked', 'once');
 
 -- ═══ red-proofs ═══
-select pg_temp.mutate('finance.p1o_issue_credit_note(uuid)', 'if v_state is distinct from ''approved'' then', 'if false then');
+select pg_temp.p1o_mutate('finance.p1o_issue_credit_note(uuid)', 'if v_state is distinct from ''approved'' then', 'if false then');
 select credit_note_id as rcn from finance.p1o_request_credit_note(:'inv2', 1000, 0, 'red-proof request') \gset
 select pg_temp.check((select outcome from finance.p1o_issue_credit_note(:'rcn')) = 'issued', 'RED-PROOF: without the approval check a credit note is issued on a pending approval');
-select pg_temp.mutate('finance.p1o_request_credit_note(uuid,bigint,bigint,text)', 'if p_amount_minor > v_room then', 'if false then');
+select pg_temp.p1o_mutate('finance.p1o_request_credit_note(uuid,bigint,bigint,text)', 'if p_amount_minor > v_room then', 'if false then');
 select pg_temp.check((select outcome from finance.p1o_request_credit_note(:'inv2', 99999999, 0, 'red-proof ceiling')) = 'requested', 'RED-PROOF: without the ceiling a credit larger than the invoice is requested');
-select pg_temp.mutate('finance.p1o_credit_note_actor_refusal(uuid)', 'if (select auth.uid()) is null then return ''needs_a_person''; end if;', '');
+select pg_temp.p1o_mutate('finance.p1o_credit_note_actor_refusal(uuid)', 'if (select auth.uid()) is null then return ''needs_a_person''; end if;', '');
 select pg_temp.as_service();
 select pg_temp.check((select outcome from finance.p1o_issue_credit_note(:'rcn')) <> 'needs_a_person', 'RED-PROOF: without the person check the service role passes the human gate');
 

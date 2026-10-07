@@ -26,14 +26,14 @@ create or replace function pg_temp.fails_with(stmt text, code text) returns bool
 begin execute stmt; return false;
 exception when others then return sqlstate = code; end $$;
 grant execute on function pg_temp.fails_with(text, text) to public;
-create or replace function pg_temp.mutate(fn regprocedure, from_text text, to_text text) returns void language plpgsql as $$
+create or replace function pg_temp.p1o_mutate(fn regprocedure, from_text text, to_text text) returns void language plpgsql as $$
 declare d text := pg_get_functiondef(fn); n text;
 begin
   n := replace(d, from_text, to_text);
   if n = d then raise exception 'RED-PROOF MUTATION CHANGED NOTHING: % / %', fn, from_text; end if;
   execute n;
 end $$;
-grant execute on function pg_temp.mutate(regprocedure, text, text) to public;
+grant execute on function pg_temp.p1o_mutate(regprocedure, text, text) to public;
 
 \set QORG '00000000-0000-4000-8000-0000000a0300'
 \set QOWN '00000000-0000-4000-8000-0000000a0301'
@@ -236,21 +236,21 @@ select pg_temp.as_service();
 select escalation_id as rr2 from approvals.expire_overdue(50) where expired_id = :'rr1' \gset
 select pg_temp.as_user(:'QOWN', :'QORG', 'owner');
 select outcome from approvals.decide_approval(:'rr2', 'approved', 'late') \gset
-select pg_temp.mutate('sales.sync_proposal_decision(uuid)', 'v_req := v_next;', 'v_req := v_req;');
+select pg_temp.p1o_mutate('sales.sync_proposal_decision(uuid)', 'v_req := v_next;', 'v_req := v_req;');
 select sales.sync_proposal_decision(:'pr1') as rsync \gset
 select pg_temp.check(:'rsync' = 'pending_approval', 'RED-PROOF: without the chain-following step the owner''s approval of the escalation leaves the quote in review');
 
-select pg_temp.mutate('sales.proposals_guard()', $m$if current_setting('p1o.cancel_door', true) is distinct from 'on' then$m$, 'if false then');
+select pg_temp.p1o_mutate('sales.proposals_guard()', $m$if current_setting('p1o.cancel_door', true) is distinct from 'on' then$m$, 'if false then');
 select pg_temp.draft(:'QORG', :'opp3', 'red cancel', 120000, 0, 2) as pr2 \gset
 select pg_temp.check(not pg_temp.fails_with(format($f$update sales.proposals set status = 'cancelled', cancelled_at = now(), cancel_reason = 'x' where id = %L$f$, :'pr2'), '23001'), 'RED-PROOF: without the cancel-door flag a direct write cancels a quotation');
 
-select pg_temp.mutate('sales.p1o_record_acceptance(uuid,uuid,text,text,integer,text,text)', 'if p_evidence_ref is null or length(btrim(p_evidence_ref)) = 0 then', 'if false then');
+select pg_temp.p1o_mutate('sales.p1o_record_acceptance(uuid,uuid,text,text,integer,text,text)', 'if p_evidence_ref is null or length(btrim(p_evidence_ref)) = 0 then', 'if false then');
 select pg_temp.draft(:'QORG', :'opp3', 'red evidence', 130000, 0, 3) as pr3 \gset
 select pg_temp.sendq(:'pr3', :'QOWN', :'QORG');
 select pg_temp.as_user(:'QOWN', :'QORG', 'owner');
 select pg_temp.check((select outcome from sales.p1o_record_acceptance(:'pr3', :'contact', 'whatsapp', '', 3)) <> 'evidence_required', 'RED-PROOF: without the evidence rule an acceptance with no evidence goes through');
 
-select pg_temp.mutate('sales.p1o_record_acceptance(uuid,uuid,text,text,integer,text,text)', 'if p_stated_version is null and cardinality(v_open) > 1 then', 'if false then');
+select pg_temp.p1o_mutate('sales.p1o_record_acceptance(uuid,uuid,text,text,integer,text,text)', 'if p_stated_version is null and cardinality(v_open) > 1 then', 'if false then');
 select pg_temp.draft(:'QORG', :'opp3', 'red amb', 140000, 0, 1) as pr4 \gset
 select pg_temp.sendq(:'pr4', :'QOWN', :'QORG');
 select pg_temp.draft(:'QORG', :'opp3', 'red amb b', 145000, 0, 2) as pr4b \gset
@@ -266,7 +266,7 @@ select pg_temp.check((select outcome from sales.p1o_record_acceptance(:'pr4', :'
 select pg_temp.draft(:'QORG', :'opp6', 'red tax', 110000) as pr5 \gset
 insert into sales.p1o_quote_flags (organization_id, proposal_id, kind, note) values (:'QORG', :'pr5', 'tax_uncertain', 'red-proof flag');
 select pg_temp.check(pg_temp.fails_with(format($f$select * from sales.submit_proposal(%L, %L)$f$, :'pr5', :'QOWN'), '23001'), 'control present: a flagged quote is refused');
-select pg_temp.mutate('sales.p1o_proposals_guard()', $m$if exists (select 1 from sales.p1o_quote_flags f where f.proposal_id = new.id$m$, $m$if false and exists (select 1 from sales.p1o_quote_flags f where f.proposal_id = new.id$m$);
+select pg_temp.p1o_mutate('sales.p1o_proposals_guard()', $m$if exists (select 1 from sales.p1o_quote_flags f where f.proposal_id = new.id$m$, $m$if false and exists (select 1 from sales.p1o_quote_flags f where f.proposal_id = new.id$m$);
 select pg_temp.check((select outcome from sales.submit_proposal(:'pr5', :'QOWN')) = 'submitted', 'RED-PROOF: without the tax-flag gate an uncertain quote goes for approval');
 
 rollback;
