@@ -55,7 +55,7 @@ export function httpStatusForOutcome(outcome: WebhookOutcome): number {
 
 export async function recordWebhookDelivery(admin: Admin, d: WebhookDelivery): Promise<WebhookDecision> {
   const core = admin.schema('core') as unknown as Rpc;
-  const bytes = d.body == null ? null : typeof d.body === 'string' ? Buffer.byteLength(d.body) : d.body.byteLength;
+  const bytes = d.body === null || d.body === undefined ? null : typeof d.body === 'string' ? Buffer.byteLength(d.body) : d.body.byteLength;
   const { data, error } = await core.rpc('p13_record_webhook_event', {
     p_organization_id: d.organizationId,
     p_provider: d.provider,
@@ -65,7 +65,7 @@ export async function recordWebhookDelivery(admin: Admin, d: WebhookDelivery): P
     p_normalized_type: d.normalizedType ?? null,
     p_resource_type: d.resourceType ?? null,
     p_resource_id: d.resourceId ?? null,
-    p_payload_sha256: d.body == null ? null : sha256Hex(d.body),
+    p_payload_sha256: d.body === null || d.body === undefined ? null : sha256Hex(d.body),
     p_payload_bytes: bytes,
     p_max_age_seconds: d.maxAgeSeconds ?? 900,
     p_correlation_id: d.correlationId ?? null,

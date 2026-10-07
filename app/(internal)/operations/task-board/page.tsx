@@ -38,7 +38,7 @@ const TONE: Record<BoardState, 'neutral' | 'info' | 'warning' | 'danger' | 'succ
  * Filter with ?state= and ?stale=1.
  */
 export default async function TaskBoardPage({ searchParams }: { searchParams: Promise<{ state?: string; stale?: string }> }) {
-  const context = await requireInternal('/task-board');
+  const context = await requireInternal('/operations/task-board');
   if (!can(context, 'agent.run') && !can(context, 'audit.read')) return <PermissionDenied />;
   const { state, stale } = await searchParams;
   const src = await readTaskBoardSources();
@@ -53,11 +53,11 @@ export default async function TaskBoardPage({ searchParams }: { searchParams: Pr
       {src.capped ? <p className="text-sm text-warning">Showing the newest 500 jobs and 500 handoffs; older ones are not counted here.</p> : null}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         {BOARD_STATES.map((s) => (
-          <Link key={s} href={`/task-board?state=${s}`}>
+          <Link key={s} href={`/operations/task-board?state=${s}`}>
             <Stat label={LABEL[s]} value={String(summary[s])} />
           </Link>
         ))}
-        <Link href="/task-board?stale=1">
+        <Link href="/operations/task-board?stale=1">
           <Stat label="Stale (open over 24h)" value={String(summary.stale)} />
         </Link>
       </div>
@@ -65,7 +65,7 @@ export default async function TaskBoardPage({ searchParams }: { searchParams: Pr
         <CardHeader title={wanted ? `${LABEL[wanted]}` : 'All tasks'} description={`${shown.length} shown. Oldest first.`} />
         <div className="px-4 pb-4 sm:px-5">
           {shown.length === 0 ? (
-            <EmptyState title="Nothing here" description="No task is in this state." />
+            <EmptyState title="Nothing here" description="No task is in this state." action={<Link href="/operations/task-board" className="text-sm underline">Show every task</Link>} />
           ) : (
             <ul className="flex flex-col divide-y divide-line text-sm">
               {shown.map((i) => (

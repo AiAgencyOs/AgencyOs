@@ -12,7 +12,7 @@
  * person, not on code. A row with an unrecognised status BLOCKS (an unreadable matrix is not a passing one).
  */
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, URL } from 'node:url';
 
 const ROW = /^\|\s*(P[123]-[A-Z0-9]+-\d+[A-Za-z]?)\s*\|(.*)\|\s*$/;
 const KNOWN = new Set(['EXISTS', 'PARTIAL', 'MISSING', 'MANUAL_EXTERNAL']);

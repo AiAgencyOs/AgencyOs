@@ -56,7 +56,7 @@ test('stale means open for a day or more; closed and failed work is never stale;
 test('the queries check every read and the page is read-only', () => {
   const q = readFileSync(new URL('../src/lib/p13/task-board-queries.ts', import.meta.url), 'utf8');
   assert.equal([...q.matchAll(/\.error\) unreadable\(/g)].length, 3);
-  const page = readFileSync(new URL('../app/(internal)/task-board/page.tsx', import.meta.url), 'utf8');
-  assert.match(page, /requireInternal\('\/task-board'\)/);
+  const page = readFileSync(new URL('../app/(internal)/operations/task-board/page.tsx', import.meta.url), 'utf8');
+  assert.match(page, /requireInternal\('\/operations\/task-board'\)/);
   assert.doesNotMatch(page, /use server|<form/);
 });

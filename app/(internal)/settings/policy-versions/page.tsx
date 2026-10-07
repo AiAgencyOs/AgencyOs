@@ -17,7 +17,7 @@ export const metadata: Metadata = { title: 'Policies and controls' };
  * has no way to reach them. A superseded version is shown, never edited.
  */
 export default async function PolicyVersionsPage() {
-  const context = await requireInternal('/policy-versions');
+  const context = await requireInternal('/settings/policy-versions');
   if (!can(context, 'audit.read') && !can(context, 'organization.settings')) return <PermissionDenied />;
   const mayEdit = can(context, 'organization.settings');
   const [rows, clock] = await Promise.all([listPolicyVersions(), agencyClock()]);

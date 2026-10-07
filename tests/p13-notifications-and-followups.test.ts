@@ -102,7 +102,7 @@ test('a refusal by the recording door (a third reminder, an answered share) is r
 
 test('the new server files keep their discipline', () => {
   const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8');
-  for (const f of ['src/lib/p13/notification-rules-actions.ts', 'src/modules/projects/p13-design-clarification-actions.ts']) {
+  for (const f of ['src/modules/approvals/p13-notification-rules-actions.ts', 'src/modules/projects/p13-design-clarification-actions.ts']) {
     const src = read(f);
     assert.match(src, /^'use server';/);
     assert.equal([...src.matchAll(/^export (?!async function)/gm)].length, 0, f);

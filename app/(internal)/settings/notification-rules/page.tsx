@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: 'Notification rules' };
  * `notificationVerdict`, never from a copy.
  */
 export default async function NotificationRulesPage() {
-  const context = await requireInternal('/notification-rules');
+  const context = await requireInternal('/settings/notification-rules');
   const mayEdit = can(context, 'organization.settings');
   const rules = await listNotificationRules();
   return (
@@ -24,7 +24,7 @@ export default async function NotificationRulesPage() {
       <Card>
         <CardHeader title="Rules in force" description={rules.length === 0 ? 'No central rule is set: every module uses its own default.' : `${rules.length} rule${rules.length === 1 ? '' : 's'}.`} />
         <div className="flex flex-col gap-4 px-4 pb-4 sm:px-5">
-          {rules.length === 0 ? <EmptyState title="No rules yet" description="Add one below." /> : null}
+          {rules.length === 0 ? <EmptyState title="No rules yet" description="Add one below." action={mayEdit ? <a href="#add-rule" className="text-sm underline">Add a rule</a> : undefined} /> : null}
           {rules.map((r) => (
             <div key={`${r.event_class}:${r.channel}`} className="flex flex-col gap-2 border-t border-line pt-3">
               <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -64,7 +64,7 @@ export default async function NotificationRulesPage() {
         </div>
       </Card>
       {mayEdit ? (
-        <Card>
+        <Card id="add-rule">
           <CardHeader title="Add or replace a rule" description="Saving a rule for an event class and channel that already has one replaces it." />
           <div className="px-4 pb-4 sm:px-5">
             <RuleForm lockKey={false} defaults={{ eventClass: 'admin_alert', channel: 'in_app', enabled: true, minIntervalSeconds: 0, quietStart: '', quietEnd: '', timezone: 'Asia/Kolkata', criticalBypassesQuiet: true }} />

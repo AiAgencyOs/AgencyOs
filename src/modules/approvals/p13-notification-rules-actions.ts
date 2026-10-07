@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import type { FormState } from '@/modules/identity/types';
 
-import { setNotificationRule } from './notification-rules';
+import { setNotificationRule } from '@/lib/p13/notification-rules';
 
 export async function setNotificationRuleAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const interval = Number(formData.get('minIntervalSeconds') ?? 0);
@@ -19,6 +19,6 @@ export async function setNotificationRuleAction(_prev: FormState, formData: Form
     criticalBypassesQuiet: formData.get('criticalBypassesQuiet') === 'on',
   });
   if (!result.ok) return { status: 'error', message: result.error.message };
-  revalidatePath('/notification-rules');
+  revalidatePath('/settings/notification-rules');
   return { status: 'success', message: 'Saved and audited.' };
 }

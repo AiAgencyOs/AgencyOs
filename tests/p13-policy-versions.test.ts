@@ -69,7 +69,7 @@ test('the server files keep their discipline: actions export only async function
   assert.equal([...actions.matchAll(/^export (?!async function)/gm)].length, 0);
   const queries = readFileSync(new URL('../src/modules/approvals/p13-policy-queries.ts', import.meta.url), 'utf8');
   assert.equal([...queries.matchAll(/if \(error\)/g)].length, [...queries.matchAll(/unreadable\(/g)].length);
-  const page = readFileSync(new URL('../app/(internal)/policy-versions/page.tsx', import.meta.url), 'utf8');
-  assert.match(page, /requireInternal\('\/policy-versions'\)/);
+  const page = readFileSync(new URL('../app/(internal)/settings/policy-versions/page.tsx', import.meta.url), 'utf8');
+  assert.match(page, /requireInternal\('\/settings\/policy-versions'\)/);
   assert.match(page, /mayEdit \?/);
 });

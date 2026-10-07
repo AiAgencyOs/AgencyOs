@@ -3,7 +3,7 @@
 import { useActionState, useId } from 'react';
 
 import { NOTIFICATION_CHANNELS, NOTIFICATION_EVENT_CLASSES } from '@/lib/p13/notification-gate';
-import { setNotificationRuleAction } from '@/lib/p13/notification-rules-actions';
+import { setNotificationRuleAction } from '@/modules/approvals/p13-notification-rules-actions';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { buttonClass, FormMessage, inputClass, labelClass } from '@/ui';
 
