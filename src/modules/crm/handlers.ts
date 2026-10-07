@@ -1977,7 +1977,7 @@ export async function handlePhaseThreeCompleted(
  * the send-window gate, the actual WhatsApp send, recording delivery) is
  * identical across all of them.
  */
-async function announceToInternalChannel(
+export async function announceToInternalChannel(
   admin: Admin,
   job: AnnounceJob,
   input: { body: string; externalRef: string; noGroupOutcome?: string; projectId?: string },
