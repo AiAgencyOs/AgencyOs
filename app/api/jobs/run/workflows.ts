@@ -137,6 +137,7 @@ import { DEVELOPMENT_SPECIALIST_WORKFLOWS } from './development-specialist-workf
 import { PHASE_EIGHT_CS_WORKFLOWS } from './phase-eight-cs-workflows';
 import { PHASE_EIGHT_SALES_WORKFLOWS } from './phase-eight-sales-workflows';
 import { DESIGN_REVISION_WORKFLOWS } from './design-revision-workflows';
+import { P789_FEEDBACK_SIGNAL_WORKFLOWS } from './p789-feedback-signal-workflow';
 import { PHASE_EIGHT_ENG_WORKFLOWS } from './phase-eight-eng-workflows';
 import { PHASE_NINE_WORKFLOWS } from './phase-nine-workflows';
 import { QA_SPECIALIST_WORKFLOWS } from './qa-specialist-workflows';
@@ -10021,7 +10022,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
  * Everything the runner claims: the workflows above plus the acquisition agents' (ADM-112 / ADM-113), kept in their own file and list so the
  * original roster's own pinned shape is not disturbed. Their tools only draft, check and ask a person to approve.
  */
-const RUNNABLE_WORKFLOWS: readonly AgentWorkflow[] = [...AGENT_WORKFLOWS, ...ACQUISITION_WORKFLOWS, ...DEVELOPMENT_WORKFLOWS, ...SPECIALIST_WORKFLOWS, ...DEVELOPMENT_SPECIALIST_WORKFLOWS, ...QA_SPECIALIST_WORKFLOWS, ...PHASE_EIGHT_ENG_WORKFLOWS, ...PHASE_NINE_WORKFLOWS, ...PHASE_EIGHT_CS_WORKFLOWS, ...PHASE_EIGHT_SALES_WORKFLOWS, ...DESIGN_REVISION_WORKFLOWS];
+const RUNNABLE_WORKFLOWS: readonly AgentWorkflow[] = [...AGENT_WORKFLOWS, ...ACQUISITION_WORKFLOWS, ...DEVELOPMENT_WORKFLOWS, ...SPECIALIST_WORKFLOWS, ...DEVELOPMENT_SPECIALIST_WORKFLOWS, ...QA_SPECIALIST_WORKFLOWS, ...PHASE_EIGHT_ENG_WORKFLOWS, ...PHASE_NINE_WORKFLOWS, ...PHASE_EIGHT_CS_WORKFLOWS, ...PHASE_EIGHT_SALES_WORKFLOWS, ...DESIGN_REVISION_WORKFLOWS, ...P789_FEEDBACK_SIGNAL_WORKFLOWS];
 
 export const AGENT_JOB_KINDS: readonly string[] = RUNNABLE_WORKFLOWS.map((w) => w.jobKind);
 

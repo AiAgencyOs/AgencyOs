@@ -119,17 +119,21 @@ export async function sweepMaintenanceLifecycle(admin: Admin): Promise<Record<st
  */
 export async function sweepSupportAndHealth(admin: Admin): Promise<Record<string, Record<string, number> | null>> {
   const projects = admin.schema('projects') as unknown as Loose;
-  const doors: { name: string; args: Record<string, unknown>; fields: string[] }[] = [
+  const finance = admin.schema('finance') as unknown as Loose;
+  const doors: { name: string; args: Record<string, unknown>; fields: string[]; schema?: 'finance' }[] = [
     { name: 'sweep_support_sla', args: {}, fields: ['response_breaches', 'resolution_breaches', 'escalated'] },
     { name: 'sweep_phase_eight_health', args: { p_limit: 500 }, fields: ['checked', 'recorded', 'unchanged'] },
     { name: 'sweep_checkins_due', args: { p_limit: 500 }, fields: ['checked', 'noticed'] },
     { name: 'sweep_message_support_tickets', args: { p_limit: 200 }, fields: ['checked', 'opened'] },
     { name: 'sweep_draft_handover_packages', args: { p_limit: 100 }, fields: ['checked', 'created'] },
+    { name: 'p789_sweep_client_action_reminders', args: {}, fields: ['scheduled'] },
+    { name: 'p789_sweep_alerts', args: {}, fields: ['raised', 'cleared'] },
+    { name: 'p789_render_receipt_documents', args: {}, fields: ['rendered'], schema: 'finance' },
   ];
   const out: Record<string, Record<string, number> | null> = {};
   for (const door of doors) {
     try {
-      const { data, error } = await projects.rpc(door.name, door.args);
+      const { data, error } = await (door.schema === 'finance' ? finance : projects).rpc(door.name, door.args);
       const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | undefined;
       if (error || !row) {
         console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `${door.name}: ${error ? error.message : 'the door answered nothing'}` }));
