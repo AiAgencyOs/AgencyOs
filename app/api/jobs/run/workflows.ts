@@ -144,6 +144,7 @@ import { PHASE_NINE_WORKFLOWS } from './phase-nine-workflows';
 import { QA_SPECIALIST_WORKFLOWS } from './qa-specialist-workflows';
 import { DEVELOPMENT_WORKFLOWS } from './development-workflows';
 import { SPECIALIST_WORKFLOWS } from './specialist-workflows';
+import { callDoor } from '@/modules/p4q/door';
 import { activateDesignerForRevision, gatePrototypeRevision } from '@/modules/p4q/revision-activation';
 import { handleP4qClassifyPrototypeFeedback } from '@/modules/p4q/feedback-handler';
 import { dispatchToolUnderPolicy } from '@/modules/agents/policy-enforcement';
@@ -1794,16 +1795,31 @@ const CLASSIFY_CLIENT_FEEDBACK: AgentWorkflow = {
     }
 
     if (classification === 'CLARIFICATION') {
-      await admin
-        .schema('projects')
-        .from('clarification_requests')
-        .insert({
-          organization_id: decision.organization_id,
-          project_id: decision.project_id,
-          ui_version_id: uiVersionId,
-          question: clarifyingQuestion ?? decision.client_words,
-          raised_by: 'project_manager',
-        });
+      // W-P3: raised through the p4q door, which also queues the question for the PM to relay to the client one at a time (in the client's wording)
+      // and routes the answer back to the agent that asked. The old direct insert remains only as the fallback when the door refuses (for example a
+      // wording the secret scan rejects): a clarification the classification asked for must still exist.
+      const question = (clarifyingQuestion ?? decision.client_words).slice(0, 2000);
+      const raised = await callDoor(admin, 'projects', 'p4q_raise_clarification', {
+        p_project_id: decision.project_id,
+        p_ui_version_id: uiVersionId,
+        p_question: question,
+        p_client_wording: clarifyingQuestion ?? `Could you tell us a little more about this request: ${decision.client_words}`.slice(0, 2000),
+        p_raised_by: 'project_manager',
+      });
+      const raisedOutcome = raised.ok ? (raised.row.outcome ?? 'no answer') : raised.message;
+      if (raisedOutcome !== 'raised' && raisedOutcome !== 'already_open') {
+        console.error(JSON.stringify({ level: 'error', scope: 'classifyClientFeedback', detail: `the clarification door answered ${raisedOutcome}; falling back to a direct request` }));
+        await admin
+          .schema('projects')
+          .from('clarification_requests')
+          .insert({
+            organization_id: decision.organization_id,
+            project_id: decision.project_id,
+            ui_version_id: uiVersionId,
+            question,
+            raised_by: 'project_manager',
+          });
+      }
     } else if (classification === 'POSSIBLE_SCOPE_CHANGE') {
       // Mirrors handlePossibleScopeChangeDetected's own body exactly — same
       // reuse-first reasoning, applied to Phase 4's own feedback source.

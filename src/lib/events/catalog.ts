@@ -155,6 +155,7 @@ export const HANDLERS = [
   'ui_prototype:planBuild',
   'projects:attachP4uiBuild',
   'projects:syncP4uiBuild',
+  'projects:returnClarificationAnswer',
   'crm:announceMeetingBooked',
   'crm:announceMeetingCancelled',
   'projects:createDraftHandoverPackage',
@@ -673,6 +674,11 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * always emitted starting `20260923160000_m2_and_the_gate_it_actually_
    * needs.sql`; the handler filters to `kind = 'prototype'` itself.
    */
+  /**
+   * W-P3: an answer to a clarification an agent raised through `projects.p4q_raise_clarification` goes back to the agent that asked
+   * (`src/modules/p4q/clarification-return.ts`).
+   */
+  'project.p4q_clarification_answered': ['projects:returnClarificationAnswer'],
   'project.deliverable_submitted': ['crm:announcePrototypeSubmitted', 'crm:announceBuildShared', 'projects:reopenOnSourceChange', 'projects:syncP4uiBuild'],
   /**
    * Finance §2, §5 — the M2 (20%) invoice, off the fact
@@ -939,6 +945,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'ui_prototype:planBuild': 'prototype.plan',
   'projects:attachP4uiBuild': 'p4ui.attach_build',
   'projects:syncP4uiBuild': 'p4ui.sync_build',
+  'projects:returnClarificationAnswer': 'p4q.clarification_return',
   'crm:announceMeetingBooked': 'meeting_booked.announce',
   'crm:announceMeetingCancelled': 'meeting_cancelled.announce',
   'projects:createDraftHandoverPackage': 'handover.create_draft',
