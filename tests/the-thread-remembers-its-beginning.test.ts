@@ -120,6 +120,9 @@ describe('C. the summariser costs nothing when there is nothing to do', () => {
       'project_manager:readDesignReply',
       // and the ninth opens a support ticket from a client's support message in an active Phase 8 project conversation (Phase 8A; never replies)
       'projects:openSupportTicketFromMessage',
+      // the tenth and eleventh (Phase 1 gap closure): a scheduling message is routed to a person and a quote reply is classified; neither replies
+      'crm:routeSchedulingMessage',
+      'sales:reviewQuoteReply',
     ]);
     assert.equal(HANDLER_JOB_KIND['sales:summariseThread'], 'conversation.summarise');
   });

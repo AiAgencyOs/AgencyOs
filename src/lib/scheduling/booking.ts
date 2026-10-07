@@ -14,6 +14,8 @@ import { interpretBook, interpretPropose } from '@/lib/scheduler/meeting-command
 
 import { bufferedSlot, offerableSlots, proposalWindow, readAvailabilityFrom, sliceWindows, slotStillFree, type Slot } from './availability';
 import { resolveGoogleCalendar } from './google';
+import { constraintsOf, currentSchedulingPolicy, durationAllowed } from './p1o-booking-policy';
+import { applyWorkingHours } from './p1o-policy';
 
 /**
  * Proposing and booking a slot from the meeting page — G-243, §5 and §6.
@@ -37,8 +39,7 @@ import { resolveGoogleCalendar } from './google';
 
 const meetingId = z.string().uuid();
 const DEFAULT_DURATIONS = [30, 45, 60] as const;
-/** §5.1's local rules for an agency with no policy rows yet: an hour's notice, a quarter-hour either side. */
-const CONSTRAINTS = { minimumNoticeMinutes: 60, bufferMinutes: 15 };
+/** §5.1's local rules now come from the organisation's scheduling policy (p1o-booking-policy.ts); an agency that saved none runs on the old values: an hour's notice, a quarter-hour either side. */
 
 export type Proposed = { message: string; leadId: string | null; slots: Slot[] };
 
@@ -90,6 +91,13 @@ export async function proposeSlots(id: string, durationMinutes: number): Promise
   const meeting = await readMeeting(parsed.data.id);
   if (!meeting.ok) return meeting;
 
+  // The organisation's own rules (P1-SCHED-018/020): notice, buffer, the durations it offers and its working hours. Unsaved means the old constants.
+  const policyRead = await currentSchedulingPolicy();
+  if (!policyRead.ok) return policyRead;
+  const policy = policyRead.data;
+  const CONSTRAINTS = constraintsOf(policy);
+  if (!durationAllowed(policy, parsed.data.duration)) return err('VALIDATION', `The agency offers ${policy.durations.join(', ')} minute meetings; ${parsed.data.duration} is not one of them.`);
+
   const calendar = await resolveGoogleCalendar();
   if (!calendar) return err('VALIDATION', 'No calendar is configured, so nothing can be offered — availability answers unconfigured (BLK-005).');
 
@@ -114,7 +122,8 @@ export async function proposeSlots(id: string, durationMinutes: number): Promise
     { durationMinutes: parsed.data.duration, minimumNoticeMinutes: CONSTRAINTS.minimumNoticeMinutes, bufferMinutes: 0 },
     now.toISOString(),
   );
-  const slots = offer.ok ? [...offer.slots] : [];
+  // Working hours only ever shorten what the calendar answered; with none configured the list is returned whole.
+  const slots = offer.ok ? applyWorkingHours(policy, [...offer.slots]) : [];
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('crm').rpc('propose_meeting_slots', {
@@ -156,6 +165,10 @@ export async function bookProposedSlot(id: string, startAt: string, mode: string
   const offered = (Array.isArray(meeting.data.proposed_slots) ? meeting.data.proposed_slots : []) as Slot[];
   const chosen = offered.find((s) => Date.parse(s.startAt) === Date.parse(parsed.data.startAt));
   if (!chosen) return err('VALIDATION', 'That time was not among the slots offered. Propose again if the client wants another.');
+
+  const policyRead = await currentSchedulingPolicy();
+  if (!policyRead.ok) return policyRead;
+  const CONSTRAINTS = constraintsOf(policyRead.data);
 
   const calendar = await resolveGoogleCalendar();
   if (!calendar) return err('VALIDATION', 'No calendar is configured, so nothing can be booked (BLK-005).');

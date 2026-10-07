@@ -148,6 +148,8 @@ export const HANDLERS = [
   'projects:openSupportTicketFromMessage',
   'ui_designer:reviseDesignDirection',
   'ui_designer:detailUIVersion',
+  'crm:routeSchedulingMessage',
+  'sales:reviewQuoteReply',
   'ui_designer:p13GuardDesignContext',
   'ui_prototype:planBuild',
   'projects:attachP4uiBuild',
@@ -424,7 +426,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * the call for a message from staff, a thread with no lead, and a lead that
    * already has a meeting open — which is the lead most likely to write again.
    */
-  'message.received': ['sales:readIntent', 'sales:readQualification', 'sales:summariseThread', 'sales:readMeetingRequest', 'sales:readLeadOutcome', 'projects:readBillingReply', 'projects:readClarificationAnswer', 'project_manager:readDesignReply', 'projects:openSupportTicketFromMessage'],
+  'message.received': ['sales:readIntent', 'sales:readQualification', 'sales:summariseThread', 'sales:readMeetingRequest', 'sales:readLeadOutcome', 'projects:readBillingReply', 'projects:readClarificationAnswer', 'project_manager:readDesignReply', 'projects:openSupportTicketFromMessage', 'crm:routeSchedulingMessage', 'sales:reviewQuoteReply'],
   /**
    * Doc 09 §19, and the reason it is a separate event rather than a third
    * subscriber on `message.received`: four of Doc 08 §12's twenty-two intents
@@ -928,6 +930,8 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:openSupportTicketFromMessage': 'support_ticket.open_from_message',
   'ui_designer:reviseDesignDirection': 'design.revise',
   'ui_designer:detailUIVersion': 'ui.design_detail',
+  'crm:routeSchedulingMessage': 'scheduling_message.route',
+  'sales:reviewQuoteReply': 'quote_reply.review',
   'ui_designer:p13GuardDesignContext': 'design.context_guard',
   'ui_prototype:planBuild': 'prototype.plan',
   'projects:attachP4uiBuild': 'p4ui.attach_build',

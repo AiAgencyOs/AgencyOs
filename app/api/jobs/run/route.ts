@@ -114,6 +114,8 @@ import {
   type HandlerResult,
   type UnlockJob,
 } from '@/modules/projects/handlers';
+import { routeSchedulingMessage, reviewQuoteReplyMessage } from '@/modules/crm/p1o-message-handlers';
+import { sweepCoordinationAllOrganizations } from '@/modules/orchestrator/p1o-coordination-sweep';
 import { guardDesignContext } from '@/modules/projects/design-context-guard';
 import { handleP4uiAttachBuild, handleP4uiSyncBuild } from '@/modules/projects/p4ui-handlers';
 import { announceMeetingBooked, announceMeetingCancelled, sendMeetingReminder } from '@/modules/crm/meeting-announcements';
@@ -1715,6 +1717,9 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     ? await runEventJobs(admin, DRAFT_HANDOVER_JOB_KIND, handleCreateDraftHandoverPackage, 'runDraftHandoverPackageJobs')
     : { claimed: 0, results: [] };
 
+  const schedulingMessages = idleTick ? await runEventJobs(admin, SCHEDULING_MESSAGE_JOB_KIND, routeSchedulingMessage, 'runSchedulingMessageRoutingJobs') : { claimed: 0, results: [] };
+  const quoteReplies = idleTick ? await runEventJobs(admin, QUOTE_REPLY_JOB_KIND, reviewQuoteReplyMessage, 'runQuoteReplyReviewJobs') : { claimed: 0, results: [] };
+  const coordination = idleTick ? await sweepCoordinationAllOrganizations(admin) : null;
   const designContextGuard = idleTick ? await runEventJobs(admin, DESIGN_CONTEXT_GUARD_JOB_KIND, guardDesignContext, 'runDesignContextGuardJobs') : { claimed: 0, results: [] };
   const p4uiAttach = idleTick ? await runEventJobs(admin, P4UI_ATTACH_JOB_KIND, handleP4uiAttachBuild, 'runP4uiAttachJobs') : { claimed: 0, results: [] };
   const p4uiSync = idleTick ? await runEventJobs(admin, P4UI_SYNC_JOB_KIND, handleP4uiSyncBuild, 'runP4uiSyncJobs') : { claimed: 0, results: [] };
@@ -1725,9 +1730,12 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     : { claimed: 0, results: [] };
 
   return NextResponse.json({
-    claimed: agentRuns.length + supportFromMessage.claimed + draftHandover.claimed + meetingBooked.claimed + meetingCancelled.claimed + meetingReminders.claimed + p4uiAttach.claimed + p4uiSync.claimed + designContextGuard.claimed,
+    claimed: agentRuns.length + supportFromMessage.claimed + draftHandover.claimed + meetingBooked.claimed + meetingCancelled.claimed + meetingReminders.claimed + p4uiAttach.claimed + p4uiSync.claimed + designContextGuard.claimed + schedulingMessages.claimed + quoteReplies.claimed,
     agentRuns,
     designContextGuard: designContextGuard.results,
+    schedulingMessages: schedulingMessages.results,
+    quoteReplies: quoteReplies.results,
+    coordination,
     p4uiAttach: p4uiAttach.results,
     p4uiSync: p4uiSync.results,
     meetingBooked: meetingBooked.results,
@@ -1987,6 +1995,8 @@ const PHASE_SEVEN_OPEN_JOB_KIND = HANDLER_JOB_KIND['projects:openPhaseSeven'];
 const PHASE_SEVEN_DEPLOY_JOB_KIND = HANDLER_JOB_KIND['projects:runDeployment'];
 const PHASE_SEVEN_ROUTE_JOB_KIND = HANDLER_JOB_KIND['projects:routePhaseSevenTask'];
 const PHASE_EIGHT_INTAKE_JOB_KIND = HANDLER_JOB_KIND['projects:fillPhaseEightIntake'];
+const SCHEDULING_MESSAGE_JOB_KIND = HANDLER_JOB_KIND['crm:routeSchedulingMessage'];
+const QUOTE_REPLY_JOB_KIND = HANDLER_JOB_KIND['sales:reviewQuoteReply'];
 const DESIGN_CONTEXT_GUARD_JOB_KIND = HANDLER_JOB_KIND['ui_designer:p13GuardDesignContext'];
 const P4UI_ATTACH_JOB_KIND = HANDLER_JOB_KIND['projects:attachP4uiBuild'];
 const P4UI_SYNC_JOB_KIND = HANDLER_JOB_KIND['projects:syncP4uiBuild'];
