@@ -276,7 +276,7 @@ set local session_replication_role = replica;
 update projects.tasks set status = 'done', completed_at = now() where id = :'CAT_id';
 set local session_replication_role = origin;
 select pg_temp.check((select done = 1 and open = 0 from (select * from projects.p7_incident_corrective_status(:'INC_id')) s), 'finishing the task shows on the incident');
-select pg_temp.check(pg_temp.refused(format($$delete from projects.p7_incident_corrective_actions where task_id = %L$$, :'CAT_id'), 'never edited or deleted'), 'the link is history');
+select pg_temp.check(pg_temp.refused(format($$delete from projects.p7d_incident_corrective_actions where task_id = %L$$, :'CAT_id'), 'never edited or deleted'), 'the link is history');
 
 -- COMP-05: derived exception states
 select pg_temp.as_user(:'ADM', :'ORG', 'ops_admin');
@@ -314,9 +314,9 @@ select pg_temp.check((select outcome = 'scheduled' and created = 3 and cardinali
 select pg_temp.check((select outcome from projects.schedule_handover_follow_ups(:'P7B_id')) = 'nothing_to_schedule', 'scheduling again creates nothing');
 select pg_temp.check((select outcome = 'scheduled' and created = 2 and cardinality(skipped) = 1 from projects.schedule_handover_follow_ups(:'P7C_id')), 'with no warranty date stated two are scheduled and the third is reported, never invented');
 reset role;
-select pg_temp.check((select count(*) from projects.p7_follow_up_tasks where project_id = :'P7C_id') = 2, 'the project with no warranty date has exactly two follow-ups');
-select pg_temp.check((select array_agg(due_on order by due_on) from projects.p7_follow_up_tasks where project_id = :'P7B_id') = array['2026-12-01'::date, '2026-12-08', '2027-03-24'], 'day 0, week 1 and warranty end minus 7 days');
-select pg_temp.check((select count(*) from projects.tasks t join projects.p7_follow_up_tasks f on f.task_id = t.id where f.project_id = :'P7B_id' and t.status = 'todo') = 3, 'each is a real task');
+select pg_temp.check((select count(*) from projects.p7d_follow_up_tasks where project_id = :'P7C_id') = 2, 'the project with no warranty date has exactly two follow-ups');
+select pg_temp.check((select array_agg(due_on order by due_on) from projects.p7d_follow_up_tasks where project_id = :'P7B_id') = array['2026-12-01'::date, '2026-12-08', '2027-03-24'], 'day 0, week 1 and warranty end minus 7 days');
+select pg_temp.check((select count(*) from projects.tasks t join projects.p7d_follow_up_tasks f on f.task_id = t.id where f.project_id = :'P7B_id' and t.status = 'todo') = 3, 'each is a real task');
 select pg_temp.as_service();
 set local role service_role;
 select pg_temp.check((select outcome from projects.schedule_handover_follow_ups(:'P7B_id')) = 'nothing_to_schedule', 'the service role (a job) is idempotent too');
@@ -348,7 +348,16 @@ select pg_temp.check((select outcome from projects.record_production_health_snap
 select pg_temp.check((select outcome from projects.record_production_health_snapshot(:'P7B_id', 'degraded', 'check-2026-12-02', 'checkout p95 is slow', true, true, null, :'C1')) = 'recorded', 'a person records a snapshot');
 select pg_temp.check((select status = 'degraded' and source = 'manual' and monitoring_source_configured = false and age_minutes < 5 from projects.p7_latest_health_snapshot(:'P7B_id')), 'the latest snapshot says it is manual, how old it is, and that no monitoring source is configured');
 reset role;
-select pg_temp.check(pg_temp.refused(format($$insert into projects.p7_health_snapshots (organization_id, project_id, source, status, evidence_ref, recorded_by) values (%L, %L, 'monitoring_adapter', 'healthy', 'x', %L)$$, :'ORG', :'P7B_id', :'ADM'), 'source'), 'a monitor''s reading cannot be written: no monitoring source exists');
+select pg_temp.check(pg_temp.refused(format($$insert into projects.p7d_health_snapshots (organization_id, project_id, source, status, evidence_ref, recorded_by) values (%L, %L, 'monitoring_adapter', 'healthy', 'x', %L)$$, :'ORG', :'P7B_id', :'ADM'), 'source'), 'a monitor''s reading cannot be written: no monitoring source exists');
+
+-- ═════════ 6. tenancy: every new org-scoped table is guarded, frozen, RLS-protected and read-only to a signed-in person ═════════
+select pg_temp.as_service();
+set local role service_role;
+select pg_temp.check((select count(*) = 0 from core.unguarded_org_fks() where child like 'projects.p7d\_%' or child like 'qa.functional\_%'), 'every org-scoped foreign key of the new tables is tenancy-guarded');
+select pg_temp.check((select count(*) = 0 from core.unfrozen_org_tables() where org_table like 'projects.p7d\_%' or org_table like 'qa.functional\_%'), 'every new table has a frozen organization_id');
+reset role;
+select pg_temp.check((select count(*) = 5 from pg_class c join pg_namespace n on n.oid = c.relnamespace where c.relkind = 'r' and c.relrowsecurity and ((n.nspname = 'projects' and c.relname like 'p7d\_%') or (n.nspname = 'qa' and c.relname like 'functional\_%'))), 'all five new tables have row level security on');
+select pg_temp.check((select count(*) = 0 from information_schema.role_table_grants g where g.grantee = 'authenticated' and g.privilege_type <> 'SELECT' and ((g.table_schema = 'projects' and g.table_name like 'p7d\_%') or (g.table_schema = 'qa' and g.table_name like 'functional\_%'))), 'authenticated holds SELECT only on the new tables');
 
 -- ───────── red-proofs: remove each control from the LIVE definition, watch the guarded behaviour become possible, roll the mutation back ─────────
 -- (each block runs in a sub-transaction that is rolled back by raising 'rp_done', so the mutation and anything it wrote are undone)
@@ -476,7 +485,7 @@ begin
   exception when others then if sqlerrm <> 'rp_done' then raise; end if; end;
   perform pg_temp.check(v_n = 0, 'RED-PROOF: without the incident rule an open incident no longer blocks the handover');
   begin
-    perform pg_temp.mutate('projects.schedule_handover_follow_ups(uuid)'::regprocedure, 'if exists (select 1 from projects.p7_follow_up_tasks f where f.project_id = p_project_id and f.kind = k) then continue; end if;', '');
+    perform pg_temp.mutate('projects.schedule_handover_follow_ups(uuid)'::regprocedure, 'if exists (select 1 from projects.p7d_follow_up_tasks f where f.project_id = p_project_id and f.kind = k) then continue; end if;', '');
     perform projects.schedule_handover_follow_ups(v_pb);
     v_res := 'ran';
     raise exception 'rp_done';
@@ -485,9 +494,10 @@ begin
   begin
     perform pg_temp.mutate('projects.schedule_handover_follow_ups(uuid)'::regprocedure, 'if v_due is null then v_skip := v_skip || (k || '': no warranty end date is stated on the delivered handover''); continue; end if;', 'v_due := coalesce(v_due, current_date + 30);');
     perform projects.schedule_handover_follow_ups((select id from projects.projects where name = 'zztest g567 p7 nowarranty'));
-    v_n := (select count(*) from projects.p7_follow_up_tasks where project_id = (select id from projects.projects where name = 'zztest g567 p7 nowarranty'));
+    v_n := (select count(*) from projects.p7d_follow_up_tasks where project_id = (select id from projects.projects where name = 'zztest g567 p7 nowarranty'));
     raise exception 'rp_done';
   exception when others then if sqlerrm <> 'rp_done' then raise; end if; end;
   perform pg_temp.check(v_n = 3, 'RED-PROOF: mutated, a missing warranty date would be silently invented');
 end $rp$;
+-- none
 rollback;

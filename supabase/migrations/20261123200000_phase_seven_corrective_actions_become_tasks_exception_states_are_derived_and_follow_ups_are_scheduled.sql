@@ -16,7 +16,7 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- ── P7-INC-09: corrective actions are tasks ────────────────────────────────
-create table if not exists projects.p7_incident_corrective_actions (
+create table if not exists projects.p7d_incident_corrective_actions (
   id               uuid primary key default gen_random_uuid(),
   organization_id  uuid not null references core.organizations(id) on delete cascade,
   incident_id      uuid not null references projects.p7_incidents(id) on delete cascade,
@@ -25,10 +25,10 @@ create table if not exists projects.p7_incident_corrective_actions (
   created_by       uuid not null references core.users(id) on delete restrict,
   created_at       timestamptz not null default clock_timestamp()
 );
-create index if not exists p7_corrective_actions_incident_idx on projects.p7_incident_corrective_actions (incident_id);
+create index if not exists p7_corrective_actions_incident_idx on projects.p7d_incident_corrective_actions (incident_id);
 
 -- ── P7-QA-06: a health snapshot with its source ────────────────────────────
-create table if not exists projects.p7_health_snapshots (
+create table if not exists projects.p7d_health_snapshots (
   id               uuid primary key default gen_random_uuid(),
   organization_id  uuid not null references core.organizations(id) on delete cascade,
   project_id       uuid not null references projects.projects(id) on delete cascade,
@@ -43,10 +43,10 @@ create table if not exists projects.p7_health_snapshots (
   recorded_by      uuid not null references core.users(id) on delete restrict,
   recorded_at      timestamptz not null default clock_timestamp()
 );
-create index if not exists p7_health_snapshots_project_idx on projects.p7_health_snapshots (project_id, recorded_at desc);
+create index if not exists p7d_health_snapshots_project_idx on projects.p7d_health_snapshots (project_id, recorded_at desc);
 
 -- ── P7-CS-03: follow-up tasks, one per kind per project ────────────────────
-create table if not exists projects.p7_follow_up_tasks (
+create table if not exists projects.p7d_follow_up_tasks (
   id               uuid primary key default gen_random_uuid(),
   organization_id  uuid not null references core.organizations(id) on delete cascade,
   project_id       uuid not null references projects.projects(id) on delete cascade,
@@ -61,14 +61,14 @@ do $$
 declare r record;
 begin
   for r in select * from (values
-    ('p7_incident_corrective_actions', 'incident_id', 'projects.p7_incidents'), ('p7_incident_corrective_actions', 'task_id', 'projects.tasks'),
-    ('p7_health_snapshots', 'project_id', 'projects.projects'), ('p7_health_snapshots', 'deployment_id', 'projects.p7_deployments'),
-    ('p7_follow_up_tasks', 'project_id', 'projects.projects'), ('p7_follow_up_tasks', 'task_id', 'projects.tasks')
+    ('p7d_incident_corrective_actions', 'incident_id', 'projects.p7_incidents'), ('p7d_incident_corrective_actions', 'task_id', 'projects.tasks'),
+    ('p7d_health_snapshots', 'project_id', 'projects.projects'), ('p7d_health_snapshots', 'deployment_id', 'projects.p7_deployments'),
+    ('p7d_follow_up_tasks', 'project_id', 'projects.projects'), ('p7d_follow_up_tasks', 'task_id', 'projects.tasks')
   ) as t(tbl, col, parent) loop
     execute format('drop trigger if exists %I on projects.%I', r.tbl || '_parent_org_' || r.col, r.tbl);
     execute format('create trigger %I before insert or update of %I on projects.%I for each row execute function core.enforce_parent_org(%L, %L)', r.tbl || '_parent_org_' || r.col, r.col, r.tbl, r.col, r.parent);
   end loop;
-  for r in select unnest(array['p7_incident_corrective_actions', 'p7_health_snapshots', 'p7_follow_up_tasks']) as tbl loop
+  for r in select unnest(array['p7d_incident_corrective_actions', 'p7d_health_snapshots', 'p7d_follow_up_tasks']) as tbl loop
     execute format('alter table projects.%I enable row level security', r.tbl);
     execute format('drop policy if exists %I on projects.%I', r.tbl || '_read', r.tbl);
     execute format($p$create policy %I on projects.%I for select to authenticated using (organization_id = (select core.current_organization_id()) and (select core.is_internal()))$p$, r.tbl || '_read', r.tbl);
@@ -97,13 +97,13 @@ begin
   select * into v_i from projects.p7_incidents i where i.id = p_incident_id and i.organization_id = v_org for update;
   if v_i.id is null then return query select 'not_found'::text, null::uuid; return; end if;
   if p_assignee_id is not null and not exists (select 1 from core.memberships m where m.organization_id = v_org and m.user_id = p_assignee_id) then return query select 'assignee_not_in_organization'::text, null::uuid; return; end if;
-  if exists (select 1 from projects.p7_incident_corrective_actions a where a.incident_id = p_incident_id and lower(btrim(a.title)) = lower(btrim(p_title))) then return query select 'already_recorded'::text, null::uuid; return; end if;
+  if exists (select 1 from projects.p7d_incident_corrective_actions a where a.incident_id = p_incident_id and lower(btrim(a.title)) = lower(btrim(p_title))) then return query select 'already_recorded'::text, null::uuid; return; end if;
   insert into projects.tasks (organization_id, project_id, title, description, priority, assignee_id, due_on)
   values (v_org, v_i.project_id, left('Corrective action: ' || btrim(p_title), 300),
           'Raised from production incident ' || v_i.id || ' (' || v_i.incident_type || ', ' || v_i.severity || '). A corrective action is work somebody owns, not text.',
           case v_i.severity when 'sev1' then 'p0' when 'sev2' then 'p1' else 'p2' end, p_assignee_id, p_due_on)
   returning id into v_t;
-  insert into projects.p7_incident_corrective_actions (organization_id, incident_id, task_id, title, created_by) values (v_org, v_i.id, v_t, btrim(p_title), v_actor);
+  insert into projects.p7d_incident_corrective_actions (organization_id, incident_id, task_id, title, created_by) values (v_org, v_i.id, v_t, btrim(p_title), v_actor);
   perform core.record_audit(v_org, 'incident.corrective_action_created', 'incident', v_i.id, null, jsonb_build_object('taskId', v_t));
   return query select 'created'::text, v_t;
 end $$;
@@ -119,7 +119,7 @@ begin
   if v_i.id is null then return; end if;
   if coalesce((select auth.role()), '') <> 'service_role' and (v_i.organization_id is distinct from (select core.current_organization_id()) or not coalesce((select core.is_internal()), false)) then return; end if;
   return query select count(*)::int, (count(*) filter (where t.status = 'done'))::int, (count(*) filter (where t.status <> 'done'))::int
-    from projects.p7_incident_corrective_actions a join projects.tasks t on t.id = a.task_id where a.incident_id = p_incident_id;
+    from projects.p7d_incident_corrective_actions a join projects.tasks t on t.id = a.task_id where a.incident_id = p_incident_id;
 end $$;
 revoke all on function projects.p7_incident_corrective_status(uuid) from public, anon;
 grant execute on function projects.p7_incident_corrective_status(uuid) to authenticated, service_role;
@@ -185,7 +185,7 @@ begin
   if v_rec.id is null then return query select 'not_completed'::text, 0, '{}'::text[]; return; end if;
   select * into v_pk from projects.p7_handover_packages k2 where k2.project_id = p_project_id and k2.status = 'delivered' order by k2.version desc limit 1;
   foreach k in array array['day_zero', 'week_one', 'warranty_end_minus_7'] loop
-    if exists (select 1 from projects.p7_follow_up_tasks f where f.project_id = p_project_id and f.kind = k) then continue; end if;
+    if exists (select 1 from projects.p7d_follow_up_tasks f where f.project_id = p_project_id and f.kind = k) then continue; end if;
     v_due := case k when 'day_zero' then v_rec.completed_at::date when 'week_one' then v_rec.completed_at::date + 7
                     else case when v_pk.warranty_ends_on is null then null else v_pk.warranty_ends_on - 7 end end;
     if v_due is null then v_skip := v_skip || (k || ': no warranty end date is stated on the delivered handover'); continue; end if;
@@ -194,7 +194,7 @@ begin
             case k when 'day_zero' then 'Day-0 check-in with the client after handover' when 'week_one' then 'Week-1 follow-up with the client after handover' else 'Warranty ends in 7 days: confirm open items and maintenance offer' end,
             'Scheduled from the completed handover. A person does this; nothing is sent automatically.', 'p2', v_due)
     returning id into v_task;
-    insert into projects.p7_follow_up_tasks (organization_id, project_id, kind, task_id, due_on) values (v_org, p_project_id, k, v_task, v_due);
+    insert into projects.p7d_follow_up_tasks (organization_id, project_id, kind, task_id, due_on) values (v_org, p_project_id, k, v_task, v_due);
     v_made := v_made + 1;
   end loop;
   if v_made > 0 then perform core.record_audit(v_org, 'handover.follow_ups_scheduled', 'project', p_project_id, null, jsonb_build_object('created', v_made)); end if;
@@ -259,7 +259,7 @@ begin
   if not exists (select 1 from projects.phase_seven s where s.project_id = p_project_id and s.organization_id = v_org) then return query select 'not_found'::text, null::uuid; return; end if;
   if p_deployment_id is not null and not exists (select 1 from projects.p7_deployments d where d.id = p_deployment_id and d.project_id = p_project_id and d.organization_id = v_org) then return query select 'deployment_not_found'::text, null::uuid; return; end if;
   begin
-    insert into projects.p7_health_snapshots (organization_id, project_id, deployment_id, commit_ref, source, status, error_summary, integrations_ok, database_ok, evidence_ref, recorded_by)
+    insert into projects.p7d_health_snapshots (organization_id, project_id, deployment_id, commit_ref, source, status, error_summary, integrations_ok, database_ok, evidence_ref, recorded_by)
     values (v_org, p_project_id, p_deployment_id, lower(nullif(btrim(p_commit_ref), '')), 'manual', p_status, nullif(btrim(p_error_summary), ''), p_integrations_ok, p_database_ok, btrim(p_evidence_ref), v_actor)
     returning id into v_id;
   exception when check_violation then return query select 'invalid'::text, null::uuid; return; end;
@@ -279,7 +279,7 @@ begin
   if coalesce((select auth.role()), '') <> 'service_role' and (v_p.organization_id is distinct from (select core.current_organization_id()) or not coalesce((select core.is_internal()), false)) then return; end if;
   -- the last column is false by construction: no monitoring source exists in this system, so no snapshot is ever a monitor's reading
   return query select h.id, h.status, h.source, h.recorded_at, (extract(epoch from (clock_timestamp() - h.recorded_at)) / 60)::int, false
-    from projects.p7_health_snapshots h where h.project_id = p_project_id order by h.recorded_at desc, h.id desc limit 1;
+    from projects.p7d_health_snapshots h where h.project_id = p_project_id order by h.recorded_at desc, h.id desc limit 1;
 end $$;
 revoke all on function projects.p7_latest_health_snapshot(uuid) from public, anon;
 grant execute on function projects.p7_latest_health_snapshot(uuid) to authenticated, service_role;

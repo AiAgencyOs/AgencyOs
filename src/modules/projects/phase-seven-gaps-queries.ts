@@ -22,7 +22,7 @@ export async function loadPhaseSevenGaps(projectId: string): Promise<PhaseSevenG
   const [states, future, follow, health] = await Promise.all([
     projects.rpc('p7_exception_states', { p_project_id: projectId }),
     projects.rpc('p7_linked_future_work', { p_project_id: projectId }),
-    projects.from('p7_follow_up_tasks').select('kind, task_id, due_on').eq('project_id', projectId).order('due_on', { ascending: true }),
+    projects.from('p7d_follow_up_tasks').select('kind, task_id, due_on').eq('project_id', projectId).order('due_on', { ascending: true }),
     projects.rpc('p7_latest_health_snapshot', { p_project_id: projectId }),
   ]);
   if (states.error) unreadable('phase 7 exception states', states.error);
