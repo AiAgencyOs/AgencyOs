@@ -52,6 +52,15 @@ const RENDERED: Record<string, string> = {
   supportSlaBreached: schema.supportSlaBreachedAnnouncementFor({ projectName: NAME, kind: 'response' }),
   retentionRecoveryRequired: schema.retentionRecoveryRequiredAnnouncementFor({ projectName: NAME }),
   maintenanceRenewalDue: schema.maintenanceRenewalDueAnnouncementFor({ projectName: NAME }),
+  maintenanceWorkOpened: schema.maintenanceWorkOpenedAnnouncementFor({ projectName: NAME }),
+  maintenanceWorkOpenedEmergency: schema.maintenanceWorkOpenedAnnouncementFor({ projectName: NAME, emergency: true }),
+  maintenanceQaFailed: schema.maintenanceQaFailedAnnouncementFor({ projectName: NAME, category: 'regression' }),
+  maintenanceReleaseRequested: schema.maintenanceReleaseRequestedAnnouncementFor({ projectName: NAME }),
+  maintenanceReleaseApproved: schema.maintenanceReleaseApprovedAnnouncementFor({ projectName: NAME }),
+  maintenanceReleased: schema.maintenanceReleasedAnnouncementFor({ projectName: NAME }),
+  maintenanceBillingProposed: schema.maintenanceBillingProposedAnnouncementFor({ projectName: NAME, kind: 'maintenance_invoice' }),
+  maintenanceSlaBreached: schema.maintenanceSlaBreachedAnnouncementFor({ projectName: NAME }),
+  maintenanceWorkStalled: schema.maintenanceWorkStalledAnnouncementFor({ projectName: NAME, reason: 'no_independent_qa' }),
 };
 
 describe('every PM5/PM6 message is free of leaks', () => {

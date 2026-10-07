@@ -74,6 +74,14 @@ import {
   announceSupportSlaBreached,
   announceRetentionRecoveryRequired,
   announceMaintenanceRenewalDue,
+  announceMaintenanceWorkOpened,
+  announceMaintenanceQaFailed,
+  announceMaintenanceReleaseRequested,
+  announceMaintenanceReleaseApproved,
+  announceMaintenanceReleased,
+  announceMaintenanceBillingProposed,
+  announceMaintenanceSlaBreached,
+  announceMaintenanceWorkStalled,
   announceQaReverification,
   announceM4PaymentVerified,
   announceFinanciallyClosed,
@@ -114,7 +122,7 @@ import { handleWelcomeClient, handleAskGstDetails, handlePaymentUpdate, handleRe
 import { handleHandoverAcceptedForFinance, handleBillingModeConfirmed, handleInvoiceIssuedForDelivery, handlePhaseFourCompletedForFinance, handlePhaseFiveCompletedForFinance, handlePhaseSixCompletedForFinance } from '@/modules/finance/handlers';
 import { learnFromDecision, learnFromRevision, syncDiscountDecision } from '@/modules/sales/handlers';
 import { handleRouteTask2Design, handleRequestUIVersionAdminReview, handleRouteDevelopmentPlan, handleRouteQaOutcome } from '@/modules/orchestrator/handlers';
-import { sweepFinanceExceptions, sweepStaleOrchestratorRecords } from '@/modules/orchestrator/sweeps';
+import { sweepFinanceExceptions, sweepMaintenanceLifecycle, sweepStaleOrchestratorRecords } from '@/modules/orchestrator/sweeps';
 import { handleReviewUIVersion, handleReviewPrototypeBuild } from '@/modules/qa/handlers';
 
 export const runtime = 'nodejs';
@@ -390,6 +398,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   // failed dispatch, and a lease past its time is expired so a crashed worker does not hold files forever.
   await sweepStaleOrchestratorRecords(admin);
   await sweepFinanceExceptions(admin);
+  await sweepMaintenanceLifecycle(admin);
   // Scheduled social posts that are due: published through the governed door, or surfaced for a person when no publisher exists.
   await runSocialPublishing(admin, SOCIAL_PUBLISHERS);
   // Approved ad changes, pending pauses, emergency stops and campaign health (lead generation, 20261020100000).
@@ -1368,6 +1377,15 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const supportSlaBreachedAnnouncements = await runEventJobs(admin, SUPPORT_SLA_BREACHED_ANNOUNCE_JOB_KIND, announceSupportSlaBreached, 'runSupportSlaBreachedAnnouncementJobs');
   const retentionRecoveryAnnouncements = await runEventJobs(admin, RETENTION_RECOVERY_ANNOUNCE_JOB_KIND, announceRetentionRecoveryRequired, 'runRetentionRecoveryAnnouncementJobs');
   const maintenanceRenewalDueAnnouncements = await runEventJobs(admin, MAINTENANCE_RENEWAL_DUE_ANNOUNCE_JOB_KIND, announceMaintenanceRenewalDue, 'runMaintenanceRenewalDueAnnouncementJobs');
+  // PM8-C (Phase 8C): the post-launch maintenance events (work, QA, release, billing draft, SLA breach, stall). Internal channel only.
+  const maintenanceWorkOpenedAnnouncements = await runEventJobs(admin, MAINTENANCE_WORK_OPENED_ANNOUNCE_JOB_KIND, announceMaintenanceWorkOpened, 'runMaintenanceWorkOpenedAnnouncementJobs');
+  const maintenanceQaFailedAnnouncements = await runEventJobs(admin, MAINTENANCE_QA_FAILED_ANNOUNCE_JOB_KIND, announceMaintenanceQaFailed, 'runMaintenanceQaFailedAnnouncementJobs');
+  const maintenanceReleaseRequestedAnnouncements = await runEventJobs(admin, MAINTENANCE_RELEASE_REQUESTED_ANNOUNCE_JOB_KIND, announceMaintenanceReleaseRequested, 'runMaintenanceReleaseRequestedAnnouncementJobs');
+  const maintenanceReleaseApprovedAnnouncements = await runEventJobs(admin, MAINTENANCE_RELEASE_APPROVED_ANNOUNCE_JOB_KIND, announceMaintenanceReleaseApproved, 'runMaintenanceReleaseApprovedAnnouncementJobs');
+  const maintenanceReleasedAnnouncements = await runEventJobs(admin, MAINTENANCE_RELEASED_ANNOUNCE_JOB_KIND, announceMaintenanceReleased, 'runMaintenanceReleasedAnnouncementJobs');
+  const maintenanceBillingProposedAnnouncements = await runEventJobs(admin, MAINTENANCE_BILLING_PROPOSED_ANNOUNCE_JOB_KIND, announceMaintenanceBillingProposed, 'runMaintenanceBillingProposedAnnouncementJobs');
+  const maintenanceSlaBreachedAnnouncements = await runEventJobs(admin, MAINTENANCE_SLA_BREACHED_ANNOUNCE_JOB_KIND, announceMaintenanceSlaBreached, 'runMaintenanceSlaBreachedAnnouncementJobs');
+  const maintenanceWorkStalledAnnouncements = await runEventJobs(admin, MAINTENANCE_WORK_STALLED_ANNOUNCE_JOB_KIND, announceMaintenanceWorkStalled, 'runMaintenanceWorkStalledAnnouncementJobs');
   const qaReverificationAnnouncements = await runEventJobs(admin, QA_REVERIFICATION_ANNOUNCE_JOB_KIND, announceQaReverification, 'runQaReverificationAnnouncementJobs');
   const m4VerifiedAnnouncements = await runEventJobs(admin, M4_VERIFIED_ANNOUNCE_JOB_KIND, announceM4PaymentVerified, 'runM4VerifiedAnnouncementJobs');
   // Phase 9: the project's finances were closed.
@@ -1695,6 +1713,14 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     supportSlaBreachedAnnouncements: supportSlaBreachedAnnouncements.results,
     retentionRecoveryAnnouncements: retentionRecoveryAnnouncements.results,
     maintenanceRenewalDueAnnouncements: maintenanceRenewalDueAnnouncements.results,
+    maintenanceWorkOpenedAnnouncements: maintenanceWorkOpenedAnnouncements.results,
+    maintenanceQaFailedAnnouncements: maintenanceQaFailedAnnouncements.results,
+    maintenanceReleaseRequestedAnnouncements: maintenanceReleaseRequestedAnnouncements.results,
+    maintenanceReleaseApprovedAnnouncements: maintenanceReleaseApprovedAnnouncements.results,
+    maintenanceReleasedAnnouncements: maintenanceReleasedAnnouncements.results,
+    maintenanceBillingProposedAnnouncements: maintenanceBillingProposedAnnouncements.results,
+    maintenanceSlaBreachedAnnouncements: maintenanceSlaBreachedAnnouncements.results,
+    maintenanceWorkStalledAnnouncements: maintenanceWorkStalledAnnouncements.results,
     qaReverificationAnnouncements: qaReverificationAnnouncements.results,
     m4VerifiedAnnouncements: m4VerifiedAnnouncements.results,
     financiallyClosedAnnouncements: financiallyClosedAnnouncements.results,
@@ -1859,6 +1885,14 @@ const SUPPORT_ESCALATED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceSuppor
 const SUPPORT_SLA_BREACHED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceSupportSlaBreached'];
 const RETENTION_RECOVERY_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceRetentionRecoveryRequired'];
 const MAINTENANCE_RENEWAL_DUE_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceRenewalDue'];
+const MAINTENANCE_WORK_OPENED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceWorkOpened'];
+const MAINTENANCE_QA_FAILED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceQaFailed'];
+const MAINTENANCE_RELEASE_REQUESTED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceReleaseRequested'];
+const MAINTENANCE_RELEASE_APPROVED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceReleaseApproved'];
+const MAINTENANCE_RELEASED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceReleased'];
+const MAINTENANCE_BILLING_PROPOSED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceBillingProposed'];
+const MAINTENANCE_SLA_BREACHED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceSlaBreached'];
+const MAINTENANCE_WORK_STALLED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceMaintenanceWorkStalled'];
 const QA_REVERIFICATION_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceQaReverification'];
 const M4_VERIFIED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceM4PaymentVerified'];
 const FINANCIALLY_CLOSED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceFinanciallyClosed'];

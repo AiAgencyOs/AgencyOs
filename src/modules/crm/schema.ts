@@ -2091,6 +2091,14 @@ export const PM_TEMPLATES: Readonly<Record<string, { milestone: string; version:
   'support-sla-breached': { milestone: 'PM8-A02', version: 1 },
   'retention-recovery-required': { milestone: 'PM8-RECOVERY', version: 1 },
   'maintenance-renewal-due': { milestone: 'PM8-RENEWAL-DUE', version: 1 },
+  'maintenance-work-opened': { milestone: 'PM8-C01', version: 1 },
+  'maintenance-qa-failed': { milestone: 'PM8-C02', version: 1 },
+  'maintenance-release-requested': { milestone: 'PM8-C03', version: 1 },
+  'maintenance-release-approved': { milestone: 'PM8-C04', version: 1 },
+  'maintenance-released': { milestone: 'PM8-C05', version: 1 },
+  'maintenance-billing-proposed': { milestone: 'PM8-C06', version: 1 },
+  'maintenance-sla-breached': { milestone: 'PM8-C07', version: 1 },
+  'maintenance-work-stalled': { milestone: 'PM8-C08', version: 1 },
 };
 
 export function pmTemplateFor(externalRef: string): { milestone: string; version: number } | null {
@@ -2238,5 +2246,89 @@ export function maintenanceRenewalDueAnnouncementFor(input: { projectName: strin
     'A maintenance plan is approaching its renewal date.',
     `Project: ${input.projectName ?? 'an unnamed project'}`,
     'A renewal review is open. Nothing has been renewed or sent: a person proposes the renewal.',
+  ].join('\n');
+}
+
+/**
+ * PM8-C01..C08 - the post-launch maintenance events that were declared and emitted but had no subscriber. Internal channel only; none of them names a
+ * commit, a model, an agent, an amount, a client's words or a person. Each says what happened on the record and what a person does next.
+ */
+const projectLine = (name: string | null) => `Project: ${name ?? 'an unnamed project'}`;
+
+export const maintenanceWorkOpenedEventSchema = z.object({ projectId: z.uuid(), kind: z.enum(['hotfix', 'patch', 'enhancement']).optional(), emergency: z.boolean().optional() }).strip();
+export function maintenanceWorkOpenedAnnouncementFor(input: { projectName: string | null; emergency?: boolean }): string {
+  return [
+    input.emergency ? 'Emergency maintenance work was opened.' : 'Post-launch maintenance work was opened.',
+    projectLine(input.projectName),
+    'It is tied to an approved defect, covered ticket or change request. Nothing has been built or released yet.',
+  ].join('\n');
+}
+
+export const maintenanceQaFailedEventSchema = z.object({ projectId: z.uuid(), category: z.enum(['targeted', 'regression', 'security']).optional() }).strip();
+export function maintenanceQaFailedAnnouncementFor(input: { projectName: string | null; category?: 'targeted' | 'regression' | 'security' }): string {
+  return [
+    `A maintenance change did not pass its ${input.category ?? 'independent'} check.`,
+    projectLine(input.projectName),
+    'It has gone back to the developer and a defect is recorded. It cannot be released until it passes again.',
+  ].join('\n');
+}
+
+export const maintenanceReleaseRequestedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function maintenanceReleaseRequestedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'A maintenance change is waiting for release approval.',
+    projectLine(input.projectName),
+    'An Admin who did not build or request it decides. Nothing is deployed by approving it here.',
+  ].join('\n');
+}
+
+export const maintenanceReleaseApprovedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function maintenanceReleaseApprovedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'A maintenance change was approved for release.',
+    projectLine(input.projectName),
+    'A person deploys it through the normal process and records the deployment and its smoke check.',
+  ].join('\n');
+}
+
+export const maintenanceReleasedEventSchema = z.object({ projectId: z.uuid() }).strip();
+export function maintenanceReleasedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'A maintenance change was recorded as released.',
+    projectLine(input.projectName),
+    'The deployment and smoke evidence are on the record. The client has not been told by this message.',
+  ].join('\n');
+}
+
+export const maintenanceBillingProposedEventSchema = z.object({ projectId: z.uuid(), kind: z.enum(['maintenance_invoice', 'change_request_invoice', 'payment_reminder']).optional() }).strip();
+export function maintenanceBillingProposedAnnouncementFor(input: { projectName: string | null; kind?: 'maintenance_invoice' | 'change_request_invoice' | 'payment_reminder' }): string {
+  const what = input.kind === 'payment_reminder' ? 'A payment reminder draft is ready' : input.kind === 'change_request_invoice' ? 'A change request billing draft is ready' : 'A maintenance billing draft is ready';
+  return [
+    `${what} for a person to decide.`,
+    projectLine(input.projectName),
+    'No invoice was created, no reminder was sent and no payment was recorded.',
+  ].join('\n');
+}
+
+export const maintenanceSlaBreachedEventSchema = z.object({ projectId: z.uuid(), workItemId: z.uuid(), priority: z.enum(['p0', 'p1', 'p2', 'p3']).optional() }).strip();
+export function maintenanceSlaBreachedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'A maintenance work item passed its resolution target.',
+    projectLine(input.projectName),
+    'An Admin is asked to acknowledge it and decide what happens next.',
+  ].join('\n');
+}
+
+export const maintenanceWorkStalledEventSchema = z.object({ projectId: z.uuid(), workItemId: z.uuid(), reason: z.enum(['no_independent_approver', 'no_independent_qa', 'authorization_invalid', 'inactive']).optional() }).strip();
+export function maintenanceWorkStalledAnnouncementFor(input: { projectName: string | null; reason?: string }): string {
+  const why =
+    input.reason === 'no_independent_approver' ? 'nobody independent of the author can approve it'
+    : input.reason === 'no_independent_qa' ? 'nobody independent of the author can test it'
+    : input.reason === 'authorization_invalid' ? 'the record that authorized it is no longer valid'
+    : 'it has not moved for as long as the stall setting allows';
+  return [
+    `A maintenance work item cannot move: ${why}.`,
+    projectLine(input.projectName),
+    'Its status is unchanged. A person decides whether to reassign, re-authorize or cancel it.',
   ].join('\n');
 }

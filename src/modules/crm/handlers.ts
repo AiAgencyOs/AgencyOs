@@ -21,6 +21,22 @@ import {
   retentionRecoveryRequiredAnnouncementFor,
   maintenanceRenewalDueEventSchema,
   maintenanceRenewalDueAnnouncementFor,
+  maintenanceWorkOpenedEventSchema,
+  maintenanceWorkOpenedAnnouncementFor,
+  maintenanceQaFailedEventSchema,
+  maintenanceQaFailedAnnouncementFor,
+  maintenanceReleaseRequestedEventSchema,
+  maintenanceReleaseRequestedAnnouncementFor,
+  maintenanceReleaseApprovedEventSchema,
+  maintenanceReleaseApprovedAnnouncementFor,
+  maintenanceReleasedEventSchema,
+  maintenanceReleasedAnnouncementFor,
+  maintenanceBillingProposedEventSchema,
+  maintenanceBillingProposedAnnouncementFor,
+  maintenanceSlaBreachedEventSchema,
+  maintenanceSlaBreachedAnnouncementFor,
+  maintenanceWorkStalledEventSchema,
+  maintenanceWorkStalledAnnouncementFor,
   buildReadyForAdminEventSchema,
   buildReadyForAdminAnnouncementFor,
   buildRevisedAnnouncementFor,
@@ -3731,6 +3747,128 @@ export async function announceMaintenanceRenewalDue(admin: Admin, job: AnnounceJ
   return announceToInternalChannel(admin, job, {
     body: maintenanceRenewalDueAnnouncementFor({ projectName }),
     externalRef: `maintenance-renewal-due:${parsed.data.planId}:${parsed.data.endsOn ?? 'open'}`,
+    projectId: parsed.data.projectId,
+  });
+}
+
+// ── Phase 8C announcers: the post-launch maintenance events that had no subscriber. Internal channel only, once per record, never to a client ──
+
+/** `project.maintenance_work_opened` -> see PM_TEMPLATES. Internal channel only; keyed by the record the event is about. */
+export async function announceMaintenanceWorkOpened(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = maintenanceWorkOpenedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.maintenance_work_opened payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: maintenanceWorkOpenedAnnouncementFor({ projectName, emergency: parsed.data.emergency === true }),
+    externalRef: `maintenance-work-opened:${envelope.subjectId ?? parsed.data.projectId}:${envelope.eventId ?? 'e'}`,
+    projectId: parsed.data.projectId,
+  });
+}
+
+/** `project.maintenance_qa_failed` -> see PM_TEMPLATES. Internal channel only; keyed by the record the event is about. */
+export async function announceMaintenanceQaFailed(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = maintenanceQaFailedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.maintenance_qa_failed payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: maintenanceQaFailedAnnouncementFor({ projectName, category: parsed.data.category }),
+    externalRef: `maintenance-qa-failed:${envelope.subjectId ?? parsed.data.projectId}:${envelope.eventId ?? 'e'}`,
+    projectId: parsed.data.projectId,
+  });
+}
+
+/** `project.maintenance_release_requested` -> see PM_TEMPLATES. Internal channel only; keyed by the record the event is about. */
+export async function announceMaintenanceReleaseRequested(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = maintenanceReleaseRequestedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.maintenance_release_requested payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: maintenanceReleaseRequestedAnnouncementFor({ projectName }),
+    externalRef: `maintenance-release-requested:${envelope.subjectId ?? parsed.data.projectId}:${envelope.eventId ?? 'e'}`,
+    projectId: parsed.data.projectId,
+  });
+}
+
+/** `project.maintenance_release_approved` -> see PM_TEMPLATES. Internal channel only; keyed by the record the event is about. */
+export async function announceMaintenanceReleaseApproved(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = maintenanceReleaseApprovedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.maintenance_release_approved payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: maintenanceReleaseApprovedAnnouncementFor({ projectName }),
+    externalRef: `maintenance-release-approved:${envelope.subjectId ?? parsed.data.projectId}:${envelope.eventId ?? 'e'}`,
+    projectId: parsed.data.projectId,
+  });
+}
+
+/** `project.maintenance_released` -> see PM_TEMPLATES. Internal channel only; keyed by the record the event is about. */
+export async function announceMaintenanceReleased(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = maintenanceReleasedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.maintenance_released payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: maintenanceReleasedAnnouncementFor({ projectName }),
+    externalRef: `maintenance-released:${envelope.subjectId ?? parsed.data.projectId}:${envelope.eventId ?? 'e'}`,
+    projectId: parsed.data.projectId,
+  });
+}
+
+/** `finance.maintenance_billing_proposed` -> see PM_TEMPLATES. Internal channel only; keyed by the record the event is about. */
+export async function announceMaintenanceBillingProposed(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = maintenanceBillingProposedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed finance.maintenance_billing_proposed payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: maintenanceBillingProposedAnnouncementFor({ projectName, kind: parsed.data.kind }),
+    externalRef: `maintenance-billing-proposed:${envelope.subjectId ?? parsed.data.projectId}`,
+    projectId: parsed.data.projectId,
+  });
+}
+
+/** `project.maintenance_sla_breached` -> see PM_TEMPLATES. Internal channel only; keyed by the record the event is about. */
+export async function announceMaintenanceSlaBreached(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = maintenanceSlaBreachedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.maintenance_sla_breached payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: maintenanceSlaBreachedAnnouncementFor({ projectName }),
+    externalRef: `maintenance-sla-breached:${parsed.data.workItemId}`,
+    projectId: parsed.data.projectId,
+  });
+}
+
+/** `project.maintenance_work_stalled` -> see PM_TEMPLATES. Internal channel only; keyed by the record the event is about. */
+export async function announceMaintenanceWorkStalled(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = maintenanceWorkStalledEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.maintenance_work_stalled payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const projectName = await projectNameFor(admin, job.organization_id, parsed.data.projectId);
+  return announceToInternalChannel(admin, job, {
+    body: maintenanceWorkStalledAnnouncementFor({ projectName, reason: parsed.data.reason }),
+    externalRef: `maintenance-work-stalled:${parsed.data.workItemId}:${envelope.eventId ?? parsed.data.reason ?? 'e'}`,
     projectId: parsed.data.projectId,
   });
 }

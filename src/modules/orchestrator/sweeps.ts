@@ -55,3 +55,36 @@ export async function sweepFinanceExceptions(admin: Admin): Promise<{ openedOver
     return null;
   }
 }
+
+/**
+ * The post-launch maintenance sweeps (Phase 8C), one tick: the 8A renewal sweep (a plan past its end date lapses, a plan near it is flagged; nothing is ever
+ * renewed here), the payment-gate sweep (an expired exception on an unpaid plan suspends its entitlement), the SLA-breach sweep (an Admin-set target passed:
+ * recorded once and escalated to a person) and the stall sweep (a work item that cannot move is recorded with its reason). Each is a service-role door that
+ * re-checks the caller; none invents hours, sends to a client, bills or changes a work item's status. Best effort: one failing sweep is logged and the rest run.
+ */
+export async function sweepMaintenanceLifecycle(admin: Admin): Promise<Record<string, Record<string, number> | null>> {
+  const projects = admin.schema('projects') as unknown as Loose;
+  const doors: { name: string; args: Record<string, unknown>; fields: string[] }[] = [
+    { name: 'sweep_maintenance_renewals', args: {}, fields: ['flagged', 'expired'] },
+    { name: 'sweep_maintenance_plan_payment_gates', args: {}, fields: ['checked', 'flagged'] },
+    { name: 'sweep_maintenance_sla', args: { p_limit: 500 }, fields: ['checked', 'breached', 'skipped_no_policy'] },
+    { name: 'sweep_maintenance_stalls', args: { p_limit: 500 }, fields: ['checked', 'marked'] },
+  ];
+  const out: Record<string, Record<string, number> | null> = {};
+  for (const door of doors) {
+    try {
+      const { data, error } = await projects.rpc(door.name, door.args);
+      const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | undefined;
+      if (error || !row) {
+        console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `${door.name}: ${error ? error.message : 'the door answered nothing'}` }));
+        out[door.name] = null;
+      } else {
+        out[door.name] = Object.fromEntries(door.fields.map((f) => [f, Number(row[f] ?? 0)]));
+      }
+    } catch (e) {
+      console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `${door.name}: ${e instanceof Error ? e.message : 'unknown'}` }));
+      out[door.name] = null;
+    }
+  }
+  return out;
+}
