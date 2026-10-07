@@ -43,10 +43,11 @@ describe('W5 webhook guard', () => {
     assert.equal(calls[0]!.args.p_provider, 'whatsapp');
   });
 
-  test('a replay of a processed delivery is answered from the ledger and not acted on', async () => {
-    const { admin } = fakeAdmin({ outcome: 'duplicate', originalStatus: 'processed' });
+  test('a replay of a processed delivery is recorded in the ledger and still handed to the route, which reports the replay itself', async () => {
+    const { admin, calls } = fakeAdmin({ outcome: 'duplicate', originalStatus: 'processed' });
     const r = await admitDelivery(admin, { provider: 'email', eventKey: 'm1', rawBody: 'x' });
-    assert.deepEqual(r, { proceed: false, status: 200, outcome: 'duplicate' });
+    assert.deepEqual(r, { proceed: true, eventId: null });
+    assert.equal(calls.length >= 1, true);
   });
 
   test('a replay of a delivery whose first attempt failed is processed again (the retry of a 500 must not be lost)', async () => {

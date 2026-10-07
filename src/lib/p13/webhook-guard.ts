@@ -1,6 +1,5 @@
 import type { createAdminClient } from '@/lib/db/admin';
 
-import { looseSchema } from './loose-client';
 import {
   finishWebhookDelivery,
   httpStatusForOutcome,
@@ -55,19 +54,6 @@ export async function rejectDelivery(
   }
 }
 
-async function originalNeedsAnotherAttempt(admin: Admin, originalId: string | null): Promise<boolean> {
-  if (!originalId) return false;
-  const { data, error } = await looseSchema(admin as unknown as { schema(name: never): unknown }, 'core')
-    .from('p13_webhook_events')
-    .select('status')
-    .eq('id', originalId)
-    .maybeSingle();
-  // Unreadable: reprocess. Ingest is idempotent, so the cost of being wrong is a no-op; the cost of the other mistake is a lost message.
-  if (error) return true;
-  const status = (data as { status?: string } | null)?.status;
-  return status !== 'processed';
-}
-
 export async function admitDelivery(
   admin: Admin,
   d: { provider: string; eventKey: string; rawBody: string; organizationId?: string | null },
@@ -87,13 +73,9 @@ export async function admitDelivery(
   }
   if (decision.outcome === 'accepted') return { proceed: true, eventId: decision.eventId };
   if (decision.outcome === 'duplicate') {
-    let again = true;
-    try {
-      again = await originalNeedsAnotherAttempt(admin, decision.duplicateOf);
-    } catch (e) {
-      logLedgerFailure(d.provider, e);
-    }
-    if (again) return { proceed: true, eventId: null };
+    // The ledger records the replay (its duplicate_of link is the audit), but the route still runs: each ingester reports a replay itself
+    // (`replayed: 1`) and is idempotent on the provider's own id, and its callers and verifiers rely on that answer.
+    return { proceed: true, eventId: null };
   }
   return { proceed: false, status: httpStatusForOutcome(decision.outcome), outcome: decision.outcome };
 }
