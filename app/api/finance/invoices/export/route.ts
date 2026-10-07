@@ -7,6 +7,7 @@ import { logReportExport } from '@/modules/finance/export-log';
 import { invoiceKindLabel, isInvoiceKind } from '@/modules/finance/invoice-kind';
 import { listInvoicesFiltered } from '@/modules/finance/overview-queries';
 import { owedOn, verifiedOn } from '@/modules/finance/verified-basis';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * The invoice registry, as a file — SCR-050 (the overview's report) and
@@ -29,7 +30,7 @@ const UNPAID = new Set(['issued', 'partially_paid', 'overdue']);
 export async function GET(request: Request) {
   const context = await requireInternal('/finance');
   if (!can(context, 'invoice.read')) {
-    return NextResponse.json({ error: 'You do not have permission to read invoices.' }, { status: 403 });
+    return routeError('FORBIDDEN', 'You do not have permission to read invoices.');
   }
 
   const url = new URL(request.url);

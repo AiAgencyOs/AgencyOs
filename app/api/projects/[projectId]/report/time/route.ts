@@ -4,6 +4,7 @@ import { getAuthContext } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject } from '@/modules/projects/queries';
 import { readProjectTime } from '@/modules/projects/time-log-queries';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * The project's time logs as CSV — decision 4 of 2026-09-29. Same reader
@@ -28,13 +29,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
   const { projectId } = await params;
 
   const context = await getAuthContext();
-  if (!context) return NextResponse.json({ error: 'Sign in to export time logs.' }, { status: 401 });
+  if (!context) return routeError('UNAUTHORIZED', 'Sign in to export time logs.');
   if (!can(context, 'project.read')) {
-    return NextResponse.json({ error: 'You do not have permission to read this project.' }, { status: 403 });
+    return routeError('FORBIDDEN', 'You do not have permission to read this project.');
   }
 
   const project = await getProject(projectId);
-  if (!project) return NextResponse.json({ error: 'Project not found.' }, { status: 404 });
+  if (!project) return routeError('NOT_FOUND', 'Project not found.');
 
   const mayReadMoney = can(context, 'invoice.read');
   const time = await readProjectTime(projectId);

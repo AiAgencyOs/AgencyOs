@@ -5,6 +5,7 @@ import { can } from '@/lib/authz/permissions';
 import { logReportExport } from '@/modules/finance/export-log';
 import { listTaxReportInvoices } from '@/modules/finance/queries';
 import { invoicesInPeriod, resolveTaxPeriod, taxRegisterCsv } from '@/modules/finance/tax-report';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * The GST & tax register as a CSV download — SCR-056's "export". Same
@@ -17,7 +18,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   const context = await requireInternal('/finance/tax');
   if (!can(context, 'invoice.read')) {
-    return NextResponse.json({ error: 'You do not have permission to read invoices.' }, { status: 403 });
+    return routeError('FORBIDDEN', 'You do not have permission to read invoices.');
   }
 
   const url = new URL(request.url);

@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 
-import { httpStatusFor } from '@/lib/errors';
 import { quotationPdfPreview } from '@/modules/sales/preview-service';
 import { termsFromText } from '@/modules/sales/terms-schema';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * SCR-012 — "Preview PDF" from the composer, before anything is saved.
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
   });
 
   if (!result.ok) {
-    return NextResponse.json({ error: result.error.message }, { status: httpStatusFor(result.error.code) });
+    return routeError(result.error.code, result.error.message);
   }
 
   return new NextResponse(Buffer.from(result.data.bytes), {

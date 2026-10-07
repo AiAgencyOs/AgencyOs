@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { getAuthContext } from '@/lib/auth/session';
 import { resolveFinanceAttachmentUrl } from '@/modules/finance/attachment-download';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * An uploaded payment proof or expense receipt — owner decision 5 of
@@ -16,11 +17,11 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(_request: Request, { params }: { params: Promise<{ kind: string; id: string }> }) {
   const { kind, id } = await params;
-  if (!(await getAuthContext())) return NextResponse.json({ error: 'Sign in to download a file.' }, { status: 401 });
+  if (!(await getAuthContext())) return routeError('UNAUTHORIZED', 'Sign in to download a file.');
   const result = await resolveFinanceAttachmentUrl(kind, id);
   if (!result.ok) {
     const status = result.error.code === 'NOT_FOUND' ? 404 : result.error.code === 'FORBIDDEN' ? 403 : result.error.code === 'PROVIDER_ERROR' ? 503 : 400;
-    return NextResponse.json({ error: result.error.message }, { status, headers: { 'Cache-Control': 'no-store' } });
+    return routeError(result.error.code, result.error.message, { status, headers: { 'Cache-Control': 'no-store' } });
   }
   return NextResponse.redirect(result.data.url, { status: 302, headers: { 'Cache-Control': 'no-store' } });
 }

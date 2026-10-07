@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createAdminClient } from '@/lib/db/admin';
 import { httpStatusFor, newCorrelationId } from '@/lib/errors';
 import { ingestWebFormLead } from '@/modules/crm/ingest-web-form';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * /api/leads/web-form — the agency's own public "Contact us" form —
@@ -40,18 +41,18 @@ export async function POST(request: NextRequest) {
 
   const contentLength = request.headers.get('content-length');
   if (contentLength && Number(contentLength) > MAX_BODY_BYTES) {
-    return NextResponse.json({ error: 'payload too large', correlationId }, { status: 413 });
+    return routeError('VALIDATION', 'payload too large', { status: 413, correlationId });
   }
 
   let payload: unknown;
   try {
     payload = await request.json();
   } catch {
-    return NextResponse.json({ error: 'malformed payload', correlationId }, { status: 400 });
+    return routeError('VALIDATION', 'malformed payload', { status: 400, correlationId });
   }
 
   if (typeof payload !== 'object' || payload === null) {
-    return NextResponse.json({ error: 'malformed payload', correlationId }, { status: 400 });
+    return routeError('VALIDATION', 'malformed payload', { status: 400, correlationId });
   }
   const body = payload as Record<string, unknown>;
 
@@ -83,7 +84,7 @@ export async function POST(request: NextRequest) {
     console.error(
       JSON.stringify({ level: 'error', scope: 'web-form.webhook', detail: result.error.code, correlationId }),
     );
-    return NextResponse.json({ error: result.error.message, correlationId }, { status });
+    return routeError(result.error.code, result.error.message, { status, correlationId });
   }
 
   return NextResponse.json({

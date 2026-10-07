@@ -5,6 +5,7 @@ import { can } from '@/lib/authz/permissions';
 import { getProject } from '@/modules/projects/queries';
 import { buildDesignHandoffBundle } from '@/modules/projects/design-handoff-bundle';
 import { readDesignHandoffPackage } from '@/modules/projects/design-export-queries';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * The design handoff package — SCR-038's export. A JSON manifest of every
@@ -21,11 +22,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
 
   const context = await requireInternal(`/projects/${projectId}/design`);
   if (!can(context, 'project.read')) {
-    return NextResponse.json({ error: 'You do not have permission to read this project.' }, { status: 403 });
+    return routeError('FORBIDDEN', 'You do not have permission to read this project.');
   }
 
   const project = await getProject(projectId);
-  if (!project) return NextResponse.json({ error: 'Project not found.' }, { status: 404 });
+  if (!project) return routeError('NOT_FOUND', 'Project not found.');
 
   const slug0 = (project.code ?? project.name).replace(/[^a-z0-9]+/gi, '-').toLowerCase();
   if (new URL(request.url).searchParams.get('format') === 'zip') {

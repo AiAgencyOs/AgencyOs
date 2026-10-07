@@ -4,6 +4,7 @@ import { csvHeaders, toCsv } from '@/lib/admin/csv';
 import { getAgentUsage } from '@/lib/admin/usage';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * AI usage as a file — SCR-061. The same aggregation `/usage` renders
@@ -17,7 +18,7 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   const context = await requireInternal('/usage');
   if (!can(context, 'audit.read')) {
-    return NextResponse.json({ error: 'You do not have permission to read usage.' }, { status: 403 });
+    return routeError('FORBIDDEN', 'You do not have permission to read usage.');
   }
 
   const { perAgent, totals, capped } = await getAgentUsage();

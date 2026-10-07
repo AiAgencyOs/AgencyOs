@@ -7,6 +7,7 @@ import { serverEnv } from '@/lib/env';
 import { httpStatusFor, newCorrelationId } from '@/lib/errors';
 import { admitDelivery, rejectDelivery, settleDelivery } from '@/lib/p13/webhook-guard';
 import { ingestEmailLead } from '@/modules/crm/ingest-email';
+import { routeError, codeForStatus } from '@/lib/route-errors';
 
 /**
  * /api/webhooks/email — inbound email — audit step 1.1.
@@ -53,14 +54,14 @@ export async function POST(request: NextRequest) {
 
   const contentLength = request.headers.get('content-length');
   if (contentLength && Number(contentLength) > MAX_BODY_BYTES) {
-    return NextResponse.json({ error: 'payload too large', correlationId }, { status: 413 });
+    return routeError('VALIDATION', 'payload too large', { status: 413, correlationId });
   }
 
   let form: FormData;
   try {
     form = await request.formData();
   } catch {
-    return NextResponse.json({ error: 'malformed payload', correlationId }, { status: 400 });
+    return routeError('VALIDATION', 'malformed payload', { status: 400, correlationId });
   }
 
   const auth = authorizeEmailSignature(
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
   if (!auth.ok) {
     // W5: a rejected signature is on record too (best effort; the answer is unchanged).
     if (auth.status === 401) await rejectDelivery(createAdminClient(), { provider: 'email', signatureHeader: firstOf(form, 'signature') });
-    return NextResponse.json({ error: auth.error, correlationId }, { status: auth.status });
+    return routeError(codeForStatus(auth.status), auth.error, { status: auth.status, correlationId });
   }
 
   const mailbox = firstOf(form, 'recipient');
@@ -127,7 +128,7 @@ async function ingestAndAnswer(
     console.error(
       JSON.stringify({ level: 'error', scope: 'email.webhook', detail: result.error.code, correlationId }),
     );
-    return NextResponse.json({ error: result.error.message, correlationId }, { status });
+    return routeError(result.error.code, result.error.message, { status, correlationId });
   }
 
   return NextResponse.json({

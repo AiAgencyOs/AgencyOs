@@ -7,6 +7,7 @@ import { normaliseSearch } from '@/lib/db/search';
 import { logReportExport } from '@/modules/finance/export-log';
 import { filterExpenses } from '@/modules/finance/project-profitability';
 import { listExpenses } from '@/modules/finance/queries';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * The expense register as a file — SCR-055. The same reader the page uses,
@@ -22,7 +23,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   const context = await requireInternal('/finance/expenses');
   if (!can(context, 'invoice.read')) {
-    return NextResponse.json({ error: 'You do not have permission to read expenses.' }, { status: 403 });
+    return routeError('FORBIDDEN', 'You do not have permission to read expenses.');
   }
 
   const url = new URL(request.url);

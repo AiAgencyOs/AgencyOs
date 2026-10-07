@@ -9,6 +9,7 @@ import { listGstrInvoices, readGstIdentity } from '@/modules/finance/gstr-querie
 import { resolveTaxPeriod } from '@/modules/finance/tax-report';
 import { filingCheck, gstSetupFrom } from '@/modules/finance/gst-settings';
 import { readOrganizationSettingsRow } from '@/modules/finance/numbering';
+import { routeError } from '@/lib/route-errors';
 
 /**
  * The one path both GSTR downloads take — bucket E5. Same reader and the
@@ -21,28 +22,28 @@ import { readOrganizationSettingsRow } from '@/modules/finance/numbering';
 export async function exportGstr(kind: 'gstr1' | 'gstr3b', request: Request): Promise<Response> {
   const context = await requireInternal('/finance/tax');
   if (!can(context, 'invoice.read')) {
-    return NextResponse.json({ error: 'You do not have permission to read invoices.' }, { status: 403 });
+    return routeError('FORBIDDEN', 'You do not have permission to read invoices.');
   }
   if (!context.organizationId) {
-    return NextResponse.json({ error: 'No organization in your session.' }, { status: 403 });
+    return routeError('FORBIDDEN', 'No organization in your session.');
   }
 
   const url = new URL(request.url);
   const period = resolveTaxPeriod(url.searchParams.get('period') ?? undefined, new Date());
   const fp = returnPeriodFor(period);
   if (!fp) {
-    return NextResponse.json({ error: `A ${kind === 'gstr1' ? 'GSTR-1' : 'GSTR-3B'} is for one month or one quarter. "${period.label}" is neither — pick a month or a quarter on the GST & tax page.` }, { status: 400 });
+    return routeError('VALIDATION', `A ${kind === 'gstr1' ? 'GSTR-1' : 'GSTR-3B'} is for one month or one quarter. "${period.label}" is neither — pick a month or a quarter on the GST & tax page.`, { status: 400 });
   }
 
   // Owner decision 9 (2026-10-01): the agency's saved GST setup (unset = regular, monthly, calendar month) decides which windows are returns it files.
   const setup = gstSetupFrom(await readOrganizationSettingsRow(await createClient()));
   const filing = filingCheck(setup, period, kind === 'gstr1' ? 'GSTR-1' : 'GSTR-3B');
-  if (!filing.ok) return NextResponse.json({ error: filing.message }, { status: 409 });
+  if (!filing.ok) return routeError('CONFLICT', filing.message);
 
   const [identity, rows] = await Promise.all([readGstIdentity(), listGstrInvoices()]);
   const issues = gstIdentityIssues(identity);
   if (issues.length > 0) {
-    return NextResponse.json({ error: `The agency's GST identity is incomplete: ${issues.map((i) => i.reason).join(' ')} Set it under Settings › Finance.` }, { status: 409 });
+    return routeError('CONFLICT', `The agency's GST identity is incomplete: ${issues.map((i) => i.reason).join(' ')} Set it under Settings › Finance.`);
   }
 
   const result = kind === 'gstr1' ? gstr1(rows, identity, period) : gstr3b(rows, identity, period);
