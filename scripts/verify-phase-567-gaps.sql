@@ -465,18 +465,18 @@ declare v_res text; v_n int; v_pa uuid := (select id from projects.projects wher
 begin
   begin
     perform pg_temp.mutate('projects.p7_exception_states(uuid)'::regprocedure, 'and e.kind in (''dispute'', ''chargeback'')', 'and e.kind in (''none'')');
-    perform set_config('session_replication_role', 'replica', true);
-    perform set_config('session_replication_role', 'replica', true);
+    execute 'alter table projects.p7_financial_exceptions disable trigger user';
+    execute 'alter table projects.p7_financial_exceptions disable trigger user';
   insert into projects.p7_financial_exceptions (organization_id, project_id, kind, note) values ('00000000-0000-4000-8000-0000000567a1', v_pb, 'chargeback', 'card dispute');
-  perform set_config('session_replication_role', 'origin', true);
-    perform set_config('session_replication_role', 'origin', true);
+  execute 'alter table projects.p7_financial_exceptions enable trigger user';
+    execute 'alter table projects.p7_financial_exceptions enable trigger user';
     v_n := (select count(*) from projects.p7_exception_states(v_pb) where state = 'disputed');
     raise exception 'rp_done';
   exception when others then if sqlerrm <> 'rp_done' then raise; end if; end;
   perform pg_temp.check(v_n = 0, 'RED-PROOF: without the chargeback rule an open chargeback is not shown as a dispute');
-  perform set_config('session_replication_role', 'replica', true);
+  execute 'alter table projects.p7_financial_exceptions disable trigger user';
   insert into projects.p7_financial_exceptions (organization_id, project_id, kind, note) values ('00000000-0000-4000-8000-0000000567a1', v_pb, 'chargeback', 'card dispute');
-  perform set_config('session_replication_role', 'origin', true);
+  execute 'alter table projects.p7_financial_exceptions enable trigger user';
   perform pg_temp.check((select count(*) from projects.p7_exception_states(v_pb) where state = 'disputed') = 1, 'the live read shows an open chargeback as DISPUTED');
   begin
     perform pg_temp.mutate('projects.p7_exception_states(uuid)'::regprocedure, 'if v_n > 0 then return query select ''handover_blocked''::text, v_n || '' production incident(s) are not closed''', 'if false then return query select ''handover_blocked''::text, v_n || '' production incident(s) are not closed''');
