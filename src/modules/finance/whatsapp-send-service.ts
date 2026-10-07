@@ -8,6 +8,7 @@ import { err, ok, type Result } from '@/lib/result';
 import { sendClientDocument, sendClientMessage } from '@/modules/crm/service';
 
 import { invoicePdfForInvoice } from './pdf-service';
+import { invoiceSendHold } from './p1r-send-hold';
 import { listPaymentAccounts } from './queries';
 import { verifiedOn } from './verified-basis';
 import { PAYMENT_ACCOUNT_FIELDS, type PaymentAccountKind } from './schema';
@@ -58,6 +59,10 @@ export async function sendInvoiceWhatsApp(
   }
 
   const supabase = await createClient();
+
+  // P1-BLUEPRINT-032: the organisation's notification rules are asked before a bill leaves; unreadable rules hold it.
+  const held = await invoiceSendHold(supabase, context.organizationId, 'whatsapp');
+  if (held) return held;
 
   const { data: invoice, error: invoiceError } = await supabase
     .schema('finance')

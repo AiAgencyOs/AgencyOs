@@ -187,8 +187,35 @@ export const SUPPORT_STANDARD = {
   ],
 } as const;
 
-/** Part G: named plainly, one way, every time — never hedged, never silent. */
+/**
+ * Part G: named plainly, one way, every time — never hedged, never silent.
+ *
+ * `GST_LINE` is the LEGACY wording with the rate literally in it. A caller that does not pass the tax configuration (older scripts, fixtures) still gets it;
+ * every production caller now passes `tax` (read from `sales.p1o_quote_tax_config`) and so prints the rate the agency configured, or no rate at all when
+ * nothing is configured: the rate is never guessed (P1-QUOTE-024).
+ */
 export const GST_LINE = 'All amounts are exclusive of GST; 18% GST extra.';
+export const GST_NEUTRAL_LINE = 'All amounts are exclusive of GST; GST is charged extra at the rate that applies.';
+export const GST_NONE_LINE = 'No GST is charged on this quotation.';
+
+/** The organisation's tax configuration as the quotation reads it. */
+export type QuoteTaxConfig = { mode: 'gst' | 'non_gst'; rateBp: number };
+
+/** 1800 -> "18", 1250 -> "12.5". */
+export function ratePercentText(rateBp: number): string {
+  return String(Number((rateBp / 100).toFixed(2)));
+}
+
+/**
+ * The sentence printed when the quotation carries no tax row. `undefined`: the caller did not ask, the legacy sentence. `null`: the configuration was read and
+ * there is none, so the sentence names no rate. A configured GST organisation prints its own rate; a non-GST one says no GST is charged.
+ */
+export function gstLineFor(tax: QuoteTaxConfig | null | undefined): string {
+  if (tax === undefined) return GST_LINE;
+  if (tax === null) return GST_NEUTRAL_LINE;
+  if (tax.mode === 'non_gst') return GST_NONE_LINE;
+  return `All amounts are exclusive of GST; ${ratePercentText(tax.rateBp)}% GST extra.`;
+}
 
 /** Part E: the world closed both ways, and what a change does. */
 export const SCOPE_PROTECTION_LINES: readonly string[] = [
@@ -337,7 +364,7 @@ export function quotationSectionsFor(
    * published wording, or the snapshot an issued quotation kept. Omitted,
    * every clause prints exactly as it always did.
    */
-  options?: { validityDays?: number; clauses?: readonly string[] },
+  options?: { validityDays?: number; clauses?: readonly string[]; tax?: QuoteTaxConfig | null },
 ): {
   understanding: string | null;
   exclusions: readonly string[] | null;
@@ -539,7 +566,7 @@ export function quotationSectionsFor(
     // The review's contradiction, closed by a rule: a stored Tax row means
     // GST is already INSIDE the total, and saying "extra" beneath it would
     // let the client hold the agency to either reading. One or the other.
-    gstLine: taxMinor > 0 ? null : GST_LINE,
+    gstLine: taxMinor > 0 ? null : gstLineFor(options?.tax),
     scopeProtection: SCOPE_PROTECTION_LINES,
     nextSteps: NEXT_STEPS_LINES,
   };

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import type { FormState } from '@/modules/identity/types';
-import { pauseTask, reassignTask, reconcileTask, resolveEscalation, resumeTask, retryTask } from '@/modules/orchestrator/p1o-coordination';
+import { advanceTask, pauseTask, reassignTask, reconcileTask, resolveEscalation, resumeTask, retryTask } from '@/modules/orchestrator/p1o-coordination';
 
 /** Workflow task board controls (Admin Panel A16). Each one is a database door; the refusal is shown as written. */
 
@@ -33,4 +33,7 @@ export async function reconcileTaskAction(_prev: FormState, f: FormData): Promis
 }
 export async function resolveEscalationAction(_prev: FormState, f: FormData): Promise<FormState> {
   return done(await resolveEscalation(text(f, 'escalationId'), text(f, 'note')));
+}
+export async function advanceTaskAction(_prev: FormState, f: FormData): Promise<FormState> {
+  return done(await advanceTask(text(f, 'handoffId'), text(f, 'toState'), text(f, 'note')));
 }

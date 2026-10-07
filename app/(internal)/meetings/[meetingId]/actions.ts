@@ -3,9 +3,10 @@
 import { revalidatePath } from 'next/cache';
 
 import { addMeetingEvidence, addMeetingEvidenceFile, cancelMeeting, completeMeeting, recordNoShow, requestMeetingAnalysis, rescheduleMeeting, type Concluded } from '@/lib/scheduler/meeting-commands';
-import { bookProposedSlot, proposeSlots } from '@/lib/scheduling/booking';
+import { bookProposedSlot, proposeSlots, type SchedulingHooks } from '@/lib/scheduling/booking';
 import type { Result } from '@/lib/result';
 import { uploadMeetingStoredFile } from '@/modules/crm/meeting-file-service';
+import { draftConfirmation, draftNoAvailability, draftProposal } from '@/modules/crm/p1r-scheduling-compose';
 import { decideMeetingNoteFile, routeMeetingFile } from '@/modules/crm/meeting-note-file';
 import type { FormState } from '@/modules/identity/types';
 
@@ -81,14 +82,24 @@ export async function requestAnalysisAction(_prev: FormState, formData: FormData
   return conclude(formData, (id) => requestMeetingAnalysis(id));
 }
 
+/**
+ * Round 4: after a step stands, the words to the client are DRAFTED (a proposal, a "nothing is free" note, a confirmation) for a person to read, edit and send from
+ * "Meetings that need a person". Nothing is sent from here.
+ */
+const DRAFT_HOOKS: SchedulingHooks = {
+  proposed: (c) => draftProposal({ meetingId: c.meetingId, leadId: c.leadId, slots: c.slots, timezone: c.timezone, mode: c.mode, clientName: c.clientName }),
+  nothingToOffer: (c) => draftNoAvailability({ meetingId: c.meetingId, leadId: c.leadId, clientName: c.clientName }),
+  booked: (c) => draftConfirmation({ meetingId: c.meetingId, leadId: c.leadId, slot: c.slot, timezone: c.timezone, mode: c.mode, meetUrl: c.meetUrl, clientName: c.clientName }),
+};
+
 /** G-243 — §5 up to PROPOSE, by a person, from what the calendar has free. */
 export async function proposeSlotsAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  return conclude(formData, (id) => proposeSlots(id, Number(formData.get('duration') ?? 30)));
+  return conclude(formData, (id) => proposeSlots(id, Number(formData.get('duration') ?? 30), DRAFT_HOOKS));
 }
 
 /** G-243 — RECHECK → the provider event → the row, on one of the slots offered. */
 export async function bookSlotAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  return conclude(formData, (id) => bookProposedSlot(id, String(formData.get('startAt') ?? ''), String(formData.get('mode') ?? 'call')));
+  return conclude(formData, (id) => bookProposedSlot(id, String(formData.get('startAt') ?? ''), String(formData.get('mode') ?? 'call'), DRAFT_HOOKS));
 }
 
 /** G-244 — §8: the booking cancelled with its history kept, a new request minted in its place. */

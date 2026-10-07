@@ -8,6 +8,7 @@ import { err, ok, type Result } from '@/lib/result';
 
 import { sendInvoiceEmailSchema, type SendInvoiceEmailInput } from './email-send-schema';
 import { invoicePdfForInvoice } from './pdf-service';
+import { invoiceSendHold } from './p1r-send-hold';
 import { recordInvoiceSend } from './sends-service';
 
 /**
@@ -37,6 +38,10 @@ export async function sendInvoiceByEmail(
   if (!transport.configured) return err('CONFLICT', `Email is not configured on this deployment. ${transport.reason}`);
 
   const supabase = await createClient();
+  // P1-BLUEPRINT-032: the organisation's notification rules are asked before a bill leaves; unreadable rules hold it.
+  const held = await invoiceSendHold(supabase, context.organizationId, 'email');
+  if (held) return held;
+
   const { data: invoice, error } = await supabase
     .schema('finance')
     .from('invoices')

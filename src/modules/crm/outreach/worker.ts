@@ -3,6 +3,7 @@ import 'server-only';
 import type { createAdminClient } from '@/lib/db/admin';
 import { outreachWindow } from '@/lib/admin/operational-defaults';
 import { clientEnv, serverEnv } from '@/lib/env';
+import { heldByNotificationRules } from '@/lib/p13/notification-hold';
 import { emailTransportState, sendEmail } from '@/lib/email/transport';
 
 import { intoSendingWindow } from '../follow-up-rhythms';
@@ -92,6 +93,14 @@ export async function runOutreach(admin: Admin, options: { limit?: number; now?:
     }
     if (intoSendingWindow(now, org.timezone, outreachWindow(org.settings as Record<string, unknown> | null)).getTime() !== now.getTime()) {
       sweep.skipped.push(`${organizationId}: outside the sending window`);
+      continue;
+    }
+
+    // P1-BLUEPRINT-032: asked BEFORE the claim, so a hold reserves nothing. Unreadable rules hold the organisation's outreach (a prospect is never mailed on the
+    // strength of a rulebook that could not be read).
+    const heldByRules = await heldByNotificationRules(admin, { organizationId, eventClass: 'sales', channel: 'email', clientFacing: true });
+    if (heldByRules) {
+      sweep.skipped.push(`${organizationId}: held by the notification rules: ${heldByRules.detail}`);
       continue;
     }
 

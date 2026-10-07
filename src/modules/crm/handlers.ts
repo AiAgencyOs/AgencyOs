@@ -874,9 +874,18 @@ async function renderQuotationDocument(
   if (!clauses.ok) {
     return { ok: false, kind: 'unreadable', detail: `could not read the quotation's clauses: ${clauses.error.message}` };
   }
+  // P1-QUOTE-024: the GST sentence names the rate the agency configured, never a literal. An unreadable configuration is retryable, not a PDF with a guess on it.
+  const { readQuoteTax } = await import('@/modules/sales/p1r-quote-tax');
+  let tax;
+  try {
+    tax = await readQuoteTax(admin, organizationId);
+  } catch (e) {
+    return { ok: false, kind: 'unreadable', detail: e instanceof Error ? e.message : 'could not read the tax configuration' };
+  }
   const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems, {
     validityDays: quotationValidityDays(org.settings as Record<string, unknown> | null),
     clauses: clauses.data,
+    tax,
   });
 
   try {
