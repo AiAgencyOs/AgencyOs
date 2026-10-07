@@ -39,8 +39,8 @@ describe('W5 webhook guard', () => {
     const { admin, calls } = fakeAdmin({});
     const r = await admitDelivery(admin, { provider: 'whatsapp', eventKey: bodyEventKey('{}'), rawBody: '{}' });
     assert.deepEqual(r, { proceed: true, eventId: 'ev-1' });
-    assert.equal(calls[0].args.p_signature_status, 'valid');
-    assert.equal(calls[0].args.p_provider, 'whatsapp');
+    assert.equal(calls[0]!.args.p_signature_status, 'valid');
+    assert.equal(calls[0]!.args.p_provider, 'whatsapp');
   });
 
   test('a replay of a processed delivery is answered from the ledger and not acted on', async () => {
@@ -64,12 +64,12 @@ describe('W5 webhook guard', () => {
   test('a bad signature is recorded as invalid, a missing one as missing, with no organization and no event key', async () => {
     const a = fakeAdmin({ outcome: 'rejected_signature' });
     await rejectDelivery(a.admin, { provider: 'whatsapp', signatureHeader: 'sha256=bad', body: 'b' });
-    assert.equal(a.calls[0].args.p_signature_status, 'invalid');
-    assert.equal(a.calls[0].args.p_organization_id, null);
-    assert.equal(a.calls[0].args.p_event_key, null);
+    assert.equal(a.calls[0]!.args.p_signature_status, 'invalid');
+    assert.equal(a.calls[0]!.args.p_organization_id, null);
+    assert.equal(a.calls[0]!.args.p_event_key, null);
     const b = fakeAdmin({ outcome: 'rejected_signature' });
     await rejectDelivery(b.admin, { provider: 'whatsapp', signatureHeader: null });
-    assert.equal(b.calls[0].args.p_signature_status, 'missing');
+    assert.equal(b.calls[0]!.args.p_signature_status, 'missing');
   });
 
   test('a rejection never throws even when the ledger is down', async () => {
@@ -80,10 +80,10 @@ describe('W5 webhook guard', () => {
   test('the outcome is written back: 2xx processed, 5xx failed; no event id means nothing to write', async () => {
     const ok = fakeAdmin({});
     await settleDelivery(ok.admin, 'ev-1', 200, 'whatsapp');
-    assert.equal(ok.calls[0].args.p_ok, true);
+    assert.equal(ok.calls[0]!.args.p_ok, true);
     const bad = fakeAdmin({});
     await settleDelivery(bad.admin, 'ev-1', 500, 'whatsapp');
-    assert.equal(bad.calls[0].args.p_ok, false);
+    assert.equal(bad.calls[0]!.args.p_ok, false);
     const none = fakeAdmin({});
     await settleDelivery(none.admin, null, 200, 'whatsapp');
     assert.equal(none.calls.length, 0);

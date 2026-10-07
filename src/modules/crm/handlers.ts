@@ -4,6 +4,8 @@ import type { createAdminClient } from '@/lib/db/admin';
 
 import { deliverQueuedText, type QueuedOutbound } from './deliver-text';
 import { handoverAcknowledgementFor, handoverAcknowledgementRef } from './handover-acknowledgement';
+import { heldByNotificationRules } from '@/lib/p13/notification-hold';
+import type { NotificationEventClass } from '@/lib/p13/notification-gate';
 import { OUTBOUND_PAUSED, outboundPaused } from './kill-switch';
 import { deferSend, markAsOutreach, planOutbound } from './outbound-window';
 
@@ -373,6 +375,10 @@ export async function handleApprovalRequested(
       detail: 'this organization has no internal channel; nothing was announced',
     };
   }
+
+  // W8 (P1-BLUEPRINT-032): the organization's notification rules decide whether this notice goes out now.
+  const held = await heldByNotificationRules(admin, { organizationId: job.organization_id, eventClass: 'approval', channel: 'whatsapp' });
+  if (held) return held;
 
   /**
    * Who asked — and this is what lets the announcement carry an amount at all.
@@ -1371,6 +1377,10 @@ export async function handleConversationEscalated(
     };
   }
 
+  // W8 (P1-BLUEPRINT-032): the organization's notification rules decide whether this notice goes out now.
+  const held = await heldByNotificationRules(admin, { organizationId: job.organization_id, eventClass: 'escalation', channel: 'whatsapp' });
+  if (held) return held;
+
   /**
    * Who is waiting, scoped by hand to the job's organization.
    *
@@ -1684,6 +1694,10 @@ export async function handleRevisionLimitEscalated(
     };
   }
 
+  // W8 (P1-BLUEPRINT-032): the organization's notification rules decide whether this notice goes out now.
+  const held = await heldByNotificationRules(admin, { organizationId: job.organization_id, eventClass: 'escalation', channel: 'whatsapp' });
+  if (held) return held;
+
   const { data: project } = await admin
     .schema('projects')
     .from('projects')
@@ -1851,6 +1865,10 @@ export async function handlePhaseThreeCompleted(
     };
   }
 
+  // W8 (P1-BLUEPRINT-032): the organization's notification rules decide whether this notice goes out now.
+  const held = await heldByNotificationRules(admin, { organizationId: job.organization_id, eventClass: 'admin_alert', channel: 'whatsapp' });
+  if (held) return held;
+
   const { data: project } = await admin
     .schema('projects')
     .from('projects')
@@ -1980,7 +1998,7 @@ export async function handlePhaseThreeCompleted(
 export async function announceToInternalChannel(
   admin: Admin,
   job: AnnounceJob,
-  input: { body: string; externalRef: string; noGroupOutcome?: string; projectId?: string },
+  input: { body: string; externalRef: string; noGroupOutcome?: string; projectId?: string; notificationClass?: NotificationEventClass },
 ): Promise<HandlerResult> {
   const { channel: group, error: groupError } = await internalChannel(admin, job.organization_id);
 
@@ -1994,6 +2012,10 @@ export async function announceToInternalChannel(
       detail: 'this organization has no internal channel; nothing was announced',
     };
   }
+
+  // W8 (P1-BLUEPRINT-032): the organization's notification rules decide whether this notice goes out now.
+  const held = await heldByNotificationRules(admin, { organizationId: job.organization_id, eventClass: input.notificationClass ?? 'admin_alert', channel: 'whatsapp' });
+  if (held) return held;
 
   const { data, error } = await admin.schema('crm').rpc('send_outbound_message', {
     p_conversation_id: group.id,
@@ -3017,6 +3039,10 @@ export async function announceOfferApplied(admin: Admin, job: AnnounceJob): Prom
       detail: 'this organization has no internal channel; the offer went out unannounced',
     };
   }
+
+  // W8 (P1-BLUEPRINT-032): the organization's notification rules decide whether this notice goes out now.
+  const held = await heldByNotificationRules(admin, { organizationId: job.organization_id, eventClass: 'sales', channel: 'whatsapp' });
+  if (held) return held;
 
   /**
    * The ROW, not the payload — the doctrine every handler here follows since

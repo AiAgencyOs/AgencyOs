@@ -111,6 +111,7 @@ export async function announceMeetingBooked(admin: Admin, job: AnnounceJob): Pro
   return announceToInternalChannel(admin, job, {
     body: meetingBookedAnnouncementFor({ leadTitle: read.leadTitle, when, mode: read.meeting.booked_mode, purpose: read.meeting.purpose }),
     externalRef: `meeting-booked:${read.meeting.id}:${read.meeting.confirmed_start_at ?? 'unset'}`,
+    notificationClass: 'sales',
   });
 }
 
@@ -129,6 +130,7 @@ export async function announceMeetingCancelled(admin: Admin, job: AnnounceJob): 
       reason: read.meeting.cancellation_reason,
     }),
     externalRef: `meeting-cancelled:${read.meeting.id}`,
+    notificationClass: 'sales',
   });
 }
 
@@ -160,5 +162,6 @@ export async function sendMeetingReminder(admin: Admin, job: ReminderJobRow, now
       minutes: parsed.data.lead_minutes,
     }),
     externalRef: `meeting-reminder:${read.meeting.id}:${parsed.data.lead_minutes}:${read.meeting.confirmed_start_at ?? 'unset'}`,
+    notificationClass: 'meeting_reminder',
   });
 }
