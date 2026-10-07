@@ -175,7 +175,7 @@ export async function phaseEightG1Action(_prev: FormState, formData: FormData): 
 export async function phaseEightG1PortalAction(_prev: FormState, formData: FormData): Promise<FormState> {
   await requireClient();
   const result = await run(PORTAL_DOORS, formData);
-  const project = String(formData.get('portalProjectId') ?? '');
+  const project = String(formData.get('projectId') ?? '');
   if (/^[0-9a-f-]{36}$/i.test(project)) {
     revalidatePath(`/portal/${project}/feedback`);
   }
