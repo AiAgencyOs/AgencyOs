@@ -440,7 +440,10 @@ export default async function OperationsPage({
                 className="rounded-lg border border-danger/20 px-4 py-3 text-sm"
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="font-medium text-danger">{m.reason}</span>
+                  <span className="font-medium text-danger">
+                    {m.state === 'unknown' ? 'Delivery unknown — it may have gone out. Check before sending again. ' : ''}
+                    {m.reason}
+                  </span>
                   <span className="text-xs text-muted">
                     {m.authorType} · {clock.dateTime(m.occurredAt)}
                   </span>

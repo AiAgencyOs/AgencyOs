@@ -62,6 +62,7 @@ import {
   type StopFollowUpSequenceInput,
   type ResumeFollowUpSequenceInput,
 } from './schema';
+import { deliveryStatusOf } from '@/lib/whatsapp/delivery-status';
 
 /**
  * Writes and domain logic for the crm module — its only public surface
@@ -554,7 +555,7 @@ export async function sendClientDocument(
 
   const settled = await supabase.schema('crm').rpc('mark_outbound_delivery', {
     p_message_id: queued.message_id!,
-    p_status: sent.ok ? 'sent' : 'failed',
+    p_status: deliveryStatusOf(sent),
     ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
   });
 

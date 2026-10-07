@@ -127,7 +127,7 @@ export async function listFailedDeliveries(limit = 50): Promise<FailedDeliveryRo
     .schema('crm')
     .from('conversation_messages')
     .select('id, conversation_id, author_type, body, metadata, occurred_at, retry_of, retry_count')
-    .eq('metadata->>delivery', 'failed')
+    .in('metadata->>delivery', ['failed', 'unknown'])
     .order('occurred_at', { ascending: false })
     .limit(limit);
 

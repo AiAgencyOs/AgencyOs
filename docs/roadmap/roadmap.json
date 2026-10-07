@@ -31,7 +31,7 @@
       "approvals",
       "qa"
     ],
-    "tables": 531,
+    "tables": 532,
     "tablesWithRls": 341,
     "migrations": 588,
     "testFiles": 557,
@@ -44,7 +44,7 @@
     "liveVerificationScripts": 128,
     "aiAgentsDefined": 32,
     "aiAgentsEnabled": 10,
-    "eventSubscriptions": 125,
+    "eventSubscriptions": 127,
     "outboundChannels": 1,
     "paymentGateways": 0
   },

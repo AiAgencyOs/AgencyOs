@@ -53,8 +53,8 @@ export async function retryFailedDelivery(input: RetryFailedDeliveryInput): Prom
   if (!original) return err('NOT_FOUND', 'Message not found.');
 
   const meta = (original.metadata ?? {}) as Record<string, unknown>;
-  if (meta.direction !== 'outbound' || meta.delivery !== 'failed') {
-    return err('CONFLICT', 'Only a failed outbound message can be retried; this one is not.');
+  if (meta.direction !== 'outbound' || (meta.delivery !== 'failed' && meta.delivery !== 'unknown')) {
+    return err('CONFLICT', 'Only a failed or unknown-delivery outbound message can be retried; this one is not.');
   }
 
   const attempt = original.retry_count + 1;

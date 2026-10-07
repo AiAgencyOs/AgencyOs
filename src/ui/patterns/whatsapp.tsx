@@ -171,7 +171,7 @@ export function SystemNote({ children }: { children: React.ReactNode }) {
 
 /* ── Bubbles ──────────────────────────────────────────────────────────────── */
 
-export type BubbleDelivery = 'pending' | 'sent' | 'failed' | null;
+export type BubbleDelivery = 'pending' | 'sent' | 'failed' | 'unknown' | null;
 export type BubbleWire = 'sent' | 'delivered' | 'read' | 'failed' | null;
 export type BubbleMedia =
   | 'audio' | 'image' | 'video' | 'document' | 'sticker' | 'location' | null;
@@ -209,6 +209,15 @@ function DeliveryMark({ delivery, wire }: { delivery: BubbleDelivery; wire: Bubb
       <span className="flex shrink-0 items-center gap-0.5 font-medium text-danger">
         <IconAlert size={12} label="The send failed; the reason is in the record" />
         failed
+      </span>
+    );
+  }
+  // P4-PM-036: the provider did not answer, so the message may or may not have gone out. Never drawn as a tick: a tick is a claim that it was handed over.
+  if (delivery === 'unknown') {
+    return (
+      <span className="flex shrink-0 items-center gap-0.5 font-medium text-warning">
+        <IconAlert size={12} label="Delivery unknown: the provider did not answer, so this message may or may not have been sent" />
+        unknown
       </span>
     );
   }

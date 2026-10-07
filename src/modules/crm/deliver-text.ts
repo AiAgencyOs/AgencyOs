@@ -3,6 +3,7 @@ import 'server-only';
 import { err, ok, type Result } from '@/lib/result';
 
 import { markAsOutreach, planOutbound } from './outbound-window';
+import { deliveryStatusOf } from '@/lib/whatsapp/delivery-status';
 
 /**
  * Delivery of a text message that is already RECORDED (delivery `pending`),
@@ -121,7 +122,7 @@ export async function deliverQueuedText(
 
   await supabase.schema('crm').rpc('mark_outbound_delivery', {
     p_message_id: queued.message_id!,
-    p_status: sent.ok ? 'sent' : 'failed',
+    p_status: deliveryStatusOf(sent),
     ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
   });
 
