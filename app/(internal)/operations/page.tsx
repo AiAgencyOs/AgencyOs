@@ -186,6 +186,9 @@ export default async function OperationsPage({
         <Link href="/operations/phase-blockers" className="text-brand hover:underline">
           What is blocked across every project
         </Link>
+        <Link href="/operations/incidents" className="text-brand hover:underline">
+          Incidents and recovery
+        </Link>
       </p>
 
       {/* SCR-066: the lists below can grow, so they can be searched. It narrows what is drawn, never a count. */}

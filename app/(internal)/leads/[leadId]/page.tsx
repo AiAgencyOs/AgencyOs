@@ -48,6 +48,7 @@ import { handoffHeaderValue, requirementHeaderValue } from '@/modules/crm/requir
 import { readDealBillingMode, readOpportunityOwner } from '@/modules/sales/composer-queries';
 
 import { SalesOwnerForm } from './composer-extras';
+import { LeadAgentTasksSection, LeadAuditSection, LeadNegotiationSection } from './lead-360-sections';
 import { LeadTabs } from './lead-tabs';
 import { LeadStageStrip } from './stage-strip';
 import { listTasksForLead } from '@/modules/crm/lead-task-queries';
@@ -921,6 +922,13 @@ export default async function LeadConversationPage({
         </Card>
       ) : null}
 
+      {/* A04's Negotiation, Tasks and Audit tabs (P1-BLUEPRINT-010): reads of what exists, each with the id its tab scrolls to. */}
+      <LeadNegotiationSection leadId={leadId} opportunityId={opportunity?.id ?? null} />
+      <LeadAgentTasksSection leadId={leadId} opportunityId={opportunity?.id ?? null} proposalIds={proposals.map((p) => p.id)} />
+      {can(context, 'audit.read') ? (
+        <LeadAuditSection subjectIds={[leadId, ...(opportunity ? [opportunity.id] : []), ...proposals.map((p) => p.id), ...(conversation ? [conversation.id] : [])]} />
+      ) : null}
+
       {/* ── Quotations (G-011, ADM-07) ───────────────────────────────── */}
       {opportunity ? (
         <Card id="quotations">
@@ -1622,6 +1630,9 @@ export default async function LeadConversationPage({
           { id: 'qualification', label: 'Qualification', icon: <IconTarget size={14} /> },
           { id: 'requirements', label: 'Requirements', icon: <IconFile size={14} /> },
           { id: 'quotations', label: 'Quote', icon: <IconInvoices size={14} /> },
+          { id: 'negotiation', label: 'Negotiation', icon: <IconTarget size={14} /> },
+          { id: 'tasks', label: 'Tasks', icon: <IconList size={14} /> },
+          ...(can(context, 'audit.read') ? [{ id: 'audit', label: 'Audit', icon: <IconActivity size={14} /> }] : []),
           { id: 'meetings', label: 'Meetings', icon: <IconCalendar size={14} /> },
           { id: 'sequences', label: 'Follow-ups', icon: <IconCalendar size={14} /> },
           { id: 'files', label: 'Files', icon: <IconAttach size={14} /> },
