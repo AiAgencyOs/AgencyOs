@@ -11,7 +11,6 @@ import { createClient } from '@/lib/db/server';
 import type { Json } from '@/lib/db/types';
 import { err, ok, type Result } from '@/lib/result';
 import { interpretBook, interpretPropose } from '@/lib/scheduler/meeting-commands-eval';
-import { draftConfirmation, draftNoAvailability, draftProposal } from '@/modules/crm/p1r-scheduling-compose';
 
 import { bufferedSlot, offerableSlots, proposalWindow, readAvailabilityFrom, sliceWindows, slotStillFree, type Slot } from './availability';
 import { resolveGoogleCalendar } from './google';
@@ -43,6 +42,25 @@ const DEFAULT_DURATIONS = [30, 45, 60] as const;
 /** §5.1's local rules now come from the organisation's scheduling policy (p1o-booking-policy.ts); an agency that saved none runs on the old values: an hour's notice, a quarter-hour either side. */
 
 export type Proposed = { message: string; leadId: string | null; slots: Slot[] };
+
+/**
+ * Round 4 (P1-SCHED-024/025/029): what the caller may do AFTER a step succeeded, with the facts the step knows. The screens use them to DRAFT the words to the client
+ * for a person to send; nothing here sends. They are injected (this layer may not depend on modules/), they run after the step stood, and a hook that throws is
+ * logged and never changes what the step answers.
+ */
+export type SchedulingHooks = {
+  proposed?(c: { meetingId: string; leadId: string; slots: Slot[]; timezone: string; mode: string; clientName: string | null }): Promise<void>;
+  nothingToOffer?(c: { meetingId: string; leadId: string; clientName: string | null }): Promise<void>;
+  booked?(c: { meetingId: string; leadId: string; slot: Slot; timezone: string; mode: string; meetUrl: string | null; clientName: string | null }): Promise<void>;
+};
+
+async function runHook(name: string, hook: Promise<void> | undefined): Promise<void> {
+  try {
+    await hook;
+  } catch (e) {
+    console.error(JSON.stringify({ level: 'error', scope: `scheduling.hook.${name}`, detail: e instanceof Error ? e.message : 'unknown' }));
+  }
+}
 
 async function authorise(): Promise<Result<true>> {
   const context = await requireInternal();
@@ -96,7 +114,7 @@ async function readRequestedDaypart(messageId: string) {
  * on either side so "Tuesday afternoon" gets Tuesday's neighbours too, or
  * the next seven days when they named none.
  */
-export async function proposeSlots(id: string, durationMinutes: number): Promise<Result<Proposed>> {
+export async function proposeSlots(id: string, durationMinutes: number, hooks: SchedulingHooks = {}): Promise<Result<Proposed>> {
   const parsed = z.object({ id: meetingId, duration: z.number().int().min(5).max(480) }).safeParse({ id, duration: durationMinutes });
   if (!parsed.success) return err('VALIDATION', 'That is not a valid meeting, or the duration is outside 5 minutes to 8 hours.');
   const auth = await authorise();
@@ -153,15 +171,12 @@ export async function proposeSlots(id: string, durationMinutes: number): Promise
   if (error) return err('INTERNAL', `Could not record the proposal: ${error.message}`);
   const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; lead_id?: string | null } | undefined;
   const decision = interpretPropose(row?.outcome, slots.length);
-  // Round 4 (P1-SCHED-024/025): the words to the client are DRAFTED here, never sent. A draft that cannot be kept never changes what this step answers.
+  // Round 4 (P1-SCHED-024/025): the caller may DRAFT the words to the client (a person sends them). A hook that fails never changes what this step answers.
   const draftContact = one(meeting.data.contacts);
-  if (row?.outcome === 'nothing_to_offer') {
-    await draftNoAvailability({ meetingId: parsed.data.id, leadId: meeting.data.lead_id, clientName: draftContact?.full_name ?? null });
-  }
+  const clientName = draftContact?.full_name ?? null;
+  if (row?.outcome === 'nothing_to_offer') await runHook('nothingToOffer', hooks.nothingToOffer?.({ meetingId: parsed.data.id, leadId: meeting.data.lead_id, clientName }));
   if (decision.kind === 'error') return err(decision.code, decision.message);
-  await draftProposal({
-    meetingId: parsed.data.id, leadId: meeting.data.lead_id, slots, timezone: meeting.data.timezone ?? (await getAgencyTimeZone()), mode: meeting.data.requested_mode, clientName: draftContact?.full_name ?? null,
-  });
+  await runHook('proposed', hooks.proposed?.({ meetingId: parsed.data.id, leadId: meeting.data.lead_id, slots, timezone: meeting.data.timezone ?? (await getAgencyTimeZone()), mode: meeting.data.requested_mode, clientName }));
   return ok({
     message: window.fellBack ? `${decision.message} (The time the lead named has passed, so the next ${horizonDays} days were read instead.)` : decision.message,
     leadId: row?.lead_id ?? null,
@@ -177,7 +192,7 @@ export type Booked = { message: string; leadId: string | null; meetUrl: string |
  * chose among what the calendar had, and "you may only offer what you read"
  * runs through to the booking.
  */
-export async function bookProposedSlot(id: string, startAt: string, mode: string): Promise<Result<Booked>> {
+export async function bookProposedSlot(id: string, startAt: string, mode: string, hooks: SchedulingHooks = {}): Promise<Result<Booked>> {
   const parsed = z
     .object({ id: meetingId, startAt: z.string().datetime({ offset: true }), mode: z.enum(['call', 'video_meeting', 'in_person_meeting', 'other']) })
     .safeParse({ id, startAt, mode });
@@ -294,8 +309,8 @@ export async function bookProposedSlot(id: string, startAt: string, mode: string
   }
   const decision = interpretBook(outcome, event.meetUrl);
   if (decision.kind === 'error') return err(decision.code, decision.message);
-  // Round 4 (P1-SCHED-029): the confirmation is drafted AFTER the booking stood, with the exact time, zone, type and link; a person sends it.
-  await draftConfirmation({ meetingId: parsed.data.id, leadId: meeting.data.lead_id, slot: chosen, timezone: zone, mode: parsed.data.mode, meetUrl: event.meetUrl, clientName: contact?.full_name ?? null });
+  // Round 4 (P1-SCHED-029): the caller may DRAFT the confirmation AFTER the booking stood, with the exact time, zone, type and link; a person sends it.
+  await runHook('booked', hooks.booked?.({ meetingId: parsed.data.id, leadId: meeting.data.lead_id, slot: chosen, timezone: zone, mode: parsed.data.mode, meetUrl: event.meetUrl, clientName: contact?.full_name ?? null }));
   const withMeetNote = event.meet === 'unavailable' && parsed.data.mode === 'video_meeting'
     ? `${decision.message} This calendar cannot create a Meet link (a shared Gmail calendar, no Workspace user) — send the client your own video link with the confirmation.`
     : decision.message;

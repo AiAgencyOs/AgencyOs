@@ -208,15 +208,31 @@ describe('P1R the draft store and the clarification', () => {
 
 describe('P1R the wiring: drafted after the step, sent only by a person', () => {
   const booking = read('src/lib/scheduling/booking.ts');
-  test('proposing drafts the proposal, or the "nothing is free" note, after the proposal was recorded', () => {
-    assert.ok(booking.indexOf("rpc('propose_meeting_slots'") < booking.indexOf('await draftProposal('));
-    assert.match(booking, /row\?\.outcome === 'nothing_to_offer'\) \{\s*await draftNoAvailability\(/);
+  const actions = read('app/(internal)/meetings/[meetingId]/actions.ts');
+  test('the scheduling layer takes hooks and does not import modules (lib may not depend on modules)', () => {
+    assert.doesNotMatch(booking, /@\/modules\//);
+    assert.match(booking, /export type SchedulingHooks/);
   });
-  test('booking drafts the confirmation only after the booking stood', () => {
-    const decision = booking.indexOf("const decision = interpretBook(outcome, event.meetUrl);");
-    const draft = booking.indexOf('await draftConfirmation(');
-    assert.ok(decision > 0 && draft > decision);
-    assert.ok(draft > booking.indexOf("rpc('book_meeting'"));
+  test('proposing runs the hooks after the proposal was recorded: the proposal, or the "nothing is free" note', () => {
+    assert.ok(booking.indexOf("rpc('propose_meeting_slots'") < booking.indexOf("runHook('proposed'"));
+    assert.match(booking, /row\?\.outcome === 'nothing_to_offer'\) await runHook\('nothingToOffer'/);
+    assert.ok(booking.indexOf("runHook('nothingToOffer'") < booking.indexOf("if (decision.kind === 'error') return err(decision.code, decision.message);\n  await runHook('proposed'"));
+  });
+  test('booking runs its hook only after the booking stood', () => {
+    const decision = booking.indexOf('const decision = interpretBook(outcome, event.meetUrl);');
+    const hook = booking.indexOf("runHook('booked'");
+    assert.ok(decision > 0 && hook > decision);
+    assert.ok(hook > booking.indexOf("rpc('book_meeting'"));
+  });
+  test('a hook that throws is logged and never changes the answer', () => {
+    assert.match(booking, /async function runHook[\s\S]*?try \{\s*await hook;\s*\} catch \(e\) \{[\s\S]*?console\.error/);
+  });
+  test('the meeting screens pass the draft hooks to both steps', () => {
+    assert.match(actions, /proposeSlots\(id, Number\(formData\.get\('duration'\) \?\? 30\), DRAFT_HOOKS\)/);
+    assert.match(actions, /bookProposedSlot\(id, String\(formData\.get\('startAt'\) \?\? ''\), String\(formData\.get\('mode'\) \?\? 'call'\), DRAFT_HOOKS\)/);
+    assert.match(actions, /proposed: \(c\) => draftProposal\(/);
+    assert.match(actions, /nothingToOffer: \(c\) => draftNoAvailability\(/);
+    assert.match(actions, /booked: \(c\) => draftConfirmation\(/);
   });
   test('the compose helpers never send: they keep a draft and swallow their own failure', () => {
     const src = read('src/modules/crm/p1r-scheduling-compose.ts');

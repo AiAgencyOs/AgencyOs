@@ -34,7 +34,7 @@ describe('P1R the task machine vocabulary matches the migration', () => {
     const sql = [...m[1]!.matchAll(/'([a-z_]+)'/g)].map((x) => x[1]).sort();
     assert.deepEqual(sql, [...DOOR_STATES].sort());
     assert.deepEqual([...PERSON_ONLY_STATES], ['verified', 'closed']);
-    assert.match(migration, /if p_to_state in \('verified', 'closed'\) then\s+if \(select auth\.uid\(\)\) is null then return query select 'person_required'/);
+    assert.match(migration, /if p_to_state in \('verified', 'closed'\) then\s{1,}if \(select auth\.uid\(\)\) is null then return query select 'person_required'/);
   });
   test('the next step is the next state on the line, or null where the work itself moves the task', () => {
     assert.equal(nextDoorStep('ready'), 'dispatched');
@@ -63,7 +63,7 @@ describe('P1R the result envelope', () => {
     assert.equal(parseResultEnvelope(null).ok, false);
   });
   test('the migration builds exactly the keys the schema reads', () => {
-    const m = /return jsonb_build_object\(([\s\S]*?)\n  \);\nend \$\$;/.exec(migration);
+    const m = /return jsonb_build_object\(([\s\S]*?)\n\s{2}\);\nend \$\$;/.exec(migration);
     assert.ok(m);
     const keys = [...m[1]!.matchAll(/^\s+'([A-Za-z]+)',/gm)].map((x) => x[1]).filter((k) => !['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens'].includes(k!));
     assert.deepEqual([...keys].sort(), Object.keys(good).sort());

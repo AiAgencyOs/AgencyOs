@@ -8,6 +8,7 @@ import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
+import { readQuoteTax } from './p1r-quote-tax';
 import { quotationSectionsFor } from './quotation-standards';
 import { quotationDocumentSurroundings } from './service';
 
@@ -62,7 +63,7 @@ export async function quotationPdfPreview(input: QuotationPreviewInput): Promise
       parsed.data.taxMinor,
       { understanding: parsed.data.body || null, commercialTerms: parsed.data.commercialTerms.length > 0 ? parsed.data.commercialTerms : null },
       items,
-      { validityDays: surroundings.validityDays },
+      { validityDays: surroundings.validityDays, tax: await readQuoteTax(supabase) },
     );
     const rendered = await renderQuotationPdf({
       ...surroundings,

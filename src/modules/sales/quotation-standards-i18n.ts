@@ -3,6 +3,8 @@ import type { QuotationLanguage } from '@/lib/pdf/quotation-labels';
 import { DEFAULT_CLAUSES, CLAUSE_KEYS } from './quotation-clauses';
 import {
   GST_LINE,
+  GST_NEUTRAL_LINE,
+  GST_NONE_LINE,
   NEXT_STEPS_LINES,
   REGULATED_CLAUSES,
   SCOPE_PROTECTION_LINES,
@@ -41,6 +43,8 @@ type Pack = {
   timelineTerms: readonly string[];
   supportLines: readonly string[];
   gstLine: string;
+  gstNeutral: string;
+  gstNone: string;
   scopeProtection: readonly string[];
   nextSteps: readonly string[];
   validity: (days: number) => string;
@@ -68,6 +72,8 @@ const HINGLISH: Pack = {
     'Third-party issues (gateway, stores, hosting, SMS) vendor ko theek karne hain aur hum madad karenge.',
   ],
   gstLine: 'Sabhi rakam GST ke bina hain; 18% GST alag se lagega.',
+  gstNeutral: 'Sabhi rakam GST ke bina hain; GST jo dar lagu ho us par alag se lagega.',
+  gstNone: 'Is quotation par koi GST nahi lagta.',
   scopeProtection: [
     'Upar jo kuch likha hai wo shaamil hai. Jo nahi likha wo scope ke bahar hai.',
     'Is scope mein koi bhi badlav — jodna, hatana ya badalna — ek change request hai: usse apni price aur timeline ke saath nayi quotation version banti hai, aur us par kaam likhit manzoori ke baad shuru hota hai.',
@@ -136,6 +142,8 @@ const HINDI: Pack = {
     'थर्ड-पार्टी समस्याएँ (गेटवे, स्टोर, होस्टिंग, SMS) ठीक करना संबंधित विक्रेता का काम है; हम सहायता करेंगे।',
   ],
   gstLine: 'सभी राशियाँ GST के बिना हैं; 18% GST अतिरिक्त लगेगा।',
+  gstNeutral: 'सभी राशियाँ GST के बिना हैं; GST लागू दर पर अतिरिक्त लगेगा।',
+  gstNone: 'इस कोटेशन पर कोई GST नहीं लगता।',
   scopeProtection: [
     'ऊपर जो कुछ लिखा है वह शामिल है। जो नहीं लिखा, वह स्कोप से बाहर है।',
     'इस स्कोप में कोई भी बदलाव — जोड़ना, हटाना या बदलना — एक चेंज रिक्वेस्ट है: उससे अपनी कीमत और समय-सीमा के साथ नया कोटेशन संस्करण बनता है, और उस पर काम लिखित स्वीकृति के बाद शुरू होता है।',
@@ -233,7 +241,7 @@ export function localiseSections(sections: Sections, language: QuotationLanguage
     ),
     timelineTerms: byEquality(sections.timelineTerms, TIMELINE_TERMS, pack.timelineTerms),
     supportLines: byEquality(sections.supportLines, SUPPORT_STANDARD.lines, pack.supportLines),
-    gstLine: sections.gstLine === GST_LINE ? pack.gstLine : sections.gstLine,
+    gstLine: localiseGstLine(sections.gstLine, pack),
     scopeProtection: byEquality(sections.scopeProtection, SCOPE_PROTECTION_LINES, pack.scopeProtection),
     nextSteps: byEquality(sections.nextSteps, NEXT_STEPS_LINES, pack.nextSteps),
     regulatedClauses: sections.regulatedClauses
@@ -253,4 +261,18 @@ export function localiseSections(sections: Sections, language: QuotationLanguage
       ? sections.deferredLines.map((l) => l.replace(/ — phase (\d+)$/, ` — ${pack.phaseWord} $1`))
       : sections.deferredLines,
   };
+}
+
+/**
+ * The GST sentence in the client's language. The legacy sentence, the neutral one and the no-GST one map to their translations; a sentence naming the agency's
+ * configured rate keeps that rate: the pack's 18% is replaced by the number the sentence carries. Anything else is somebody's own wording and prints as written.
+ */
+const ENGLISH_RATED = /^All amounts are exclusive of GST; (\d+(?:\.\d+)?)% GST extra\.$/;
+function localiseGstLine(line: string | null, pack: Pack): string | null {
+  if (line === null) return null;
+  if (line === GST_LINE) return pack.gstLine;
+  if (line === GST_NEUTRAL_LINE) return pack.gstNeutral;
+  if (line === GST_NONE_LINE) return pack.gstNone;
+  const rated = ENGLISH_RATED.exec(line);
+  return rated ? pack.gstLine.replace('18%', `${rated[1]}%`) : line;
 }
