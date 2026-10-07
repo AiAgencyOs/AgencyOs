@@ -135,7 +135,7 @@ describe('the verifiers prove controls by removing them from the live definition
       assert.doesNotMatch(sql, /session_replication_role/);
     });
     test(`${v}: every red-proof mutates a definition it first reads back`, () => {
-      const mutations = [...sql.matchAll(/pg_temp\.mutate\('([^']+)'/g)].map((m) => m[1] as string);
+      const mutations = [...sql.matchAll(/pg_temp\.p1o_mutate\('([^']+)'/g)].map((m) => m[1] as string);
       assert.ok(mutations.length >= 3);
       for (const fn of mutations) assert.match(fn, /^[a-z]+\.[a-z_0-9]+\(/);
     });

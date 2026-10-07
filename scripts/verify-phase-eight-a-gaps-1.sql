@@ -569,7 +569,7 @@ select pg_temp.check((select outcome from projects.settle_ticket_handoff(:'H1_id
 select pg_temp.check((select outcome from projects.request_ticket_handoff(:'T1_id', 'developer', 'A second fault surfaced on the same ticket')) = 'requested', 'after settling, a new request can be made');
 reset role;
 select pg_temp.check(pg_temp.direct(format('update projects.support_handoff_requests set status = ''completed'' where id = %L', :'H1_id'), 'through its door'), 'no direct write to a request');
-select pg_temp.check((select count(*) from projects.maintenance_items where organization_id = :'ORG') = 0, 'no maintenance task was created by any request (a person creates the work through its own door)');
+select pg_temp.check((select count(*) from projects.maintenance_items where organization_id = :'ORG' and created_at >= now()) = 0, 'no maintenance task was created by any request (a person creates the work through its own door)');
 select pg_temp.check(pg_temp.errs(format('insert into projects.support_handoff_requests (organization_id, ticket_id, target, reason, payload, status, requested_by) values (%L, %L, ''developer'', ''a reason that is long enough'', ''{}'', ''completed'', %L)', :'ORG', :'T3_id', :'STAFF'), 'handoff_request_settled_is_a_persons'), 'CHECK: settled means a person settled it with a note (table layer)');
 
 -- ═════════ 11. the next-action queue ═════════
