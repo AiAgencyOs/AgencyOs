@@ -7,8 +7,6 @@ declare
   v_old_mask text := '\m(api[_-]?key|secret|token|password|passwd)[[:space:]]*[=:][[:space:]]*[^[:space:]]{6,}';
   v_new_mask text := $re$[a-z0-9_.-]*(api[_-]?key|secret|token|password|passwd|authtoken)[a-z0-9_.-]*["']?[[:space:]]*[=:][[:space:]]*["']?[^[:space:]"']{6,}$re$;
   v_fn text;
-  v_guard_old text := ' is distinct from (select core.current_organization_id()) then';
-  v_guard_new text := ' is distinct from (select core.current_organization_id()) or not coalesce(core.is_internal(), false) then';
   r record;
 begin
   -- 1. mask_secrets
@@ -17,12 +15,15 @@ begin
   v_new := replace(v_def, v_old_mask, replace(v_new_mask, '''', ''''''));
   execute v_new;
 
-  -- 2. gate readers: a non-service caller must be internal as well as in the organisation
+  -- 2. gate readers: a non-service caller must be internal as well as in the organisation.
+  -- Parenthesised: `service <> and org-differs or not internal` would refuse the service role.
   for v_fn in select unnest(array['projects.evaluate_maintenance_gates(uuid)', 'projects.maintenance_priority(uuid)',
                                   'projects.maintenance_work_stall_reasons(uuid,timestamptz)', 'finance.maintenance_financial_gate(uuid)']) loop
     v_def := pg_get_functiondef(v_fn::regprocedure);
-    if (length(v_def) - length(replace(v_def, v_guard_old, ''))) / length(v_guard_old) <> 1 then raise exception '% : expected exactly one organisation guard', v_fn; end if;
-    execute replace(v_def, v_guard_old, v_guard_new);
+    v_new := regexp_replace(v_def, '(<> ''service_role'' and )(v_[a-z]+\.organization_id is distinct from \(select core\.current_organization_id\(\)\))( then)',
+                            '\1(\2 or not coalesce(core.is_internal(), false))\3');
+    if v_new = v_def then raise exception '% : organisation guard not found', v_fn; end if;
+    execute v_new;
   end loop;
 
   -- 3. NULL decisions: "null not in (...)" is null, not true, so the guard never fired

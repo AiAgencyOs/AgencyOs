@@ -19,7 +19,7 @@ select pg_temp.check((select bool_and(position('is null or ' || v in pg_get_func
   ('sales.record_phase_eight_opportunity(uuid,text,text,jsonb,text,text,text,text,text,uuid)', 'p_agent_key')) t(f, v)),
   'five doors and the agent-key door refuse a NULL decision');
 
-select pg_temp.check((select bool_and(pg_get_functiondef(f::regprocedure) like '%or not coalesce(core.is_internal(), false) then%') from (values
+select pg_temp.check((select bool_and(pg_get_functiondef(f::regprocedure) like '%or not coalesce(core.is_internal(), false)) then%') from (values
   ('projects.evaluate_maintenance_gates(uuid)'), ('projects.maintenance_priority(uuid)'),
   ('projects.maintenance_work_stall_reasons(uuid,timestamptz)'), ('finance.maintenance_financial_gate(uuid)')) t(f)),
   'gate readers require an internal caller');
