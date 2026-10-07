@@ -7,6 +7,7 @@ import type { FormState } from '@/modules/identity/types';
 import {
   confirmPrototypeDesignIssue,
   decidePostLockRevision,
+  recordDesignInputs,
   recordFigmaRefs,
   requestPostLockRevision,
   resolveDesignBlocker,
@@ -61,5 +62,28 @@ export async function recordFigmaRefsAction(_prev: FormState, formData: FormData
     text(formData, 'projectId'),
     await recordFigmaRefs(text(formData, 'uiVersionId'), text(formData, 'fileRef'), text(formData, 'pageRef') || null, text(formData, 'replaceReason') || null),
     'Figma references recorded. Nothing was written to Figma.',
+  );
+}
+
+/** One brand asset per line; a trailing " | placeholder" says an approved placeholder stands in. Accessibility targets and devices are comma-separated. */
+export async function recordDesignInputsAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const list = (name: string) => text(formData, name).split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+  const brandAssets = text(formData, 'brandAssets')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [name = '', flag = ''] = line.split('|').map((x) => x.trim());
+      return { name, placeholderApproved: flag.toLowerCase() === 'placeholder' };
+    });
+  return finish(
+    text(formData, 'projectId'),
+    await recordDesignInputs(text(formData, 'phaseFourId'), {
+      brandAssets,
+      accessibilityTargets: list('accessibility'),
+      deviceTargets: list('devices'),
+      planningNote: text(formData, 'planningNote') || null,
+    }),
+    'Design inputs recorded. A brand asset that is neither stored nor a placeholder is now an open blocker.',
   );
 }

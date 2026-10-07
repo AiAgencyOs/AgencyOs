@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { decoderSafeSchema } from '@/lib/ai/schema';
 import { PROJECT_ROLES } from './project-members-schema';
+import { P4UI_DEVICES, P4UI_SCREEN_STATES } from './p4ui';
 
 /** Same vocabulary as the projects.projects status CHECK (migration 013). */
 export const PROJECT_STATUSES = [
@@ -847,12 +848,19 @@ export const prototypeBuildSchema = z
               .string()
               .trim()
               .regex(/^[a-z][a-z0-9_.-]{1,62}$/, 'A screen id is lower-case and stable'),
+            // P4-PROTO-010/066/097: the states the screen demonstrates (the same vocabulary the UI Designer's screen specs use) and the device sizes it adapts to.
+            // Optional, so a build made before this vocabulary existed still validates; `projects.p4r_prototype_state_report` compares them with the locked UI.
+            states: z.array(z.enum(P4UI_SCREEN_STATES)).max(P4UI_SCREEN_STATES.length).optional(),
+            responsiveVariants: z.array(z.enum(P4UI_DEVICES)).max(P4UI_DEVICES.length).optional(),
             elements: z
               .array(
                 z
                   .object({
                     type: z.enum(PROTOTYPE_ELEMENT_TYPES),
                     label: z.string().trim().min(1).max(200),
+                    // An `input` says what it validates (for example "16 digits", "required"); a control shown only in one state names it.
+                    validation: z.string().trim().min(1).max(200).optional(),
+                    stateVariant: z.enum(P4UI_SCREEN_STATES).optional(),
                     // Present only for 'button'/'link' elements that navigate
                     // to another screen in THIS build; the workflow checks it
                     // resolves to a real screenKey in the same artifact.
