@@ -45,7 +45,7 @@ CASES = [
      [("if v_t.client_confirmed_at is null then return query select 'client_confirmation_required'::text; return; end if;", '')]),
     ('closed-technical CHECK dropped (table layer)', 'sql', 'alter table projects.support_tickets drop constraint support_tickets_closed_technical_needs_confirmation;', None),
     ('advance: how-to closes without the knowledge source', 'fn', P + 'advance_support_ticket(uuid,text,text,text,boolean)',
-     [("if v_note is null or v_ev is null then return query select 'answer_and_source_required'::text; return; end if;", '')]),
+     [("if not exists (select 1 from projects.ticket_knowledge_citations kc where kc.ticket_id = v_t.id and kc.organization_id = v_org) then", 'if false then')]),
     ('advance: out-of-scope work allowed to start', 'fn', P + 'advance_support_ticket(uuid,text,text,text,boolean)',
      [("if v_t.classification in ('change_request', 'new_project') then return query select 'out_of_scope_is_not_maintenance_work'::text; return; end if;", '')]),
     ('record_client_confirmation: evidence requirement removed', 'fn', P + 'record_client_confirmation(uuid,text,boolean)',

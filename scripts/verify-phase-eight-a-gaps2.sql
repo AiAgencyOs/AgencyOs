@@ -87,6 +87,21 @@ select set_config('p8.org', :'ORG', true);
 select set_config('p8.staff', :'STAFF', true);
 
 -- a warranty-bug ticket taken to in_progress through the real doors (one warranty window is open on a fixture project)
+-- round 4: a how-to closes only on a citation of an APPROVED article, so a fixture cites one (written as the table owner, like the other fixtures)
+create or replace function pg_temp.p5r_cite_approved(p_ticket uuid) returns void language plpgsql security definer as $$
+declare v_org uuid; v_art uuid; v_u uuid; v_r text;
+begin
+  select t.organization_id into v_org from projects.support_tickets t where t.id = p_ticket;
+  select u.id into v_u from core.users u order by u.id limit 1;
+  if v_org is null or v_u is null then raise exception 'p5r fixture: no ticket or no user'; end if;
+  insert into projects.support_knowledge_articles (organization_id, article_key, version, title, body, status, proposed_by_agent, approved_by, approved_at)
+  values (v_org, 'p5r-' || replace(gen_random_uuid()::text, '-', ''), 1, 'Exporting your data', 'Open Settings, choose Export, pick a format and press the Export button.', 'approved', 'support', v_u, now())
+  returning id into v_art;
+  v_r := projects.p8g_cite(v_org, null, 'support', p_ticket, v_art);
+  if v_r <> 'cited' then raise exception 'p5r fixture: cite returned %', v_r; end if;
+end $$;
+grant execute on function pg_temp.p5r_cite_approved(uuid) to public;
+
 create or replace function pg_temp.open_ticket(p_project uuid, p_ref text, p_class text, p_cov text, p_prio text, p_org uuid default null, p_actor uuid default null, p_actor_org uuid default null, p_to text default 'in_progress') returns uuid language plpgsql as $$
 declare v_t uuid; v_o text; v_d uuid; v_org uuid := coalesce(p_org, current_setting('p8.org')::uuid); v_au uuid := coalesce(p_actor, current_setting('p8.staff')::uuid); v_ao uuid := coalesce(p_actor_org, v_org);
 begin
@@ -107,7 +122,8 @@ begin
   select outcome into v_o from projects.advance_support_ticket(v_t, 'in_progress');
   if v_o <> 'advanced' then raise exception 'fixture ticket % not started: %', p_ref, v_o; end if;
   if p_to = 'closed' then
-    select outcome into v_o from projects.advance_support_ticket(v_t, 'closed', 'Explained the export button', 'knowledge: exports-guide v2');
+    perform pg_temp.p5r_cite_approved(v_t);
+    select outcome into v_o from projects.advance_support_ticket(v_t, 'closed', 'Explained the export button');
     if v_o <> 'advanced' then raise exception 'fixture ticket % not closed: %', p_ref, v_o; end if;
   end if;
   return v_t;
