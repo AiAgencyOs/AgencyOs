@@ -52,7 +52,11 @@ export default async function PortalHandoverPage({ params }: { params: Promise<{
             This project was completed{state.completedAt ? ` on ${clock.date(state.completedAt)}` : ''}
             {state.acceptedVersion ? `; version ${state.acceptedVersion} of the handover was accepted` : ''}
             {state.lifecycle === 'archived' ? '. It is now archived.' : '.'}
-            {readOnly ? ' This page is read-only.' : ''}
+            {readOnly ? ' This page is read-only.' : ''}{' '}
+            {/* P7-ARC-01: the completion certificate, as a download behind your session (it is built once from the completion record and is not signed). */}
+            <a href={`/api/p789/certificate/${projectId}`} className="font-medium text-brand hover:underline">
+              Download the completion certificate
+            </a>
           </p>
         ) : null}
       </div>

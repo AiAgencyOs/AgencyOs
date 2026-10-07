@@ -21,6 +21,7 @@ import { QuotationResponseForm, SendQuotationForm, SubmitQuotationForm } from '.
 export function QuotationManageButton({
   leadId,
   proposalId,
+  opportunityId,
   title,
   status,
   lapsed,
@@ -30,6 +31,7 @@ export function QuotationManageButton({
 }: {
   leadId: string;
   proposalId: string;
+  opportunityId: string;
   title: string;
   status: string;
   lapsed: boolean;
@@ -98,7 +100,7 @@ export function QuotationManageButton({
             </div>
             {canSubmit ? <SubmitQuotationForm leadId={leadId} proposalId={proposalId} /> : null}
             {canSend ? <SendQuotationForm leadId={leadId} proposalId={proposalId} conversationId={null} /> : null}
-            {canAnswer ? <QuotationResponseForm leadId={leadId} proposalId={proposalId} lapsed={lapsed} /> : null}
+            {canAnswer ? <QuotationResponseForm leadId={leadId} proposalId={proposalId} opportunityId={opportunityId} lapsed={lapsed} /> : null}
             {!canSubmit && !canSend && !canAnswer ? <p className="text-[13px] text-muted">Nothing to do here for this quotation, or your role may not act on it.</p> : null}
           </div>
         ) : null}

@@ -1152,6 +1152,7 @@ export default async function LeadConversationPage({
                 <QuotationResponseForm
                   leadId={leadId}
                   proposalId={liveProposal.id}
+                  opportunityId={opportunity?.id ?? null}
                   lapsed={hasLapsed(liveProposal.valid_until)}
                 />
               </div>

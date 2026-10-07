@@ -113,6 +113,37 @@ export function daypartWindow(policy: SchedulingPolicy, word: string): HoursWind
   return key ? (policy.dayparts[key] ?? null) : null;
 }
 
+/**
+ * The daypart a client's words name ("shaam ko", "in the morning"), or null when they name none or more than one (then nothing is narrowed: a person reads it).
+ * Whole words only, so "evening" is read and "evenings-and-weekends" in a signature is not a request.
+ */
+export function daypartInText(text: string): Daypart | null {
+  const found = new Set<Daypart>();
+  for (const word of text.toLowerCase().split(/[^a-z]+/)) {
+    const key = DAYPART_WORDS[word];
+    if (key) found.add(key);
+  }
+  return found.size === 1 ? ([...found][0] as Daypart) : null;
+}
+
+/**
+ * Narrow offered slots to the daypart the client asked for, in the agency's own definition of that daypart (the policy's window), read in the zone the policy
+ * names. It only ever shortens the list and never to nothing: when no offered slot sits inside the window the list is returned whole, because offering the
+ * calendar's real times is better than offering none (the person reading sees which were offered).
+ */
+export function applyDaypart(policy: SchedulingPolicy, daypart: Daypart | null, slots: readonly Slot[]): Slot[] {
+  if (!daypart) return [...slots];
+  const window = daypartWindow(policy, daypart);
+  if (!window) return [...slots];
+  const inside = slots.filter((slot) => {
+    const s = localParts(new Date(slot.startAt), policy.timezone);
+    const e = localParts(new Date(slot.endAt), policy.timezone);
+    if (!s || !e || s.year !== e.year || s.month !== e.month || s.day !== e.day) return false;
+    return s.minutes >= toMinutes(window.start) && e.minutes <= toMinutes(window.end);
+  });
+  return inside.length > 0 ? inside : [...slots];
+}
+
 export type DateReading =
   | { state: 'date'; date: string; basis: 'explicit' | 'relative' | 'weekday' }
   | { state: 'past'; date: string }

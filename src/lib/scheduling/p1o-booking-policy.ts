@@ -29,3 +29,21 @@ export function constraintsOf(policy: SchedulingPolicy): { minimumNoticeMinutes:
 export function durationAllowed(policy: SchedulingPolicy, minutes: number): boolean {
   return !policy.configured || policy.durations.includes(minutes);
 }
+
+export type MeetingZone = { timezone: string; basis: string; mustAsk: boolean };
+
+/**
+ * Which zone a meeting is read in (P1-SCHED-014): the contact's verified zone, then a stored but unverified one, then the meeting's own, and only then the agency's
+ * default, which comes back marked `mustAsk` because the zone is a guess a person should confirm. `null` when the door cannot answer (the caller keeps what it had).
+ */
+export async function readMeetingZone(meetingId: string): Promise<MeetingZone | null> {
+  const rpc = await userRpc('crm');
+  const { data, error } = await rpc('p1o_meeting_timezone', { p_meeting_id: meetingId });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'readMeetingZone', detail: error.message }));
+    return null;
+  }
+  const row = firstRow(data);
+  if (!row || typeof row.timezone !== 'string' || row.timezone.length === 0) return null;
+  return { timezone: row.timezone, basis: String(row.basis ?? ''), mustAsk: row.must_ask === true };
+}
