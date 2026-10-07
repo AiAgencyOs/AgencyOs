@@ -232,6 +232,124 @@ select pg_temp.check((select outcome from qa.record_functional_case_profile(:'CD
 select pg_temp.check((select (qa.functional_handoff(:'MP_id') -> 'totals' ->> 'not_applicable')::int) = 1, 'it is counted as not applicable, visibly');
 reset role;
 
+-- ═════════ 5. Phase 7: corrective actions are tasks; exception states, linked future work and the classifier are derived; follow-ups are scheduled ═════════
+insert into projects.projects (organization_id, client_account_id, name, project_code) values (:'ORG', :'A_id', 'zztest g567 p7 blocked', 'ZG567-7A') returning id \gset P7A_
+insert into projects.projects (organization_id, client_account_id, name, project_code) values (:'ORG', :'A_id', 'zztest g567 p7 done', 'ZG567-7B') returning id \gset P7B_
+insert into projects.projects (organization_id, client_account_id, name, project_code) values (:'ORG', :'A_id', 'zztest g567 p7 nowarranty', 'ZG567-7C') returning id \gset P7C_
+set local session_replication_role = replica;
+insert into projects.phase_seven (organization_id, project_id, phase_six_handoff_id, candidate_id, commit_ref, artifact_sha256, state) values (:'ORG', :'P7A_id', gen_random_uuid(), gen_random_uuid(), :'C1', repeat('a', 64), 'handover_preparing') returning id \gset PS7A_
+insert into projects.phase_seven (organization_id, project_id, phase_six_handoff_id, candidate_id, commit_ref, artifact_sha256, state) values (:'ORG', :'P7B_id', gen_random_uuid(), gen_random_uuid(), :'C1', repeat('a', 64), 'completed') returning id \gset PS7B_
+insert into projects.phase_seven (organization_id, project_id, phase_six_handoff_id, candidate_id, commit_ref, artifact_sha256, state) values (:'ORG', :'P7C_id', gen_random_uuid(), gen_random_uuid(), :'C1', repeat('a', 64), 'completed') returning id \gset PS7C_
+insert into projects.p7_deployments (organization_id, project_id, phase_seven_id, plan_id, candidate_id, commit_ref, artifact_sha256, environment, attempt, idempotency_key) values (:'ORG', :'P7A_id', :'PS7A_id', gen_random_uuid(), gen_random_uuid(), :'C1', repeat('a', 64), 'production', 1, 'g567-dep-a') returning id \gset DEPA_
+insert into projects.p7_incidents (organization_id, project_id, phase_seven_id, deployment_id, candidate_id, commit_ref, incident_type, severity, state) values (:'ORG', :'P7A_id', :'PS7A_id', :'DEPA_id', gen_random_uuid(), :'C1', 'runtime_failure', 'sev2', 'open') returning id \gset INC_
+insert into projects.p7_handover_packages (organization_id, project_id, phase_seven_id, version, status, deployment_id, validation_run_id, candidate_id, commit_ref, artifact_sha256, warranty_ends_on, admin_approved_by, admin_approved_at, delivered_by, delivered_at)
+  values (:'ORG', :'P7B_id', :'PS7B_id', 1, 'delivered', gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), :'C1', repeat('a', 64), '2027-03-31', :'OWNER', now(), :'OWNER', now()) returning id \gset PK7B_
+insert into projects.p7_completion_records (organization_id, project_id, phase_seven_id, package_id, deployment_id, validation_run_id, candidate_id, commit_ref, payload, completed_at)
+  values (:'ORG', :'P7B_id', :'PS7B_id', :'PK7B_id', gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), :'C1', '{}', '2026-12-01 10:00:00+00');
+insert into projects.p7_handover_packages (organization_id, project_id, phase_seven_id, version, status, deployment_id, validation_run_id, candidate_id, commit_ref, artifact_sha256, admin_approved_by, admin_approved_at, delivered_by, delivered_at)
+  values (:'ORG', :'P7C_id', :'PS7C_id', 1, 'delivered', gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), :'C1', repeat('a', 64), :'OWNER', now(), :'OWNER', now()) returning id \gset PK7C_
+insert into projects.p7_completion_records (organization_id, project_id, phase_seven_id, package_id, deployment_id, validation_run_id, candidate_id, commit_ref, payload, completed_at)
+  values (:'ORG', :'P7C_id', :'PS7C_id', :'PK7C_id', gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), :'C1', '{}', '2026-12-01 10:00:00+00');
+insert into projects.p7_handover_feedback (organization_id, project_id, package_id, classification, route, body) values (:'ORG', :'P7B_id', :'PK7B_id', 'new_feature', 'change_request', 'can you add a wishlist') returning id \gset FB_
+insert into projects.p7_known_limitations (organization_id, project_id, title, source) values (:'ORG', :'P7B_id', 'Search is slow on very large catalogues', 'manual');
+insert into projects.p7_change_records (organization_id, project_id, kind, description, from_candidate_id) values (:'ORG', :'P7B_id', 'code_change', 'fix the checkout rounding', gen_random_uuid());
+set local session_replication_role = origin;
+
+-- INC-09: a corrective action is a task
+select pg_temp.as_user(:'DEV', :'ORG', 'member');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.add_incident_corrective_action(:'INC_id', 'add a health alert')) = 'not_authorized', 'a plain member cannot raise a corrective action');
+reset role;
+select pg_temp.as_user(:'ADM', :'ORG', 'ops_admin');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.add_incident_corrective_action(:'INC_id', '  ')) = 'title_required', 'a corrective action has a title');
+select pg_temp.check((select outcome from projects.add_incident_corrective_action(:'INC_id', 'rotate with token = abcdefghijklmnop')) = 'contains_secret', 'a secret in the title is refused');
+select pg_temp.check((select outcome from projects.add_incident_corrective_action(:'INC_id', 'add a health alert', :'UB')) = 'assignee_not_in_organization', 'the assignee must belong to the organization');
+select outcome as o, task_id as id from projects.add_incident_corrective_action(:'INC_id', 'add a health alert', :'QA', '2027-01-15') \gset CAT_
+select pg_temp.check(:'CAT_o' = 'created', 'a corrective action is created');
+select pg_temp.check((select outcome from projects.add_incident_corrective_action(:'INC_id', 'ADD A HEALTH ALERT')) = 'already_recorded', 'the same action is not created twice');
+select pg_temp.check((select total = 1 and open = 1 and done = 0 from projects.p7_incident_corrective_status(:'INC_id')), 'one open corrective task');
+reset role;
+select pg_temp.check((select priority = 'p1' and assignee_id = :'QA' and due_on = '2027-01-15' and project_id = :'P7A_id' and status = 'todo' from projects.tasks where id = :'CAT_id'), 'a real task exists for the incident''s project: sev2 is p1, with its assignee and due date');
+-- the task workflow's own review guards are other verifiers' business
+set local session_replication_role = replica;
+update projects.tasks set status = 'done', completed_at = now() where id = :'CAT_id';
+set local session_replication_role = origin;
+select pg_temp.check((select done = 1 and open = 0 from (select * from projects.p7_incident_corrective_status(:'INC_id')) s), 'finishing the task shows on the incident');
+select pg_temp.check(pg_temp.refused(format($$delete from projects.p7_incident_corrective_actions where task_id = %L$$, :'CAT_id'), 'never edited or deleted'), 'the link is history');
+
+-- COMP-05: derived exception states
+select pg_temp.as_user(:'ADM', :'ORG', 'ops_admin');
+set local role authenticated;
+select pg_temp.check(exists (select 1 from projects.p7_exception_states(:'P7A_id') where state = 'handover_blocked' and source = 'p7_incidents'), 'an open incident blocks the handover, and the state names the incident rows');
+reset role;
+set local session_replication_role = replica;
+update projects.phase_seven set completion_paused = true, paused_reason = 'a production incident is open' where id = :'PS7A_id';
+set local session_replication_role = origin;
+set local session_replication_role = replica;
+insert into projects.p7c_client_action_requests (organization_id, project_id, client_account_id, kind, title, instructions, due_at) values (:'ORG', :'P7A_id', :'A_id', 'dns_change', 'point the domain', 'set the A record', now() + interval '3 days');
+insert into projects.p7_client_acceptances (organization_id, project_id, package_id, package_version, commit_ref, decision, evidence_kind, evidence_ref, client_name, recorded_by) values (:'ORG', :'P7A_id', gen_random_uuid(), 1, :'C1', 'disputed', 'email_reply', 'mail-1', 'Client Contact', :'ADM');
+set local session_replication_role = origin;
+select pg_temp.as_user(:'ADM', :'ORG', 'ops_admin');
+set local role authenticated;
+select pg_temp.check((select count(*) from projects.p7_exception_states(:'P7A_id') where state = 'handover_blocked') = 2, 'pause and incident are two reasons for the same blocked state');
+select pg_temp.check(exists (select 1 from projects.p7_exception_states(:'P7A_id') where state = 'client_action_required' and source = 'p7c_client_action_requests'), 'an open client action request is CLIENT_ACTION_REQUIRED');
+select pg_temp.check(exists (select 1 from projects.p7_exception_states(:'P7A_id') where state = 'disputed' and source = 'p7_client_acceptances'), 'a disputed acceptance is DISPUTED');
+select pg_temp.check((select count(*) from projects.p7_exception_states(:'P7B_id')) = 0, 'a completed project has no exception state');
+reset role;
+select pg_temp.as_user(:'UB', :'ORGB', 'owner');
+set local role authenticated;
+select pg_temp.check((select count(*) from projects.p7_exception_states(:'P7A_id')) = 0 and (select count(*) from projects.p7_linked_future_work(:'P7B_id')) = 0, 'another organisation reads nothing');
+reset role;
+
+-- CS-03: follow-up tasks, once each, from the delivered package's own warranty date
+select pg_temp.as_user(:'DEV', :'ORG', 'member');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.schedule_handover_follow_ups(:'P7B_id')) = 'not_authorized', 'a plain member cannot schedule follow-ups');
+reset role;
+select pg_temp.as_user(:'ADM', :'ORG', 'ops_admin');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.schedule_handover_follow_ups(:'P7A_id')) = 'not_completed', 'nothing is scheduled for a project that has not completed');
+select pg_temp.check((select outcome = 'scheduled' and created = 3 and cardinality(skipped) = 0 from projects.schedule_handover_follow_ups(:'P7B_id')), 'three follow-ups are scheduled');
+select pg_temp.check((select outcome from projects.schedule_handover_follow_ups(:'P7B_id')) = 'nothing_to_schedule', 'scheduling again creates nothing');
+select pg_temp.check((select outcome = 'scheduled' and created = 2 and cardinality(skipped) = 1 from projects.schedule_handover_follow_ups(:'P7C_id')), 'with no warranty date stated two are scheduled and the third is reported, never invented');
+reset role;
+select pg_temp.check((select count(*) from projects.p7_follow_up_tasks where project_id = :'P7C_id') = 2, 'the project with no warranty date has exactly two follow-ups');
+select pg_temp.check((select array_agg(due_on order by due_on) from projects.p7_follow_up_tasks where project_id = :'P7B_id') = array['2026-12-01'::date, '2026-12-08', '2027-03-24'], 'day 0, week 1 and warranty end minus 7 days');
+select pg_temp.check((select count(*) from projects.tasks t join projects.p7_follow_up_tasks f on f.task_id = t.id where f.project_id = :'P7B_id' and t.status = 'todo') = 3, 'each is a real task');
+select pg_temp.as_service();
+set local role service_role;
+select pg_temp.check((select outcome from projects.schedule_handover_follow_ups(:'P7B_id')) = 'nothing_to_schedule', 'the service role (a job) is idempotent too');
+reset role;
+
+-- ARC-06: linked future work, derived
+select pg_temp.as_user(:'ADM', :'ORG', 'ops_admin');
+set local role authenticated;
+select pg_temp.check((select count(*) from projects.p7_linked_future_work(:'P7B_id') where kind = 'handover_feedback' and route = 'change_request') = 1 and (select count(*) from projects.p7_linked_future_work(:'P7B_id') where kind = 'known_limitation') = 1 and (select count(*) from projects.p7_linked_future_work(:'P7B_id') where kind = 'code_change') = 1, 'open feedback, a known limitation and an open code change are linked future work');
+
+-- PM-06: the classifier suggests, ambiguity and silence are reported
+select pg_temp.check((select classification = 'access_issue' and route = 'client_action' and not ambiguous from projects.p7_suggest_feedback_classification('I cannot access the admin, my password is rejected')), 'an access complaint is classified access_issue and routed to the client action');
+select pg_temp.check((select classification = 'new_feature' and route = 'change_request' from projects.p7_suggest_feedback_classification('Can you add a wishlist page?')), 'a feature ask is a change request, never a defect');
+select pg_temp.check((select classification = 'production_defect' and ambiguous and 'new_feature' = any (alternatives) from projects.p7_suggest_feedback_classification('There is an error on checkout, can you add a retry?')), 'two readings are reported as ambiguous, with the alternatives');
+select pg_temp.check((select classification is null and rule = 'no_rule_matched' from projects.p7_suggest_feedback_classification('thanks')), 'a text no rule matches is not guessed');
+select pg_temp.check((select classification is null and rule = 'empty_text' from projects.p7_suggest_feedback_classification('  ')), 'an empty text is not classified');
+
+-- QA-06: a health snapshot with its source named
+reset role;
+select pg_temp.as_user(:'DEV', :'ORG', 'member');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.record_production_health_snapshot(:'P7B_id', 'healthy', 'check-2026-12-02')) = 'not_authorized', 'a plain member cannot record a snapshot');
+reset role;
+select pg_temp.as_user(:'ADM', :'ORG', 'ops_admin');
+set local role authenticated;
+select pg_temp.check((select outcome from projects.record_production_health_snapshot(:'P7B_id', 'fine', 'check-1')) = 'bad_status', 'the status is one of four');
+select pg_temp.check((select outcome from projects.record_production_health_snapshot(:'P7B_id', 'healthy', ' ')) = 'evidence_required', 'a snapshot names its evidence');
+select pg_temp.check((select outcome from projects.record_production_health_snapshot(:'P7B_id', 'healthy', 'check-1', 'api_key = abcdefghijklmnopqrstuv')) = 'contains_secret', 'no secret in a snapshot');
+select pg_temp.check((select outcome from projects.record_production_health_snapshot(:'P7B_id', 'degraded', 'check-2026-12-02', 'checkout p95 is slow', true, true, null, :'C1')) = 'recorded', 'a person records a snapshot');
+select pg_temp.check((select status = 'degraded' and source = 'manual' and monitoring_source_configured = false and age_minutes < 5 from projects.p7_latest_health_snapshot(:'P7B_id')), 'the latest snapshot says it is manual, how old it is, and that no monitoring source is configured');
+reset role;
+select pg_temp.check(pg_temp.refused(format($$insert into projects.p7_health_snapshots (organization_id, project_id, source, status, evidence_ref, recorded_by) values (%L, %L, 'monitoring_adapter', 'healthy', 'x', %L)$$, :'ORG', :'P7B_id', :'ADM'), 'source'), 'a monitor''s reading cannot be written: no monitoring source exists');
+
 -- ───────── red-proofs: remove each control from the LIVE definition, watch the guarded behaviour become possible, roll the mutation back ─────────
 -- (each block runs in a sub-transaction that is rolled back by raising 'rp_done', so the mutation and anything it wrote are undone)
 select pg_temp.as_service();
@@ -331,5 +449,45 @@ begin
     raise exception 'rp_done';
   exception when others then if sqlerrm <> 'rp_done' then raise; end if; end;
   perform pg_temp.check(v_res = 'recorded', 'RED-PROOF: without the rule NOT_APPLICABLE would rescue a passed case');
+end $rp$;
+select pg_temp.as_user('00000000-0000-4000-8000-00000056f902', '00000000-0000-4000-8000-0000000567a1', 'ops_admin');
+do $rp$
+declare v_res text; v_n int; v_pa uuid := (select id from projects.projects where name = 'zztest g567 p7 blocked'); v_pb uuid := (select id from projects.projects where name = 'zztest g567 p7 done');
+begin
+  begin
+    perform pg_temp.mutate('projects.p7_exception_states(uuid)'::regprocedure, 'and e.kind in (''dispute'', ''chargeback'')', 'and e.kind in (''none'')');
+    perform set_config('session_replication_role', 'replica', true);
+    perform set_config('session_replication_role', 'replica', true);
+  insert into projects.p7_financial_exceptions (organization_id, project_id, kind, note) values ('00000000-0000-4000-8000-0000000567a1', v_pb, 'chargeback', 'card dispute');
+  perform set_config('session_replication_role', 'origin', true);
+    perform set_config('session_replication_role', 'origin', true);
+    v_n := (select count(*) from projects.p7_exception_states(v_pb) where state = 'disputed');
+    raise exception 'rp_done';
+  exception when others then if sqlerrm <> 'rp_done' then raise; end if; end;
+  perform pg_temp.check(v_n = 0, 'RED-PROOF: without the chargeback rule an open chargeback is not shown as a dispute');
+  perform set_config('session_replication_role', 'replica', true);
+  insert into projects.p7_financial_exceptions (organization_id, project_id, kind, note) values ('00000000-0000-4000-8000-0000000567a1', v_pb, 'chargeback', 'card dispute');
+  perform set_config('session_replication_role', 'origin', true);
+  perform pg_temp.check((select count(*) from projects.p7_exception_states(v_pb) where state = 'disputed') = 1, 'the live read shows an open chargeback as DISPUTED');
+  begin
+    perform pg_temp.mutate('projects.p7_exception_states(uuid)'::regprocedure, 'if v_n > 0 then return query select ''handover_blocked''::text, v_n || '' production incident(s) are not closed''', 'if false then return query select ''handover_blocked''::text, v_n || '' production incident(s) are not closed''');
+    v_n := (select count(*) from projects.p7_exception_states(v_pa) where source = 'p7_incidents');
+    raise exception 'rp_done';
+  exception when others then if sqlerrm <> 'rp_done' then raise; end if; end;
+  perform pg_temp.check(v_n = 0, 'RED-PROOF: without the incident rule an open incident no longer blocks the handover');
+  begin
+    perform pg_temp.mutate('projects.schedule_handover_follow_ups(uuid)'::regprocedure, 'if exists (select 1 from projects.p7_follow_up_tasks f where f.project_id = p_project_id and f.kind = k) then continue; end if;', '');
+    perform projects.schedule_handover_follow_ups(v_pb);
+    v_res := 'ran';
+    raise exception 'rp_done';
+  exception when unique_violation then v_res := 'duplicate'; when others then if sqlerrm <> 'rp_done' then raise; end if; end;
+  perform pg_temp.check(v_res = 'duplicate', 'RED-PROOF: without the idempotency check a second run would duplicate follow-ups (the unique key is the backstop)');
+  begin
+    perform pg_temp.mutate('projects.schedule_handover_follow_ups(uuid)'::regprocedure, 'if v_due is null then v_skip := v_skip || (k || '': no warranty end date is stated on the delivered handover''); continue; end if;', 'v_due := coalesce(v_due, current_date + 30);');
+    perform projects.schedule_handover_follow_ups((select id from projects.projects where name = 'zztest g567 p7 nowarranty'));
+    v_n := (select count(*) from projects.p7_follow_up_tasks where project_id = (select id from projects.projects where name = 'zztest g567 p7 nowarranty'));
+    raise exception 'rp_done';
+  exception when others then if sqlerrm <> 'rp_done' then raise; end if; end;
+  perform pg_temp.check(v_n = 3, 'RED-PROOF: mutated, a missing warranty date would be silently invented');
 end $rp$;
 rollback;
