@@ -2,12 +2,14 @@ import 'server-only';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { createAdminClient } from '@/lib/db/admin';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 import { sendClientMessage } from '@/modules/crm/service';
 
 import { describeBlockers } from './kickoff-blockers';
 import { pmKickoff } from './pm-messages';
+import { resolvePmText } from './pm-template-resolve';
 import { recordKickoff } from './planning';
 
 /**
@@ -65,9 +67,14 @@ export async function sendKickoffAndRecord(input: { projectId: string }): Promis
   const { quotationLanguageForConversation } = await import('@/modules/sales/quotation-language');
   const language = await quotationLanguageForConversation(supabase as never, group.id).catch(() => 'en' as const);
 
+  // P2-PM-006: the wording an Admin approved for this organization, else the wording in code. The read is the service-role door; the send below is
+  // still governed under the person who pressed the button.
+  const body = context.organizationId
+    ? await resolvePmText(createAdminClient(), { organizationId: context.organizationId, key: 'kickoff', language, vars: {}, fallback: pmKickoff(language) })
+    : pmKickoff(language);
   const sent = await sendClientMessage({
     conversationId: group.id,
-    body: pmKickoff(language),
+    body,
     idempotencyKey: `pm:kickoff:${input.projectId}`,
   });
   if (!sent.ok) return sent;
