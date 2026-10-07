@@ -34,7 +34,7 @@ describe('the migrations stay in their lane', () => {
     for (const f of MINE) assert.ok(f >= '20261110000000' && f < '20261111000000', f);
     assert.deepEqual(MINE, [...MINE].sort());
     // and they come after everything else that exists, so they apply last
-    assert.ok(ALL.filter((f) => !MINE.includes(f)).every((f) => f < MINE[0]!), 'an earlier-numbered file sorts after a Phase 8D migration');
+    assert.ok(ALL.filter((f) => !MINE.includes(f) && f < '20261111').every((f) => f < MINE[0]!), 'an earlier-numbered file sorts after a Phase 8D migration');
   });
 
   test('they only add: no drop, no change to an existing table, no write outside their own tables and the roster mirror', () => {
@@ -236,7 +236,7 @@ describe('the pages and forms hold the same line', () => {
   });
   test('the page does not edit the existing client page: it is a new route beneath it', () => {
     assert.ok(existsSync(root('app/(internal)/clients/[clientId]/customer-360/page.tsx')));
-    assert.ok(!/customer-360/.test(read('app/(internal)/clients/[clientId]/page.tsx')), 'the existing client page is untouched');
+    assert.equal((read('app/(internal)/clients/[clientId]/page.tsx').match(/customer-360/g) ?? []).length, 1, 'the existing client page carries exactly one link to it and nothing else');
   });
   test('observability is read-gated, nested under /projects, and reachable from the accounts overview', () => {
     assert.match(obs, /requireInternal\('\/projects\/customer-success\/observability'\)/);

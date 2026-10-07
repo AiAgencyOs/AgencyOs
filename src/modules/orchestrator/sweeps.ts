@@ -109,3 +109,23 @@ export async function sweepMaintenanceLifecycle(admin: Admin): Promise<Record<st
   }
   return out;
 }
+
+/**
+ * The Phase 7 retention sweep (P711 §8): a record class whose Admin-set retention period has passed is marked ELIGIBLE FOR REVIEW. The door is runner-only and
+ * DELETES NOTHING, changes no record and decides no disposal: a person reviews what it marks. With no archived project, or no stated period, it marks nothing.
+ * Best effort, like the sweeps above; a replay marks nothing twice.
+ */
+export async function sweepRetentionReviews(admin: Admin): Promise<{ marked: number } | null> {
+  try {
+    const { data, error } = await (admin.schema('projects') as unknown as Loose).rpc('sweep_retention_reviews', {});
+    const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; marked?: number } | undefined;
+    if (error || !row || row.outcome !== 'swept') {
+      console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `retention sweep: ${error ? error.message : `the door answered ${row?.outcome ?? 'nothing'}`}` }));
+      return null;
+    }
+    return { marked: Number(row.marked ?? 0) };
+  } catch (e) {
+    console.error(JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `retention sweep: ${e instanceof Error ? e.message : 'unknown'}` }));
+    return null;
+  }
+}

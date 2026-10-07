@@ -36,7 +36,7 @@ describe('each PM7 announcer is wired end to end', () => {
   test('the Phase 7 workspace opens on Phase6Completed and on M4PaymentVerified, and a closed rollback incident redeploys', () => {
     assert.ok(SUBSCRIPTIONS['project.phase_six_completed']?.includes('projects:openPhaseSeven'));
     assert.ok(SUBSCRIPTIONS['project.m4_payment_verified']?.includes('projects:openPhaseSeven'));
-    assert.deepEqual(SUBSCRIPTIONS['project.deployment_approved']?.filter((h) => h.startsWith('projects:')), ['projects:runDeployment']);
+    assert.deepEqual(SUBSCRIPTIONS['project.deployment_approved']?.filter((h) => h.startsWith('projects:')), ['projects:runDeployment', 'projects:routePhaseSevenTask']);
     assert.ok(SUBSCRIPTIONS['project.deployment_incident_closed']?.includes('projects:runDeployment'));
     assert.match(ROUTE, /runEventJobs\(admin, PHASE_SEVEN_OPEN_JOB_KIND, handleOpenPhaseSeven,/);
     assert.match(ROUTE, /runEventJobs\(admin, PHASE_SEVEN_DEPLOY_JOB_KIND, handleRunDeployment,/);

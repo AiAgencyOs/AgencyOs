@@ -452,6 +452,7 @@ const ORCHESTRATOR: AgentDefinition = {
   handoffTargets: [
     'frontend_developer', 'backend_developer', 'database_developer', 'mobile_developer', 'integration', 'devops_build',
     'test_automation', 'security_review', 'bug_fix', 'refactor_performance', 'documentation',
+    'deployment_agent', 'release_qa', 'incident_recovery',
   ],
   mayVerify: false,
   verification: {

@@ -2,6 +2,8 @@ import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
 
+import { buildPhaseSevenEnvelope, decidePhaseSevenRoute, phaseSevenPolicyVersion, taskTypeForEvent, validatePhaseSevenEnvelope } from '@/modules/orchestrator/phase-seven-route';
+
 import { resolveDeploymentExecutor } from './deployment-executor';
 import type { HandlerResult, UnlockJob } from './handlers';
 
@@ -119,6 +121,118 @@ export async function handleRunDeployment(admin: Admin, job: UnlockJob): Promise
     return { status: 'succeeded', outcome: 'blocked_no_executor', detail: `the deployment is recorded as approved and NOT started: ${result.code} (door: ${blocked}). Nothing was deployed.` };
   }
   return { status: 'succeeded', outcome: 'executor_accepted', detail: 'the executor accepted the deployment and reports its own progress through the runner door.' };
+}
+
+/**
+ * `project.completed` -> fill Phase 8's intake from the frozen Phase 7 handoff (docs/phase-8a-manual-actions.md M-6).
+ *
+ * The door is `projects.fill_phase_eight_intake` (service role): it reads the project's frozen `phase_seven_handoffs` row (and falls back to the legacy completion
+ * record for a project that never entered the Phase 7 pipeline), evaluates the eight start gates and writes ONE intake row per project, refreshing it until Phase 8
+ * starts. It starts nothing: a person defines the warranty window and starts Phase 8. A replay is safe by construction (one row per project; `already_started`).
+ */
+export async function handleFillPhaseEightIntake(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const projectId = job.payload?.subjectId ?? null;
+  if (!projectId) return { status: 'failed', permanent: true, detail: 'the event named no project' };
+  const projects = admin.schema('projects') as unknown as Loose;
+  const { data: found, error: findError } = await projects.from('projects').select('id').eq('id', projectId).eq('organization_id', job.organization_id).maybeSingle();
+  if (findError) return { status: 'failed', permanent: false, detail: `the project could not be read: ${findError.message}` };
+  if (!found) return { status: 'succeeded', outcome: 'gone', detail: 'the project is not in this organization' };
+  // the organization is the JOB's, never the payload's
+  const { data, error } = await projects.rpc('fill_phase_eight_intake', { p_organization_id: job.organization_id, p_project_id: projectId });
+  if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  const outcome = str(firstRow(data)?.outcome) ?? 'no answer';
+  switch (outcome) {
+    case 'ready':
+      return { status: 'succeeded', outcome, detail: 'the Phase 8 intake is READY from the completion facts; a person defines the warranty window and starts Phase 8.' };
+    case 'incomplete':
+      return { status: 'succeeded', outcome, detail: 'the Phase 8 intake exists with named blockers; a person resolves or waives them (the intake refreshes until Phase 8 starts).' };
+    case 'already_started':
+      return { status: 'succeeded', outcome, detail: 'Phase 8 had already started: its intake is frozen.' };
+    case 'not_completed':
+      return { status: 'succeeded', outcome, detail: 'the project is not completed: there is no intake to build yet.' };
+    case 'unknown_project':
+      return { status: 'failed', permanent: true, detail: 'the project no longer exists.' };
+    default:
+      return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
+  }
+}
+
+type AiLoose = { from(table: string): { select(columns: string): { in(column: string, values: readonly string[]): Res } } };
+
+/**
+ * `project.deployment_approved` / `project.deployment_failed` / `project.production_validation_failed` -> the Orchestrator's Phase 7 routing decision
+ * (P703), RECORDED. The decision is the pure function `decidePhaseSevenRoute`; the facts (is the agent enabled, does the plan's approval still hold, which
+ * state the workspace is in) are read here under the job's organization. The database door refuses a decision the rules forbid.
+ *
+ * Every Phase 7 agent is disabled and holds no tool, so today the recorded outcome is HELD with the reason stated. This handler never starts a deployment,
+ * validates production, approves or closes anything: it records where the work WOULD go and why it cannot go there yet.
+ */
+export async function handleRoutePhaseSevenTask(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const subjectId = envelope.subjectId ?? null;
+  const taskType = envelope.eventType ? taskTypeForEvent(envelope.eventType) : null;
+  if (!subjectId || !taskType) return { status: 'failed', permanent: true, detail: 'the event names no routable Phase 7 task' };
+  const projects = admin.schema('projects') as unknown as Loose;
+
+  // the subject is a plan (an approval) or a deployment (a failure); the project, commit and artifact come from the ROW, never the event payload
+  const table = taskType === 'deployment_execution' ? 'p7_deployment_plans' : 'p7_deployments';
+  const { data: subject, error: subjectError } = await projects.from(table).select('id, project_id, commit_ref, artifact_sha256').eq('id', subjectId).eq('organization_id', job.organization_id).maybeSingle();
+  if (subjectError) return { status: 'failed', permanent: false, detail: `the subject could not be read: ${subjectError.message}` };
+  const row = firstRow(subject);
+  if (!row) return { status: 'succeeded', outcome: 'gone', detail: 'the subject is not in this organization' };
+  const projectId = String(row.project_id);
+
+  const { data: workspace, error: workspaceError } = await projects.from('phase_seven').select('state').eq('project_id', projectId).eq('organization_id', job.organization_id).maybeSingle();
+  if (workspaceError) return { status: 'failed', permanent: false, detail: `the workspace could not be read: ${workspaceError.message}` };
+
+  const { data: agents, error: agentsError } = await (admin.schema('ai') as unknown as AiLoose).from('agents').select('key, enabled').in('key', ['deployment_agent', 'release_qa', 'incident_recovery']);
+  if (agentsError) return { status: 'failed', permanent: false, detail: `the agents could not be read: ${agentsError.message}` };
+  const enabled = new Map<string, boolean>((Array.isArray(agents) ? (agents as Row[]) : []).map((a) => [String(a.key), a.enabled === true]));
+
+  let planApproved: boolean | null = null;
+  if (taskType === 'deployment_execution') {
+    const { data: approved, error: approvedError } = await projects.rpc('p7_deployment_approved', { p_plan_id: subjectId });
+    if (approvedError) return { status: 'failed', permanent: false, detail: `the approval could not be read: ${approvedError.message}` };
+    planApproved = approved === true;
+  }
+
+  const route = decidePhaseSevenRoute(taskType, { enabled, workspaceState: str(firstRow(workspace)?.state), planApproved });
+  const built = buildPhaseSevenEnvelope({
+    taskType,
+    organizationId: job.organization_id,
+    projectId,
+    subjectId,
+    planId: taskType === 'deployment_execution' ? subjectId : null,
+    candidate: { commitRef: str(row.commit_ref), artifactSha256: str(row.artifact_sha256) },
+    routingReason: route.reason,
+  });
+  if (route.outcome === 'routed') {
+    const problems = validatePhaseSevenEnvelope(built);
+    if (problems.length > 0) return { status: 'failed', permanent: true, detail: `the envelope was rejected, not repaired: ${problems.join('; ')}` };
+  }
+
+  const { data, error } = await projects.rpc('record_phase_seven_routing', {
+    p_organization_id: job.organization_id,
+    p_project_id: projectId,
+    p_task_type: taskType,
+    p_decision_key: `${envelope.eventType}:${subjectId}`,
+    p_outcome: route.outcome,
+    p_code: route.code,
+    p_to_agent: route.toAgent,
+    p_reason: route.reason,
+    p_candidates: route.candidates,
+    p_envelope: route.outcome === 'held' || route.outcome === 'routed' ? built : null,
+    p_subject_id: subjectId,
+    p_policy_version: phaseSevenPolicyVersion(),
+    p_correlation_id: job.correlation_id,
+  });
+  if (error) return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  const outcome = str(firstRow(data)?.outcome) ?? 'no answer';
+  if (outcome === 'recorded' || outcome === 'already_recorded') {
+    return { status: 'succeeded', outcome: `${route.outcome}:${route.code}`, detail: `${route.reason} (${outcome === 'recorded' ? 'recorded' : 'already recorded'})` };
+  }
+  // the database and the pure rule disagree: that is a defect to surface, never to retry into a pass
+  return { status: 'failed', permanent: true, detail: `the database refused the decision (${outcome}): the rule and the door disagree` };
 }
 
 /** The plan whose approval still holds for the current candidate (the door answers; a failed answer is thrown, so the runner retries rather than concluding "none"). */
