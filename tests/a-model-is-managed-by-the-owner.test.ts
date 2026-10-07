@@ -219,7 +219,7 @@ describe('D. the runner asks — structurally', () => {
   });
 
   test('the tick catches the three gates before the policy refusal, each settled its own way', () => {
-    const catcher = region(route, '    const outcome = await workflow.run({', 'export async function GET');
+    const catcher = region(route, '    const outcome = await runPhaseFourWorkflowHop(', 'export async function GET');
     const cancelled = catcher.indexOf('error instanceof JobCancelled');
     const paused = catcher.indexOf('error instanceof AgentsPaused');
     const budget = catcher.indexOf('error instanceof AgentBudgetRefusal');
@@ -236,7 +236,7 @@ describe('D. the runner asks — structurally', () => {
     const killSwitch = route.indexOf('if (!agent.enabled)');
     const autonomy = route.indexOf('mayAgentRun(agent.autonomy_level');
     const classes = route.indexOf('allowed.length > 0 && !allowed.includes(workflow.workClass)');
-    const work = route.indexOf('await workflow.run({');
+    const work = route.indexOf('() => workflow.run({');
     assert.ok(killSwitch > -1 && autonomy > killSwitch && classes > autonomy && work > classes);
     assert.match(route, /select\('key, enabled, default_model, default_effort, autonomy_level, allowed_work_classes'\)/);
   });

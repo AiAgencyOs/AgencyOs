@@ -86,7 +86,8 @@ describe('what is wired', () => {
     assert.ok(SUBSCRIPTIONS['project.handoff_bound']?.includes('projects:welcomeClient'));
     assert.ok(SUBSCRIPTIONS['project.billing_mode_confirmed']?.includes('projects:askGstDetails'));
     for (const e of ['payment.submitted', 'payment.rejected', 'payment.mismatched']) {
-      assert.deepEqual(SUBSCRIPTIONS[e], ['projects:updateClientOnPayment'], e);
+      // payment.submitted also feeds the automatic payment match (W-F4); the PM update subscribes to all three and stays first.
+      assert.deepEqual(SUBSCRIPTIONS[e], e === 'payment.submitted' ? ['projects:updateClientOnPayment', 'finance:matchPaymentSubmission'] : ['projects:updateClientOnPayment'], e);
     }
     // The MONEY being verified (the invoice is paid) is what the client is told; a claim an Admin merely checked is not
     // the money (Doc 15 §12, G-272), so payment.verified on a claim says nothing.

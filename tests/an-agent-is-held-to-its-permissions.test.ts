@@ -112,7 +112,7 @@ describe('C. the runner enforces it — structurally', () => {
   test('the gate order is unchanged: the registry kill switch and autonomy still run before any workflow', () => {
     const killSwitch = RUNNER_SOURCE.indexOf('if (!agent.enabled)');
     const autonomy = RUNNER_SOURCE.indexOf('mayAgentRun(agent.autonomy_level');
-    const work = RUNNER_SOURCE.indexOf('await workflow.run({');
+    const work = RUNNER_SOURCE.indexOf('() => workflow.run({');
     assert.ok(killSwitch > -1 && autonomy > killSwitch && work > autonomy);
   });
 

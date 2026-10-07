@@ -1,6 +1,7 @@
 import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
+import { markInvoiceReminder, scheduleReminderStages } from './p4q-reminders';
 import { verifiedOn } from './verified-basis';
 
 import {
@@ -52,6 +53,9 @@ export type ReminderOutcome = {
 
 export async function runInvoiceReminders(admin: Admin, limit = 50): Promise<ReminderOutcome> {
   const outcome: ReminderOutcome = { observed: 0, queued: 0, withheld: 0, skipped: 0, failed: false };
+
+  // W-F6: each invoice's reminder stage gets its row (and the escalation its exception) before the sweep decides what to send.
+  await scheduleReminderStages(admin);
 
   const { data: candidates, error: observeError } = await admin
     .schema('finance')
@@ -155,6 +159,7 @@ export async function runInvoiceReminders(admin: Admin, limit = 50): Promise<Rem
         p_send_id: claim.send_id,
         p_note: 'Automatic past-due reminder: not sent — this client has no WhatsApp thread of its own and the project has no group.',
       });
+      await markInvoiceReminder(admin, row.invoice_id, 'failed', 'not sent: no WhatsApp thread for this client and no project group');
       outcome.withheld += 1;
       continue;
     }
@@ -181,6 +186,7 @@ export async function runInvoiceReminders(admin: Admin, limit = 50): Promise<Rem
         p_send_id: claim.send_id,
         p_note: `Automatic past-due reminder: not queued — ${sendError.message}`.slice(0, 600),
       });
+      await markInvoiceReminder(admin, row.invoice_id, 'failed', `not queued: ${sendError.message}`.slice(0, 300));
       outcome.failed = true;
       continue;
     }
@@ -196,6 +202,7 @@ export async function runInvoiceReminders(admin: Admin, limit = 50): Promise<Rem
         p_send_id: claim.send_id,
         p_note: `Automatic past-due reminder: not sent — ${why}.`,
       });
+      await markInvoiceReminder(admin, row.invoice_id, 'failed', `not sent: ${why}`.slice(0, 300));
       outcome.withheld += 1;
       continue;
     }
@@ -223,10 +230,12 @@ export async function runInvoiceReminders(admin: Admin, limit = 50): Promise<Rem
         p_send_id: claim.send_id,
         p_note: `Automatic past-due reminder: queued but not handed to the runner — ${emitError.message}`.slice(0, 600),
       });
+      await markInvoiceReminder(admin, row.invoice_id, 'failed', `queued but not handed to the runner: ${emitError.message}`.slice(0, 300));
       outcome.failed = true;
       continue;
     }
 
+    await markInvoiceReminder(admin, row.invoice_id, 'sent');
     outcome.queued += 1;
   }
 

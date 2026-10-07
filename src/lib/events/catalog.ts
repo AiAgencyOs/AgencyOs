@@ -156,6 +156,7 @@ export const HANDLERS = [
   'projects:attachP4uiBuild',
   'projects:syncP4uiBuild',
   'projects:returnClarificationAnswer',
+  'finance:matchPaymentSubmission',
   'crm:announceMeetingBooked',
   'crm:announceMeetingCancelled',
   'projects:createDraftHandoverPackage',
@@ -219,7 +220,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    */
   'project.billing_mode_confirmed': ['finance:generateM1Invoice', 'projects:askGstDetails'],
   /** Phase 2 PM §6 PM-08: where the client's payment stands, said to the client. */
-  'payment.submitted': ['projects:updateClientOnPayment'],
+  'payment.submitted': ['projects:updateClientOnPayment', 'finance:matchPaymentSubmission'],
   'payment.rejected': ['projects:updateClientOnPayment'],
   'payment.mismatched': ['projects:updateClientOnPayment'],
   /** Phase 2 Finance §4.5 — the issued bill reaches the client's email and the project group. */
@@ -946,6 +947,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:attachP4uiBuild': 'p4ui.attach_build',
   'projects:syncP4uiBuild': 'p4ui.sync_build',
   'projects:returnClarificationAnswer': 'p4q.clarification_return',
+  'finance:matchPaymentSubmission': 'payment.p4q_match',
   'crm:announceMeetingBooked': 'meeting_booked.announce',
   'crm:announceMeetingCancelled': 'meeting_cancelled.announce',
   'projects:createDraftHandoverPackage': 'handover.create_draft',

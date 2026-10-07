@@ -1,4 +1,5 @@
 import { readVerificationPacket } from '@/modules/finance/phase-nine-packet-queries';
+import { readPaymentMatch } from '@/modules/finance/p4q-finance-queries';
 import type { PacketTone } from '@/modules/finance/phase-nine-verification-packet';
 import { Badge } from '@/ui';
 
@@ -12,9 +13,13 @@ import { Badge } from '@/ui';
  */
 const TONE: Record<PacketTone, 'success' | 'warning' | 'danger'> = { ok: 'success', attention: 'warning', blocking: 'danger' };
 
+/** W-F4: the automatic match's recommendation, as a badge tone. It is advice; the person verifying decides. */
+const MATCH_TONE: Record<'MATCH' | 'REVIEW' | 'REJECT' | 'EXCEPTION', 'success' | 'warning' | 'danger'> = { MATCH: 'success', REVIEW: 'warning', REJECT: 'danger', EXCEPTION: 'danger' };
+
 export async function VerificationPacket({ submissionId }: { submissionId: string }) {
   const packet = await readVerificationPacket(submissionId);
   if (!packet) return null;
+  const match = await readPaymentMatch(submissionId);
   return (
     <section aria-label="Verification packet" className="flex flex-col gap-2 rounded-md border border-line p-3">
       <p className="text-[13px] font-medium text-foreground">{packet.headline}</p>
@@ -34,6 +39,20 @@ export async function VerificationPacket({ submissionId }: { submissionId: strin
           </li>
         ))}
       </ul>
+      {match ? (
+        <div className="flex flex-col gap-1 rounded-md bg-surface-muted p-2" aria-label="Automatic match">
+          <p className="flex items-center gap-2 text-[13px]">
+            <Badge tone={MATCH_TONE[match.recommendation]}>{match.recommendation}</Badge>
+            <span className="text-foreground">Automatic match against the invoice and the accounts shown on it: {match.matchClass.replaceAll('_', ' ')}</span>
+          </p>
+          <ul className="list-disc pl-5 text-[13px] text-foreground">
+            {match.reasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+          <p className="text-[12px] text-muted">This is advice only. Nothing was verified, rejected or marked paid by it.</p>
+        </div>
+      ) : null}
       <p className="text-[12px] text-muted">{packet.reminder}</p>
     </section>
   );
