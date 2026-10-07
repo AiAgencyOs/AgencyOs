@@ -154,6 +154,84 @@ select pg_temp.check((select outcome from finance.link_maintenance_invoice(:'PL_
 reset role;
 select pg_temp.check((select count(*) from audit.audit_log where organization_id = :'ORG' and action = 'maintenance_billing.linked') = 2, 'each link is audited');
 
+-- ═════════ 4. P604: a functional case states its scenario and failure class; coverage, done and the handoff are derived from rows ═════════
+insert into projects.deliverables (organization_id, project_id, kind, version, title, created_by) values (:'ORG', :'P_id', 'build', 1, 'zztest g567 build', :'DEV') returning id \gset D_
+insert into projects.deliverable_details (deliverable_id, organization_id, project_id, commit_ref) values (:'D_id', :'ORG', :'P_id', 'abc1234');
+set local session_replication_role = replica;
+insert into projects.scope_versions (organization_id, project_id, version) values (:'ORG', :'P_id', 1) returning id \gset SV_
+insert into projects.scope_items (organization_id, scope_version_id, title, inclusion) values (:'ORG', :'SV_id', 'login', 'included') returning id \gset SI1_
+insert into projects.scope_items (organization_id, scope_version_id, title, inclusion) values (:'ORG', :'SV_id', 'checkout', 'included') returning id \gset SI2_
+insert into projects.scope_items (organization_id, scope_version_id, title, inclusion) values (:'ORG', :'SV_id', 'about page', 'included') returning id \gset SI3_
+insert into projects.scope_items (organization_id, scope_version_id, title, inclusion) values (:'ORG', :'SV_id', 'out of scope thing', 'excluded') returning id \gset SI4_
+insert into projects.development_baselines (organization_id, project_id, phase_five_id, ui_version_id, prototype_artifact_id, prototype_deliverable_id, scope_version_id)
+  values (:'ORG', :'P_id', gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), :'SV_id');
+insert into projects.qa_intakes (organization_id, project_id, phase_six_id, phase_five_handoff_id, build_deliverable_id, commit_ref, artifact_sha256, status, m3_verified, external_dependencies)
+  values (:'ORG', :'P_id', gen_random_uuid(), gen_random_uuid(), :'D_id', 'abc1234', repeat('a', 64), 'valid', true, '["payment gateway sandbox"]') returning id \gset I_
+insert into qa.master_test_plans (organization_id, project_id, intake_id, version, status, commit_ref, required_categories, environments, approved_by, approved_at)
+  values (:'ORG', :'P_id', :'I_id', 1, 'approved', 'abc1234', array['functional'], array['staging'], :'OWNER', now()) returning id \gset MP_
+insert into qa.risk_items (organization_id, plan_id, area, kind, level, depth, reason) values (:'ORG', :'MP_id', 'login', 'authentication', 'high', 'deep', 'sign-in is high risk');
+insert into qa.phase6_cases (organization_id, project_id, plan_id, scope_item_id, title, acceptance_criterion, category, priority) values (:'ORG', :'P_id', :'MP_id', :'SI1_id', 'login ok', 'a user signs in', 'functional', 'critical') returning id \gset CA_
+insert into qa.phase6_cases (organization_id, project_id, plan_id, scope_item_id, title, acceptance_criterion, category, priority) values (:'ORG', :'P_id', :'MP_id', :'SI1_id', 'login wrong password', 'a wrong password is refused', 'functional', 'high') returning id \gset CB_
+insert into qa.phase6_cases (organization_id, project_id, plan_id, scope_item_id, title, acceptance_criterion, category, priority) values (:'ORG', :'P_id', :'MP_id', :'SI2_id', 'checkout total', 'total is right', 'functional', 'medium') returning id \gset CC_
+insert into qa.phase6_cases (organization_id, project_id, plan_id, scope_item_id, title, acceptance_criterion, category, priority) values (:'ORG', :'P_id', :'MP_id', :'SI2_id', 'checkout blocked step', 'step reachable', 'functional', 'medium') returning id \gset CD_
+insert into qa.phase6_cases (organization_id, project_id, plan_id, scope_item_id, title, acceptance_criterion, category, priority) values (:'ORG', :'P_id', :'MP_id', null, 'speed', 'fast', 'performance', 'low') returning id \gset CE_
+set local session_replication_role = origin;
+-- results as an independent person (DEV built the deliverable, so QA records)
+select pg_temp.as_user(:'QA', :'ORG', 'member');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.record_case_result(:'CA_id', 'pass', 'run:1')) = 'recorded', 'fixture: login ok passes');
+select pg_temp.check((select outcome from qa.record_case_result(:'CD_id', 'blocked', null, 'payment sandbox down')) = 'recorded', 'fixture: a case is blocked');
+select pg_temp.check((select outcome from qa.record_functional_case_profile(:'CE_id', 'happy_path', 'feature')) = 'not_a_functional_case', 'only a functional case takes a functional profile');
+select pg_temp.check((select outcome from qa.record_functional_case_profile(:'CA_id', 'nonsense', 'feature')) = 'bad_scenario_kind', 'the scenario kind is one of the twelve');
+select pg_temp.check((select outcome from qa.record_functional_case_profile(:'CA_id', 'happy_path', 'nonsense')) = 'bad_layer', 'the layer is one of the eight');
+select pg_temp.check((select outcome from qa.record_functional_case_profile(:'CA_id', 'happy_path', 'feature', null, 'production')) = 'environment_not_in_plan', 'an environment the plan does not list is refused');
+select pg_temp.check((select outcome from qa.record_functional_case_profile(:'CA_id', 'happy_path', 'feature', null, null, null, null, 'product_code')) = 'failure_class_needs_a_failed_or_blocked_case', 'a failure class needs a failure');
+select pg_temp.check((select outcome from qa.record_functional_case_profile(:'CA_id', 'happy_path', 'feature', null, null, null, null, null, 'not relevant')) = 'a_tested_case_is_applicable', 'NOT_APPLICABLE never rescues a tested case');
+select pg_temp.check((select outcome from qa.record_functional_case_profile(:'CA_id', 'happy_path', 'feature', 'api_key = abcdefghijklmnopqrstuv')) = 'secret_in_text', 'a secret in the persona is refused');
+select pg_temp.check((select outcome from qa.record_functional_case_profile(:'CA_id', 'happy_path', 'feature', 'member', 'staging', 'a registered user', 'signed in and landed on the dashboard')) = 'recorded', 'the happy-path profile is recorded');
+select pg_temp.check((select outcome from qa.record_functional_case_profile(:'CB_id', 'invalid_input', 'validation', 'anonymous', 'staging')) = 'recorded', 'a negative scenario is profiled');
+select pg_temp.check((select outcome from qa.record_functional_case_profile(:'CC_id', 'happy_path', 'workflow')) = 'recorded', 'checkout happy path profiled');
+select pg_temp.check((select outcome from qa.record_functional_case_profile(:'CD_id', 'interrupted_flow', 'integration', null, null, null, null, 'environment')) = 'recorded', 'a blocked case states its failure class');
+reset role;
+select pg_temp.check(pg_temp.refused(format($$update qa.functional_case_profiles set scenario_kind = 'wrong_role' where case_id = %L$$, :'CA_id'), 'through its door'), 'a profile is not edited around its door');
+select pg_temp.check(pg_temp.refused(format($$delete from qa.functional_case_profiles where case_id = %L$$, :'CA_id'), 'never deleted'), 'a profile is never deleted');
+select pg_temp.as_user(:'DEV', :'ORG', 'member');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.record_functional_exclusion(:'MP_id', :'SI3_id', 'static page')) = 'not_authorized', 'a plain member cannot record an exclusion');
+reset role;
+select pg_temp.as_user(:'OWNER', :'ORG', 'owner');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.record_functional_exclusion(:'MP_id', :'SI4_id', 'x')) = 'not_an_included_requirement', 'only an included requirement takes an exclusion');
+select pg_temp.check((select outcome from qa.record_functional_exclusion(:'MP_id', :'SI1_id', 'x')) = 'has_a_direct_functional_case', 'a requirement with a direct case needs no exclusion');
+select pg_temp.check((select outcome from qa.record_functional_exclusion(:'MP_id', :'SI3_id', ' ')) = 'reason_required', 'an exclusion states why');
+select pg_temp.check((select outcome from qa.record_functional_exclusion(:'MP_id', :'SI3_id', 'static content with no behaviour; covered by the visual check')) = 'recorded', 'a person records why there is no direct functional test');
+select pg_temp.check((select outcome from qa.record_functional_exclusion(:'MP_id', :'SI3_id', 'again')) = 'already_recorded', 'recorded once');
+select pg_temp.check((select coverage from qa.functional_coverage(:'MP_id') where scope_item_id = :'SI1_id') = 'minimum_met', 'login has a happy path and a negative scenario');
+select pg_temp.check((select coverage from qa.functional_coverage(:'MP_id') where scope_item_id = :'SI2_id') = 'partial', 'checkout has a happy path but no negative scenario: partial');
+select pg_temp.check((select coverage from qa.functional_coverage(:'MP_id') where scope_item_id = :'SI3_id') = 'excluded', 'a requirement with a recorded reason is excluded, not hidden');
+select pg_temp.check((select count(*) from qa.functional_coverage(:'MP_id')) = 3, 'an out-of-scope item is not a requirement');
+select pg_temp.check((select 'wrong_role' = any (kinds_missing) from qa.functional_coverage(:'MP_id') where scope_item_id = :'SI1_id'), 'the missing scenario kinds are named');
+select pg_temp.check((select satisfied from qa.functional_definition_of_done(:'MP_id') where item = 'scenario_minimum') = false, 'done: checkout lacks a negative scenario');
+select pg_temp.check((select satisfied from qa.functional_definition_of_done(:'MP_id') where item = 'role_paths_checked') = false, 'done: the risk matrix names authentication and no wrong-role case has a result');
+select pg_temp.check((select satisfied from qa.functional_definition_of_done(:'MP_id') where item = 'all_executed') = false, 'done: cases are still waiting');
+select pg_temp.check((select satisfied from qa.functional_definition_of_done(:'MP_id') where item = 'exact_build') = true, 'done: the build is exact');
+select pg_temp.check((select satisfied from qa.functional_definition_of_done(:'MP_id') where item = 'failures_classified') = true, 'done: the blocked case states its class');
+select pg_temp.check((select detail from qa.functional_definition_of_done(:'MP_id') where item = 'skips_and_blocks_visible') like '1 blocked%', 'skips and blocks are visible with their counts');
+select pg_temp.check((select (qa.functional_handoff(:'MP_id') ->> 'declares_production_ready')::boolean) = false, 'the handoff never declares production readiness');
+select pg_temp.check((select qa.functional_handoff(:'MP_id') ->> 'recommendation') = 'blocked', 'a blocked case means the functional recommendation is blocked, not pass');
+select pg_temp.check((select (qa.functional_handoff(:'MP_id') -> 'totals' ->> 'blocked')::int) = 1 and (select (qa.functional_handoff(:'MP_id') -> 'totals' ->> 'pass')::int) = 1, 'the handoff totals count pass and blocked');
+select pg_temp.check((select qa.functional_handoff(:'MP_id') -> 'knownLimitations' ->> 0) = 'payment gateway sandbox', 'known limitations come from the intake');
+reset role;
+select pg_temp.as_user(:'UB', :'ORGB', 'owner');
+set local role authenticated;
+select pg_temp.check((select count(*) from qa.functional_coverage(:'MP_id')) = 0 and qa.functional_handoff(:'MP_id') is null, 'another organisation reads no coverage and no handoff');
+reset role;
+select pg_temp.as_user(:'QA', :'ORG', 'member');
+set local role authenticated;
+select pg_temp.check((select outcome from qa.record_functional_case_profile(:'CD_id', 'interrupted_flow', 'integration', null, null, null, null, 'environment', 'sandbox is out of scope for this build')) = 'recorded', 'a blocked case may be marked not applicable with its reason');
+select pg_temp.check((select (qa.functional_handoff(:'MP_id') -> 'totals' ->> 'not_applicable')::int) = 1, 'it is counted as not applicable, visibly');
+reset role;
+
 -- ───────── red-proofs: remove each control from the LIVE definition, watch the guarded behaviour become possible, roll the mutation back ─────────
 -- (each block runs in a sub-transaction that is rolled back by raising 'rp_done', so the mutation and anything it wrote are undone)
 select pg_temp.as_service();
@@ -229,5 +307,29 @@ begin
     raise exception 'rp_done';
   exception when others then if sqlerrm <> 'rp_done' then raise; end if; end;
   perform pg_temp.check(v_res in ('linked', 'invoice_already_linked'), 'RED-PROOF: without the exact-renewal check the renewal cycle is not held to the accepted period');
+end $rp$;
+select pg_temp.as_service();
+do $rp$
+declare v_res text;
+begin
+  begin
+    perform pg_temp.mutate('qa.functional_handoff(uuid)'::regprocedure, '''declares_production_ready'', false', '''declares_production_ready'', true');
+    v_res := (qa.functional_handoff((select id from qa.master_test_plans where organization_id = '00000000-0000-4000-8000-0000000567a1')) ->> 'declares_production_ready');
+    raise exception 'rp_done';
+  exception when others then if sqlerrm <> 'rp_done' then raise; end if; end;
+  perform pg_temp.check(v_res = 'true', 'RED-PROOF: the handoff''s readiness flag is the control that keeps it from declaring production readiness');
+  begin
+    perform pg_temp.mutate('qa.functional_handoff(uuid)'::regprocedure, 'when v_blocked > 0 or v_skipped > 0 then ''blocked''', 'when false then ''blocked''');
+    v_res := (qa.functional_handoff((select id from qa.master_test_plans where organization_id = '00000000-0000-4000-8000-0000000567a1')) ->> 'recommendation');
+    raise exception 'rp_done';
+  exception when others then if sqlerrm <> 'rp_done' then raise; end if; end;
+  perform pg_temp.check(v_res <> 'blocked', 'RED-PROOF: without the blocked rule a blocked case no longer shows in the recommendation');
+  begin
+    perform pg_temp.mutate('qa.record_functional_case_profile(uuid,text,text,text,text,text,text,text,text)'::regprocedure, 'if p_not_applicable_reason is not null and v_case.status in (''pass'', ''fail'') then', 'if false then');
+    perform pg_temp.as_user('00000000-0000-4000-8000-00000056f904', '00000000-0000-4000-8000-0000000567a1', 'member');
+    v_res := (select outcome from qa.record_functional_case_profile((select id from qa.phase6_cases where title = 'login ok'), 'happy_path', 'feature', null, null, null, null, null, 'not relevant'));
+    raise exception 'rp_done';
+  exception when others then if sqlerrm <> 'rp_done' then raise; end if; end;
+  perform pg_temp.check(v_res = 'recorded', 'RED-PROOF: without the rule NOT_APPLICABLE would rescue a passed case');
 end $rp$;
 rollback;
