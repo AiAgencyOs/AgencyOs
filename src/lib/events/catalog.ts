@@ -133,6 +133,9 @@ export const HANDLERS = [
   'crm:announceProductionValidationFailed',
   'crm:announceHandoverReady',
   'crm:announceProjectCompleted',
+  // Phase 7b: the Phase 7 -> Phase 8 seam (the intake reads the frozen handoff) and the Orchestrator's recorded Phase 7 routing decision
+  'projects:fillPhaseEightIntake',
+  'projects:routePhaseSevenTask',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -712,17 +715,19 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   /** P701 §14 Phase 7: Phase7Ready -> PM7-M01 (Task 5 start). Emitted once by `open_phase_seven`, only after Phase6Completed + the exact candidate + M4 verified. */
   'project.phase_seven_ready': ['crm:announcePhaseSevenReady'],
   /** P704: DeploymentApproved -> the runner door records the deployment (the executor is NOT configured: it records a blocker) + the PM tells the team approval is not deployment. */
-  'project.deployment_approved': ['projects:runDeployment', 'crm:announceDeploymentApproved'],
+  'project.deployment_approved': ['projects:runDeployment', 'crm:announceDeploymentApproved', 'projects:routePhaseSevenTask'],
   /** P706: after a ROLLBACK recovery is verified and the incident closed, the same approved candidate is redeployed through the same runner door. */
   'project.deployment_incident_closed': ['projects:runDeployment'],
   /** P705: ProductionValidated (QA/Release evidence, never a deployment claim) -> PM7 prepares the handover communication. */
   'project.production_validated': ['crm:announceProductionValidated'],
   /** P705/P706: DeploymentValidationFailed -> a controlled, client-safe status; completion is paused. */
-  'project.production_validation_failed': ['crm:announceProductionValidationFailed'],
+  'project.production_validation_failed': ['crm:announceProductionValidationFailed', 'projects:routePhaseSevenTask'],
   /** P707/P708: the Admin-approved package was delivered -> invite the client's formal review. */
   'project.handover_delivered': ['crm:announceHandoverReady'],
   /** P701/P708: ProjectCompleted (gate passed, immutable record written) -> completion + support/warranty message and the Customer Success transition. */
-  'project.completed': ['crm:announceProjectCompleted'],
+  'project.completed': ['crm:announceProjectCompleted', 'projects:fillPhaseEightIntake'],
+  /** P703: a Phase 7 failure is triaged by the Orchestrator's recorded routing decision (held while the agents are disabled). Completion pause and the incident are the database's. */
+  'project.deployment_failed': ['projects:routePhaseSevenTask'],
   /**
    * Audit 1.2/1.3 (docs/AGENCYOS_BUSINESS_PHASE_1_4_AUDIT.json), Implementation
    * Plan Phase 1 items 1 and 3 — the two gaps the audit named "no
@@ -869,6 +874,8 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'crm:announceProductionValidationFailed': 'production_validation_failed.announce',
   'crm:announceHandoverReady': 'handover_ready.announce',
   'crm:announceProjectCompleted': 'project_completed.announce',
+  'projects:fillPhaseEightIntake': 'phase_eight_intake.fill',
+  'projects:routePhaseSevenTask': 'phase_seven.route_task',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);
