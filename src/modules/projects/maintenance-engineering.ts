@@ -218,6 +218,14 @@ export const MAINTENANCE_OUTCOME_WORDS: Record<string, string> = {
   plan_not_accepted: 'The plan has no accepted quote yet.',
   amount_differs_from_the_quoted_price: 'That invoice does not carry the quoted total. Amounts are never changed here.',
   requester_cannot_approve: 'You requested this exception, so the owner decides it, not you.',
+  amount_differs_from_the_accepted_price: 'That invoice does not carry the total the client accepted. Amounts are never changed here.',
+  no_accepted_price: 'The plan has no accepted quote for this cycle, so there is no price to bind the invoice to.',
+  bad_cycle: 'A cycle must end after it starts.',
+  cycle_too_long: 'That cycle is longer than the plan\'s billing model allows.',
+  cycle_overlaps_a_billed_cycle: 'That cycle overlaps a cycle already billed on this plan.',
+  cycle_outside_the_plan_period: 'That cycle falls outside the plan\'s own start and end dates.',
+  cycle_is_not_the_accepted_renewal: 'A renewal invoice must cover exactly the renewal period the client accepted.',
+  cycle_already_billed: 'That cycle already has a different invoice linked to it.',
 };
 
 export const outcomeWords = (outcome: string): string => MAINTENANCE_OUTCOME_WORDS[outcome] ?? `Refused: ${outcome.replace(/_/g, ' ')}.`;

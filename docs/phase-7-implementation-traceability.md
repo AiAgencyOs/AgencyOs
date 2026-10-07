@@ -50,7 +50,7 @@ Journey proven end to end in the verifier: Phase6Completed with M4 pending (bloc
 | P7-PM-03 | 02 §8, §13 | Handover invitation, exact version | EXISTS | `project.handover_delivered` → PM7-HANDOVER-READY (keyed by the package version; "looks good is not acceptance") |
 | P7-PM-04 | 02 §10 | Completion message only after ProjectCompleted | EXISTS | `project.completed` → PM7-COMPLETE; one per project |
 | P7-PM-05 | 02 §6 | Client-safe: no secret, stack trace, model/provider detail | EXISTS | message tests; PM messages carry their template version (`PM_TEMPLATES`) |
-| P7-PM-06 | 02 §9 | Feedback classification | PARTIAL | the seven classes and their routes are a deterministic table (`p7_feedback_route`) applied by staff; there is no automatic classifier |
+| P7-PM-06 | 02 §9 | Feedback classification | EXISTS (deterministic suggestion) | `projects.p7_suggest_feedback_classification(text)` suggests one of the seven classes and its route from fixed keyword rules, reports ambiguity with the alternatives, and says `no_rule_matched` rather than guessing. Staff still apply a class through `record_handover_feedback`; there is no model |
 | P7-PM-07 | 02 §7, §12 | Client action requests (DNS, store, account) as an entity with a deadline | EXISTS (record, door, portal) / PARTIAL (no reminder) | Phase 7c `20261112100000`: `p7c_client_action_requests` + append-only events; staff raise (`create_client_action_request`, a deadline in the future, no secret), the client reads its own through `client_action_requests_for_client` and RESOLVES with a note (`resolve_client_action_request`: a CLAIM, status `submitted`), a person CONFIRMS with their own verification or sends it back (`settle_client_action_request`). Overdue is derived and enters the Failure Queue. Verifier §3 (client of another account reads and answers nothing; a client cannot confirm; confirmation needs a verifier at the door AND the table), UI: portal page `actions/`, Admin panel `phase-seven-c-panel.tsx` (not mounted, not rendered). Nothing is sent or chased: the PM does not message the client directly, and a readiness item (P7-READY-01) stays a separate record |
 | P7-PM-08 | 02 §14 | Admin panel: PM timeline, delivery, client actions | PARTIAL | PM delivery is in the existing PM messages panel; the Phase 7 panel shows state and feedback |
 
@@ -87,7 +87,7 @@ Journey proven end to end in the verifier: Phase6Completed with M4 pending (bloc
 | P7-QA-03 | 05 §9 | Rollback verification: re-smoke before the incident closes | EXISTS | `post_rollback` run tied to the incident (P705-T009, P706-T008) |
 | P7-QA-04 | 05 §10 | Code-change boundary | EXISTS | see P7-CHG-01 |
 | P7-QA-05 | 05 §6 | Safe test data; production-specific integrations | MANUAL_EXTERNAL | needs production access and test accounts |
-| P7-QA-06 | 05 §12 | ProductionHealthSnapshot (errors, metrics, integrations, DB) | MISSING | needs a monitoring source; checks are recorded by a person |
+| P7-QA-06 | 05 §12 | ProductionHealthSnapshot (errors, metrics, integrations, DB) | EXISTS (manual record) / MANUAL_EXTERNAL (monitoring source) | `projects.record_production_health_snapshot` records a person's snapshot (status, evidence reference, no secret) and `projects.p7_latest_health_snapshot` returns it with its source and age and `monitoring_source_configured = false`. The `source` check admits only `manual`: a monitor's reading cannot be written because no monitoring source exists |
 | P7-QA-07 | 05 §13 | SmokeFailed / SmokePassed / RollbackCompleted events | PARTIAL | `production_validation_failed`, `production_validated`, `deployment_failed`; rollback completion is a deployment event row, not a separate event type |
 
 ## P706 Incident / Rollback
@@ -101,7 +101,7 @@ Journey proven end to end in the verifier: Phase6Completed with M4 pending (bloc
 | P7-INC-06 | 06 §15 | Duplicate alerts → one canonical incident | EXISTS | partial unique index + dedupe in `p7_open_incident` (T010) |
 | P7-INC-07 | 06 §6 | Admin notification by policy; client-safe messaging separate from technical detail | PARTIAL | the PM7-INCIDENT message is client-safe; there is no Admin notification policy engine (the incident is on the Admin panel and the internal channel) |
 | P7-INC-08 | 06 §5 | Provider-outage wait/retry/failover | PARTIAL | an incident path `provider` is a recorded decision; no automatic failover |
-| P7-INC-09 | 06 §11 | Corrective-action linkage (tasks) | PARTIAL | corrective actions are recorded text; no task is created |
+| P7-INC-09 | 06 §11 | Corrective-action linkage (tasks) | EXISTS | `20261123200000` `projects.add_incident_corrective_action` creates a real `projects.tasks` row (priority from severity, optional assignee and due date) linked to the incident in an append-only table; `projects.p7_incident_corrective_status` reads done/open. The incident close rule is untouched (owner decision pending on who may close). `scripts/verify-phase-567-gaps.sql` |
 
 ## P707 Handover
 
@@ -126,7 +126,7 @@ Journey proven end to end in the verifier: Phase6Completed with M4 pending (bloc
 | P7-COMP-02 | 08 §7 | Completion gate: scope, final QA, production, payment, handover, acceptance, no blocking issue, CS handoff | EXISTS | nine gate rows; scope and acceptance are exceptionable by an Admin; production, payment, handover, QA are not |
 | P7-COMP-03 | 08 §8 | Completion record: project, scope, release, QA, finance, production, handover, acceptance, limitations, support, timestamp/owner | EXISTS | `p7_completion_records.payload` |
 | P7-COMP-04 | 08 §9 | Completion exceptions: reason, risk, Admin, exact gate/build/package, audit, no silent AI | EXISTS | `approve_completion_exception` (Admin only); append-only; bound to the delivered package and commit (T009) |
-| P7-COMP-05 | 08 §10 | Exception states HANDOVER_BLOCKED, CLIENT_ACTION_REQUIRED, DISPUTED | PARTIAL | `client_action_required` is a state (access issue, dispute); HANDOVER_BLOCKED and DISPUTED are not separate states: a blocked handover shows as `handover_preparing`, a dispute is a decision row |
+| P7-COMP-05 | 08 §10 | Exception states HANDOVER_BLOCKED, CLIENT_ACTION_REQUIRED, DISPUTED | EXISTS (derived) | `projects.p7_exception_states(project)` derives HANDOVER_BLOCKED (completion paused, an open incident, a package sent back), CLIENT_ACTION_REQUIRED (the phase state or an open client action request) and DISPUTED (the latest acceptance is a dispute, or an open dispute/chargeback), each row naming its source. Nothing is stored and no state-machine value is added (red-proven) |
 | P7-COMP-06 | 08 §11 | Historical integrity: completion does not delete, versions immutable, future work separate | EXISTS | completed workspace never returns to production work; completion record and intake frozen; a completed project accepts no change/plan door (T011) |
 | P7-COMP-07 | 08 §12 | ProjectArchivePreparation | EXISTS | `start_project_archive` (an Admin; needs the frozen completion record and a retention policy for every class), `finish_project_archive`; see P711 |
 
@@ -135,7 +135,7 @@ Journey proven end to end in the verifier: Phase6Completed with M4 pending (bloc
 | REQ | Spec | Requirement | Status | Evidence |
 |---|---|---|---|---|
 | P7-CS-02 | 09 §2, §5 | CS handoff intake: production version, docs, support contacts, warranty window, limitations, open non-blocking issues | EXISTS (snapshot) | `phase_seven_handoffs.payload` |
-| P7-CS-03 | 09 §6, §10 | Day 0 / early follow-up schedule | PARTIAL | suggested dates (day 0, week 1, warranty end minus 7 days) are DATA in the intake; no follow-up task is scheduled (Phase 8) |
+| P7-CS-03 | 09 §6, §10 | Day 0 / early follow-up schedule | EXISTS (tasks) / Phase 8 (client messages) | `projects.schedule_handover_follow_ups` schedules day 0, week 1 and warranty end minus 7 days as tasks, once each, from the completion date and the DELIVERED package's own warranty date; with none stated that follow-up is reported as skipped, never invented. Idempotent for a person and for the service role (red-proven). Sending anything to the client remains Phase 8 |
 | P7-CS-04 | 09 §7, §12 | Issue classification, warranty bug / maintenance / change request / opportunity routing | PARTIAL | the handover feedback routes exist; the post-project issue workflow, warranty window model and maintenance entitlement are Phase 8 (`maintenanceEntitlement` is null in the intake: not invented) |
 | P7-CS-05 | 09 §9 | Feedback, adoption signals, complaints | MISSING | Phase 8 |
 | P7-CS-06 | 09 §13 | ProjectCompleted creates the handoff once | EXISTS | created in the same transaction as the completion record; replay creates nothing |
@@ -160,7 +160,7 @@ Journey proven end to end in the verifier: Phase6Completed with M4 pending (bloc
 | P7-ARC-03 | 11 §8 | Retention classes, deletion policy, retention jobs | EXISTS (marking) / NOT BUILT (disposal) | eight record classes with an Admin-set period or "indefinite" (`set_retention_policy`; no default exists, so no policy means no archive); `sweep_retention_reviews` (service role, called on the cron tick) marks a class ELIGIBLE FOR REVIEW and **deletes nothing**. Disposal is a person's decision and no disposal door exists |
 | P7-ARC-04 | 11 §9 | Client portal completed / read-only state | EXISTS | `client_completed_state` returns completed/archived, the accepted handover version and the completion date; the portal is open, read-only or expired by the archive's snapshot of the Admin-set portal policy, and the portal write door refuses once read-only (P711-T006) |
 | P7-ARC-05 | 11 §10, §11 | Reactivation guard: a completed project cannot silently return to development | EXISTS | the Phase 7 workspace and project status refuse it; once ARCHIVING starts, tasks, modules, features, deliverables and deliverable details of that project refuse insert, update and delete (a trigger keyed on the archive row: a legacy project, and a completed project that is not archived, are untouched) |
-| P7-ARC-06 | 11 §12 | LinkedFutureWork | PARTIAL | feedback routes only |
+| P7-ARC-06 | 11 §12 | LinkedFutureWork | EXISTS (derived) | `projects.p7_linked_future_work` lists open handover feedback routed to change request / customer success / support, known limitations and open code changes, each with its source |
 | P7-ARC-07 | 11 §5 | Remove unnecessary secrets | EXISTS (by construction) | no secret is ever stored; nothing to remove |
 
 ## Agents

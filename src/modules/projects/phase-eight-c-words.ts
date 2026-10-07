@@ -60,7 +60,7 @@ const WORDS: Record<string, string> = {
   requester_cannot_confirm: 'Whoever requested the cancellation cannot confirm it.',
   cycle_not_paid: 'The current cycle is not paid on verified money (or excepted) again.',
   stale_commit: 'That evidence is about a different commit than the change now holds.',
-  not_a_sensitive_database_change: 'Only a change marked sensitive that touches the database takes a data-safety record.',
+  not_a_sensitive_database_change: 'Only a change to the database area takes a data-safety record (the sensitive mark does not decide this).',
   rollback_plan_required: 'A rollback plan is required.',
   backup_evidence_required: 'A backup-confirmed evidence reference is required.',
   self_confirmation: 'The author of the commit cannot confirm their own backup.',
